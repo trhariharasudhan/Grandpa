@@ -123,7 +123,7 @@ class EmailChannel(BaseChannel):
             msg["To"] = channel
             msg["Subject"] = (metadata or {}).get(
                 "subject",
-                "Message from OpenJarvis",
+                "Message from Grandpa",
             )
             if conversation_id:
                 msg["In-Reply-To"] = conversation_id

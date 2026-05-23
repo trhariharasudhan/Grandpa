@@ -1,6 +1,6 @@
-"""LLM-based optimizer for OpenJarvis configuration tuning.
+"""LLM-based optimizer for Grandpa configuration tuning.
 
-Uses a cloud LLM to propose optimal OpenJarvis configs, inspired by DSPy's
+Uses a cloud LLM to propose optimal Grandpa configs, inspired by DSPy's
 GEPA approach: textual feedback from execution traces rather than just scalar
 rewards guides the optimizer toward better configurations.
 """
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class LLMOptimizer:
-    """Uses a cloud LLM to propose optimal OpenJarvis configs.
+    """Uses a cloud LLM to propose optimal Grandpa configs.
 
     Inspired by DSPy's GEPA: uses textual feedback from execution
     traces rather than just scalar rewards.
@@ -119,7 +119,7 @@ class LLMOptimizer:
     def _build_initial_prompt(self) -> str:
         """Construct the prompt for the initial config proposal."""
         lines: List[str] = []
-        lines.append("You are optimizing an OpenJarvis AI system configuration.")
+        lines.append("You are optimizing an Grandpa AI system configuration.")
         lines.append("")
         lines.append(self.search_space.to_prompt_description())
         lines.append("## Objective")
@@ -150,7 +150,7 @@ class LLMOptimizer:
     ) -> str:
         """Construct the full prompt for propose_next."""
         lines: List[str] = []
-        lines.append("You are optimizing an OpenJarvis AI system configuration.")
+        lines.append("You are optimizing an Grandpa AI system configuration.")
         lines.append("")
         lines.append(self.search_space.to_prompt_description())
 
@@ -194,7 +194,7 @@ class LLMOptimizer:
     ) -> str:
         """Construct the prompt for analyze_trial."""
         lines: List[str] = []
-        lines.append("Analyze this OpenJarvis evaluation result.")
+        lines.append("Analyze this Grandpa evaluation result.")
         lines.append("")
 
         lines.append("## Configuration")
@@ -438,7 +438,7 @@ class LLMOptimizer:
     ) -> str:
         """Build prompt for primitive-targeted mutation."""
         lines: List[str] = []
-        lines.append("You are optimizing an OpenJarvis AI system configuration.")
+        lines.append("You are optimizing an Grandpa AI system configuration.")
         lines.append("")
         lines.append(self.search_space.to_prompt_description())
 
@@ -475,7 +475,7 @@ class LLMOptimizer:
     ) -> str:
         """Build prompt for merging frontier configs."""
         lines: List[str] = []
-        lines.append("You are optimizing an OpenJarvis AI system configuration.")
+        lines.append("You are optimizing an Grandpa AI system configuration.")
         lines.append("")
         lines.append(self.search_space.to_prompt_description())
 

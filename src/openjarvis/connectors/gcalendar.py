@@ -241,7 +241,7 @@ class GCalendarConnector(BaseConnector):
     ----------
     credentials_path:
         Path to the JSON file where OAuth tokens are stored.  Defaults to
-        ``~/.openjarvis/connectors/gcalendar.json``.
+        ``~/.Grandpa/connectors/gcalendar.json``.
     """
 
     connector_id = "gcalendar"

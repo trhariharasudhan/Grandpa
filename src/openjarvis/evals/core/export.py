@@ -386,7 +386,7 @@ def export_summary_json(
         fwk = config.get("framework", "") or ""
         fwk_commit = config.get("framework_commit", "") or ""
     if not fwk:
-        fwk = "openjarvis"
+        fwk = "Grandpa"
 
     def _stats_block(vals: list[float]) -> dict[str, Any]:
         if not vals:

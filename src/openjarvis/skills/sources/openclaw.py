@@ -29,7 +29,7 @@ class OpenClawResolver(SourceResolver):
 
     def __init__(self, cache_root: Path | None = None) -> None:
         if cache_root is None:
-            cache_root = Path("~/.openjarvis/skill-cache/openclaw/").expanduser()
+            cache_root = Path("~/.Grandpa/skill-cache/openclaw/").expanduser()
         self._cache_root = Path(cache_root)
 
     def cache_dir(self) -> Path:

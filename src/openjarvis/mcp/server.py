@@ -1,4 +1,4 @@
-"""MCP Server — wraps OpenJarvis tools as MCP-discoverable tools."""
+"""MCP Server — wraps Grandpa tools as MCP-discoverable tools."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ _TOOL_ANNOTATIONS: Dict[str, Dict[str, Any]] = {
 
 
 class MCPServer:
-    """MCP server that exposes OpenJarvis tools via JSON-RPC.
+    """MCP server that exposes Grandpa tools via JSON-RPC.
 
     Parameters
     ----------
@@ -47,7 +47,7 @@ class MCPServer:
         all registered tools from ``ToolRegistry``.
     """
 
-    SERVER_NAME = "openjarvis"
+    SERVER_NAME = "Grandpa"
     SERVER_VERSION = "0.1.0"
     PROTOCOL_VERSION = "2025-11-25"
 
@@ -213,7 +213,7 @@ class MCPServer:
                 "serverInfo": {
                     "name": self.SERVER_NAME,
                     "version": self.SERVER_VERSION,
-                    "title": "OpenJarvis Tool Server",
+                    "title": "Grandpa Tool Server",
                 },
             },
             id=req.id,

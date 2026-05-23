@@ -1,4 +1,4 @@
-"""``jarvis host`` — download and serve a model locally with auto backend setup."""
+"""``Grandpa host`` — download and serve a model locally with auto backend setup."""
 
 from __future__ import annotations
 
@@ -316,10 +316,10 @@ def host(
     Examples:
 
     \b
-      jarvis host mlx-community/Qwen2.5-7B-4bit --backend mlx
-      jarvis host Qwen/Qwen3-8B --backend vllm
-      jarvis host qwen3:8b --backend ollama
-      jarvis host meta-llama/Llama-3-8B -b sglang
+      Grandpa host mlx-community/Qwen2.5-7B-4bit --backend mlx
+      Grandpa host Qwen/Qwen3-8B --backend vllm
+      Grandpa host qwen3:8b --backend ollama
+      Grandpa host meta-llama/Llama-3-8B -b sglang
     """
     console = Console()
 
@@ -372,7 +372,7 @@ def host(
     if backend != "ollama":
         console.print(f"[dim]The model server will be available at {host_url}[/dim]")
         console.print(
-            "[dim]OpenJarvis will auto-discover it. Press Ctrl+C to stop.[/dim]\n"
+            "[dim]Grandpa will auto-discover it. Press Ctrl+C to stop.[/dim]\n"
         )
 
     try:

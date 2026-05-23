@@ -1,4 +1,4 @@
-"""Top-level system composition: JarvisSystem, SystemBuilder, and helpers."""
+"""Top-level system composition: GrandpaSystem, SystemBuilder, and helpers."""
 
 from openjarvis.system.builder import SystemBuilder
 from openjarvis.system.bundles import (
@@ -7,13 +7,13 @@ from openjarvis.system.bundles import (
     Scheduling,
     SecurityContext,
 )
-from openjarvis.system.core import JarvisSystem
+from openjarvis.system.core import GrandpaSystem
 from openjarvis.system.orchestrator import QueryOrchestrator
 from openjarvis.system.protocols import OrchestratorDeps
 
 __all__ = [
     "AgentRuntime",
-    "JarvisSystem",
+    "GrandpaSystem",
     "Observability",
     "OrchestratorDeps",
     "QueryOrchestrator",

@@ -1,4 +1,4 @@
-# src/openjarvis/mining/_collector.py
+# src/Grandpa/mining/_collector.py
 """Background poller for mining telemetry.
 
 Shipped in v1 but not wired into the gateway daemon. v1's status command

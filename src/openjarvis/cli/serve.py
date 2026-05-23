@@ -1,4 +1,4 @@
-"""``jarvis serve`` — OpenAI-compatible API server."""
+"""``Grandpa serve`` — OpenAI-compatible API server."""
 
 from __future__ import annotations
 
@@ -251,7 +251,7 @@ def serve(
 
     # Wire channel messages → agent / engine (per-chat session isolation)
     if channel_bridge is not None:
-        from openjarvis.system import JarvisSystem
+        from openjarvis.system import GrandpaSystem
 
         channel_agent = config.channel.default_agent or agent_key or "simple"
 
@@ -297,7 +297,7 @@ def serve(
             except Exception as exc:
                 logger.warning("Channel tools failed to load: %s", exc)
 
-        _wire_system = JarvisSystem(
+        _wire_system = GrandpaSystem(
             config=config,
             bus=bus,
             engine=engine,
@@ -331,7 +331,7 @@ def serve(
             from openjarvis.agents.manager import AgentManager
 
             am_db = config.agent_manager.db_path or str(
-                Path("~/.openjarvis/agents.db").expanduser()
+                Path("~/.Grandpa/agents.db").expanduser()
             )
             agent_manager = AgentManager(db_path=am_db)
         except Exception as exc:
@@ -400,13 +400,13 @@ def serve(
     # --- Channel Gateway: API key, sessions, ChannelBridge ---
     import os as _os
 
-    api_key = _os.environ.get("OPENJARVIS_API_KEY", "")
+    api_key = _os.environ.get("Grandpa_API_KEY", "")
     if not api_key:
         try:
             import tomllib
 
             _cfg_path = str(
-                __import__("pathlib").Path.home() / ".openjarvis" / "config.toml"
+                __import__("pathlib").Path.home() / ".Grandpa" / "config.toml"
             )
             with open(_cfg_path, "rb") as _f:
                 _raw = tomllib.load(_f)
@@ -479,7 +479,7 @@ def serve(
     )
 
     console.print(
-        f"[green]Starting OpenJarvis API server[/green]\n"
+        f"[green]Starting Grandpa API server[/green]\n"
         f"  Engine: [cyan]{engine_name}[/cyan]\n"
         f"  Model:  [cyan]{model_name}[/cyan]\n"
         f"  Agent:  [cyan]{agent_key or 'none'}[/cyan]\n"

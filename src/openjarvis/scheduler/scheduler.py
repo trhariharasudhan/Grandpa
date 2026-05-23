@@ -81,7 +81,7 @@ class TaskScheduler:
     store:
         The persistence backend.
     system:
-        Optional ``JarvisSystem`` instance for executing prompts.
+        Optional ``GrandpaSystem`` instance for executing prompts.
     poll_interval:
         Seconds between poll cycles (default 60).
     bus:
@@ -112,7 +112,7 @@ class TaskScheduler:
             return
         self._stop_event.clear()
         self._thread = threading.Thread(
-            target=self._poll_loop, daemon=True, name="jarvis-scheduler"
+            target=self._poll_loop, daemon=True, name="Grandpa-scheduler"
         )
         self._thread.start()
         logger.info("Scheduler started (poll_interval=%ds)", self._poll_interval)

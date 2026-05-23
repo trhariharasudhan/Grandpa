@@ -147,7 +147,7 @@ class ApprovalStore:
 
     def __init__(self, db_path: str = "") -> None:
         if not db_path:
-            db_path = str(Path.home() / ".openjarvis" / "approvals.db")
+            db_path = str(Path.home() / ".Grandpa" / "approvals.db")
         self._db_path = db_path
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)

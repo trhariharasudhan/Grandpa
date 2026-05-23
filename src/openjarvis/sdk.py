@@ -1,4 +1,4 @@
-"""High-level Python SDK for OpenJarvis."""
+"""High-level Python SDK for openjarvis."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import openjarvis
-from openjarvis.core.config import JarvisConfig, load_config
+from openjarvis.core.config import GrandpaConfig, load_config
 from openjarvis.core.events import EventBus
 from openjarvis.core.types import Message, Role
 from openjarvis.engine._discovery import get_engine
-from openjarvis.system import JarvisSystem, SystemBuilder
+from openjarvis.system import GrandpaSystem, SystemBuilder
 from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
 from openjarvis.telemetry.store import TelemetryStore
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class MemoryHandle:
     """Proxy for memory operations. Lazily initializes backend."""
 
-    def __init__(self, config: JarvisConfig) -> None:
+    def __init__(self, config: GrandpaConfig) -> None:
         self._config = config
         self._backend: Any = None
 
@@ -121,14 +121,14 @@ class MemoryHandle:
         self.close()
 
 
-class Jarvis:
-    """High-level OpenJarvis SDK.
+class Grandpa:
+    """High-level Grandpa SDK.
 
     Usage::
 
-        from openjarvis import Jarvis
+        from Grandpa import Grandpa
 
-        with Jarvis() as j:
+        with Grandpa() as j:
             response = j.ask("Hello, what can you do?")
             print(response)
 
@@ -136,7 +136,7 @@ class Jarvis:
         import asyncio
 
         async def main():
-            j = Jarvis()
+            j = Grandpa()
             async for token in j.ask_stream("Tell me a joke"):
                 print(token, end="", flush=True)
             j.close()
@@ -144,7 +144,7 @@ class Jarvis:
         asyncio.run(main())
 
         # Or without context manager:
-        j = Jarvis()
+        j = Grandpa()
         response = j.ask("Hello")
         j.close()
     """
@@ -152,7 +152,7 @@ class Jarvis:
     def __init__(
         self,
         *,
-        config: Optional[JarvisConfig] = None,
+        config: Optional[GrandpaConfig] = None,
         config_path: Optional[str] = None,
         engine_key: Optional[str] = None,
         model: Optional[str] = None,
@@ -184,13 +184,13 @@ class Jarvis:
                 logger.warning("Failed to initialize telemetry store: %s", exc)
 
     @property
-    def config(self) -> JarvisConfig:
+    def config(self) -> GrandpaConfig:
         """Return the active configuration."""
         return self._config
 
     @property
     def version(self) -> str:
-        """Return the OpenJarvis version string."""
+        """Return the Grandpa version string."""
         return openjarvis.__version__
 
     def _ensure_engine(self) -> None:
@@ -619,11 +619,11 @@ class Jarvis:
             self._audit_logger = None
         self._engine = None
 
-    def __enter__(self) -> Jarvis:
+    def __enter__(self) -> Grandpa:
         return self
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
 
 
-__all__ = ["Jarvis", "JarvisSystem", "MemoryHandle", "SystemBuilder"]
+__all__ = ["Grandpa", "GrandpaSystem", "MemoryHandle", "SystemBuilder"]

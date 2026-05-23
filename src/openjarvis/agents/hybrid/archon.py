@@ -68,7 +68,7 @@ ARCHON_SWE_RANKER_SYS = (
 def _stub_archon_imports() -> None:
     """``utils.py`` imports groq/google/litellm/dotenv at module load. Stub
     the ones we don't use so the import chain doesn't fail when those
-    libraries aren't installed in the OpenJarvis venv."""
+    libraries aren't installed in the Grandpa venv."""
     for name in ("groq", "google", "google.generativeai", "litellm"):
         if name in sys.modules:
             continue

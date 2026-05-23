@@ -1,7 +1,7 @@
-"""ToolTranslator — translate external tool names to OpenJarvis equivalents.
+"""ToolTranslator — translate external tool names to Grandpa equivalents.
 
 External skill libraries (Hermes Agent, OpenClaw) reference tools by Claude
-Code's standard tool names (Bash, Read, Write, etc.).  OpenJarvis uses
+Code's standard tool names (Bash, Read, Write, etc.).  Grandpa uses
 different names (shell_exec, file_read, file_write).  This module translates
 those references in skill markdown bodies and ``allowed-tools`` fields.
 
@@ -15,7 +15,7 @@ import re
 from typing import Dict, List, Tuple
 
 # ---------------------------------------------------------------------------
-# Translation table — external name → OpenJarvis name
+# Translation table — external name → Grandpa name
 # ---------------------------------------------------------------------------
 
 TOOL_TRANSLATION: Dict[str, str] = {

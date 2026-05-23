@@ -70,7 +70,7 @@ def main() -> int:
             max_iterations=args.max_iterations,
             quiet_mode=True,
             save_trajectories=True,
-            platform="openjarvis-eval",
+            platform="Grandpa-eval",
         )
         kwargs = {}
         if args.system_prompt:

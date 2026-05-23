@@ -1,4 +1,4 @@
-"""``jarvis bench`` — run inference benchmarks."""
+"""``Grandpa bench`` — run inference benchmarks."""
 
 from __future__ import annotations
 
@@ -273,11 +273,11 @@ def run(
         )
         is_darwin_arm = platform.system() == "Darwin" and platform.machine() == "arm64"
         extra_hint = (
-            "openjarvis[energy-apple]"
+            "Grandpa[energy-apple]"
             if is_darwin_arm
-            else "openjarvis[gpu-metrics]"
+            else "Grandpa[gpu-metrics]"
             if platform.system() == "Linux"
-            else "openjarvis[energy-all]"
+            else "Grandpa[energy-all]"
         )
         extra_name = extra_hint.split("[")[1].rstrip("]")
         msg = (

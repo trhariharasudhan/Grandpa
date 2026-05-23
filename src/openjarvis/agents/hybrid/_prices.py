@@ -4,7 +4,7 @@ Ported verbatim from ``hybrid-local-cloud-compute/prices.py``. Kept as a
 sibling to the agents rather than merged into ``engine/cloud.py``'s PRICING
 on purpose: the hybrid harness is the authoritative cost reference for the
 n=500 numbers in ``hybrid-local-cloud-compute/docs/results.md`` and we want
-the OpenJarvis ports to charge identically.
+the Grandpa ports to charge identically.
 """
 
 from __future__ import annotations

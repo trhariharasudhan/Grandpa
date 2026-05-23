@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
-class TestJarvisDirectBackend:
+class TestGrandpaDirectBackend:
     @patch("openjarvis.system.SystemBuilder")
     def test_construction_default(self, mock_builder_cls):
         mock_builder = MagicMock()
@@ -16,10 +16,10 @@ class TestJarvisDirectBackend:
         mock_builder.build.return_value = mock_system
         mock_builder_cls.return_value = mock_builder
 
-        from openjarvis.evals.backends.jarvis_direct import JarvisDirectBackend
+        from openjarvis.evals.backends.Grandpa_direct import GrandpaDirectBackend
 
-        backend = JarvisDirectBackend()
-        assert backend.backend_id == "jarvis-direct"
+        backend = GrandpaDirectBackend()
+        assert backend.backend_id == "Grandpa-direct"
         mock_builder.telemetry.assert_called_with(False)
         mock_builder.traces.assert_called_with(False)
         mock_builder.build.assert_called_once()
@@ -33,9 +33,9 @@ class TestJarvisDirectBackend:
         mock_builder.build.return_value = MagicMock()
         mock_builder_cls.return_value = mock_builder
 
-        from openjarvis.evals.backends.jarvis_direct import JarvisDirectBackend
+        from openjarvis.evals.backends.Grandpa_direct import GrandpaDirectBackend
 
-        JarvisDirectBackend(engine_key="cloud")
+        GrandpaDirectBackend(engine_key="cloud")
         mock_builder.engine.assert_called_with("cloud")
 
     @patch("openjarvis.system.SystemBuilder")
@@ -54,9 +54,9 @@ class TestJarvisDirectBackend:
         mock_builder.build.return_value = mock_system
         mock_builder_cls.return_value = mock_builder
 
-        from openjarvis.evals.backends.jarvis_direct import JarvisDirectBackend
+        from openjarvis.evals.backends.Grandpa_direct import GrandpaDirectBackend
 
-        backend = JarvisDirectBackend()
+        backend = GrandpaDirectBackend()
         result = backend.generate_full("What is 2+2?", model="test-model")
 
         assert result["content"] == "42"
@@ -77,14 +77,14 @@ class TestJarvisDirectBackend:
         mock_builder.build.return_value = mock_system
         mock_builder_cls.return_value = mock_builder
 
-        from openjarvis.evals.backends.jarvis_direct import JarvisDirectBackend
+        from openjarvis.evals.backends.Grandpa_direct import GrandpaDirectBackend
 
-        backend = JarvisDirectBackend()
+        backend = GrandpaDirectBackend()
         text = backend.generate("Capital of France?", model="m")
         assert text == "Paris"
 
 
-class TestJarvisAgentBackend:
+class TestGrandpaAgentBackend:
     @patch("openjarvis.system.SystemBuilder")
     def test_construction(self, mock_builder_cls):
         mock_builder = MagicMock()
@@ -96,14 +96,14 @@ class TestJarvisAgentBackend:
         mock_builder.build.return_value = MagicMock()
         mock_builder_cls.return_value = mock_builder
 
-        from openjarvis.evals.backends.jarvis_agent import JarvisAgentBackend
+        from openjarvis.evals.backends.Grandpa_agent import GrandpaAgentBackend
 
-        backend = JarvisAgentBackend(
+        backend = GrandpaAgentBackend(
             engine_key="cloud",
             agent_name="orchestrator",
             tools=["calculator", "think"],
         )
-        assert backend.backend_id == "jarvis-agent"
+        assert backend.backend_id == "Grandpa-agent"
         mock_builder.engine.assert_called_with("cloud")
         mock_builder.agent.assert_called_with("orchestrator")
         mock_builder.tools.assert_called_with(["calculator", "think"])
@@ -129,9 +129,9 @@ class TestJarvisAgentBackend:
         mock_builder.build.return_value = mock_system
         mock_builder_cls.return_value = mock_builder
 
-        from openjarvis.evals.backends.jarvis_agent import JarvisAgentBackend
+        from openjarvis.evals.backends.Grandpa_agent import GrandpaAgentBackend
 
-        backend = JarvisAgentBackend(agent_name="orchestrator")
+        backend = GrandpaAgentBackend(agent_name="orchestrator")
         result = backend.generate_full("What is 2+2?", model="gpt-4o")
 
         assert result["content"] == "The answer is 4."

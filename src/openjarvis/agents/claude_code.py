@@ -26,8 +26,8 @@ from openjarvis.engine._stubs import InferenceEngine
 logger = logging.getLogger(__name__)
 
 # Sentinel markers for parsing subprocess output
-_OUTPUT_START = "---OPENJARVIS_OUTPUT_START---"
-_OUTPUT_END = "---OPENJARVIS_OUTPUT_END---"
+_OUTPUT_START = "---Grandpa_OUTPUT_START---"
+_OUTPUT_END = "---Grandpa_OUTPUT_END---"
 
 # Path to the bundled runner source (relative to this module).
 # In editable installs this lives next to this file; in wheel installs
@@ -90,7 +90,7 @@ class ClaudeCodeAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def _ensure_runner(self) -> Path:
-        """Copy the bundled runner to ``~/.openjarvis/claude_code_runner/``
+        """Copy the bundled runner to ``~/.Grandpa/claude_code_runner/``
         and run ``npm install`` if ``node_modules`` is missing.
 
         Returns the path to the runner directory.
@@ -103,7 +103,7 @@ class ClaudeCodeAgent(BaseAgent):
                 "Install it from https://nodejs.org/ or via your package manager."
             )
 
-        dest = Path.home() / ".openjarvis" / "claude_code_runner"
+        dest = Path.home() / ".Grandpa" / "claude_code_runner"
         dest.mkdir(parents=True, exist_ok=True)
 
         # Copy runner files if missing or outdated

@@ -1,10 +1,10 @@
-"""Load system prompt and few-shot overrides from $OPENJARVIS_HOME.
+"""Load system prompt and few-shot overrides from $Grandpa_HOME.
 
 LLM-guided spec search (M1) proposes edits that get written to disk by appliers.
 This module lets agents pick those overrides up at runtime:
 
-- System prompts: ``$OPENJARVIS_HOME/agents/{name}/system_prompt.md``
-- Few-shot exemplars: ``$OPENJARVIS_HOME/agents/{name}/few_shot.json``
+- System prompts: ``$Grandpa_HOME/agents/{name}/system_prompt.md``
+- Few-shot exemplars: ``$Grandpa_HOME/agents/{name}/few_shot.json``
 
 Override files are templates — they may contain ``{tool_descriptions}`` and
 other format placeholders that the agent fills in via ``.format()``, exactly
@@ -22,18 +22,18 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
-def _openjarvis_home() -> Path:
-    """Resolve $OPENJARVIS_HOME, defaulting to ~/.openjarvis."""
-    return Path(os.environ.get("OPENJARVIS_HOME", "~/.openjarvis")).expanduser()
+def _Grandpa_home() -> Path:
+    """Resolve $Grandpa_HOME, defaulting to ~/.openjarvis."""
+    return Path(os.environ.get("Grandpa_HOME", "~/.Grandpa")).expanduser()
 
 
 def load_system_prompt_override(agent_name: str) -> str | None:
     """Return the override prompt for *agent_name*, or ``None``.
 
-    Looks for ``$OPENJARVIS_HOME/agents/<agent_name>/system_prompt.md``.
-    ``OPENJARVIS_HOME`` defaults to ``~/.openjarvis`` when unset.
+    Looks for ``$Grandpa_HOME/agents/<agent_name>/system_prompt.md``.
+    ``Grandpa_HOME`` defaults to ``~/.Grandpa`` when unset.
     """
-    home = _openjarvis_home()
+    home = _Grandpa_home()
     prompt_path = home / "agents" / agent_name / "system_prompt.md"
     if not prompt_path.exists():
         return None
@@ -55,10 +55,10 @@ def load_few_shot_exemplars(
 ) -> list[dict[str, Any]]:
     """Return few-shot exemplars for *agent_name*, or empty list.
 
-    Looks for ``$OPENJARVIS_HOME/agents/<agent_name>/few_shot.json``.
+    Looks for ``$Grandpa_HOME/agents/<agent_name>/few_shot.json``.
     Expected format: ``[{"input": "Q", "output": "A"}, ...]``.
     """
-    home = _openjarvis_home()
+    home = _Grandpa_home()
     fs_path = home / "agents" / agent_name / "few_shot.json"
     if not fs_path.exists():
         return []

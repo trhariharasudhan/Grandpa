@@ -494,7 +494,7 @@ class AgentManager:
             pass
 
         # User templates
-        user_dir = Path("~/.openjarvis/templates").expanduser()
+        user_dir = Path("~/.Grandpa/templates").expanduser()
         if user_dir.is_dir():
             for f in user_dir.glob("*.toml"):
                 try:

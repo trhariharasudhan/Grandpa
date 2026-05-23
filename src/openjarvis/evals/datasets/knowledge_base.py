@@ -23,8 +23,8 @@ Provide a concise, accurate answer based solely on the documents above."""
 
 _RECORDS = [
     {
-        "documents": "OpenJarvis Architecture Guide (v2.9):\nOpenJarvis is organized around five composable primitives: Intelligence, Engine, Agents, Tools, and Learning. The Intelligence primitive handles model definition and catalog management via ModelRegistry. The Engine primitive provides inference through backends including Ollama, vLLM, SGLang, llama.cpp, MLX, and LM Studio. All engines implement the InferenceEngine ABC with generate(), stream(), list_models(), and health() methods.",
-        "question": "What are the five primitives of OpenJarvis and what does the Engine primitive provide?",
+        "documents": "Grandpa Architecture Guide (v2.9):\nGrandpa is organized around five composable primitives: Intelligence, Engine, Agents, Tools, and Learning. The Intelligence primitive handles model definition and catalog management via ModelRegistry. The Engine primitive provides inference through backends including Ollama, vLLM, SGLang, llama.cpp, MLX, and LM Studio. All engines implement the InferenceEngine ABC with generate(), stream(), list_models(), and health() methods.",
+        "question": "What are the five primitives of Grandpa and what does the Engine primitive provide?",
         "answer": "The five primitives are Intelligence, Engine, Agents, Tools, and Learning. The Engine primitive provides inference through backends including Ollama, vLLM, SGLang, llama.cpp, MLX, and LM Studio.",
     },
     {
@@ -33,12 +33,12 @@ _RECORDS = [
         "answer": "SQLite/FTS5 is the default memory backend. The Hybrid backend uses Reciprocal Rank Fusion (RRF) to combine results from multiple backends.",
     },
     {
-        "documents": "Security Architecture Document:\nOpenJarvis implements a multi-layer security approach. SecretScanner and PIIScanner implement the BaseScanner ABC. GuardrailsEngine wraps inference engines with input/output scanning supporting WARN, REDACT, and BLOCK modes. The AuditLogger uses a Merkle hash chain with SHA-256 for tamper evidence. CapabilityPolicy provides RBAC with 10 capabilities and glob matching, enforced in ToolExecutor.",
+        "documents": "Security Architecture Document:\nGrandpa implements a multi-layer security approach. SecretScanner and PIIScanner implement the BaseScanner ABC. GuardrailsEngine wraps inference engines with input/output scanning supporting WARN, REDACT, and BLOCK modes. The AuditLogger uses a Merkle hash chain with SHA-256 for tamper evidence. CapabilityPolicy provides RBAC with 10 capabilities and glob matching, enforced in ToolExecutor.",
         "question": "How does the AuditLogger ensure tamper evidence?",
         "answer": "The AuditLogger uses a Merkle hash chain with SHA-256 for tamper evidence.",
     },
     {
-        "documents": "Agent System Documentation:\nOpenJarvis agents follow a hierarchy: BaseAgent ABC provides helpers for turn management and message building. ToolUsingAgent extends BaseAgent with tool dispatch via ToolExecutor. SimpleAgent handles single-turn queries. OrchestratorAgent manages multi-turn tool loops. NativeReActAgent implements Thought-Action-Observation patterns. The LoopGuard system prevents infinite loops via SHA-256 hash tracking and ping-pong detection.",
+        "documents": "Agent System Documentation:\nGrandpa agents follow a hierarchy: BaseAgent ABC provides helpers for turn management and message building. ToolUsingAgent extends BaseAgent with tool dispatch via ToolExecutor. SimpleAgent handles single-turn queries. OrchestratorAgent manages multi-turn tool loops. NativeReActAgent implements Thought-Action-Observation patterns. The LoopGuard system prevents infinite loops via SHA-256 hash tracking and ping-pong detection.",
         "question": "What is the agent hierarchy and how are infinite loops prevented?",
         "answer": "The hierarchy is BaseAgent -> ToolUsingAgent -> specific agents (SimpleAgent, OrchestratorAgent, NativeReActAgent, etc.). Infinite loops are prevented by the LoopGuard system which uses SHA-256 hash tracking and ping-pong detection.",
     },
@@ -48,9 +48,9 @@ _RECORDS = [
         "answer": "The available energy monitoring backends are NvidiaEnergyMonitor (hardware counters/polling), AmdEnergyMonitor (amdsmi), AppleEnergyMonitor (zeus-ml), and RaplEnergyMonitor (sysfs). The Apple backend uses the zeus-ml library.",
     },
     {
-        "documents": "Configuration Reference:\nOpenJarvis uses TOML configuration with primitive-aligned sections. The config file is located at ~/.openjarvis/config.toml. Key sections include [engine] with nested per-backend configs (e.g., [engine.ollama], [engine.vllm]), [intelligence] for model defaults, [agent] for agent configuration, [tools.storage] for memory backend settings, [learning] with nested routing/intelligence/agent/metrics sub-policies, and [security] with capabilities and rate limiting.",
+        "documents": "Configuration Reference:\nGrandpa uses TOML configuration with primitive-aligned sections. The config file is located at ~/.Grandpa/config.toml. Key sections include [engine] with nested per-backend configs (e.g., [engine.ollama], [engine.vllm]), [intelligence] for model defaults, [agent] for agent configuration, [tools.storage] for memory backend settings, [learning] with nested routing/intelligence/agent/metrics sub-policies, and [security] with capabilities and rate limiting.",
         "question": "Where is the config file located and what format does it use?",
-        "answer": "The config file is located at ~/.openjarvis/config.toml and uses TOML format.",
+        "answer": "The config file is located at ~/.Grandpa/config.toml and uses TOML format.",
     },
     {
         "documents": "Learning Subsystem Overview:\nThe Learning primitive supports multiple routing policies. HeuristicRouter uses rule-based routing. SFTRouterPolicy learns query-to-model mapping from traces. GRPORouterPolicy uses softmax sampling with group relative advantage and per-query-class weights. BanditRouterPolicy implements Thompson Sampling and UCB1 with per-arm statistics. SkillDiscovery mines tool subsequences from traces to auto-generate skill manifests.",
@@ -59,28 +59,28 @@ _RECORDS = [
     },
     {
         "documents": "MCP Integration Guide:\nThe Model Context Protocol (MCP) is used for all tool management. MCPToolAdapter wraps external MCP tools as native BaseTool instances. MCPToolProvider discovers tools from MCP servers. The built-in MCP server exposes all tools via JSON-RPC tools/list and tools/call endpoints following the MCP spec 2025-11-25. Tool templates in tools/templates/ allow dynamic tool construction from TOML specifications with 10 builtin templates.",
-        "question": "How does OpenJarvis integrate with external MCP tools?",
+        "question": "How does Grandpa integrate with external MCP tools?",
         "answer": "MCPToolAdapter wraps external MCP tools as native BaseTool instances, and MCPToolProvider discovers tools from MCP servers.",
     },
     {
-        "documents": "Workflow Engine Documentation:\nThe workflow engine uses DAG-based WorkflowGraph with cycle detection and topological sort. Parallel stages execute via ThreadPoolExecutor. WorkflowBuilder provides a fluent API for graph construction. WorkflowEngine executes workflows against a JarvisSystem instance. Workflows can be defined in TOML files. Supported node types: agent, tool, condition, parallel, loop, and transform.",
+        "documents": "Workflow Engine Documentation:\nThe workflow engine uses DAG-based WorkflowGraph with cycle detection and topological sort. Parallel stages execute via ThreadPoolExecutor. WorkflowBuilder provides a fluent API for graph construction. WorkflowEngine executes workflows against a GrandpaSystem instance. Workflows can be defined in TOML files. Supported node types: agent, tool, condition, parallel, loop, and transform.",
         "question": "What node types does the workflow engine support and how are parallel stages executed?",
         "answer": "The workflow engine supports agent, tool, condition, parallel, loop, and transform node types. Parallel stages are executed via ThreadPoolExecutor.",
     },
     {
-        "documents": "Speech Subsystem Technical Reference:\nOpenJarvis supports speech-to-text with pluggable backends. SpeechBackend ABC defines transcribe(), health(), and supported_formats() methods. Three backends are available: FasterWhisperBackend (local, CTranslate2, key 'faster-whisper'), OpenAIWhisperBackend (cloud, whisper-1, key 'openai'), and DeepgramSpeechBackend (cloud, nova-2, key 'deepgram'). Auto-discovery prioritizes local backends.",
+        "documents": "Speech Subsystem Technical Reference:\nGrandpa supports speech-to-text with pluggable backends. SpeechBackend ABC defines transcribe(), health(), and supported_formats() methods. Three backends are available: FasterWhisperBackend (local, CTranslate2, key 'faster-whisper'), OpenAIWhisperBackend (cloud, whisper-1, key 'openai'), and DeepgramSpeechBackend (cloud, nova-2, key 'deepgram'). Auto-discovery prioritizes local backends.",
         "question": "What speech backends are available and which models do the cloud backends use?",
         "answer": "Three backends are available: FasterWhisperBackend (local), OpenAIWhisperBackend (cloud, using whisper-1), and DeepgramSpeechBackend (cloud, using nova-2). Auto-discovery prioritizes local backends.",
     },
     {
-        "documents": "Sandbox System Guide:\nOpenJarvis provides two sandbox options. ContainerRunner manages Docker/Podman container lifecycle with mount validation. WasmRunner uses wasmtime-py with fuel and memory limits. SandboxedAgent is a transparent wrapper that routes agent execution through either sandbox. MountAllowlist prevents path traversal attacks. The create_sandbox_runner() factory selects the appropriate runner.",
+        "documents": "Sandbox System Guide:\nGrandpa provides two sandbox options. ContainerRunner manages Docker/Podman container lifecycle with mount validation. WasmRunner uses wasmtime-py with fuel and memory limits. SandboxedAgent is a transparent wrapper that routes agent execution through either sandbox. MountAllowlist prevents path traversal attacks. The create_sandbox_runner() factory selects the appropriate runner.",
         "question": "What are the two sandbox options and what prevents path traversal attacks?",
         "answer": "The two sandbox options are ContainerRunner (Docker/Podman) and WasmRunner (wasmtime-py). MountAllowlist prevents path traversal attacks.",
     },
     {
-        "documents": "Channel System Architecture:\nOpenJarvis supports multi-platform messaging via the BaseChannel ABC. Available channels include WhatsAppBaileysChannel, LINEChannel, ViberChannel, MessengerChannel, RedditChannel, MastodonChannel, XMPPChannel, RocketChatChannel, ZulipChannel, TwitchChannel, and NostrChannel. All channels use @ChannelRegistry.register() for discovery and integrate with the EventBus.",
-        "question": "How many messaging channels does OpenJarvis support and how are they discovered?",
-        "answer": "OpenJarvis supports 11 messaging channels. They are discovered via the @ChannelRegistry.register() decorator.",
+        "documents": "Channel System Architecture:\nGrandpa supports multi-platform messaging via the BaseChannel ABC. Available channels include WhatsAppBaileysChannel, LINEChannel, ViberChannel, MessengerChannel, RedditChannel, MastodonChannel, XMPPChannel, RocketChatChannel, ZulipChannel, TwitchChannel, and NostrChannel. All channels use @ChannelRegistry.register() for discovery and integrate with the EventBus.",
+        "question": "How many messaging channels does Grandpa support and how are they discovered?",
+        "answer": "Grandpa supports 11 messaging channels. They are discovered via the @ChannelRegistry.register() decorator.",
     },
     {
         "documents": "Eval Framework Guide:\nThe evaluation framework includes 15 real benchmark datasets from IPW: SuperGPQA, GPQA, MMLU-Pro, MATH-500, Natural Reasoning, HLE, SimpleQA, WildChat, IPW, GAIA, FRAMES, SWE-bench, SWEfficiency, TerminalBench, and TerminalBench Native. Scorer types include MCQ letter extraction, LLM-judge, exact match, and structural validation. EvalRunner supports parallel execution.",
@@ -93,14 +93,14 @@ _RECORDS = [
         "answer": "Sessions are managed via SessionStore using SQLite with SessionIdentity for canonical user identification across channels. Storage is reduced through the consolidate() method which summarizes old messages.",
     },
     {
-        "documents": "Desktop Application Guide:\nThe OpenJarvis desktop app uses Tauri 2.0. It includes 5 dashboard panels: EnergyDashboard (real-time power monitoring with recharts), TraceDebugger (timeline inspection with step-type color coding), LearningCurve (policy visualization for GRPO/bandit stats), MemoryBrowser (search and stats), and AdminPanel (health, agents, server control). Tauri commands proxy to the OpenJarvis REST API.",
+        "documents": "Desktop Application Guide:\nThe Grandpa desktop app uses Tauri 2.0. It includes 5 dashboard panels: EnergyDashboard (real-time power monitoring with recharts), TraceDebugger (timeline inspection with step-type color coding), LearningCurve (policy visualization for GRPO/bandit stats), MemoryBrowser (search and stats), and AdminPanel (health, agents, server control). Tauri commands proxy to the Grandpa REST API.",
         "question": "What framework does the desktop app use and what are the 5 dashboard panels?",
         "answer": "The desktop app uses Tauri 2.0. The 5 panels are EnergyDashboard, TraceDebugger, LearningCurve, MemoryBrowser, and AdminPanel.",
     },
     {
-        "documents": "API Server Reference:\nThe OpenAI-compatible server is started via 'jarvis serve'. Core endpoints: POST /v1/chat/completions, GET /v1/models, GET /health. Extended endpoints cover agents, memory, traces, telemetry, learning, skills, sessions, budget, and metrics. SSE streaming is supported on /v1/chat/completions with stream=true. WebSocket streaming is available at WS /v1/chat/stream.",
+        "documents": "API Server Reference:\nThe OpenAI-compatible server is started via 'Grandpa serve'. Core endpoints: POST /v1/chat/completions, GET /v1/models, GET /health. Extended endpoints cover agents, memory, traces, telemetry, learning, skills, sessions, budget, and metrics. SSE streaming is supported on /v1/chat/completions with stream=true. WebSocket streaming is available at WS /v1/chat/stream.",
         "question": "How is the API server started and what streaming options are available?",
-        "answer": "The API server is started via 'jarvis serve'. SSE streaming is available on /v1/chat/completions with stream=true, and WebSocket streaming is available at WS /v1/chat/stream.",
+        "answer": "The API server is started via 'Grandpa serve'. SSE streaming is available on /v1/chat/completions with stream=true, and WebSocket streaming is available at WS /v1/chat/stream.",
     },
     {
         "documents": "Trace System Documentation:\nTraces capture full interaction records via TraceStep objects. Step types include route, retrieve, generate, tool_call, and respond, each with timing information. TraceStore persists traces to SQLite. TraceCollector auto-wraps agents to capture traces. TraceAnalyzer generates statistics used by the learning subsystem.",
@@ -113,9 +113,9 @@ _RECORDS = [
         "answer": "There are 20 bundled skills. Their integrity is verified through Ed25519 signature verification.",
     },
     {
-        "documents": "Vault System Guide:\nThe vault provides encrypted credential storage at ~/.openjarvis/vault.enc using Fernet encryption. The encryption key is auto-generated with 0o600 file permissions for security. CLI commands: 'jarvis vault set KEY' to store, 'jarvis vault get KEY' to retrieve, and 'jarvis vault list' to list stored keys.",
+        "documents": "Vault System Guide:\nThe vault provides encrypted credential storage at ~/.Grandpa/vault.enc using Fernet encryption. The encryption key is auto-generated with 0o600 file permissions for security. CLI commands: 'Grandpa vault set KEY' to store, 'Grandpa vault get KEY' to retrieve, and 'Grandpa vault list' to list stored keys.",
         "question": "What encryption does the vault use and where is it stored?",
-        "answer": "The vault uses Fernet encryption and is stored at ~/.openjarvis/vault.enc.",
+        "answer": "The vault uses Fernet encryption and is stored at ~/.Grandpa/vault.enc.",
     },
     {
         "documents": "Recipe System Documentation:\nRecipes are composable TOML configs that wire all 5 primitives. Each Recipe dataclass provides to_builder_kwargs() for SystemBuilder integration. Three built-in recipes exist: coding_assistant, research_assistant, and general_assistant. Operator recipes include researcher (4h cycle), correspondent (5min interval), and sentinel (2h cycle). Recipes are discovered via discover_recipes() and resolved via resolve_recipe().",
@@ -123,14 +123,14 @@ _RECORDS = [
         "answer": "Built-in recipes are coding_assistant, research_assistant, and general_assistant. Operator recipe cycle times: researcher (4h), correspondent (5min), sentinel (2h).",
     },
     {
-        "documents": "A2A Protocol Implementation:\nOpenJarvis implements the Google Agent-to-Agent spec using JSON-RPC 2.0. A2AServer supports tasks/send, tasks/get, and tasks/cancel operations. Agent discovery is available at /.well-known/agent.json. A2AClient enables calling external A2A agents. A2AAgentTool adapts A2A agents as tool-callable resources.",
+        "documents": "A2A Protocol Implementation:\nGrandpa implements the Google Agent-to-Agent spec using JSON-RPC 2.0. A2AServer supports tasks/send, tasks/get, and tasks/cancel operations. Agent discovery is available at /.well-known/agent.json. A2AClient enables calling external A2A agents. A2AAgentTool adapts A2A agents as tool-callable resources.",
         "question": "What protocol does A2A use and how are agents discovered?",
         "answer": "A2A uses JSON-RPC 2.0. Agents are discovered via /.well-known/agent.json.",
     },
     {
-        "documents": "Deployment Guide:\nOpenJarvis provides three Docker variants: Dockerfile (Python 3.12-slim for CPU), Dockerfile.gpu (NVIDIA CUDA 12.4), and Dockerfile.gpu.rocm (AMD ROCm 7.2). The docker-compose.yml runs two services: jarvis on port 8000 and ollama on port 11434. SystemD and launchd service files are also provided for system-level deployment.",
+        "documents": "Deployment Guide:\nGrandpa provides three Docker variants: Dockerfile (Python 3.12-slim for CPU), Dockerfile.gpu (NVIDIA CUDA 12.4), and Dockerfile.gpu.rocm (AMD ROCm 7.2). The docker-compose.yml runs two services: Grandpa on port 8000 and ollama on port 11434. SystemD and launchd service files are also provided for system-level deployment.",
         "question": "What Docker variants are available and what ports do the services use?",
-        "answer": "Three Docker variants: CPU (Python 3.12-slim), NVIDIA (CUDA 12.4), and AMD (ROCm 7.2). Jarvis runs on port 8000 and Ollama on port 11434.",
+        "answer": "Three Docker variants: CPU (Python 3.12-slim), NVIDIA (CUDA 12.4), and AMD (ROCm 7.2). Grandpa runs on port 8000 and Ollama on port 11434.",
     },
     {
         "documents": "Event System Reference:\nThe EventBus provides synchronous pub/sub event dispatch. Approximately 30 EventType values cover inference, tools, memory, agents, telemetry, traces, channels, security, scheduler, workflow, skills, sessions, and A2A. Subscribers register handlers for specific event types. Events are dispatched synchronously within the publishing thread.",
@@ -143,9 +143,9 @@ _RECORDS = [
         "answer": "Cloud spending was $8,120/month. After migration to local inference: $0/month in API fees plus approximately $15/month in electricity for a consumer GPU.",
     },
     {
-        "documents": "Hardware Detection System:\nOpenJarvis auto-detects GPU vendor, model, and VRAM using platform-specific tools: nvidia-smi for NVIDIA GPUs, rocm-smi for AMD GPUs, system_profiler for Apple Silicon, and /proc/cpuinfo for CPU features. Based on detection, it recommends the appropriate inference engine (vLLM for NVIDIA, MLX for Apple, llama.cpp for CPU-only).",
-        "question": "How does OpenJarvis detect hardware and what engine is recommended for Apple Silicon?",
-        "answer": "OpenJarvis detects hardware using nvidia-smi, rocm-smi, system_profiler, and /proc/cpuinfo. MLX is recommended for Apple Silicon.",
+        "documents": "Hardware Detection System:\nGrandpa auto-detects GPU vendor, model, and VRAM using platform-specific tools: nvidia-smi for NVIDIA GPUs, rocm-smi for AMD GPUs, system_profiler for Apple Silicon, and /proc/cpuinfo for CPU features. Based on detection, it recommends the appropriate inference engine (vLLM for NVIDIA, MLX for Apple, llama.cpp for CPU-only).",
+        "question": "How does Grandpa detect hardware and what engine is recommended for Apple Silicon?",
+        "answer": "Grandpa detects hardware using nvidia-smi, rocm-smi, system_profiler, and /proc/cpuinfo. MLX is recommended for Apple Silicon.",
     },
     {
         "documents": "Template System Documentation:\nAgent templates are pre-configured TOML manifests with system prompts, tool sets, and behavioral parameters. 15 built-in templates exist including code-reviewer, debugger, architect, deep-researcher, fact-checker, and summarizer. Templates are loaded via load_template() and discovered via discover_templates(). Each template specifies the agent type, tools, and generation parameters.",
@@ -163,14 +163,14 @@ _RECORDS = [
         "answer": "The TUI dashboard is powered by the textual library. It includes panels for system status, event stream, telemetry, agent activity, and sessions.",
     },
     {
-        "documents": "MCP Quick-Add Feature:\nThe 'jarvis add' command provides quick MCP server setup with 8 built-in templates: github, filesystem, slack, postgres, brave-search, memory, puppeteer, and google-maps. Configuration is saved as JSON to ~/.openjarvis/mcp/. Each template includes the server command, arguments, and required environment variables.",
-        "question": "How many MCP server templates are available via 'jarvis add' and where is configuration saved?",
-        "answer": "8 MCP server templates are available. Configuration is saved to ~/.openjarvis/mcp/.",
+        "documents": "MCP Quick-Add Feature:\nThe 'Grandpa add' command provides quick MCP server setup with 8 built-in templates: github, filesystem, slack, postgres, brave-search, memory, puppeteer, and google-maps. Configuration is saved as JSON to ~/.Grandpa/mcp/. Each template includes the server command, arguments, and required environment variables.",
+        "question": "How many MCP server templates are available via 'Grandpa add' and where is configuration saved?",
+        "answer": "8 MCP server templates are available. Configuration is saved to ~/.Grandpa/mcp/.",
     },
     {
-        "documents": "Composition Layer Documentation:\nSystemBuilder provides a fluent builder pattern that produces JarvisSystem instances. The builder wires together engine, model, agent, tools, telemetry, traces, workflow, sessions, and capability policy. JarvisSystem exposes ask() for queries and close() for resource cleanup. The SDK (Jarvis class) wraps SystemBuilder with a simplified sync API.",
-        "question": "What is the relationship between SystemBuilder, JarvisSystem, and the Jarvis SDK class?",
-        "answer": "SystemBuilder is a fluent builder that produces JarvisSystem instances. The Jarvis SDK class wraps SystemBuilder with a simplified synchronous API.",
+        "documents": "Composition Layer Documentation:\nSystemBuilder provides a fluent builder pattern that produces GrandpaSystem instances. The builder wires together engine, model, agent, tools, telemetry, traces, workflow, sessions, and capability policy. GrandpaSystem exposes ask() for queries and close() for resource cleanup. The SDK (Grandpa class) wraps SystemBuilder with a simplified sync API.",
+        "question": "What is the relationship between SystemBuilder, GrandpaSystem, and the Grandpa SDK class?",
+        "answer": "SystemBuilder is a fluent builder that produces GrandpaSystem instances. The Grandpa SDK class wraps SystemBuilder with a simplified synchronous API.",
     },
 ]
 

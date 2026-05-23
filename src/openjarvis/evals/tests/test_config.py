@@ -74,7 +74,7 @@ class TestDataclassDefaults:
 
     def test_benchmark_config_defaults(self):
         b = BenchmarkConfig(name="supergpqa")
-        assert b.backend == "jarvis-direct"
+        assert b.backend == "Grandpa-direct"
         assert b.max_samples is None
         assert b.split is None
         assert b.agent is None
@@ -152,13 +152,13 @@ class TestLoadEvalConfig:
 
             [[benchmarks]]
             name = "supergpqa"
-            backend = "jarvis-direct"
+            backend = "Grandpa-direct"
             max_samples = 100
             split = "test"
 
             [[benchmarks]]
             name = "gaia"
-            backend = "jarvis-agent"
+            backend = "Grandpa-agent"
             agent = "orchestrator"
             tools = ["calc", "think"]
             judge_model = "gpt-4o"
@@ -236,7 +236,7 @@ class TestLoadEvalConfig:
             name = "qwen3:8b"
 
             [[benchmarks]]
-            backend = "jarvis-direct"
+            backend = "Grandpa-direct"
         """,
         )
         with pytest.raises(EvalConfigError, match="'name' field"):
@@ -576,10 +576,10 @@ class TestExpandSuite:
     def test_backend_from_benchmark(self):
         suite = EvalSuiteConfig(
             models=[ModelConfig(name="m1")],
-            benchmarks=[BenchmarkConfig(name="gaia", backend="jarvis-agent")],
+            benchmarks=[BenchmarkConfig(name="gaia", backend="Grandpa-agent")],
         )
         configs = expand_suite(suite)
-        assert configs[0].backend == "jarvis-agent"
+        assert configs[0].backend == "Grandpa-agent"
 
     def test_expand_returns_run_config_type(self):
         suite = EvalSuiteConfig(

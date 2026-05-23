@@ -1,23 +1,23 @@
-"""Jarvis Direct backend — engine-level inference for local and cloud models."""
+"""Grandpa Direct backend — engine-level inference for local and cloud models."""
 
 from __future__ import annotations
 
 import time
 from typing import Any, Dict, Optional
 
-from openjarvis.evals.backends._commit_util import openjarvis_commit
+from openjarvis.evals.backends._commit_util import Grandpa_commit
 from openjarvis.evals.core.backend import InferenceBackend
 
 
-class JarvisDirectBackend(InferenceBackend):
+class GrandpaDirectBackend(InferenceBackend):
     """Direct engine inference via SystemBuilder.
 
     Works for both local models (Ollama, vLLM, etc.) and cloud models
     (OpenAI, Anthropic, Google) via the CloudEngine.
     """
 
-    backend_id = "jarvis-direct"
-    framework_name = "openjarvis"
+    backend_id = "Grandpa-direct"
+    framework_name = "Grandpa"
 
     def __init__(
         self,
@@ -41,10 +41,10 @@ class JarvisDirectBackend(InferenceBackend):
 
     @property
     def framework_commit_value(self) -> str:
-        """OpenJarvis repo HEAD commit (for telemetry tagging)."""
-        from openjarvis.evals.backends._commit_util import openjarvis_commit
+        """Grandpa repo HEAD commit (for telemetry tagging)."""
+        from openjarvis.evals.backends._commit_util import Grandpa_commit
 
-        return openjarvis_commit()
+        return Grandpa_commit()
 
     def generate(
         self,
@@ -116,8 +116,8 @@ class JarvisDirectBackend(InferenceBackend):
             "throughput_tok_per_sec": telemetry_data.get("throughput_tok_per_sec", 0.0),
             "tool_calls": 0,
             "turn_count": 1,
-            "framework": "openjarvis",
-            "framework_commit": openjarvis_commit(),
+            "framework": "Grandpa",
+            "framework_commit": Grandpa_commit(),
             "error": None,
         }
 
@@ -125,4 +125,4 @@ class JarvisDirectBackend(InferenceBackend):
         self._system.close()
 
 
-__all__ = ["JarvisDirectBackend"]
+__all__ = ["GrandpaDirectBackend"]

@@ -58,7 +58,7 @@ def load_skill(
     name = "research_and_summarize"
     version = "0.1.0"
     description = "Search web and summarize results"
-    author = "openjarvis"
+    author = "Grandpa"
     required_capabilities = ["network:fetch"]
     signature = ""
 
@@ -255,9 +255,9 @@ def load_skill_directory(path: str | Path) -> SkillManifest:
         source_name = source_str.partition(":")[0] if source_str else ""
         if source_name:
             new_metadata = dict(manifest.metadata) if manifest.metadata else {}
-            oj = dict(new_metadata.get("openjarvis", {}) or {})
+            oj = dict(new_metadata.get("Grandpa", {}) or {})
             oj["source"] = source_name
-            new_metadata["openjarvis"] = oj
+            new_metadata["Grandpa"] = oj
             manifest.metadata = new_metadata
 
     return manifest

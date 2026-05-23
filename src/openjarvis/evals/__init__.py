@@ -1,1 +1,1 @@
-"""OpenJarvis Evaluation Framework."""
+"""Grandpa Evaluation Framework."""

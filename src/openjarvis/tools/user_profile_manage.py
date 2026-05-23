@@ -14,7 +14,7 @@ from openjarvis.tools._stubs import BaseTool, ToolSpec
 class UserProfileManageTool(BaseTool):
     """Manage persistent user profile (USER.md)."""
 
-    def __init__(self, user_path: Path | str = "~/.openjarvis/USER.md") -> None:
+    def __init__(self, user_path: Path | str = "~/.Grandpa/USER.md") -> None:
         self._user_path = Path(user_path).expanduser()
 
     @property

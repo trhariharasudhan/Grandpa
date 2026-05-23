@@ -1,4 +1,4 @@
-# src/openjarvis/mining/_constants.py
+# src/Grandpa/mining/_constants.py
 """Constants for the Pearl mining subsystem.
 
 Pinned Pearl ref OJ has tested against. Bumped per OJ release after
@@ -15,7 +15,7 @@ PEARL_REPO = "https://github.com/pearl-research-labs/pearl.git"
 # TODO at implementation time: replace with the specific commit/tag verified
 # against H100. Document the chosen ref in the OJ release notes.
 PEARL_PINNED_REF = "master"
-PEARL_IMAGE_TAG = f"openjarvis/pearl-miner:{PEARL_PINNED_REF}"
+PEARL_IMAGE_TAG = f"Grandpa/pearl-miner:{PEARL_PINNED_REF}"
 
 # Default Pearl-blessed model. Overridable via [mining.extra].model.
 DEFAULT_PEARL_MODEL = "pearl-ai/Llama-3.3-70B-Instruct-pearl"
@@ -47,9 +47,9 @@ DEFAULT_PEARLD_RPC_URL = "http://localhost:44107"
 MIN_FREE_DISK_GB = 200
 
 # Runtime sidecar location (single-session assumption — see spec §8.8).
-RUNTIME_DIR = Path.home() / ".openjarvis" / "runtime"
+RUNTIME_DIR = Path.home() / ".Grandpa" / "runtime"
 SIDECAR_PATH = RUNTIME_DIR / "mining.json"
 SIDECAR_LOCK_PATH = RUNTIME_DIR / "mining.lock"
 
 # Pearl source cache for build-from-pin path (see spec §7.2).
-PEARL_CACHE_DIR = Path.home() / ".openjarvis" / "cache" / "pearl"
+PEARL_CACHE_DIR = Path.home() / ".Grandpa" / "cache" / "pearl"

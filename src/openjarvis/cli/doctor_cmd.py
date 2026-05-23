@@ -1,4 +1,4 @@
-"""``jarvis doctor`` — run diagnostic checks on the OpenJarvis installation."""
+"""``Grandpa doctor`` — run diagnostic checks on the Grandpa installation."""
 
 from __future__ import annotations
 
@@ -46,7 +46,7 @@ def _check_config_exists() -> CheckResult:
         "Config file",
         "warn",
         f"Not found at {DEFAULT_CONFIG_PATH}",
-        details="Run `jarvis init` to generate a config file.",
+        details="Run `Grandpa init` to generate a config file.",
     )
 
 
@@ -74,9 +74,9 @@ def _get_config() -> Any:
     try:
         return load_config()
     except Exception:
-        from openjarvis.core.config import JarvisConfig
+        from openjarvis.core.config import GrandpaConfig
 
-        return JarvisConfig()
+        return GrandpaConfig()
 
 
 def _check_engines() -> List[CheckResult]:
@@ -201,12 +201,12 @@ def _check_optional_deps() -> List[CheckResult]:
     """Check availability of optional dependency packages."""
     results: List[CheckResult] = []
     optional_packages = [
-        ("fastapi", "openjarvis[server]", "REST API server"),
+        ("fastapi", "Grandpa[server]", "REST API server"),
         ("torch", "pip install torch", "SFT/GRPO training"),
-        ("pynvml", "openjarvis[gpu-metrics]", "NVIDIA energy monitoring"),
-        ("amdsmi", "openjarvis[energy-amd]", "AMD energy monitoring"),
-        ("colbert", "openjarvis[memory-colbert]", "ColBERT memory backend"),
-        ("zeus", "openjarvis[energy-apple]", "Apple Silicon energy monitoring"),
+        ("pynvml", "Grandpa[gpu-metrics]", "NVIDIA energy monitoring"),
+        ("amdsmi", "Grandpa[energy-amd]", "AMD energy monitoring"),
+        ("colbert", "Grandpa[memory-colbert]", "ColBERT memory backend"),
+        ("zeus", "Grandpa[energy-apple]", "Apple Silicon energy monitoring"),
     ]
     for pkg, install_hint, description in optional_packages:
         try:
@@ -319,7 +319,7 @@ def _results_to_dicts(checks: List[CheckResult]) -> List[Dict[str, Any]]:
 @click.command()
 @click.option("--json", "as_json", is_flag=True, help="Output results as JSON.")
 def doctor(as_json: bool) -> None:
-    """Run diagnostic checks on your OpenJarvis installation."""
+    """Run diagnostic checks on your Grandpa installation."""
     checks = _run_all_checks()
 
     if as_json:
@@ -328,7 +328,7 @@ def doctor(as_json: bool) -> None:
 
     console = Console()
     console.print()
-    console.print("[bold]OpenJarvis Doctor[/bold]")
+    console.print("[bold]Grandpa Doctor[/bold]")
     console.print()
 
     table = Table(show_header=True, header_style="bold")
@@ -364,8 +364,8 @@ def doctor(as_json: bool) -> None:
     elif bg.rust_extension == "failed":
         console.print(f"  [red]✗[/red] Rust extension: failed — {bg.rust_error[:80]}")
         console.print(
-            "    retry: ~/.openjarvis/.scripts/install-rust.sh && "
-            "~/.openjarvis/.scripts/build-extension.sh"
+            "    retry: ~/.Grandpa/.scripts/install-rust.sh && "
+            "~/.Grandpa/.scripts/build-extension.sh"
         )
         bg_failed = True
     else:
@@ -380,7 +380,7 @@ def doctor(as_json: bool) -> None:
             console.print(f"  [green]✓[/green] {model_id}: ready")
         elif state == "failed":
             console.print(f"  [red]✗[/red] {model_id}: failed")
-            console.print(f"    retry: ~/.openjarvis/.scripts/pull-model.sh {model_id}")
+            console.print(f"    retry: ~/.Grandpa/.scripts/pull-model.sh {model_id}")
             bg_failed = True
         else:
             console.print(f"  [yellow]…[/yellow] {model_id}: downloading")

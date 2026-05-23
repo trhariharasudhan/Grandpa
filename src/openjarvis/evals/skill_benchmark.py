@@ -53,13 +53,13 @@ class SkillBenchmarkConfig:
     max_samples: Optional[int] = None
     output_dir: Path = field(default_factory=lambda: Path("docs/superpowers/results/"))
     skills_dir: Path = field(
-        default_factory=lambda: Path("~/.openjarvis/skills/").expanduser()
+        default_factory=lambda: Path("~/.Grandpa/skills/").expanduser()
     )
     overlay_dir_dspy: Path = field(
-        default_factory=lambda: Path("~/.openjarvis/learning/skills-dspy/").expanduser()
+        default_factory=lambda: Path("~/.Grandpa/learning/skills-dspy/").expanduser()
     )
     overlay_dir_gepa: Path = field(
-        default_factory=lambda: Path("~/.openjarvis/learning/skills-gepa/").expanduser()
+        default_factory=lambda: Path("~/.Grandpa/learning/skills-gepa/").expanduser()
     )
 
 
@@ -107,7 +107,7 @@ class SkillBenchmarkRunner:
         # An "empty" overlay dir for the skills_on condition.  We point at
         # a known-empty subdirectory under the output dir so SkillManager
         # finds zero overlays even if the user happens to have populated
-        # the default ~/.openjarvis/learning/skills/ tree.
+        # the default ~/.Grandpa/learning/skills/ tree.
         self._empty_overlay_dir = (
             Path(self._config.output_dir).expanduser() / "_skills_on_empty_overlays"
         )
@@ -118,7 +118,7 @@ class SkillBenchmarkRunner:
     # ------------------------------------------------------------------
 
     def _backend_kwargs_for_condition(self, condition: str) -> Dict[str, Any]:
-        """Return the kwargs to pass to JarvisAgentBackend for *condition*.
+        """Return the kwargs to pass to GrandpaAgentBackend for *condition*.
 
         Pure function — no side effects, no SystemBuilder construction.
         Tested in isolation so we can verify the per-condition switches
@@ -150,15 +150,15 @@ class SkillBenchmarkRunner:
         )
 
     def _build_backend_for_condition(self, condition: str) -> Any:
-        """Construct a JarvisAgentBackend for *condition*.
+        """Construct a GrandpaAgentBackend for *condition*.
 
         Separate from `_backend_kwargs_for_condition` so the kwarg logic
         can be tested without instantiating an engine.
         """
-        from openjarvis.evals.backends.jarvis_agent import JarvisAgentBackend
+        from openjarvis.evals.backends.Grandpa_agent import GrandpaAgentBackend
 
         kw = self._backend_kwargs_for_condition(condition)
-        return JarvisAgentBackend(
+        return GrandpaAgentBackend(
             engine_key=self._config.engine,
             agent_name=self._config.agent,
             tools=list(self._config.tools),
@@ -187,7 +187,7 @@ class SkillBenchmarkRunner:
         shim so tests can monkeypatch it without instantiating an
         engine or running real benchmark tasks.
         """
-        from openjarvis.evals.backends.jarvis_direct import JarvisDirectBackend
+        from openjarvis.evals.backends.Grandpa_direct import GrandpaDirectBackend
         from openjarvis.evals.core.runner import EvalRunner
         from openjarvis.evals.core.types import RunConfig
         from openjarvis.evals.datasets.pinchbench import PinchBenchDataset
@@ -206,7 +206,7 @@ class SkillBenchmarkRunner:
         # backend.  We reuse the same engine the agent uses (typically
         # a local Ollama model) so the headline run is fully local.
         try:
-            judge_backend = JarvisDirectBackend(
+            judge_backend = GrandpaDirectBackend(
                 engine_key=self._config.engine,
             )
         except RuntimeError as exc:
@@ -219,7 +219,7 @@ class SkillBenchmarkRunner:
 
         runner_cfg = RunConfig(
             benchmark=self._config.benchmark,
-            backend="jarvis-agent",
+            backend="Grandpa-agent",
             model=self._config.model,
             max_workers=1,
             episode_mode=False,

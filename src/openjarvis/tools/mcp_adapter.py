@@ -13,7 +13,7 @@ class MCPToolAdapter(BaseTool):
     """Wraps a single MCP-hosted tool as a native BaseTool.
 
     This adapter enables tools discovered from external MCP servers to
-    be used seamlessly within OpenJarvis agents via the ``ToolExecutor``.
+    be used seamlessly within Grandpa agents via the ``ToolExecutor``.
 
     Parameters
     ----------

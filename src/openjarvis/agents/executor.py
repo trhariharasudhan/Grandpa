@@ -27,7 +27,7 @@ _MAX_RETRIES = 3
 class AgentExecutor:
     """Executes a single tick for a managed agent.
 
-    Constructor receives a JarvisSystem reference for access to engine,
+    Constructor receives a GrandpaSystem reference for access to engine,
     tools, config, memory backends, and all other primitives.
     """
 
@@ -44,7 +44,7 @@ class AgentExecutor:
         self._trace_store = trace_store
 
     def set_system(self, system: Any) -> None:
-        """Deferred system injection — called after JarvisSystem is constructed."""
+        """Deferred system injection — called after GrandpaSystem is constructed."""
         self._system = system
 
     def _set_activity(self, agent_id: str, activity: str) -> None:
@@ -253,10 +253,10 @@ class AgentExecutor:
 
         config = agent.get("config", {})
 
-        # Resolve engine + model from JarvisSystem
+        # Resolve engine + model from GrandpaSystem
         engine = self._system.engine if self._system else None
         if engine is None:
-            raise FatalError("No engine available in JarvisSystem")
+            raise FatalError("No engine available in GrandpaSystem")
         model = config.get("model") or (self._system.model if self._system else "")
         if not model:
             raise FatalError("No model configured for agent")
@@ -351,7 +351,7 @@ class AgentExecutor:
         if getattr(agent_cls, "accepts_tools", False) and tool_instances:
             agent_kwargs["tools"] = tool_instances
         # Propagate confirmation policy from the AgentExecutor down to the
-        # agent's own ToolExecutor. Set by CLI paths like `jarvis agents ask`
+        # agent's own ToolExecutor. Set by CLI paths like `Grandpa agents ask`
         # so non-interactive runs can auto-approve tool execution.
         if getattr(self, "_confirm_callback", None) is not None:
             agent_kwargs["interactive"] = True

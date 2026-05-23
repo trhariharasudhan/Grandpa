@@ -1,6 +1,6 @@
 """GEPA agent optimizer -- Pareto-efficient evolutionary optimization.
 
-Uses GEPA's adapter pattern to bridge OpenJarvis traces into GEPA's
+Uses GEPA's adapter pattern to bridge Grandpa traces into GEPA's
 evolutionary optimization framework. Outputs TOML config updates
 written via AgentConfigEvolver.
 """
@@ -26,8 +26,8 @@ except ImportError:
     gepa = None  # type: ignore[assignment]
 
 
-class OpenJarvisGEPAAdapter:
-    """Implements GEPA's adapter protocol for OpenJarvis agents.
+class GrandpaGEPAAdapter:
+    """Implements GEPA's adapter protocol for Grandpa agents.
 
     Bridges trace data into GEPA's optimization framework via
     the ``assess()`` and ``make_reflective_dataset()`` methods.
@@ -183,12 +183,12 @@ class GEPAAgentOptimizer:
             return {
                 "status": "error",
                 "reason": (
-                    "gepa not installed (pip install 'openjarvis[learning-gepa]')"
+                    "gepa not installed (pip install 'Grandpa[learning-gepa]')"
                 ),
             }
 
         agent_name = self.config.agent_filter or "default"
-        adapter = OpenJarvisGEPAAdapter(trace_store, agent_name, self.config)
+        adapter = GrandpaGEPAAdapter(trace_store, agent_name, self.config)
         adapter.load_traces()
 
         try:
@@ -210,7 +210,7 @@ class GEPAAgentOptimizer:
 
     def _run_gepa(
         self,
-        adapter: OpenJarvisGEPAAdapter,
+        adapter: GrandpaGEPAAdapter,
         traces: List[Any],
     ) -> Dict[str, Any]:
         """Run the GEPA evolutionary optimization loop."""
@@ -323,4 +323,4 @@ class _GEPALearningPolicy(AgentLearningPolicy):
         return optimizer.optimize(trace_store)
 
 
-__all__ = ["GEPAAgentOptimizer", "OpenJarvisGEPAAdapter"]
+__all__ = ["GEPAAgentOptimizer", "GrandpaGEPAAdapter"]

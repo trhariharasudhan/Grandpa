@@ -1,4 +1,4 @@
-"""``jarvis scheduler`` -- task scheduling commands."""
+"""``Grandpa scheduler`` -- task scheduling commands."""
 
 from __future__ import annotations
 
@@ -231,10 +231,10 @@ def scheduler_run_task(agent_name: str, dry_run: bool) -> None:
 
     Finds the first active scheduled task whose agent matches AGENT_NAME
     and runs it right now — useful for testing and for launchd invocation
-    when OpenJarvis is not running as a persistent daemon.
+    when Grandpa is not running as a persistent daemon.
 
     Example (launchd plist ProgramArguments):
-        jarvis scheduler run-task proactive
+        Grandpa scheduler run-task proactive
     """
     console = Console()
     store = _get_store()
@@ -246,7 +246,7 @@ def scheduler_run_task(agent_name: str, dry_run: bool) -> None:
         if match is None:
             console.print(
                 f"[yellow]No active task found for agent '{agent_name}'. "
-                "Register it first with 'jarvis scheduler create'.[/yellow]"
+                "Register it first with 'Grandpa scheduler create'.[/yellow]"
             )
             return
 

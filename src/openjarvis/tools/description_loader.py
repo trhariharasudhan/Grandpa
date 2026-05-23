@@ -1,4 +1,4 @@
-"""Load tool description overrides from $OPENJARVIS_HOME/tools/descriptions.toml.
+"""Load tool description overrides from $Grandpa_HOME/tools/descriptions.toml.
 
 LLM-guided spec search (M1) proposes tool description edits that get written to disk by
 ``EditToolDescriptionApplier``.  This module loads those overrides so agents
@@ -27,7 +27,7 @@ _cache: Optional[Dict[str, str]] = None
 
 def _load_overrides() -> Dict[str, str]:
     """Parse descriptions.toml and return {tool_name: description}."""
-    home = Path(os.environ.get("OPENJARVIS_HOME", "~/.openjarvis")).expanduser()
+    home = Path(os.environ.get("Grandpa_HOME", "~/.Grandpa")).expanduser()
     desc_path = home / "tools" / "descriptions.toml"
     if not desc_path.exists():
         return {}

@@ -149,7 +149,7 @@ def create_sandbox_runner(config: Any = None) -> Any:
         from openjarvis.sandbox.runner import ContainerRunner
 
         return ContainerRunner(
-            image=getattr(config, "image", "openjarvis-sandbox:latest"),
+            image=getattr(config, "image", "Grandpa-sandbox:latest"),
             timeout=getattr(config, "timeout", 300),
         )
     except ImportError:

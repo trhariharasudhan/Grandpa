@@ -28,12 +28,12 @@ def _get_trace_store():
 
 def _get_discovered_dir() -> Path:
     """Return the directory where discovered skill manifests are written."""
-    return Path("~/.openjarvis/skills/discovered/").expanduser()
+    return Path("~/.Grandpa/skills/discovered/").expanduser()
 
 
 def _get_overlay_dir() -> Path:
     """Return the directory where optimization overlays are stored."""
-    return Path("~/.openjarvis/learning/skills/").expanduser()
+    return Path("~/.Grandpa/learning/skills/").expanduser()
 
 
 def _get_skill_paths() -> List[Path]:
@@ -41,7 +41,7 @@ def _get_skill_paths() -> List[Path]:
     workspace = Path("./skills")
     if workspace.exists():
         paths.append(workspace)
-    user_dir = Path("~/.openjarvis/skills/").expanduser()
+    user_dir = Path("~/.Grandpa/skills/").expanduser()
     paths.append(user_dir)
     return paths
 
@@ -174,7 +174,7 @@ def _get_resolver(source: str, url: str = ""):
         from openjarvis.skills.sources.github import GitHubResolver
 
         cache = _Path(
-            "~/.openjarvis/skill-cache/github/" + url.rstrip("/").rsplit("/", 1)[-1]
+            "~/.Grandpa/skill-cache/github/" + url.rstrip("/").rsplit("/", 1)[-1]
         ).expanduser()
         return GitHubResolver(cache_root=cache, repo_url=url)
     raise click.BadParameter(f"Unknown source: {source!r}")
@@ -199,7 +199,7 @@ def _get_resolver(source: str, url: str = ""):
 def install(query: str, with_scripts: bool, force: bool, url: str):
     """Install a skill from a source.
 
-    Example: ``jarvis skill install hermes:apple-notes``
+    Example: ``Grandpa skill install hermes:apple-notes``
     """
     console = Console()
     source, name = _parse_source_query(query)
@@ -391,7 +391,7 @@ def sources():
 def remove(skill_name: str, yes: bool):
     """Remove an installed skill by name.
 
-    Searches ``~/.openjarvis/skills/`` and ``./skills`` for a directory whose
+    Searches ``~/.Grandpa/skills/`` and ``./skills`` for a directory whose
     name (or parsed manifest name) matches ``skill_name`` and deletes it.
     """
     console = Console()
@@ -492,7 +492,7 @@ def search(query: str, source: str):
     console.print(table)
     console.print(
         f"[dim]{len(rows)} match(es). "
-        f"Install with: jarvis skill install <source>:<name>[/dim]"
+        f"Install with: Grandpa skill install <source>:<name>[/dim]"
     )
 
 
@@ -541,7 +541,7 @@ def update():
 )
 def discover(min_frequency: int, min_outcome: float, dry_run: bool) -> None:
     """Mine the trace store for recurring tool sequences and write them as
-    discovered skill manifests under ~/.openjarvis/skills/discovered/."""
+    discovered skill manifests under ~/.Grandpa/skills/discovered/."""
     console = Console()
     store = _get_trace_store()
     if store is None:
@@ -559,7 +559,7 @@ def discover(min_frequency: int, min_outcome: float, dry_run: bool) -> None:
         # Use a temporary directory so nothing is persisted
         import tempfile
 
-        tmp = Path(tempfile.mkdtemp(prefix="openjarvis-discover-dryrun-"))
+        tmp = Path(tempfile.mkdtemp(prefix="Grandpa-discover-dryrun-"))
         try:
             written = mgr.discover_from_traces(
                 store,

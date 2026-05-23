@@ -119,7 +119,7 @@ class AppleEnergyMonitor(EnergyMonitor):
         result: EnergySample,
     ) -> Generator[EnergySample, None, None]:
         assert self._monitor is not None
-        window_name = f"openjarvis_{time.monotonic_ns()}"
+        window_name = f"Grandpa_{time.monotonic_ns()}"
         t_start = time.monotonic()
         self._monitor.begin_window(window_name)
 

@@ -46,7 +46,7 @@ class ViberChannel(BaseChannel):
         bus: Optional[EventBus] = None,
     ) -> None:
         self._auth_token = auth_token or os.environ.get("VIBER_AUTH_TOKEN", "")
-        self._name = name or os.environ.get("VIBER_BOT_NAME", "OpenJarvis")
+        self._name = name or os.environ.get("VIBER_BOT_NAME", "Grandpa")
         self._avatar = avatar or os.environ.get("VIBER_BOT_AVATAR", "")
         self._bus = bus
         self._handlers: List[ChannelHandler] = []

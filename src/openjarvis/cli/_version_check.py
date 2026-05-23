@@ -1,4 +1,4 @@
-"""Check for newer OpenJarvis releases on PyPI."""
+"""Check for newer Grandpa releases on PyPI."""
 
 from __future__ import annotations
 
@@ -11,17 +11,17 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_CACHE_PATH = Path("~/.openjarvis/version-check.json").expanduser()
+_CACHE_PATH = Path("~/.Grandpa/version-check.json").expanduser()
 _CACHE_TTL = 86400  # 24 hours
-_PYPI_API = "https://pypi.org/pypi/openjarvis/json"
+_PYPI_API = "https://pypi.org/pypi/Grandpa/json"
 
 
 def _config_path() -> Path:
-    """Resolve the config path, honoring ``OPENJARVIS_CONFIG`` like core.config."""
-    override = os.environ.get("OPENJARVIS_CONFIG")
+    """Resolve the config path, honoring ``Grandpa_CONFIG`` like core.config."""
+    override = os.environ.get("Grandpa_CONFIG")
     if override:
         return Path(override).expanduser()
-    return Path("~/.openjarvis/config.toml").expanduser()
+    return Path("~/.Grandpa/config.toml").expanduser()
 
 
 # Commands that surface the "new version available" nudge. We deliberately
@@ -48,9 +48,9 @@ _CHECK_COMMANDS = {
 }
 
 # Environment opt-outs (any truthy value disables the check):
-# - ``OPENJARVIS_NO_UPDATE_CHECK=1`` — project-specific
+# - ``Grandpa_NO_UPDATE_CHECK=1`` — project-specific
 # - ``CI=true`` — set by every major CI provider, suppresses by default
-_OPT_OUT_ENV_VARS = ("OPENJARVIS_NO_UPDATE_CHECK",)
+_OPT_OUT_ENV_VARS = ("Grandpa_NO_UPDATE_CHECK",)
 
 
 def _check_disabled() -> bool:
@@ -60,7 +60,7 @@ def _check_disabled() -> bool:
         if raw and raw.strip().lower() not in ("", "0", "false", "no", "off"):
             return True
     # CI defaults to skipping. Users in CI can override with
-    # ``OPENJARVIS_NO_UPDATE_CHECK=0`` if they want the nudge anyway.
+    # ``Grandpa_NO_UPDATE_CHECK=0`` if they want the nudge anyway.
     if os.environ.get("CI", "").strip().lower() in ("1", "true", "yes", "on"):
         return True
     return _config_disabled()
@@ -99,7 +99,7 @@ def _config_disabled() -> bool:
 def check_for_updates(command_name: str) -> None:
     """Print a message if a newer version is available. Best-effort, never raises.
 
-    Honors ``OPENJARVIS_NO_UPDATE_CHECK=1`` and ``CI=true`` — any
+    Honors ``Grandpa_NO_UPDATE_CHECK=1`` and ``CI=true`` — any
     truthy value (``1``, ``true``, ``yes``, ``on``) disables both the
     PyPI poll and the banner. See ``_check_disabled`` for the full list.
     """
@@ -114,7 +114,7 @@ def check_for_updates(command_name: str) -> None:
 
 
 def _do_check() -> None:
-    import openjarvis
+    import Grandpa
 
     current = openjarvis.__version__
     latest = _get_latest_version(current)
@@ -129,10 +129,10 @@ def _do_check() -> None:
 
             cmd = detect_install().upgrade_command
             sys.stderr.write(
-                f"\033[33mA new version of OpenJarvis is available "
+                f"\033[33mA new version of Grandpa is available "
                 f"(v{current} → v{latest})\n"
                 f"Update: {cmd}\n"
-                f"Or run: jarvis self-update\033[0m\n\n"
+                f"Or run: Grandpa self-update\033[0m\n\n"
             )
     except InvalidVersion:
         pass

@@ -17,7 +17,7 @@ weights are not.
 
 Why ship this at all if it's not the "real" thing? Because the prompted
 upper-bound is useful as a reference point alongside the other paradigms,
-and because the OpenJarvis registry needs all six entries for the
+and because the Grandpa registry needs all six entries for the
 distillation pipeline to slot ToolOrchestra in alongside the rest.
 
 Pipeline per task:

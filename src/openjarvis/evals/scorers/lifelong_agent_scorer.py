@@ -25,7 +25,7 @@ Three subset scoring strategies matching the original:
 
 IMPORTANT: Single-shot scoring is DEGRADED and will always emit warnings.
 The original benchmark is multi-turn interactive.  Use ``episode_mode=True``
-with the ``jarvis-agent`` backend for faithful evaluation.
+with the ``Grandpa-agent`` backend for faithful evaluation.
 """
 
 from __future__ import annotations

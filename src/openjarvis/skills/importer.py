@@ -1,4 +1,4 @@
-"""SkillImporter — install ResolvedSkill instances into ~/.openjarvis/skills/.
+"""SkillImporter — install ResolvedSkill instances into ~/.Grandpa/skills/.
 
 Steps performed by ``import_skill``:
 
@@ -56,7 +56,7 @@ class SkillImporter:
         self._parser = parser
         self._translator = tool_translator
         if target_root is None:
-            target_root = Path("~/.openjarvis/skills/").expanduser()
+            target_root = Path("~/.Grandpa/skills/").expanduser()
         self._target_root = Path(target_root)
 
     def import_skill(

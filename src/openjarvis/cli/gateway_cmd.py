@@ -1,4 +1,4 @@
-"""``jarvis gateway start|stop|status|logs`` — multi-channel gateway management."""
+"""``Grandpa gateway start|stop|status|logs`` — multi-channel gateway management."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import click
 
 @click.group()
 def gateway() -> None:
-    """Manage the OpenJarvis multi-channel gateway."""
+    """Manage the Grandpa multi-channel gateway."""
 
 
 @gateway.command()
@@ -41,7 +41,7 @@ def start(install: bool) -> None:
             )
         else:
             service_path = (
-                Path.home() / ".config/systemd/user/openjarvis-gateway.service"
+                Path.home() / ".config/systemd/user/Grandpa-gateway.service"
             )
             generate_systemd_service(service_path)
             click.echo(f"Wrote {service_path}")
@@ -50,11 +50,11 @@ def start(install: bool) -> None:
                 check=False,
             )
             subprocess.run(
-                ["systemctl", "--user", "enable", "--now", "openjarvis-gateway"],
+                ["systemctl", "--user", "enable", "--now", "Grandpa-gateway"],
                 check=False,
             )
     else:
-        click.echo("Starting OpenJarvis gateway (foreground)...")
+        click.echo("Starting Grandpa gateway (foreground)...")
         click.echo("Gateway started. Press Ctrl+C to stop.")
 
 
@@ -70,7 +70,7 @@ def stop() -> None:
         )
     else:
         subprocess.run(
-            ["systemctl", "--user", "stop", "openjarvis-gateway"],
+            ["systemctl", "--user", "stop", "Grandpa-gateway"],
             check=False,
         )
     click.echo("Gateway stopped.")
@@ -88,7 +88,7 @@ def status() -> None:
         )
     else:
         subprocess.run(
-            ["systemctl", "--user", "status", "openjarvis-gateway"],
+            ["systemctl", "--user", "status", "Grandpa-gateway"],
             check=False,
         )
 
@@ -102,6 +102,6 @@ def logs() -> None:
         click.echo("Check ~/Library/Logs/com.openjarvis.gateway.log")
     else:
         subprocess.run(
-            ["journalctl", "--user", "-u", "openjarvis-gateway", "-f"],
+            ["journalctl", "--user", "-u", "Grandpa-gateway", "-f"],
             check=False,
         )

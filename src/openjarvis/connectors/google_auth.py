@@ -2,7 +2,7 @@
 
 All Google connectors (Gmail, Calendar, Contacts, Drive, Tasks) authenticate
 with the same OAuth flow and store identical token payloads at
-``~/.openjarvis/connectors/*.json`` — typically a shared ``google.json`` file
+``~/.Grandpa/connectors/*.json`` — typically a shared ``google.json`` file
 plus per-product copies. They all need the same refresh-on-401 behavior, so
 the wrapper lives here instead of being duplicated per connector.
 

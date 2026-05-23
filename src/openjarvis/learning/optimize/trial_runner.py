@@ -110,9 +110,9 @@ class TrialRunner:
     def _build_run_config(self, trial: TrialConfig, recipe: Any) -> RunConfig:
         """Map recipe fields into a :class:`RunConfig`."""
         model = recipe.model or "default"
-        backend_name = "jarvis-direct"
+        backend_name = "Grandpa-direct"
         if recipe.agent_type is not None:
-            backend_name = "jarvis-agent"
+            backend_name = "Grandpa-agent"
 
         model_slug = model.replace("/", "-").replace(":", "-")
         output_path = str(
@@ -275,7 +275,7 @@ class MultiBenchTrialRunner:
             "dataset_version": "0.1.1",
             "model_name": litellm_model,
             "agent_import_path": (
-                "openjarvis.evals.backends.tb_agent:OpenJarvisTerminalBenchAgent"
+                "openjarvis.evals.backends.tb_agent:GrandpaTerminalBenchAgent"
             ),
             "agent_kwargs": {
                 "model_name": litellm_model,

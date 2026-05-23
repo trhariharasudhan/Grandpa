@@ -1,4 +1,4 @@
-"""Command-line interface for OpenJarvis (Click-based)."""
+"""Command-line interface for Grandpa (Click-based)."""
 
 from __future__ import annotations
 
@@ -45,10 +45,10 @@ from openjarvis.cli.workflow_cmd import workflow
 
 
 @click.group(
-    help="OpenJarvis — modular AI assistant backend",
+    help="Grandpa — modular AI assistant backend",
     invoke_without_command=True,
 )
-@click.version_option(version=openjarvis.__version__, prog_name="jarvis")
+@click.version_option(version=openjarvis.__version__, prog_name="Grandpa")
 @click.option("--verbose", is_flag=True, default=False, help="Enable debug logging")
 @click.option("--quiet", is_flag=True, default=False, help="Suppress non-error output")
 @click.pass_context
@@ -62,7 +62,7 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
     setup_logging(verbose=verbose, quiet=quiet)
 
     # Check for updates on interactive commands. The banner is noise in
-    # demo recordings of ``jarvis ask --research``, so skip it whenever
+    # demo recordings of ``Grandpa ask --research``, so skip it whenever
     # the research flag is in argv (cheap argv sniff — Click hasn't
     # parsed the subcommand's args yet at this point).
     import sys
@@ -73,7 +73,7 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
 
         check_for_updates(ctx.invoked_subcommand)
 
-    # First-run guard — routes bare `jarvis` to chat or init.
+    # First-run guard — routes bare `Grandpa` to chat or init.
     if ctx.invoked_subcommand is None:
         from openjarvis.cli._first_run import check_and_route
 
@@ -139,7 +139,7 @@ except ImportError:
 
 
 def main() -> None:
-    """Entry point registered as ``jarvis`` console script."""
+    """Entry point registered as ``Grandpa`` console script."""
     import sys
 
     if sys.platform == "win32":

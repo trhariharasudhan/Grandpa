@@ -87,7 +87,7 @@ class TextToSpeechTool(BaseTool):
         if output_dir:
             out_dir = Path(output_dir)
         else:
-            out_dir = Path(tempfile.mkdtemp(prefix="jarvis-tts-"))
+            out_dir = Path(tempfile.mkdtemp(prefix="Grandpa-tts-"))
 
         out_dir.mkdir(parents=True, exist_ok=True)
         ext = result.format or "mp3"

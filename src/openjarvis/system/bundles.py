@@ -1,4 +1,4 @@
-"""Bundle dataclasses that group cohesive subsystems of JarvisSystem."""
+"""Bundle dataclasses that group cohesive subsystems of GrandpaSystem."""
 
 from __future__ import annotations
 

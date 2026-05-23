@@ -67,13 +67,13 @@ class GemmaCppEngine(InferenceEngine):
                 raise FileNotFoundError(
                     "gemma.cpp model_path not configured. Download weights "
                     "from Kaggle and set GEMMA_CPP_MODEL_PATH or configure "
-                    "[engine.gemma_cpp] in ~/.openjarvis/config.toml"
+                    "[engine.gemma_cpp] in ~/.Grandpa/config.toml"
                 )
             if not self._tokenizer_path:
                 raise FileNotFoundError(
                     "gemma.cpp tokenizer_path not configured. Set "
                     "GEMMA_CPP_TOKENIZER_PATH or configure "
-                    "[engine.gemma_cpp] in ~/.openjarvis/config.toml"
+                    "[engine.gemma_cpp] in ~/.Grandpa/config.toml"
                 )
             Gemma = _import_pygemma()
             self._gemma = Gemma()

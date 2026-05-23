@@ -1,4 +1,4 @@
-# src/openjarvis/mining/__init__.py
+# src/Grandpa/mining/__init__.py
 """Pearl mining subsystem.
 
 See spec ``docs/design/2026-05-05-vllm-pearl-mining-integration-design.md``.

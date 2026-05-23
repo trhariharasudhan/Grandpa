@@ -14,7 +14,7 @@ class InferenceBackend(ABC):
     # error path before the backend's generate_full() has returned a payload
     # to read ``framework`` from. Each subclass must override this so that
     # error-path results are tagged with the correct framework name.
-    framework_name: str = "openjarvis"
+    framework_name: str = "Grandpa"
 
     @property
     def framework_commit_value(self) -> str:

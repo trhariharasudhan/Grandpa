@@ -21,7 +21,7 @@ def _make_summary(**overrides) -> RunSummary:
     defaults = dict(
         benchmark="gaia",
         category="agentic",
-        backend="jarvis-agent",
+        backend="Grandpa-agent",
         model="qwen3:8b",
         total_samples=100,
         scored_samples=100,

@@ -33,8 +33,8 @@ else:
 logger = logging.getLogger(__name__)
 
 VALID_BACKENDS = {
-    "jarvis-direct",
-    "jarvis-agent",
+    "Grandpa-direct",
+    "Grandpa-agent",
     "terminalbench-native",
     "hermes",
     "openclaw",
@@ -181,7 +181,7 @@ def load_eval_config(path: str | Path) -> EvalSuiteConfig:
         if not b.get("name"):
             raise EvalConfigError("Each [[benchmarks]] entry must have a 'name' field")
 
-        backend = b.get("backend", "jarvis-direct")
+        backend = b.get("backend", "Grandpa-direct")
         if backend not in VALID_BACKENDS:
             raise EvalConfigError(
                 f"Invalid backend '{backend}' for benchmark '{b['name']}'. "
@@ -219,12 +219,12 @@ def load_eval_config(path: str | Path) -> EvalSuiteConfig:
     # Env vars override TOML values; either source may be empty.
     external_raw = raw.get("backend", {}).get("external", {})
     backend_external_base_url = (
-        os.environ.get("JARVIS_BACKEND_BASE_URL")
+        os.environ.get("Grandpa_BACKEND_BASE_URL")
         or external_raw.get("base_url")
         or None
     )
     backend_external_api_key = (
-        os.environ.get("JARVIS_BACKEND_API_KEY") or external_raw.get("api_key") or None
+        os.environ.get("Grandpa_BACKEND_API_KEY") or external_raw.get("api_key") or None
     )
 
     return EvalSuiteConfig(

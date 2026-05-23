@@ -9,7 +9,7 @@ Mirrors the style of ``openjarvis.learning.optimize.store.OptimizationStore``:
 
 The store does NOT share its database file with ``OptimizationStore`` (see
 spec §8.1 / brainstorming Q8). The two SQLite files live side-by-side in
-``~/.openjarvis/learning/`` but are independent.
+``~/.Grandpa/learning/`` but are independent.
 """
 
 from __future__ import annotations

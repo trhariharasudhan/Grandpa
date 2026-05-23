@@ -1,4 +1,4 @@
-"""``jarvis optimize`` — LLM-driven configuration optimization CLI."""
+"""``Grandpa optimize`` — LLM-driven configuration optimization CLI."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def optimize_run(
     max_samples: int,
     output_dir: str,
 ) -> None:
-    """Run an optimization loop over OpenJarvis configuration."""
+    """Run an optimization loop over Grandpa configuration."""
     console = Console(stderr=True)
 
     # Load config data if provided

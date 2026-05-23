@@ -1,25 +1,25 @@
-"""Config-driven fluent builder that wires up a JarvisSystem."""
+"""Config-driven fluent builder that wires up a GrandpaSystem."""
 
 from __future__ import annotations
 
 import logging
 from typing import Any, List, Optional
 
-from openjarvis.core.config import JarvisConfig, load_config
+from openjarvis.core.config import GrandpaConfig, load_config
 from openjarvis.core.events import EventBus, get_event_bus
 from openjarvis.engine._stubs import InferenceEngine
-from openjarvis.system.core import JarvisSystem
+from openjarvis.system.core import GrandpaSystem
 from openjarvis.tools._stubs import BaseTool, ToolExecutor
 
 logger = logging.getLogger(__name__)
 
 
 class SystemBuilder:
-    """Config-driven fluent builder for JarvisSystem."""
+    """Config-driven fluent builder for GrandpaSystem."""
 
     def __init__(
         self,
-        config: Optional[JarvisConfig] = None,
+        config: Optional[GrandpaConfig] = None,
         *,
         config_path: Optional[Any] = None,
     ) -> None:
@@ -94,8 +94,8 @@ class SystemBuilder:
         self._bus = bus
         return self
 
-    def build(self) -> JarvisSystem:
-        """Construct a fully wired JarvisSystem."""
+    def build(self) -> GrandpaSystem:
+        """Construct a fully wired GrandpaSystem."""
         config = self._config
         bus = self._bus or get_event_bus()
 
@@ -221,7 +221,7 @@ class SystemBuilder:
                 from openjarvis.agents.manager import AgentManager
 
                 am_db = config.agent_manager.db_path or str(
-                    Path("~/.openjarvis/agents.db").expanduser()
+                    Path("~/.Grandpa/agents.db").expanduser()
                 )
                 agent_manager = AgentManager(db_path=am_db)
             except Exception as exc:
@@ -268,7 +268,7 @@ class SystemBuilder:
             except Exception as exc:
                 logger.warning("Failed to initialize speech backend: %s", exc)
 
-        system = JarvisSystem(
+        system = GrandpaSystem(
             config=config,
             bus=bus,
             engine=engine,
@@ -302,7 +302,7 @@ class SystemBuilder:
             system.agent_executor.set_system(system)
         return system
 
-    def _resolve_engine(self, config: JarvisConfig):
+    def _resolve_engine(self, config: GrandpaConfig):
         from openjarvis.engine._discovery import get_engine
 
         pref = config.intelligence.preferred_engine
@@ -315,7 +315,7 @@ class SystemBuilder:
             )
         return resolved[1], resolved[0]
 
-    def _resolve_model(self, config: JarvisConfig, engine: InferenceEngine) -> str:
+    def _resolve_model(self, config: GrandpaConfig, engine: InferenceEngine) -> str:
         if self._model:
             return self._model
         if config.intelligence.default_model:
@@ -537,7 +537,7 @@ class SystemBuilder:
             return None
 
     @staticmethod
-    def _setup_learning_orchestrator(config: JarvisConfig):
+    def _setup_learning_orchestrator(config: GrandpaConfig):
         if not config.learning.training_enabled:
             return None
         try:

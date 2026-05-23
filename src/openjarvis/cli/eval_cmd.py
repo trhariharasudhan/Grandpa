@@ -1,4 +1,4 @@
-"""``jarvis eval`` — evaluation framework CLI commands."""
+"""``Grandpa eval`` — evaluation framework CLI commands."""
 
 from __future__ import annotations
 
@@ -59,8 +59,8 @@ KNOWN_BENCHMARKS = {
 }
 
 KNOWN_BACKENDS = {
-    "jarvis-direct": "Engine-level inference (local or cloud)",
-    "jarvis-agent": "Agent-level inference with tool calling",
+    "Grandpa-direct": "Engine-level inference (local or cloud)",
+    "Grandpa-agent": "Agent-level inference with tool calling",
 }
 
 
@@ -132,13 +132,13 @@ def eval_list() -> None:
 @click.option(
     "--backend",
     "backend",
-    default="jarvis-direct",
+    default="Grandpa-direct",
     type=click.Choice(
-        ["jarvis-direct", "jarvis-agent", "hermes", "openclaw", "terminalbench-native"]
+        ["Grandpa-direct", "Grandpa-agent", "hermes", "openclaw", "terminalbench-native"]
     ),
     help=(
         "Inference backend. For hermes/openclaw, also pass --base-url and "
-        "--api-key (or set JARVIS_BACKEND_BASE_URL/JARVIS_BACKEND_API_KEY)."
+        "--api-key (or set Grandpa_BACKEND_BASE_URL/Grandpa_BACKEND_API_KEY)."
     ),
 )
 @click.option(
@@ -147,20 +147,20 @@ def eval_list() -> None:
     default=None,
     help=(
         "OpenAI-compat endpoint URL for hermes/openclaw backends "
-        "(env: JARVIS_BACKEND_BASE_URL)."
+        "(env: Grandpa_BACKEND_BASE_URL)."
     ),
 )
 @click.option(
     "--api-key",
     "api_key",
     default=None,
-    help=("API key for the hermes/openclaw endpoint (env: JARVIS_BACKEND_API_KEY)."),
+    help=("API key for the hermes/openclaw endpoint (env: Grandpa_BACKEND_API_KEY)."),
 )
 @click.option(
     "--agent",
     "agent_name",
     default=None,
-    help="Agent name for jarvis-agent backend.",
+    help="Agent name for Grandpa-agent backend.",
 )
 @click.option(
     "-e",
@@ -400,9 +400,9 @@ def eval_run(
         sheets_worksheet=sheets_worksheet,
         sheets_credentials_path=sheets_credentials_path,
         # Spec §6.2 — for hermes/openclaw external backends. Falls back to env vars
-        # so users can also set JARVIS_BACKEND_BASE_URL/JARVIS_BACKEND_API_KEY.
-        base_url=base_url or os.environ.get("JARVIS_BACKEND_BASE_URL"),
-        api_key=api_key or os.environ.get("JARVIS_BACKEND_API_KEY"),
+        # so users can also set Grandpa_BACKEND_BASE_URL/Grandpa_BACKEND_API_KEY.
+        base_url=base_url or os.environ.get("Grandpa_BACKEND_BASE_URL"),
+        api_key=api_key or os.environ.get("Grandpa_BACKEND_API_KEY"),
     )
 
     try:

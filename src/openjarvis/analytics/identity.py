@@ -18,10 +18,10 @@ from openjarvis.core.config import AnalyticsConfig
 
 # Env vars that disable analytics regardless of config-file setting.
 # ``DO_NOT_TRACK`` follows the W3C convention (https://www.eff.org/dnt-policy);
-# ``OPENJARVIS_NO_ANALYTICS`` is the project-specific opt-out for users who
+# ``Grandpa_NO_ANALYTICS`` is the project-specific opt-out for users who
 # want to disable just our telemetry without affecting other tools that
 # honor DNT.
-_OPT_OUT_ENV_VARS = ("DO_NOT_TRACK", "OPENJARVIS_NO_ANALYTICS")
+_OPT_OUT_ENV_VARS = ("DO_NOT_TRACK", "Grandpa_NO_ANALYTICS")
 
 
 def get_or_create_anon_id(path: Path | str) -> str:
@@ -80,9 +80,9 @@ def is_analytics_enabled(cfg: AnalyticsConfig) -> bool:
        sys.modules`` (covers the collection phase before the first
        test runs).
     2. An opt-out env var is set: ``DO_NOT_TRACK=1`` (W3C convention)
-       or ``OPENJARVIS_NO_ANALYTICS=1`` (project-specific). Both take
+       or ``Grandpa_NO_ANALYTICS=1`` (project-specific). Both take
        precedence over the config so users can opt out without
-       editing ``~/.openjarvis/config.toml``.
+       editing ``~/.Grandpa/config.toml``.
     3. The ``[analytics] enabled = false`` config-file setting.
     """
     if os.environ.get("PYTEST_CURRENT_TEST") or "pytest" in sys.modules:

@@ -1,4 +1,4 @@
-"""CLI for the OpenJarvis evaluation framework."""
+"""CLI for the Grandpa evaluation framework."""
 
 from __future__ import annotations
 
@@ -156,8 +156,8 @@ BENCHMARKS = {
 }
 
 BACKENDS = {
-    "jarvis-direct": "Engine-level inference (local or cloud)",
-    "jarvis-agent": "Agent-level inference with tool calling",
+    "Grandpa-direct": "Engine-level inference (local or cloud)",
+    "Grandpa-agent": "Agent-level inference with tool calling",
     "hermes": "Real Hermes Agent (Nous Research) via subprocess",
     "openclaw": "Real OpenClaw via Node subprocess",
 }
@@ -191,10 +191,10 @@ def _build_backend(
     to send model calls to. Pass them via the eval config's
     ``[backend.external]`` section or env vars.
     """
-    if backend_name == "jarvis-agent":
-        from openjarvis.evals.backends.jarvis_agent import JarvisAgentBackend
+    if backend_name == "Grandpa-agent":
+        from openjarvis.evals.backends.Grandpa_agent import GrandpaAgentBackend
 
-        return JarvisAgentBackend(
+        return GrandpaAgentBackend(
             engine_key=engine_key,
             agent_name=agent_name,
             tools=tools,
@@ -203,10 +203,10 @@ def _build_backend(
             model=model,
             max_turns=max_turns,
         )
-    elif backend_name == "jarvis-direct":
-        from openjarvis.evals.backends.jarvis_direct import JarvisDirectBackend
+    elif backend_name == "Grandpa-direct":
+        from openjarvis.evals.backends.Grandpa_direct import GrandpaDirectBackend
 
-        return JarvisDirectBackend(
+        return GrandpaDirectBackend(
             engine_key=engine_key,
             telemetry=telemetry,
             gpu_metrics=gpu_metrics,
@@ -584,10 +584,10 @@ def _build_judge_backend(judge_model: str, engine_key: str = "cloud"):
     LLM-judge scorers will raise a clear error when they actually try
     to use the backend rather than failing at startup.
     """
-    from openjarvis.evals.backends.jarvis_direct import JarvisDirectBackend
+    from openjarvis.evals.backends.Grandpa_direct import GrandpaDirectBackend
 
     try:
-        return JarvisDirectBackend(engine_key=engine_key)
+        return GrandpaDirectBackend(engine_key=engine_key)
     except RuntimeError as exc:
         LOGGER.warning(
             "Judge backend (%s) unavailable: %s — "
@@ -735,12 +735,12 @@ def _run_single(config, console: Optional[Console] = None) -> object:
         base_url=(
             getattr(config, "base_url", None)
             or _metadata.get("base_url")
-            or os.environ.get("JARVIS_BACKEND_BASE_URL")
+            or os.environ.get("Grandpa_BACKEND_BASE_URL")
         ),
         api_key=(
             getattr(config, "api_key", None)
             or _metadata.get("api_key")
-            or os.environ.get("JARVIS_BACKEND_API_KEY")
+            or os.environ.get("Grandpa_BACKEND_API_KEY")
         ),
     )
     dataset = _build_dataset(config.benchmark)
@@ -1087,7 +1087,7 @@ def _run_from_config(
 
 @click.group()
 def main():
-    """OpenJarvis Evaluation Framework."""
+    """Grandpa Evaluation Framework."""
 
 
 @main.command()
@@ -1108,7 +1108,7 @@ def main():
 )
 @click.option(
     "--backend",
-    default="jarvis-direct",
+    default="Grandpa-direct",
     type=click.Choice(list(BACKENDS.keys())),
     help="Inference backend",
 )
@@ -1134,7 +1134,7 @@ def main():
     "--agent",
     "agent_name",
     default="orchestrator",
-    help="Agent name for jarvis-agent backend",
+    help="Agent name for Grandpa-agent backend",
 )
 @click.option("--tools", default="", help="Comma-separated tool names")
 @click.option(
@@ -1325,11 +1325,11 @@ def run(
         sheets_worksheet=sheets_worksheet,
         sheets_credentials_path=sheets_credentials_path,
         episode_mode=episode_mode,
-        base_url=base_url or os.environ.get("JARVIS_BACKEND_BASE_URL"),
-        api_key=api_key or os.environ.get("JARVIS_BACKEND_API_KEY"),
+        base_url=base_url or os.environ.get("Grandpa_BACKEND_BASE_URL"),
+        api_key=api_key or os.environ.get("Grandpa_BACKEND_API_KEY"),
         metadata={
-            "base_url": base_url or os.environ.get("JARVIS_BACKEND_BASE_URL"),
-            "api_key": api_key or os.environ.get("JARVIS_BACKEND_API_KEY"),
+            "base_url": base_url or os.environ.get("Grandpa_BACKEND_BASE_URL"),
+            "api_key": api_key or os.environ.get("Grandpa_BACKEND_API_KEY"),
         },
     )
 
@@ -1422,7 +1422,7 @@ def run_all(
 
         config = RunConfig(
             benchmark=bench_name,
-            backend="jarvis-direct",
+            backend="Grandpa-direct",
             model=model,
             max_samples=max_samples,
             max_workers=max_workers,
@@ -1432,7 +1432,7 @@ def run_all(
             seed=seed,
         )
 
-        eval_backend = _build_backend("jarvis-direct", engine_key, "orchestrator", [])
+        eval_backend = _build_backend("Grandpa-direct", engine_key, "orchestrator", [])
         dataset = _build_dataset(bench_name)
         judge_backend = _build_judge_backend(judge_model, engine_key="cloud")
         scorer = _build_scorer(bench_name, judge_backend, judge_model)

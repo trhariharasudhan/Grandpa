@@ -1,7 +1,7 @@
 """SkillOverlay — sidecar storage for optimization output (Plan 2A).
 
 Optimization results from DSPy/GEPA are written to
-``~/.openjarvis/learning/skills/<skill-name>/optimized.toml``.  This module
+``~/.Grandpa/learning/skills/<skill-name>/optimized.toml``.  This module
 provides a small loader and writer for that overlay format.
 
 The overlay is a strict TOML file with a single ``[optimized]`` section

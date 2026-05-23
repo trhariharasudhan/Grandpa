@@ -503,7 +503,7 @@ def create_connectors_router():
             content=(
                 f"<html><body style='{_style}'>"
                 "<h2 style='color:#22c55e'>Connected!</h2>"
-                "<p>You can close this tab and return to OpenJarvis.</p>"
+                "<p>You can close this tab and return to openjarvis.</p>"
                 "<script>setTimeout(()=>window.close(),2000)</script>"
                 "</body></html>"
             )

@@ -1,6 +1,6 @@
 """NativeOpenHandsAgent -- code-execution-centric agent.
 
-Renamed from ``OpenHandsAgent`` to clarify this is OpenJarvis's native
+Renamed from ``OpenHandsAgent`` to clarify this is Grandpa's native
 CodeAct-style implementation.  The ``OpenHandsAgent`` name is now used
 for the real openhands-sdk integration in ``openhands.py``.
 """

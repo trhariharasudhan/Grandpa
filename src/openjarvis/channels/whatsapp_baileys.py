@@ -38,7 +38,7 @@ if not _BRIDGE_SRC.exists():
     )
 
 # Default runtime directory (npm install + auth state).
-_DEFAULT_RUNTIME_DIR = Path.home() / ".openjarvis" / "whatsapp_baileys_bridge"
+_DEFAULT_RUNTIME_DIR = Path.home() / ".Grandpa" / "whatsapp_baileys_bridge"
 
 
 @ChannelRegistry.register("whatsapp_baileys")
@@ -51,7 +51,7 @@ class WhatsAppBaileysChannel(BaseChannel):
     ----------
     auth_dir:
         Directory for Baileys auth state persistence.  Defaults to
-        ``~/.openjarvis/whatsapp_baileys_bridge/auth``.
+        ``~/.Grandpa/whatsapp_baileys_bridge/auth``.
     assistant_name:
         Display name used by the assistant in conversations.
     assistant_has_own_number:
@@ -67,7 +67,7 @@ class WhatsAppBaileysChannel(BaseChannel):
         self,
         *,
         auth_dir: str = "",
-        assistant_name: str = "Jarvis",
+        assistant_name: str = "Grandpa",
         assistant_has_own_number: bool = False,
         bus: Optional[EventBus] = None,
     ) -> None:

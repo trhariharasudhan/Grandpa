@@ -1,6 +1,6 @@
 """NativeReActAgent -- Thought-Action-Observation loop agent.
 
-Renamed from ``ReActAgent`` to clarify this is OpenJarvis's native
+Renamed from ``ReActAgent`` to clarify this is Grandpa's native
 implementation, not an integration with an external project.
 """
 
@@ -145,7 +145,7 @@ class NativeReActAgent(ToolUsingAgent):
             )
         else:
             skill_examples_block = ""
-        # Respect $OPENJARVIS_HOME override for the base template (M2+ work).
+        # Respect $Grandpa_HOME override for the base template (M2+ work).
         prompt_template = (
             load_system_prompt_override("native_react") or REACT_SYSTEM_PROMPT
         )

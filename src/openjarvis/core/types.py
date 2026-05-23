@@ -1,4 +1,4 @@
-"""Canonical data types shared across all OpenJarvis primitives."""
+"""Canonical data types shared across all Grandpa primitives."""
 
 from __future__ import annotations
 

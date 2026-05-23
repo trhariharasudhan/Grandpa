@@ -14,7 +14,7 @@ from openjarvis.tools._stubs import BaseTool, ToolSpec
 class SkillManageTool(BaseTool):
     """Manage agent-authored procedural skills."""
 
-    def __init__(self, skills_dir: Path | str = "~/.openjarvis/skills/") -> None:
+    def __init__(self, skills_dir: Path | str = "~/.Grandpa/skills/") -> None:
         self._skills_dir = Path(skills_dir).expanduser()
 
     @property

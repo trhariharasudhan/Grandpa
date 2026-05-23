@@ -14,7 +14,7 @@ from openjarvis.tools._stubs import BaseTool, ToolSpec
 class MemoryManageTool(BaseTool):
     """Manage persistent agent memory (MEMORY.md)."""
 
-    def __init__(self, memory_path: Path | str = "~/.openjarvis/MEMORY.md") -> None:
+    def __init__(self, memory_path: Path | str = "~/.Grandpa/MEMORY.md") -> None:
         self._memory_path = Path(memory_path).expanduser()
 
     @property

@@ -184,7 +184,7 @@ class GranolaConnector(BaseConnector):
         credentials file.
     credentials_path:
         Path to the JSON file where the API key is stored.  Defaults to
-        ``~/.openjarvis/connectors/granola.json``.
+        ``~/.Grandpa/connectors/granola.json``.
     """
 
     connector_id = "granola"

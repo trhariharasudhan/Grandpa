@@ -1,6 +1,6 @@
 """Direct cloud API router — bypasses the engine system entirely.
 
-Reads API keys from ~/.openjarvis/cloud-keys.env at request time so
+Reads API keys from ~/.Grandpa/cloud-keys.env at request time so
 it works even when the server was started without cloud keys in its
 environment.  Uses httpx directly so no cloud SDK packages are required.
 """
@@ -21,7 +21,7 @@ from openjarvis.core.types import Message
 # Key / provider detection
 # ---------------------------------------------------------------------------
 
-_CLOUD_ENV_FILE = Path.home() / ".openjarvis" / "cloud-keys.env"
+_CLOUD_ENV_FILE = Path.home() / ".Grandpa" / "cloud-keys.env"
 
 _OPENAI_PREFIXES = ("gpt-", "o1-", "o3-", "o4-", "chatgpt-")
 _ANTHROPIC_PREFIXES = ("claude-",)

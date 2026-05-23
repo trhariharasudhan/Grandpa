@@ -1,4 +1,4 @@
-"""``jarvis chat`` — interactive multi-turn chat REPL."""
+"""``Grandpa chat`` — interactive multi-turn chat REPL."""
 
 from __future__ import annotations
 
@@ -127,7 +127,7 @@ def chat(
 
     # Print banner
     console.print(
-        f"[green bold]OpenJarvis Chat[/green bold]\n"
+        f"[green bold]Grandpa Chat[/green bold]\n"
         f"  Engine: [cyan]{engine_name}[/cyan]  Model: [cyan]{model}[/cyan]"
         f"  Agent: [cyan]{agent_key or 'direct'}[/cyan]\n"
         f"  Type /help for commands, /quit to exit.\n"

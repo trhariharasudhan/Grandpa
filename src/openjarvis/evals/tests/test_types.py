@@ -108,7 +108,7 @@ class TestEvalResult:
 
 class TestRunConfig:
     def test_defaults(self):
-        c = RunConfig(benchmark="supergpqa", backend="jarvis-direct", model="qwen3:8b")
+        c = RunConfig(benchmark="supergpqa", backend="Grandpa-direct", model="qwen3:8b")
         assert c.max_samples is None
         assert c.max_workers == 4
         assert c.temperature == 0.0
@@ -123,7 +123,7 @@ class TestRunConfig:
     def test_with_agent(self):
         c = RunConfig(
             benchmark="gaia",
-            backend="jarvis-agent",
+            backend="Grandpa-agent",
             model="gpt-4o",
             engine_key="cloud",
             agent_name="orchestrator",
@@ -136,7 +136,7 @@ class TestRunConfig:
         meta = {"param_count_b": 30.0, "active_params_b": 3.0, "num_gpus": 4}
         c = RunConfig(
             benchmark="supergpqa",
-            backend="jarvis-direct",
+            backend="Grandpa-direct",
             model="m",
             metadata=meta,
         )
@@ -175,7 +175,7 @@ class TestRunSummary:
         s = RunSummary(
             benchmark="supergpqa",
             category="reasoning",
-            backend="jarvis-direct",
+            backend="Grandpa-direct",
             model="qwen3:8b",
             total_samples=100,
             scored_samples=95,
@@ -195,7 +195,7 @@ class TestRunSummary:
         s = RunSummary(
             benchmark="test",
             category="reasoning",
-            backend="jarvis-direct",
+            backend="Grandpa-direct",
             model="m",
             total_samples=10,
             scored_samples=10,
@@ -386,7 +386,7 @@ class TestBenchmarkConfig:
     def test_defaults(self):
         b = BenchmarkConfig(name="supergpqa")
         assert b.name == "supergpqa"
-        assert b.backend == "jarvis-direct"
+        assert b.backend == "Grandpa-direct"
         assert b.max_samples is None
         assert b.split is None
         assert b.agent is None
@@ -398,7 +398,7 @@ class TestBenchmarkConfig:
     def test_with_overrides(self):
         b = BenchmarkConfig(
             name="gaia",
-            backend="jarvis-agent",
+            backend="Grandpa-agent",
             max_samples=50,
             split="test",
             agent="orchestrator",
@@ -407,7 +407,7 @@ class TestBenchmarkConfig:
             temperature=0.3,
             max_tokens=1024,
         )
-        assert b.backend == "jarvis-agent"
+        assert b.backend == "Grandpa-agent"
         assert b.max_samples == 50
         assert b.split == "test"
         assert b.agent == "orchestrator"

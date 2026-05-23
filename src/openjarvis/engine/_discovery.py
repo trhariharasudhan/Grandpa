@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Tuple
 
-from openjarvis.core.config import JarvisConfig
+from openjarvis.core.config import GrandpaConfig
 from openjarvis.core.registry import EngineRegistry
 from openjarvis.engine._base import InferenceEngine
 
@@ -30,7 +30,7 @@ _HOST_MAP: Dict[str, str | None] = {
 }
 
 
-def _make_engine(key: str, config: JarvisConfig) -> InferenceEngine:
+def _make_engine(key: str, config: GrandpaConfig) -> InferenceEngine:
     """Instantiate a registered engine with the appropriate config host."""
     cls = EngineRegistry.get(key)
 
@@ -100,7 +100,7 @@ def _maybe_register_mining_sidecar_engine() -> None:
     EngineRegistry.register_value("vllm-pearl-mining", _cls)
 
 
-def discover_engines(config: JarvisConfig) -> List[Tuple[str, InferenceEngine]]:
+def discover_engines(config: GrandpaConfig) -> List[Tuple[str, InferenceEngine]]:
     """Probe registered engines and return ``[(key, instance)]`` for healthy ones.
 
     Results are sorted with the config default engine first.
@@ -140,7 +140,7 @@ def discover_models(
 
 
 def get_engine(
-    config: JarvisConfig, engine_key: str | None = None
+    config: GrandpaConfig, engine_key: str | None = None
 ) -> Tuple[str, InferenceEngine] | None:
     """Get a specific engine by key, or the default with fallback.
 

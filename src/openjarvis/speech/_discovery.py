@@ -6,7 +6,7 @@ import os
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
-    from openjarvis.core.config import JarvisConfig
+    from openjarvis.core.config import GrandpaConfig
     from openjarvis.speech._stubs import SpeechBackend
 
 # Priority order: local first, then cloud
@@ -19,7 +19,7 @@ DISCOVERY_ORDER = [
 
 def _create_backend(
     key: str,
-    config: "JarvisConfig",
+    config: "GrandpaConfig",
 ) -> Optional["SpeechBackend"]:
     """Try to instantiate a speech backend by registry key."""
     from openjarvis.core.registry import SpeechRegistry
@@ -52,7 +52,7 @@ def _create_backend(
         return None
 
 
-def get_speech_backend(config: "JarvisConfig") -> Optional["SpeechBackend"]:
+def get_speech_backend(config: "GrandpaConfig") -> Optional["SpeechBackend"]:
     """Resolve the speech backend from config.
 
     If ``config.speech.backend`` is ``"auto"``, tries backends in

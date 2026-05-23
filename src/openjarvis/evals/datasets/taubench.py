@@ -1,6 +1,6 @@
 """TauBench V2 dataset provider — multi-turn customer service benchmark.
 
-Wraps the tau2-bench framework for evaluation within OpenJarvis.
+Wraps the tau2-bench framework for evaluation within openjarvis.
 Supports airline, retail, and telecom domains.
 
 Reference: https://github.com/sierra-research/tau2-bench
@@ -88,8 +88,8 @@ class TauBenchDataset(DatasetProvider):
         self._max_tokens: int = 4096
         self._user_model: Optional[str] = None
         # pass^k: best of k trials per task. Default 3, override via env var
-        # OPENJARVIS_TAUBENCH_TRIALS for faster runs (e.g. =1 for 3x speedup).
-        self._num_trials: int = int(os.environ.get("OPENJARVIS_TAUBENCH_TRIALS", "3"))
+        # Grandpa_TAUBENCH_TRIALS for faster runs (e.g. =1 for 3x speedup).
+        self._num_trials: int = int(os.environ.get("Grandpa_TAUBENCH_TRIALS", "3"))
         self._telemetry: bool = False
         self._gpu_metrics: bool = False
 

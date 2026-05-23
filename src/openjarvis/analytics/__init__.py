@@ -1,6 +1,6 @@
 """External anonymous usage analytics.
 
-Sends anonymized events to PostHog so the OpenJarvis team can measure
+Sends anonymized events to PostHog so the Grandpa team can measure
 setup success, retention, feature usage, and churn — without ever
 collecting chat content, prompts, file paths, emails, IPs, or hardware
 identifiers.
@@ -8,7 +8,7 @@ identifiers.
 Distinct from :mod:`openjarvis.telemetry`, which stores local FLOPs and
 energy metrics in a SQLite DB and never leaves the machine.
 
-Disable: set ``[analytics] enabled = false`` in ``~/.openjarvis/config.toml``.
+Disable: set ``[analytics] enabled = false`` in ``~/.Grandpa/config.toml``.
 """
 
 from openjarvis.analytics.aggregator import SessionAggregator

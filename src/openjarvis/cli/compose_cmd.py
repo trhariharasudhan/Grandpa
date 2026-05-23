@@ -1,4 +1,4 @@
-"""``jarvis compose`` — unified composition CLI for discrete agents and operators."""
+"""``Grandpa compose`` — unified composition CLI for discrete agents and operators."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from rich.table import Table
 
 @click.group()
 def compose() -> None:
-    """Compose, run, benchmark, and deploy OpenJarvis configurations.
+    """Compose, run, benchmark, and deploy Grandpa configurations.
 
     Recipes are unified TOML configs that wire all five primitives
     (Intelligence, Engine, Agent, Tools, Learning).  They come in two
@@ -25,7 +25,7 @@ def compose() -> None:
 
 
 # ------------------------------------------------------------------ #
-# jarvis compose list
+# Grandpa compose list
 # ------------------------------------------------------------------ #
 
 
@@ -48,8 +48,8 @@ def compose_list(kind: Optional[str]) -> None:
         if not recipes:
             console.print("[dim]No compositions found.[/dim]")
             console.print(
-                "[dim]Place TOML recipes in src/openjarvis/recipes/data/ "
-                "or ~/.openjarvis/recipes/[/dim]"
+                "[dim]Place TOML recipes in src/Grandpa/recipes/data/ "
+                "or ~/.Grandpa/recipes/[/dim]"
             )
             return
 
@@ -80,7 +80,7 @@ def compose_list(kind: Optional[str]) -> None:
 
 
 # ------------------------------------------------------------------ #
-# jarvis compose show
+# Grandpa compose show
 # ------------------------------------------------------------------ #
 
 
@@ -151,7 +151,7 @@ def compose_show(name: str) -> None:
 
 
 # ------------------------------------------------------------------ #
-# jarvis compose run
+# Grandpa compose run
 # ------------------------------------------------------------------ #
 
 
@@ -235,7 +235,7 @@ def compose_run(name: str, query: tuple[str, ...], output_json: bool) -> None:
 
 
 # ------------------------------------------------------------------ #
-# jarvis compose bench
+# Grandpa compose bench
 # ------------------------------------------------------------------ #
 
 
@@ -351,7 +351,7 @@ def compose_bench(
 
 
 # ------------------------------------------------------------------ #
-# jarvis compose deploy
+# Grandpa compose deploy
 # ------------------------------------------------------------------ #
 
 
@@ -399,7 +399,7 @@ def compose_deploy(name: str) -> None:
 
 
 # ------------------------------------------------------------------ #
-# jarvis compose stop
+# Grandpa compose stop
 # ------------------------------------------------------------------ #
 
 
@@ -433,7 +433,7 @@ def compose_stop(name: str) -> None:
 
 
 # ------------------------------------------------------------------ #
-# jarvis compose status
+# Grandpa compose status
 # ------------------------------------------------------------------ #
 
 

@@ -71,7 +71,7 @@ _BROWSER_SUB_TOOLS = {
 
 class _LightweightSystem:
     """Minimal system facade for the executor — avoids rebuilding the
-    full JarvisSystem (which picks a random model from Ollama)."""
+    full GrandpaSystem (which picks a random model from Ollama)."""
 
     def __init__(self, engine: Any, model: str, config: Any = None):
         self.engine = engine
@@ -1874,7 +1874,7 @@ def create_agent_manager_router(
             from openjarvis.traces.store import TraceStore
 
             config = load_config()
-            store = TraceStore(config.traces.db_path or "~/.openjarvis/traces.db")
+            store = TraceStore(config.traces.db_path or "~/.Grandpa/traces.db")
             traces = store.list_traces(agent=agent_id, limit=limit)
             return {
                 "traces": [
@@ -1899,7 +1899,7 @@ def create_agent_manager_router(
             from openjarvis.traces.store import TraceStore
 
             config = load_config()
-            store = TraceStore(config.traces.db_path or "~/.openjarvis/traces.db")
+            store = TraceStore(config.traces.db_path or "~/.Grandpa/traces.db")
             trace = store.get(trace_id)
             if trace is None:
                 raise HTTPException(status_code=404, detail="Trace not found")
@@ -2140,7 +2140,7 @@ def create_agent_manager_router(
             payload: Dict[str, str] = {
                 "number": to_number,
                 "content": (
-                    "Hello from your OpenJarvis agent! "
+                    "Hello from your Grandpa agent! "
                     "Text this number anytime to search your "
                     "personal data. Reply with any question to try it."
                 ),

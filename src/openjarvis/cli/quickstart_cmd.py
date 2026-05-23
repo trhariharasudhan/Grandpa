@@ -1,4 +1,4 @@
-"""``jarvis quickstart`` — guided 5-step setup for new users."""
+"""``Grandpa quickstart`` — guided 5-step setup for new users."""
 
 from __future__ import annotations
 
@@ -70,9 +70,9 @@ def _check_model_available(engine_key: str) -> bool:
 def _test_query(engine_key: str) -> str:
     """Run a quick test query and return the response text."""
     try:
-        from openjarvis import Jarvis
+        from Grandpa import Grandpa
 
-        j = Jarvis(engine_key=engine_key)
+        j = Grandpa(engine_key=engine_key)
         response = j.ask("Say hello in one sentence.")
         j.close()
         return response
@@ -132,7 +132,7 @@ def quickstart(force: bool) -> None:
             )
             console.print()
             console.print(f"  Start the {engine_key} server and try again.")
-            console.print("  Run [bold]jarvis doctor[/bold] for detailed diagnostics.")
+            console.print("  Run [bold]Grandpa doctor[/bold] for detailed diagnostics.")
             raise SystemExit(1)
     else:
         console.print(f"  [green]Engine '{engine_key}' is healthy.[/green]")
@@ -156,5 +156,5 @@ def quickstart(force: bool) -> None:
 
     console.print()
     console.print(
-        '[bold green]Setup complete![/bold green] Try: [bold]jarvis ask "Hello"[/bold]'
+        '[bold green]Setup complete![/bold green] Try: [bold]Grandpa ask "Hello"[/bold]'
     )

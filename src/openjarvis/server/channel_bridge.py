@@ -130,7 +130,7 @@ class ChannelBridge:
             if result is not None:
                 return result
 
-        # Regular chat — route to JarvisSystem.ask()
+        # Regular chat — route to GrandpaSystem.ask()
         return self._handle_chat(sender_id, stripped, channel_type, max_length)
 
     # --------------------------------------------------------------
@@ -268,7 +268,7 @@ class ChannelBridge:
                 result = self._system.ask(query)
                 response_text = result.get("content", str(result))
             except Exception:
-                logger.exception("Error in JarvisSystem.ask()")
+                logger.exception("Error in GrandpaSystem.ask()")
                 error_msg = (
                     "Sorry, I couldn't process that right now. Try again in a moment."
                 )

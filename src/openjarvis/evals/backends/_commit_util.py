@@ -1,4 +1,4 @@
-"""Shared helper for resolving the openjarvis repo's HEAD commit."""
+"""Shared helper for resolving the Grandpa repo's HEAD commit."""
 
 from __future__ import annotations
 
@@ -8,15 +8,15 @@ from pathlib import Path
 
 
 @functools.lru_cache(maxsize=1)
-def openjarvis_commit() -> str:
-    """Return the openjarvis repo's HEAD commit (cached, lru-1).
+def Grandpa_commit() -> str:
+    """Return the Grandpa repo's HEAD commit (cached, lru-1).
 
     Returns ``"unknown"`` if git is unavailable or the path isn't a repo.
-    Used by JarvisAgentBackend and JarvisDirectBackend to populate the
+    Used by GrandpaAgentBackend and GrandpaDirectBackend to populate the
     ``framework_commit`` field in their extended return dicts.
     """
     try:
-        # Walk up to repo root: backends/ -> evals/ -> openjarvis/ -> src/ -> repo
+        # Walk up to repo root: backends/ -> evals/ -> Grandpa/ -> src/ -> repo
         result = subprocess.run(
             [
                 "git",

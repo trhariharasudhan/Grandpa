@@ -50,7 +50,7 @@ def _extract_tool_calls(
         if tool_calls:
             return tool_calls
 
-    # Try tool_results list (from JarvisAgentBackend)
+    # Try tool_results list (from GrandpaAgentBackend)
     tool_results = record.metadata.get("tool_results", [])
     for tr in tool_results:
         tool_calls.append(

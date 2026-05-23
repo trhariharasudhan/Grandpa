@@ -1,4 +1,4 @@
-"""``jarvis agents`` — persistent agent lifecycle management."""
+"""``Grandpa agents`` — persistent agent lifecycle management."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def _get_manager():
 
     config = load_config()
     db_path = config.agent_manager.db_path or str(
-        Path("~/.openjarvis/agents.db").expanduser()
+        Path("~/.Grandpa/agents.db").expanduser()
     )
     return AgentManager(db_path=db_path)
 
@@ -58,7 +58,7 @@ def list_agents() -> None:
         agents = mgr.list_agents()
         if not agents:
             console.print(
-                "[dim]No agents found. Create one with: jarvis agents create[/dim]"
+                "[dim]No agents found. Create one with: Grandpa agents create[/dim]"
             )
             return
         table = Table(title="Managed Agents")
@@ -275,7 +275,7 @@ def search(agent_id: str, query: str, limit: int) -> None:
         if not agent:
             console.print(f"[red]Agent not found: {agent_id}[/red]")
             return
-        store = TraceStore(config.traces.db_path or "~/.openjarvis/traces.db")
+        store = TraceStore(config.traces.db_path or "~/.Grandpa/traces.db")
         results = store.search(query, agent=agent["name"], limit=limit)
         if not results:
             console.print("[dim]No results.[/dim]")
@@ -320,7 +320,7 @@ def templates() -> None:
 
 
 def _get_system():
-    """Build a JarvisSystem for CLI commands that need scheduler/executor."""
+    """Build a GrandpaSystem for CLI commands that need scheduler/executor."""
     from openjarvis.system import SystemBuilder
 
     try:
@@ -331,7 +331,7 @@ def _get_system():
 
 
 def _get_scheduler_and_executor(system=None):
-    """Get scheduler + executor from a JarvisSystem instance."""
+    """Get scheduler + executor from a GrandpaSystem instance."""
     if system is None:
         system = _get_system()
     return system.agent_scheduler, system.agent_executor, system
@@ -558,7 +558,7 @@ def trace(agent_id, run_number, limit):
         raise SystemExit(1)
 
     config = load_config()
-    store = TraceStore(config.traces.db_path or "~/.openjarvis/traces.db")
+    store = TraceStore(config.traces.db_path or "~/.Grandpa/traces.db")
     traces = store.list_traces(agent=agent_id, limit=limit)
 
     if not traces:

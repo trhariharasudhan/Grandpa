@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 _PLANNER_SYSTEM_PROMPT = """\
 You are a meta-engineer planning improvements to a local AI assistant called \
-OpenJarvis. You have been given a diagnosis of the student's failure patterns.
+openjarvis. You have been given a diagnosis of the student's failure patterns.
 
 Your job: for each surviving failure cluster, propose 1-3 edits from the \
 available operation set that would address the cluster's skill gap.

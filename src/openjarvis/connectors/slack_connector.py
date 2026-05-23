@@ -289,7 +289,7 @@ class SlackConnector(BaseConnector):
     ----------
     credentials_path:
         Path to the JSON file where OAuth tokens are stored.  Defaults to
-        ``~/.openjarvis/connectors/slack.json``.
+        ``~/.Grandpa/connectors/slack.json``.
     """
 
     connector_id = "slack"

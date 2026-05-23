@@ -1,4 +1,4 @@
-"""Jarvis Agent backend — agent-level inference with tool calling."""
+"""Grandpa Agent backend — agent-level inference with tool calling."""
 
 from __future__ import annotations
 
@@ -6,19 +6,19 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from openjarvis.evals.backends._commit_util import openjarvis_commit
+from openjarvis.evals.backends._commit_util import Grandpa_commit
 from openjarvis.evals.core.backend import InferenceBackend
 
 
-class JarvisAgentBackend(InferenceBackend):
-    """Agent-level inference via SystemBuilder + JarvisSystem.ask().
+class GrandpaAgentBackend(InferenceBackend):
+    """Agent-level inference via SystemBuilder + GrandpaSystem.ask().
 
     Supports tool calling via the agent harness. Works for both local
     and cloud models.
     """
 
-    backend_id = "jarvis-agent"
-    framework_name = "openjarvis"
+    backend_id = "Grandpa-agent"
+    framework_name = "Grandpa"
 
     def __init__(
         self,
@@ -51,7 +51,7 @@ class JarvisAgentBackend(InferenceBackend):
         # creates a GpuMonitor when building the InstrumentedEngine.
         if gpu_metrics:
             builder._config.telemetry.gpu_metrics = True
-        # Override the agent's per-run turn budget. JarvisConfig.agent.max_turns
+        # Override the agent's per-run turn budget. GrandpaConfig.agent.max_turns
         # defaults to 10, which is too low for thinking/reasoning models on
         # multi-step agentic benchmarks (Trinity-Large hit the cap on 25/50
         # GAIA tasks before this was configurable per-eval).
@@ -66,10 +66,10 @@ class JarvisAgentBackend(InferenceBackend):
 
     @property
     def framework_commit_value(self) -> str:
-        """OpenJarvis repo HEAD commit (for telemetry tagging)."""
-        from openjarvis.evals.backends._commit_util import openjarvis_commit
+        """Grandpa repo HEAD commit (for telemetry tagging)."""
+        from openjarvis.evals.backends._commit_util import Grandpa_commit
 
-        return openjarvis_commit()
+        return Grandpa_commit()
 
     def generate(
         self,
@@ -186,8 +186,8 @@ class JarvisAgentBackend(InferenceBackend):
             "trace_data": trace_data,
             "tool_calls": tool_calls_count,
             "turn_count": turn_count,
-            "framework": "openjarvis",
-            "framework_commit": openjarvis_commit(),
+            "framework": "Grandpa",
+            "framework_commit": Grandpa_commit(),
             "error": None,
         }
 
@@ -201,4 +201,4 @@ class JarvisAgentBackend(InferenceBackend):
         self._system.close()
 
 
-__all__ = ["JarvisAgentBackend"]
+__all__ = ["GrandpaAgentBackend"]

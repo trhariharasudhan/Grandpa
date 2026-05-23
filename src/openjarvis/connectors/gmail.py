@@ -340,7 +340,7 @@ class GmailConnector(BaseConnector):
     ----------
     credentials_path:
         Path to the JSON file where OAuth tokens are stored.  Defaults to
-        ``~/.openjarvis/connectors/gmail.json``.
+        ``~/.Grandpa/connectors/gmail.json``.
     """
 
     connector_id = "gmail"
@@ -365,7 +365,7 @@ class GmailConnector(BaseConnector):
 
         The previous "any non-empty dict counts" check returned True for
         files containing only client_id/client_secret (no actual OAuth
-        token), which made `jarvis connect gmail` short-circuit with
+        token), which made `Grandpa connect gmail` short-circuit with
         "already connected" before any OAuth flow ran.
         """
         tokens = load_tokens(self._credentials_path)
@@ -535,7 +535,7 @@ class GmailConnector(BaseConnector):
         new = refresh_google_token(self._credentials_path)
         if not new:
             raise RuntimeError(
-                "Gmail token refresh failed — re-run `jarvis connect gmail`"
+                "Gmail token refresh failed — re-run `Grandpa connect gmail`"
             )
         return new
 

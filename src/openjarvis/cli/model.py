@@ -1,4 +1,4 @@
-"""``jarvis model`` — model management subcommands."""
+"""``Grandpa model`` — model management subcommands."""
 
 from __future__ import annotations
 

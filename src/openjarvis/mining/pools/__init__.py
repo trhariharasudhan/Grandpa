@@ -1,4 +1,4 @@
-# src/openjarvis/mining/pools/__init__.py
+# src/Grandpa/mining/pools/__init__.py
 """RESERVED for v2 pool support.
 
 Do not add code here in v1. The v2 spec will define a ``PoolClient`` ABC and

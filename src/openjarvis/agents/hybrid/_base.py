@@ -5,7 +5,7 @@ ToolOrchestra) all coordinate at least two models: a small **local** model
 served by vLLM over an OpenAI-compatible endpoint, and a **cloud** model
 reached via the Anthropic or OpenAI SDK.
 
-Why not just use OpenJarvis's :class:`InferenceEngine` for both? Two reasons:
+Why not just use Grandpa's :class:`InferenceEngine` for both? Two reasons:
 
 1. The reference hybrid adapters (``hybrid-local-cloud-compute/adapters/``) make
    raw SDK calls because some of them (Minions, Archon) construct external

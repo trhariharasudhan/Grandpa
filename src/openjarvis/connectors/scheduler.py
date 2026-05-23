@@ -2,7 +2,7 @@
 
 Registers connectors for timed re-sync and runs them on a configurable
 interval.  Designed to be long-lived (daemon thread) inside a running
-OpenJarvis server process.
+Grandpa server process.
 
 Typical usage::
 

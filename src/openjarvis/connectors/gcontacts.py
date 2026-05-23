@@ -146,7 +146,7 @@ class GContactsConnector(BaseConnector):
     ----------
     credentials_path:
         Path to the JSON file where OAuth tokens are stored.  Defaults to
-        ``~/.openjarvis/connectors/gcontacts.json``.
+        ``~/.Grandpa/connectors/gcontacts.json``.
     """
 
     connector_id = "gcontacts"

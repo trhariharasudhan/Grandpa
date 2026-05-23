@@ -59,7 +59,7 @@ class RedditChannel(BaseChannel):
         self._username = username or os.environ.get("REDDIT_USERNAME", "")
         self._password = password or os.environ.get("REDDIT_PASSWORD", "")
         self._user_agent = user_agent or os.environ.get(
-            "REDDIT_USER_AGENT", "openjarvis:v1.0"
+            "REDDIT_USER_AGENT", "Grandpa:v1.0"
         )
         self._bus = bus
         self._handlers: List[ChannelHandler] = []
@@ -129,7 +129,7 @@ class RedditChannel(BaseChannel):
             else:
                 # Submit as a new text post to the subreddit
                 subreddit = reddit.subreddit(channel)
-                title = (metadata or {}).get("title", "OpenJarvis Message")
+                title = (metadata or {}).get("title", "Grandpa Message")
                 subreddit.submit(title=title, selftext=content)
 
             self._publish_sent(channel, content, conversation_id)

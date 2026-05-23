@@ -51,7 +51,7 @@ def check_readiness(
             message=(
                 f"Not enough traces yet to learn from. "
                 f"Have {count}, need at least {min_traces}. "
-                f"Use OpenJarvis for a while and try again."
+                f"Use Grandpa for a while and try again."
             ),
             trace_count=count,
         )

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_DB_PATH = str(Path.home() / "Library" / "Messages" / "chat.db")
 _POLL_INTERVAL = 5
-_PID_FILE = str(Path.home() / ".openjarvis" / "imessage-agent.pid")
+_PID_FILE = str(Path.home() / ".Grandpa" / "imessage-agent.pid")
 
 
 def poll_new_messages(

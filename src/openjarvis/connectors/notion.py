@@ -248,7 +248,7 @@ class NotionConnector(BaseConnector):
         stored credentials file.
     credentials_path:
         Path to the JSON file where the token is stored.  Defaults to
-        ``~/.openjarvis/connectors/notion.json``.
+        ``~/.Grandpa/connectors/notion.json``.
     """
 
     connector_id = "notion"

@@ -1,4 +1,4 @@
-"""Global logging configuration for the OpenJarvis CLI."""
+"""Global logging configuration for the Grandpa CLI."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def setup_logging(
     quiet: bool = False,
     log_file: Optional[Union[str, Path]] = None,
 ) -> logging.Logger:
-    """Configure the ``openjarvis`` logger.
+    """Configure the ``Grandpa`` logger.
 
     Parameters
     ----------
@@ -36,13 +36,13 @@ def setup_logging(
     log_file:
         Path for a rotating file handler.  When *verbose* is ``True``
         and no *log_file* is given, defaults to
-        ``~/.openjarvis/cli.log``.
+        ``~/.Grandpa/cli.log``.
 
     Returns
     -------
-    The configured ``openjarvis`` logger.
+    The configured ``Grandpa`` logger.
     """
-    logger = logging.getLogger("openjarvis")
+    logger = logging.getLogger("Grandpa")
 
     # Clear existing handlers to avoid duplication across calls
     logger.handlers.clear()
@@ -68,7 +68,7 @@ def setup_logging(
         if log_file is None:
             from openjarvis.security.file_utils import secure_mkdir
 
-            log_dir = Path.home() / ".openjarvis"
+            log_dir = Path.home() / ".Grandpa"
             secure_mkdir(log_dir)
             log_file = log_dir / "cli.log"
         file_handler = RotatingFileHandler(

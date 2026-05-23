@@ -10,7 +10,7 @@ agent that maximizes weighted competence minus λ·cost.
 What we reproduce here: the **deployment-time** step only. The full
 explore/learn/select pipeline requires multi-model serving + the FRAMES
 wiki retriever + a multi-hour LLM-driven learning loop that's out of
-scope for the OpenJarvis port (and was out of scope in the hybrid harness).
+scope for the Grandpa port (and was out of scope in the hybrid harness).
 
 So this agent uses the orchestrator's *inference logic* with a small
 handbook that's synthesized per-task on the fly: cloud (Opus) reads the

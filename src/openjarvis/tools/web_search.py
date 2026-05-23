@@ -89,7 +89,7 @@ class WebSearchTool(BaseTool):
             follow_redirects=True,
             timeout=30.0,
             headers={
-                "User-Agent": "Mozilla/5.0 (compatible; OpenJarvis/1.0; +https://github.com/openjarvis)"
+                "User-Agent": "Mozilla/5.0 (compatible; Grandpa/1.0; +https://github.com/Grandpa)"
             },
         )
         resp.raise_for_status()

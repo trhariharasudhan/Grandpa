@@ -47,7 +47,7 @@ def _sidecar_path() -> Path:
 
 def _log_dir() -> Path:
     """Return the logs directory. Override in tests."""
-    return Path.home() / ".openjarvis" / "logs" / "mining"
+    return Path.home() / ".Grandpa" / "logs" / "mining"
 
 
 def _parse_gateway_metrics(text: str, *, provider_id: str) -> MiningStats:

@@ -2,7 +2,7 @@
 
 Buckets traces by skill name, runs the underlying optimizer on each skill's
 bucket, and writes the result as a sidecar overlay file in
-``~/.openjarvis/learning/skills/<skill-name>/optimized.toml``.
+``~/.Grandpa/learning/skills/<skill-name>/optimized.toml``.
 
 The actual DSPy/GEPA invocation is done in ``_run_dspy`` / ``_run_gepa``,
 which are isolated for easy mocking in tests.  In Plan 2A these are
@@ -99,7 +99,7 @@ class SkillOptimizer:
                 pass
             if overlay_dir is None:
                 overlay_dir = Path(
-                    "~/.openjarvis/learning/skills/"
+                    "~/.Grandpa/learning/skills/"
                 ).expanduser()
         overlay_dir = Path(overlay_dir).expanduser()
 

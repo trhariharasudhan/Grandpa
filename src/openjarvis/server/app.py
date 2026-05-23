@@ -1,4 +1,4 @@
-"""FastAPI application factory for the OpenJarvis API server."""
+"""FastAPI application factory for the Grandpa API server."""
 
 from __future__ import annotations
 
@@ -173,11 +173,11 @@ def create_app(
     channel_bridge:
         Optional channel bridge for multi-platform messaging.
     config:
-        Optional JarvisConfig for other settings.
+        Optional GrandpaConfig for other settings.
     """
     app = FastAPI(
-        title="OpenJarvis API",
-        description="OpenAI-compatible API server for OpenJarvis",
+        title="Grandpa API",
+        description="OpenAI-compatible API server for Grandpa",
         version="0.1.0",
     )
 

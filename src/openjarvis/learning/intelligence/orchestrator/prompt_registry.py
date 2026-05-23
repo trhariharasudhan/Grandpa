@@ -49,7 +49,7 @@ NOW SOLVE THE TASK. You MUST use at least one tool - choose the best one for the
 """
 
 # ---------------------------------------------------------------------------
-# Tool descriptions for OpenJarvis built-in tools
+# Tool descriptions for Grandpa built-in tools
 # ---------------------------------------------------------------------------
 
 TOOL_DESCRIPTIONS: Dict[str, dict] = {

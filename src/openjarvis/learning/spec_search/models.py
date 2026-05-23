@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 
 class EditPillar(str, Enum):
-    """Which OpenJarvis pillar an edit targets."""
+    """Which Grandpa pillar an edit targets."""
 
     INTELLIGENCE = "intelligence"
     AGENT = "agent"
@@ -108,7 +108,7 @@ class SessionStatus(str, Enum):
 
 
 class Edit(BaseModel):
-    """One atomic edit to the OpenJarvis harness.
+    """One atomic edit to the Grandpa harness.
 
     Emitted by the LearningPlanner, consumed by an EditApplier. The teacher
     proposes the op, target, payload, rationale, and references; the planner
@@ -122,7 +122,7 @@ class Edit(BaseModel):
         ...,
         description="UUID for this edit; also used as a footer in git commits.",
     )
-    pillar: EditPillar = Field(..., description="Which OpenJarvis pillar is touched.")
+    pillar: EditPillar = Field(..., description="Which Grandpa pillar is touched.")
     op: EditOp = Field(..., description="The typed operation to perform.")
     target: str = Field(
         ...,

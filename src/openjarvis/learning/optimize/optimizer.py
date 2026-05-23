@@ -218,7 +218,7 @@ class OptimizationEngine:
                 synth = _RS(
                     benchmark="multi",
                     category="multi",
-                    backend="jarvis-agent",
+                    backend="Grandpa-agent",
                     model=result.config.params.get("intelligence.model", ""),
                     accuracy=result.accuracy,
                     mean_latency_seconds=result.mean_latency_seconds,

@@ -1,4 +1,4 @@
-"""``jarvis vault`` — encrypted credential store."""
+"""``Grandpa vault`` — encrypted credential store."""
 
 from __future__ import annotations
 

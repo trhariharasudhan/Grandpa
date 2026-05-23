@@ -6,7 +6,7 @@ Provides structured-mode training for the OrchestratorAgent with:
 - **Reward**: Multi-objective reward balancing accuracy, cost, energy, latency, power
 - **Prompt registry**: Canonical system prompts for structured mode
 - **Policy model**: HuggingFace LM wrapper for action prediction
-- **Environment**: RL environment using OpenJarvis ToolExecutor
+- **Environment**: RL environment using Grandpa ToolExecutor
 - **SFT trainer**: Supervised fine-tuning on successful trajectories
 - **GRPO trainer**: Group Relative Policy Optimization
 

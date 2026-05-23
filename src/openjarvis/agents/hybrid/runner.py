@@ -5,13 +5,13 @@
     python -m openjarvis.agents.hybrid.runner --cell minions-gaia-qwen27b-opus-3
 
 Reads a cell definition from ``registry/<method>.toml`` (bundled with this
-package or pointed at by ``OPENJARVIS_HYBRID_REGISTRY_DIR``), constructs
-the registered agent, loads bench tasks via OpenJarvis's existing dataset
+package or pointed at by ``Grandpa_HYBRID_REGISTRY_DIR``), constructs
+the registered agent, loads bench tasks via Grandpa's existing dataset
 providers, runs every task, scores it, and writes
 ``<EXPERIMENTS_DIR>/<cell>/results.jsonl`` + ``summary.json``.
 
 The output schema matches ``hybrid-local-cloud-compute/runner.py`` so the
-existing rescore / dashboard scripts can read OpenJarvis cells without
+existing rescore / dashboard scripts can read Grandpa cells without
 modification.
 """
 
@@ -42,8 +42,8 @@ PACKAGE_DIR = Path(__file__).parent
 DEFAULT_REGISTRY_DIR = PACKAGE_DIR / "registry"
 DEFAULT_EXPERIMENTS_DIR = Path(
     os.environ.get(
-        "OPENJARVIS_HYBRID_EXPERIMENTS_DIR",
-        str(Path.home() / ".openjarvis-hybrid" / "experiments"),
+        "Grandpa_HYBRID_EXPERIMENTS_DIR",
+        str(Path.home() / ".Grandpa-hybrid" / "experiments"),
     )
 )
 
@@ -53,7 +53,7 @@ DEFAULT_EXPERIMENTS_DIR = Path(
 def load_registry(registry_dir: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
     """Merge every ``<registry_dir>/*.toml``. Cell names must be unique."""
     base = registry_dir or DEFAULT_REGISTRY_DIR
-    env_override = os.environ.get("OPENJARVIS_HYBRID_REGISTRY_DIR")
+    env_override = os.environ.get("Grandpa_HYBRID_REGISTRY_DIR")
     if env_override:
         base = Path(env_override)
     if not base.is_dir():
@@ -130,7 +130,7 @@ def _score_gaia(task: Dict[str, Any], answer: str) -> Dict[str, Any]:
     """Exact-match-with-format-normalization GAIA scorer.
 
     Lightweight version: extracts the final-answer line and string-compares
-    against the reference. Use the OpenJarvis gaia_exact scorer for the
+    against the reference. Use the Grandpa gaia_exact scorer for the
     judge-tiebreaker path.
     """
     import re

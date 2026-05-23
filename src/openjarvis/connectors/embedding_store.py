@@ -45,7 +45,7 @@ class EmbeddingStore:
     ----------
     store_dir:
         Root directory for the embedding store.  Defaults to
-        ``~/.openjarvis/embeddings/``.  The directory is created if it does
+        ``~/.Grandpa/embeddings/``.  The directory is created if it does
         not already exist.
     """
 

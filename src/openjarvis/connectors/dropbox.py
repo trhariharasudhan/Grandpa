@@ -147,7 +147,7 @@ class DropboxConnector(BaseConnector):
     ----------
     credentials_path:
         Path to the JSON file where OAuth tokens are stored.  Defaults to
-        ``~/.openjarvis/connectors/dropbox.json``.
+        ``~/.Grandpa/connectors/dropbox.json``.
     """
 
     connector_id = "dropbox"

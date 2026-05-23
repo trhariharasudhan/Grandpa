@@ -22,8 +22,8 @@ from openjarvis.engine._stubs import InferenceEngine
 logger = logging.getLogger(__name__)
 
 # Sentinel markers (same as ClaudeCodeAgent)
-_OUTPUT_START = "---OPENJARVIS_OUTPUT_START---"
-_OUTPUT_END = "---OPENJARVIS_OUTPUT_END---"
+_OUTPUT_START = "---Grandpa_OUTPUT_START---"
+_OUTPUT_END = "---Grandpa_OUTPUT_END---"
 
 
 class ContainerRunner:
@@ -32,7 +32,7 @@ class ContainerRunner:
     Parameters
     ----------
     image:
-        Docker image to run.  Defaults to ``openjarvis-sandbox:latest``.
+        Docker image to run.  Defaults to ``Grandpa-sandbox:latest``.
     timeout:
         Maximum execution time in seconds.
     mount_allowlist_path:
@@ -43,7 +43,7 @@ class ContainerRunner:
         Container runtime binary name (``docker`` or ``podman``).
     """
 
-    DEFAULT_IMAGE = "openjarvis-sandbox:latest"
+    DEFAULT_IMAGE = "Grandpa-sandbox:latest"
     DEFAULT_TIMEOUT = 300
 
     def __init__(
@@ -117,7 +117,7 @@ class ContainerRunner:
             "--name",
             container_name,
             "--label",
-            "openjarvis-sandbox=true",
+            "Grandpa-sandbox=true",
             "--network",
             "none",
             "-i",
@@ -253,7 +253,7 @@ class ContainerRunner:
                     "ps",
                     "-aq",
                     "--filter",
-                    "label=openjarvis-sandbox=true",
+                    "label=Grandpa-sandbox=true",
                 ],
                 capture_output=True,
                 text=True,

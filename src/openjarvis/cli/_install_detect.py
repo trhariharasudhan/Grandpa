@@ -1,13 +1,13 @@
-"""Detect how OpenJarvis was installed so we can show the right upgrade
-command (and run the right upgrade command for ``jarvis self-update``).
+"""Detect how Grandpa was installed so we can show the right upgrade
+command (and run the right upgrade command for ``Grandpa self-update``).
 
 Three install paths are supported today:
 
-- **PyPI** (``pip install openjarvis``). The package lives somewhere
-  inside ``site-packages``. Upgrade with ``pip install --upgrade openjarvis``.
-- **uv tool** (``uv tool install openjarvis``). Lives in a uv-managed
+- **PyPI** (``pip install Grandpa``). The package lives somewhere
+  inside ``site-packages``. Upgrade with ``pip install --upgrade Grandpa``.
+- **uv tool** (``uv tool install Grandpa``). Lives in a uv-managed
   isolated venv under ``~/.local/share/uv/tools/``. Upgrade with
-  ``uv tool upgrade openjarvis``.
+  ``uv tool upgrade Grandpa``.
 - **Editable git checkout** (``uv sync`` / ``pip install -e .`` from a
   cloned repo). The package's ``__file__`` is inside a working tree
   with a ``.git`` directory at the repo root. Upgrade with
@@ -28,7 +28,7 @@ from typing import Optional
 
 @dataclass(frozen=True)
 class InstallInfo:
-    """How OpenJarvis was installed."""
+    """How Grandpa was installed."""
 
     kind: str  # "pypi" | "uv-tool" | "editable-git" | "unknown"
     upgrade_command: str
@@ -42,13 +42,13 @@ def detect_install() -> InstallInfo:
     once and checks for marker directories. No subprocess calls.
     """
     try:
-        import openjarvis
+        import Grandpa
 
         pkg_file = Path(openjarvis.__file__).resolve()
     except Exception:
         return InstallInfo(
             kind="unknown",
-            upgrade_command="pip install --upgrade openjarvis",
+            upgrade_command="pip install --upgrade Grandpa",
         )
 
     parts = [p.lower() for p in pkg_file.parts]
@@ -56,12 +56,12 @@ def detect_install() -> InstallInfo:
     if "uv" in parts and "tools" in parts:
         return InstallInfo(
             kind="uv-tool",
-            upgrade_command="uv tool upgrade openjarvis",
+            upgrade_command="uv tool upgrade Grandpa",
         )
 
     # Editable install: a ``.git`` dir within a few parents of the
     # package source. Walk up at most ~8 levels — enough for typical
-    # ``<repo>/src/openjarvis/__init__.py`` layouts plus headroom, but
+    # ``<repo>/src/Grandpa/__init__.py`` layouts plus headroom, but
     # not so deep we wander into home or root.
     candidate = pkg_file.parent
     for _ in range(8):
@@ -78,10 +78,10 @@ def detect_install() -> InstallInfo:
     if "site-packages" in parts:
         return InstallInfo(
             kind="pypi",
-            upgrade_command="pip install --upgrade openjarvis",
+            upgrade_command="pip install --upgrade Grandpa",
         )
 
     return InstallInfo(
         kind="unknown",
-        upgrade_command="pip install --upgrade openjarvis",
+        upgrade_command="pip install --upgrade Grandpa",
     )

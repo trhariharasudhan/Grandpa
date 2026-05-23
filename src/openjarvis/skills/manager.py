@@ -39,7 +39,7 @@ class SkillManager:
         self._tool_executor: Optional[ToolExecutor] = None
         if overlay_dir is None:
             # Try to read from config first; fall back to the default
-            # ~/.openjarvis/learning/skills/ if config can't be loaded.
+            # ~/.Grandpa/learning/skills/ if config can't be loaded.
             try:
                 from openjarvis.core.config import load_config
 
@@ -54,7 +54,7 @@ class SkillManager:
             except Exception:
                 pass
             if overlay_dir is None:
-                overlay_dir = Path("~/.openjarvis/learning/skills/").expanduser()
+                overlay_dir = Path("~/.Grandpa/learning/skills/").expanduser()
         self._overlay_dir = Path(overlay_dir).expanduser()
 
     # ------------------------------------------------------------------
@@ -112,9 +112,9 @@ class SkillManager:
                 manifest.description = overlay.description
             if overlay.few_shot:
                 new_metadata = dict(manifest.metadata) if manifest.metadata else {}
-                oj = dict(new_metadata.get("openjarvis", {}) or {})
+                oj = dict(new_metadata.get("Grandpa", {}) or {})
                 oj["few_shot"] = list(overlay.few_shot)
-                new_metadata["openjarvis"] = oj
+                new_metadata["Grandpa"] = oj
                 manifest.metadata = new_metadata
 
     # ------------------------------------------------------------------
@@ -218,7 +218,7 @@ class SkillManager:
         """
         examples: List[str] = []
         for name, manifest in self._skills.items():
-            oj = manifest.metadata.get("openjarvis", {}) if manifest.metadata else {}
+            oj = manifest.metadata.get("Grandpa", {}) if manifest.metadata else {}
             few_shot = oj.get("few_shot", []) or []
             for ex in few_shot:
                 if not isinstance(ex, dict):
@@ -245,7 +245,7 @@ class SkillManager:
 
         For each recurring sequence found by :class:`SkillDiscovery`, write
         a TOML skill manifest into *output_dir* (default
-        ``~/.openjarvis/skills/discovered/``).  Returns a list of dicts with
+        ``~/.Grandpa/skills/discovered/``).  Returns a list of dicts with
         ``name`` and ``path`` for each manifest written.
 
         Names are normalized to spec-compliant kebab-case (lowercase with
@@ -262,7 +262,7 @@ class SkillManager:
         discovered = discovery.analyze_traces(traces)
 
         if output_dir is None:
-            output_dir = Path("~/.openjarvis/skills/discovered/").expanduser()
+            output_dir = Path("~/.Grandpa/skills/discovered/").expanduser()
         output_dir = Path(output_dir).expanduser()
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -310,7 +310,7 @@ class SkillManager:
         # Escape backslashes and double quotes for basic TOML strings
         description = description.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'description = "{description}"')
-        lines.append('author = "openjarvis (auto-discovered)"')
+        lines.append('author = "Grandpa (auto-discovered)"')
         lines.append('tags = ["auto-discovered"]')
         lines.append("")
 
@@ -375,7 +375,7 @@ class SkillManager:
         manifest's ``name`` field equals ``name``.
         """
         if roots is None:
-            roots = [Path("~/.openjarvis/skills/").expanduser(), Path("./skills")]
+            roots = [Path("~/.Grandpa/skills/").expanduser(), Path("./skills")]
 
         matches: List[Path] = []
         for root in roots:

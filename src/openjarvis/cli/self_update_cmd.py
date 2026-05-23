@@ -1,9 +1,9 @@
-"""`jarvis self-update` — upgrade OpenJarvis to the latest release.
+"""`Grandpa self-update` — upgrade Grandpa to the latest release.
 
-Runs the right upgrade command for how the user installed OpenJarvis:
+Runs the right upgrade command for how the user installed Grandpa:
 
-- PyPI installs get ``pip install --upgrade openjarvis``.
-- uv-tool installs get ``uv tool upgrade openjarvis``.
+- PyPI installs get ``pip install --upgrade Grandpa``.
+- uv-tool installs get ``uv tool upgrade Grandpa``.
 - Editable git checkouts get ``git pull && uv sync`` in the checkout.
 
 The detection logic is shared with the post-command "new version
@@ -25,7 +25,7 @@ from openjarvis.cli._install_detect import detect_install
 @click.command(
     "self-update",
     help=(
-        "Upgrade OpenJarvis to the latest release. Detects how you "
+        "Upgrade Grandpa to the latest release. Detects how you "
         "installed (pip, uv tool, editable git) and runs the right "
         "command. Use --check to only print the upgrade command "
         "without running it."
@@ -46,7 +46,7 @@ def self_update(check: bool, yes: bool) -> None:
     info = detect_install()
     current = openjarvis.__version__
 
-    click.echo(f"Current OpenJarvis version: v{current}")
+    click.echo(f"Current Grandpa version: v{current}")
     click.echo(f"Install method: {info.kind}")
     click.echo(f"Upgrade command: {info.upgrade_command}")
 
@@ -86,4 +86,4 @@ def self_update(check: bool, yes: bool) -> None:
         )
         sys.exit(result.returncode)
 
-    click.echo("\nUpgrade complete. Re-run `jarvis --version` to confirm.")
+    click.echo("\nUpgrade complete. Re-run `Grandpa --version` to confirm.")

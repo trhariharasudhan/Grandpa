@@ -71,8 +71,8 @@ def _builtin_templates_dir() -> Path:
 
 
 def _user_templates_dir() -> Path:
-    """Return the path to user-defined templates (~/.openjarvis/templates/agents/)."""
-    return Path.home() / ".openjarvis" / "templates" / "agents"
+    """Return the path to user-defined templates (~/.Grandpa/templates/agents/)."""
+    return Path.home() / ".Grandpa" / "templates" / "agents"
 
 
 def discover_templates(
@@ -82,7 +82,7 @@ def discover_templates(
 
     Search order:
     1. Built-in templates shipped with the package (``templates/data/``).
-    2. User templates at ``~/.openjarvis/templates/agents/``.
+    2. User templates at ``~/.Grandpa/templates/agents/``.
     3. Any additional directories supplied via *extra_dirs*.
 
     Returns a list of :class:`AgentTemplate` instances sorted by name.

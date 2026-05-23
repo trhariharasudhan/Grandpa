@@ -1,4 +1,4 @@
-"""``jarvis config`` — configuration inspection commands."""
+"""``Grandpa config`` — configuration inspection commands."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def _get_config_path(path: str | None) -> Path:
 
     if path:
         return Path(path)
-    return Path(os.environ.get("OPENJARVIS_CONFIG", DEFAULT_CONFIG_PATH))
+    return Path(os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_PATH))
 
 
 def _show_hardware_info(console: Console, show_recommendations: bool = True) -> None:
@@ -316,7 +316,7 @@ def _coerce_value(value: str, target_type: type) -> object:
 @click.argument("key")
 @click.argument("value")
 def set_config(key: str, value: str) -> None:
-    """Set a configuration value (e.g. jarvis config set engine.ollama.host URL)."""
+    """Set a configuration value (e.g. Grandpa config set engine.ollama.host URL)."""
     import tomlkit
 
     from openjarvis.core.config import DEFAULT_CONFIG_DIR, validate_config_key
@@ -342,7 +342,7 @@ def set_config(key: str, value: str) -> None:
 
     # Load or create TOML document
     config_path = Path(
-        os.environ.get("OPENJARVIS_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
+        os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
     )
     if config_path.exists():
         doc = tomlkit.parse(config_path.read_text())

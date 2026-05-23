@@ -1,4 +1,4 @@
-"""``jarvis digest`` — display and play the morning digest."""
+"""``Grandpa digest`` — display and play the morning digest."""
 
 from __future__ import annotations
 
@@ -181,9 +181,9 @@ def digest(
         # Trigger on-demand generation
         console.print("[yellow]Generating fresh digest...[/yellow]")
         try:
-            from openjarvis.sdk import Jarvis
+            from openjarvis.sdk import Grandpa
 
-            with Jarvis() as j:
+            with Grandpa() as j:
                 j.ask("Generate my morning digest", agent="morning_digest")
         except Exception as exc:
             console.print(f"[red]Failed to generate digest: {exc}[/red]")

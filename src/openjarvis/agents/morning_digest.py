@@ -20,8 +20,8 @@ from openjarvis.core.types import Message, Role, ToolCall
 def _load_persona(persona_name: str) -> str:
     """Load a persona prompt file by name."""
     search_paths = [
-        Path("configs/openjarvis/prompts/personas") / f"{persona_name}.md",
-        Path.home() / ".openjarvis" / "prompts" / "personas" / f"{persona_name}.md",
+        Path("configs/Grandpa/prompts/personas") / f"{persona_name}.md",
+        Path.home() / ".Grandpa" / "prompts" / "personas" / f"{persona_name}.md",
     ]
     for p in search_paths:
         if p.exists():
@@ -37,7 +37,7 @@ class MorningDigestAgent(ToolUsingAgent):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         # Extract digest-specific kwargs before passing to parent
-        self._persona = kwargs.pop("persona", "jarvis")
+        self._persona = kwargs.pop("persona", "Grandpa")
         self._sections = kwargs.pop(
             "sections", ["messages", "calendar", "health", "world"]
         )
@@ -202,7 +202,7 @@ class MorningDigestAgent(ToolUsingAgent):
         tts_text = re.sub(r"\*{1,2}([^*]+)\*{1,2}", r"\1", tts_text)
         tts_text = tts_text.strip()
 
-        output_dir = str(Path.home() / ".openjarvis" / "digests")
+        output_dir = str(Path.home() / ".Grandpa" / "digests")
         tts_call = ToolCall(
             id="digest-tts-1",
             name="text_to_speech",

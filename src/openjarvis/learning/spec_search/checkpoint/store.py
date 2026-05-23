@@ -1,6 +1,6 @@
 """Git-backed checkpoint store for spec-search config rollback.
 
-A thin wrapper over a local git repository at ``<openjarvis_home>/.git``.
+A thin wrapper over a local git repository at ``<Grandpa_home>/.git``.
 The repo tracks ``config.toml``, ``agents/``, and ``tools/`` so that the
 diff between two commits captures the harness state at any point in time.
 The repo does NOT track ``learning/`` (sessions are append-only artifacts,
@@ -54,7 +54,7 @@ class CheckpointStore:
     root :
         The directory that *contains* the checkpoint repo (the repo's
         ``.git`` lives at ``root / ".git"``). For production use this is
-        ``~/.openjarvis/`` (or ``$OPENJARVIS_HOME``); for tests it's a
+        ``~/.Grandpa/`` (or ``$Grandpa_HOME``); for tests it's a
         ``tmp_path`` subdirectory.
     """
 
@@ -72,7 +72,7 @@ class CheckpointStore:
     def init(self) -> None:
         """Initialize the checkpoint repo if it doesn't exist.
 
-        Refuses to initialize if ``self.root`` is inside the OpenJarvis source
+        Refuses to initialize if ``self.root`` is inside the Grandpa source
         tree — this is the same defense-in-depth check as
         ``resolve_spec_search_root``: we never want a stray git repo writing
         config snapshots into the working copy.
@@ -89,7 +89,7 @@ class CheckpointStore:
             else:
                 raise ConfigurationError(
                     f"CheckpointStore root ({self._root}) is inside the "
-                    f"OpenJarvis source tree ({source_root}). Refusing to "
+                    f"Grandpa source tree ({source_root}). Refusing to "
                     "initialize a checkpoint repo there."
                 )
 
@@ -101,7 +101,7 @@ class CheckpointStore:
         if not (self._root / ".git").exists():
             self._git("init", "-q")
             self._git("config", "user.email", "spec-search@openjarvis.local")
-            self._git("config", "user.name", "OpenJarvis Spec Search")
+            self._git("config", "user.name", "Grandpa Spec Search")
 
         # Stage whatever tracked paths currently exist (it's OK if some
         # don't yet — the user may not have agents or tools dirs at first
@@ -111,7 +111,7 @@ class CheckpointStore:
             if target.exists():
                 self._git("add", rel)
 
-        # Allow empty so init succeeds even on a brand-new openjarvis home.
+        # Allow empty so init succeeds even on a brand-new Grandpa home.
         self._git(
             "commit",
             "--allow-empty",

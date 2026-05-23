@@ -1,4 +1,4 @@
-"""``jarvis start|stop|restart|status`` — daemon management commands."""
+"""``Grandpa start|stop|restart|status`` — daemon management commands."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ def _write_pid(pid: int) -> None:
 
 @click.group()
 def daemon() -> None:
-    """Manage the OpenJarvis server daemon."""
+    """Manage the Grandpa server daemon."""
 
 
 @daemon.command()
@@ -55,20 +55,20 @@ def start(
     model_name: str | None,
     agent_name: str | None,
 ) -> None:
-    """Start the OpenJarvis server as a background daemon."""
+    """Start the Grandpa server as a background daemon."""
     console = Console(stderr=True)
 
     existing = _read_pid()
     if existing is not None:
         console.print(f"[yellow]Server already running (PID {existing}).[/yellow]")
-        console.print("Use 'jarvis stop' to stop it first, or 'jarvis restart'.")
+        console.print("Use 'Grandpa stop' to stop it first, or 'Grandpa restart'.")
         sys.exit(1)
 
     config = load_config()
     bind_host = host or config.server.host
     bind_port = port or config.server.port
 
-    # Build command to run jarvis serve
+    # Build command to run Grandpa serve
     cmd = [sys.executable, "-m", "openjarvis.cli", "serve"]
     if host:
         cmd.extend(["--host", host])
@@ -93,7 +93,7 @@ def start(
     _write_pid(proc.pid)
 
     console.print(
-        f"[green]OpenJarvis server started[/green] (PID {proc.pid})\n"
+        f"[green]Grandpa server started[/green] (PID {proc.pid})\n"
         f"  URL: http://{bind_host}:{bind_port}\n"
         f"  Log: {_LOG_FILE}"
     )
@@ -101,7 +101,7 @@ def start(
 
 @daemon.command()
 def stop() -> None:
-    """Stop the running OpenJarvis server daemon."""
+    """Stop the running Grandpa server daemon."""
     console = Console(stderr=True)
     pid = _read_pid()
     if pid is None:
@@ -133,7 +133,7 @@ def stop() -> None:
 @daemon.command()
 @click.pass_context
 def restart(ctx: click.Context) -> None:
-    """Restart the OpenJarvis server daemon."""
+    """Restart the Grandpa server daemon."""
     console = Console(stderr=True)
     pid = _read_pid()
     if pid is not None:
@@ -144,7 +144,7 @@ def restart(ctx: click.Context) -> None:
 
 @daemon.command()
 def status() -> None:
-    """Show status of the OpenJarvis server daemon."""
+    """Show status of the Grandpa server daemon."""
     console = Console(stderr=True)
     pid = _read_pid()
     if pid is None:

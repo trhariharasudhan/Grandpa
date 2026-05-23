@@ -1,10 +1,10 @@
-# src/openjarvis/mining/_metrics.py
+# src/Grandpa/mining/_metrics.py
 """Pearl/vLLM Prometheus → MiningStats adapter.
 
 The original v1 design expected Pearl gateway metrics on ``:8339/metrics``.
 The live Pearl miner currently exposes the vLLM Prometheus endpoint on
 ``:8000/metrics`` instead, while the gateway listens on a Unix socket for miner
-RPC. Keep both parsers here so ``jarvis mine status`` can report a healthy
+RPC. Keep both parsers here so ``Grandpa mine status`` can report a healthy
 runtime even when share/block counters are not exposed by the gateway yet.
 
 If Pearl renames metrics, change the ``PROM_*`` constants here — that's the

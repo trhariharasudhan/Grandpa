@@ -488,7 +488,7 @@ class CloudEngine(InferenceEngine):
             raise EngineConnectionError(
                 "OpenAI client not available — set "
                 "OPENAI_API_KEY and install "
-                "openjarvis[inference-cloud]"
+                "Grandpa[inference-cloud]"
             )
         # Extract response_format before spreading kwargs into create_kwargs
         response_format = kwargs.pop("response_format", None)
@@ -566,7 +566,7 @@ class CloudEngine(InferenceEngine):
             raise EngineConnectionError(
                 "Anthropic client not available — set "
                 "ANTHROPIC_API_KEY and install "
-                "openjarvis[inference-cloud]"
+                "Grandpa[inference-cloud]"
             )
         system_text, chat_msgs = self._prepare_anthropic_messages(messages)
         create_kwargs: Dict[str, Any] = {
@@ -690,7 +690,7 @@ class CloudEngine(InferenceEngine):
             raise EngineConnectionError(
                 "Google client not available — set "
                 "GEMINI_API_KEY or GOOGLE_API_KEY and install "
-                "openjarvis[inference-google]"
+                "Grandpa[inference-google]"
             )
         # Build contents from messages, converting tool roles for Gemini
         system_text = ""

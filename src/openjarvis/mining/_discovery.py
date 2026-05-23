@@ -1,9 +1,9 @@
-# src/openjarvis/mining/_discovery.py
+# src/Grandpa/mining/_discovery.py
 """Capability detection for mining providers.
 
 Each function answers a single yes/no question and returns ``(ok: bool,
 info: str)`` where ``info`` is a short human-readable explanation surfaced
-verbatim by ``jarvis mine doctor``.
+verbatim by ``Grandpa mine doctor``.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def detect_for_engine_model(
     """Capability matrix for the ``vllm-pearl`` provider.
 
     Pure inspection. No subprocess, no Docker, no network. Used by
-    ``jarvis mine doctor`` and ``jarvis mine init``.
+    ``Grandpa mine doctor`` and ``Grandpa mine init``.
     """
     if provider_id != "vllm-pearl":
         return MiningCapabilities(False, reason=f"unknown provider {provider_id!r}")
@@ -84,7 +84,7 @@ def detect_for_engine_model(
     if spec is None:
         return MiningCapabilities(
             False,
-            reason=f"model {model!r} is not in OpenJarvis' Pearl model registry",
+            reason=f"model {model!r} is not in Grandpa' Pearl model registry",
         )
     if not spec.is_validated:
         return MiningCapabilities(
@@ -97,7 +97,7 @@ def detect_for_engine_model(
 
 
 # ---------------------------------------------------------------------------
-# Doctor checks (one per row of `jarvis mine doctor` output)
+# Doctor checks (one per row of `Grandpa mine doctor` output)
 # ---------------------------------------------------------------------------
 
 

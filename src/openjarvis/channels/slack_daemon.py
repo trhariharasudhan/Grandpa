@@ -16,7 +16,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_PID_FILE = str(Path.home() / ".openjarvis" / "slack-daemon.pid")
+_PID_FILE = str(Path.home() / ".Grandpa" / "slack-daemon.pid")
 
 
 def _to_slack_fmt(text: str) -> str:

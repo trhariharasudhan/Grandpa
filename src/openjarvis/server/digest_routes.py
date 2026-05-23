@@ -65,9 +65,9 @@ def create_digest_router(*, db_path: str = "") -> APIRouter:
     async def generate_digest():
         """Force re-generation of the digest."""
         try:
-            from openjarvis.sdk import Jarvis
+            from openjarvis.sdk import Grandpa
 
-            with Jarvis() as j:
+            with Grandpa() as j:
                 result = j.ask("Generate my morning digest", agent="morning_digest")
             return {"status": "ok", "text": result}
         except Exception as exc:

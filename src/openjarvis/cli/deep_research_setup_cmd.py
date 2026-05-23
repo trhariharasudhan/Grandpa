@@ -1,4 +1,4 @@
-"""``jarvis deep-research-setup`` — auto-detect local sources, ingest, and chat.
+"""``Grandpa deep-research-setup`` — auto-detect local sources, ingest, and chat.
 
 Walks the user through connecting local data sources (Apple Notes, iMessage,
 Obsidian), ingesting them into a shared KnowledgeStore, and launching an
@@ -256,7 +256,7 @@ def ingest_sources(
     ----------
     state_db:
         Path for the SyncEngine checkpoint database.  Defaults to
-        ``~/.openjarvis/sync_state.db`` when empty.
+        ``~/.Grandpa/sync_state.db`` when empty.
 
     Returns total chunks indexed across all sources.
     """

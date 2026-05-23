@@ -19,8 +19,8 @@ import click
 # ---------------------------------------------------------------------------
 
 FRAMEWORKS: Dict[str, Dict[str, str]] = {
-    "openjarvis": {"backend_id": "jarvis-agent"},
-    "openjarvis-distilled": {"backend_id": "jarvis-agent"},
+    "Grandpa": {"backend_id": "Grandpa-agent"},
+    "Grandpa-distilled": {"backend_id": "Grandpa-agent"},
     "hermes": {"backend_id": "hermes"},
     "openclaw": {"backend_id": "openclaw"},
 }

@@ -65,7 +65,7 @@ class DSPyAgentOptimizer:
             return {
                 "status": "error",
                 "reason": (
-                    "dspy not installed (pip install 'openjarvis[learning-dspy]')"
+                    "dspy not installed (pip install 'Grandpa[learning-dspy]')"
                 ),
             }
 

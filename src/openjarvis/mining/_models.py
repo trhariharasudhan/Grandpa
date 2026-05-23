@@ -12,7 +12,7 @@ PearlModelStatus = Literal["validated", "planned"]
 
 @dataclass(frozen=True)
 class PearlModelSpec:
-    """OpenJarvis support metadata for a Pearl-compatible model."""
+    """Grandpa support metadata for a Pearl-compatible model."""
 
     model_id: str
     base_model_id: str
@@ -45,7 +45,7 @@ PEARL_MODEL_SPECS: tuple[PearlModelSpec, ...] = (
         default_max_model_len=8192,
         notes=(
             "Public Pearl org artifact; requires H100/H200 validation in "
-            "OpenJarvis before mining is enabled by default."
+            "Grandpa before mining is enabled by default."
         ),
     ),
     PearlModelSpec(
@@ -56,7 +56,7 @@ PEARL_MODEL_SPECS: tuple[PearlModelSpec, ...] = (
         default_max_model_len=8192,
         notes=(
             "Public Pearl org artifact; requires H100/H200 validation in "
-            "OpenJarvis before mining is enabled by default."
+            "Grandpa before mining is enabled by default."
         ),
     ),
 )

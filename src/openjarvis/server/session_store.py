@@ -22,7 +22,7 @@ class SessionStore:
 
     def __init__(self, db_path: str = "") -> None:
         if not db_path:
-            db_path = str(Path.home() / ".openjarvis" / "sessions.db")
+            db_path = str(Path.home() / ".Grandpa" / "sessions.db")
         from openjarvis.security.file_utils import secure_create
 
         secure_create(Path(db_path))

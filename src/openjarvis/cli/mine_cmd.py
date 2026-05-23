@@ -1,4 +1,4 @@
-"""``jarvis mine`` command group."""
+"""``Grandpa mine`` command group."""
 
 from __future__ import annotations
 
@@ -290,7 +290,7 @@ def doctor() -> None:
 
     click.echo("Pearl node")
     if mining_cfg is None:
-        _row("RPC", False, "no [mining] config - run `jarvis mine init`")
+        _row("RPC", False, "no [mining] config - run `Grandpa mine init`")
     else:
         url = mining_cfg.extra.get("pearld_rpc_url", DEFAULT_PEARLD_RPC_URL)
         user = mining_cfg.extra.get("pearld_rpc_user", "rpcuser")
@@ -435,7 +435,7 @@ def init(
             if not cap.supported:
                 raise click.ClickException(
                     f"vllm-pearl not supported on this host: {cap.reason}\n"
-                    "See `jarvis mine models` and `jarvis mine doctor` for details."
+                    "See `Grandpa mine models` and `Grandpa mine doctor` for details."
                 )
         elif not local_model_path.exists():
             raise click.ClickException(
@@ -465,13 +465,13 @@ def init(
     if pearld_password_env not in os.environ:
         click.echo(
             f"Warning: ${pearld_password_env} is not set. "
-            "Set it before `jarvis mine start`.",
+            "Set it before `Grandpa mine start`.",
             err=True,
         )
 
     from openjarvis.core.config import DEFAULT_CONFIG_PATH
 
-    config_path = Path(os.environ.get("OPENJARVIS_CONFIG", DEFAULT_CONFIG_PATH))
+    config_path = Path(os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_PATH))
     config_path.parent.mkdir(parents=True, exist_ok=True)
     section = f"""
 [mining]
@@ -531,7 +531,7 @@ pearld_rpc_password_env = "{pearld_password_env}"
     if selected_provider == "vllm-pearl":
         click.echo(f"Resolving image {image}...")
         PearlDockerLauncher(client=_docker_from_env()).ensure_image(image)
-    click.echo("Done. Run `jarvis mine start` to begin mining.")
+    click.echo("Done. Run `Grandpa mine start` to begin mining.")
 
 
 @mine.command()
@@ -542,11 +542,11 @@ def start() -> None:
     cfg = load_config().mining
     if cfg is None:
         raise click.ClickException(
-            "no [mining] section in config - run `jarvis mine init`"
+            "no [mining] section in config - run `Grandpa mine init`"
         )
     provider = MinerRegistry.get(cfg.provider)()
     asyncio.run(provider.start(cfg))
-    click.echo(f"Started {cfg.provider}. Run `jarvis mine status` for live stats.")
+    click.echo(f"Started {cfg.provider}. Run `Grandpa mine status` for live stats.")
 
 
 @mine.command()
@@ -695,7 +695,7 @@ def validate_model(
         record(
             "Sidecar",
             False,
-            "absent - run `jarvis mine start` first",
+            "absent - run `Grandpa mine start` first",
         )
     else:
         record("Sidecar", True, f"present ({SIDECAR_PATH})")
@@ -1002,7 +1002,7 @@ def logs(tail_n: int, follow: bool) -> None:
     client = _docker_from_env()
     launcher = PearlDockerLauncher(client=client)
     try:
-        launcher._container = client.containers.get("openjarvis-pearl-miner")
+        launcher._container = client.containers.get("Grandpa-pearl-miner")
     except Exception as exc:  # noqa: BLE001
         raise click.ClickException(f"no mining container: {exc}") from exc
     click.echo(launcher.get_logs(tail=tail_n))

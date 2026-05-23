@@ -17,7 +17,7 @@ etc.) goes through ``context.metadata``.
 
 The hybrid harness at ``/matx/u/aspark/hybrid-local-cloud-compute`` is the
 reference implementation and stays untouched — these ports are the
-OpenJarvis-native versions of the same paradigms.
+Grandpa-native versions of the same paradigms.
 """
 
 from __future__ import annotations

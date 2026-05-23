@@ -342,8 +342,8 @@ class ProactiveAgent(ToolUsingAgent):
         return self._approval_store
 
     def _build_system_prompt(self) -> str:
-        user_md = _load_md_file(Path.home() / ".openjarvis" / "USER.md")
-        memory_md = _load_md_file(Path.home() / ".openjarvis" / "MEMORY.md")
+        user_md = _load_md_file(Path.home() / ".Grandpa" / "USER.md")
+        memory_md = _load_md_file(Path.home() / ".Grandpa" / "MEMORY.md")
         now = datetime.now()
         context_block = ""
         if user_md or memory_md:

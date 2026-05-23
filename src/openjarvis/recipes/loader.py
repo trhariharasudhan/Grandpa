@@ -1,6 +1,6 @@
 """Recipe loader — load and resolve TOML recipe files.
 
-Recipes are the universal composition format for OpenJarvis.  Each recipe
+Recipes are the universal composition format for openjarvis.  Each recipe
 specifies all five primitives (Intelligence, Engine, Agent, Tools, Learning)
 and carries a ``kind`` that determines its lifecycle:
 
@@ -24,8 +24,8 @@ except ModuleNotFoundError:
 _PROJECT_RECIPES_DIR = Path(__file__).resolve().parent / "data"
 _PROJECT_OPERATORS_DIR = _PROJECT_RECIPES_DIR / "operators"
 # User-level directories
-_USER_RECIPES_DIR = Path.home() / ".openjarvis" / "recipes"
-_USER_OPERATORS_DIR = Path.home() / ".openjarvis" / "operators"
+_USER_RECIPES_DIR = Path.home() / ".Grandpa" / "recipes"
+_USER_OPERATORS_DIR = Path.home() / ".Grandpa" / "operators"
 
 
 @dataclass(slots=True)
@@ -87,10 +87,10 @@ class Recipe:
     # ------------------------------------------------------------------ #
 
     def to_builder_kwargs(self) -> Dict[str, Any]:
-        """Convert recipe fields to kwargs for SystemBuilder/Jarvis.
+        """Convert recipe fields to kwargs for SystemBuilder/openjarvis.
 
         Returns a dict with only the non-None fields, keyed to match
-        the SystemBuilder fluent API or Jarvis constructor parameters.
+        the SystemBuilder fluent API or Grandpa constructor parameters.
         """
         kwargs: Dict[str, Any] = {}
         if self.model is not None:
@@ -288,8 +288,8 @@ def discover_recipes(
     Search order (later entries override earlier ones by name):
     1. Project ``recipes/data/`` directory (discrete recipes)
     2. Project ``recipes/data/operators/`` directory (operator recipes)
-    3. User ``~/.openjarvis/recipes/`` directory
-    4. User ``~/.openjarvis/operators/`` directory
+    3. User ``~/.Grandpa/recipes/`` directory
+    4. User ``~/.Grandpa/operators/`` directory
     5. Any additional directories in *extra_dirs*
 
     Args:

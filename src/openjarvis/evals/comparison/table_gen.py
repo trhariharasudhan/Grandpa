@@ -183,8 +183,8 @@ def _render_booktabs(
 T1_FRAMEWORKS_ORDER = [
     "openclaw",
     "hermes",
-    "openjarvis",
-    "openjarvis-distilled",
+    "Grandpa",
+    "Grandpa-distilled",
 ]
 
 

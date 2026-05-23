@@ -4,7 +4,7 @@ Two data sources are tried in order:
 1. HealthKit SQLite DB at ``~/Library/Health/healthdb_secure.sqlite`` (macOS
    with HealthKit sync enabled).
 2. Health Export XML placed by the user at
-   ``~/.openjarvis/connectors/apple_health_export/export.xml``.
+   ``~/.Grandpa/connectors/apple_health_export/export.xml``.
 
 Both are local-only; no API keys are needed.
 """

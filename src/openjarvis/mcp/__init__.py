@@ -1,4 +1,4 @@
-"""MCP (Model Context Protocol) layer for OpenJarvis."""
+"""MCP (Model Context Protocol) layer for openjarvis."""
 
 from openjarvis.mcp.client import MCPClient
 from openjarvis.mcp.protocol import MCPError, MCPNotification, MCPRequest, MCPResponse

@@ -1,4 +1,4 @@
-"""API key authentication middleware for the OpenJarvis server."""
+"""API key authentication middleware for the Grandpa server."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
     def __init__(self, app, api_key: str = "") -> None:  # noqa: ANN001
         super().__init__(app)
-        self._api_key = api_key or os.environ.get("OPENJARVIS_API_KEY", "")
+        self._api_key = api_key or os.environ.get("Grandpa_API_KEY", "")
 
     async def dispatch(self, request: Request, call_next):  # noqa: ANN001
         if self._api_key and self._requires_auth(request.url.path):
@@ -68,8 +68,8 @@ def check_bind_safety(host: str, *, api_key: str) -> None:
 
     if not is_loop and not api_key:
         logger.error(
-            "Binding to %s requires OPENJARVIS_API_KEY to be set. "
-            "Run: jarvis auth generate-key",
+            "Binding to %s requires Grandpa_API_KEY to be set. "
+            "Run: Grandpa auth generate-key",
             host,
         )
         sys.exit(1)

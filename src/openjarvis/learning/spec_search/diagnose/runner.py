@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
 You are a meta-engineer analyzing the performance of a local AI assistant \
-called OpenJarvis. Your job is to diagnose why the local student model fails \
+called openjarvis. Your job is to diagnose why the local student model fails \
 on certain tasks and identify root cause patterns.
 
 IMPORTANT — OUTPUT REQUIREMENT: You MUST end your response with a JSON array \
@@ -106,7 +106,7 @@ class DiagnosisRunner:
     session_id :
         Current session id.
     config :
-        Dict with config_path and openjarvis_home.
+        Dict with config_path and Grandpa_home.
     max_turns :
         Max teacher tool calls (default 30).
     max_cost_usd :

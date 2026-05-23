@@ -1,6 +1,6 @@
 """PinchBench grading helpers and scorer.
 
-Provides transcript translation (OpenJarvis events → PinchBench format),
+Provides transcript translation (Grandpa events → PinchBench format),
 automated grading (exec of embedded Python), LLM judge grading, and
 hybrid combination. Used by PinchBenchTaskEnv.run_tests() and the
 standalone PinchBenchScorer.
@@ -22,7 +22,7 @@ from openjarvis.evals.core.types import EvalRecord
 LOGGER = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Tool name mapping: OpenJarvis name → PinchBench-expected name
+# Tool name mapping: Grandpa name → PinchBench-expected name
 # ---------------------------------------------------------------------------
 _TOOL_NAME_MAP: Dict[str, str] = {
     "file_read": "read_file",
@@ -134,7 +134,7 @@ def _trace_to_transcript(trace: Any) -> List[Dict[str, Any]]:
 def _tool_results_to_transcript(
     tool_results: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Build transcript from JarvisAgentBackend tool_results list."""
+    """Build transcript from GrandpaAgentBackend tool_results list."""
     transcript: List[Dict[str, Any]] = []
     for tr in tool_results:
         tool_name = tr.get("tool_name", "unknown")

@@ -1,4 +1,4 @@
-# src/openjarvis/mining/vllm_pearl.py
+# src/Grandpa/mining/vllm_pearl.py
 """The v1 vllm-pearl mining provider.
 
 See spec ``docs/design/2026-05-05-vllm-pearl-mining-integration-design.md``.
@@ -60,7 +60,7 @@ class VllmPearlProvider(MiningProvider):
     async def start(self, config: MiningConfig) -> None:
         if isinstance(config.submit_target, PoolTarget):
             raise NotImplementedError(
-                "pool support is v2 — see openjarvis#XYZ. v1 only accepts "
+                "pool support is v2 — see Grandpa#XYZ. v1 only accepts "
                 "submit_target='solo'."
             )
         assert isinstance(config.submit_target, SoloTarget)

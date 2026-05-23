@@ -40,8 +40,8 @@ SPEC_FIELDS = frozenset(
 
 # Each entry maps a non-spec top-level field name to (target_kind, attr).
 # When target_kind is "field" the value is set directly on the SkillManifest
-# dataclass attribute.  When target_kind is "openjarvis_meta" the value is
-# stored under manifest.metadata["openjarvis"][attr].
+# dataclass attribute.  When target_kind is "Grandpa_meta" the value is
+# stored under manifest.metadata["Grandpa"][attr].
 FIELD_MAPPING: Dict[str, tuple[str, str]] = {
     "version": ("field", "version"),
     "author": ("field", "author"),
@@ -50,8 +50,8 @@ FIELD_MAPPING: Dict[str, tuple[str, str]] = {
     "required_capabilities": ("field", "required_capabilities"),
     "user_invocable": ("field", "user_invocable"),
     "disable_model_invocation": ("field", "disable_model_invocation"),
-    "platforms": ("openjarvis_meta", "platforms"),
-    "prerequisites": ("openjarvis_meta", "prerequisites"),
+    "platforms": ("Grandpa_meta", "platforms"),
+    "prerequisites": ("Grandpa_meta", "prerequisites"),
 }
 
 # Naming pattern: lowercase alnum + hyphens, no leading/trailing/consecutive hyphens
@@ -176,8 +176,8 @@ class SkillParser:
         raw_metadata = frontmatter.get("metadata") or {}
         if not isinstance(raw_metadata, dict):
             raw_metadata = {}
-        # Initialize openjarvis namespace
-        oj_meta = dict(raw_metadata.get("openjarvis") or {})
+        # Initialize Grandpa namespace
+        oj_meta = dict(raw_metadata.get("Grandpa") or {})
 
         # Apply FIELD_MAPPING for non-spec top-level fields
         unmapped: Dict[str, Any] = {}
@@ -188,7 +188,7 @@ class SkillParser:
                 target, attr = FIELD_MAPPING[key]
                 if target == "field":
                     setattr(manifest, attr, value)
-                else:  # "openjarvis_meta"
+                else:  # "Grandpa_meta"
                     oj_meta[attr] = value
             else:
                 unmapped[key] = value
@@ -200,7 +200,7 @@ class SkillParser:
                 )
 
         # Merge metadata.openjarvis.* into canonical fields (these override
-        # top-level mappings since they are explicit OpenJarvis-namespaced).
+        # top-level mappings since they are explicit Grandpa-namespaced).
         for key in (
             "version",
             "author",
@@ -217,10 +217,10 @@ class SkillParser:
         if unmapped:
             oj_meta["original_frontmatter"] = unmapped
 
-        # Stash the openjarvis metadata block back
+        # Stash the Grandpa metadata block back
         if oj_meta:
             new_metadata = dict(raw_metadata)
-            new_metadata["openjarvis"] = oj_meta
+            new_metadata["Grandpa"] = oj_meta
             manifest.metadata = new_metadata
         else:
             manifest.metadata = raw_metadata

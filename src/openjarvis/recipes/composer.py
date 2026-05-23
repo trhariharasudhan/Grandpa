@@ -64,7 +64,7 @@ def recipe_to_eval_suite(
         )
 
     has_agent = recipe.agent_type is not None
-    backend = recipe.eval_backend or ("jarvis-agent" if has_agent else "jarvis-direct")
+    backend = recipe.eval_backend or ("Grandpa-agent" if has_agent else "Grandpa-direct")
 
     model_cfg = ModelConfig(
         name=model_name,

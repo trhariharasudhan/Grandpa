@@ -1,4 +1,4 @@
-"""``jarvis operators`` — operator lifecycle management commands."""
+"""``Grandpa operators`` — operator lifecycle management commands."""
 
 from __future__ import annotations
 
@@ -264,7 +264,7 @@ def _find_manifest(operator_id: str):
 
 
 def _build_system_with_operators():
-    """Build a JarvisSystem with operators wired up."""
+    """Build a GrandpaSystem with operators wired up."""
     from openjarvis.operators.manager import OperatorManager
     from openjarvis.system import SystemBuilder
 
