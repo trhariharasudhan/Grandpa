@@ -5,13 +5,15 @@ import rehypeKatex from 'rehype-katex';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import 'katex/dist/katex.min.css';
-import { Copy, Check } from 'lucide-react';
+import { Copy, Check, ShieldCheck, X } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { ToolCallCard } from './ToolCallCard';
 import { ResearchTimeline } from './ResearchTimeline';
 import { rehypeCitations } from '../../lib/rehype-citations';
 import { XRayFooter } from './XRayFooter';
 import type { ChatMessage } from '../../types';
+import { approveLocalAction, denyLocalAction } from '../../lib/api';
+import { useAppStore } from '../../lib/store';
 
 function stripThinkTags(text: string): string {
   let cleaned = text.replace(/<think>[\s\S]*?<\/think>\s*/gi, '');
@@ -97,6 +99,105 @@ function CopyMessageButton({ content }: { content: string }) {
     >
       {copied ? <Check size={14} /> : <Copy size={14} />}
     </button>
+  );
+}
+
+function LocalActionConfirmationCard({ content }: { content: string }) {
+  const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const activeId = useAppStore((s) => s.activeId);
+  const addMessage = useAppStore((s) => s.addMessage);
+  const match = content.match(/Action ID:\s*([a-f0-9]{32})/i);
+  const actionMatch = content.match(/Action:\s*(.+)/i);
+  const actionId = match?.[1];
+  if (!actionId) return null;
+
+  const finish = async (decision: 'approve' | 'deny') => {
+    if (!activeId || busy || done) return;
+    setBusy(decision);
+    try {
+      const result = decision === 'approve'
+        ? await approveLocalAction(actionId)
+        : await denyLocalAction(actionId);
+      addMessage(activeId, {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        role: 'assistant',
+        content: result.message,
+        timestamp: Date.now(),
+      });
+      setDone(decision === 'approve' ? 'Approved' : 'Denied');
+    } catch (err) {
+      addMessage(activeId, {
+        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+        role: 'assistant',
+        content: err instanceof Error ? err.message : 'Could not update local action.',
+        timestamp: Date.now(),
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div
+      className="mt-3 rounded-2xl p-4"
+      style={{
+        background: 'color-mix(in srgb, var(--color-accent) 10%, var(--color-bg-secondary))',
+        border: '1px solid color-mix(in srgb, var(--color-accent) 34%, var(--color-border))',
+        boxShadow: '0 18px 44px -32px var(--color-accent)',
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
+          style={{ background: 'var(--color-accent-subtle)', color: 'var(--color-accent)' }}
+        >
+          <ShieldCheck size={18} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium mb-1" style={{ color: 'var(--color-text)' }}>
+            Confirm local action
+          </div>
+          <div className="text-xs mb-3" style={{ color: 'var(--color-text-secondary)' }}>
+            {actionMatch?.[1] || 'Grandpa wants to run a medium-risk local action.'}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => finish('approve')}
+              disabled={!!busy || !!done}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium"
+              style={{
+                background: 'var(--color-accent)',
+                color: 'var(--color-on-accent)',
+                opacity: busy || done ? 0.6 : 1,
+              }}
+            >
+              <ShieldCheck size={14} />
+              {busy === 'approve' ? 'Approving...' : 'Approve'}
+            </button>
+            <button
+              onClick={() => finish('deny')}
+              disabled={!!busy || !!done}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium"
+              style={{
+                background: 'var(--color-bg-tertiary)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-secondary)',
+                opacity: busy || done ? 0.6 : 1,
+              }}
+            >
+              <X size={14} />
+              {busy === 'deny' ? 'Denying...' : 'Deny'}
+            </button>
+            {done && (
+              <span className="text-xs self-center" style={{ color: 'var(--color-text-tertiary)' }}>
+                {done}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -188,6 +289,7 @@ export function MessageBubble({ message, isLive = false }: Props) {
               {cleanContent}
             </ReactMarkdown>
           </div>
+          <LocalActionConfirmationCard content={cleanContent} />
         </div>
       )}
 

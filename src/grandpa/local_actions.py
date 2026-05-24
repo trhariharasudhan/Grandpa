@@ -18,11 +18,22 @@ import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
+
+from grandpa.local_action_approvals import LocalActionApprovalStore
 
 logger = logging.getLogger(__name__)
 
-ActionStatus = Literal["handled", "blocked", "unsupported", "no_match", "error"]
+ActionStatus = Literal[
+    "handled",
+    "requires_confirmation",
+    "blocked",
+    "unsupported",
+    "no_match",
+    "error",
+    "cancelled",
+]
+PermissionStatus = Literal["allowed", "requires_confirmation", "blocked", "unsupported"]
 ActionKind = Literal[
     "app",
     "folder",
@@ -37,6 +48,8 @@ ActionKind = Literal[
 ]
 
 BLOCKED_MESSAGE = "I blocked this action for safety."
+CONFIRMATION_PREFIX = "This action needs your confirmation before I run it."
+CANCELLED_MESSAGE = "Cancelled the pending local action."
 
 
 @dataclass(frozen=True)
@@ -46,6 +59,8 @@ class LocalActionResult:
     target: str = ""
     message: str = ""
     tts_text: str = ""
+    permission: PermissionStatus | None = None
+    pending_action: dict[str, Any] | None = None
 
     @property
     def should_fallback(self) -> bool:
@@ -119,6 +134,10 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
     if not command:
         return LocalActionResult(status="no_match")
 
+    confirmation_result = _handle_confirmation_command(command)
+    if confirmation_result.status != "no_match":
+        return confirmation_result
+
     if _is_dangerous(command):
         result = LocalActionResult(
             status="blocked",
@@ -126,12 +145,19 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
             target=command,
             message=BLOCKED_MESSAGE,
             tts_text=BLOCKED_MESSAGE,
+            permission="blocked",
         )
+        _audit_decision(command, result, "blocked")
         _log_attempt(command, result)
         return result
 
     result = _parse_safe_action(command)
     if result.status == "no_match":
+        return result
+
+    result = _with_permission(command, result)
+    if result.status == "requires_confirmation":
+        _log_attempt(command, result)
         return result
 
     if not execute:
@@ -145,7 +171,9 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
             target=result.target,
             message="Windows local actions are not supported in this environment.",
             tts_text="Windows local actions are not supported here.",
+            permission="unsupported",
         )
+        _audit_decision(command, unsupported, "unsupported")
         _log_attempt(command, unsupported)
         return unsupported
 
@@ -158,10 +186,218 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
             target=result.target,
             message=f"I could not complete that local action: {exc}",
             tts_text="I could not complete that local action.",
+            permission=result.permission,
         )
 
+    _audit_decision(command, executed, executed.status)
     _log_attempt(command, executed)
     return executed
+
+
+def approve_pending_action(action_id: str | None = None) -> LocalActionResult:
+    store = LocalActionApprovalStore()
+    pending = store.get_pending(action_id) if action_id else store.latest_pending()
+    if not pending:
+        return LocalActionResult(
+            status="unsupported",
+            kind="blocked",
+            target=action_id or "",
+            message="There is no pending local action to approve.",
+            tts_text="There is no pending action.",
+            permission="unsupported",
+        )
+    if pending["status"] != "pending":
+        return LocalActionResult(
+            status="unsupported",
+            kind=pending["kind"],
+            target=pending["target"],
+            message="That pending local action is no longer available.",
+            tts_text="That pending action is no longer available.",
+            permission="unsupported",
+            pending_action=_pending_metadata(pending),
+        )
+    store.mark(pending["id"], "approved")
+    result = LocalActionResult(
+        status="handled",
+        kind=pending["kind"],
+        target=pending["target"],
+        message=pending["message"],
+        tts_text=pending["tts_text"],
+        permission="allowed",
+        pending_action=_pending_metadata(pending),
+    )
+    if result.kind in {"app", "folder", "url", "browser"} and sys.platform != "win32":
+        result = LocalActionResult(
+            status="unsupported",
+            kind=result.kind,
+            target=result.target,
+            message="Windows local actions are not supported in this environment.",
+            tts_text="Windows local actions are not supported here.",
+            permission="unsupported",
+            pending_action=_pending_metadata(pending),
+        )
+    else:
+        try:
+            executed = _execute(result)
+            result = LocalActionResult(
+                status=executed.status,
+                kind=executed.kind,
+                target=executed.target,
+                message=executed.message,
+                tts_text=executed.tts_text,
+                permission="allowed",
+                pending_action=_pending_metadata(pending),
+            )
+        except Exception as exc:  # pragma: no cover - defensive edge
+            result = LocalActionResult(
+                status="error",
+                kind=pending["kind"],
+                target=pending["target"],
+                message=f"I could not complete that local action: {exc}",
+                tts_text="I could not complete that local action.",
+                permission="allowed",
+                pending_action=_pending_metadata(pending),
+            )
+    _log_attempt(pending["source_text"], result)
+    return result
+
+
+def deny_pending_action(action_id: str | None = None) -> LocalActionResult:
+    store = LocalActionApprovalStore()
+    pending = store.get_pending(action_id) if action_id else store.latest_pending()
+    if not pending:
+        return LocalActionResult(
+            status="unsupported",
+            kind="blocked",
+            target=action_id or "",
+            message="There is no pending local action to cancel.",
+            tts_text="There is no pending action.",
+            permission="unsupported",
+        )
+    store.mark(pending["id"], "denied")
+    result = LocalActionResult(
+        status="cancelled",
+        kind=pending["kind"],
+        target=pending["target"],
+        message=CANCELLED_MESSAGE,
+        tts_text=CANCELLED_MESSAGE,
+        permission="requires_confirmation",
+        pending_action=_pending_metadata(pending),
+    )
+    _log_attempt(pending["source_text"], result)
+    return result
+
+
+def _handle_confirmation_command(command: str) -> LocalActionResult:
+    if command in {"yes", "confirm", "approve", "run it", "do it"}:
+        return approve_pending_action()
+    if command in {"no", "cancel", "deny", "stop", "don't", "do not"}:
+        return deny_pending_action()
+    return LocalActionResult(status="no_match")
+
+
+def _with_permission(command: str, result: LocalActionResult) -> LocalActionResult:
+    permission = classify_permission(command, result)
+    if permission == "allowed":
+        return LocalActionResult(
+            status=result.status,
+            kind=result.kind,
+            target=result.target,
+            message=result.message,
+            tts_text=result.tts_text,
+            permission="allowed",
+        )
+    if permission == "unsupported":
+        return LocalActionResult(
+            status="unsupported",
+            kind=result.kind,
+            target=result.target,
+            message="That local action is not supported yet.",
+            tts_text="That local action is not supported yet.",
+            permission="unsupported",
+        )
+    if permission == "blocked":
+        blocked = LocalActionResult(
+            status="blocked",
+            kind="blocked",
+            target=command,
+            message=BLOCKED_MESSAGE,
+            tts_text=BLOCKED_MESSAGE,
+            permission="blocked",
+        )
+        _audit_decision(command, blocked, "blocked")
+        return blocked
+
+    pending = LocalActionApprovalStore().create_pending(
+        source_text=command,
+        kind=result.kind or "",
+        target=result.target,
+        message=result.message,
+        tts_text=result.tts_text,
+    )
+    message = (
+        f"{CONFIRMATION_PREFIX}\n\n"
+        f"Action: {command}\n"
+        f"Permission: requires_confirmation\n"
+        f"Action ID: {pending['id']}\n\n"
+        "Reply with yes/confirm to approve, or cancel to deny."
+    )
+    return LocalActionResult(
+        status="requires_confirmation",
+        kind=result.kind,
+        target=result.target,
+        message=message,
+        tts_text="Please confirm this local action.",
+        permission="requires_confirmation",
+        pending_action=_pending_metadata(pending),
+    )
+
+
+def classify_permission(command: str, result: LocalActionResult) -> PermissionStatus:
+    if result.kind == "automation":
+        return "requires_confirmation"
+    if result.kind == "folder" and not _is_known_safe_folder(result.target):
+        return "requires_confirmation"
+    if result.kind == "url" and not _is_known_safe_url(result.target):
+        return "requires_confirmation"
+    if result.kind in {"app", "folder", "url", "browser", "time", "system_info", "screen", "screenshot"}:
+        return "allowed"
+    if result.kind == "blocked":
+        return "blocked"
+    return "unsupported"
+
+
+def _pending_metadata(pending: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": pending["id"],
+        "status": pending["status"],
+        "kind": pending["kind"],
+        "target": pending["target"],
+        "source_text": pending["source_text"],
+        "expires_at": pending["expires_at"],
+    }
+
+
+def _audit_decision(command: str, result: LocalActionResult, decision: str) -> None:
+    try:
+        LocalActionApprovalStore().audit(
+            action_id=(result.pending_action or {}).get("id"),
+            decision=decision,
+            source_text=command,
+            kind=result.kind,
+            target=result.target,
+            detail={"permission": result.permission, "status": result.status},
+        )
+    except Exception:
+        logger.debug("Failed to audit local action decision", exc_info=True)
+
+
+def _is_known_safe_url(url: str) -> bool:
+    return url in {value[0] for value in _URL_ALLOWLIST.values()}
+
+
+def _is_known_safe_folder(path: str) -> bool:
+    return path in {str(Path.home() / "Downloads"), str(Path("D:\\"))}
 
 
 def _normalise(text: str) -> str:
@@ -236,6 +472,16 @@ def _parse_safe_action(command: str) -> LocalActionResult:
             target=str(folder),
             message=f"Opening {open_target.title()}.",
             tts_text=f"Opening {open_target.title()}.",
+        )
+
+    unknown_folder = _unknown_folder_path(open_target)
+    if unknown_folder is not None:
+        return LocalActionResult(
+            status="handled",
+            kind="folder",
+            target=str(unknown_folder),
+            message=f"Opening {unknown_folder}.",
+            tts_text="Opening that folder.",
         )
 
     if open_target in _APP_ALLOWLIST:
@@ -478,6 +724,14 @@ def _strip_open_prefix(command: str) -> str | None:
     return None
 
 
+def _unknown_folder_path(target: str) -> Path | None:
+    if re.match(r"^[a-z]:[\\/]", target, re.I):
+        return Path(target)
+    if target.startswith(("~\\", "~/")):
+        return Path.home() / target[2:]
+    return None
+
+
 def _folder_for(target: str) -> Path | None:
     if target in {"downloads", "downloads folder", "download folder"}:
         return Path.home() / "Downloads"
@@ -614,4 +868,11 @@ def _log_attempt(command: str, result: LocalActionResult) -> None:
         logger.debug("Failed to record local action activity", exc_info=True)
 
 
-__all__ = ["BLOCKED_MESSAGE", "LocalActionResult", "handle_local_action"]
+__all__ = [
+    "BLOCKED_MESSAGE",
+    "LocalActionResult",
+    "approve_pending_action",
+    "classify_permission",
+    "deny_pending_action",
+    "handle_local_action",
+]

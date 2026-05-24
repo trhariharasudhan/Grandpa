@@ -75,6 +75,8 @@ def _local_action_response(
             "kind": action_result.kind,
             "target": action_result.target,
             "tts_text": action_result.tts_text,
+            "permission": getattr(action_result, "permission", None),
+            "pending_action": getattr(action_result, "pending_action", None),
         },
     )
 
@@ -584,6 +586,8 @@ async def _handle_local_action_stream(model: str, action_result, complexity_info
             "kind": action_result.kind,
             "target": action_result.target,
             "tts_text": action_result.tts_text,
+            "permission": getattr(action_result, "permission", None),
+            "pending_action": getattr(action_result, "pending_action", None),
         }
         if complexity_info is not None:
             finish_dict["complexity"] = complexity_info.model_dump()
@@ -853,6 +857,52 @@ async def clear_personal_memory():
     from grandpa.memory_context import clear_memory
 
     return clear_memory()
+
+
+@router.get("/v1/local-actions/pending")
+async def pending_local_actions():
+    """List pending local actions awaiting user confirmation."""
+    from grandpa.local_action_approvals import LocalActionApprovalStore
+
+    return {"actions": LocalActionApprovalStore().list_pending()}
+
+
+@router.post("/v1/local-actions/{action_id}/approve")
+async def approve_local_action(action_id: str):
+    """Approve and run a pending local action."""
+    from grandpa.local_actions import approve_pending_action
+
+    result = approve_pending_action(action_id)
+    return {
+        "message": result.message,
+        "local_action": {
+            "status": result.status,
+            "kind": result.kind,
+            "target": result.target,
+            "tts_text": result.tts_text,
+            "permission": result.permission,
+            "pending_action": result.pending_action,
+        },
+    }
+
+
+@router.post("/v1/local-actions/{action_id}/deny")
+async def deny_local_action(action_id: str):
+    """Deny a pending local action."""
+    from grandpa.local_actions import deny_pending_action
+
+    result = deny_pending_action(action_id)
+    return {
+        "message": result.message,
+        "local_action": {
+            "status": result.status,
+            "kind": result.kind,
+            "target": result.target,
+            "tts_text": result.tts_text,
+            "permission": result.permission,
+            "pending_action": result.pending_action,
+        },
+    }
 
 
 @router.get("/health")

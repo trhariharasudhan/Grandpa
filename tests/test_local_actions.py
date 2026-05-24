@@ -1,7 +1,24 @@
 from __future__ import annotations
 
+import pytest
+
 import grandpa.local_actions as local_actions
+from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.local_actions import BLOCKED_MESSAGE, handle_local_action
+
+
+@pytest.fixture(autouse=True)
+def _approval_store_fixture(tmp_path, monkeypatch):
+    store = LocalActionApprovalStore(tmp_path / "approvals.db")
+    monkeypatch.setattr(local_actions, "LocalActionApprovalStore", lambda: store)
+    return store
+
+
+def test_safe_auto_run_command_is_allowed_without_execution():
+    result = handle_local_action("open notepad", execute=False)
+
+    assert result.status == "handled"
+    assert result.permission == "allowed"
 
 
 def test_safe_app_command_is_recognized_without_execution():
@@ -93,15 +110,17 @@ def test_purchase_browser_command_is_blocked():
 def test_type_command_is_allowlisted_without_execution():
     result = handle_local_action("type hello", execute=False)
 
-    assert result.status == "handled"
+    assert result.status == "requires_confirmation"
+    assert result.permission == "requires_confirmation"
     assert result.kind == "automation"
     assert result.target == "type|hello"
+    assert result.pending_action
 
 
 def test_enter_command_is_allowlisted_without_execution():
     result = handle_local_action("press enter", execute=False)
 
-    assert result.status == "handled"
+    assert result.status == "requires_confirmation"
     assert result.kind == "automation"
     assert result.target == "press|enter"
 
@@ -109,7 +128,7 @@ def test_enter_command_is_allowlisted_without_execution():
 def test_copy_selected_text_is_allowlisted_without_execution():
     result = handle_local_action("copy selected text", execute=False)
 
-    assert result.status == "handled"
+    assert result.status == "requires_confirmation"
     assert result.kind == "automation"
     assert result.target == "hotkey|ctrl+c"
 
@@ -119,3 +138,31 @@ def test_destructive_desktop_command_is_blocked():
 
     assert result.status == "blocked"
     assert result.message == BLOCKED_MESSAGE
+
+
+def test_pending_action_can_be_denied(_approval_store_fixture):
+    store = _approval_store_fixture
+    pending = handle_local_action("type hello", execute=False)
+    denied = handle_local_action("cancel")
+
+    assert pending.status == "requires_confirmation"
+    assert denied.status == "cancelled"
+    assert store.get_pending(pending.pending_action["id"])["status"] == "denied"
+
+
+def test_expired_pending_action_is_not_approved(_approval_store_fixture):
+    store = _approval_store_fixture
+    pending = handle_local_action("type hello", execute=False)
+    store.expire_old(now=pending.pending_action["expires_at"] + 1)
+    approved = local_actions.approve_pending_action(pending.pending_action["id"])
+
+    assert approved.status == "unsupported"
+    assert "no longer available" in approved.message
+
+
+def test_unknown_url_requires_confirmation():
+    result = handle_local_action("open https://example.com", execute=False)
+
+    assert result.status == "requires_confirmation"
+    assert result.kind == "url"
+    assert result.permission == "requires_confirmation"

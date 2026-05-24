@@ -928,6 +928,43 @@ export async function clearPersonalMemory(): Promise<void> {
   if (!res.ok) throw new Error('Failed to clear personal memory');
 }
 
+export interface LocalActionPending {
+  id: string;
+  status: string;
+  kind: string;
+  target: string;
+  source_text: string;
+  expires_at: number;
+}
+
+export interface LocalActionDecisionResponse {
+  message: string;
+  local_action?: {
+    status: string;
+    kind: string;
+    target: string;
+    tts_text?: string;
+    permission?: string;
+    pending_action?: LocalActionPending;
+  };
+}
+
+export async function approveLocalAction(actionId: string): Promise<LocalActionDecisionResponse> {
+  const res = await fetch(`${getBase()}/v1/local-actions/${encodeURIComponent(actionId)}/approve`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to approve local action');
+  return res.json();
+}
+
+export async function denyLocalAction(actionId: string): Promise<LocalActionDecisionResponse> {
+  const res = await fetch(`${getBase()}/v1/local-actions/${encodeURIComponent(actionId)}/deny`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to deny local action');
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Approvals
 // ---------------------------------------------------------------------------
