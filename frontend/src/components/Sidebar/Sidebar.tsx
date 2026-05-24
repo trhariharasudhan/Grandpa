@@ -15,6 +15,7 @@ import {
   Monitor,
   ScrollText,
   Database,
+  Brain,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -50,6 +51,7 @@ export function Sidebar() {
     { path: '/', icon: MessageSquare, label: 'Chat' },
     { path: '/dashboard', icon: BarChart3, label: 'Assistant Home' },
     { path: '/data-sources', icon: Database, label: 'Context' },
+    { path: '/memory', icon: Brain, label: 'Memory' },
     { path: '/agents', icon: Bot, label: 'Agents' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },

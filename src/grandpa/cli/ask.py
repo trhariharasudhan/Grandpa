@@ -606,10 +606,35 @@ def ask(
     console = Console(stderr=True)
     query_text = " ".join(query)
 
+    from grandpa.memory_context import handle_memory_command, remember_conversation
+
+    remember_conversation("user", query_text)
+    memory_result = handle_memory_command(query_text)
+    if not memory_result.should_fallback:
+        remember_conversation("assistant", memory_result.message)
+        if output_json:
+            click.echo(
+                json_mod.dumps(
+                    {
+                        "content": memory_result.message,
+                        "local_action": {
+                            "status": memory_result.status,
+                            "kind": memory_result.kind,
+                            "target": memory_result.target,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            click.echo(memory_result.message)
+        return
+
     from grandpa.local_actions import handle_local_action
 
     local_action = handle_local_action(query_text)
     if not local_action.should_fallback:
+        remember_conversation("assistant", local_action.message)
         if output_json:
             click.echo(
                 json_mod.dumps(
@@ -812,6 +837,7 @@ def ask(
             )
         else:
             click.echo(result.content)
+        remember_conversation("assistant", result.content)
 
         if enable_profile:
             _print_profile(
@@ -872,10 +898,12 @@ def ask(
         sys.exit(1)
 
     # Output
+    content = result.get("content", "")
+    remember_conversation("assistant", content)
     if output_json:
         click.echo(json_mod.dumps(result, indent=2))
     else:
-        click.echo(result.get("content", ""))
+        click.echo(content)
 
     if enable_profile:
         _print_profile(

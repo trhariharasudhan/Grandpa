@@ -56,6 +56,15 @@ def _local_action_response(
     complexity_info=None,
 ) -> ChatCompletionResponse:
     choice_msg = ChoiceMessage(role="assistant", content=action_result.message)
+    try:
+        from grandpa.memory_context import remember_conversation
+
+        remember_conversation("assistant", action_result.message)
+    except Exception:
+        logging.getLogger("grandpa.server").debug(
+            "Assistant memory logging failed",
+            exc_info=True,
+        )
     return ChatCompletionResponse(
         model=model,
         choices=[Choice(message=choice_msg, finish_reason="stop")],
@@ -77,6 +86,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
     original_user_text = _last_user_text(request_body)
+    if original_user_text:
+        try:
+            from grandpa.memory_context import remember_conversation
+
+            remember_conversation("user", original_user_text)
+        except Exception:
+            logging.getLogger("grandpa.server").debug(
+                "Conversation memory logging failed",
+                exc_info=True,
+            )
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
@@ -162,7 +181,18 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             )
 
     if original_user_text:
+        from grandpa.memory_context import handle_memory_command
         from grandpa.local_actions import handle_local_action
+
+        memory_result = handle_memory_command(original_user_text)
+        if not memory_result.should_fallback:
+            if request_body.stream:
+                return await _handle_local_action_stream(
+                    model,
+                    memory_result,
+                    complexity_info,
+                )
+            return _local_action_response(model, memory_result, complexity_info)
 
         action_result = handle_local_action(original_user_text)
         if not action_result.should_fallback:
@@ -231,6 +261,15 @@ def _handle_direct(
             **kwargs,
         )
     content = result.get("content", "")
+    try:
+        from grandpa.memory_context import remember_conversation
+
+        remember_conversation("assistant", content)
+    except Exception:
+        logging.getLogger("grandpa.server").debug(
+            "Assistant memory logging failed",
+            exc_info=True,
+        )
     usage = result.get("usage", {})
 
     choice_msg = ChoiceMessage(role="assistant", content=content)
@@ -294,6 +333,16 @@ def _handle_agent(
     finally:
         agent._model = original_model
 
+    try:
+        from grandpa.memory_context import remember_conversation
+
+        remember_conversation("assistant", result.content)
+    except Exception:
+        logging.getLogger("grandpa.server").debug(
+            "Assistant memory logging failed",
+            exc_info=True,
+        )
+
     usage = UsageInfo(
         prompt_tokens=result.metadata.get("prompt_tokens", 0),
         completion_tokens=result.metadata.get("completion_tokens", 0),
@@ -356,6 +405,7 @@ async def _handle_stream(
     use_cloud = is_cloud_model(model)
 
     async def generate():
+        full_content = ""
         # Send role chunk first
         first_chunk = ChatCompletionChunk(
             id=chunk_id,
@@ -408,6 +458,7 @@ async def _handle_stream(
                         max_tokens=req.max_tokens,
                     )
             async for token in token_iter:
+                full_content += token
                 chunk = ChatCompletionChunk(
                     id=chunk_id,
                     model=model,
@@ -443,6 +494,17 @@ async def _handle_stream(
             yield f"data: {error_chunk.model_dump_json()}\n\n"
             yield "data: [DONE]\n\n"
             return
+
+        if full_content:
+            try:
+                from grandpa.memory_context import remember_conversation
+
+                remember_conversation("assistant", full_content)
+            except Exception:
+                logging.getLogger("grandpa.server").debug(
+                    "Assistant memory logging failed",
+                    exc_info=True,
+                )
 
         # Send finish chunk with usage data if available
         import json as _json
@@ -501,6 +563,15 @@ async def _handle_local_action_stream(model: str, action_result, complexity_info
                 ],
             )
             yield f"data: {content_chunk.model_dump_json()}\n\n"
+            try:
+                from grandpa.memory_context import remember_conversation
+
+                remember_conversation("assistant", action_result.message)
+            except Exception:
+                logging.getLogger("grandpa.server").debug(
+                    "Assistant memory logging failed",
+                    exc_info=True,
+                )
 
         finish_chunk = ChatCompletionChunk(
             id=chunk_id,
@@ -766,6 +837,22 @@ async def server_info(request: Request):
         "agent": agent_id,
         "engine": getattr(request.app.state, "engine_name", ""),
     }
+
+
+@router.get("/v1/personal-memory")
+async def personal_memory():
+    """Return local personal memory and recent activity."""
+    from grandpa.memory_context import memory_summary
+
+    return memory_summary()
+
+
+@router.delete("/v1/personal-memory")
+async def clear_personal_memory():
+    """Clear local personal memory and recent activity."""
+    from grandpa.memory_context import clear_memory
+
+    return clear_memory()
 
 
 @router.get("/health")

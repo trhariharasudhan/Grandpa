@@ -845,6 +845,36 @@ export interface MemoryConfig {
   context_max_tokens: number;
 }
 
+export interface PersonalMemoryItem {
+  id: number;
+  created_at: number;
+  updated_at: number;
+  category: string;
+  key: string;
+  value: string;
+  source: string;
+}
+
+export interface PersonalActivityItem {
+  id: number;
+  created_at: number;
+  category: string;
+  action: string;
+  target: string | null;
+  detail: string | null;
+  status: string;
+}
+
+export interface PersonalMemorySummary {
+  memories: PersonalMemoryItem[];
+  recent_activity: PersonalActivityItem[];
+  storage: {
+    backend: string;
+    path: string;
+    local_only: boolean;
+  };
+}
+
 export async function getMemoryStats(): Promise<MemoryStats> {
   const res = await fetch(`${getBase()}/v1/memory/stats`);
   if (!res.ok) throw new Error('Failed to fetch memory stats');
@@ -885,6 +915,17 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
   const res = await fetch(`${getBase()}/v1/memory/config`);
   if (!res.ok) throw new Error('Failed to fetch memory config');
   return res.json();
+}
+
+export async function fetchPersonalMemory(): Promise<PersonalMemorySummary> {
+  const res = await fetch(`${getBase()}/v1/personal-memory`);
+  if (!res.ok) throw new Error('Failed to fetch personal memory');
+  return res.json();
+}
+
+export async function clearPersonalMemory(): Promise<void> {
+  const res = await fetch(`${getBase()}/v1/personal-memory`, { method: 'DELETE' });
+  if (!res.ok) throw new Error('Failed to clear personal memory');
 }
 
 // ---------------------------------------------------------------------------

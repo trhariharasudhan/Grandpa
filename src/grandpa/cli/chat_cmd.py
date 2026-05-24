@@ -201,12 +201,26 @@ def chat(
                     console.print(f"[bold]{role}:[/bold] {msg.content[:200]}")
             continue
 
+        from grandpa.memory_context import handle_memory_command, remember_conversation
+
+        remember_conversation("user", user_input)
+        memory_result = handle_memory_command(user_input)
+        if not memory_result.should_fallback:
+            history.append(Message(role=Role.USER, content=user_input))
+            history.append(Message(role=Role.ASSISTANT, content=memory_result.message))
+            remember_conversation("assistant", memory_result.message)
+            console.print()
+            console.print(Markdown(memory_result.message))
+            console.print()
+            continue
+
         from grandpa.local_actions import handle_local_action
 
         local_action = handle_local_action(user_input)
         if not local_action.should_fallback:
             history.append(Message(role=Role.USER, content=user_input))
             history.append(Message(role=Role.ASSISTANT, content=local_action.message))
+            remember_conversation("assistant", local_action.message)
             console.print()
             console.print(Markdown(local_action.message))
             console.print()
@@ -229,6 +243,7 @@ def chat(
                     if isinstance(result, dict)
                     else str(result)
                 )
+            remember_conversation("assistant", content)
 
             history.append(Message(role=Role.ASSISTANT, content=content))
             console.print()

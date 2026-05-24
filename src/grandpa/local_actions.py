@@ -597,6 +597,21 @@ def _log_attempt(command: str, result: LocalActionResult) -> None:
         result.kind,
         result.target,
     )
+    try:
+        from grandpa.memory_context import record_activity
+
+        action = "blocked" if result.status == "blocked" else "open"
+        if result.kind in {"time", "system_info", "screen", "screenshot", "automation"}:
+            action = result.kind
+        record_activity(
+            result.kind if result.kind != "blocked" else "safety",
+            action,
+            result.target,
+            command,
+            result.status,
+        )
+    except Exception:
+        logger.debug("Failed to record local action activity", exc_info=True)
 
 
 __all__ = ["BLOCKED_MESSAGE", "LocalActionResult", "handle_local_action"]
