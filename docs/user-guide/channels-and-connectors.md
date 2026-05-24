@@ -296,10 +296,6 @@ We recommend creating **one Slack app** that handles both. The App Manifest belo
    - Name it "socket" → add the `connections:write` scope → Generate
    - Copy the token (`xapp-...`)
 
-8. **(Optional) Set the app icon:**
-   - Go to Basic Information → Display Information
-   - Upload the [grandpa icon](https://github.com/grandpa/grandpa/blob/main/assets/grandpa-slack-icon.jpg)
-
 ### Required Bot Token Scopes (reference)
 
 | Scope | Purpose |

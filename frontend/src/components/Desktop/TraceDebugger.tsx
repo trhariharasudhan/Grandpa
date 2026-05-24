@@ -47,24 +47,24 @@ interface TraceDetail {
 // ---------------------------------------------------------------------------
 
 const STEP_COLORS: Record<string, string> = {
-  route: '#89b4fa',
-  retrieve: '#a6e3a1',
-  generate: '#f9e2af',
-  tool_call: '#cba6f7',
-  respond: '#f38ba8',
+  route: '#6244c5',
+  retrieve: '#3ddc97',
+  generate: '#ffc448',
+  tool_call: '#7b63dc',
+  respond: '#ff6b6b',
 };
 
-const DEFAULT_STEP_COLOR = '#9399b2';
+const DEFAULT_STEP_COLOR = '#948da8';
 
 const colors = {
-  bg: '#1e1e2e',
-  surface: '#282840',
-  surfaceHover: '#313150',
-  text: '#cdd6f4',
-  textMuted: '#a6adc8',
-  accent: '#89b4fa',
-  border: '#45475a',
-  red: '#f38ba8',
+  bg: '#12141d',
+  surface: '#191c29',
+  surfaceHover: '#222638',
+  text: '#fafafb',
+  textMuted: '#c8c3da',
+  accent: '#6244c5',
+  border: '#343a40',
+  red: '#ff6b6b',
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -290,7 +290,7 @@ const styles: Record<string, React.CSSProperties> = {
     textAlign: 'center',
   },
   errorBanner: {
-    background: 'rgba(243,139,168,0.1)',
+    background: 'rgba(255,107,107,0.12)',
     border: `1px solid ${colors.red}`,
     borderRadius: 8,
     padding: '10px 16px',

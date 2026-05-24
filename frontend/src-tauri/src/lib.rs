@@ -547,7 +547,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 "clone",
                 "--depth",
                 "1",
-                "https://github.com/grandpa/Grandpa.git",
+                "https://github.com/grandpa/grandpa.git",
                 &clone_target,
             ])
             .stdout(std::process::Stdio::null())
@@ -564,7 +564,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download Grandpa: {}. \
-                         Clone manually: git clone https://github.com/grandpa/Grandpa.git {}",
+                         Clone manually: git clone https://github.com/grandpa/grandpa.git {}",
                         stderr.trim(),
                         clone_target,
                     ));
@@ -574,7 +574,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
                         "Failed to download Grandpa: {}. \
-                         Clone manually: git clone https://github.com/grandpa/Grandpa.git {}",
+                         Clone manually: git clone https://github.com/grandpa/grandpa.git {}",
                         e, clone_target,
                     ));
                     return;
@@ -994,21 +994,6 @@ async fn run_grandpa_command(args: Vec<String>) -> Result<String, String> {
     }
 }
 
-#[tauri::command]
-async fn fetch_savings(api_url: String) -> Result<serde_json::Value, String> {
-    let base = if api_url.is_empty() {
-        api_base()
-    } else {
-        api_url
-    };
-    let resp = reqwest::get(format!("{}/v1/savings", base))
-        .await
-        .map_err(|e| format!("Connection failed: {}", e))?;
-    resp.json()
-        .await
-        .map_err(|e| format!("Invalid response: {}", e))
-}
-
 /// Transcribe audio via the speech API endpoint.
 #[tauri::command]
 async fn transcribe_audio(
@@ -1037,33 +1022,6 @@ async fn transcribe_audio(
         .await
         .map_err(|e| format!("Invalid response: {}", e))?;
     Ok(body)
-}
-
-/// Submit savings to Supabase leaderboard.
-#[tauri::command]
-async fn submit_savings(
-    supabase_url: String,
-    supabase_key: String,
-    payload: serde_json::Value,
-) -> Result<bool, String> {
-    if supabase_url.is_empty() || supabase_key.is_empty() {
-        return Ok(false);
-    }
-    let client = reqwest::Client::new();
-    let resp = client
-        .post(format!(
-            "{}/rest/v1/savings_entries?on_conflict=anon_id",
-            supabase_url
-        ))
-        .header("Content-Type", "application/json")
-        .header("apikey", &supabase_key)
-        .header("Authorization", format!("Bearer {}", supabase_key))
-        .header("Prefer", "resolution=merge-duplicates")
-        .json(&payload)
-        .send()
-        .await
-        .map_err(|e| format!("Supabase POST failed: {}", e))?;
-    Ok(resp.status().is_success())
 }
 
 // ---------------------------------------------------------------------------
@@ -1628,27 +1586,29 @@ pub fn run() {
                 .item(&quit)
                 .build()?;
 
-            let _tray = TrayIconBuilder::with_id("main")
-                .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Grandpa")
-                .menu(&menu)
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "show" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            if window.is_visible().unwrap_or(false) {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
+            if let Some(icon) = app.default_window_icon() {
+                let _tray = TrayIconBuilder::with_id("main")
+                    .icon(icon.clone())
+                    .tooltip("Grandpa")
+                    .menu(&menu)
+                    .on_menu_event(move |app, event| match event.id().as_ref() {
+                        "show" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
                             }
                         }
-                    }
-                    "quit" => {
-                        app.exit(0);
-                    }
-                    _ => {}
-                })
-                .build(app)?;
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    })
+                    .build(app)?;
+            }
 
             // Create native macOS overlay panel
             #[cfg(target_os = "macos")]
@@ -1696,8 +1656,6 @@ pub fn run() {
             fetch_agents,
             fetch_models,
             run_grandpa_command,
-            fetch_savings,
-            submit_savings,
             transcribe_audio,
             speech_health,
             pull_ollama_model,

@@ -1,11 +1,4 @@
-import type { ModelInfo, SavingsData, ServerInfo } from '../types';
-
-// ---------------------------------------------------------------------------
-// Supabase config — safe to embed (RLS protects writes)
-// ---------------------------------------------------------------------------
-
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://mtbtgpwzrbostweaanpr.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10YnRncHd6cmJvc3R3ZWFhbnByIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMxODk0OTQsImV4cCI6MjA4ODc2NTQ5NH0._xMlqCfljtXpwPj54H-ghxfLFO-jiq4W2WhpU8vVL1c';
+import type { ModelInfo, RuntimeUsageData, ServerInfo } from '../types';
 
 declare global {
   interface Window {
@@ -171,9 +164,9 @@ export async function preloadModel(modelName: string): Promise<void> {
   }
 }
 
-export async function fetchSavings(): Promise<SavingsData> {
+export async function fetchRuntimeUsage(): Promise<RuntimeUsageData> {
   const res = await fetch(`${getBase()}/v1/savings`);
-  if (!res.ok) throw new Error(`Failed to fetch savings: ${res.status}`);
+  if (!res.ok) throw new Error(`Failed to fetch runtime usage: ${res.status}`);
   return res.json();
 }
 
@@ -826,44 +819,6 @@ export async function fetchAgentTrace(agentId: string, traceId: string): Promise
   const res = await fetch(`${getBase()}/v1/managed-agents/${agentId}/traces/${traceId}`);
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
-}
-
-// ---------------------------------------------------------------------------
-// Leaderboard savings submission (Supabase)
-// ---------------------------------------------------------------------------
-
-export interface SavingsSubmission {
-  anon_id: string;
-  display_name: string;
-  email: string;
-  total_calls: number;
-  total_tokens: number;
-  dollar_savings: number;
-  energy_wh_saved: number;
-  flops_saved: number;
-  token_counting_version?: number;
-}
-
-export async function submitSavings(data: SavingsSubmission): Promise<boolean> {
-  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
-  try {
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/savings_entries?on_conflict=anon_id`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          Prefer: 'resolution=merge-duplicates',
-        },
-        body: JSON.stringify(data),
-      },
-    );
-    return res.ok || res.status === 201 || res.status === 200;
-  } catch {
-    return false;
-  }
 }
 
 // ---------------------------------------------------------------------------

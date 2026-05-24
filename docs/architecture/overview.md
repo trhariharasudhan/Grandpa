@@ -1,17 +1,13 @@
 ---
 title: Architecture Overview
-description: The five-primitive architecture behind grandpa — Intelligence, Engine, Agents, Tools, and Learning
+description: The five-primitive architecture behind Grandpa — Intelligence, Engine, Agents, Tools, and Learning
 search:
   boost: 2
 ---
 
 # Architecture Overview
 
-grandpa is a research framework for studying on-device AI systems. Its architecture is organized around **five core abstractions** -- Intelligence, Engine, Agentic Logic, Memory, and Learning -- that work together through trace-driven feedback.
-
-![grandpa Architecture](../assets/grandpa_Architecture.png)
-
----
+Grandpa is a research framework for studying on-device AI systems. Its architecture is organized around **five core abstractions** -- Intelligence, Engine, Agentic Logic, Memory, and Learning -- that work together through trace-driven feedback.
 
 ## Primitive Descriptions
 

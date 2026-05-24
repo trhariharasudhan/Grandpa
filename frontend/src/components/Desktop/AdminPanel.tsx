@@ -35,8 +35,8 @@ interface ServerInfo {
 
 const styles: Record<string, React.CSSProperties> = {
   container: {
-    backgroundColor: '#1e1e2e',
-    color: '#cdd6f4',
+    backgroundColor: '#12141d',
+    color: '#fafafb',
     padding: 24,
     borderRadius: 12,
     fontFamily: 'system-ui, -apple-system, sans-serif',
@@ -46,7 +46,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 20,
     fontWeight: 700,
     marginBottom: 20,
-    color: '#cdd6f4',
+    color: '#fafafb',
   },
   grid: {
     display: 'grid',
@@ -55,7 +55,7 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: 24,
   },
   card: {
-    backgroundColor: '#313244',
+    backgroundColor: '#222638',
     borderRadius: 8,
     padding: 16,
   },
@@ -64,7 +64,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
     textTransform: 'uppercase' as const,
     letterSpacing: '0.05em',
-    color: '#89b4fa',
+    color: '#6244c5',
     marginBottom: 12,
   },
   row: {
@@ -75,12 +75,12 @@ const styles: Record<string, React.CSSProperties> = {
   },
   label: {
     fontSize: 13,
-    color: '#a6adc8',
+    color: '#c8c3da',
   },
   value: {
     fontSize: 13,
     fontWeight: 500,
-    color: '#cdd6f4',
+    color: '#fafafb',
   },
   healthDot: {
     display: 'inline-block',
@@ -91,15 +91,15 @@ const styles: Record<string, React.CSSProperties> = {
     verticalAlign: 'middle',
   },
   healthDotHealthy: {
-    backgroundColor: '#a6e3a1',
-    boxShadow: '0 0 6px #a6e3a166',
+    backgroundColor: '#3ddc97',
+    boxShadow: '0 0 6px #3ddc9766',
   },
   healthDotUnhealthy: {
-    backgroundColor: '#f38588',
-    boxShadow: '0 0 6px #f3858866',
+    backgroundColor: '#ff6b6b',
+    boxShadow: '0 0 6px #ff6b6b66',
   },
   healthDotUnknown: {
-    backgroundColor: '#a6adc8',
+    backgroundColor: '#c8c3da',
   },
   badge: {
     display: 'inline-block',
@@ -109,12 +109,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontWeight: 600,
   },
   badgeTrue: {
-    backgroundColor: '#a6e3a133',
-    color: '#a6e3a1',
+    backgroundColor: '#3ddc9733',
+    color: '#3ddc97',
   },
   badgeFalse: {
-    backgroundColor: '#45475a',
-    color: '#a6adc8',
+    backgroundColor: '#343a40',
+    color: '#c8c3da',
   },
   agentTable: {
     width: '100%',
@@ -124,16 +124,16 @@ const styles: Record<string, React.CSSProperties> = {
   th: {
     textAlign: 'left' as const,
     padding: '8px 10px',
-    borderBottom: '1px solid #45475a',
-    color: '#89b4fa',
+    borderBottom: '1px solid #343a40',
+    color: '#6244c5',
     fontWeight: 600,
     fontSize: 12,
     textTransform: 'uppercase' as const,
   },
   td: {
     padding: '8px 10px',
-    borderBottom: '1px solid #313244',
-    color: '#cdd6f4',
+    borderBottom: '1px solid #222638',
+    color: '#fafafb',
   },
   buttonGroup: {
     display: 'flex',
@@ -149,21 +149,21 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
   },
   startButton: {
-    backgroundColor: '#a6e3a1',
-    color: '#1e1e2e',
+    backgroundColor: '#3ddc97',
+    color: '#12141d',
   },
   stopButton: {
-    backgroundColor: '#f38588',
-    color: '#1e1e2e',
+    backgroundColor: '#ff6b6b',
+    color: '#12141d',
   },
   buttonDisabled: {
     opacity: 0.5,
     cursor: 'not-allowed',
   },
   error: {
-    color: '#f38588',
+    color: '#ff6b6b',
     padding: 12,
-    backgroundColor: '#f3858811',
+    backgroundColor: '#ff6b6b11',
     borderRadius: 8,
     fontSize: 13,
     marginBottom: 16,
@@ -171,18 +171,18 @@ const styles: Record<string, React.CSSProperties> = {
   commandOutput: {
     marginTop: 12,
     padding: 12,
-    backgroundColor: '#181825',
+    backgroundColor: '#10131d',
     borderRadius: 6,
     fontSize: 12,
     fontFamily: 'monospace',
-    color: '#a6adc8',
+    color: '#c8c3da',
     maxHeight: 120,
     overflow: 'auto',
     whiteSpace: 'pre-wrap' as const,
     wordBreak: 'break-word' as const,
   },
   loading: {
-    color: '#a6adc8',
+    color: '#c8c3da',
     textAlign: 'center' as const,
     padding: 40,
   },
@@ -431,7 +431,7 @@ export function AdminPanel({ apiUrl }: { apiUrl: string }) {
                       {agent.accepts_tools ? 'Yes' : 'No'}
                     </span>
                   </td>
-                  <td style={{ ...styles.td, color: '#a6adc8', fontSize: 12 }}>
+                  <td style={{ ...styles.td, color: '#c8c3da', fontSize: 12 }}>
                     {agent.description || '--'}
                   </td>
                 </tr>
@@ -444,7 +444,7 @@ export function AdminPanel({ apiUrl }: { apiUrl: string }) {
       {agents.length === 0 && !loading && (
         <div style={styles.card}>
           <div style={styles.cardTitle}>Agent Registry</div>
-          <div style={{ color: '#a6adc8', fontSize: 13, padding: '8px 0' }}>
+          <div style={{ color: '#c8c3da', fontSize: 13, padding: '8px 0' }}>
             No agents registered or server not reachable.
           </div>
         </div>

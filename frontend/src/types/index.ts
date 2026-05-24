@@ -163,7 +163,7 @@ export interface ModelInfo {
   owned_by: string;
 }
 
-export interface ProviderSavings {
+export interface RuntimeProviderMetrics {
   provider: string;
   label: string;
   input_cost: number;
@@ -174,13 +174,13 @@ export interface ProviderSavings {
   flops: number;
 }
 
-export interface SavingsData {
+export interface RuntimeUsageData {
   total_calls: number;
   total_prompt_tokens: number;
   total_completion_tokens: number;
   total_tokens: number;
   local_cost: number;
-  per_provider: ProviderSavings[];
+  per_provider: RuntimeProviderMetrics[];
   token_counting_version?: number;
 }
 

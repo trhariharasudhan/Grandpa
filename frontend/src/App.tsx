@@ -12,8 +12,7 @@ import { CommandPalette } from './components/CommandPalette';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
 import { useAppStore } from './lib/store';
-import { fetchModels, fetchServerInfo, fetchSavings, submitSavings, isTauri } from './lib/api';
-import { OptInModal } from './components/OptInModal';
+import { fetchModels, fetchServerInfo, fetchRuntimeUsage, isTauri } from './lib/api';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
 
@@ -29,19 +28,10 @@ export default function App() {
   const setSelectedModel = useAppStore((s) => s.setSelectedModel);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const setServerInfo = useAppStore((s) => s.setServerInfo);
-  const setSavings = useAppStore((s) => s.setSavings);
+  const setRuntimeUsage = useAppStore((s) => s.setRuntimeUsage);
   const settings = useAppStore((s) => s.settings);
   const commandPaletteOpen = useAppStore((s) => s.commandPaletteOpen);
   const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
-  const optInEnabled = useAppStore((s) => s.optInEnabled);
-  const optInDisplayName = useAppStore((s) => s.optInDisplayName);
-  const optInEmail = useAppStore((s) => s.optInEmail);
-  const optInAnonId = useAppStore((s) => s.optInAnonId);
-  const optInModalSeen = useAppStore((s) => s.optInModalSeen);
-  const optInModalOpen = useAppStore((s) => s.optInModalOpen);
-  const setOptInModalOpen = useAppStore((s) => s.setOptInModalOpen);
-  const markOptInModalSeen = useAppStore((s) => s.markOptInModalSeen);
-  const savings = useAppStore((s) => s.savings);
 
   // Apply theme class to <html>
   useEffect(() => {
@@ -76,50 +66,15 @@ export default function App() {
     fetchServerInfo().then(setServerInfo).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Poll savings and optionally share to Supabase
+  // Poll lightweight runtime counters used by assistant diagnostics.
   useEffect(() => {
     const refresh = () =>
-      fetchSavings()
-        .then((data) => {
-          setSavings(data);
-          if (optInEnabled && optInDisplayName && data) {
-            const claudeEntry = data.per_provider.find(
-              (p) => p.provider === 'claude-opus-4.6',
-            );
-            const dollarSavings = claudeEntry ? claudeEntry.total_cost : 0;
-            const energySaved = data.per_provider.reduce(
-              (sum, p) => sum + (p.energy_wh || 0),
-              0,
-            );
-            const flopsSaved = data.per_provider.reduce(
-              (sum, p) => sum + (p.flops || 0),
-              0,
-            );
-            submitSavings({
-              anon_id: optInAnonId,
-              display_name: optInDisplayName,
-              email: optInEmail,
-              total_calls: data.total_calls,
-              total_tokens: data.total_tokens,
-              dollar_savings: dollarSavings,
-              energy_wh_saved: energySaved,
-              flops_saved: flopsSaved,
-              token_counting_version: data.token_counting_version ?? 1,
-            });
-          }
-        })
+      fetchRuntimeUsage()
+        .then(setRuntimeUsage)
         .catch(() => {});
     refresh();
     const interval = setInterval(refresh, 30000);
     return () => clearInterval(interval);
-  }, [optInEnabled, optInDisplayName, optInAnonId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Show opt-in modal on first visit
-  useEffect(() => {
-    if (!optInModalSeen) {
-      setOptInModalOpen(true);
-      markOptInModalSeen();
-    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fire model_changed when the user switches models. First mount is
@@ -191,9 +146,6 @@ export default function App() {
       </Routes>
       <Toaster position="bottom-right" />
       {commandPaletteOpen && <CommandPalette />}
-      {optInModalOpen && (
-        <OptInModal onClose={() => setOptInModalOpen(false)} />
-      )}
     </>
   );
 }

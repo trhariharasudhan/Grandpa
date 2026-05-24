@@ -99,7 +99,7 @@ export function SetupScreen({ onReady }: { onReady: () => void }) {
       style={{ background: 'var(--color-bg)' }}
     >
       <div className="w-full max-w-md px-6">
-        {/* Logo */}
+        {/* App mark */}
         <div className="text-center mb-10">
           <div
             className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"

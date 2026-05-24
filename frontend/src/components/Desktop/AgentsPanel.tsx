@@ -22,22 +22,22 @@ import type { ManagedAgent, AgentTask, AgentMessage, AgentTemplate, LearningLogE
 // ---------------------------------------------------------------------------
 
 const C = {
-  bg: '#1e1e2e',
-  mantle: '#181825',
-  surface0: '#313244',
-  surface1: '#45475a',
-  surface2: '#585b70',
-  text: '#cdd6f4',
-  subtext1: '#bac2de',
-  subtext0: '#a6adc8',
-  overlay1: '#7f849c',
-  overlay0: '#6c7086',
-  accent: '#89b4fa',
-  green: '#a6e3a1',
-  red: '#f38ba8',
-  peach: '#fab387',
-  yellow: '#f9e2af',
-  border: '#45475a',
+  bg: '#12141d',
+  mantle: '#10131d',
+  surface0: '#222638',
+  surface1: '#343a40',
+  surface2: '#948da8',
+  text: '#fafafb',
+  subtext1: '#c8c3da',
+  subtext0: '#c8c3da',
+  overlay1: '#948da8',
+  overlay0: '#948da8',
+  accent: '#6244c5',
+  green: '#3ddc97',
+  red: '#ff6b6b',
+  peach: '#ffd166',
+  yellow: '#ffc448',
+  border: '#343a40',
 };
 
 // ---------------------------------------------------------------------------
@@ -698,10 +698,6 @@ function OverviewTab({ agent, onRun, onPause, onResume, onRecover }: {
         <div style={rowStyle}>
           <span style={labelStyle}>Total Runs</span>
           <span style={valueStyle}>{agent.total_runs ?? 0}</span>
-        </div>
-        <div style={rowStyle}>
-          <span style={labelStyle}>Total Cost</span>
-          <span style={valueStyle}>{formatCost(agent.total_cost)}</span>
         </div>
         <div style={{ ...rowStyle, borderBottom: 'none' }}>
           <span style={labelStyle}>Budget</span>

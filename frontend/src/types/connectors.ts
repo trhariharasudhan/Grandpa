@@ -134,11 +134,6 @@ export const SOURCE_CATALOG: ConnectorMeta[] = [
       {
         label: 'Paste the user token below. Sync indexes every channel, private channel, DM, and group DM you have access to — no need to invite anything to channels',
       },
-      {
-        label: '(Optional) Set the app icon: in the left sidebar click "Basic Information" → scroll to "Display Information" → upload the Grandpa logo',
-        url: 'https://github.com/grandpa/Grandpa/blob/main/assets/Grandpa-slack-icon.jpg',
-        urlLabel: 'Download icon',
-      },
     ],
     inputFields: [
       { name: 'token', placeholder: 'xoxp-...', type: 'password' },

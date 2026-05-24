@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { Send, Square, Paperclip, Search } from 'lucide-react';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
-import { fetchSavings, getBase } from '../../lib/api';
+import { fetchRuntimeUsage, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
 import { MicButton } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
@@ -315,9 +315,9 @@ export function InputArea() {
               };
               // Optimistically roll this research turn into the session
               // counters so the Session panel updates the moment the
-              // stream finishes, regardless of how /v1/savings aggregates
+              // stream finishes, regardless of when the backend aggregates
               // research telemetry server-side.
-              useAppStore.getState().incrementSavings(usage);
+              useAppStore.getState().incrementRuntimeUsage(usage);
             }
             // Hold the final live numbers visible for a beat so the panel
             // doesn't flash to 0 between the SSE close and the next
@@ -478,11 +478,10 @@ export function InputArea() {
 
       // Research path updates session counters optimistically from the
       // `done` event's usage payload — re-fetching here would overwrite
-      // it with a potentially stale snapshot if the server's research
-      // telemetry hasn't been merged into /v1/savings yet.
+      // it with a potentially stale backend snapshot.
       if (!deepResearch) {
-        fetchSavings()
-          .then((data) => useAppStore.getState().setSavings(data))
+        fetchRuntimeUsage()
+          .then((data) => useAppStore.getState().setRuntimeUsage(data))
           .catch(() => {});
       }
     }
@@ -509,7 +508,7 @@ export function InputArea() {
   };
 
   return (
-    <div className="px-4 pb-4 pt-2" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
+    <div className="px-4 pb-5 pt-3" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
       <div className="mb-2 flex flex-col gap-1">
         <div className="flex items-center gap-2">
           <button
@@ -543,11 +542,12 @@ export function InputArea() {
         )}
       </div>
       <div
-        className="flex items-center gap-2 rounded-2xl px-4 py-3 transition-shadow"
+        className="flex items-end gap-2 rounded-2xl px-4 py-3 transition-shadow"
         style={{
-          background: 'var(--color-input-bg)',
+          background: 'color-mix(in srgb, var(--color-input-bg) 92%, transparent)',
           border: '1px solid var(--color-input-border)',
-          boxShadow: 'var(--shadow-sm)',
+          boxShadow: 'var(--shadow-md)',
+          backdropFilter: 'blur(18px)',
         }}
       >
         <textarea
@@ -555,16 +555,16 @@ export function InputArea() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Message Grandpa..."
+          placeholder="Ask Grandpa anything..."
           rows={1}
-          className="flex-1 bg-transparent outline-none resize-none text-sm leading-relaxed"
-          style={{ color: 'var(--color-text)', maxHeight: '200px' }}
+          className="flex-1 bg-transparent outline-none resize-none text-[15px] leading-7"
+          style={{ color: 'var(--color-text)', maxHeight: '220px', minHeight: '32px' }}
           disabled={streamState.isStreaming || modelLoading}
         />
         {streamState.isStreaming ? (
           <button
             onClick={stopStreaming}
-            className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer"
+            className="p-2.5 rounded-xl transition-colors shrink-0 cursor-pointer"
             style={{ background: 'var(--color-error)', color: 'var(--color-on-accent)' }}
             title="Stop generating"
           >
@@ -581,7 +581,7 @@ export function InputArea() {
             <button
               onClick={sendMessage}
               disabled={!input.trim() || modelLoading}
-              className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
+              className="p-2.5 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
               style={{
                 background: input.trim() ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
                 color: input.trim() ? 'white' : 'var(--color-text-tertiary)',
@@ -595,8 +595,7 @@ export function InputArea() {
       </div>
       <div className="flex items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
         <span>
-          <kbd className="font-mono">Enter</kbd> to send &middot;{' '}
-          <kbd className="font-mono">Shift+Enter</kbd> for new line
+          Private local assistant &middot; <kbd className="font-mono">Enter</kbd> sends
         </span>
       </div>
     </div>

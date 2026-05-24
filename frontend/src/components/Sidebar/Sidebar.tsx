@@ -54,12 +54,14 @@ export function Sidebar() {
 
   const navItems = [
     { path: '/', icon: MessageSquare, label: 'Chat' },
-    { path: '/dashboard', icon: BarChart3, label: 'Dashboard' },
-    { path: '/data-sources', icon: Database, label: 'Data Sources' },
+    { path: '/dashboard', icon: BarChart3, label: 'Assistant Home' },
+    { path: '/data-sources', icon: Database, label: 'Context' },
     { path: '/agents', icon: Bot, label: 'Agents' },
-    { path: '/logs', icon: ScrollText, label: 'Logs' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },
+  ];
+  const supportItems = [
+    { path: '/logs', icon: ScrollText, label: 'Activity Log' },
   ];
 
   return (
@@ -113,25 +115,32 @@ export function Sidebar() {
               >
                 <ThemeIcon size={16} />
               </button>
-              <button
-                onClick={handleNewChat}
-                className="p-2 rounded-lg transition-colors cursor-pointer"
-                style={{ color: 'var(--color-text-secondary)' }}
-                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
-                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                title="New chat"
-              >
-                <Plus size={18} />
-              </button>
             </div>
+          </div>
+
+          <div className="px-3 pb-3">
+            <button
+              onClick={handleNewChat}
+              className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer"
+              style={{
+                background: 'var(--color-accent)',
+                color: 'var(--color-on-accent)',
+                boxShadow: '0 12px 30px -18px var(--color-accent)',
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-accent-hover)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-accent)')}
+            >
+              <Plus size={16} />
+              New Chat
+            </button>
           </div>
 
           {/* Model badge */}
           <button
             onClick={() => setCommandPaletteOpen(true)}
-            className="mx-3 mb-2 flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-colors cursor-pointer"
+            className="mx-3 mb-3 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
             style={{
-              background: 'var(--color-bg-secondary)',
+              background: 'color-mix(in srgb, var(--color-bg-secondary) 82%, transparent)',
               color: 'var(--color-text-secondary)',
               border: '1px solid var(--color-border)',
             }}
@@ -169,9 +178,9 @@ export function Sidebar() {
           </button>
 
           {/* Search */}
-          <div className="px-3 mb-2">
+          <div className="px-3 mb-3">
             <div
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
               style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
             >
               <Search size={14} style={{ color: 'var(--color-text-tertiary)' }} />
@@ -192,14 +201,17 @@ export function Sidebar() {
           </div>
 
           {/* Bottom nav */}
-          <nav className="px-2 pb-3 pt-2 flex flex-col gap-0.5" style={{ borderTop: '1px solid var(--color-border)' }}>
+          <nav className="px-2 pb-3 pt-2 flex flex-col gap-1" style={{ borderTop: '1px solid var(--color-border)' }}>
+            <div className="px-3 pb-1 text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-tertiary)' }}>
+              Assistant
+            </div>
             {navItems.map((item) => {
               const isActive = location.pathname === item.path;
               return (
                 <button
                   key={item.path}
                   onClick={() => navigate(item.path)}
-                  className="relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors w-full text-left cursor-pointer"
+                  className="relative flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors w-full text-left cursor-pointer"
                   style={{
                     background: isActive ? 'var(--color-accent-subtle)' : 'transparent',
                     color: isActive ? 'var(--color-text)' : 'var(--color-text-secondary)',
@@ -223,6 +235,33 @@ export function Sidebar() {
                     />
                   )}
                   <item.icon size={16} style={isActive ? { color: 'var(--color-accent)' } : undefined} />
+                  {item.label}
+                </button>
+              );
+            })}
+            <div className="px-3 pb-1 pt-3 text-[10px] uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-tertiary)' }}>
+              Support
+            </div>
+            {supportItems.map((item) => {
+              const isActive = location.pathname === item.path;
+              return (
+                <button
+                  key={item.path}
+                  onClick={() => navigate(item.path)}
+                  className="relative flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-colors w-full text-left cursor-pointer"
+                  style={{
+                    background: isActive ? 'var(--color-bg-secondary)' : 'transparent',
+                    color: isActive ? 'var(--color-text)' : 'var(--color-text-tertiary)',
+                    fontWeight: isActive ? 500 : 400,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isActive) e.currentTarget.style.background = 'var(--color-bg-secondary)';
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isActive) e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  <item.icon size={15} style={isActive ? { color: 'var(--color-accent)' } : undefined} />
                   {item.label}
                 </button>
               );
