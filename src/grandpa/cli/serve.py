@@ -40,12 +40,18 @@ logger = logging.getLogger(__name__)
     default=None,
     help="Agent for non-streaming requests (simple, orchestrator, react, openhands).",
 )
+@click.option(
+    "--allow-insecure-bind",
+    is_flag=True,
+    help="Allow binding non-loopback without an API key. Intended for local Docker use.",
+)
 def serve(
     host: str | None,
     port: int | None,
     engine_key: str | None,
     model_name: str | None,
     agent_name: str | None,
+    allow_insecure_bind: bool,
 ) -> None:
     """Start the OpenAI-compatible API server."""
     console = Console(stderr=True)
@@ -416,7 +422,11 @@ def serve(
 
     from grandpa.server.auth_middleware import check_bind_safety
 
-    check_bind_safety(bind_host, api_key=api_key)
+    check_bind_safety(
+        bind_host,
+        api_key=api_key,
+        allow_insecure_bind=allow_insecure_bind,
+    )
 
     # Log credential status at startup
     from grandpa.core.credentials import TOOL_CREDENTIALS, get_credential_status

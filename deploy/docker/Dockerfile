@@ -13,6 +13,7 @@ FROM python:3.12-slim-bookworm AS builder
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src/ src/
+COPY scripts/install/ scripts/install/
 
 # Copy built frontend into the server static directory
 COPY --from=frontend /src/grandpa/server/static src/grandpa/server/static/
@@ -27,7 +28,9 @@ COPY --from=builder /usr/local /usr/local
 COPY --from=builder /app /app
 WORKDIR /app
 
+ENV OLLAMA_HOST=http://host.docker.internal:11434
+
 EXPOSE 8000
 
 ENTRYPOINT ["grandpa"]
-CMD ["serve", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["serve", "--engine", "ollama", "--host", "0.0.0.0", "--port", "8000", "--allow-insecure-bind"]

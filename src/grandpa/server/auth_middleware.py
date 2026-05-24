@@ -52,7 +52,12 @@ def generate_api_key() -> str:
     return f"oj_sk_{secrets.token_urlsafe(32)}"
 
 
-def check_bind_safety(host: str, *, api_key: str) -> None:
+def check_bind_safety(
+    host: str,
+    *,
+    api_key: str,
+    allow_insecure_bind: bool = False,
+) -> None:
     """Refuse to bind non-loopback without an API key.
 
     Raises ``SystemExit`` if *host* is not a loopback address and
@@ -66,7 +71,7 @@ def check_bind_safety(host: str, *, api_key: str) -> None:
     except ValueError:
         is_loop = host in ("localhost", "")
 
-    if not is_loop and not api_key:
+    if not is_loop and not api_key and not allow_insecure_bind:
         logger.error(
             "Binding to %s requires Grandpa_API_KEY to be set. "
             "Run: Grandpa auth generate-key",
