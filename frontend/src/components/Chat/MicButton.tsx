@@ -1,14 +1,18 @@
 import { useState } from 'react';
 import type { SpeechState } from '../../hooks/useSpeech';
 
+export type VoiceStatus = SpeechState | 'thinking' | 'speaking';
+
 interface MicButtonProps {
-  state: SpeechState;
+  state: VoiceStatus;
   onClick: () => void;
+  onStopSpeaking?: () => void;
   disabled?: boolean;
   reason?: 'not-enabled' | 'no-backend' | 'streaming';
+  error?: string | null;
 }
 
-export function MicButton({ state, onClick, disabled, reason }: MicButtonProps) {
+export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, error }: MicButtonProps) {
   const [showTooltip, setShowTooltip] = useState(false);
 
   const tooltipText =
@@ -18,13 +22,27 @@ export function MicButton({ state, onClick, disabled, reason }: MicButtonProps) 
         ? 'Speech backend not configured'
         : reason === 'streaming'
           ? 'Wait for response'
-          : state === 'recording'
-            ? 'Stop recording'
+          : state === 'listening'
+            ? 'Listening - click to stop'
             : state === 'transcribing'
               ? 'Transcribing...'
-              : 'Voice input';
+              : state === 'thinking'
+                ? 'Grandpa is thinking...'
+                : state === 'speaking'
+                  ? 'Speaking - click to stop'
+                  : state === 'error'
+                    ? error || 'Voice input error'
+                    : 'Voice input';
 
-  const isInactive = disabled || state === 'transcribing';
+  const isInactive = disabled || state === 'transcribing' || state === 'thinking';
+  const active = state === 'listening' || state === 'speaking';
+  const handleClick = () => {
+    if (state === 'speaking') {
+      onStopSpeaking?.();
+      return;
+    }
+    onClick();
+  };
 
   return (
     <div
@@ -33,23 +51,39 @@ export function MicButton({ state, onClick, disabled, reason }: MicButtonProps) 
       onMouseLeave={() => setShowTooltip(false)}
     >
       <button
-        onClick={onClick}
+        onClick={handleClick}
         disabled={isInactive}
-        className="p-2 rounded-xl transition-all shrink-0"
+        className="relative p-2 rounded-xl transition-all shrink-0"
         style={{
-          background: state === 'recording'
-            ? 'var(--color-error)'
+          background: active
+            ? 'color-mix(in srgb, var(--color-accent) 82%, var(--color-accent-amber))'
+            : state === 'error'
+              ? 'color-mix(in srgb, var(--color-error) 18%, transparent)'
             : 'transparent',
-          color: state === 'recording'
+          color: active
             ? 'white'
             : isInactive
               ? 'var(--color-text-tertiary)'
+              : state === 'error'
+                ? 'var(--color-error)'
               : 'var(--color-text-secondary)',
           cursor: isInactive ? 'default' : 'pointer',
           opacity: isInactive ? 0.35 : 1,
-          animation: state === 'recording' ? 'pulse 1.5s ease-in-out infinite' : 'none',
+          animation: active ? 'pulse 1.5s ease-in-out infinite' : 'none',
+          boxShadow: active ? '0 0 24px var(--color-accent-glow)' : 'none',
         }}
+        title={tooltipText}
       >
+        {state === 'listening' && (
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 rounded-xl"
+            style={{
+              boxShadow: '0 0 0 0 color-mix(in srgb, var(--color-accent) 45%, transparent)',
+              animation: 'pulse 1.4s ease-out infinite',
+            }}
+          />
+        )}
         {state === 'transcribing' ? (
           <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
             <circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="10">
@@ -63,7 +97,7 @@ export function MicButton({ state, onClick, disabled, reason }: MicButtonProps) 
           </svg>
         )}
       </button>
-      {showTooltip && isInactive && (
+      {showTooltip && (
         <div
           className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2.5 py-1.5 rounded-lg text-xs whitespace-nowrap pointer-events-none"
           style={{

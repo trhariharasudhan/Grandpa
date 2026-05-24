@@ -71,6 +71,10 @@ interface Settings {
   temperature: number;
   maxTokens: number;
   speechEnabled: boolean;
+  speechOutputEnabled: boolean;
+  speechShortRepliesOnly: boolean;
+  speechRate: number;
+  speechPitch: number;
 }
 
 function loadSettings(): Settings {
@@ -83,6 +87,10 @@ function loadSettings(): Settings {
     temperature: 0.7,
     maxTokens: 4096,
     speechEnabled: false,
+    speechOutputEnabled: true,
+    speechShortRepliesOnly: true,
+    speechRate: 1,
+    speechPitch: 1,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);

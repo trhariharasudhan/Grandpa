@@ -491,7 +491,7 @@ export function SettingsPage() {
 
           {/* Speech */}
           <Section title="Speech">
-            <SettingRow label="Speech-to-Text" description="Enable microphone input for voice dictation">
+            <SettingRow label="Speech-to-Text" description="Enable microphone input for voice commands">
               <button
                 onClick={() => { updateSettings({ speechEnabled: !settings.speechEnabled }); showSaved(); }}
                 className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
@@ -507,6 +507,62 @@ export function SettingsPage() {
                   }}
                 />
               </button>
+            </SettingRow>
+            <SettingRow label="Speech output" description="Speak short replies and local action confirmations in the browser">
+              <button
+                onClick={() => { updateSettings({ speechOutputEnabled: !settings.speechOutputEnabled }); showSaved(); }}
+                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
+                style={{
+                  background: settings.speechOutputEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
+                  style={{
+                    transform: settings.speechOutputEnabled ? 'translateX(20px)' : 'translateX(0)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                />
+              </button>
+            </SettingRow>
+            <SettingRow label="Short replies only" description="Avoid reading long generated answers aloud">
+              <button
+                onClick={() => { updateSettings({ speechShortRepliesOnly: !settings.speechShortRepliesOnly }); showSaved(); }}
+                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
+                style={{
+                  background: settings.speechShortRepliesOnly ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
+                  style={{
+                    transform: settings.speechShortRepliesOnly ? 'translateX(20px)' : 'translateX(0)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                />
+              </button>
+            </SettingRow>
+            <SettingRow label="Voice rate" description={`${settings.speechRate.toFixed(1)}x`}>
+              <input
+                type="range"
+                min="0.6"
+                max="1.6"
+                step="0.1"
+                value={settings.speechRate}
+                onChange={(e) => { updateSettings({ speechRate: parseFloat(e.target.value) }); showSaved(); }}
+                className="w-32 cursor-pointer accent-[var(--color-accent)]"
+              />
+            </SettingRow>
+            <SettingRow label="Voice pitch" description={settings.speechPitch.toFixed(1)}>
+              <input
+                type="range"
+                min="0.6"
+                max="1.6"
+                step="0.1"
+                value={settings.speechPitch}
+                onChange={(e) => { updateSettings({ speechPitch: parseFloat(e.target.value) }); showSaved(); }}
+                className="w-32 cursor-pointer accent-[var(--color-accent)]"
+              />
             </SettingRow>
             <SettingRow label="Backend status" description="Requires Whisper, Deepgram, or another speech backend">
               <div className="flex items-center gap-2">

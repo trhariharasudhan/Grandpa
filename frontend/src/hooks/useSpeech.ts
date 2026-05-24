@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { transcribeAudio, fetchSpeechHealth } from '../lib/api';
 
-export type SpeechState = 'idle' | 'recording' | 'transcribing';
+export type SpeechState = 'idle' | 'listening' | 'transcribing' | 'error';
 
 export function useSpeech() {
   const [state, setState] = useState<SpeechState>('idle');
@@ -39,10 +39,10 @@ export function useSpeech() {
 
       recorder.start();
       mediaRecorderRef.current = recorder;
-      setState('recording');
+      setState('listening');
     } catch (err) {
       setError('Microphone access denied');
-      setState('idle');
+      setState('error');
     }
   }, []);
 
@@ -69,7 +69,7 @@ export function useSpeech() {
           setState('idle');
           resolve(result.text);
         } catch (err) {
-          setState('idle');
+          setState('error');
           const msg = err instanceof Error ? err.message : 'Transcription failed';
           setError(msg);
           reject(err);
@@ -86,7 +86,7 @@ export function useSpeech() {
     available,
     startRecording,
     stopRecording,
-    isRecording: state === 'recording',
+    isRecording: state === 'listening',
     isTranscribing: state === 'transcribing',
   };
 }

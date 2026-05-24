@@ -4,7 +4,7 @@ import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
 import { fetchRuntimeUsage, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
-import { MicButton } from './MicButton';
+import { MicButton, type VoiceStatus } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
 import type {
   ChatMessage,
@@ -73,22 +73,46 @@ function useResearchCorpusSync(enabled: boolean): {
   return state;
 }
 
-function speakLocalActionResponse(text: string | undefined) {
-  if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+function canSpeakText(text: string, shortRepliesOnly: boolean, force = false) {
+  if (force) return true;
+  if (!shortRepliesOnly) return true;
+  return text.length <= 260 && text.split(/\s+/).length <= 42;
+}
+
+function speakBrowserResponse(
+  text: string | undefined,
+  options: {
+    enabled: boolean;
+    shortRepliesOnly: boolean;
+    rate: number;
+    pitch: number;
+    force?: boolean;
+    onStart?: () => void;
+    onEnd?: () => void;
+  },
+): boolean {
+  if (!options.enabled || !text || typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
+  if (!canSpeakText(text, options.shortRepliesOnly, options.force)) return false;
   try {
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
+    utterance.rate = options.rate;
+    utterance.pitch = options.pitch;
+    utterance.onstart = options.onStart || null;
+    utterance.onend = options.onEnd || null;
+    utterance.onerror = options.onEnd || null;
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
+    return true;
   } catch {
     // Browser TTS is optional; text confirmation remains the source of truth.
+    return false;
   }
 }
 
 export function InputArea() {
   const [input, setInput] = useState('');
   const [lastLocalActionKind, setLastLocalActionKind] = useState<string | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<VoiceStatus>('idle');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -99,6 +123,10 @@ export function InputArea() {
   const streamState = useAppStore((s) => s.streamState);
   const messages = useAppStore((s) => s.messages);
   const speechEnabled = useAppStore((s) => s.settings.speechEnabled);
+  const speechOutputEnabled = useAppStore((s) => s.settings.speechOutputEnabled);
+  const speechShortRepliesOnly = useAppStore((s) => s.settings.speechShortRepliesOnly);
+  const speechRate = useAppStore((s) => s.settings.speechRate);
+  const speechPitch = useAppStore((s) => s.settings.speechPitch);
   const maxTokens = useAppStore((s) => s.settings.maxTokens);
   const temperature = useAppStore((s) => s.settings.temperature);
   const createConversation = useAppStore((s) => s.createConversation);
@@ -112,7 +140,19 @@ export function InputArea() {
   const setDeepResearch = useAppStore((s) => s.setDeepResearch);
   const corpusSync = useResearchCorpusSync(deepResearch);
 
-  const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
+  const { state: speechState, error: speechError, available: speechAvailable, startRecording, stopRecording } = useSpeech();
+
+  useEffect(() => {
+    if (voiceStatus === 'speaking' || voiceStatus === 'thinking') return;
+    setVoiceStatus(speechState);
+  }, [speechState, voiceStatus]);
+
+  const stopSpeaking = useCallback(() => {
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+    setVoiceStatus('idle');
+  }, []);
 
   useEffect(() => {
     const handleDraft = (event: Event) => {
@@ -148,21 +188,6 @@ export function InputArea() {
     : streamState.isStreaming ? 'streaming'
     : undefined;
 
-  const handleMicClick = useCallback(async () => {
-    if (speechState === 'recording') {
-      try {
-        const text = await stopRecording();
-        if (text) {
-          setInput((prev) => (prev ? prev + ' ' + text : text));
-        }
-      } catch {
-        // Error is captured in useSpeech
-      }
-    } else {
-      await startRecording();
-    }
-  }, [speechState, startRecording, stopRecording]);
-
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -179,11 +204,13 @@ export function InputArea() {
     resetStream();
   }, [resetStream]);
 
-  const sendMessage = useCallback(async () => {
-    const content = input.trim();
+  const sendMessage = useCallback(async (overrideContent?: string, options?: { fromVoice?: boolean }) => {
+    const content = (overrideContent ?? input).trim();
     if (!content || streamState.isStreaming) return;
 
     setInput('');
+    const fromVoice = !!options?.fromVoice;
+    if (fromVoice) setVoiceStatus('thinking');
 
     let convId = activeId;
     if (!convId) {
@@ -234,6 +261,7 @@ export function InputArea() {
       Array.from(researchSourcesByRef.values()).sort((a, b) => a.ref - b.ref);
     let lastFlush = 0;
     let ttftMs: number | undefined;
+    let spokeLocalAction = false;
 
     setStreamState({
       isStreaming: true,
@@ -414,7 +442,17 @@ export function InputArea() {
               setLastLocalActionKind(data.local_action.kind);
             }
             if (data.local_action?.tts_text) {
-              speakLocalActionResponse(data.local_action.tts_text);
+              spokeLocalAction = true;
+              const didSpeak = speakBrowserResponse(data.local_action.tts_text, {
+                enabled: speechOutputEnabled,
+                shortRepliesOnly: speechShortRepliesOnly,
+                rate: speechRate,
+                pitch: speechPitch,
+                force: true,
+                onStart: () => setVoiceStatus('speaking'),
+                onEnd: () => setVoiceStatus('idle'),
+              });
+              if (!didSpeak) setVoiceStatus('idle');
             }
             const delta = data.choices?.[0]?.delta;
             if (data.usage) usage = data.usage;
@@ -507,6 +545,27 @@ export function InputArea() {
         timestamp: Date.now(), level: 'info', category: 'chat',
         message: `Response: ${accumulatedContent.length} chars`,
       });
+      let didSpeak = false;
+      if (!deepResearch && !fromVoice && !spokeLocalAction) {
+        didSpeak = speakBrowserResponse(accumulatedContent, {
+          enabled: speechOutputEnabled,
+          shortRepliesOnly: speechShortRepliesOnly,
+          rate: speechRate,
+          pitch: speechPitch,
+          onStart: () => setVoiceStatus('speaking'),
+          onEnd: () => setVoiceStatus('idle'),
+        });
+      } else if (fromVoice && !spokeLocalAction) {
+        didSpeak = speakBrowserResponse(accumulatedContent, {
+          enabled: speechOutputEnabled,
+          shortRepliesOnly: speechShortRepliesOnly,
+          rate: speechRate,
+          pitch: speechPitch,
+          onStart: () => setVoiceStatus('speaking'),
+          onEnd: () => setVoiceStatus('idle'),
+        });
+      }
+      if (!didSpeak && !spokeLocalAction) setVoiceStatus('idle');
       abortRef.current = null;
 
       // Research path updates session counters optimistically from the
@@ -531,6 +590,10 @@ export function InputArea() {
     deepResearch,
     temperature,
     maxTokens,
+    speechOutputEnabled,
+    speechShortRepliesOnly,
+    speechRate,
+    speechPitch,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -539,6 +602,25 @@ export function InputArea() {
       sendMessage();
     }
   };
+
+  const handleMicClick = useCallback(async () => {
+    if (speechState === 'listening') {
+      try {
+        const text = await stopRecording();
+        if (text) {
+          setInput(text);
+          setVoiceStatus('thinking');
+          await sendMessage(text, { fromVoice: true });
+        }
+      } catch {
+        // Error is captured in useSpeech
+        setVoiceStatus('error');
+      }
+    } else {
+      stopSpeaking();
+      await startRecording();
+    }
+  }, [speechState, startRecording, stopRecording, stopSpeaking, sendMessage]);
 
   const prepareScreenAnalysis = () => {
     setInput('What is on my screen?');
@@ -654,13 +736,15 @@ export function InputArea() {
               <Camera size={16} />
             </button>
             <MicButton
-              state={speechState}
+              state={voiceStatus}
               onClick={handleMicClick}
+              onStopSpeaking={stopSpeaking}
               disabled={micDisabled}
               reason={micReason}
+              error={speechError}
             />
             <button
-              onClick={sendMessage}
+              onClick={() => sendMessage()}
               disabled={!input.trim() || modelLoading}
               className="p-2.5 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
               style={{
@@ -684,6 +768,14 @@ export function InputArea() {
             </>
           )}
           Private local assistant &middot; <kbd className="font-mono">Enter</kbd> sends
+          {speechEnabled && (
+            <>
+              <span>&middot;</span>
+              <span style={{ color: voiceStatus === 'error' ? 'var(--color-error)' : 'var(--color-text-tertiary)' }}>
+                Voice: {voiceStatus}
+              </span>
+            </>
+          )}
         </span>
       </div>
     </div>
