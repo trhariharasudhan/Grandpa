@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { SpeechState } from '../../hooks/useSpeech';
 
-export type VoiceStatus = SpeechState | 'thinking' | 'speaking';
+export type VoiceStatus = SpeechState | 'wake-listening' | 'active-listening' | 'thinking' | 'speaking';
 
 interface MicButtonProps {
   state: VoiceStatus;
@@ -22,6 +22,10 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
         ? 'Speech backend not configured'
         : reason === 'streaming'
           ? 'Wait for response'
+          : state === 'wake-listening'
+            ? 'Wake mode listening for Hey Grandpa'
+          : state === 'active-listening'
+            ? 'Wake phrase heard - listening for command'
           : state === 'listening'
             ? 'Listening - click to stop'
             : state === 'transcribing'
@@ -35,7 +39,8 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
                     : 'Voice input';
 
   const isInactive = disabled || state === 'transcribing' || state === 'thinking';
-  const active = state === 'listening' || state === 'speaking';
+  const active = state === 'listening' || state === 'active-listening' || state === 'speaking';
+  const passive = state === 'wake-listening';
   const handleClick = () => {
     if (state === 'speaking') {
       onStopSpeaking?.();
@@ -57,11 +62,15 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
         style={{
           background: active
             ? 'color-mix(in srgb, var(--color-accent) 82%, var(--color-accent-amber))'
+            : passive
+              ? 'color-mix(in srgb, var(--color-bg-secondary) 82%, transparent)'
             : state === 'error'
               ? 'color-mix(in srgb, var(--color-error) 18%, transparent)'
             : 'transparent',
           color: active
             ? 'white'
+            : passive
+              ? 'var(--color-accent-amber)'
             : isInactive
               ? 'var(--color-text-tertiary)'
               : state === 'error'
@@ -70,11 +79,15 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
           cursor: isInactive ? 'default' : 'pointer',
           opacity: isInactive ? 0.35 : 1,
           animation: active ? 'pulse 1.5s ease-in-out infinite' : 'none',
-          boxShadow: active ? '0 0 24px var(--color-accent-glow)' : 'none',
+          boxShadow: active
+            ? '0 0 24px var(--color-accent-glow)'
+            : passive
+              ? '0 0 18px color-mix(in srgb, var(--color-accent-amber) 28%, transparent)'
+              : 'none',
         }}
         title={tooltipText}
       >
-        {state === 'listening' && (
+        {(state === 'listening' || state === 'active-listening') && (
           <span
             aria-hidden="true"
             className="absolute inset-0 rounded-xl"

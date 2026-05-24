@@ -6,6 +6,7 @@ import { fetchRuntimeUsage, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
 import { MicButton, type VoiceStatus } from './MicButton';
 import { useSpeech } from '../../hooks/useSpeech';
+import { useWakeWord } from '../../hooks/useWakeWord';
 import type {
   ChatMessage,
   MessageTelemetry,
@@ -127,6 +128,7 @@ export function InputArea() {
   const speechShortRepliesOnly = useAppStore((s) => s.settings.speechShortRepliesOnly);
   const speechRate = useAppStore((s) => s.settings.speechRate);
   const speechPitch = useAppStore((s) => s.settings.speechPitch);
+  const wakeWordEnabled = useAppStore((s) => s.settings.wakeWordEnabled);
   const maxTokens = useAppStore((s) => s.settings.maxTokens);
   const temperature = useAppStore((s) => s.settings.temperature);
   const createConversation = useAppStore((s) => s.createConversation);
@@ -144,6 +146,7 @@ export function InputArea() {
 
   useEffect(() => {
     if (voiceStatus === 'speaking' || voiceStatus === 'thinking') return;
+    if (voiceStatus === 'wake-listening' || voiceStatus === 'active-listening') return;
     setVoiceStatus(speechState);
   }, [speechState, voiceStatus]);
 
@@ -622,6 +625,31 @@ export function InputArea() {
     }
   }, [speechState, startRecording, stopRecording, stopSpeaking, sendMessage]);
 
+  const wake = useWakeWord({
+    enabled: speechEnabled
+      && wakeWordEnabled
+      && !streamState.isStreaming
+      && speechState === 'idle'
+      && voiceStatus !== 'speaking'
+      && voiceStatus !== 'thinking',
+    onWake: () => setVoiceStatus('active-listening'),
+    onCommand: (text) => {
+      const command = text.trim();
+      if (!command) return;
+      setInput(command);
+      setVoiceStatus('thinking');
+      void sendMessage(command, { fromVoice: true });
+    },
+  });
+
+  useEffect(() => {
+    if (!wakeWordEnabled || !speechEnabled) return;
+    if (voiceStatus === 'speaking' || voiceStatus === 'thinking') return;
+    if (wake.state === 'wake-listening' || wake.state === 'active-listening' || wake.state === 'error') {
+      setVoiceStatus(wake.state);
+    }
+  }, [wake.state, wakeWordEnabled, speechEnabled, voiceStatus]);
+
   const prepareScreenAnalysis = () => {
     setInput('What is on my screen?');
     requestAnimationFrame(() => textareaRef.current?.focus());
@@ -741,7 +769,7 @@ export function InputArea() {
               onStopSpeaking={stopSpeaking}
               disabled={micDisabled}
               reason={micReason}
-              error={speechError}
+              error={wake.state === 'error' ? wake.error : speechError}
             />
             <button
               onClick={() => sendMessage()}
@@ -773,6 +801,14 @@ export function InputArea() {
               <span>&middot;</span>
               <span style={{ color: voiceStatus === 'error' ? 'var(--color-error)' : 'var(--color-text-tertiary)' }}>
                 Voice: {voiceStatus}
+              </span>
+            </>
+          )}
+          {speechEnabled && wakeWordEnabled && (
+            <>
+              <span>&middot;</span>
+              <span style={{ color: wake.state === 'error' ? 'var(--color-error)' : 'var(--color-accent-amber)' }}>
+                Wake: {voiceStatus === 'speaking' ? 'speaking' : wake.state === 'wake-listening' ? 'sleeping' : wake.state === 'active-listening' ? 'listening' : wake.state}
               </span>
             </>
           )}

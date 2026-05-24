@@ -75,6 +75,7 @@ interface Settings {
   speechShortRepliesOnly: boolean;
   speechRate: number;
   speechPitch: number;
+  wakeWordEnabled: boolean;
 }
 
 function loadSettings(): Settings {
@@ -91,6 +92,7 @@ function loadSettings(): Settings {
     speechShortRepliesOnly: true,
     speechRate: 1,
     speechPitch: 1,
+    wakeWordEnabled: false,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);

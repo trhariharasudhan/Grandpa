@@ -542,6 +542,28 @@ export function SettingsPage() {
                 />
               </button>
             </SettingRow>
+            <SettingRow label="Wake word mode" description='Optional always-listening mode for "Hey Grandpa" and "Okay Grandpa"'>
+              <button
+                onClick={() => { updateSettings({ wakeWordEnabled: !settings.wakeWordEnabled }); showSaved(); }}
+                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
+                style={{
+                  background: settings.wakeWordEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
+                  style={{
+                    transform: settings.wakeWordEnabled ? 'translateX(20px)' : 'translateX(0)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                />
+              </button>
+            </SettingRow>
+            {settings.wakeWordEnabled && (
+              <div className="text-xs mt-2 px-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                Wake mode uses browser speech recognition for the wake phrase and sends only recognized commands to Grandpa.
+              </div>
+            )}
             <SettingRow label="Voice rate" description={`${settings.speechRate.toFixed(1)}x`}>
               <input
                 type="range"
