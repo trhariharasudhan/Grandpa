@@ -8,13 +8,11 @@ import {
   Search,
   PanelLeftClose,
   PanelLeft,
-  Cpu,
   Rocket,
   Bot,
   Sun,
   Moon,
   Monitor,
-  Loader2,
   ScrollText,
   Database,
 } from 'lucide-react';
@@ -30,10 +28,6 @@ export function Sidebar() {
   const toggleSidebar = useAppStore((s) => s.toggleSidebar);
   const createConversation = useAppStore((s) => s.createConversation);
   const selectedModel = useAppStore((s) => s.selectedModel);
-  const serverInfo = useAppStore((s) => s.serverInfo);
-  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
-  const modelLoading = useAppStore((s) => s.modelLoading);
-  const deepResearch = useAppStore((s) => s.deepResearch);
 
   const settings = useAppStore((s) => s.settings);
   const updateSettings = useAppStore((s) => s.updateSettings);
@@ -86,10 +80,11 @@ export function Sidebar() {
           ${sidebarOpen ? 'w-[260px]' : 'w-0'}
         `}
         style={{
-          background: 'var(--color-sidebar)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-          borderRight: sidebarOpen ? '1px solid var(--color-border)' : 'none',
+          background: 'color-mix(in srgb, var(--color-sidebar) 86%, transparent)',
+          backdropFilter: 'blur(24px) saturate(132%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(132%)',
+          borderRight: sidebarOpen ? '1px solid color-mix(in srgb, var(--color-accent) 16%, var(--color-border))' : 'none',
+          boxShadow: sidebarOpen ? 'inset -1px 0 0 color-mix(in srgb, var(--color-text) 3%, transparent)' : 'none',
         }}
       >
         <div className="flex flex-col h-full w-[260px]">
@@ -123,65 +118,27 @@ export function Sidebar() {
               onClick={handleNewChat}
               className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all cursor-pointer"
               style={{
-                background: 'var(--color-accent)',
+                background: 'linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 72%, var(--color-accent-amber)))',
                 color: 'var(--color-on-accent)',
-                boxShadow: '0 12px 30px -18px var(--color-accent)',
+                boxShadow: '0 16px 36px -20px var(--color-accent), inset 0 1px 0 rgba(255,255,255,0.14)',
               }}
               onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-accent-hover)')}
-              onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-accent)')}
+              onMouseLeave={(e) => (e.currentTarget.style.background = 'linear-gradient(135deg, var(--color-accent), color-mix(in srgb, var(--color-accent) 72%, var(--color-accent-amber)))')}
             >
               <Plus size={16} />
               New Chat
             </button>
           </div>
 
-          {/* Model badge */}
-          <button
-            onClick={() => setCommandPaletteOpen(true)}
-            className="mx-3 mb-3 flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs transition-colors cursor-pointer"
-            style={{
-              background: 'color-mix(in srgb, var(--color-bg-secondary) 82%, transparent)',
-              color: 'var(--color-text-secondary)',
-              border: '1px solid var(--color-border)',
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--color-bg-tertiary)')}
-            onMouseLeave={(e) => (e.currentTarget.style.background = 'var(--color-bg-secondary)')}
-          >
-            {modelLoading ? (
-              <Loader2 size={14} className="animate-spin" style={{ color: 'var(--color-accent)' }} />
-            ) : (
-              <Cpu size={14} />
-            )}
-            <div className="flex-1 min-w-0">
-              <span
-                className="truncate block text-left"
-                style={{ color: deepResearch ? 'var(--color-accent)' : 'var(--color-text)' }}
-              >
-                {deepResearch
-                  ? 'Deep Research'
-                  : selectedModel || serverInfo?.model || 'Select model'}
-              </span>
-              {modelLoading && (
-                <span className="text-[10px] block text-left" style={{ color: 'var(--color-accent)' }}>
-                  Loading model...
-                </span>
-              )}
-            </div>
-            {!modelLoading && (
-              <kbd
-                className="text-[10px] px-1.5 py-0.5 rounded font-mono"
-                style={{ background: 'var(--color-bg-tertiary)', color: 'var(--color-text-tertiary)' }}
-              >
-                ⌘K
-              </kbd>
-            )}
-          </button>
-
           {/* Search */}
           <div className="px-3 mb-3">
             <div
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm"
-              style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
+              style={{
+                background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)',
+                border: '1px solid var(--color-border)',
+                boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--color-text) 5%, transparent)',
+              }}
             >
               <Search size={14} style={{ color: 'var(--color-text-tertiary)' }} />
               <input

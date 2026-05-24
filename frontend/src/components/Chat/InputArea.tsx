@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { Send, Square, Paperclip, Search } from 'lucide-react';
+import { ChevronDown, Cpu, Loader2, Search, Send, Sparkles, Square } from 'lucide-react';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
 import { fetchRuntimeUsage, getBase } from '../../lib/api';
@@ -81,6 +81,7 @@ export function InputArea() {
 
   const activeId = useAppStore((s) => s.activeId);
   const selectedModel = useAppStore((s) => s.selectedModel);
+  const serverInfo = useAppStore((s) => s.serverInfo);
   const streamState = useAppStore((s) => s.streamState);
   const messages = useAppStore((s) => s.messages);
   const speechEnabled = useAppStore((s) => s.settings.speechEnabled);
@@ -92,11 +93,23 @@ export function InputArea() {
   const setStreamState = useAppStore((s) => s.setStreamState);
   const resetStream = useAppStore((s) => s.resetStream);
   const modelLoading = useAppStore((s) => s.modelLoading);
+  const setCommandPaletteOpen = useAppStore((s) => s.setCommandPaletteOpen);
   const deepResearch = useAppStore((s) => s.deepResearch);
   const setDeepResearch = useAppStore((s) => s.setDeepResearch);
   const corpusSync = useResearchCorpusSync(deepResearch);
 
   const { state: speechState, available: speechAvailable, startRecording, stopRecording } = useSpeech();
+
+  useEffect(() => {
+    const handleDraft = (event: Event) => {
+      const detail = (event as CustomEvent<string>).detail;
+      if (typeof detail !== 'string' || !detail.trim()) return;
+      setInput(detail);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+    };
+    window.addEventListener('grandpa:set-draft', handleDraft as EventListener);
+    return () => window.removeEventListener('grandpa:set-draft', handleDraft as EventListener);
+  }, []);
 
   // Abort in-flight stream when the user switches models mid-generation.
   // This prevents errors from trying to continue a stream with a stale model.
@@ -509,8 +522,36 @@ export function InputArea() {
 
   return (
     <div className="px-4 pb-5 pt-3" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
-      <div className="mb-2 flex flex-col gap-1">
-        <div className="flex items-center gap-2">
+      <div className="mb-2 flex flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <button
+            type="button"
+            onClick={() => setCommandPaletteOpen(true)}
+            className="group inline-flex min-w-0 max-w-full items-center gap-2 rounded-full px-3 py-1.5 text-xs transition-all cursor-pointer"
+            style={{
+              background: 'linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 18%, transparent), color-mix(in srgb, var(--color-bg-secondary) 78%, transparent))',
+              border: '1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border))',
+              color: 'var(--color-text-secondary)',
+              boxShadow: '0 10px 28px -22px var(--color-accent), inset 0 1px 0 color-mix(in srgb, var(--color-text) 8%, transparent)',
+              backdropFilter: 'blur(16px)',
+            }}
+            title="Switch model"
+          >
+            {modelLoading ? (
+              <Loader2 size={13} className="animate-spin" style={{ color: 'var(--color-accent-amber)' }} />
+            ) : (
+              <Cpu size={13} style={{ color: 'var(--color-accent-amber)' }} />
+            )}
+            <span className="min-w-0 truncate">
+              <span className="mr-1" style={{ color: 'var(--color-text-tertiary)' }}>
+                Model
+              </span>
+              <span style={{ color: 'var(--color-text)' }}>
+                {selectedModel || serverInfo?.model || 'Select model'}
+              </span>
+            </span>
+            <ChevronDown size={13} style={{ color: 'var(--color-text-tertiary)' }} />
+          </button>
           <button
             type="button"
             onClick={() => setDeepResearch(!deepResearch)}
@@ -521,10 +562,11 @@ export function InputArea() {
               background: deepResearch ? 'var(--color-accent-subtle)' : 'transparent',
               border: `1px solid ${deepResearch ? 'var(--color-accent)' : 'var(--color-border)'}`,
               color: deepResearch ? 'var(--color-accent)' : 'var(--color-text-tertiary)',
+              boxShadow: deepResearch ? '0 10px 28px -22px var(--color-accent)' : 'none',
             }}
             title={deepResearch ? 'Deep Research: on' : 'Deep Research: off'}
           >
-            <Search size={12} />
+            {deepResearch ? <Sparkles size={12} /> : <Search size={12} />}
             Deep Research
           </button>
         </div>
@@ -542,12 +584,13 @@ export function InputArea() {
         )}
       </div>
       <div
-        className="flex items-end gap-2 rounded-2xl px-4 py-3 transition-shadow"
+        className="flex items-end gap-2 rounded-[24px] px-4 py-3 transition-shadow"
         style={{
-          background: 'color-mix(in srgb, var(--color-input-bg) 92%, transparent)',
-          border: '1px solid var(--color-input-border)',
-          boxShadow: 'var(--shadow-md)',
-          backdropFilter: 'blur(18px)',
+          background: 'linear-gradient(180deg, color-mix(in srgb, var(--color-input-bg) 88%, transparent), color-mix(in srgb, var(--color-bg-secondary) 78%, transparent))',
+          border: '1px solid color-mix(in srgb, var(--color-accent) 34%, var(--color-input-border))',
+          boxShadow: '0 22px 70px -36px var(--color-accent), 0 16px 36px -28px rgb(0 0 0 / 0.9), inset 0 1px 0 color-mix(in srgb, var(--color-text) 7%, transparent)',
+          backdropFilter: 'blur(22px) saturate(130%)',
+          WebkitBackdropFilter: 'blur(22px) saturate(130%)',
         }}
       >
         <textarea

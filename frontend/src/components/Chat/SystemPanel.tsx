@@ -7,6 +7,8 @@ import {
   X,
   Gauge,
   MessageSquare,
+  Brain,
+  Cpu,
 } from 'lucide-react';
 import { useAppStore } from '../../lib/store';
 import { getBase } from '../../lib/api';
@@ -26,6 +28,8 @@ interface TelemetryStats {
 
 export function SystemPanel() {
   const runtimeUsage = useAppStore((s) => s.runtimeUsage);
+  const selectedModel = useAppStore((s) => s.selectedModel);
+  const serverInfo = useAppStore((s) => s.serverInfo);
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
   const liveEnergy = useAppStore((s) => s.liveEnergy);
   const [energy, setEnergy] = useState<EnergyData | null>(null);
@@ -66,15 +70,17 @@ export function SystemPanel() {
       style={{
         width: 292,
         minWidth: 292,
-        background: 'color-mix(in srgb, var(--color-bg) 92%, transparent)',
-        borderLeft: '1px solid var(--color-border)',
-        backdropFilter: 'blur(18px)',
+        background: 'linear-gradient(180deg, color-mix(in srgb, var(--color-bg) 88%, transparent), color-mix(in srgb, var(--color-surface) 82%, transparent))',
+        borderLeft: '1px solid color-mix(in srgb, var(--color-accent) 18%, var(--color-border))',
+        backdropFilter: 'blur(22px) saturate(126%)',
+        WebkitBackdropFilter: 'blur(22px) saturate(126%)',
+        boxShadow: 'inset 1px 0 0 color-mix(in srgb, var(--color-text) 4%, transparent), -18px 0 48px -44px var(--color-accent)',
       }}
     >
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 py-3 shrink-0"
-        style={{ borderBottom: '1px solid var(--color-border)' }}
+        style={{ borderBottom: '1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border))' }}
       >
         <div>
           <span className="text-xs font-semibold tracking-wide uppercase" style={{ color: 'var(--color-text-secondary)' }}>
@@ -98,11 +104,14 @@ export function SystemPanel() {
         <section
           className="rounded-xl px-3 py-3"
           style={{
-            background: 'var(--color-accent-subtle)',
-            border: '1px solid var(--color-border)',
+            background:
+              'linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 20%, transparent), color-mix(in srgb, var(--color-accent-amber) 10%, transparent))',
+            border: '1px solid color-mix(in srgb, var(--color-accent) 28%, var(--color-border))',
+            boxShadow: '0 18px 42px -32px var(--color-accent), inset 0 1px 0 color-mix(in srgb, var(--color-text) 8%, transparent)',
           }}
         >
           <div className="flex items-center gap-2 mb-1">
+            <span className="hud-heartbeat" />
             <MessageSquare size={14} style={{ color: 'var(--color-accent-amber)' }} />
             <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
               Chat-first workspace
@@ -111,6 +120,16 @@ export function SystemPanel() {
           <p className="text-[11px] leading-5" style={{ color: 'var(--color-text-secondary)' }}>
             This panel stays quiet unless you need runtime health while Grandpa answers.
           </p>
+        </section>
+
+        <section>
+          <h4 className="text-[11px] font-medium uppercase tracking-wide mb-2" style={{ color: 'var(--color-text-tertiary)' }}>
+            Core
+          </h4>
+          <div className="flex flex-col gap-2">
+            <CoreLine icon={Cpu} label="Model" value={selectedModel || serverInfo?.model || 'Select model'} />
+            <CoreLine icon={Brain} label="Runtime" value={serverInfo?.engine || 'local'} />
+          </div>
         </section>
 
         {/* Session Stats */}
@@ -122,6 +141,7 @@ export function SystemPanel() {
             <MiniStat icon={Hash} label="Requests" value={String(runtimeUsage?.total_calls ?? telemetry?.total_requests ?? 0)} />
             <MiniStat icon={Hash} label="Output Tokens" value={formatNumber(runtimeUsage?.total_completion_tokens ?? telemetry?.total_tokens ?? 0)} />
           </div>
+          <SignalMeter label="Context stream" value={runtimeUsage?.total_tokens ? 72 : 18} />
         </section>
 
         {/* Device */}
@@ -156,7 +176,58 @@ export function SystemPanel() {
               value="Local"
             />
           </div>
+          <SignalMeter label="Thermal headroom" value={(energy?.avg_power_w ?? 0) > 0 ? Math.max(12, 100 - (energy?.avg_power_w ?? 0) / 2) : 84} />
         </section>
+      </div>
+    </div>
+  );
+}
+
+function CoreLine({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Cpu;
+  label: string;
+  value: string;
+}) {
+  return (
+    <div
+      className="flex items-center gap-2 rounded-lg px-3 py-2"
+      style={{
+        background: 'color-mix(in srgb, var(--color-bg-secondary) 70%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border))',
+        boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--color-text) 5%, transparent)',
+      }}
+    >
+      <Icon size={13} style={{ color: 'var(--color-accent-amber)' }} />
+      <span className="text-[10px] uppercase tracking-[0.12em]" style={{ color: 'var(--color-text-tertiary)' }}>
+        {label}
+      </span>
+      <span className="ml-auto text-xs truncate max-w-[130px]" style={{ color: 'var(--color-text)' }}>
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SignalMeter({ label, value }: { label: string; value: number }) {
+  const width = Math.max(0, Math.min(100, value));
+  return (
+    <div className="mt-3">
+      <div className="flex justify-between text-[10px] mb-1" style={{ color: 'var(--color-text-tertiary)' }}>
+        <span>{label}</span>
+        <span className="hud-mono">{Math.round(width)}%</span>
+      </div>
+      <div className="h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--color-bg-tertiary)' }}>
+        <div
+          className="h-full hud-shimmer"
+          style={{
+            width: `${width}%`,
+            background: 'linear-gradient(90deg, var(--color-accent), var(--color-accent-amber))',
+          }}
+        />
       </div>
     </div>
   );
@@ -176,7 +247,11 @@ function MiniStat({
   return (
     <div
       className="rounded-lg px-2.5 py-2"
-      style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}
+      style={{
+        background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--color-accent) 12%, var(--color-border))',
+        boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--color-text) 5%, transparent)',
+      }}
     >
       <div className="flex items-center gap-1 mb-0.5">
         <Icon size={10} style={{ color: 'var(--color-accent)' }} />

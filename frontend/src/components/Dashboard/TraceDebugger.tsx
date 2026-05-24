@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { GitBranch, Clock, ChevronRight, ChevronDown } from 'lucide-react';
+import { GitBranch, Clock, ChevronRight, ChevronDown, Route, Wrench, Brain } from 'lucide-react';
 
 interface TraceStepData {
   model?: string;
@@ -157,14 +157,38 @@ export function TraceDebugger() {
 
   return (
     <div className="hud-panel p-6">
-      <h3 className="hud-label flex items-center gap-2 mb-4">
-        <GitBranch size={12} style={{ color: 'var(--color-accent)' }} />
-        Trace Debugger
-      </h3>
+      <div className="hud-panel-head flex items-center justify-between gap-4 mb-5">
+        <div>
+          <h3 className="hud-label flex items-center gap-2">
+            <GitBranch size={12} style={{ color: 'var(--color-accent)' }} />
+            Reasoning Trace
+          </h3>
+          <p className="text-xs mt-2" style={{ color: 'var(--color-text-secondary)' }}>
+            Inspect how Grandpa routes prompts, uses context, calls tools, and forms responses.
+          </p>
+        </div>
+        <div className="hidden md:flex items-center gap-2">
+          <TraceChip icon={Route} label="Route" />
+          <TraceChip icon={Wrench} label="Tools" />
+          <TraceChip icon={Brain} label="Synthesis" />
+        </div>
+      </div>
 
       {traces.length === 0 ? (
-        <div className="h-48 flex items-center justify-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
-          No traces yet. Start making queries to see them here.
+        <div
+          className="h-56 rounded-2xl flex flex-col items-center justify-center text-sm"
+          style={{
+            color: 'var(--color-text-tertiary)',
+            background:
+              'radial-gradient(circle at 50% 0%, var(--color-accent-subtle), transparent 42%), var(--color-bg-secondary)',
+            border: '1px dashed var(--color-border)',
+          }}
+        >
+          <div className="hud-reticle mb-4">
+            <GitBranch size={14} style={{ color: 'var(--color-accent-amber)' }} />
+          </div>
+          <div style={{ color: 'var(--color-text)' }}>No trace captured yet</div>
+          <div className="text-xs mt-1">Ask Grandpa something and the reasoning path will appear here.</div>
         </div>
       ) : (
         <div className="flex gap-4 h-80">
@@ -199,6 +223,18 @@ export function TraceDebugger() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function TraceChip({ icon: Icon, label }: { icon: typeof Route; label: string }) {
+  return (
+    <div
+      className="rounded-full px-3 py-1.5 text-[11px] flex items-center gap-1.5"
+      style={{ color: 'var(--color-text-secondary)', border: '1px solid var(--color-border)', background: 'var(--color-bg-secondary)' }}
+    >
+      <Icon size={11} style={{ color: 'var(--color-accent-amber)' }} />
+      {label}
     </div>
   );
 }

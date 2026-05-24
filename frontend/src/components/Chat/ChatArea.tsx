@@ -4,7 +4,7 @@ import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X } from 'lucide-react';
+import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X, Brain, Zap } from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
 
 function getGreeting(): string {
@@ -48,6 +48,9 @@ export function ChatArea() {
   const isEmpty = messages.length === 0 && !streamState.isStreaming;
 
   const PanelIcon = systemPanelOpen ? PanelRightClose : PanelRightOpen;
+  const usePrompt = (prompt: string) => {
+    window.dispatchEvent(new CustomEvent('grandpa:set-draft', { detail: prompt }));
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -104,13 +107,15 @@ export function ChatArea() {
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center min-h-full px-4 py-10">
             <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-5"
+              className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 relative"
               style={{
-                background: 'var(--color-accent-subtle)',
+                background: 'linear-gradient(135deg, var(--color-accent-subtle), var(--color-accent-amber-subtle))',
                 color: 'var(--color-accent-amber)',
-                boxShadow: '0 18px 45px -28px var(--color-accent)',
+                boxShadow: '0 22px 60px -30px var(--color-accent)',
+                border: '1px solid var(--color-border)',
               }}
             >
+              <span className="hud-reticle absolute inset-auto" />
               <Sparkles size={26} />
             </div>
             <h2 className="text-2xl font-semibold mb-2 text-center" style={{ color: 'var(--color-text)' }}>
@@ -121,7 +126,21 @@ export function ChatArea() {
             </p>
 
             {/* Quick action hints */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-xl">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
+              <PromptCard
+                icon={Brain}
+                title="Think through a plan"
+                detail="Break down a task or decision"
+                prompt="Help me think through a practical plan for today. Ask me one question at a time if you need context."
+                onUse={usePrompt}
+              />
+              <PromptCard
+                icon={Zap}
+                title="Draft something"
+                detail="Write, rewrite, summarize"
+                prompt="Draft a clear, friendly message for me. Start by asking who it is for and what tone I want."
+                onUse={usePrompt}
+              />
               <button
                 onClick={() => navigate('/data-sources')}
                 className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs cursor-pointer transition-colors text-left"
@@ -192,5 +211,50 @@ export function ChatArea() {
       </div>
       <InputArea />
     </div>
+  );
+}
+
+function PromptCard({
+  icon: Icon,
+  title,
+  detail,
+  prompt,
+  onUse,
+}: {
+  icon: typeof Brain;
+  title: string;
+  detail: string;
+  prompt: string;
+  onUse: (prompt: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onUse(prompt)}
+      className="flex items-center gap-3 px-4 py-3 rounded-xl text-xs text-left cursor-pointer transition-all"
+      style={{
+        background: 'color-mix(in srgb, var(--color-bg-secondary) 74%, transparent)',
+        border: '1px solid color-mix(in srgb, var(--color-accent) 16%, var(--color-border))',
+        color: 'var(--color-text-secondary)',
+        boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--color-text) 6%, transparent)',
+        backdropFilter: 'blur(14px)',
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--color-accent) 48%, var(--color-border))';
+        e.currentTarget.style.transform = 'translateY(-1px)';
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = 'color-mix(in srgb, var(--color-accent) 16%, var(--color-border))';
+        e.currentTarget.style.transform = 'translateY(0)';
+      }}
+    >
+      <Icon size={14} style={{ color: 'var(--color-accent-amber)' }} />
+      <span>
+        <span className="block font-medium" style={{ color: 'var(--color-text)' }}>
+          {title}
+        </span>
+        <span style={{ color: 'var(--color-text-tertiary)' }}>{detail}</span>
+      </span>
+    </button>
   );
 }

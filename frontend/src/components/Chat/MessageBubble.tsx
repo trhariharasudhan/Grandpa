@@ -105,13 +105,16 @@ export function MessageBubble({ message, isLive = false }: Props) {
 
   if (isUser) {
     return (
-      <div className="flex justify-end mb-4">
+      <div className="flex justify-end mb-5">
         <div
-          className="max-w-[85%] px-4 py-2.5 text-sm leading-relaxed"
+          className="max-w-[85%] px-4 py-3 text-sm leading-relaxed"
           style={{
-            background: 'var(--color-user-bubble)',
+            background: 'linear-gradient(135deg, color-mix(in srgb, var(--color-user-bubble) 92%, var(--color-bg)), color-mix(in srgb, var(--color-accent) 72%, var(--color-accent-amber)))',
             color: 'var(--color-user-bubble-text)',
+            border: '1px solid color-mix(in srgb, var(--color-text) 12%, transparent)',
             borderRadius: 'var(--radius-xl) var(--radius-xl) var(--radius-sm) var(--radius-xl)',
+            boxShadow: '0 14px 34px -24px var(--color-accent), inset 0 1px 0 rgba(255,255,255,0.12)',
+            backdropFilter: 'blur(14px)',
             whiteSpace: 'pre-wrap',
             wordBreak: 'break-word',
           }}
@@ -165,16 +168,26 @@ export function MessageBubble({ message, isLive = false }: Props) {
 
       {/* Assistant message */}
       {cleanContent && (
-        <div className="prose max-w-none">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMath]}
-            rehypePlugins={rehypePlugins}
-            components={{
-              pre: CodeBlockPre,
-            }}
-          >
-            {cleanContent}
-          </ReactMarkdown>
+        <div
+          className="rounded-2xl px-4 py-3"
+          style={{
+            background: 'color-mix(in srgb, var(--color-bg-secondary) 46%, transparent)',
+            border: '1px solid var(--color-border-subtle)',
+            boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--color-text) 4%, transparent)',
+            backdropFilter: 'blur(10px)',
+          }}
+        >
+          <div className="prose max-w-none">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm, remarkMath]}
+              rehypePlugins={rehypePlugins}
+              components={{
+                pre: CodeBlockPre,
+              }}
+            >
+              {cleanContent}
+            </ReactMarkdown>
+          </div>
         </div>
       )}
 
