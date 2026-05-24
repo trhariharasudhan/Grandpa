@@ -5,9 +5,9 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from openjarvis.core.events import EventBus, EventType
-from openjarvis.security.audit import AuditLogger
-from openjarvis.security.types import (
+from grandpa.core.events import EventBus, EventType
+from grandpa.security.audit import AuditLogger
+from grandpa.security.types import (
     ScanFinding,
     SecurityEvent,
     SecurityEventType,

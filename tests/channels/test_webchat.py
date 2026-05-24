@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from openjarvis.channels._stubs import ChannelStatus
-from openjarvis.channels.webchat import WebChatChannel
-from openjarvis.core.events import EventBus, EventType
-from openjarvis.core.registry import ChannelRegistry
+from grandpa.channels._stubs import ChannelStatus
+from grandpa.channels.webchat import WebChatChannel
+from grandpa.core.events import EventBus, EventType
+from grandpa.core.registry import ChannelRegistry
 from tests.channels.channel_test_helpers import make_common_channel_tests
 
 

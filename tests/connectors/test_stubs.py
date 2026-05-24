@@ -5,13 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Iterator, Optional
 
-from openjarvis.connectors._stubs import (
+from grandpa.connectors._stubs import (
     Attachment,
     BaseConnector,
     Document,
     SyncStatus,
 )
-from openjarvis.core.registry import ConnectorRegistry
+from grandpa.core.registry import ConnectorRegistry
 
 
 class FakeConnector(BaseConnector):

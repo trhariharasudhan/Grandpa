@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from openjarvis.agents.orchestrator import OrchestratorAgent
-from openjarvis.core.types import ToolResult
-from openjarvis.engine._stubs import InferenceEngine
-from openjarvis.tools._stubs import BaseTool, ToolSpec
+from grandpa.agents.orchestrator import OrchestratorAgent
+from grandpa.core.types import ToolResult
+from grandpa.engine._stubs import InferenceEngine
+from grandpa.tools._stubs import BaseTool, ToolSpec
 
 # -- Mocks -------------------------------------------------------------------
 

@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from openjarvis.tools.calculator import CalculatorTool, safe_eval
+from grandpa.tools.calculator import CalculatorTool, safe_eval
 
 
 class TestSafeEval:

@@ -1,10 +1,10 @@
-"""Tests for the ``jarvis workflow`` CLI commands."""
+"""Tests for the ``Grandpa workflow`` CLI commands."""
 
 from __future__ import annotations
 
 from click.testing import CliRunner
 
-from openjarvis.cli import cli
+from grandpa.cli import cli
 
 
 class TestWorkflowCmd:

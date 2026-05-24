@@ -7,14 +7,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from openjarvis.learning.spec_search.models import (
+from grandpa.learning.spec_search.models import (
     AutonomyMode,
     BenchmarkSnapshot,
     LearningSession,
     SessionStatus,
     TriggerKind,
 )
-from openjarvis.learning.spec_search.multi_session import (
+from grandpa.learning.spec_search.multi_session import (
     SpecSearchLoop,
 )
 

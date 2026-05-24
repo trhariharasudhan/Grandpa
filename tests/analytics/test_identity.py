@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import pytest
 
-from openjarvis.analytics.identity import (
+from grandpa.analytics.identity import (
     _env_opt_out,
     get_or_create_anon_id,
     is_analytics_enabled,
     reset_anon_id,
 )
-from openjarvis.core.config import AnalyticsConfig
+from grandpa.core.config import AnalyticsConfig
 
 
 @pytest.fixture
@@ -27,7 +27,7 @@ def cfg_disabled() -> AnalyticsConfig:
 def _clean_env(monkeypatch):
     """Strip opt-out env vars so a host shell can't leak into tests."""
     monkeypatch.delenv("DO_NOT_TRACK", raising=False)
-    monkeypatch.delenv("OPENJARVIS_NO_ANALYTICS", raising=False)
+    monkeypatch.delenv("grandpa_NO_ANALYTICS", raising=False)
 
 
 # ---------------------------------------------------------------------------
@@ -51,8 +51,8 @@ class TestEnvOptOut:
         assert _env_opt_out() is True
 
     @pytest.mark.parametrize("value", ["1", "true", "yes", "on"])
-    def test_openjarvis_no_analytics_truthy(self, monkeypatch, value):
-        monkeypatch.setenv("OPENJARVIS_NO_ANALYTICS", value)
+    def test_grandpa_no_analytics_truthy(self, monkeypatch, value):
+        monkeypatch.setenv("grandpa_NO_ANALYTICS", value)
         assert _env_opt_out() is True
 
     @pytest.mark.parametrize("value", ["", "0", "false", "False", "no", "off"])

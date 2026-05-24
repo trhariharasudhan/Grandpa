@@ -9,8 +9,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from openjarvis.core.types import Message, Role
-from openjarvis.engine._stubs import InferenceEngine, StreamChunk
+from grandpa.core.types import Message, Role
+from grandpa.engine._stubs import InferenceEngine, StreamChunk
 
 # ---------------------------------------------------------------------------
 # StreamChunk dataclass tests
@@ -147,7 +147,7 @@ class TestOpenAICompatStreamFull:
 
     @pytest.mark.asyncio
     async def test_parses_sse_with_content_and_finish(self):
-        from openjarvis.engine._openai_compat import _OpenAICompatibleEngine
+        from grandpa.engine._openai_compat import _OpenAICompatibleEngine
 
         # Build mock SSE lines
         sse_lines = []
@@ -198,7 +198,7 @@ class TestOpenAICompatStreamFull:
 
     @pytest.mark.asyncio
     async def test_parses_tool_call_fragments(self):
-        from openjarvis.engine._openai_compat import _OpenAICompatibleEngine
+        from grandpa.engine._openai_compat import _OpenAICompatibleEngine
 
         # Simulate streamed tool_call fragments
         _tc1 = (

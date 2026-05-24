@@ -43,13 +43,13 @@ def _make_fake_zeus():
 class TestAvailable:
     def test_available_false_on_non_darwin(self):
         with patch("platform.system", return_value="Linux"):
-            from openjarvis.telemetry.energy_apple import AppleEnergyMonitor
+            from grandpa.telemetry.energy_apple import AppleEnergyMonitor
 
             assert AppleEnergyMonitor.available() is False
 
     def test_available_true_without_zeus(self):
         """Monitor is available on Apple Silicon even without Zeus."""
-        import openjarvis.telemetry.energy_apple as mod
+        import grandpa.telemetry.energy_apple as mod
 
         orig = mod._ZEUS_APPLE_AVAILABLE
         mod._ZEUS_APPLE_AVAILABLE = False
@@ -73,7 +73,7 @@ class TestAvailable:
 
 class TestEnergyMethod:
     def test_returns_zeus(self):
-        from openjarvis.telemetry.energy_apple import AppleEnergyMonitor
+        from grandpa.telemetry.energy_apple import AppleEnergyMonitor
 
         monitor = AppleEnergyMonitor.__new__(AppleEnergyMonitor)
         monitor._zeus_ok = True
@@ -98,7 +98,7 @@ class TestSampleComponentBreakdown:
         mock_zeus_monitor.begin_window = MagicMock()
         mock_zeus_monitor.end_window = MagicMock(return_value=mock_measurement)
 
-        from openjarvis.telemetry.energy_apple import AppleEnergyMonitor
+        from grandpa.telemetry.energy_apple import AppleEnergyMonitor
 
         monitor = AppleEnergyMonitor.__new__(AppleEnergyMonitor)
         monitor._poll_interval_ms = 50
@@ -130,7 +130,7 @@ class TestSampleComponentBreakdown:
         mock_zeus_monitor.begin_window = MagicMock()
         mock_zeus_monitor.end_window = MagicMock(return_value=mock_measurement)
 
-        from openjarvis.telemetry.energy_apple import AppleEnergyMonitor
+        from grandpa.telemetry.energy_apple import AppleEnergyMonitor
 
         monitor = AppleEnergyMonitor.__new__(AppleEnergyMonitor)
         monitor._poll_interval_ms = 50
@@ -153,7 +153,7 @@ class TestSampleComponentBreakdown:
 class TestSampleUninitialized:
     def test_uninitialized_monitor_empty_result(self):
         """When monitor is not initialized, sample yields empty result."""
-        from openjarvis.telemetry.energy_apple import AppleEnergyMonitor
+        from grandpa.telemetry.energy_apple import AppleEnergyMonitor
 
         monitor = AppleEnergyMonitor.__new__(AppleEnergyMonitor)
         monitor._poll_interval_ms = 50

@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from openjarvis.agents._stubs import AgentResult, ToolUsingAgent
-from openjarvis.core.config import (
+from grandpa.agents._stubs import AgentResult, ToolUsingAgent
+from grandpa.core.config import (
     CapabilitiesConfig,
-    JarvisConfig,
+    GrandpaConfig,
     SecurityConfig,
 )
-from openjarvis.core.events import EventBus
-from openjarvis.security import setup_security
+from grandpa.core.events import EventBus
+from grandpa.security import setup_security
 
 
 class _ConcreteAgent(ToolUsingAgent):
@@ -39,7 +39,7 @@ def _make_mock_engine() -> MagicMock:
 
 def _has_rust() -> bool:
     try:
-        import openjarvis_rust  # noqa: F401
+        import grandpa_rust  # noqa: F401
 
         return True
     except ImportError:
@@ -48,7 +48,7 @@ def _has_rust() -> bool:
 
 class TestCapabilityPolicyReachesExecutor:
     def test_no_policy_when_caps_disabled(self) -> None:
-        cfg = JarvisConfig()
+        cfg = GrandpaConfig()
         cfg.security = SecurityConfig(
             enabled=True,
             capabilities=CapabilitiesConfig(enabled=False),
@@ -66,7 +66,7 @@ class TestCapabilityPolicyReachesExecutor:
         assert agent._executor._capability_policy is None
 
     def test_no_policy_when_security_disabled(self) -> None:
-        cfg = JarvisConfig()
+        cfg = GrandpaConfig()
         cfg.security = SecurityConfig(enabled=False)
         engine = _make_mock_engine()
         sec = setup_security(cfg, engine)

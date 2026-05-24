@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from openjarvis.a2a.protocol import (
+from grandpa.a2a.protocol import (
     A2ARequest,
     A2AResponse,
     A2ATask,
     AgentCard,
     TaskState,
 )
-from openjarvis.a2a.server import A2AServer
-from openjarvis.core.events import EventBus, EventType
+from grandpa.a2a.server import A2AServer
+from grandpa.core.events import EventBus, EventType
 
 
 class TestAgentCard:

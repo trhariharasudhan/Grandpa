@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from openjarvis.core.events import EventBus
+from grandpa.core.events import EventBus
 from tests.agents.fake_engine import FakeEngine
 from tests.agents.scenario_harness import FakeSystem, ScenarioHarness
 
@@ -15,11 +15,11 @@ from tests.agents.scenario_harness import FakeSystem, ScenarioHarness
 @pytest.fixture
 def scenario_harness(tmp_path):
     """Wire up real components for agent lifecycle testing (channels copy)."""
-    from openjarvis.agents.executor import AgentExecutor
-    from openjarvis.agents.manager import AgentManager
-    from openjarvis.agents.monitor_operative import MonitorOperativeAgent
-    from openjarvis.agents.scheduler import AgentScheduler
-    from openjarvis.core.registry import AgentRegistry
+    from grandpa.agents.executor import AgentExecutor
+    from grandpa.agents.manager import AgentManager
+    from grandpa.agents.monitor_operative import MonitorOperativeAgent
+    from grandpa.agents.scheduler import AgentScheduler
+    from grandpa.core.registry import AgentRegistry
 
     if not AgentRegistry.contains("monitor_operative"):
         AgentRegistry.register("monitor_operative")(MonitorOperativeAgent)

@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [
-    {name = "Open Jarvis Contributors"},
+    {name = "Grandpa Contributors"},
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -88,7 +88,7 @@ orchestrator-training = ["torch>=2.0", "transformers>=4.40"]
 learning-dspy = ["dspy>=2.6"]
 learning-gepa = ["gepa>=0.1"]
 # ACE (Agentic Context Engineering) is supported via
-# ``openjarvis.learning.agents.ace_optimizer`` but ACE upstream isn't on
+# ``grandpa.learning.agents.ace_optimizer`` but ACE upstream isn't on
 # PyPI and isn't structured as an installable Python package as of
 # v1.0.1, so there's no ``learning-ace`` extra. To use ACE, follow the
 # manual setup in docs/learning/ace.md (clone the upstream repo, add
@@ -129,7 +129,7 @@ eval-sheets = ["gspread>=6.0", "google-auth>=2.0"]
 mining-pearl-cpu = [
     # Pearl Python packages (py-pearl-mining, miner-base, pearl-gateway) are
     # not on PyPI yet. They are installed at first `mine init` via the
-    # build-from-pin path in src/openjarvis/mining/_install.py:build_from_pin().
+    # build-from-pin path in src/grandpa/mining/_install.py:build_from_pin().
     # When Pearl publishes wheels, replace the line below with version pins.
     #
     # The extra remains as a feature-flag namespace so users can run
@@ -146,21 +146,21 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/open-jarvis/OpenJarvis"
-Documentation = "https://open-jarvis.github.io/OpenJarvis/"
-Repository = "https://github.com/open-jarvis/OpenJarvis"
-Issues = "https://github.com/open-jarvis/OpenJarvis/issues"
+Homepage = "https://github.com/grandpa/grandpa"
+Documentation = "https://grandpa.github.io/grandpa/"
+Repository = "https://github.com/grandpa/grandpa"
+Issues = "https://github.com/grandpa/grandpa/issues"
 
 [project.scripts]
-grandpa = "openjarvis.cli:main"
-jarvis = "openjarvis.cli:main"
+grandpa = "grandpa.cli:main"
+Grandpa = "grandpa.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/openjarvis"]
+packages = ["src/grandpa"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"src/openjarvis/agents/claude_code_runner" = "_node_modules/claude_code_runner"
-"src/openjarvis/channels/whatsapp_baileys_bridge" = "_node_modules/whatsapp_baileys_bridge"
+"src/grandpa/agents/claude_code_runner" = "_node_modules/claude_code_runner"
+"src/grandpa/channels/whatsapp_baileys_bridge" = "_node_modules/whatsapp_baileys_bridge"
 "scripts/install" = "_install_scripts"
 
 [tool.pytest.ini_options]
@@ -186,15 +186,15 @@ src = ["src", "tests"]
 select = ["E", "F", "I", "W"]
 
 [tool.ruff.lint.per-file-ignores]
-"src/openjarvis/evals/datasets/*.py" = ["E501"]
-"src/openjarvis/evals/scorers/*.py" = ["E501"]
+"src/grandpa/evals/datasets/*.py" = ["E501"]
+"src/grandpa/evals/scorers/*.py" = ["E501"]
 # hybrid/ is research code with long prompt strings and paradigm-specific
 # config dicts — same relaxation as evals research code above.
-"src/openjarvis/agents/hybrid/*.py" = ["E501"]
+"src/grandpa/agents/hybrid/*.py" = ["E501"]
 # research_loop.py carries the multi-paragraph planner system prompt as
 # inline string literals; line-length wrapping would harm readability of
 # the prompt itself.
-"src/openjarvis/agents/research_loop.py" = ["E501"]
+"src/grandpa/agents/research_loop.py" = ["E501"]
 
 [dependency-groups]
 dev = [

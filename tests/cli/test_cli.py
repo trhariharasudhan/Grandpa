@@ -9,12 +9,12 @@ from unittest import mock
 
 from click.testing import CliRunner
 
-import openjarvis
-from openjarvis.cli import cli, main
+import grandpa
+from grandpa.cli import cli, main
 
 
 class TestMainEntryPoint:
-    """Tests for the ``jarvis`` console script entry point."""
+    """Tests for the ``Grandpa`` console script entry point."""
 
     def test_windows_reconfigures_stdout_to_utf8(self) -> None:
         """On Windows, main() must reconfigure stdout/stderr to UTF-8 so that
@@ -26,7 +26,7 @@ class TestMainEntryPoint:
             mock.patch.object(sys, "platform", "win32"),
             mock.patch.object(sys, "stdout", stdout_mock),
             mock.patch.object(sys, "stderr", stderr_mock),
-            mock.patch("openjarvis.cli.cli") as cli_mock,
+            mock.patch("grandpa.cli.cli") as cli_mock,
         ):
             main()
         stdout_mock.reconfigure.assert_called_once_with(
@@ -43,7 +43,7 @@ class TestMainEntryPoint:
         with (
             mock.patch.object(sys, "platform", "linux"),
             mock.patch.object(sys, "stdout", stdout_mock),
-            mock.patch("openjarvis.cli.cli") as cli_mock,
+            mock.patch("grandpa.cli.cli") as cli_mock,
         ):
             main()
         stdout_mock.reconfigure.assert_not_called()
@@ -54,12 +54,12 @@ class TestCLI:
     def test_help(self) -> None:
         result = CliRunner().invoke(cli, ["--help"])
         assert result.exit_code == 0
-        assert "OpenJarvis" in result.output
+        assert "grandpa" in result.output
 
     def test_version(self) -> None:
         result = CliRunner().invoke(cli, ["--version"])
         assert result.exit_code == 0
-        assert openjarvis.__version__ in result.output
+        assert grandpa.__version__ in result.output
 
     def test_ask_requires_query(self) -> None:
         result = CliRunner().invoke(cli, ["ask"])
@@ -122,12 +122,12 @@ class TestCLI:
         assert "list" in result.output
 
     def test_init_creates_config(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".openjarvis"
+        config_dir = tmp_path / ".grandpa"
         config_path = config_dir / "config.toml"
         with (
-            mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("openjarvis.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("openjarvis.cli.init_cmd.PrivacyScanner"),
+            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
+            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
+            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
         ):
             result = CliRunner().invoke(
                 cli, ["init", "--engine", "ollama", "--no-download"]

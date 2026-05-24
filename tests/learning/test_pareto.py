@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from openjarvis.evals.core.types import MetricStats, RunSummary
-from openjarvis.learning.optimize.optimizer import compute_pareto_frontier
-from openjarvis.learning.optimize.types import (
+from grandpa.evals.core.types import MetricStats, RunSummary
+from grandpa.learning.optimize.optimizer import compute_pareto_frontier
+from grandpa.learning.optimize.types import (
     ObjectiveSpec,
     TrialConfig,
     TrialResult,
@@ -53,7 +53,7 @@ def _make_trial_with_summary(
     defaults: Dict[str, Any] = dict(
         benchmark="test",
         category="reasoning",
-        backend="jarvis-direct",
+        backend="Grandpa-direct",
         model="test-model",
         total_samples=10,
         scored_samples=10,

@@ -5,7 +5,7 @@ setup() {
     export FAKE_HOME="$TEST_TMPDIR/home"
     mkdir -p "$FAKE_HOME"
     export HOME="$FAKE_HOME"
-    export OPENJARVIS_HOME="$FAKE_HOME/.openjarvis"
+    export GRANDPA_HOME="$FAKE_HOME/.grandpa"
 
     export STUBS_DIR="$BATS_TEST_DIRNAME/stubs"
     # Use a copy of stubs without uv-style real binaries that might be on the host.
@@ -21,7 +21,7 @@ setup() {
     : > "$UV_STUB_LOG"
     : > "$CURL_STUB_LOG"
 
-    # uv stub needs to fake creating a venv with a jarvis binary.
+    # uv stub needs to fake creating a venv with a grandpa binary.
     # Replace the stubs/uv with one that creates the venv tree on `venv` command.
     # Since we don't want to mutate the real stub, override via a per-test stub dir.
     export PER_TEST_STUBS="$TEST_TMPDIR/stubs"
@@ -43,13 +43,13 @@ case "\$1" in
         done
         if [[ -n "\$venv_path" ]]; then
             mkdir -p "\$venv_path/bin"
-            cat > "\$venv_path/bin/jarvis" <<'EOJ'
+            cat > "\$venv_path/bin/grandpa" <<'EOJ'
 #!/usr/bin/env bash
-# fake jarvis for tests
-echo "fake jarvis: \$@"
+# fake grandpa for tests
+echo "fake grandpa: \$@"
 exit 0
 EOJ
-            chmod +x "\$venv_path/bin/jarvis"
+            chmod +x "\$venv_path/bin/grandpa"
             cat > "\$venv_path/bin/python" <<'EOJ'
 #!/usr/bin/env bash
 # fake python that prints empty for the inline embedded scripts (recommend_model, etc.)
@@ -91,29 +91,29 @@ IDEOF
     echo "$output" | grep -qi "root"
 }
 
-@test "creates ~/.openjarvis directory tree" {
+@test "creates ~/.grandpa directory tree" {
     run bash "$SCRIPT" --no-bg-orchestrator
     [ "$status" -eq 0 ]
-    [ -d "$OPENJARVIS_HOME/src" ]
-    [ -d "$OPENJARVIS_HOME/.state" ]
-    [ -d "$OPENJARVIS_HOME/.scripts" ]
+    [ -d "$GRANDPA_HOME/src" ]
+    [ -d "$GRANDPA_HOME/.state" ]
+    [ -d "$GRANDPA_HOME/.scripts" ]
 }
 
 @test "writes install-state.json on success" {
     run bash "$SCRIPT" --no-bg-orchestrator
     [ "$status" -eq 0 ]
-    [ -f "$OPENJARVIS_HOME/.state/install-state.json" ]
+    [ -f "$GRANDPA_HOME/.state/install-state.json" ]
 }
 
-@test "calls git clone for the OpenJarvis repo" {
+@test "calls git clone for the Grandpa repo" {
     run bash "$SCRIPT" --no-bg-orchestrator
     grep -q "clone" "$GIT_STUB_LOG"
 }
 
-@test "creates jarvis symlink in ~/.local/bin" {
+@test "creates grandpa symlink in ~/.local/bin" {
     run bash "$SCRIPT" --no-bg-orchestrator
     [ "$status" -eq 0 ]
-    [ -L "$FAKE_HOME/.local/bin/jarvis" ] || [ -f "$FAKE_HOME/.local/bin/jarvis" ]
+    [ -L "$FAKE_HOME/.local/bin/grandpa" ] || [ -f "$FAKE_HOME/.local/bin/grandpa" ]
 }
 
 @test "is idempotent — second run skips completed steps" {
@@ -126,9 +126,9 @@ IDEOF
 }
 
 @test "detects WSL2 and writes platform note to install-state" {
-    OPENJARVIS_FORCE_WSL=1 run bash "$SCRIPT" --no-bg-orchestrator
+    GRANDPA_FORCE_WSL=1 run bash "$SCRIPT" --no-bg-orchestrator
     [ "$status" -eq 0 ]
-    grep -q "wsl" "$OPENJARVIS_HOME/.state/install-state.json"
+    grep -q "wsl" "$GRANDPA_HOME/.state/install-state.json"
 }
 
 @test "fails loudly when git is missing" {

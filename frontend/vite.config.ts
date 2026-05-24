@@ -16,8 +16,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'OpenJarvis',
-        short_name: 'Jarvis',
+        name: 'Grandpa',
+        short_name: 'Grandpa',
         description: 'On-device AI assistant',
         theme_color: '#161618',
         background_color: '#161618',
@@ -34,7 +34,7 @@ export default defineConfig({
     }),
   ],
   build: {
-    outDir: '../src/openjarvis/server/static',
+    outDir: '../src/grandpa/server/static',
     emptyOutDir: true,
     minify: 'esbuild',
     rollupOptions: {

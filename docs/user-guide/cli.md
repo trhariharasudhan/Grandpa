@@ -1,21 +1,21 @@
 # CLI Reference
 
-OpenJarvis provides a command-line interface through the `jarvis` command. Built on [Click](https://click.palletsprojects.com/), it offers subcommands for querying models, managing memory, running benchmarks, and serving an OpenAI-compatible API.
+grandpa provides a command-line interface through the `Grandpa` command. Built on [Click](https://click.palletsprojects.com/), it offers subcommands for querying models, managing memory, running benchmarks, and serving an OpenAI-compatible API.
 
 ## Global Options
 
 ```bash
-jarvis --version   # Print the OpenJarvis version
-jarvis --help      # Show top-level help with all subcommands
+Grandpa --version   # Print the grandpa version
+Grandpa --help      # Show top-level help with all subcommands
 ```
 
-## `jarvis init`
+## `Grandpa init`
 
-Detect local hardware (CPU, GPU, RAM) and generate a configuration file at `~/.openjarvis/config.toml`.
+Detect local hardware (CPU, GPU, RAM) and generate a configuration file at `~/.grandpa/config.toml`.
 
 ```bash
-jarvis init           # Interactive — refuses to overwrite existing config
-jarvis init --force   # Overwrite existing config without prompting
+Grandpa init           # Interactive — refuses to overwrite existing config
+Grandpa init --force   # Overwrite existing config without prompting
 ```
 
 | Option    | Description                                   |
@@ -45,12 +45,12 @@ Config written successfully.
 
 ---
 
-## `jarvis ask`
+## `Grandpa ask`
 
 Send a query to the inference engine (directly or through an agent) and print the response.
 
 ```bash
-jarvis ask "What is the capital of France?"
+Grandpa ask "What is the capital of France?"
 ```
 
 ### Options
@@ -72,37 +72,37 @@ jarvis ask "What is the capital of France?"
 **Direct mode** (default) sends the query straight to the inference engine:
 
 ```bash
-jarvis ask "Explain quantum computing"
+Grandpa ask "Explain quantum computing"
 ```
 
 **Agent mode** routes the query through an agent that can use tools and manage multi-turn interactions:
 
 ```bash
-jarvis ask --agent orchestrator "What is 2+2?"
-jarvis ask --agent orchestrator --tools calculator,think "Calculate sqrt(144) + 3^2"
-jarvis ask --agent simple "Hello"
+Grandpa ask --agent orchestrator "What is 2+2?"
+Grandpa ask --agent orchestrator --tools calculator,think "Calculate sqrt(144) + 3^2"
+Grandpa ask --agent simple "Hello"
 ```
 
 ### Usage Examples
 
 ```bash
 # Basic query
-jarvis ask "What is machine learning?"
+Grandpa ask "What is machine learning?"
 
 # Specify a model
-jarvis ask -m qwen3:8b "Summarize this concept"
+Grandpa ask -m qwen3:8b "Summarize this concept"
 
 # Use the orchestrator agent with tools
-jarvis ask --agent orchestrator --tools calculator "What is 15% of 340?"
+Grandpa ask --agent orchestrator --tools calculator "What is 15% of 340?"
 
 # Get JSON output
-jarvis ask --json "Hello"
+Grandpa ask --json "Hello"
 
 # Disable memory context injection
-jarvis ask --no-context "Tell me about Python"
+Grandpa ask --no-context "Tell me about Python"
 
 # Set maximum token generation
-jarvis ask --max-tokens 2048 "Write a detailed essay about AI"
+Grandpa ask --max-tokens 2048 "Write a detailed essay about AI"
 ```
 
 ### JSON Output Format
@@ -138,16 +138,16 @@ When using `--json` in **agent mode**, the output includes:
 
 ---
 
-## `jarvis model`
+## `Grandpa model`
 
 Manage and inspect language models available on running engines.
 
-### `jarvis model list`
+### `Grandpa model list`
 
 List all models available from running inference engines, displayed as a Rich table with model parameters, context length, and VRAM requirements.
 
 ```bash
-jarvis model list
+Grandpa model list
 ```
 
 **Example output:**
@@ -162,12 +162,12 @@ jarvis model list
 └─────────┴────────────────┴────────┴─────────┴──────┘
 ```
 
-### `jarvis model info <model>`
+### `Grandpa model info <model>`
 
 Show detailed information about a specific model.
 
 ```bash
-jarvis model info qwen3:8b
+Grandpa model info qwen3:8b
 ```
 
 **Example output:**
@@ -186,12 +186,12 @@ jarvis model info qwen3:8b
 └───────────────────────────────────────────┘
 ```
 
-### `jarvis model pull <model>`
+### `Grandpa model pull <model>`
 
 Download a model via Ollama. Shows a progress bar during download.
 
 ```bash
-jarvis model pull qwen3:8b
+Grandpa model pull qwen3:8b
 ```
 
 !!! note
@@ -199,28 +199,28 @@ jarvis model pull qwen3:8b
 
 ---
 
-## `jarvis pearl`
+## `Grandpa pearl`
 
-Access Pearl's native node, wallet, and RPC tools from the OpenJarvis CLI.
+Access Pearl's native node, wallet, and RPC tools from the grandpa CLI.
 
 ```bash
-jarvis pearl doctor
-jarvis pearl node -- <pearld args>
-jarvis pearl wallet -- <oyster args>
-jarvis pearl ctl -- <prlctl args>
-jarvis pearl address
+Grandpa pearl doctor
+Grandpa pearl node -- <pearld args>
+Grandpa pearl wallet -- <oyster args>
+Grandpa pearl ctl -- <prlctl args>
+Grandpa pearl address
 ```
 
-All Pearl wrapper commands use the `jarvis pearl <command>` shape. The
+All Pearl wrapper commands use the `Grandpa pearl <command>` shape. The
 pass-through commands map to Pearl's native binaries:
 
-| OpenJarvis command | Pearl binary | Use |
+| grandpa command | Pearl binary | Use |
 |--------------------|--------------|-----|
-| `jarvis pearl doctor` | n/a | Check whether `pearld`, `oyster`, and `prlctl` are discoverable |
-| `jarvis pearl node` | `pearld` | Run the Pearl full node |
-| `jarvis pearl wallet` | `oyster` | Run the Oyster wallet daemon |
-| `jarvis pearl ctl` | `prlctl` | Query Pearl node or wallet RPC |
-| `jarvis pearl address` | `prlctl --wallet getnewaddress` | Generate a wallet address from Oyster |
+| `Grandpa pearl doctor` | n/a | Check whether `pearld`, `oyster`, and `prlctl` are discoverable |
+| `Grandpa pearl node` | `pearld` | Run the Pearl full node |
+| `Grandpa pearl wallet` | `oyster` | Run the Oyster wallet daemon |
+| `Grandpa pearl ctl` | `prlctl` | Query Pearl node or wallet RPC |
+| `Grandpa pearl address` | `prlctl --wallet getnewaddress` | Generate a wallet address from Oyster |
 
 Use `PEARL_HOME=/path/to/pearl` or `--pearl-home /path/to/pearl` if Pearl's
 `bin/` directory is not on `PATH`. See the [Pearl CLI guide](pearl.md) for
@@ -228,19 +228,19 @@ examples.
 
 ---
 
-## `jarvis memory`
+## `Grandpa memory`
 
 Manage the document memory store for retrieval-augmented generation.
 
-### `jarvis memory index <path>`
+### `Grandpa memory index <path>`
 
 Index documents from a file or directory into the memory store.
 
 ```bash
-jarvis memory index ./docs/
-jarvis memory index ./notes.md
-jarvis memory index ./data/ --chunk-size 256 --chunk-overlap 32
-jarvis memory index ./docs/ --backend sqlite
+Grandpa memory index ./docs/
+Grandpa memory index ./notes.md
+Grandpa memory index ./data/ --chunk-size 256 --chunk-overlap 32
+Grandpa memory index ./docs/ --backend sqlite
 ```
 
 | Option                      | Type   | Default | Description                          |
@@ -251,14 +251,14 @@ jarvis memory index ./docs/ --backend sqlite
 
 The ingestion pipeline supports text, markdown, code files, and PDF (with `pdfplumber` installed). Binary files and hidden directories are automatically skipped.
 
-### `jarvis memory search <query>`
+### `Grandpa memory search <query>`
 
 Search the memory store for relevant document chunks.
 
 ```bash
-jarvis memory search "machine learning basics"
-jarvis memory search -k 10 "neural networks"
-jarvis memory search --backend faiss "embeddings"
+Grandpa memory search "machine learning basics"
+Grandpa memory search -k 10 "neural networks"
+Grandpa memory search --backend faiss "embeddings"
 ```
 
 | Option             | Type   | Default | Description                          |
@@ -268,13 +268,13 @@ jarvis memory search --backend faiss "embeddings"
 
 Results are displayed in a table with rank, score, source file, and a content preview.
 
-### `jarvis memory stats`
+### `Grandpa memory stats`
 
 Show memory store statistics including document count and database size.
 
 ```bash
-jarvis memory stats
-jarvis memory stats --backend sqlite
+Grandpa memory stats
+Grandpa memory stats --backend sqlite
 ```
 
 | Option             | Type   | Default | Description                          |
@@ -283,32 +283,32 @@ jarvis memory stats --backend sqlite
 
 ---
 
-## `jarvis telemetry`
+## `Grandpa telemetry`
 
 Query and manage inference telemetry data stored in SQLite.
 
-### `jarvis telemetry stats`
+### `Grandpa telemetry stats`
 
 Show aggregated telemetry statistics including total calls, tokens, cost, and latency, broken down by model and engine.
 
 ```bash
-jarvis telemetry stats
-jarvis telemetry stats -n 5    # Show top 5 models
+Grandpa telemetry stats
+Grandpa telemetry stats -n 5    # Show top 5 models
 ```
 
 | Option          | Type | Default | Description                   |
 |-----------------|------|---------|-------------------------------|
 | `-n`, `--top`   | int  | `10`    | Number of top models to show  |
 
-### `jarvis telemetry export`
+### `Grandpa telemetry export`
 
 Export raw telemetry records in JSON or CSV format.
 
 ```bash
-jarvis telemetry export                          # JSON to stdout
-jarvis telemetry export --format csv             # CSV to stdout
-jarvis telemetry export --format json -o data.json  # JSON to file
-jarvis telemetry export -f csv -o metrics.csv    # CSV to file
+Grandpa telemetry export                          # JSON to stdout
+Grandpa telemetry export --format csv             # CSV to stdout
+Grandpa telemetry export --format json -o data.json  # JSON to file
+Grandpa telemetry export -f csv -o metrics.csv    # CSV to file
 ```
 
 | Option                | Type   | Default  | Description                     |
@@ -316,13 +316,13 @@ jarvis telemetry export -f csv -o metrics.csv    # CSV to file
 | `-f`, `--format`      | choice | `json`   | Output format: `json` or `csv`  |
 | `-o`, `--output`      | path   | stdout   | Output file path                |
 
-### `jarvis telemetry clear`
+### `Grandpa telemetry clear`
 
 Delete all telemetry records from the database.
 
 ```bash
-jarvis telemetry clear         # Interactive confirmation
-jarvis telemetry clear --yes   # Skip confirmation
+Grandpa telemetry clear         # Interactive confirmation
+Grandpa telemetry clear --yes   # Skip confirmation
 ```
 
 | Option         | Type | Default | Description                   |
@@ -334,21 +334,21 @@ jarvis telemetry clear --yes   # Skip confirmation
 
 ---
 
-## `jarvis bench`
+## `Grandpa bench`
 
 Run inference benchmarks against a running engine.
 
-### `jarvis bench run`
+### `Grandpa bench run`
 
 Execute benchmarks and report results.
 
 ```bash
-jarvis bench run                               # Run all benchmarks, 10 samples
-jarvis bench run -n 20                         # 20 samples per benchmark
-jarvis bench run -b latency                    # Only the latency benchmark
-jarvis bench run -b throughput -n 50 --json    # Throughput, 50 samples, JSON output
-jarvis bench run -o results.jsonl              # Write JSONL results to file
-jarvis bench run -m qwen3:8b -e ollama         # Specific model and engine
+Grandpa bench run                               # Run all benchmarks, 10 samples
+Grandpa bench run -n 20                         # 20 samples per benchmark
+Grandpa bench run -b latency                    # Only the latency benchmark
+Grandpa bench run -b throughput -n 50 --json    # Throughput, 50 samples, JSON output
+Grandpa bench run -o results.jsonl              # Write JSONL results to file
+Grandpa bench run -m qwen3:8b -e ollama         # Specific model and engine
 ```
 
 | Option                     | Type   | Default | Description                              |
@@ -367,25 +367,25 @@ Available benchmarks:
 
 ---
 
-## `jarvis channel`
+## `Grandpa channel`
 
 Manage messaging channels for multi-platform communication. Channels connect directly to platform APIs (Telegram, Discord, Slack, etc.) -- no gateway required.
 
-### `jarvis channel list`
+### `Grandpa channel list`
 
 List registered channel backends and their connection status.
 
 ```bash
-jarvis channel list
+Grandpa channel list
 ```
 
-### `jarvis channel send`
+### `Grandpa channel send`
 
 Send a message to a specific channel.
 
 ```bash
-jarvis channel send slack "Hello from Jarvis!"
-jarvis channel send discord "Build complete"
+Grandpa channel send slack "Hello from Grandpa!"
+Grandpa channel send discord "Build complete"
 ```
 
 | Argument    | Type   | Description                          |
@@ -393,12 +393,12 @@ jarvis channel send discord "Build complete"
 | `TARGET`    | string | Channel name to send to              |
 | `MESSAGE`   | string | Message content                      |
 
-### `jarvis channel status`
+### `Grandpa channel status`
 
 Show connection status for configured channels.
 
 ```bash
-jarvis channel status
+Grandpa channel status
 ```
 
 !!! note "Channel Dependencies"
@@ -406,16 +406,16 @@ jarvis channel status
 
 ---
 
-## `jarvis serve`
+## `Grandpa serve`
 
 Start an OpenAI-compatible API server.
 
 ```bash
-jarvis serve                                 # Default host/port from config
-jarvis serve --port 8000                     # Custom port
-jarvis serve --host 0.0.0.0 --port 9000      # Bind to all interfaces
-jarvis serve --model qwen3:8b                # Specify default model
-jarvis serve --agent orchestrator            # Route requests through an agent
+Grandpa serve                                 # Default host/port from config
+Grandpa serve --port 8000                     # Custom port
+Grandpa serve --host 0.0.0.0 --port 9000      # Bind to all interfaces
+Grandpa serve --model qwen3:8b                # Specify default model
+Grandpa serve --agent orchestrator            # Route requests through an agent
 ```
 
 | Option                   | Type   | Default | Description                              |
@@ -467,10 +467,10 @@ When an agent is configured (e.g., `--agent orchestrator`), non-streaming reques
 
 LLM-guided spec search (the frontier-driven harness-learning subsystem)
 is exposed as a Python library only — there is currently no top-level
-`jarvis` subcommand for it. Construct a `SpecSearchOrchestrator`
-directly from `openjarvis.learning.spec_search.orchestrator` and call
+`Grandpa` subcommand for it. Construct a `SpecSearchOrchestrator`
+directly from `grandpa.learning.spec_search.orchestrator` and call
 `.run(trigger)` with a trigger from
-`openjarvis.learning.spec_search.triggers`. See
+`grandpa.learning.spec_search.triggers`. See
 [`docs/user-guide/llm-guided-spec-search.md`](llm-guided-spec-search.md)
 for the architecture and the building blocks
 (`splits.py`, external corpora, `external_adapter`).

@@ -1,4 +1,4 @@
-"""Tests for openjarvis.evals.backends.external.openclaw.OpenClawBackend."""
+"""Tests for grandpa.evals.backends.external.openclaw.OpenClawBackend."""
 
 from __future__ import annotations
 
@@ -7,9 +7,9 @@ from unittest.mock import patch
 
 import pytest
 
-from openjarvis.evals.backends.external._subprocess_runner import SubprocessResult
-from openjarvis.evals.backends.external.openclaw import OpenClawBackend
-from openjarvis.evals.comparison.third_party import (
+from grandpa.evals.backends.external._subprocess_runner import SubprocessResult
+from grandpa.evals.backends.external.openclaw import OpenClawBackend
+from grandpa.evals.comparison.third_party import (
     CommitDriftError,
     ThirdPartyConfig,
     ThirdPartyEntry,
@@ -24,7 +24,7 @@ def _fake_third_party(tmp_path: Path) -> ThirdPartyConfig:
                 path=tmp_path,
                 pinned_commit="def456",
                 runner_script=(
-                    "src/openjarvis/evals/backends/external/_runners/openclaw_runner.mjs"
+                    "src/grandpa/evals/backends/external/_runners/openclaw_runner.mjs"
                 ),
                 node_executable="",
             )
@@ -39,14 +39,14 @@ class TestOpenClawBackend:
         cfg = _fake_third_party(tmp_path)
         with (
             patch(
-                "openjarvis.evals.backends.external.openclaw.load_third_party_config",
+                "grandpa.evals.backends.external.openclaw.load_third_party_config",
                 return_value=cfg,
             ),
             patch(
-                "openjarvis.evals.backends.external.openclaw.verify_commit_pin",
+                "grandpa.evals.backends.external.openclaw.verify_commit_pin",
             ),
             patch(
-                "openjarvis.evals.backends.external.openclaw.run_one_shot",
+                "grandpa.evals.backends.external.openclaw.run_one_shot",
             ) as mock_run,
         ):
             mock_run.return_value = SubprocessResult(
@@ -85,14 +85,14 @@ class TestOpenClawBackend:
         cfg = _fake_third_party(tmp_path)
         with (
             patch(
-                "openjarvis.evals.backends.external.openclaw.load_third_party_config",
+                "grandpa.evals.backends.external.openclaw.load_third_party_config",
                 return_value=cfg,
             ),
             patch(
-                "openjarvis.evals.backends.external.openclaw.verify_commit_pin",
+                "grandpa.evals.backends.external.openclaw.verify_commit_pin",
             ),
             patch(
-                "openjarvis.evals.backends.external.openclaw.run_one_shot",
+                "grandpa.evals.backends.external.openclaw.run_one_shot",
             ) as mock_run,
         ):
             mock_run.return_value = SubprocessResult(
@@ -130,14 +130,14 @@ class TestOpenClawBackend:
         cfg = _fake_third_party(tmp_path)
         with (
             patch(
-                "openjarvis.evals.backends.external.openclaw.load_third_party_config",
+                "grandpa.evals.backends.external.openclaw.load_third_party_config",
                 return_value=cfg,
             ),
             patch(
-                "openjarvis.evals.backends.external.openclaw.verify_commit_pin",
+                "grandpa.evals.backends.external.openclaw.verify_commit_pin",
             ),
             patch(
-                "openjarvis.evals.backends.external.openclaw.run_one_shot",
+                "grandpa.evals.backends.external.openclaw.run_one_shot",
             ) as mock_run,
         ):
             mock_run.return_value = SubprocessResult(
@@ -165,11 +165,11 @@ class TestOpenClawBackend:
         cfg = _fake_third_party(tmp_path)
         with (
             patch(
-                "openjarvis.evals.backends.external.openclaw.load_third_party_config",
+                "grandpa.evals.backends.external.openclaw.load_third_party_config",
                 return_value=cfg,
             ),
             patch(
-                "openjarvis.evals.backends.external.openclaw.verify_commit_pin",
+                "grandpa.evals.backends.external.openclaw.verify_commit_pin",
                 side_effect=CommitDriftError("drift!"),
             ),
         ):

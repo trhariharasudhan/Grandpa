@@ -1,11 +1,11 @@
-"""Tests for openjarvis.optimize.feedback.judge module."""
+"""Tests for grandpa.optimize.feedback.judge module."""
 
 from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-from openjarvis.core.types import StepType, Trace, TraceStep
-from openjarvis.learning.optimize.feedback.judge import TraceJudge, _parse_score
+from grandpa.core.types import StepType, Trace, TraceStep
+from grandpa.learning.optimize.feedback.judge import TraceJudge, _parse_score
 
 # ---------------------------------------------------------------------------
 # _parse_score unit tests

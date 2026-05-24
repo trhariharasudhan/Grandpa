@@ -6,7 +6,7 @@ import pytest
 
 pydantic = pytest.importorskip("pydantic")
 
-from openjarvis.server.models import (  # noqa: E402
+from grandpa.server.models import (  # noqa: E402
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,

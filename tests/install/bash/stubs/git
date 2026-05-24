@@ -31,7 +31,7 @@ case "$1" in
         mkdir -p "$target/scripts/install"
         # Provide minimal expected files so install.sh can copy them.
         for s in install-rust.sh build-extension.sh pull-model.sh bg-orchestrator.sh \
-                 jarvis-wrapper.sh jarvis-uninstall.sh; do
+                 grandpa-wrapper.sh grandpa-uninstall.sh; do
             cat > "$target/scripts/install/$s" <<EOF2
 #!/usr/bin/env bash
 exit 0
@@ -43,7 +43,7 @@ EOF2
         # Also create a pyproject.toml so editable install would work in real life.
         cat > "$target/pyproject.toml" <<EOF2
 [project]
-name = "OpenJarvis"
+name = "Grandpa"
 version = "0.1.1"
 EOF2
         ;;

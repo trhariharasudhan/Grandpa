@@ -3,10 +3,10 @@
 import time
 from unittest.mock import patch
 
-from openjarvis.agents._stubs import AgentResult
-from openjarvis.agents.executor import AgentExecutor
-from openjarvis.agents.manager import AgentManager
-from openjarvis.core.events import EventBus, EventType
+from grandpa.agents._stubs import AgentResult
+from grandpa.agents.executor import AgentExecutor
+from grandpa.agents.manager import AgentManager
+from grandpa.core.events import EventBus, EventType
 
 
 def test_activity_tracking_updates_last_activity_at(tmp_path):
@@ -69,7 +69,7 @@ def test_reconcile_detects_stalled_agent(tmp_path):
     mgr = AgentManager(str(tmp_path / "test.db"))
     bus = EventBus(record_history=True)
     executor = AgentExecutor(mgr, bus)
-    from openjarvis.agents.scheduler import AgentScheduler
+    from grandpa.agents.scheduler import AgentScheduler
 
     scheduler = AgentScheduler(mgr, executor, event_bus=bus)
 
@@ -99,7 +99,7 @@ def test_reconcile_skips_active_agent(tmp_path):
     mgr = AgentManager(str(tmp_path / "test.db"))
     bus = EventBus(record_history=True)
     executor = AgentExecutor(mgr, bus)
-    from openjarvis.agents.scheduler import AgentScheduler
+    from grandpa.agents.scheduler import AgentScheduler
 
     scheduler = AgentScheduler(mgr, executor, event_bus=bus)
 
@@ -118,7 +118,7 @@ def test_reconcile_retries_exhausted_sets_error(tmp_path):
     mgr = AgentManager(str(tmp_path / "test.db"))
     bus = EventBus()
     executor = AgentExecutor(mgr, bus)
-    from openjarvis.agents.scheduler import AgentScheduler
+    from grandpa.agents.scheduler import AgentScheduler
 
     scheduler = AgentScheduler(mgr, executor, event_bus=bus)
 

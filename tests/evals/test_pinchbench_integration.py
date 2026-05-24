@@ -7,8 +7,8 @@ without requiring the actual PinchBench repo or cloud API keys.
 import textwrap
 from pathlib import Path
 
-from openjarvis.evals.core.event_recorder import EventRecorder, EventType
-from openjarvis.evals.datasets.pinchbench import PinchBenchDataset
+from grandpa.evals.core.event_recorder import EventRecorder, EventType
+from grandpa.evals.datasets.pinchbench import PinchBenchDataset
 
 
 def _create_test_repo(tmp_path: Path) -> Path:

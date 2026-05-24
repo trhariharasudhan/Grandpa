@@ -7,13 +7,13 @@ A multi-hop research agent that searches across your indexed documents, cross-re
 ### 1. Install and initialize
 
 ```bash
-git clone https://github.com/open-jarvis/OpenJarvis.git
-cd OpenJarvis
+git clone https://github.com/grandpa/grandpa.git
+cd grandpa
 uv sync --extra dev
-jarvis init --preset deep-research
+Grandpa init --preset deep-research
 ```
 
-This writes a pre-configured `~/.openjarvis/config.toml` for the deep research agent.
+This writes a pre-configured `~/.grandpa/config.toml` for the deep research agent.
 
 ### 2. Index your documents
 
@@ -22,16 +22,16 @@ This writes a pre-configured `~/.openjarvis/config.toml` for the deep research a
 ollama pull qwen3.5:9b
 
 # Index a directory of files
-jarvis memory index ./docs/
-jarvis memory index ~/Documents/papers/
+Grandpa memory index ./docs/
+Grandpa memory index ~/Documents/papers/
 ```
 
-OpenJarvis chunks the content and stores it in a local SQLite/FTS5 database. Supported formats include `.txt`, `.md`, `.pdf`, `.py`, `.json`, `.csv`, and more.
+grandpa chunks the content and stores it in a local SQLite/FTS5 database. Supported formats include `.txt`, `.md`, `.pdf`, `.py`, `.json`, `.csv`, and more.
 
 ### 3. Ask a research question
 
 ```bash
-jarvis ask "Summarize all documents about transformer architectures"
+Grandpa ask "Summarize all documents about transformer architectures"
 ```
 
 The deep research agent will:
@@ -44,26 +44,26 @@ The deep research agent will:
 
 ```bash
 # Ask a question (uses deep_research agent by default with this config)
-jarvis ask "What meetings did I have with Alice last month?"
+Grandpa ask "What meetings did I have with Alice last month?"
 
 # Explicitly specify the agent
-jarvis ask --agent deep_research "Compare the approaches described in paper-a.pdf and paper-b.pdf"
+Grandpa ask --agent deep_research "Compare the approaches described in paper-a.pdf and paper-b.pdf"
 
 # Index more documents
-jarvis memory index ~/Downloads/reports/
-jarvis memory index ./notes.md
+Grandpa memory index ~/Downloads/reports/
+Grandpa memory index ./notes.md
 
 # Search memory directly
-jarvis memory search "project timeline"
-jarvis memory search -k 20 "budget estimates"
+Grandpa memory search "project timeline"
+Grandpa memory search -k 20 "budget estimates"
 
 # Check what's indexed
-jarvis memory stats
+Grandpa memory stats
 ```
 
 ## Configuration Reference
 
-The preset writes this to `~/.openjarvis/config.toml`:
+The preset writes this to `~/.grandpa/config.toml`:
 
 ```toml
 [engine]
@@ -98,19 +98,19 @@ default_backend = "sqlite"
 
 ```bash
 # Summarize across multiple documents
-jarvis ask "Summarize all emails about the Q3 budget review"
+Grandpa ask "Summarize all emails about the Q3 budget review"
 
 # Cross-reference sources
-jarvis ask "What do papers A and B agree on regarding attention mechanisms?"
+Grandpa ask "What do papers A and B agree on regarding attention mechanisms?"
 
 # Find specific information
-jarvis ask "What meetings did I have with Alice last month?"
+Grandpa ask "What meetings did I have with Alice last month?"
 
 # Extract structured data
-jarvis ask "List all action items from the meeting notes in ~/Documents/meetings/"
+Grandpa ask "List all action items from the meeting notes in ~/Documents/meetings/"
 
 # Research with web fallback
-jarvis ask "Compare our internal benchmarks with the latest published results"
+Grandpa ask "Compare our internal benchmarks with the latest published results"
 ```
 
 ## Indexing Different Data Sources
@@ -119,13 +119,13 @@ jarvis ask "Compare our internal benchmarks with the latest published results"
 
 ```bash
 # Recursively index a directory
-jarvis memory index ~/Documents/
+Grandpa memory index ~/Documents/
 
 # Single file
-jarvis memory index ./report.pdf
+Grandpa memory index ./report.pdf
 
 # Custom chunk size for long documents
-jarvis memory index ./paper.pdf --chunk-size 1024 --chunk-overlap 128
+Grandpa memory index ./paper.pdf --chunk-size 1024 --chunk-overlap 128
 ```
 
 ### PDFs
@@ -133,7 +133,7 @@ jarvis memory index ./paper.pdf --chunk-size 1024 --chunk-overlap 128
 PDFs are automatically extracted and chunked. For best results with scanned PDFs, ensure they have been OCR-processed.
 
 ```bash
-jarvis memory index ~/Papers/*.pdf
+Grandpa memory index ~/Papers/*.pdf
 ```
 
 ### Web pages
@@ -141,20 +141,20 @@ jarvis memory index ~/Papers/*.pdf
 Use the `web_search` tool (enabled by default in this config) to pull in online sources at query time. For persistent indexing of web content, download pages first:
 
 ```bash
-curl -s https://example.com/article | jarvis memory index --stdin --source "example.com"
+curl -s https://example.com/article | Grandpa memory index --stdin --source "example.com"
 ```
 
 ### Code repositories
 
 ```bash
-jarvis memory index ./src/ --chunk-size 256
+Grandpa memory index ./src/ --chunk-size 256
 ```
 
 Smaller chunk sizes work better for code, where each function or class is a natural unit.
 
 ## Troubleshooting
 
-**"No results found"** -- Make sure you have indexed documents first with `jarvis memory index`. Check indexed content with `jarvis memory stats`.
+**"No results found"** -- Make sure you have indexed documents first with `Grandpa memory index`. Check indexed content with `Grandpa memory stats`.
 
 **Answers are too vague** -- Try increasing `max_turns` in the config (e.g., `12` or `15`) to give the agent more reasoning steps. You can also try a larger model like `qwen3.5:35b`.
 

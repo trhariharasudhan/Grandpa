@@ -11,6 +11,6 @@ WORKDIR /app
 COPY . .
 RUN pip install --no-cache-dir ".[server]"
 
-LABEL openjarvis-sandbox=true
+LABEL grandpa-sandbox=true
 
-ENTRYPOINT ["python", "-m", "openjarvis.sandbox.entrypoint"]
+ENTRYPOINT ["python", "-m", "grandpa.sandbox.entrypoint"]

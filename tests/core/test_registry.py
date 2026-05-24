@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from openjarvis.core.registry import (
+from grandpa.core.registry import (
     EngineRegistry,
     ModelRegistry,
     RouterPolicyRegistry,
@@ -95,7 +95,7 @@ class TestRouterPolicyRegistry:
 
 
 def test_miner_registry_register_and_get():
-    from openjarvis.core.registry import MinerRegistry
+    from grandpa.core.registry import MinerRegistry
 
     class _Stub:
         provider_id = "stub-pearl"
@@ -106,6 +106,6 @@ def test_miner_registry_register_and_get():
 
 
 def test_miner_registry_cleared_between_tests():
-    from openjarvis.core.registry import MinerRegistry
+    from grandpa.core.registry import MinerRegistry
     # If autouse clear works, no entry from prior tests remains
     assert MinerRegistry.contains("stub-pearl") is False

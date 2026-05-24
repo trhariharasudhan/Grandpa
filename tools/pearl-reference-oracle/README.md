@@ -1,4 +1,4 @@
-# Pearl reference oracle (OpenJarvis Phase 0 deliverable)
+# Pearl reference oracle (grandpa Phase 0 deliverable)
 
 Phase 0-B of [Spec B](../../docs/design/2026-05-05-apple-silicon-pearl-mining-design.md)
 called for "build a Python reference oracle for NoisyGEMM, validate against the
@@ -75,7 +75,7 @@ The `a.row_indices` and `bt.row_indices` values above are not constants — they
 miner happened to find a jackpot at. The smoke test verifies the *deltas* match
 the configured `PeriodicPattern`, not the absolute values.
 
-If it succeeds, this host can mine Pearl using the OpenJarvis `cpu-pearl` provider
+If it succeeds, this host can mine Pearl using the grandpa `cpu-pearl` provider
 (see Spec B §13). If it fails, the `[fail]` line tells you which step broke.
 
 ## What this proves (and what it doesn't)
@@ -102,7 +102,7 @@ If it succeeds, this host can mine Pearl using the OpenJarvis `cpu-pearl` provid
 ## When to update this
 
 - When Pearl bumps `py-pearl-mining` API: re-run the smoke test against the
-  new ref pinned in `OpenJarvis/src/openjarvis/mining/_constants.py`.
+  new ref pinned in `grandpa/src/grandpa/mining/_constants.py`.
 - When Pearl publishes a Mac wheel to PyPI: simplify the install instructions
   above, drop the local `maturin build` step.
 - When Spec B v2 adds the PyTorch-MPS reference path: extend `smoke_test.py`

@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openjarvis.channels._stubs import ChannelStatus
-from openjarvis.channels.twitter_channel import TwitterChannel
-from openjarvis.core.events import EventBus, EventType
-from openjarvis.core.registry import ChannelRegistry
+from grandpa.channels._stubs import ChannelStatus
+from grandpa.channels.twitter_channel import TwitterChannel
+from grandpa.core.events import EventBus, EventType
+from grandpa.core.registry import ChannelRegistry
 
 
 @pytest.fixture(autouse=True)
@@ -78,14 +78,14 @@ class TestSend:
         mock_response.status_code = 201
 
         with patch("httpx.post", return_value=mock_response) as mock_post:
-            result = ch.send("twitter", "Hello from OpenJarvis!")
+            result = ch.send("twitter", "Hello from grandpa!")
             assert result is True
             mock_post.assert_called_once()
             call_args = mock_post.call_args
             url = call_args[0][0]
             assert "api.twitter.com/2/tweets" in url
             payload = call_args[1]["json"]
-            assert payload["text"] == "Hello from OpenJarvis!"
+            assert payload["text"] == "Hello from grandpa!"
             assert "reply" not in payload
 
     def test_send_as_reply(self):

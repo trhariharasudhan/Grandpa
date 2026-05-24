@@ -1,0 +1,10 @@
+[package]
+name = "grandpa-recipes"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+grandpa-core = { path = "../grandpa-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }

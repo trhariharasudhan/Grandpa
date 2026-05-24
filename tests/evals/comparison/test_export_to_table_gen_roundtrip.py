@@ -14,7 +14,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from openjarvis.evals.comparison.table_gen import (
+from grandpa.evals.comparison.table_gen import (
     _build_t1,
     load_results,
 )
@@ -81,7 +81,7 @@ class TestExportToTableGenRoundtrip:
 
     def test_table_gen_builds_t1_from_export_schema(self, tmp_path: Path) -> None:
         """T1 builder produces non-empty LaTeX from realistic schema."""
-        for fwk, acc in [("hermes", 0.30), ("openjarvis", 0.45)]:
+        for fwk, acc in [("hermes", 0.30), ("grandpa", 0.45)]:
             summary = {
                 "framework": fwk,
                 "framework_commit": "abc" if fwk == "hermes" else "def",
@@ -110,8 +110,8 @@ class TestSummaryToDictEmitsRequiredFields:
     """
 
     def test_summary_to_dict_includes_table_gen_fields(self) -> None:
-        from openjarvis.evals.core.runner import _summary_to_dict
-        from openjarvis.evals.core.types import EvalResult, RunSummary
+        from grandpa.evals.core.runner import _summary_to_dict
+        from grandpa.evals.core.types import EvalResult, RunSummary
 
         results = [
             EvalResult(
@@ -165,8 +165,8 @@ class TestSummaryToDictEmitsRequiredFields:
 
     def test_summary_to_dict_without_results_still_works(self) -> None:
         """Backward compat: calling without ``results`` must not error."""
-        from openjarvis.evals.core.runner import _summary_to_dict
-        from openjarvis.evals.core.types import RunSummary
+        from grandpa.evals.core.runner import _summary_to_dict
+        from grandpa.evals.core.types import RunSummary
 
         summary = RunSummary(
             benchmark="gaia",
@@ -184,7 +184,7 @@ class TestSummaryToDictEmitsRequiredFields:
 
         d = _summary_to_dict(summary)
         # Still emits the §6.3 keys (defaults), so the schema is stable.
-        assert d["framework"] == "openjarvis"
+        assert d["framework"] == "grandpa"
         assert d["n_tasks"] == 0
         assert d["metrics"]["accuracy"] == {"mean": 0.0, "std": 0.0, "n": 0}
 
@@ -194,8 +194,8 @@ class TestExportSummaryJsonEmitsRequiredFields:
     the §6.3 fields, sourced from the ``config`` dict argument."""
 
     def test_export_summary_includes_table_gen_fields(self, tmp_path: Path) -> None:
-        from openjarvis.evals.core.export import export_summary_json
-        from openjarvis.evals.core.trace import QueryTrace, TurnTrace
+        from grandpa.evals.core.export import export_summary_json
+        from grandpa.evals.core.trace import QueryTrace, TurnTrace
 
         # Build minimal traces with enough fields populated so the
         # statistics blocks are non-empty.

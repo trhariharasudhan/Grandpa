@@ -191,12 +191,12 @@ fn resolve_bin(name: &str) -> String {
     name.to_string()
 }
 
-/// Find the OpenJarvis project root (contains pyproject.toml).
-/// Checks OPENJARVIS_ROOT env var, walks up from the executable, then
+/// Find the Grandpa project root (contains pyproject.toml).
+/// Checks Grandpa_ROOT env var, walks up from the executable, then
 /// probes common clone locations.
 fn find_project_root() -> Option<std::path::PathBuf> {
     // 1. Explicit env var override
-    if let Ok(root) = std::env::var("OPENJARVIS_ROOT") {
+    if let Ok(root) = std::env::var("Grandpa_ROOT") {
         let path = std::path::PathBuf::from(&root);
         if path.join("pyproject.toml").exists() {
             return Some(path);
@@ -219,18 +219,18 @@ fn find_project_root() -> Option<std::path::PathBuf> {
     // 3. Fallback: well-known direct paths
     let home = home_dir();
     let direct = [
-        format!("{home}/OpenJarvis"),
-        format!("{home}/projects/hazy/OpenJarvis"),
-        format!("{home}/projects/OpenJarvis"),
-        format!("{home}/src/OpenJarvis"),
-        format!("{home}/Documents/OpenJarvis"),
-        format!("{home}/Desktop/OpenJarvis"),
-        format!("{home}/Developer/OpenJarvis"),
-        format!("{home}/dev/OpenJarvis"),
-        format!("{home}/Code/OpenJarvis"),
-        format!("{home}/code/OpenJarvis"),
-        format!("{home}/repos/OpenJarvis"),
-        format!("{home}/github/OpenJarvis"),
+        format!("{home}/Grandpa"),
+        format!("{home}/projects/hazy/Grandpa"),
+        format!("{home}/projects/Grandpa"),
+        format!("{home}/src/grandpa"),
+        format!("{home}/Documents/Grandpa"),
+        format!("{home}/Desktop/Grandpa"),
+        format!("{home}/Developer/Grandpa"),
+        format!("{home}/dev/Grandpa"),
+        format!("{home}/Code/Grandpa"),
+        format!("{home}/code/Grandpa"),
+        format!("{home}/repos/Grandpa"),
+        format!("{home}/github/Grandpa"),
     ];
     for p in &direct {
         let path = std::path::PathBuf::from(p);
@@ -239,8 +239,8 @@ fn find_project_root() -> Option<std::path::PathBuf> {
         }
     }
 
-    // 4. Shallow scan: look for OpenJarvis one level inside common parent dirs.
-    //    This catches clones like ~/Documents/my-stuff/OpenJarvis without
+    // 4. Shallow scan: look for Grandpa one level inside common parent dirs.
+    //    This catches clones like ~/Documents/my-stuff/Grandpa without
     //    needing to enumerate every possible intermediate folder.
     let scan_parents = [
         format!("{home}/Documents"),
@@ -258,13 +258,13 @@ fn find_project_root() -> Option<std::path::PathBuf> {
         let parent_path = std::path::PathBuf::from(parent);
         if let Ok(entries) = std::fs::read_dir(&parent_path) {
             for entry in entries.flatten() {
-                let candidate = entry.path().join("OpenJarvis");
+                let candidate = entry.path().join("Grandpa");
                 if candidate.join("pyproject.toml").exists() {
                     return Some(candidate);
                 }
-                // Also check if the entry itself is OpenJarvis (case-insensitive match)
+                // Also check if the entry itself is Grandpa (case-insensitive match)
                 if let Some(name) = entry.file_name().to_str() {
-                    if name.eq_ignore_ascii_case("openjarvis")
+                    if name.eq_ignore_ascii_case("Grandpa")
                         && entry.path().join("pyproject.toml").exists()
                     {
                         return Some(entry.path());
@@ -278,7 +278,7 @@ fn find_project_root() -> Option<std::path::PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
-// BackendManager — owns the Ollama + Jarvis server child processes
+// BackendManager — owns the Ollama + Grandpa server child processes
 // ---------------------------------------------------------------------------
 
 struct ChildHandle {
@@ -294,15 +294,15 @@ impl ChildHandle {
 #[derive(Default)]
 struct BackendManager {
     ollama: Option<ChildHandle>,
-    jarvis: Option<ChildHandle>,
+    grandpa: Option<ChildHandle>,
 }
 
 impl BackendManager {
     async fn stop_all(&mut self) {
-        if let Some(ref mut h) = self.jarvis {
+        if let Some(ref mut h) = self.grandpa {
             h.kill().await;
         }
-        self.jarvis = None;
+        self.grandpa = None;
         if let Some(ref mut h) = self.ollama {
             h.kill().await;
         }
@@ -486,7 +486,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         s.detail = "Model ready.".into();
     }
 
-    // Phase 3: Start jarvis serve
+    // Phase 3: Start grandpa serve
     {
         let mut s = status.lock().await;
         s.phase = "server".into();
@@ -523,15 +523,15 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             return;
         }
 
-        let target_path = std::path::PathBuf::from(home_dir()).join("OpenJarvis");
+        let target_path = std::path::PathBuf::from(home_dir()).join("Grandpa");
         let clone_target = target_path.display().to_string();
 
         // If the directory exists but is not a valid project, don't overwrite
         if target_path.exists() && !target_path.join("pyproject.toml").exists() {
             let mut s = status.lock().await;
             s.error = Some(format!(
-                "{} exists but is not a valid OpenJarvis project. \
-                 Remove it and relaunch, or set OPENJARVIS_ROOT to the correct path.",
+                "{} exists but is not a valid Grandpa project. \
+                 Remove it and relaunch, or set Grandpa_ROOT to the correct path.",
                 clone_target,
             ));
             return;
@@ -539,7 +539,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 
         {
             let mut s = status.lock().await;
-            s.detail = "Downloading OpenJarvis (first launch)...".into();
+            s.detail = "Downloading Grandpa (first launch)...".into();
         }
 
         let clone_result = tokio::process::Command::new(&git_bin)
@@ -547,7 +547,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 "clone",
                 "--depth",
                 "1",
-                "https://github.com/open-jarvis/OpenJarvis.git",
+                "https://github.com/grandpa/Grandpa.git",
                 &clone_target,
             ])
             .stdout(std::process::Stdio::null())
@@ -563,8 +563,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                     let stderr = String::from_utf8_lossy(&output.stderr);
                     let mut s = status.lock().await;
                     s.error = Some(format!(
-                        "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
+                        "Failed to download Grandpa: {}. \
+                         Clone manually: git clone https://github.com/grandpa/Grandpa.git {}",
                         stderr.trim(),
                         clone_target,
                     ));
@@ -573,8 +573,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 Err(e) => {
                     let mut s = status.lock().await;
                     s.error = Some(format!(
-                        "Failed to download OpenJarvis: {}. \
-                         Clone manually: git clone https://github.com/open-jarvis/OpenJarvis.git {}",
+                        "Failed to download Grandpa: {}. \
+                         Clone manually: git clone https://github.com/grandpa/Grandpa.git {}",
                         e, clone_target,
                     ));
                     return;
@@ -673,7 +673,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     let mut cmd = tokio::process::Command::new(&uv_bin);
     cmd.args([
         "run",
-        "jarvis",
+        "grandpa",
         "serve",
         "--port",
         &JARVIS_PORT.to_string(),
@@ -686,21 +686,21 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     .stderr(std::process::Stdio::piped())
     .current_dir(root);
 
-    // Inject cloud API keys from ~/.openjarvis/cloud-keys.env
+    // Inject cloud API keys from ~/.grandpa/cloud-keys.env
     for (key, value) in read_cloud_keys() {
         cmd.env(&key, &value);
     }
-    let jarvis_child = cmd.spawn();
+    let grandpa_child = cmd.spawn();
 
-    match jarvis_child {
+    match grandpa_child {
         Ok(child) => {
-            backend.lock().await.jarvis = Some(ChildHandle { child });
+            backend.lock().await.grandpa = Some(ChildHandle { child });
         }
         Err(e) => {
             let mut s = status.lock().await;
             s.error = Some(format!(
-                "Could not start jarvis server: {}. \
-                 Make sure uv is installed (https://astral.sh/uv) and the OpenJarvis repo is cloned at {}",
+                "Could not start grandpa server: {}. \
+                 Make sure uv is installed (https://astral.sh/uv) and the Grandpa repo is cloned at {}",
                 e,
                 root.display(),
             ));
@@ -716,7 +716,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         let mut stderr_msg = String::new();
         {
             let mut mgr = backend.lock().await;
-            if let Some(ref mut h) = mgr.jarvis {
+            if let Some(ref mut h) = mgr.grandpa {
                 if let Some(ref mut stderr) = h.child.stderr.take() {
                     use tokio::io::AsyncReadExt;
                     let mut buf = vec![0u8; 4096];
@@ -728,9 +728,9 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
         let detail = if stderr_msg.is_empty() {
             format!(
-                "Jarvis server did not start. Check that:\n\
+                "Grandpa server did not start. Check that:\n\
                  1. uv is installed ({})\n\
-                 2. The OpenJarvis repo is at {}\n\
+                 2. The Grandpa repo is at {}\n\
                  3. Run 'uv sync' in that directory",
                 uv_bin,
                 root.display(),
@@ -977,15 +977,15 @@ async fn fetch_models(api_url: String) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-async fn run_jarvis_command(args: Vec<String>) -> Result<String, String> {
-    let mut cmd_args = vec!["run".to_string(), "jarvis".to_string()];
+async fn run_grandpa_command(args: Vec<String>) -> Result<String, String> {
+    let mut cmd_args = vec!["run".to_string(), "grandpa".to_string()];
     cmd_args.extend(args);
     let uv_bin = resolve_bin("uv");
     let output = tokio::process::Command::new(&uv_bin)
         .args(&cmd_args)
         .output()
         .await
-        .map_err(|e| format!("Failed to launch jarvis: {}", e))?;
+        .map_err(|e| format!("Failed to launch grandpa: {}", e))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -1070,11 +1070,11 @@ async fn submit_savings(
 // Cloud API key management
 // ---------------------------------------------------------------------------
 
-/// Path to the cloud keys file (~/.openjarvis/cloud-keys.env).
+/// Path to the cloud keys file (~/.grandpa/cloud-keys.env).
 fn cloud_keys_path() -> std::path::PathBuf {
     let home = home_dir();
     std::path::PathBuf::from(home)
-        .join(".openjarvis")
+        .join(".grandpa")
         .join("cloud-keys.env")
 }
 
@@ -1251,7 +1251,7 @@ mod native_overlay {
 
     fn conversation_path() -> std::path::PathBuf {
         std::path::PathBuf::from(super::home_dir())
-            .join(".openjarvis")
+            .join(".grandpa")
             .join("overlay-conversation.json")
     }
 
@@ -1314,9 +1314,9 @@ mod native_overlay {
     /// Build the native overlay panel.  Call once during app setup.
     pub unsafe fn create(html: &str, api_port: u16) {
         // --- Custom NSPanel subclass that accepts keyboard input ------
-        if Class::get("JarvisOverlayPanel").is_none() {
+        if Class::get("GrandpaOverlayPanel").is_none() {
             let sup = Class::get("NSPanel").unwrap();
-            let mut decl = ClassDecl::new("JarvisOverlayPanel", sup).unwrap();
+            let mut decl = ClassDecl::new("GrandpaOverlayPanel", sup).unwrap();
             extern "C" fn yes(_: &Object, _: Sel) -> BOOL {
                 YES
             }
@@ -1328,9 +1328,9 @@ mod native_overlay {
         }
 
         // --- WKNavigationDelegate — re-apply transparency after load --
-        if Class::get("JarvisOverlayNavDelegate").is_none() {
+        if Class::get("GrandpaOverlayNavDelegate").is_none() {
             let sup = Class::get("NSObject").unwrap();
-            let mut decl = ClassDecl::new("JarvisOverlayNavDelegate", sup).unwrap();
+            let mut decl = ClassDecl::new("GrandpaOverlayNavDelegate", sup).unwrap();
             extern "C" fn did_finish(_: &Object, _: Sel, wv: *mut Object, _nav: *mut Object) {
                 unsafe { force_transparent(wv); }
             }
@@ -1342,9 +1342,9 @@ mod native_overlay {
         }
 
         // --- WKScriptMessageHandler so JS can call hide() ------------
-        if Class::get("JarvisOverlayMsgHandler").is_none() {
+        if Class::get("GrandpaOverlayMsgHandler").is_none() {
             let sup = Class::get("NSObject").unwrap();
-            let mut decl = ClassDecl::new("JarvisOverlayMsgHandler", sup).unwrap();
+            let mut decl = ClassDecl::new("GrandpaOverlayMsgHandler", sup).unwrap();
             extern "C" fn on_msg(_: &Object, _: Sel, _ctrl: *mut Object, msg: *mut Object) {
                 unsafe {
                     let body: *mut Object = msg_send![msg, body];
@@ -1384,7 +1384,7 @@ mod native_overlay {
         // NSWindowStyleMaskNonactivatingPanel = 1 << 7
         let style: u64 = 1 << 7;
 
-        let cls = Class::get("JarvisOverlayPanel").unwrap();
+        let cls = Class::get("GrandpaOverlayPanel").unwrap();
         let panel: *mut Object = msg_send![cls, alloc];
         let panel: *mut Object = msg_send![panel,
             initWithContentRect: frame
@@ -1411,7 +1411,7 @@ mod native_overlay {
         let cfg: *mut Object = msg_send![cfg, init];
 
         // Attach message handler ("overlay" channel)
-        let hcls = Class::get("JarvisOverlayMsgHandler").unwrap();
+        let hcls = Class::get("GrandpaOverlayMsgHandler").unwrap();
         let handler: *mut Object = msg_send![hcls, alloc];
         let handler: *mut Object = msg_send![handler, init];
         let uc: *mut Object = msg_send![cfg, userContentController];
@@ -1430,7 +1430,7 @@ mod native_overlay {
         force_transparent(wv);
 
         // Set navigation delegate so we re-apply after page loads
-        let nav_cls = Class::get("JarvisOverlayNavDelegate").unwrap();
+        let nav_cls = Class::get("GrandpaOverlayNavDelegate").unwrap();
         let nav_del: *mut Object = msg_send![nav_cls, alloc];
         let nav_del: *mut Object = msg_send![nav_del, init];
         let _: () = msg_send![wv, setNavigationDelegate: nav_del];
@@ -1618,7 +1618,7 @@ pub fn run() {
             let health = MenuItemBuilder::with_id("health", "Health: starting...")
                 .enabled(false)
                 .build(app)?;
-            let quit = MenuItemBuilder::with_id("quit", "Quit OpenJarvis").build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "Quit Grandpa").build(app)?;
 
             let menu = MenuBuilder::new(app)
                 .item(&show)
@@ -1630,7 +1630,7 @@ pub fn run() {
 
             let _tray = TrayIconBuilder::with_id("main")
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("OpenJarvis")
+                .tooltip("Grandpa")
                 .menu(&menu)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "show" => {
@@ -1695,7 +1695,7 @@ pub fn run() {
             search_memory,
             fetch_agents,
             fetch_models,
-            run_jarvis_command,
+            run_grandpa_command,
             fetch_savings,
             submit_savings,
             transcribe_audio,
@@ -1709,7 +1709,7 @@ pub fn run() {
             get_overlay_conversation,
         ])
         .build(tauri::generate_context!())
-        .expect("error while building OpenJarvis Desktop")
+        .expect("error while building Grandpa Desktop")
         .run(move |_app, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
                 let b = backend.clone();

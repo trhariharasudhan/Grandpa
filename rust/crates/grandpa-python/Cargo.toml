@@ -1,0 +1,32 @@
+[package]
+name = "grandpa-python"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "grandpa_rust"
+crate-type = ["cdylib"]
+
+[dependencies]
+grandpa-core = { path = "../grandpa-core" }
+grandpa-engine = { path = "../grandpa-engine" }
+grandpa-security = { path = "../grandpa-security" }
+grandpa-tools = { path = "../grandpa-tools" }
+grandpa-agents = { path = "../grandpa-agents" }
+grandpa-traces = { path = "../grandpa-traces" }
+grandpa-telemetry = { path = "../grandpa-telemetry" }
+grandpa-learning = { path = "../grandpa-learning" }
+grandpa-mcp = { path = "../grandpa-mcp" }
+grandpa-sessions = { path = "../grandpa-sessions" }
+grandpa-workflow = { path = "../grandpa-workflow" }
+grandpa-skills = { path = "../grandpa-skills" }
+grandpa-recipes = { path = "../grandpa-recipes" }
+grandpa-templates = { path = "../grandpa-templates" }
+grandpa-a2a = { path = "../grandpa-a2a" }
+grandpa-scheduler = { path = "../grandpa-scheduler" }
+pyo3 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+once_cell = { workspace = true }
+parking_lot = { workspace = true }

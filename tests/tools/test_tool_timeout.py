@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import time
 
-from openjarvis.core.events import EventBus, EventType
-from openjarvis.core.types import ToolCall, ToolResult
-from openjarvis.tools._stubs import BaseTool, ToolExecutor, ToolSpec
+from grandpa.core.events import EventBus, EventType
+from grandpa.core.types import ToolCall, ToolResult
+from grandpa.tools._stubs import BaseTool, ToolExecutor, ToolSpec
 
 
 class SlowTool(BaseTool):

@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from openjarvis.bench._stubs import BaseBenchmark, BenchmarkResult, BenchmarkSuite
+from grandpa.bench._stubs import BaseBenchmark, BenchmarkResult, BenchmarkSuite
 
 
 class TestBenchmarkResult:

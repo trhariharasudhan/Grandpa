@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openjarvis.channels._stubs import ChannelStatus
-from openjarvis.channels.telegram import TelegramChannel
-from openjarvis.core.events import EventBus, EventType
-from openjarvis.core.registry import ChannelRegistry
+from grandpa.channels._stubs import ChannelStatus
+from grandpa.channels.telegram import TelegramChannel
+from grandpa.core.events import EventBus, EventType
+from grandpa.core.registry import ChannelRegistry
 from tests.channels.channel_test_helpers import make_common_channel_tests
 
 
@@ -129,7 +129,7 @@ class TestAllowedChatIds:
 
     def _invoke_handle_msg(self, ch: TelegramChannel, chat_id: str, text: str = "hi"):
         """Simulate _poll_loop dispatching a message without starting a thread."""
-        from openjarvis.channels._stubs import ChannelMessage
+        from grandpa.channels._stubs import ChannelMessage
 
         cm = ChannelMessage(
             channel="telegram",
@@ -196,7 +196,7 @@ class TestChannelAgentWiring:
         received = []
         ch.on_message(lambda cm: received.append(cm))
 
-        from openjarvis.channels._stubs import ChannelMessage
+        from grandpa.channels._stubs import ChannelMessage
 
         cm = ChannelMessage(
             channel="telegram",
@@ -219,7 +219,7 @@ class TestChannelAgentWiring:
         ch.on_message(lambda cm: calls_a.append(cm))
         ch.on_message(lambda cm: calls_b.append(cm))
 
-        from openjarvis.channels._stubs import ChannelMessage
+        from grandpa.channels._stubs import ChannelMessage
 
         cm = ChannelMessage(
             channel="telegram",

@@ -17,7 +17,7 @@ const DEFAULT_SETTINGS: Settings = {
   theme: 'dark',
 };
 
-const STORAGE_KEY = 'openjarvis-settings';
+const STORAGE_KEY = 'Grandpa-settings';
 
 function loadSettings(): Settings {
   try {

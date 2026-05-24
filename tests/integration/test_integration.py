@@ -6,10 +6,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from openjarvis.agents._stubs import AgentContext, AgentResult
-from openjarvis.core.events import EventBus, EventType
-from openjarvis.core.registry import AgentRegistry, RouterPolicyRegistry, ToolRegistry
-from openjarvis.core.types import (
+from grandpa.agents._stubs import AgentContext, AgentResult
+from grandpa.core.events import EventBus, EventType
+from grandpa.core.registry import AgentRegistry, RouterPolicyRegistry, ToolRegistry
+from grandpa.core.types import (
     Conversation,
     Message,
     Role,
@@ -23,8 +23,8 @@ from openjarvis.core.types import (
 
 
 def _register_agents():
-    from openjarvis.agents.orchestrator import OrchestratorAgent
-    from openjarvis.agents.simple import SimpleAgent
+    from grandpa.agents.orchestrator import OrchestratorAgent
+    from grandpa.agents.simple import SimpleAgent
 
     if not AgentRegistry.contains("simple"):
         AgentRegistry.register_value("simple", SimpleAgent)
@@ -33,8 +33,8 @@ def _register_agents():
 
 
 def _register_tools():
-    from openjarvis.tools.calculator import CalculatorTool
-    from openjarvis.tools.think import ThinkTool
+    from grandpa.tools.calculator import CalculatorTool
+    from grandpa.tools.think import ThinkTool
 
     if not ToolRegistry.contains("calculator"):
         ToolRegistry.register_value("calculator", CalculatorTool)
@@ -101,7 +101,7 @@ class TestOrchestratorWithCalculator:
         _register_agents()
         _register_tools()
 
-        from openjarvis.tools.calculator import CalculatorTool
+        from grandpa.tools.calculator import CalculatorTool
 
         engine = MagicMock()
         engine.engine_id = "mock"
@@ -164,7 +164,7 @@ class TestAPIServerRoundtrip:
         pytest.importorskip("fastapi")
         from fastapi.testclient import TestClient
 
-        from openjarvis.server.app import create_app
+        from grandpa.server.app import create_app
 
         engine = _make_engine("API response!")
         app = create_app(engine, "test-model")
@@ -189,7 +189,7 @@ class TestAPIServerRoundtrip:
         pytest.importorskip("fastapi")
         from fastapi.testclient import TestClient
 
-        from openjarvis.server.app import create_app
+        from grandpa.server.app import create_app
 
         engine = _make_engine()
         app = create_app(engine, "test-model")
@@ -241,7 +241,7 @@ class TestTelemetryThroughAgent:
     def test_telemetry_record_created(self):
         """Telemetry records are now produced by InstrumentedEngine,
         not by agents directly."""
-        from openjarvis.telemetry.instrumented_engine import InstrumentedEngine
+        from grandpa.telemetry.instrumented_engine import InstrumentedEngine
 
         _register_agents()
         bus = EventBus(record_history=True)
@@ -264,9 +264,9 @@ class TestToolExecutorIntegration:
 
     def test_calculator_and_think(self):
         _register_tools()
-        from openjarvis.tools._stubs import ToolExecutor
-        from openjarvis.tools.calculator import CalculatorTool
-        from openjarvis.tools.think import ThinkTool
+        from grandpa.tools._stubs import ToolExecutor
+        from grandpa.tools.calculator import CalculatorTool
+        from grandpa.tools.think import ThinkTool
 
         bus = EventBus(record_history=True)
         executor = ToolExecutor([CalculatorTool(), ThinkTool()], bus=bus)
@@ -301,8 +301,8 @@ class TestHeuristicRewardWithTelemetry:
     """HeuristicRewardFunction scores using TelemetryRecord data."""
 
     def test_reward_from_telemetry_record(self):
-        from openjarvis.learning._stubs import RoutingContext
-        from openjarvis.learning.routing.heuristic_reward import HeuristicRewardFunction
+        from grandpa.learning._stubs import RoutingContext
+        from grandpa.learning.routing.heuristic_reward import HeuristicRewardFunction
 
         rec = TelemetryRecord(
             timestamp=0.0,
@@ -330,7 +330,7 @@ class TestRouterPolicyRegistryDiscovery:
     """RouterPolicyRegistry discovers both heuristic and learned."""
 
     def test_both_policies_registered(self):
-        from openjarvis.learning import ensure_registered
+        from grandpa.learning import ensure_registered
 
         ensure_registered()
         assert RouterPolicyRegistry.contains("heuristic")
@@ -343,8 +343,8 @@ class TestTelemetryPipeline:
     def test_store_then_aggregate(self, tmp_path):
         import time
 
-        from openjarvis.telemetry.aggregator import TelemetryAggregator
-        from openjarvis.telemetry.store import TelemetryStore
+        from grandpa.telemetry.aggregator import TelemetryAggregator
+        from grandpa.telemetry.store import TelemetryStore
 
         db = tmp_path / "telemetry.db"
         store = TelemetryStore(db)
@@ -387,8 +387,8 @@ class TestEventBusTelemetryAggregator:
     """EventBus → TelemetryStore → TelemetryAggregator end-to-end."""
 
     def test_event_driven_pipeline(self, tmp_path):
-        from openjarvis.telemetry.aggregator import TelemetryAggregator
-        from openjarvis.telemetry.store import TelemetryStore
+        from grandpa.telemetry.aggregator import TelemetryAggregator
+        from grandpa.telemetry.store import TelemetryStore
 
         db = tmp_path / "telemetry.db"
         store = TelemetryStore(db)
@@ -419,9 +419,9 @@ class TestAskFlowWithRouterPolicy:
     """Full ask flow with router policy (mocked)."""
 
     def test_mocked_ask_with_registry_router(self):
-        from openjarvis.learning._stubs import RoutingContext
-        from openjarvis.learning.routing.heuristic_policy import ensure_registered
-        from openjarvis.learning.routing.router import HeuristicRouter
+        from grandpa.learning._stubs import RoutingContext
+        from grandpa.learning.routing.heuristic_policy import ensure_registered
+        from grandpa.learning.routing.router import HeuristicRouter
 
         ensure_registered()
         router_cls = RouterPolicyRegistry.get("heuristic")
@@ -442,10 +442,10 @@ class TestRewardTelemetryIntegration:
     def test_score_from_aggregated_stats(self, tmp_path):
         import time
 
-        from openjarvis.learning._stubs import RoutingContext
-        from openjarvis.learning.routing.heuristic_reward import HeuristicRewardFunction
-        from openjarvis.telemetry.aggregator import TelemetryAggregator
-        from openjarvis.telemetry.store import TelemetryStore
+        from grandpa.learning._stubs import RoutingContext
+        from grandpa.learning.routing.heuristic_reward import HeuristicRewardFunction
+        from grandpa.telemetry.aggregator import TelemetryAggregator
+        from grandpa.telemetry.store import TelemetryStore
 
         db = tmp_path / "telemetry.db"
         store = TelemetryStore(db)
@@ -487,12 +487,12 @@ class TestRewardTelemetryIntegration:
 
 
 class TestSDKImport:
-    """Verify Jarvis class is importable from openjarvis."""
+    """Verify Grandpa class is importable from grandpa."""
 
-    def test_jarvis_imports(self):
-        from openjarvis import Jarvis
+    def test_Grandpa_imports(self):
+        from grandpa import Grandpa
 
-        assert Jarvis is not None
+        assert Grandpa is not None
 
 
 class TestSDKAskFlow:
@@ -501,12 +501,12 @@ class TestSDKAskFlow:
     def test_sdk_ask_e2e(self):
         from unittest.mock import patch
 
-        from openjarvis.core.config import JarvisConfig
-        from openjarvis.sdk import Jarvis
+        from grandpa.core.config import GrandpaConfig
+        from grandpa.sdk import Grandpa
 
         engine = _make_engine("SDK response")
-        with patch("openjarvis.sdk.get_engine", return_value=("mock", engine)):
-            j = Jarvis(config=JarvisConfig(), model="test-model")
+        with patch("grandpa.sdk.get_engine", return_value=("mock", engine)):
+            j = Grandpa(config=GrandpaConfig(), model="test-model")
             result = j.ask("Hello from integration test")
             assert result == "SDK response"
             j.close()
@@ -516,10 +516,10 @@ class TestSDKMemoryHandle:
     """SDK memory handle with SQLite backend."""
 
     def test_index_and_search(self, tmp_path):
-        from openjarvis.core.config import JarvisConfig
-        from openjarvis.sdk import MemoryHandle
+        from grandpa.core.config import GrandpaConfig
+        from grandpa.sdk import MemoryHandle
 
-        cfg = JarvisConfig()
+        cfg = GrandpaConfig()
         handle = MemoryHandle(cfg)
 
         mock_backend = MagicMock()
@@ -550,8 +550,8 @@ class TestBenchmarkRegistryDiscovery:
     """BenchmarkRegistry discovers latency + throughput."""
 
     def test_discovers_benchmarks(self):
-        from openjarvis.bench import ensure_registered
-        from openjarvis.core.registry import BenchmarkRegistry
+        from grandpa.bench import ensure_registered
+        from grandpa.core.registry import BenchmarkRegistry
 
         ensure_registered()
         assert BenchmarkRegistry.contains("latency")
@@ -564,9 +564,9 @@ class TestBenchmarkSuiteRunAll:
     def test_suite_produces_jsonl(self):
         import json
 
-        from openjarvis.bench import ensure_registered
-        from openjarvis.bench._stubs import BenchmarkSuite
-        from openjarvis.core.registry import BenchmarkRegistry
+        from grandpa.bench import ensure_registered
+        from grandpa.bench._stubs import BenchmarkSuite
+        from grandpa.core.registry import BenchmarkRegistry
 
         ensure_registered()
         benchmarks = [cls() for _, cls in BenchmarkRegistry.items()]
@@ -588,10 +588,10 @@ class TestFullPipeline:
     def test_full_pipeline(self, tmp_path):
         from unittest.mock import patch
 
-        from openjarvis.agents._stubs import AgentResult
-        from openjarvis.core.config import JarvisConfig
-        from openjarvis.core.registry import AgentRegistry
-        from openjarvis.sdk import Jarvis
+        from grandpa.agents._stubs import AgentResult
+        from grandpa.core.config import GrandpaConfig
+        from grandpa.core.registry import AgentRegistry
+        from grandpa.sdk import Grandpa
 
         engine = _make_engine("Pipeline response")
 
@@ -611,11 +611,11 @@ class TestFullPipeline:
 
         AgentRegistry.register_value("pipeline-test", PipelineAgent)
 
-        cfg = JarvisConfig()
+        cfg = GrandpaConfig()
         cfg.telemetry.db_path = str(tmp_path / "telemetry.db")
 
-        with patch("openjarvis.sdk.get_engine", return_value=("mock", engine)):
-            j = Jarvis(config=cfg, model="test-model")
+        with patch("grandpa.sdk.get_engine", return_value=("mock", engine)):
+            j = Grandpa(config=cfg, model="test-model")
             result = j.ask("Full pipeline test", agent="pipeline-test")
             assert result == "Pipeline response"
             j.close()

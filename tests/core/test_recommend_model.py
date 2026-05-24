@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from openjarvis.core.config import GpuInfo, HardwareInfo, recommend_model
+from grandpa.core.config import GpuInfo, HardwareInfo, recommend_model
 
 
 class TestRecommendModelTiers:

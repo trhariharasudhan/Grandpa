@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from openjarvis.channels._stubs import ChannelStatus
-from openjarvis.channels.matrix_channel import MatrixChannel
-from openjarvis.core.events import EventBus, EventType
-from openjarvis.core.registry import ChannelRegistry
+from grandpa.channels._stubs import ChannelStatus
+from grandpa.channels.matrix_channel import MatrixChannel
+from grandpa.core.events import EventBus, EventType
+from grandpa.core.registry import ChannelRegistry
 from tests.channels.channel_test_helpers import make_common_channel_tests
 
 

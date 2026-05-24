@@ -5,16 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from openjarvis.agents.executor import AgentExecutor
-from openjarvis.agents.manager import AgentManager
-from openjarvis.agents.scheduler import AgentScheduler
-from openjarvis.core.events import EventBus
+from grandpa.agents.executor import AgentExecutor
+from grandpa.agents.manager import AgentManager
+from grandpa.agents.scheduler import AgentScheduler
+from grandpa.core.events import EventBus
 from tests.agents.fake_engine import FakeEngine
 
 
 @dataclass(slots=True)
 class FakeSystem:
-    """Lightweight stand-in for JarvisSystem — just engine + model."""
+    """Lightweight stand-in for GrandpaSystem — just engine + model."""
 
     engine: FakeEngine
     model: str = "fake-model"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import textwrap
 from pathlib import Path
 
-from openjarvis.core.config import ChannelConfig, JarvisConfig, load_config
+from grandpa.core.config import ChannelConfig, GrandpaConfig, load_config
 
 
 class TestChannelConfigDefaults:
@@ -23,14 +23,14 @@ class TestChannelConfigDefaults:
         assert cfg.default_agent == "orchestrator"
 
 
-class TestChannelConfigInJarvisConfig:
-    def test_channel_config_in_jarvis_config(self) -> None:
-        cfg = JarvisConfig()
+class TestChannelConfigInGrandpaConfig:
+    def test_channel_config_in_Grandpa_config(self) -> None:
+        cfg = GrandpaConfig()
         assert hasattr(cfg, "channel")
         assert isinstance(cfg.channel, ChannelConfig)
 
-    def test_jarvis_config_channel_defaults(self) -> None:
-        cfg = JarvisConfig()
+    def test_Grandpa_config_channel_defaults(self) -> None:
+        cfg = GrandpaConfig()
         assert cfg.channel.enabled is False
         assert cfg.channel.default_channel == ""
 

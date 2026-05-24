@@ -7,14 +7,14 @@ from unittest.mock import MagicMock
 
 from rich.console import Console
 
-from openjarvis.bench._stubs import BenchmarkResult
-from openjarvis.cli.bench_cmd import _render_stats_table
+from grandpa.bench._stubs import BenchmarkResult
+from grandpa.cli.bench_cmd import _render_stats_table
 
 
 class TestLatencyBenchmarkStats:
     def test_latency_includes_std(self):
         """LatencyBenchmark should include std_latency in metrics."""
-        from openjarvis.bench.latency import LatencyBenchmark
+        from grandpa.bench.latency import LatencyBenchmark
 
         bench = LatencyBenchmark()
         engine = MagicMock()

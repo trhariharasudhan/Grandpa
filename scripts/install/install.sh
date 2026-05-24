@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# install.sh — OpenJarvis curl-pipe-bash installer.
+# install.sh — Grandpa curl-pipe-bash installer.
 #
 # Usage:
-#   curl -fsSL https://openjarvis.ai/install.sh | bash
+#   curl -fsSL https://grandpa.ai/install.sh | bash
 #
 # Flags (only used in tests / power users):
 #   --no-bg-orchestrator   Skip the detached background orchestrator
@@ -10,9 +10,9 @@
 #   --force                Re-run all steps even if state file says done
 #
 # Environment overrides:
-#   OPENJARVIS_HOME        Install dir (default: $HOME/.openjarvis)
-#   OPENJARVIS_REPO_URL    git repo URL (default: https://github.com/open-jarvis/OpenJarvis.git)
-#   OPENJARVIS_FORCE_WSL   Set 1 to force WSL detection (testing)
+#   GRANDPA_HOME        Install dir (default: $HOME/.grandpa)
+#   GRANDPA_REPO_URL    git repo URL (default: https://github.com/grandpa/Grandpa.git)
+#   GRANDPA_FORCE_WSL   Set 1 to force WSL detection (testing)
 
 set -euo pipefail
 
@@ -34,7 +34,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
     cat >&2 <<'EOF'
 install.sh: don't run as root.
 
-OpenJarvis installs to $HOME/.openjarvis, not /usr/local. Re-run as your
+Grandpa installs to $HOME/.grandpa, not /usr/local. Re-run as your
 regular user (without sudo).
 EOF
     exit 1
@@ -59,19 +59,19 @@ need git
 need curl
 
 # ---- env ----
-OPENJARVIS_HOME="${OPENJARVIS_HOME:-$HOME/.openjarvis}"
-OPENJARVIS_REPO_URL="${OPENJARVIS_REPO_URL:-https://github.com/open-jarvis/OpenJarvis.git}"
-SRC_DIR="$OPENJARVIS_HOME/src"
-VENV_DIR="$OPENJARVIS_HOME/.venv"
-STATE_DIR="$OPENJARVIS_HOME/.state"
-SCRIPTS_DIR="$OPENJARVIS_HOME/.scripts"
+GRANDPA_HOME="${GRANDPA_HOME:-$HOME/.grandpa}"
+GRANDPA_REPO_URL="${GRANDPA_REPO_URL:-https://github.com/grandpa/Grandpa.git}"
+SRC_DIR="$GRANDPA_HOME/src"
+VENV_DIR="$GRANDPA_HOME/.venv"
+STATE_DIR="$GRANDPA_HOME/.state"
+SCRIPTS_DIR="$GRANDPA_HOME/.scripts"
 STATE_FILE="$STATE_DIR/install-state.json"
 
-mkdir -p "$OPENJARVIS_HOME" "$STATE_DIR" "$SCRIPTS_DIR"
+mkdir -p "$GRANDPA_HOME" "$STATE_DIR" "$SCRIPTS_DIR"
 
 # ---- WSL detection ----
 WSL=0
-if [[ "${OPENJARVIS_FORCE_WSL:-0}" == "1" ]]; then
+if [[ "${GRANDPA_FORCE_WSL:-0}" == "1" ]]; then
     WSL=1
 elif [[ -f /proc/sys/kernel/osrelease ]] && grep -qi "microsoft" /proc/sys/kernel/osrelease 2>/dev/null; then
     WSL=1
@@ -80,22 +80,22 @@ fi
 # ---- analytics beacon (anonymized install funnel) ----
 #
 # Posts a small JSON event to PostHog at each install stage so the
-# OpenJarvis team can see where users drop off during install.
+# Grandpa team can see where users drop off during install.
 # No content, no IPs (handled by PostHog disable_geoip on server),
 # no hardware identifiers — just OS, arch, elapsed time, and stage name.
 #
-ANALYTICS_HOST="${OPENJARVIS_ANALYTICS_HOST:-https://34.231.106.201.sslip.io}"
-ANALYTICS_KEY="${OPENJARVIS_ANALYTICS_KEY:-phc_ysKu72QaxzYNmDpHFcesD2ZZAe68zkdWJEKoYYkc5e3n}"
-ANON_ID_FILE="$OPENJARVIS_HOME/anon_id"
+ANALYTICS_HOST="${GRANDPA_ANALYTICS_HOST:-https://34.231.106.201.sslip.io}"
+ANALYTICS_KEY="${GRANDPA_ANALYTICS_KEY:-phc_ysKu72QaxzYNmDpHFcesD2ZZAe68zkdWJEKoYYkc5e3n}"
+ANON_ID_FILE="$GRANDPA_HOME/anon_id"
 INSTALL_START_EPOCH="$(date +%s)"
 CURRENT_STAGE=""
 
 analytics_enabled() {
     # Honor the same opt-out env vars as the Python analytics module
-    # (``src/openjarvis/analytics/identity.py::is_analytics_enabled``).
-    # ``DO_NOT_TRACK`` is W3C convention; ``OPENJARVIS_NO_ANALYTICS`` is
+    # (``src/grandpa/analytics/identity.py::is_analytics_enabled``).
+    # ``DO_NOT_TRACK`` is W3C convention; ``GRANDPA_NO_ANALYTICS`` is
     # the project-specific override. Any truthy value disables.
-    for var in DO_NOT_TRACK OPENJARVIS_NO_ANALYTICS; do
+    for var in DO_NOT_TRACK GRANDPA_NO_ANALYTICS; do
         val="${!var:-}"
         case "$(printf '%s' "$val" | tr '[:upper:]' '[:lower:]' | xargs)" in
             ""|0|false|no|off) ;;
@@ -276,7 +276,7 @@ clone_repo() {
         echo "    repo already at $SRC_DIR"
         return 0
     fi
-    git clone --depth 1 "$OPENJARVIS_REPO_URL" "$SRC_DIR"
+    git clone --depth 1 "$GRANDPA_REPO_URL" "$SRC_DIR"
 }
 
 copy_scripts() {
@@ -324,15 +324,15 @@ pull_default_model() {
 }
 
 write_config() {
-    "$VENV_DIR/bin/jarvis" _bootstrap --write-config \
+    "$VENV_DIR/bin/grandpa" _bootstrap --write-config \
         --engine ollama --model qwen3.5:2b \
         --prefer-cloud-when-available
 }
 
 install_symlinks() {
     mkdir -p "$HOME/.local/bin"
-    ln -sf "$SCRIPTS_DIR/jarvis-wrapper.sh" "$HOME/.local/bin/jarvis"
-    ln -sf "$SCRIPTS_DIR/jarvis-uninstall.sh" "$HOME/.local/bin/jarvis-uninstall"
+    ln -sf "$SCRIPTS_DIR/grandpa-wrapper.sh" "$HOME/.local/bin/grandpa"
+    ln -sf "$SCRIPTS_DIR/grandpa-uninstall.sh" "$HOME/.local/bin/grandpa-uninstall"
 }
 
 ensure_path() {
@@ -345,12 +345,12 @@ ensure_path() {
     else
         rc="$HOME/.bashrc"
     fi
-    if grep -q "OpenJarvis" "$rc" 2>/dev/null; then
+    if grep -q "Grandpa" "$rc" 2>/dev/null; then
         return 0
     fi
     {
         echo ''
-        echo '# OpenJarvis'
+        echo '# Grandpa'
         echo 'export PATH="$HOME/.local/bin:$PATH"'
     } >> "$rc"
     echo "    Added ~/.local/bin to PATH in $rc — run: source $rc"
@@ -363,7 +363,7 @@ detach_bg_orchestrator() {
     fi
     local models
     models=$("$VENV_DIR/bin/python" - <<'PYEOF' 2>/dev/null || true
-from openjarvis.core.config import detect_hardware, recommend_model
+from grandpa.core.config import detect_hardware, recommend_model
 hw = detect_hardware()
 tier = recommend_model(hw, "ollama")
 TIERS = ["qwen3.5:2b", "qwen3.5:4b", "qwen3.5:9b", "qwen3.5:27b"]
@@ -384,18 +384,18 @@ PYEOF
 }
 
 # ---- run ----
-echo "OpenJarvis installer"
-echo "  install dir: $OPENJARVIS_HOME"
+echo "Grandpa installer"
+echo "  install dir: $GRANDPA_HOME"
 echo "  WSL2:        $WSL"
 echo
 
 beacon "install_started"
 
 step install_uv         "Install uv"            install_uv
-step clone_repo         "Clone OpenJarvis repo" clone_repo
+step clone_repo         "Clone Grandpa repo" clone_repo
 step copy_scripts       "Copy install scripts"  copy_scripts
 step create_venv        "Create venv"           create_venv
-step editable_install   "Install OpenJarvis"    editable_install
+step editable_install   "Install Grandpa"    editable_install
 step install_ollama     "Install Ollama"        install_ollama
 step start_ollama       "Start Ollama daemon"   start_ollama
 step pull_default_model "Pull qwen3.5:2b"       pull_default_model
@@ -412,10 +412,10 @@ trap - ERR
 
 cat <<EOF
 
-Done. Type 'jarvis' to start chatting.
+Done. Type 'grandpa' to start chatting.
 
 Background work continues silently:
   - Rust toolchain + maturin extension build
   - Bigger model downloads
-  Run 'jarvis doctor' to check status anytime.
+  Run 'grandpa doctor' to check status anytime.
 EOF

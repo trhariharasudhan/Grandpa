@@ -1,0 +1,13 @@
+[package]
+name = "grandpa-mcp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+grandpa-core = { path = "../grandpa-core" }
+grandpa-tools = { path = "../grandpa-tools" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }

@@ -1,4 +1,4 @@
-"""Tests for the ``jarvis config`` CLI commands."""
+"""Tests for the ``Grandpa config`` CLI commands."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from openjarvis.cli import cli
+from grandpa.cli import cli
 
 
 class TestConfigCmd:
-    """Test cases for the jarvis config CLI group."""
+    """Test cases for the Grandpa config CLI group."""
 
     def test_config_group_help(self) -> None:
         """Test that the config group help displays correctly."""

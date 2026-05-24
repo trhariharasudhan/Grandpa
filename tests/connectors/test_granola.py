@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from openjarvis.connectors._stubs import Document
-from openjarvis.core.registry import ConnectorRegistry
+from grandpa.connectors._stubs import Document
+from grandpa.core.registry import ConnectorRegistry
 
 # ---------------------------------------------------------------------------
 # Fake API payloads
@@ -97,7 +97,7 @@ _NOTE_2 = {
 @pytest.fixture()
 def connector(tmp_path: Path):
     """GranolaConnector pointing at a tmp credentials path (no file yet)."""
-    from openjarvis.connectors.granola import GranolaConnector  # noqa: PLC0415
+    from grandpa.connectors.granola import GranolaConnector  # noqa: PLC0415
 
     creds_path = str(tmp_path / "granola.json")
     return GranolaConnector(credentials_path=creds_path)
@@ -120,7 +120,7 @@ def test_not_connected_without_key(connector) -> None:
 
 def test_connected_with_key() -> None:
     """is_connected() returns True when an api_key is passed directly."""
-    from openjarvis.connectors.granola import GranolaConnector  # noqa: PLC0415
+    from grandpa.connectors.granola import GranolaConnector  # noqa: PLC0415
 
     conn = GranolaConnector(api_key="grl_fake_key")
     assert conn.is_connected() is True
@@ -142,8 +142,8 @@ def test_auth_url(connector) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("openjarvis.connectors.granola._granola_api_list_notes")
-@patch("openjarvis.connectors.granola._granola_api_get_note")
+@patch("grandpa.connectors.granola._granola_api_list_notes")
+@patch("grandpa.connectors.granola._granola_api_get_note")
 def test_sync_yields_documents(
     mock_get,
     mock_list,
@@ -209,7 +209,7 @@ def test_sync_yields_documents(
 
 def test_format_note_content() -> None:
     """_format_note_content combines summary and transcript into correct markdown."""
-    from openjarvis.connectors.granola import _format_note_content  # noqa: PLC0415
+    from grandpa.connectors.granola import _format_note_content  # noqa: PLC0415
 
     result = _format_note_content(_NOTE_1)
 
@@ -261,7 +261,7 @@ def test_mcp_tools(connector) -> None:
 
 def test_registry() -> None:
     """GranolaConnector can be registered and retrieved via ConnectorRegistry."""
-    from openjarvis.connectors.granola import GranolaConnector  # noqa: PLC0415
+    from grandpa.connectors.granola import GranolaConnector  # noqa: PLC0415
 
     ConnectorRegistry.register_value("granola", GranolaConnector)
     assert ConnectorRegistry.contains("granola")
@@ -274,8 +274,8 @@ def test_registry() -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("openjarvis.connectors.granola._granola_api_list_notes")
-@patch("openjarvis.connectors.granola._granola_api_get_note")
+@patch("grandpa.connectors.granola._granola_api_list_notes")
+@patch("grandpa.connectors.granola._granola_api_get_note")
 def test_sync_logs_note_count(
     mock_get,
     mock_list,
@@ -294,7 +294,7 @@ def test_sync_logs_note_count(
     mock_list.return_value = _LIST_RESPONSE
     mock_get.side_effect = [_NOTE_1, _NOTE_2]
 
-    with caplog.at_level(logging.INFO, logger="openjarvis.connectors.granola"):
+    with caplog.at_level(logging.INFO, logger="grandpa.connectors.granola"):
         list(connector.sync())
 
     text = caplog.text
@@ -307,8 +307,8 @@ def test_sync_logs_note_count(
 # ---------------------------------------------------------------------------
 
 
-@patch("openjarvis.connectors.granola._granola_api_list_notes")
-@patch("openjarvis.connectors.granola._granola_api_get_note")
+@patch("grandpa.connectors.granola._granola_api_list_notes")
+@patch("grandpa.connectors.granola._granola_api_get_note")
 def test_end_to_end_ingest_and_search(
     mock_get,
     mock_list,
@@ -322,9 +322,9 @@ def test_end_to_end_ingest_and_search(
     namespaced thread_id, channel, participants, and that the research-loop
     URL builder reconstructs the Granola web deep-link from the doc_id.
     """
-    from openjarvis.connectors.hybrid_search import HybridSearch  # noqa: PLC0415
-    from openjarvis.connectors.pipeline import IngestionPipeline  # noqa: PLC0415
-    from openjarvis.connectors.store import KnowledgeStore  # noqa: PLC0415
+    from grandpa.connectors.hybrid_search import HybridSearch  # noqa: PLC0415
+    from grandpa.connectors.pipeline import IngestionPipeline  # noqa: PLC0415
+    from grandpa.connectors.store import KnowledgeStore  # noqa: PLC0415
 
     creds_path = Path(connector._credentials_path)
     creds_path.parent.mkdir(parents=True, exist_ok=True)
@@ -362,7 +362,7 @@ def test_end_to_end_ingest_and_search(
     # different from the API note_id.
     assert target.url == _NOTE_1_WEB_URL
 
-    from openjarvis.agents.research_loop import (  # noqa: PLC0415
+    from grandpa.agents.research_loop import (  # noqa: PLC0415
         _hit_url,
         build_sources_for_client,
     )

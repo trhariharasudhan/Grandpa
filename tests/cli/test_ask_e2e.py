@@ -1,4 +1,4 @@
-"""End-to-end tests for ``jarvis ask``."""
+"""End-to-end tests for ``Grandpa ask``."""
 
 from __future__ import annotations
 
@@ -9,11 +9,11 @@ from unittest import mock
 
 from click.testing import CliRunner
 
-from openjarvis.cli import cli
-from openjarvis.core.config import JarvisConfig
+from grandpa.cli import cli
+from grandpa.core.config import GrandpaConfig
 
 # Import the actual module (not the Click command attribute)
-_ask_mod = importlib.import_module("openjarvis.cli.ask")
+_ask_mod = importlib.import_module("grandpa.cli.ask")
 
 
 def _mock_engine_response():
@@ -33,15 +33,15 @@ def _mock_engine_response():
 def _patch_ask(monkeypatch, tmp_path, *, engine_result=None, no_engine=False):
     """Set up common mocks for ask tests."""
     # Re-register SimpleAgent after the autouse `_clean_registries` conftest
-    # fixture clears it. ``JarvisConfig().agent.default_agent`` defaults to
-    # ``"simple"``, so ``jarvis ask "..."`` (no --agent) routes through it.
-    from openjarvis.agents.simple import SimpleAgent
-    from openjarvis.core.registry import AgentRegistry
+    # fixture clears it. ``GrandpaConfig().agent.default_agent`` defaults to
+    # ``"simple"``, so ``Grandpa ask "..."`` (no --agent) routes through it.
+    from grandpa.agents.simple import SimpleAgent
+    from grandpa.core.registry import AgentRegistry
 
     if not AgentRegistry.contains("simple"):
         AgentRegistry.register_value("simple", SimpleAgent)
 
-    cfg = JarvisConfig()
+    cfg = GrandpaConfig()
     cfg.telemetry.db_path = str(tmp_path / "telemetry.db")
 
     monkeypatch.setattr(_ask_mod, "load_config", lambda: cfg)

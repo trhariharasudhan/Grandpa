@@ -1,12 +1,12 @@
-site_name: OpenJarvis
-site_url: https://open-jarvis.github.io/OpenJarvis/
+site_name: grandpa
+site_url: https://grandpa.github.io/grandpa/
 site_description: Personal AI, On Personal Devices
-site_author: OpenJarvis Contributors
-repo_url: https://github.com/open-jarvis/OpenJarvis
-repo_name: open-jarvis/OpenJarvis
+site_author: grandpa Contributors
+repo_url: https://github.com/grandpa/grandpa
+repo_name: grandpa/grandpa
 edit_uri: edit/main/docs/
 
-copyright: Copyright &copy; 2026 OpenJarvis Contributors
+copyright: Copyright &copy; 2026 grandpa Contributors
 
 theme:
   name: material
@@ -136,10 +136,10 @@ extra:
   algolia:
     app_id: ""       # Fill after DocSearch approval
     api_key: ""      # Search-only key
-    index_name: ""   # e.g. "openjarvis"
+    index_name: ""   # e.g. "grandpa"
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/open-jarvis/OpenJarvis
+      link: https://github.com/grandpa/grandpa
 
 nav:
   - Home: index.md

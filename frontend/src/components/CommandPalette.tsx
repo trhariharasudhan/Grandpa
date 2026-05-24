@@ -31,7 +31,7 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
   {
     name: 'OpenAI',
     envKey: 'OPENAI_API_KEY',
-    storageKey: 'openjarvis-openai-key',
+    storageKey: 'Grandpa-openai-key',
     models: [
       { id: 'gpt-4o', desc: 'GPT-4o — fast, multimodal' },
       { id: 'gpt-4o-mini', desc: 'GPT-4o Mini — cheap, fast' },
@@ -41,7 +41,7 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
   {
     name: 'Anthropic',
     envKey: 'ANTHROPIC_API_KEY',
-    storageKey: 'openjarvis-anthropic-key',
+    storageKey: 'Grandpa-anthropic-key',
     models: [
       { id: 'claude-sonnet-4-6', desc: 'Claude Sonnet 4.6 — balanced' },
       { id: 'claude-opus-4-6', desc: 'Claude Opus 4.6 — most capable' },
@@ -51,7 +51,7 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
   {
     name: 'Google',
     envKey: 'GEMINI_API_KEY',
-    storageKey: 'openjarvis-gemini-key',
+    storageKey: 'Grandpa-gemini-key',
     models: [
       { id: 'gemini-2.5-pro', desc: 'Gemini 2.5 Pro — flagship' },
       { id: 'gemini-2.5-flash', desc: 'Gemini 2.5 Flash — fast' },
@@ -61,7 +61,7 @@ const CLOUD_PROVIDERS: CloudProvider[] = [
   {
     name: 'OpenRouter',
     envKey: 'OPENROUTER_API_KEY',
-    storageKey: 'openjarvis-openrouter-key',
+    storageKey: 'Grandpa-openrouter-key',
     models: [
       { id: 'openrouter/auto', desc: 'Auto — best model for the task' },
       { id: 'openrouter/anthropic/claude-sonnet-4', desc: 'Claude Sonnet 4 via OpenRouter' },
@@ -536,7 +536,7 @@ export function CommandPalette() {
           ) : tab === 'catalogue' ? (
             <span>Models are downloaded from the Ollama registry</span>
           ) : (
-            <span>API keys are stored locally and never sent to OpenJarvis servers</span>
+            <span>API keys are stored locally and never sent to Grandpa servers</span>
           )}
         </div>
       </div>

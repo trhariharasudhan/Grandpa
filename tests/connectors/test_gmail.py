@@ -13,8 +13,8 @@ from unittest.mock import patch
 
 import pytest
 
-from openjarvis.connectors._stubs import Document
-from openjarvis.core.registry import ConnectorRegistry
+from grandpa.connectors._stubs import Document
+from grandpa.core.registry import ConnectorRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers — fake API payloads
@@ -76,7 +76,7 @@ def _make_credentials(tmp_path: Path) -> Path:
 @pytest.fixture()
 def connector(tmp_path: Path):
     """GmailConnector pointing at a tmp credentials path (no file yet)."""
-    from openjarvis.connectors.gmail import GmailConnector  # noqa: PLC0415
+    from grandpa.connectors.gmail import GmailConnector  # noqa: PLC0415
 
     creds_path = str(tmp_path / "gmail.json")
     return GmailConnector(credentials_path=creds_path)
@@ -120,8 +120,8 @@ def test_auth_url_returns_string(connector) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_yields_documents(
     mock_get,
     mock_list,
@@ -200,8 +200,8 @@ def test_mcp_tools(connector) -> None:
 # ---------------------------------------------------------------------------
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_passes_since_as_query(
     mock_get,
     mock_list,
@@ -235,8 +235,8 @@ def test_sync_passes_since_as_query(
 # ---------------------------------------------------------------------------
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_without_since_passes_empty_query(
     mock_get,
     mock_list,
@@ -264,7 +264,7 @@ def test_sync_without_since_passes_empty_query(
 
 def test_registry() -> None:
     """GmailConnector can be registered and retrieved via ConnectorRegistry."""
-    from openjarvis.connectors.gmail import GmailConnector  # noqa: PLC0415
+    from grandpa.connectors.gmail import GmailConnector  # noqa: PLC0415
 
     # The registry is cleared before each test by the autouse conftest fixture,
     # so we imperatively re-register here (same pattern as test_obsidian.py).
@@ -304,8 +304,8 @@ _MSG_RICH = {
 }
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_emits_v1_fields(
     mock_get,
     mock_list,
@@ -355,8 +355,8 @@ def test_sync_emits_v1_fields(
     assert "CATEGORY_PERSONAL" in doc.metadata["labels"]
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_channel_falls_back_to_inbox(
     mock_get,
     mock_list,
@@ -374,8 +374,8 @@ def test_sync_channel_falls_back_to_inbox(
     assert all(d.channel == "INBOX" for d in docs)
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_channel_none_when_no_system_label(
     mock_get,
     mock_list,
@@ -406,7 +406,7 @@ def test_sync_channel_none_when_no_system_label(
 
 def test_html_to_text_strips_basic_tags() -> None:
     """_html_to_text() removes tags but preserves visible text content."""
-    from openjarvis.connectors.gmail import _html_to_text  # noqa: PLC0415
+    from grandpa.connectors.gmail import _html_to_text  # noqa: PLC0415
 
     html = (
         "<html><body><p>Hello <b>world</b>!</p><p>Second paragraph.</p></body></html>"
@@ -420,7 +420,7 @@ def test_html_to_text_strips_basic_tags() -> None:
 
 def test_html_to_text_drops_script_and_style() -> None:
     """Content inside <script>/<style>/<head> is stripped, not rendered."""
-    from openjarvis.connectors.gmail import _html_to_text  # noqa: PLC0415
+    from grandpa.connectors.gmail import _html_to_text  # noqa: PLC0415
 
     html = """
     <html>
@@ -440,7 +440,7 @@ def test_html_to_text_drops_script_and_style() -> None:
 
 def test_html_to_text_decodes_entities() -> None:
     """Named and numeric HTML entities are decoded to their characters."""
-    from openjarvis.connectors.gmail import _html_to_text  # noqa: PLC0415
+    from grandpa.connectors.gmail import _html_to_text  # noqa: PLC0415
 
     html = "<p>Tom &amp; Jerry &mdash; 50&nbsp;cents</p>"
     text = _html_to_text(html)
@@ -451,7 +451,7 @@ def test_html_to_text_decodes_entities() -> None:
 
 def test_html_to_text_inserts_paragraph_breaks() -> None:
     """Block-level tags produce newlines so the chunker sees structure."""
-    from openjarvis.connectors.gmail import _html_to_text  # noqa: PLC0415
+    from grandpa.connectors.gmail import _html_to_text  # noqa: PLC0415
 
     html = "<div>line one</div><div>line two</div><div>line three</div>"
     text = _html_to_text(html)
@@ -459,8 +459,8 @@ def test_html_to_text_inserts_paragraph_breaks() -> None:
     assert text.count("\n") >= 2
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_strips_html_when_no_text_plain(
     mock_get,
     mock_list,
@@ -510,8 +510,8 @@ def test_sync_strips_html_when_no_text_plain(
     assert "<" not in content and ">" not in content
 
 
-@patch("openjarvis.connectors.gmail._gmail_api_list_messages")
-@patch("openjarvis.connectors.gmail._gmail_api_get_message")
+@patch("grandpa.connectors.gmail._gmail_api_list_messages")
+@patch("grandpa.connectors.gmail._gmail_api_get_message")
 def test_sync_prefers_text_plain_over_text_html(
     mock_get,
     mock_list,
@@ -604,7 +604,7 @@ def _write_full_creds(tmp_path: Path) -> str:
 
 def test_401_triggers_refresh_and_retries_with_new_token(tmp_path: Path) -> None:
     """A 401 on a Gmail API call refreshes the token, persists it, and retries."""
-    from openjarvis.connectors import gmail as gmail_mod
+    from grandpa.connectors import gmail as gmail_mod
 
     creds_path = _write_full_creds(tmp_path)
 
@@ -664,7 +664,7 @@ def test_non_401_status_is_not_refreshed(tmp_path: Path) -> None:
     """A 500 from Gmail must propagate — only 401 should trigger refresh."""
     import httpx as _httpx
 
-    from openjarvis.connectors import gmail as gmail_mod
+    from grandpa.connectors import gmail as gmail_mod
 
     creds_path = _write_full_creds(tmp_path)
 
@@ -688,7 +688,7 @@ def test_non_401_status_is_not_refreshed(tmp_path: Path) -> None:
 
 def test_refresh_raises_when_refresh_token_missing(tmp_path: Path) -> None:
     """Refresh aborts with a clear error when no refresh_token is stored."""
-    from openjarvis.connectors import google_auth
+    from grandpa.connectors import google_auth
 
     creds_path = tmp_path / "gmail.json"
     creds_path.write_text(
@@ -709,7 +709,7 @@ def test_sync_recovers_when_list_returns_401(tmp_path: Path) -> None:
     successfully. Verifies the connector yields the expected Document and
     that the credentials file is rewritten with the fresh token.
     """
-    from openjarvis.connectors import gmail as gmail_mod
+    from grandpa.connectors import gmail as gmail_mod
 
     creds_path = _write_full_creds(tmp_path)
     connector = gmail_mod.GmailConnector(credentials_path=creds_path)

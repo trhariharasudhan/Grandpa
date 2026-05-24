@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Index OpenJarvis docs (README.md + docs/**/*.md) into a DenseMemory backend.
+"""Index grandpa docs (README.md + docs/**/*.md) into a DenseMemory backend.
 
 Usage:
     python scripts/index_docs.py              # print retrieval smoke test
@@ -21,7 +21,7 @@ import sys
 import time
 from pathlib import Path
 
-from openjarvis.tools.storage.dense import (
+from grandpa.tools.storage.dense import (
     DenseMemory,
     MdChunk,
     chunk_markdown,
@@ -47,8 +47,8 @@ def build_index(
     max_section_tokens: int = 1000,
     paragraph_overlap_tokens: int = 100,
     dedupe: bool = True,
-    # Empirical: on the actual OpenJarvis docs the boilerplate that
-    # crowds retrieval ("OpenJarvis runs entirely on your hardware...")
+    # Empirical: on the actual grandpa docs the boilerplate that
+    # crowds retrieval ("grandpa runs entirely on your hardware...")
     # appears in exactly 2 files (downloads.md ↔ installation.md).
     # Spec'd 3+ removes 0 chunks; 2+ removes 15 (1.3%) — all genuine
     # cross-file boilerplate. See the dry-run audit logged at index time.
@@ -171,7 +171,7 @@ def main() -> int:
 
     queries = args.query or [
         "can I run the orchestrator agent on a laptop without a gpu?",
-        "what inference engines does openjarvis support?",
+        "what inference engines does grandpa support?",
         "how do I add a new channel integration?",
         "why would I choose the dense memory backend over sqlite?",
     ]

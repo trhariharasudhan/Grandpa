@@ -7,12 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from openjarvis.core.types import Trace
+from grandpa.core.types import Trace
 
 
 @pytest.fixture
 def store():
-    from openjarvis.traces.store import TraceStore
+    from grandpa.traces.store import TraceStore
 
     with tempfile.TemporaryDirectory() as tmpdir:
         s = TraceStore(Path(tmpdir) / "traces.db")

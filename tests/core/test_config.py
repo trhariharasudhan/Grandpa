@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openjarvis.core.config import (
+from grandpa.core.config import (
     AgentConfig,
     ChannelConfig,
     EngineConfig,
     GpuInfo,
     HardwareInfo,
     IntelligenceConfig,
-    JarvisConfig,
+    GrandpaConfig,
     LearningConfig,
     SandboxConfig,
     SchedulerConfig,
@@ -24,8 +24,8 @@ from openjarvis.core.config import (
 
 
 class TestDefaults:
-    def test_jarvis_config_defaults(self) -> None:
-        cfg = JarvisConfig()
+    def test_Grandpa_config_defaults(self) -> None:
+        cfg = GrandpaConfig()
         assert cfg.engine.default == "ollama"
         assert cfg.memory.default_backend == "sqlite"
         assert cfg.telemetry.enabled is True
@@ -82,7 +82,7 @@ class TestRecommendEngine:
 class TestTomlLoading:
     def test_load_missing_file_uses_defaults(self, tmp_path: Path) -> None:
         cfg = load_config(tmp_path / "nonexistent.toml")
-        assert isinstance(cfg, JarvisConfig)
+        assert isinstance(cfg, GrandpaConfig)
         # engine default is derived from detected hardware — just ensure it's a string
         assert isinstance(cfg.engine.default, str)
 
@@ -133,8 +133,8 @@ class TestSecurityConfig:
         assert sc.pii_scanner is True
         assert sc.enforce_tool_confirmation is True
 
-    def test_security_config_on_jarvis_config(self) -> None:
-        cfg = JarvisConfig()
+    def test_security_config_on_Grandpa_config(self) -> None:
+        cfg = GrandpaConfig()
         assert isinstance(cfg.security, SecurityConfig)
 
     def test_security_config_loads_from_toml(self, tmp_path: Path) -> None:
@@ -155,8 +155,8 @@ class TestChannelConfig:
         assert cc.enabled is False
         assert cc.default_agent == "simple"
 
-    def test_channel_config_on_jarvis_config(self) -> None:
-        cfg = JarvisConfig()
+    def test_channel_config_on_Grandpa_config(self) -> None:
+        cfg = GrandpaConfig()
         assert isinstance(cfg.channel, ChannelConfig)
 
     def test_channel_config_loads_from_toml(self, tmp_path: Path) -> None:
@@ -397,7 +397,7 @@ class TestSandboxConfig:
     def test_defaults(self) -> None:
         sc = SandboxConfig()
         assert sc.enabled is False
-        assert sc.image == "openjarvis-sandbox:latest"
+        assert sc.image == "grandpa-sandbox:latest"
         assert sc.timeout == 300
         assert sc.workspace == ""
         assert sc.mount_allowlist_path == ""
@@ -416,8 +416,8 @@ class TestSandboxConfig:
         assert sc.timeout == 600
         assert sc.runtime == "podman"
 
-    def test_on_jarvis_config(self) -> None:
-        cfg = JarvisConfig()
+    def test_on_Grandpa_config(self) -> None:
+        cfg = GrandpaConfig()
         assert isinstance(cfg.sandbox, SandboxConfig)
         assert cfg.sandbox.enabled is False
 
@@ -450,8 +450,8 @@ class TestSchedulerConfig:
         assert sc.poll_interval == 30
         assert sc.db_path == "/tmp/sched.db"
 
-    def test_on_jarvis_config(self) -> None:
-        cfg = JarvisConfig()
+    def test_on_Grandpa_config(self) -> None:
+        cfg = GrandpaConfig()
         assert isinstance(cfg.scheduler, SchedulerConfig)
         assert cfg.scheduler.enabled is False
 
@@ -475,7 +475,7 @@ class TestSchedulerConfig:
 class TestApplyTomlSectionListNormalization:
     def test_apply_toml_section_list_to_str_field(self) -> None:
         """TOML arrays assigned to str-typed fields should be joined with ','."""
-        from openjarvis.core.config import ToolsConfig, _apply_toml_section
+        from grandpa.core.config import ToolsConfig, _apply_toml_section
 
         target = ToolsConfig()
         tools = ["code_interpreter", "web_search", "file_read"]
@@ -486,7 +486,7 @@ class TestApplyTomlSectionListNormalization:
     def test_apply_toml_section_list_to_property_setter(self) -> None:
         """TOML arrays passed to backward-compat property setters should be
         normalized to comma-separated strings, not passed as raw lists."""
-        from openjarvis.core.config import _apply_toml_section
+        from grandpa.core.config import _apply_toml_section
 
         target = LearningConfig()
         _apply_toml_section(
@@ -500,7 +500,7 @@ class TestApplyTomlSectionListNormalization:
 
     def test_apply_toml_section_agent_tools_list(self) -> None:
         """Agent tools should work as a TOML array."""
-        from openjarvis.core.config import _apply_toml_section
+        from grandpa.core.config import _apply_toml_section
 
         target = AgentConfig()
         _apply_toml_section(
@@ -517,7 +517,7 @@ class TestWhatsAppBaileysChannelConfig:
     def test_defaults(self) -> None:
         wc = WhatsAppBaileysChannelConfig()
         assert wc.auth_dir == ""
-        assert wc.assistant_name == "Jarvis"
+        assert wc.assistant_name == "Grandpa"
         assert wc.assistant_has_own_number is False
 
     def test_custom_values(self) -> None:
@@ -541,7 +541,7 @@ class TestWhatsAppBaileysChannelConfig:
 
 
 def test_mining_config_absent_means_none(tmp_path):
-    from openjarvis.core.config import load_config
+    from grandpa.core.config import load_config
     cfg_path = tmp_path / "config.toml"
     cfg_path.write_text("")  # empty config
     cfg = load_config(cfg_path)
@@ -551,8 +551,8 @@ def test_mining_config_absent_means_none(tmp_path):
 def test_mining_config_solo_parsed(tmp_path):
     from pathlib import Path
 
-    from openjarvis.core.config import load_config
-    from openjarvis.mining._stubs import SoloTarget
+    from grandpa.core.config import load_config
+    from grandpa.mining._stubs import SoloTarget
 
     src = Path(__file__).parent.parent / "mining" / "fixtures" / "config_minimal.toml"
     target = tmp_path / "config.toml"
@@ -570,12 +570,12 @@ def test_mining_config_solo_parsed(tmp_path):
 def test_mining_config_pool_parsed_as_pool_target(tmp_path):
     from pathlib import Path
 
-    from openjarvis.core.config import load_config
-    from openjarvis.mining._stubs import PoolTarget
+    from grandpa.core.config import load_config
+    from grandpa.mining._stubs import PoolTarget
 
     src = Path(__file__).parent.parent / "mining" / "fixtures" / "config_pool_v2.toml"
     target = tmp_path / "config.toml"
     target.write_text(src.read_text())
     cfg = load_config(target)
     assert isinstance(cfg.mining.submit_target, PoolTarget)
-    assert cfg.mining.submit_target.url == "https://pool.openjarvis.ai/submit"
+    assert cfg.mining.submit_target.url == "https://pool.grandpa.ai/submit"

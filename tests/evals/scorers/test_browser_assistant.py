@@ -1,7 +1,7 @@
 """Tests for the browser_assistant scorer."""
 
-from openjarvis.evals.core.types import EvalRecord
-from openjarvis.evals.scorers.browser_assistant import (
+from grandpa.evals.core.types import EvalRecord
+from grandpa.evals.scorers.browser_assistant import (
     BrowserAssistantScorer,
 )
 

@@ -1,7 +1,7 @@
 """Tests for the coding_assistant scorer."""
 
-from openjarvis.evals.core.types import EvalRecord
-from openjarvis.evals.scorers.coding_assistant import CodingAssistantScorer
+from grandpa.evals.core.types import EvalRecord
+from grandpa.evals.scorers.coding_assistant import CodingAssistantScorer
 
 
 def _make_record(buggy_code, test_code, originally_failing, originally_passing):
