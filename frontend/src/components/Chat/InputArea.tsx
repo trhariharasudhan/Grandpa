@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { ChevronDown, Cpu, Loader2, Search, Send, Sparkles, Square } from 'lucide-react';
+import { Activity, Camera, ChevronDown, Cpu, Loader2, Search, Send, Sparkles, Square } from 'lucide-react';
 import { useAppStore, generateId } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
 import { fetchRuntimeUsage, getBase } from '../../lib/api';
@@ -73,8 +73,22 @@ function useResearchCorpusSync(enabled: boolean): {
   return state;
 }
 
+function speakLocalActionResponse(text: string | undefined) {
+  if (!text || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  try {
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  } catch {
+    // Browser TTS is optional; text confirmation remains the source of truth.
+  }
+}
+
 export function InputArea() {
   const [input, setInput] = useState('');
+  const [lastLocalActionKind, setLastLocalActionKind] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -396,6 +410,12 @@ export function InputArea() {
         } else {
           try {
             const data = JSON.parse(sseEvent.data);
+            if (data.local_action?.kind) {
+              setLastLocalActionKind(data.local_action.kind);
+            }
+            if (data.local_action?.tts_text) {
+              speakLocalActionResponse(data.local_action.tts_text);
+            }
             const delta = data.choices?.[0]?.delta;
             if (data.usage) usage = data.usage;
             if (data.complexity) complexity = data.complexity;
@@ -520,6 +540,11 @@ export function InputArea() {
     }
   };
 
+  const prepareScreenAnalysis = () => {
+    setInput('What is on my screen?');
+    requestAnimationFrame(() => textareaRef.current?.focus());
+  };
+
   return (
     <div className="px-4 pb-5 pt-3" style={{ maxWidth: 'var(--chat-max-width)', margin: '0 auto', width: '100%' }}>
       <div className="mb-2 flex flex-col gap-2">
@@ -615,6 +640,19 @@ export function InputArea() {
           </button>
         ) : (
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={prepareScreenAnalysis}
+              disabled={streamState.isStreaming || modelLoading}
+              className="p-2 rounded-xl transition-colors shrink-0 cursor-pointer disabled:opacity-30 disabled:cursor-default"
+              style={{
+                background: 'transparent',
+                color: 'var(--color-text-secondary)',
+              }}
+              title="Analyze current screen"
+            >
+              <Camera size={16} />
+            </button>
             <MicButton
               state={speechState}
               onClick={handleMicClick}
@@ -637,7 +675,14 @@ export function InputArea() {
         )}
       </div>
       <div className="flex items-center justify-center mt-2 text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
-        <span>
+        <span className="inline-flex items-center gap-1.5">
+          {lastLocalActionKind === 'automation' && (
+            <>
+              <Activity size={11} style={{ color: 'var(--color-accent-amber)' }} />
+              <span style={{ color: 'var(--color-accent-amber)' }}>Automation ready</span>
+              <span>&middot;</span>
+            </>
+          )}
           Private local assistant &middot; <kbd className="font-mono">Enter</kbd> sends
         </span>
       </div>

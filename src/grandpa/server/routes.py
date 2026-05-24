@@ -43,12 +43,40 @@ def _to_messages(chat_messages) -> list[Message]:
     return messages
 
 
+def _last_user_text(request_body: ChatCompletionRequest) -> str:
+    for message in reversed(request_body.messages):
+        if message.role == "user" and message.content:
+            return message.content
+    return ""
+
+
+def _local_action_response(
+    model: str,
+    action_result,
+    complexity_info=None,
+) -> ChatCompletionResponse:
+    choice_msg = ChoiceMessage(role="assistant", content=action_result.message)
+    return ChatCompletionResponse(
+        model=model,
+        choices=[Choice(message=choice_msg, finish_reason="stop")],
+        usage=UsageInfo(),
+        complexity=complexity_info,
+        local_action={
+            "status": action_result.status,
+            "kind": action_result.kind,
+            "target": action_result.target,
+            "tts_text": action_result.tts_text,
+        },
+    )
+
+
 @router.post("/v1/chat/completions")
 async def chat_completions(request_body: ChatCompletionRequest, request: Request):
     """Handle chat completion requests (streaming and non-streaming)."""
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
     model = request_body.model
+    original_user_text = _last_user_text(request_body)
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
@@ -105,11 +133,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
 
     # Run complexity analysis on the last user message
     complexity_info = None
-    query_text_for_complexity = ""
-    for m in reversed(request_body.messages):
-        if m.role == "user" and m.content:
-            query_text_for_complexity = m.content
-            break
+    query_text_for_complexity = original_user_text
     if query_text_for_complexity:
         try:
             from grandpa.learning.routing.complexity import (
@@ -136,6 +160,19 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 "Complexity analysis failed",
                 exc_info=True,
             )
+
+    if original_user_text:
+        from grandpa.local_actions import handle_local_action
+
+        action_result = handle_local_action(original_user_text)
+        if not action_result.should_fallback:
+            if request_body.stream:
+                return await _handle_local_action_stream(
+                    model,
+                    action_result,
+                    complexity_info,
+                )
+            return _local_action_response(model, action_result, complexity_info)
 
     if request_body.stream:
         bus = getattr(request.app.state, "bus", None)
@@ -431,6 +468,54 @@ async def _handle_stream(
         if complexity_info is not None:
             finish_dict["complexity"] = complexity_info.model_dump()
 
+        yield f"data: {_json.dumps(finish_dict)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
+    )
+
+
+async def _handle_local_action_stream(model: str, action_result, complexity_info=None):
+    """Stream a local-action confirmation in OpenAI-compatible SSE shape."""
+    import json as _json
+
+    chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+
+    async def generate():
+        role_chunk = ChatCompletionChunk(
+            id=chunk_id,
+            model=model,
+            choices=[StreamChoice(delta=DeltaMessage(role="assistant"))],
+        )
+        yield f"data: {role_chunk.model_dump_json()}\n\n"
+
+        if action_result.message:
+            content_chunk = ChatCompletionChunk(
+                id=chunk_id,
+                model=model,
+                choices=[
+                    StreamChoice(delta=DeltaMessage(content=action_result.message))
+                ],
+            )
+            yield f"data: {content_chunk.model_dump_json()}\n\n"
+
+        finish_chunk = ChatCompletionChunk(
+            id=chunk_id,
+            model=model,
+            choices=[StreamChoice(delta=DeltaMessage(), finish_reason="stop")],
+        )
+        finish_dict = _json.loads(finish_chunk.model_dump_json())
+        finish_dict["local_action"] = {
+            "status": action_result.status,
+            "kind": action_result.kind,
+            "target": action_result.target,
+            "tts_text": action_result.tts_text,
+        }
+        if complexity_info is not None:
+            finish_dict["complexity"] = complexity_info.model_dump()
         yield f"data: {_json.dumps(finish_dict)}\n\n"
         yield "data: [DONE]\n\n"
 

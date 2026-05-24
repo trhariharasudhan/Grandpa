@@ -201,6 +201,17 @@ def chat(
                     console.print(f"[bold]{role}:[/bold] {msg.content[:200]}")
             continue
 
+        from grandpa.local_actions import handle_local_action
+
+        local_action = handle_local_action(user_input)
+        if not local_action.should_fallback:
+            history.append(Message(role=Role.USER, content=user_input))
+            history.append(Message(role=Role.ASSISTANT, content=local_action.message))
+            console.print()
+            console.print(Markdown(local_action.message))
+            console.print()
+            continue
+
         # Add user message
         history.append(Message(role=Role.USER, content=user_input))
 

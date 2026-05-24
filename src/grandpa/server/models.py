@@ -72,6 +72,7 @@ class ChatCompletionResponse(BaseModel):
     choices: List[Choice] = Field(default_factory=list)
     usage: UsageInfo = Field(default_factory=UsageInfo)
     complexity: Optional[ComplexityInfo] = None
+    local_action: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------

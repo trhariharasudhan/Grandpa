@@ -606,6 +606,28 @@ def ask(
     console = Console(stderr=True)
     query_text = " ".join(query)
 
+    from grandpa.local_actions import handle_local_action
+
+    local_action = handle_local_action(query_text)
+    if not local_action.should_fallback:
+        if output_json:
+            click.echo(
+                json_mod.dumps(
+                    {
+                        "content": local_action.message,
+                        "local_action": {
+                            "status": local_action.status,
+                            "kind": local_action.kind,
+                            "target": local_action.target,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            click.echo(local_action.message)
+        return
+
     wall_start = time.monotonic() if enable_profile else None
 
     # Load config

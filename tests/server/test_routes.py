@@ -240,6 +240,79 @@ class TestChatCompletions:
         data = resp.json()
         assert data["choices"][0]["finish_reason"] == "stop"
 
+    def test_local_time_action_bypasses_engine(self):
+        engine = _make_engine(content="Should not be used")
+        app = create_app(engine, "test-model")
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "what time is it?"}],
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["choices"][0]["message"]["content"].startswith("It is ")
+        assert data["local_action"]["kind"] == "time"
+        engine.generate.assert_not_called()
+
+    def test_dangerous_local_action_is_blocked(self):
+        engine = _make_engine(content="Should not be used")
+        app = create_app(engine, "test-model")
+        client = TestClient(app)
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "delete all files"}],
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert (
+            data["choices"][0]["message"]["content"]
+            == "I blocked this action for safety."
+        )
+        assert data["local_action"]["status"] == "blocked"
+        engine.generate.assert_not_called()
+
+    def test_unsupported_local_action_falls_back_to_engine(self, client):
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "What is Python?"}],
+            },
+        )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["choices"][0]["message"]["content"] == "Hello from server"
+        assert data["local_action"] is None
+
+    def test_streaming_local_action_marks_finish_chunk(self, client):
+        resp = client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "test-model",
+                "messages": [{"role": "user", "content": "what time is it?"}],
+                "stream": True,
+            },
+        )
+
+        assert resp.status_code == 200
+        finish = None
+        for line in resp.text.strip().split("\n"):
+            if line.startswith("data:") and "[DONE]" not in line:
+                data = json.loads(line[5:].strip())
+                if data.get("local_action"):
+                    finish = data
+        assert finish is not None
+        assert finish["local_action"]["kind"] == "time"
+
 
 # ---------------------------------------------------------------------------
 # Models endpoint tests
