@@ -186,6 +186,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         from grandpa.file_assistant import handle_file_command
         from grandpa.memory_context import handle_memory_command
         from grandpa.local_actions import handle_local_action
+        from grandpa.task_scheduler import handle_scheduler_command
 
         memory_result = handle_memory_command(original_user_text)
         if not memory_result.should_fallback:
@@ -216,6 +217,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                     complexity_info,
                 )
             return _local_action_response(model, file_result, complexity_info)
+
+        scheduler_result = handle_scheduler_command(original_user_text)
+        if not scheduler_result.should_fallback:
+            if request_body.stream:
+                return await _handle_local_action_stream(
+                    model,
+                    scheduler_result,
+                    complexity_info,
+                )
+            return _local_action_response(model, scheduler_result, complexity_info)
 
     if request_body.stream:
         bus = getattr(request.app.state, "bus", None)
@@ -880,6 +891,38 @@ async def file_assistant_search(request: Request):
     if not query:
         raise HTTPException(status_code=400, detail="'query' field is required")
     return search_files(query)
+
+
+@router.get("/v1/routines")
+async def routines():
+    """Return local routines and reminders."""
+    from grandpa.task_scheduler import scheduler_summary
+
+    return scheduler_summary()
+
+
+@router.post("/v1/routines/{routine_name:path}/run")
+async def run_routine_endpoint(routine_name: str):
+    """Run a stored routine by name."""
+    from grandpa.task_scheduler import run_routine
+
+    return run_routine(routine_name)
+
+
+@router.post("/v1/routines/{routine_name:path}/enable")
+async def enable_routine_endpoint(routine_name: str):
+    """Enable a stored routine."""
+    from grandpa.task_scheduler import set_routine_enabled
+
+    return set_routine_enabled(routine_name, True)
+
+
+@router.post("/v1/routines/{routine_name:path}/disable")
+async def disable_routine_endpoint(routine_name: str):
+    """Disable a stored routine."""
+    from grandpa.task_scheduler import set_routine_enabled
+
+    return set_routine_enabled(routine_name, False)
 
 
 @router.delete("/v1/personal-memory")

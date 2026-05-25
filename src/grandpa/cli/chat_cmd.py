@@ -238,6 +238,18 @@ def chat(
             console.print()
             continue
 
+        from grandpa.task_scheduler import handle_scheduler_command
+
+        scheduler_action = handle_scheduler_command(user_input)
+        if not scheduler_action.should_fallback:
+            history.append(Message(role=Role.USER, content=user_input))
+            history.append(Message(role=Role.ASSISTANT, content=scheduler_action.message))
+            remember_conversation("assistant", scheduler_action.message)
+            console.print()
+            console.print(Markdown(scheduler_action.message))
+            console.print()
+            continue
+
         # Add user message
         history.append(Message(role=Role.USER, content=user_input))
 

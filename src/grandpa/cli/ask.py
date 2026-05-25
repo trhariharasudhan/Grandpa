@@ -676,6 +676,29 @@ def ask(
             click.echo(file_action.message)
         return
 
+    from grandpa.task_scheduler import handle_scheduler_command
+
+    scheduler_action = handle_scheduler_command(query_text)
+    if not scheduler_action.should_fallback:
+        remember_conversation("assistant", scheduler_action.message)
+        if output_json:
+            click.echo(
+                json_mod.dumps(
+                    {
+                        "content": scheduler_action.message,
+                        "local_action": {
+                            "status": scheduler_action.status,
+                            "kind": scheduler_action.kind,
+                            "target": scheduler_action.target,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            click.echo(scheduler_action.message)
+        return
+
     wall_start = time.monotonic() if enable_profile else None
 
     # Load config

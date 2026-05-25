@@ -1015,6 +1015,63 @@ export async function searchFileAssistant(query: string): Promise<FileAssistantS
   return res.json();
 }
 
+export interface RoutineItem {
+  id: number;
+  created_at: number;
+  updated_at: number;
+  name: string;
+  schedule?: string | null;
+  actions: string[];
+  enabled: boolean;
+  next_run_at?: number | null;
+  next_run_label: string;
+}
+
+export interface ReminderItem {
+  id: number;
+  created_at: number;
+  updated_at: number;
+  text: string;
+  schedule: string;
+  schedule_label: string;
+  enabled: boolean;
+  next_run_at?: number | null;
+  next_run_label: string;
+}
+
+export interface RoutinesSummary {
+  routines: RoutineItem[];
+  reminders: ReminderItem[];
+  storage: {
+    backend: string;
+    path: string;
+    local_only: boolean;
+  };
+}
+
+export async function fetchRoutinesSummary(): Promise<RoutinesSummary> {
+  const res = await fetch(`${getBase()}/v1/routines`);
+  if (!res.ok) throw new Error('Failed to fetch routines');
+  return res.json();
+}
+
+export async function runRoutine(name: string): Promise<{ status: string; message: string }> {
+  const res = await fetch(`${getBase()}/v1/routines/${encodeURIComponent(name)}/run`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to run routine');
+  return res.json();
+}
+
+export async function setRoutineEnabled(name: string, enabled: boolean): Promise<{ status: string }> {
+  const action = enabled ? 'enable' : 'disable';
+  const res = await fetch(`${getBase()}/v1/routines/${encodeURIComponent(name)}/${action}`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to update routine');
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Approvals
 // ---------------------------------------------------------------------------
