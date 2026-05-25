@@ -6,6 +6,7 @@ import subprocess
 from scripts.validate_daily_use import (
     ValidationStep,
     _docker_daemon_ready,
+    _npm_command,
     _run_step,
     build_steps,
 )
@@ -61,3 +62,36 @@ def test_docker_daemon_ready_handles_command_failure(monkeypatch) -> None:
     )
 
     assert _docker_daemon_ready() is False
+
+
+def test_npm_command_prefers_cmd_on_windows(monkeypatch) -> None:
+    monkeypatch.setattr("os.name", "nt")
+
+    def fake_which(name: str) -> str | None:
+        if name == "npm.cmd":
+            return "C:/Program Files/nodejs/npm.cmd"
+        if name == "npm":
+            return "C:/Program Files/nodejs/npm"
+        return None
+
+    monkeypatch.setattr("shutil.which", fake_which)
+
+    assert _npm_command() == ["C:/Program Files/nodejs/npm.cmd"]
+
+
+def test_frontend_step_uses_resolved_npm(monkeypatch) -> None:
+    args = argparse.Namespace(
+        skip_app_launch=True,
+        skip_frontend=False,
+        skip_docker=True,
+    )
+    monkeypatch.setattr(
+        "scripts.validate_daily_use._npm_command",
+        lambda: ["C:/Program Files/nodejs/npm.cmd"],
+    )
+
+    steps = build_steps(args)
+    frontend = next(step for step in steps if step.name == "frontend build")
+
+    assert frontend.cwd.name == "frontend"
+    assert frontend.command == ["C:/Program Files/nodejs/npm.cmd", "run", "build"]

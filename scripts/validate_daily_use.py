@@ -8,6 +8,7 @@ overwriting, or editing user files. It may open a safe allowlisted app unless
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -103,6 +104,17 @@ def _docker_daemon_ready() -> bool:
     return completed.returncode == 0
 
 
+def _npm_command() -> list[str] | None:
+    """Return a subprocess-safe npm command for the current platform."""
+    if os.name == "nt":
+        npm = shutil.which("npm.cmd") or shutil.which("npm.exe")
+    else:
+        npm = shutil.which("npm")
+    if not npm:
+        return None
+    return [npm]
+
+
 def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
     steps = [
         ValidationStep("doctor dashboard", ["uv", "run", "grandpa", "doctor"], timeout=240),
@@ -161,12 +173,20 @@ def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
         )
 
     if not args.skip_frontend:
+        npm = _npm_command()
+        frontend_dir = ROOT / "frontend"
+        frontend_command = (
+            [*npm, "run", "build"]
+            if npm
+            else ["npm", "run", "build"]
+        )
         steps.append(
             ValidationStep(
                 "frontend build",
-                ["npm", "run", "build"],
-                cwd=ROOT / "frontend",
+                frontend_command,
+                cwd=frontend_dir,
                 timeout=240,
+                required=(frontend_dir / "package.json").exists(),
             )
         )
 
