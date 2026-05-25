@@ -25,6 +25,7 @@ import logging
 import re
 import threading
 import time
+import warnings
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional
 
 from fastapi import APIRouter
@@ -149,7 +150,13 @@ class _LiveGPUSampler:
         self._t_start = 0.0
         self._t_last = 0.0
         try:
-            import pynvml  # type: ignore
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    category=FutureWarning,
+                    message=r".*pynvml.*",
+                )
+                import pynvml  # type: ignore
 
             pynvml.nvmlInit()
             count = pynvml.nvmlDeviceGetCount()

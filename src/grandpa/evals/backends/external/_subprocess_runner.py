@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import threading
 import time
+import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
@@ -201,7 +202,13 @@ class _NullSampler(_Sampler):
 
 def _try_start_nvml() -> Optional[_Sampler]:
     try:
-        import pynvml  # type: ignore
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                category=FutureWarning,
+                message=r".*pynvml.*",
+            )
+            import pynvml  # type: ignore
 
         pynvml.nvmlInit()
         handle = pynvml.nvmlDeviceGetHandleByIndex(0)

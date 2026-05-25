@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import warnings
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict, Generator, List, Optional
@@ -12,7 +13,14 @@ from typing import Dict, Generator, List, Optional
 logger = logging.getLogger(__name__)
 
 try:
-    import pynvml
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=FutureWarning,
+            message=r".*pynvml.*",
+        )
+        import pynvml
+
     _PYNVML_AVAILABLE = True
 except ImportError:
     _PYNVML_AVAILABLE = False

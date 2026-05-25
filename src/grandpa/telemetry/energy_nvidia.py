@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import warnings
 from contextlib import contextmanager
 from typing import Generator, List, Optional, Tuple
 
@@ -17,7 +18,13 @@ from grandpa.telemetry.energy_monitor import (
 logger = logging.getLogger(__name__)
 
 try:
-    import pynvml
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            category=FutureWarning,
+            message=r".*pynvml.*",
+        )
+        import pynvml
 
     _PYNVML_AVAILABLE = True
 except ImportError:

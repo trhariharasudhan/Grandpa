@@ -26,7 +26,7 @@ def test_safe_app_command_is_recognized_without_execution():
 
     assert result.status == "handled"
     assert result.kind == "app"
-    assert result.target == "notepad.exe"
+    assert result.target == "notepad"
     assert result.message == "Opening Notepad."
 
 

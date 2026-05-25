@@ -12,6 +12,18 @@ features work best when these optional local tools are ready.
 - **Docker Desktop**: install from <https://www.docker.com/products/docker-desktop/>
   and wait for the daemon to finish starting before running Docker validation.
 
+## Python Environment
+
+Use the project environment at `D:\Grandpa\.venv`. If PowerShell has another
+environment active, such as `.venv311`, `uv` may print a `VIRTUAL_ENV` mismatch
+warning before Grandpa starts.
+
+```powershell
+deactivate
+uv sync --python 3.11 --extra server --link-mode=copy
+uv run grandpa chat
+```
+
 ## Screen, OCR, And Desktop Control
 
 - **Pillow**: included in Grandpa dependencies; refresh with

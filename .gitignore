@@ -11,6 +11,8 @@ build/
 
 # Virtual environments
 .venv/
+/.venv311/
+/Grandpa/
 venv/
 env/
 
@@ -60,6 +62,7 @@ site/
 # Frontend
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # Desktop
 desktop/node_modules/

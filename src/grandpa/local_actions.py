@@ -43,6 +43,7 @@ ActionKind = Literal[
     "screenshot",
     "browser",
     "automation",
+    "window",
     "app_lookup",
     "blocked",
 ]
@@ -363,11 +364,26 @@ def _with_permission(command: str, result: LocalActionResult) -> LocalActionResu
 def classify_permission(command: str, result: LocalActionResult) -> PermissionStatus:
     if result.kind == "automation":
         return "requires_confirmation"
+    if result.kind == "window" and result.target == "close|task_manager":
+        return "blocked"
+    if result.kind == "window" and result.target.startswith("close|"):
+        return "requires_confirmation"
     if result.kind == "folder" and not _is_known_safe_folder(result.target):
         return "requires_confirmation"
     if result.kind == "url" and not _is_known_safe_url(result.target):
         return "requires_confirmation"
-    if result.kind in {"app", "folder", "url", "browser", "time", "system_info", "screen", "screenshot", "app_lookup"}:
+    if result.kind in {
+        "app",
+        "folder",
+        "url",
+        "browser",
+        "time",
+        "system_info",
+        "screen",
+        "screenshot",
+        "window",
+        "app_lookup",
+    }:
         return "allowed"
     if result.kind == "blocked":
         return "blocked"
@@ -419,6 +435,10 @@ def _is_dangerous(command: str) -> bool:
 
 
 def _parse_safe_action(command: str) -> LocalActionResult:
+    window_result = _parse_window_action(command)
+    if window_result.status != "no_match":
+        return window_result
+
     screen_result = _parse_screen_action(command)
     if screen_result.status != "no_match":
         return screen_result
@@ -636,6 +656,79 @@ def _parse_automation_action(command: str) -> LocalActionResult:
         )
 
     return LocalActionResult(status="no_match")
+
+
+def _parse_window_action(command: str) -> LocalActionResult:
+    if command in {"list open windows", "what windows are open", "show open windows"}:
+        return LocalActionResult(
+            status="handled",
+            kind="window",
+            target="list|windows",
+            message="Checking open windows.",
+            tts_text="Checking open windows.",
+        )
+
+    match = re.fullmatch(
+        r"(focus|minimize|maximize|restore|close) "
+        r"(notepad|chrome|edge|vs code|vscode|visual studio code|calculator|"
+        r"file explorer|explorer|settings|control panel|task manager)",
+        command,
+    )
+    if match:
+        action = match.group(1)
+        target = _window_app_id(match.group(2))
+        return LocalActionResult(
+            status="handled",
+            kind="window",
+            target=f"{action}|{target}",
+            message=_window_pending_message(action, target),
+            tts_text=_window_tts(action, target),
+        )
+
+    match = re.fullmatch(r"(minimize|maximize|restore|close) active window", command)
+    if match:
+        action = match.group(1)
+        return LocalActionResult(
+            status="handled",
+            kind="window",
+            target=f"{action}|active",
+            message=_window_pending_message(action, "active"),
+            tts_text=_window_tts(action, "active"),
+        )
+
+    return LocalActionResult(status="no_match")
+
+
+def _window_app_id(target: str) -> str:
+    if target in {"vs code", "visual studio code"}:
+        return "vscode"
+    if target == "file explorer":
+        return "explorer"
+    if target == "control panel":
+        return "control_panel"
+    if target == "task manager":
+        return "task_manager"
+    return target
+
+
+def _window_pending_message(action: str, target: str) -> str:
+    label = "the active window" if target == "active" else _window_label(target)
+    if action == "close":
+        return f"Close {label}."
+    return f"{action.title()} {label}."
+
+
+def _window_tts(action: str, target: str) -> str:
+    label = "the active window" if target == "active" else _window_label(target)
+    if action == "close":
+        return f"Close {label}."
+    return f"{action.title()} {label}."
+
+
+def _window_label(target: str) -> str:
+    if target == "vscode":
+        return "VS Code"
+    return target.title()
 
 
 def _parse_screen_action(command: str) -> LocalActionResult:
@@ -875,6 +968,31 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
             tts_text=automation.tts_text or automation.message,
         )
 
+    if result.kind == "window":
+        from grandpa.windows_window_control import control_window, list_open_windows
+
+        action, _, target = result.target.partition("|")
+        if action == "list":
+            window_result = list_open_windows()
+        else:
+            window_result = control_window(action, target or "active")
+        status = {
+            "handled": "handled",
+            "blocked": "blocked",
+            "unsupported": "unsupported",
+            "not_found": "handled",
+            "multiple_matches": "handled",
+            "error": "error",
+        }.get(window_result.status, "error")
+        return LocalActionResult(
+            status=status,
+            kind="window",
+            target=result.target,
+            message=window_result.message,
+            tts_text=window_result.message,
+            permission=result.permission,
+        )
+
     if result.kind == "app":
         from grandpa.windows_app_resolver import launch_app
 
@@ -935,7 +1053,14 @@ def _log_attempt(command: str, result: LocalActionResult) -> None:
         from grandpa.memory_context import record_activity
 
         action = "blocked" if result.status == "blocked" else "open"
-        if result.kind in {"time", "system_info", "screen", "screenshot", "automation"}:
+        if result.kind in {
+            "time",
+            "system_info",
+            "screen",
+            "screenshot",
+            "automation",
+            "window",
+        }:
             action = result.kind
         record_activity(
             result.kind if result.kind != "blocked" else "safety",
