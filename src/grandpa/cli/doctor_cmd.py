@@ -6,7 +6,10 @@ import json
 import shutil
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import click
@@ -24,6 +27,14 @@ class CheckResult:
     status: str  # "ok", "warn", "fail"
     message: str
     details: Optional[str] = None
+
+
+@dataclass
+class DoctorSection:
+    """A grouped section in the doctor readiness dashboard."""
+
+    name: str
+    checks: List[CheckResult]
 
 
 # -- Individual checks -------------------------------------------------------
@@ -287,6 +298,487 @@ def _check_nodejs() -> CheckResult:
         return CheckResult("Node.js", "warn", f"Error checking version: {exc}")
 
 
+def _ollama_host(config: Any | None = None) -> str:
+    config = config or _get_config()
+    host = getattr(getattr(getattr(config, "engine", None), "ollama", None), "host", "")
+    return (host or "http://localhost:11434").rstrip("/")
+
+
+def _fetch_ollama_models(host: str, timeout: float = 1.5) -> tuple[bool, list[str], str]:
+    try:
+        with urllib.request.urlopen(f"{host}/api/tags", timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+        models = []
+        for item in payload.get("models", []):
+            name = item.get("name") if isinstance(item, dict) else None
+            if name:
+                models.append(name)
+        return True, models, "Reachable"
+    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        return False, [], str(exc)
+
+
+def _check_ollama_reachable() -> CheckResult:
+    host = _ollama_host()
+    ok, _, detail = _fetch_ollama_models(host)
+    if ok:
+        return CheckResult("Ollama reachable", "ok", f"Ready ({host})")
+    return CheckResult(
+        "Ollama reachable",
+        "warn",
+        "Missing/optional",
+        details=f"Start Ollama. Last error: {detail}",
+    )
+
+
+def _check_daily_default_model() -> CheckResult:
+    config = _get_config()
+    model = getattr(getattr(config, "intelligence", None), "default_model", "")
+    if not model:
+        return CheckResult("Default model available", "ok", "Ready (auto-routing)")
+    host = _ollama_host(config)
+    ok, models, detail = _fetch_ollama_models(host)
+    if ok and model in models:
+        return CheckResult("Default model available", "ok", f"Ready ({model})")
+    if ok:
+        return CheckResult(
+            "Default model available",
+            "warn",
+            "Missing/optional",
+            details=f"Pull the model with `ollama pull {model}`.",
+        )
+    return CheckResult(
+        "Default model available",
+        "warn",
+        "Missing/optional",
+        details=f"Start Ollama to verify {model}. Last error: {detail}",
+    )
+
+
+def _check_rest_api_installed() -> CheckResult:
+    missing = []
+    for pkg in ("fastapi", "uvicorn"):
+        try:
+            __import__(pkg)
+        except Exception:
+            missing.append(pkg)
+    if not missing:
+        return CheckResult("REST API server installed", "ok", "Ready")
+    return CheckResult(
+        "REST API server installed",
+        "warn",
+        "Missing/optional",
+        details="Run `uv sync --extra server --link-mode=copy`.",
+    )
+
+
+def _check_windows_app_resolver_ready() -> CheckResult:
+    try:
+        from grandpa.windows_app_resolver import APP_DEFINITIONS
+
+        count = len(APP_DEFINITIONS)
+        return CheckResult("Windows app resolver ready", "ok", f"Ready ({count} allowlisted apps)")
+    except Exception as exc:
+        return CheckResult("Windows app resolver ready", "fail", "Failed", details=str(exc))
+
+
+def _check_known_app(app_name: str) -> CheckResult:
+    try:
+        from grandpa.windows_app_resolver import resolve_app
+
+        result = resolve_app(app_name)
+        if result.status == "found":
+            return CheckResult(
+                f"Known app: {result.display_name}",
+                "ok",
+                "Ready",
+                result.launch_target,
+            )
+        if result.status == "unsupported":
+            return CheckResult(
+                f"Known app: {result.display_name}",
+                "warn",
+                "Missing/optional",
+                details="Windows app detection is only available on Windows desktop.",
+            )
+        return CheckResult(
+            f"Known app: {result.display_name}",
+            "warn",
+            "Missing/optional",
+            details=result.message,
+        )
+    except Exception as exc:
+        return CheckResult(f"Known app: {app_name}", "fail", "Failed", details=str(exc))
+
+
+def _check_local_actions_ready() -> CheckResult:
+    try:
+        from grandpa.local_actions import handle_local_action
+
+        result = handle_local_action("what time is it", execute=False)
+        if result.status in {"handled", "requires_confirmation"}:
+            return CheckResult("Local actions ready", "ok", "Ready")
+        return CheckResult(
+            "Local actions ready",
+            "warn",
+            "Missing/optional",
+            details=result.status,
+        )
+    except Exception as exc:
+        return CheckResult("Local actions ready", "fail", "Failed", details=str(exc))
+
+
+def _check_existing_sqlite_db(name: str, path: Path) -> CheckResult:
+    if not path.exists():
+        return CheckResult(
+            name,
+            "warn",
+            "Missing/optional",
+            details=f"Will be created on first use: {path}",
+        )
+    try:
+        import sqlite3
+
+        uri = f"file:{path.as_posix()}?mode=ro"
+        with sqlite3.connect(uri, uri=True, timeout=1.0) as conn:
+            conn.execute("SELECT 1").fetchone()
+        return CheckResult(name, "ok", "Ready", str(path))
+    except Exception as exc:
+        return CheckResult(name, "fail", "Failed", details=str(exc))
+
+
+def _check_approval_db_ready() -> CheckResult:
+    from grandpa.local_action_approvals import DEFAULT_APPROVAL_DB
+
+    return _check_existing_sqlite_db("Approval database ready", DEFAULT_APPROVAL_DB)
+
+
+def _check_memory_db_ready() -> CheckResult:
+    from grandpa.memory_context import DEFAULT_MEMORY_DB
+
+    return _check_existing_sqlite_db("Memory database ready", DEFAULT_MEMORY_DB)
+
+
+def _check_file_db_ready() -> CheckResult:
+    from grandpa.file_assistant import DEFAULT_FILE_DB
+
+    return _check_existing_sqlite_db("File assistant database ready", DEFAULT_FILE_DB)
+
+
+def _check_scheduler_db_ready() -> CheckResult:
+    from grandpa.task_scheduler import DEFAULT_SCHEDULER_DB
+
+    return _check_existing_sqlite_db("Scheduler database ready", DEFAULT_SCHEDULER_DB)
+
+
+def _check_scheduler_daemon_ready() -> CheckResult:
+    try:
+        from grandpa.scheduler_daemon import BackgroundSchedulerDaemon  # noqa: F401
+        from grandpa.task_scheduler import SchedulerStore  # noqa: F401
+
+        return CheckResult("Scheduler daemon import/startup ready", "ok", "Ready")
+    except Exception as exc:
+        return CheckResult(
+            "Scheduler daemon import/startup ready",
+            "fail",
+            "Failed",
+            details=str(exc),
+        )
+
+
+def _check_screen_awareness_available() -> CheckResult:
+    try:
+        import grandpa.screen_awareness  # noqa: F401
+
+        return CheckResult("Screen awareness available", "ok", "Ready")
+    except Exception as exc:
+        return CheckResult(
+            "Screen awareness available",
+            "warn",
+            "Missing/optional",
+            details=str(exc),
+        )
+
+
+def _check_screenshot_backend() -> CheckResult:
+    backends = []
+    try:
+        from PIL import ImageGrab  # noqa: F401
+
+        backends.append("Pillow ImageGrab")
+    except Exception:
+        pass
+    try:
+        import pyautogui  # noqa: F401
+
+        backends.append("pyautogui")
+    except Exception:
+        pass
+    if backends:
+        return CheckResult("Screenshot backend", "ok", f"Ready ({', '.join(backends)})")
+    return CheckResult(
+        "Screenshot backend",
+        "warn",
+        "Missing/optional",
+        details="Install Pillow or pyautogui.",
+    )
+
+
+def _check_ocr_backend() -> List[CheckResult]:
+    results = []
+    try:
+        import pytesseract  # noqa: F401
+
+        results.append(CheckResult("OCR backend: pytesseract", "ok", "Ready"))
+    except Exception:
+        results.append(
+            CheckResult(
+                "OCR backend: pytesseract",
+                "warn",
+                "Missing/optional",
+                details="Install pytesseract.",
+            )
+        )
+    if shutil.which("tesseract"):
+        results.append(CheckResult("OCR backend: Tesseract executable", "ok", "Ready"))
+    else:
+        results.append(
+            CheckResult(
+                "OCR backend: Tesseract executable",
+                "warn",
+                "Missing/optional",
+                details="Install Tesseract OCR and add it to PATH.",
+            )
+        )
+    return results
+
+
+def _check_desktop_automation_backend() -> CheckResult:
+    try:
+        import pyautogui  # noqa: F401
+
+        return CheckResult("Desktop automation backend", "ok", "Ready")
+    except Exception:
+        return CheckResult(
+            "Desktop automation backend",
+            "warn",
+            "Missing/optional",
+            details="Install pyautogui.",
+        )
+
+
+def _check_voice_frontend_note() -> CheckResult:
+    return CheckResult(
+        "Voice frontend support",
+        "warn",
+        "Missing/optional",
+        details="Browser-based speech requires browser support and microphone permission.",
+    )
+
+
+def _check_docker_readiness() -> List[CheckResult]:
+    docker = shutil.which("docker")
+    if not docker:
+        return [
+            CheckResult(
+                "Docker command available",
+                "warn",
+                "Missing/optional",
+                details="Install Docker Desktop.",
+            ),
+            CheckResult(
+                "Docker daemon reachable",
+                "warn",
+                "Missing/optional",
+                details="Install and start Docker Desktop.",
+            ),
+        ]
+    results = [CheckResult("Docker command available", "ok", "Ready", docker)]
+    try:
+        proc = subprocess.run(
+            ["docker", "version", "--format", "{{.Server.Version}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if proc.returncode == 0:
+            results.append(
+                CheckResult(
+                    "Docker daemon reachable",
+                    "ok",
+                    f"Ready ({proc.stdout.strip()})",
+                )
+            )
+        else:
+            results.append(
+                CheckResult(
+                    "Docker daemon reachable",
+                    "warn",
+                    "Missing/optional",
+                    details="Start Docker Desktop.",
+                )
+            )
+    except Exception as exc:
+        results.append(
+            CheckResult(
+                "Docker daemon reachable",
+                "warn",
+                "Missing/optional",
+                details=f"Start Docker Desktop. Last error: {exc}",
+            )
+        )
+    return results
+
+
+def _check_notifications_ready() -> CheckResult:
+    try:
+        from grandpa.task_scheduler import SchedulerStore  # noqa: F401
+
+        return CheckResult(
+            "Notifications",
+            "ok",
+            "Ready",
+            "Routine and reminder notifications can be stored locally.",
+        )
+    except Exception as exc:
+        return CheckResult("Notifications", "warn", "Missing/optional", details=str(exc))
+
+
+def _check_background_scheduler_ready() -> CheckResult:
+    try:
+        from grandpa.scheduler_daemon import BackgroundSchedulerDaemon  # noqa: F401
+        from grandpa.server.app import create_app  # noqa: F401
+
+        return CheckResult(
+            "Background scheduler",
+            "ok",
+            "Ready",
+            "Backend startup can register the routine scheduler daemon.",
+        )
+    except Exception as exc:
+        return CheckResult("Background scheduler", "fail", "Failed", details=str(exc))
+
+
+def _check_frontend_readiness() -> CheckResult:
+    static_index = Path(__file__).resolve().parents[1] / "server" / "static" / "index.html"
+    source_index = Path.cwd() / "frontend" / "index.html"
+    package_json = Path.cwd() / "frontend" / "package.json"
+    if static_index.exists():
+        return CheckResult("Frontend readiness", "ok", "Ready", str(static_index))
+    if source_index.exists() and package_json.exists():
+        return CheckResult(
+            "Frontend readiness",
+            "warn",
+            "Missing/optional",
+            details=(
+                "Frontend source exists; run `cd frontend && npm run build` "
+                "to refresh packaged assets."
+            ),
+        )
+    return CheckResult(
+        "Frontend readiness",
+        "warn",
+        "Missing/optional",
+        details="Frontend assets were not detected.",
+    )
+
+
+def _check_background_tasks() -> List[CheckResult]:
+    from grandpa.cli._bg_state import get_status
+
+    bg = get_status()
+    results: List[CheckResult] = []
+    if bg.rust_extension == "ready":
+        results.append(CheckResult("Rust extension background task", "ok", "Ready"))
+    elif bg.rust_extension == "failed":
+        results.append(
+            CheckResult(
+                "Rust extension background task",
+                "fail",
+                "Failed",
+                details=(
+                    f"{bg.rust_error[:80]}\n"
+                    "Retry: ~/.grandpa/.scripts/install-rust.sh && "
+                    "~/.grandpa/.scripts/build-extension.sh"
+                ),
+            )
+        )
+    else:
+        results.append(
+            CheckResult(
+                "Rust extension background task",
+                "warn",
+                "Missing/optional",
+                details="Rust extension is building in the background.",
+            )
+        )
+
+    if not bg.models:
+        results.append(
+            CheckResult(
+                "Background model downloads",
+                "ok",
+                "Ready",
+                "No model downloads are currently tracked.",
+            )
+        )
+    for model_id, state in bg.models.items():
+        if state == "ready":
+            results.append(CheckResult(f"Background model: {model_id}", "ok", "Ready"))
+        elif state == "failed":
+            results.append(
+                CheckResult(
+                    f"Background model: {model_id}",
+                    "fail",
+                    "Failed",
+                    details=f"Retry: ~/.grandpa/.scripts/pull-model.sh {model_id}",
+                )
+            )
+        else:
+            results.append(
+                CheckResult(
+                    f"Background model: {model_id}",
+                    "warn",
+                    "Missing/optional",
+                    details="Model download is still running.",
+                )
+            )
+    return results
+
+
+def _check_daily_use_readiness() -> List[CheckResult]:
+    checks: List[CheckResult] = [
+        _check_ollama_reachable(),
+        _check_daily_default_model(),
+        _check_rest_api_installed(),
+        _check_security_profile(),
+        _check_windows_app_resolver_ready(),
+    ]
+    for app_name in ("chrome", "edge", "vscode", "notepad", "calculator"):
+        checks.append(_check_known_app(app_name))
+    checks.extend(
+        [
+            _check_local_actions_ready(),
+            _check_approval_db_ready(),
+            _check_memory_db_ready(),
+            _check_file_db_ready(),
+            _check_scheduler_db_ready(),
+            _check_scheduler_daemon_ready(),
+            _check_screen_awareness_available(),
+            _check_screenshot_backend(),
+        ]
+    )
+    checks.extend(_check_ocr_backend())
+    checks.extend(
+        [
+            _check_desktop_automation_backend(),
+            _check_voice_frontend_note(),
+        ]
+    )
+    checks.extend(_check_docker_readiness())
+    return checks
+
+
 # -- Main command -------------------------------------------------------------
 
 _STATUS_ICONS = {
@@ -311,6 +803,91 @@ def _run_all_checks() -> List[CheckResult]:
     return checks
 
 
+def _build_doctor_dashboard() -> List[DoctorSection]:
+    """Build the grouped doctor dashboard without duplicate visible checks."""
+    core_runtime = [
+        _check_python_version(),
+        _check_config_exists(),
+        _check_config_parses(),
+        _check_rest_api_installed(),
+        _check_security_profile(),
+        _check_nodejs(),
+    ]
+
+    ai_engines = []
+    ai_engines.extend(_check_engines())
+    ai_engines.append(_check_default_model())
+    ai_engines.extend(_check_models())
+
+    daily_features: List[CheckResult] = [
+        _check_windows_app_resolver_ready(),
+    ]
+    for app_name in ("chrome", "edge", "vscode", "notepad", "calculator"):
+        daily_features.append(_check_known_app(app_name))
+    daily_features.extend(
+        [
+            _check_local_actions_ready(),
+            _check_approval_db_ready(),
+            _check_memory_db_ready(),
+            _check_file_db_ready(),
+            _check_scheduler_db_ready(),
+            _check_scheduler_daemon_ready(),
+            _check_screen_awareness_available(),
+            _check_screenshot_backend(),
+        ]
+    )
+    daily_features.extend(_check_ocr_backend())
+    daily_features.extend(
+        [
+            _check_desktop_automation_backend(),
+            _check_voice_frontend_note(),
+        ]
+    )
+
+    system_integration: List[CheckResult] = []
+    system_integration.extend(_check_docker_readiness())
+    system_integration.extend(
+        [
+            _check_notifications_ready(),
+            _check_background_scheduler_ready(),
+            _check_frontend_readiness(),
+        ]
+    )
+    system_integration.extend(_check_background_tasks())
+
+    return [
+        DoctorSection("Core Runtime", core_runtime),
+        DoctorSection("AI Engines", ai_engines),
+        DoctorSection("Daily Use Features", daily_features),
+        DoctorSection("System Integration", system_integration),
+    ]
+
+
+def _flatten_sections(sections: List[DoctorSection]) -> List[CheckResult]:
+    checks: List[CheckResult] = []
+    for section in sections:
+        checks.extend(section.checks)
+    return checks
+
+
+def _readiness_label(checks: List[CheckResult]) -> str:
+    failures = sum(1 for c in checks if c.status == "fail")
+    warnings = sum(1 for c in checks if c.status == "warn")
+    if failures:
+        return "NEEDS SETUP"
+    if warnings:
+        return "PARTIALLY READY"
+    return "DAILY USE READY"
+
+
+def _readiness_style(label: str) -> str:
+    if label == "DAILY USE READY":
+        return "bold green"
+    if label == "PARTIALLY READY":
+        return "bold yellow"
+    return "bold red"
+
+
 def _results_to_dicts(checks: List[CheckResult]) -> List[Dict[str, Any]]:
     """Convert CheckResult list to JSON-serializable dicts."""
     return [asdict(c) for c in checks]
@@ -320,7 +897,8 @@ def _results_to_dicts(checks: List[CheckResult]) -> List[Dict[str, Any]]:
 @click.option("--json", "as_json", is_flag=True, help="Output results as JSON.")
 def doctor(as_json: bool) -> None:
     """Run diagnostic checks on your Grandpa installation."""
-    checks = _run_all_checks()
+    sections = _build_doctor_dashboard()
+    checks = _flatten_sections(sections)
 
     if as_json:
         click.echo(json.dumps(_results_to_dicts(checks), indent=2))
@@ -328,62 +906,50 @@ def doctor(as_json: bool) -> None:
 
     console = Console()
     console.print()
-    console.print("[bold]Grandpa Doctor[/bold]")
+    console.print("[bold]Grandpa Doctor Dashboard[/bold]")
     console.print()
 
-    table = Table(show_header=True, header_style="bold")
+    table = Table(show_header=True, header_style="bold", expand=True)
+    table.add_column("Section", style="bold", no_wrap=True)
     table.add_column("Status", width=3, justify="center")
     table.add_column("Check")
     table.add_column("Result")
 
-    for check in checks:
-        icon = _STATUS_ICONS.get(check.status, "?")
-        message = check.message
-        if check.details:
-            message += f"\n  [dim]{check.details}[/dim]"
-        table.add_row(icon, check.name, message)
+    for section_index, section in enumerate(sections):
+        if section_index:
+            table.add_section()
+        for check_index, check in enumerate(section.checks):
+            icon = _STATUS_ICONS.get(check.status, "?")
+            message = check.message
+            if check.details:
+                message += f"\n  [dim]{check.details}[/dim]"
+            table.add_row(
+                section.name if check_index == 0 else "",
+                icon,
+                check.name,
+                message,
+            )
 
     console.print(table)
 
     ok_count = sum(1 for c in checks if c.status == "ok")
     warn_count = sum(1 for c in checks if c.status == "warn")
     fail_count = sum(1 for c in checks if c.status == "fail")
+    readiness = _readiness_label(checks)
     console.print()
-    console.print(f"  {ok_count} passed, {warn_count} warnings, {fail_count} failures")
-    console.print()
+    console.print("[bold]Final Summary[/bold]")
+    console.print(
+        f"  {ok_count} passed, {warn_count} warnings, {fail_count} failures"
+    )
+    console.print(f"  Overall readiness: [{_readiness_style(readiness)}]{readiness}[/]")
 
-    # Background tasks section
-    from grandpa.cli._bg_state import get_status
-
-    console.print("[bold]Background tasks[/bold]")
-    bg = get_status()
-    bg_failed = False
-
-    if bg.rust_extension == "ready":
-        console.print("  [green]✓[/green] Rust extension: ready")
-    elif bg.rust_extension == "failed":
-        console.print(f"  [red]✗[/red] Rust extension: failed — {bg.rust_error[:80]}")
-        console.print(
-            "    retry: ~/.grandpa/.scripts/install-rust.sh && "
-            "~/.grandpa/.scripts/build-extension.sh"
+    failed_background = any(
+        check.status == "fail"
+        and (
+            check.name.startswith("Rust extension background task")
+            or check.name.startswith("Background model:")
         )
-        bg_failed = True
-    else:
-        console.print(
-            "  [yellow]…[/yellow] Rust extension: building (run in background)"
-        )
-
-    if not bg.models:
-        console.print("  [dim]no model downloads tracked[/dim]")
-    for model_id, state in bg.models.items():
-        if state == "ready":
-            console.print(f"  [green]✓[/green] {model_id}: ready")
-        elif state == "failed":
-            console.print(f"  [red]✗[/red] {model_id}: failed")
-            console.print(f"    retry: ~/.grandpa/.scripts/pull-model.sh {model_id}")
-            bg_failed = True
-        else:
-            console.print(f"  [yellow]…[/yellow] {model_id}: downloading")
-
-    if bg_failed:
+        for check in checks
+    )
+    if failed_background:
         raise click.exceptions.Exit(code=1)

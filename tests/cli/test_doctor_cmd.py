@@ -10,6 +10,8 @@ from click.testing import CliRunner
 
 from grandpa.cli import cli
 from grandpa.cli.doctor_cmd import (
+    CheckResult,
+    DoctorSection,
     _check_config_exists,
     _check_default_model,
     _check_nodejs,
@@ -37,12 +39,20 @@ class TestDoctorRuns:
                 "grandpa.cli.doctor_cmd.DEFAULT_CONFIG_PATH",
                 Path("/tmp/nonexistent/config.toml"),
             ),
-            patch("grandpa.cli.doctor_cmd._check_engines", return_value=[]),
-            patch("grandpa.cli.doctor_cmd._check_models", return_value=[]),
+            patch(
+                "grandpa.cli.doctor_cmd._build_doctor_dashboard",
+                return_value=[
+                    DoctorSection(
+                        "Core Runtime",
+                        [CheckResult("Runtime sample", "ok", "Ready")],
+                    )
+                ],
+            ),
         ):
             result = CliRunner().invoke(cli, ["doctor"])
         assert result.exit_code == 0
-        assert "Doctor" in result.output or "passed" in result.output
+        assert "Doctor Dashboard" in result.output
+        assert "Core Runtime" in result.output
 
 
 class TestDoctorJsonOutput:
@@ -57,8 +67,15 @@ class TestDoctorJsonOutput:
                 "grandpa.cli.doctor_cmd.DEFAULT_CONFIG_PATH",
                 Path("/tmp/nonexistent/config.toml"),
             ),
-            patch("grandpa.cli.doctor_cmd._check_engines", return_value=[]),
-            patch("grandpa.cli.doctor_cmd._check_models", return_value=[]),
+            patch(
+                "grandpa.cli.doctor_cmd._build_doctor_dashboard",
+                return_value=[
+                    DoctorSection(
+                        "Core Runtime",
+                        [CheckResult("Runtime sample", "ok", "Ready")],
+                    )
+                ],
+            ),
         ):
             result = CliRunner().invoke(cli, ["doctor", "--json"])
         assert result.exit_code == 0
