@@ -70,7 +70,7 @@ The backend (Ollama, Python API server, inference) runs separately on your machi
 
 ```bash
 git clone https://github.com/grandpa/grandpa.git
-cd grandpa/desktop
+cd grandpa/frontend
 npm install
 npm run tauri build
 ```

@@ -4,8 +4,8 @@
 # PILLAR 1: Intelligence — The Model
 # ═══════════════════════════════════════════════════════════════
 [intelligence]
-default_model = "zai-org/GLM-4.7-Flash"   # HuggingFace model ID
-fallback_model = "glm-4.7-flash"          # Catalog alias fallback
+default_model = "qwen3:4b"   		  # Ollama local model
+fallback_model = "qwen2.5:3b"	          # Lightweight fallback
 preferred_engine = "vllm"                 # MoE model, vLLM is best for A100s
 provider = "local"                        # Running locally on this machine
 quantization = "none"                     # Full precision, we have 640GB VRAM

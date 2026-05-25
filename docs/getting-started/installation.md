@@ -116,7 +116,7 @@ The app connects to `http://localhost:8000` automatically.
 
 ```bash
 git clone https://github.com/grandpa/grandpa.git
-cd grandpa/desktop
+cd grandpa/frontend
 npm install
 npm run tauri build
 ```
