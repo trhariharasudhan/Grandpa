@@ -965,6 +965,56 @@ export async function denyLocalAction(actionId: string): Promise<LocalActionDeci
   return res.json();
 }
 
+export interface FileAssistantRecentItem {
+  id: number;
+  created_at: number;
+  action: string;
+  path: string;
+  detail?: string | null;
+}
+
+export interface FileAssistantNote {
+  path: string;
+  name: string;
+  type: string;
+  size: number;
+  size_label: string;
+  modified: number;
+  modified_label: string;
+}
+
+export interface FileAssistantSummary {
+  recent_files: FileAssistantRecentItem[];
+  notes: FileAssistantNote[];
+  safe_roots: string[];
+  storage: {
+    backend: string;
+    path: string;
+    local_only: boolean;
+  };
+}
+
+export interface FileAssistantSearchResponse {
+  status: string;
+  message: string;
+}
+
+export async function fetchFileAssistantSummary(): Promise<FileAssistantSummary> {
+  const res = await fetch(`${getBase()}/v1/file-assistant`);
+  if (!res.ok) throw new Error('Failed to fetch file assistant summary');
+  return res.json();
+}
+
+export async function searchFileAssistant(query: string): Promise<FileAssistantSearchResponse> {
+  const res = await fetch(`${getBase()}/v1/file-assistant/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  });
+  if (!res.ok) throw new Error('Failed to search files');
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Approvals
 // ---------------------------------------------------------------------------

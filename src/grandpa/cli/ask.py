@@ -653,6 +653,29 @@ def ask(
             click.echo(local_action.message)
         return
 
+    from grandpa.file_assistant import handle_file_command
+
+    file_action = handle_file_command(query_text)
+    if not file_action.should_fallback:
+        remember_conversation("assistant", file_action.message)
+        if output_json:
+            click.echo(
+                json_mod.dumps(
+                    {
+                        "content": file_action.message,
+                        "local_action": {
+                            "status": file_action.status,
+                            "kind": file_action.kind,
+                            "target": file_action.target,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            click.echo(file_action.message)
+        return
+
     wall_start = time.monotonic() if enable_profile else None
 
     # Load config

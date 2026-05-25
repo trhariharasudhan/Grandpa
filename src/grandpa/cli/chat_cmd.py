@@ -226,6 +226,18 @@ def chat(
             console.print()
             continue
 
+        from grandpa.file_assistant import handle_file_command
+
+        file_action = handle_file_command(user_input)
+        if not file_action.should_fallback:
+            history.append(Message(role=Role.USER, content=user_input))
+            history.append(Message(role=Role.ASSISTANT, content=file_action.message))
+            remember_conversation("assistant", file_action.message)
+            console.print()
+            console.print(Markdown(file_action.message))
+            console.print()
+            continue
+
         # Add user message
         history.append(Message(role=Role.USER, content=user_input))
 

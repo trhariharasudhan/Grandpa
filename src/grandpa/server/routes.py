@@ -183,6 +183,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             )
 
     if original_user_text:
+        from grandpa.file_assistant import handle_file_command
         from grandpa.memory_context import handle_memory_command
         from grandpa.local_actions import handle_local_action
 
@@ -205,6 +206,16 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                     complexity_info,
                 )
             return _local_action_response(model, action_result, complexity_info)
+
+        file_result = handle_file_command(original_user_text)
+        if not file_result.should_fallback:
+            if request_body.stream:
+                return await _handle_local_action_stream(
+                    model,
+                    file_result,
+                    complexity_info,
+                )
+            return _local_action_response(model, file_result, complexity_info)
 
     if request_body.stream:
         bus = getattr(request.app.state, "bus", None)
@@ -849,6 +860,26 @@ async def personal_memory():
     from grandpa.memory_context import memory_summary
 
     return memory_summary()
+
+
+@router.get("/v1/file-assistant")
+async def file_assistant():
+    """Return local file assistant history and notes."""
+    from grandpa.file_assistant import file_assistant_summary
+
+    return file_assistant_summary()
+
+
+@router.post("/v1/file-assistant/search")
+async def file_assistant_search(request: Request):
+    """Search safe local document folders."""
+    from grandpa.file_assistant import search_files
+
+    body = await request.json()
+    query = str(body.get("query", "")).strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="'query' field is required")
+    return search_files(query)
 
 
 @router.delete("/v1/personal-memory")
