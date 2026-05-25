@@ -115,6 +115,8 @@ def test_type_command_is_allowlisted_without_execution():
     assert result.kind == "automation"
     assert result.target == "type|hello"
     assert result.pending_action
+    assert "typing into the active app" in result.message
+    assert "Permission:" not in result.message
 
 
 def test_enter_command_is_allowlisted_without_execution():

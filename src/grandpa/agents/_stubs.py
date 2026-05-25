@@ -8,7 +8,6 @@ base for agents that accept tools.
 
 from __future__ import annotations
 
-import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -261,16 +260,9 @@ class BaseAgent(ABC):
         pattern where the opening ``<think>`` is absent and the response
         begins directly with reasoning text followed by ``</think>``.
         """
-        # Full <think>...</think> blocks
-        text = re.sub(
-            r"<think>.*?</think>\s*",
-            "",
-            text,
-            flags=re.DOTALL | re.IGNORECASE,
-        )
-        # Leading content before a bare </think> (no opening tag)
-        text = re.sub(r"^.*?</think>\s*", "", text, flags=re.DOTALL | re.IGNORECASE)
-        return text.strip()
+        from grandpa.response_cleanup import clean_assistant_response
+
+        return clean_assistant_response(text, fallback="")
 
     @abstractmethod
     def run(

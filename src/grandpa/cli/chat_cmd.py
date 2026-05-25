@@ -12,6 +12,7 @@ from rich.markdown import Markdown
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.core.config import load_config
 from grandpa.core.types import Message, Role
+from grandpa.response_cleanup import GENERATION_ERROR_MESSAGE, clean_assistant_response
 
 
 def _read_input(prompt: str = "You> ") -> Optional[str]:
@@ -267,6 +268,7 @@ def chat(
                     if isinstance(result, dict)
                     else str(result)
                 )
+            content = clean_assistant_response(content)
             remember_conversation("assistant", content)
 
             history.append(Message(role=Role.ASSISTANT, content=content))
@@ -275,8 +277,8 @@ def chat(
             console.print()
         except KeyboardInterrupt:
             console.print("\n[dim]Generation interrupted.[/dim]")
-        except Exception as exc:
-            console.print(f"\n[red]Error: {exc}[/red]\n")
+        except Exception:
+            console.print(f"\n[red]{GENERATION_ERROR_MESSAGE}[/red]\n")
 
 
 __all__ = ["chat"]

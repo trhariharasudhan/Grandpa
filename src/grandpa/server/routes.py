@@ -10,6 +10,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from grandpa.core.types import Message, Role
+from grandpa.response_cleanup import (
+    GENERATION_ERROR_MESSAGE,
+    clean_assistant_response,
+)
 from grandpa.server.models import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -284,7 +288,8 @@ def _handle_direct(
             max_tokens=req.max_tokens,
             **kwargs,
         )
-    content = result.get("content", "")
+    content = clean_assistant_response(result.get("content", ""))
+    result["content"] = content
     try:
         from grandpa.memory_context import remember_conversation
 
@@ -357,10 +362,11 @@ def _handle_agent(
     finally:
         agent._model = original_model
 
+    content = clean_assistant_response(result.content)
     try:
         from grandpa.memory_context import remember_conversation
 
-        remember_conversation("assistant", result.content)
+        remember_conversation("assistant", content)
     except Exception:
         logging.getLogger("grandpa.server").debug(
             "Assistant memory logging failed",
@@ -390,7 +396,7 @@ def _handle_agent(
             Choice(
                 message=ChoiceMessage(
                     role="assistant",
-                    content=result.content,
+                    content=content,
                     audio=audio_meta,
                 ),
                 finish_reason="stop",
@@ -509,7 +515,7 @@ async def _handle_stream(
                 choices=[
                     StreamChoice(
                         delta=DeltaMessage(
-                            content=f"\n\nError during generation: {exc}",
+                            content=f"\n\n{GENERATION_ERROR_MESSAGE}",
                         ),
                         finish_reason="stop",
                     )
@@ -523,7 +529,10 @@ async def _handle_stream(
             try:
                 from grandpa.memory_context import remember_conversation
 
-                remember_conversation("assistant", full_content)
+                remember_conversation(
+                    "assistant",
+                    clean_assistant_response(full_content),
+                )
             except Exception:
                 logging.getLogger("grandpa.server").debug(
                     "Assistant memory logging failed",

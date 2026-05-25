@@ -41,6 +41,17 @@ def test_window_close_command_requires_confirmation():
     assert result.target == "close|notepad"
     assert result.permission == "requires_confirmation"
     assert result.pending_action
+    assert "Confirmation required before closing Notepad." in result.message
+    assert "Permission: requires_confirmation" not in result.message
+
+
+def test_window_list_command_is_deterministic_without_execution():
+    result = handle_local_action("what windows are open?", execute=False)
+
+    assert result.status == "handled"
+    assert result.kind == "window"
+    assert result.target == "list|windows"
+    assert result.should_fallback is False
 
 
 def test_window_close_system_app_command_is_blocked():

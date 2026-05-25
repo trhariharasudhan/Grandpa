@@ -863,11 +863,14 @@ def ask(
             console.print(hint_no_engine())
             sys.exit(1)
 
+        from grandpa.response_cleanup import clean_assistant_response
+
+        clean_content = clean_assistant_response(result.content)
         if output_json:
             click.echo(
                 json_mod.dumps(
                     {
-                        "content": result.content,
+                        "content": clean_content,
                         "turns": result.turns,
                         "tool_results": [
                             {
@@ -882,8 +885,8 @@ def ask(
                 )
             )
         else:
-            click.echo(result.content)
-        remember_conversation("assistant", result.content)
+            click.echo(clean_content)
+        remember_conversation("assistant", clean_content)
 
         if enable_profile:
             _print_profile(
@@ -944,7 +947,10 @@ def ask(
         sys.exit(1)
 
     # Output
-    content = result.get("content", "")
+    from grandpa.response_cleanup import clean_assistant_response
+
+    content = clean_assistant_response(result.get("content", ""))
+    result["content"] = content
     remember_conversation("assistant", content)
     if output_json:
         click.echo(json_mod.dumps(result, indent=2))

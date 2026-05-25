@@ -20,8 +20,97 @@ from grandpa.engine._base import (
 )
 from grandpa.engine._network import local_port_is_open
 from grandpa.engine._stubs import StreamChunk
+from grandpa.response_cleanup import clean_assistant_response
 
 logger = logging.getLogger(__name__)
+
+_MAX_NUM_PREDICT = 2048
+_DEFAULT_STOP_SEQUENCES = ["<|im_end|>", "<|endoftext|>"]
+
+
+def _generation_options(
+    temperature: float,
+    max_tokens: int,
+    kwargs: dict[str, Any],
+) -> Dict[str, Any]:
+    requested = _coerce_positive_int(max_tokens, default=1024)
+    options: Dict[str, Any] = {
+        "temperature": temperature,
+        "num_predict": min(requested, _MAX_NUM_PREDICT),
+        "num_ctx": kwargs.get("num_ctx", 8192),
+        "repeat_penalty": kwargs.get("repeat_penalty", 1.08),
+    }
+    stop = kwargs.get("stop", _DEFAULT_STOP_SEQUENCES)
+    if isinstance(stop, str):
+        stop = [stop]
+    if stop:
+        options["stop"] = list(stop)
+    return options
+
+
+def _coerce_positive_int(value: Any, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _visible_stream_delta(content: str, state: dict[str, bool]) -> str:
+    """Drop explicit streamed reasoning tags without delaying normal tokens."""
+
+    if not content:
+        return ""
+    text = str(content)
+    lower = text.lower()
+    if state.get("in_reasoning"):
+        end = _first_reasoning_end(lower)
+        if end is None:
+            return ""
+        text = text[end:]
+        lower = text.lower()
+        state["in_reasoning"] = False
+
+    visible = ""
+    while text:
+        lower = text.lower()
+        start = _first_reasoning_start(lower)
+        if start is None:
+            visible += text
+            break
+        visible += text[:start[0]]
+        text = text[start[1] :]
+        lower = text.lower()
+        end = _first_reasoning_end(lower)
+        if end is None:
+            state["in_reasoning"] = True
+            break
+        text = text[end:]
+    return visible
+
+
+def _first_reasoning_start(lower_text: str) -> tuple[int, int] | None:
+    starts = [
+        (lower_text.find(tag), len(tag))
+        for tag in ("<think>", "<thinking>", "<analysis>", "<reasoning>")
+        if lower_text.find(tag) >= 0
+    ]
+    if not starts:
+        return None
+    index, length = min(starts)
+    return index, index + length
+
+
+def _first_reasoning_end(lower_text: str) -> int | None:
+    ends = [
+        (lower_text.find(tag), len(tag))
+        for tag in ("</think>", "</thinking>", "</analysis>", "</reasoning>")
+        if lower_text.find(tag) >= 0
+    ]
+    if not ends:
+        return None
+    index, length = min(ends)
+    return index + length
 
 
 @EngineRegistry.register("ollama")
@@ -36,7 +125,7 @@ class OllamaEngine(InferenceEngine):
         self,
         host: str | None = None,
         *,
-        timeout: float = 1800.0,
+        timeout: float = 180.0,
     ) -> None:
         # Priority: explicit host (from config.toml) > OLLAMA_HOST env var > default
         if host is None:
@@ -71,11 +160,7 @@ class OllamaEngine(InferenceEngine):
             "model": model,
             "messages": msg_dicts,
             "stream": False,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-                "num_ctx": kwargs.get("num_ctx", 8192),
-            },
+            "options": _generation_options(temperature, max_tokens, kwargs),
         }
         # Disable extended thinking by default (Qwen3.5 etc.).
         # When enabled, thinking tokens consume the entire budget and
@@ -127,7 +212,10 @@ class OllamaEngine(InferenceEngine):
             reported_prompt if reported_prompt > 0 else prompt_tokens
         )
         completion_tokens = data.get("eval_count", 0)
-        content = data.get("message", {}).get("content", "")
+        content = clean_assistant_response(
+            data.get("message", {}).get("content", ""),
+            fallback="",
+        )
         result: Dict[str, Any] = {
             "content": content,
             "usage": {
@@ -187,11 +275,7 @@ class OllamaEngine(InferenceEngine):
             "model": model,
             "messages": messages_to_dicts(messages),
             "stream": True,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-                "num_ctx": kwargs.get("num_ctx", 8192),
-            },
+            "options": _generation_options(temperature, max_tokens, kwargs),
         }
         # Mirror generate()'s default: disable extended thinking unless the
         # caller opted in. Qwen3/etc. with thinking on can stall the visible
@@ -204,6 +288,7 @@ class OllamaEngine(InferenceEngine):
         try:
             with self._client.stream("POST", "/api/chat", json=payload) as resp:
                 resp.raise_for_status()
+                stream_state = {"in_reasoning": False}
                 for line in resp.iter_lines():
                     if not line.strip():
                         continue
@@ -211,7 +296,10 @@ class OllamaEngine(InferenceEngine):
                         chunk = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    content = chunk.get("message", {}).get("content", "")
+                    content = _visible_stream_delta(
+                        chunk.get("message", {}).get("content", ""),
+                        stream_state,
+                    )
                     if content:
                         yield content
                     if chunk.get("done", False):
@@ -266,11 +354,7 @@ class OllamaEngine(InferenceEngine):
             "model": model,
             "messages": msg_dicts,
             "stream": True,
-            "options": {
-                "temperature": temperature,
-                "num_predict": max_tokens,
-                "num_ctx": kwargs.get("num_ctx", 8192),
-            },
+            "options": _generation_options(temperature, max_tokens, kwargs),
         }
         if "think" not in kwargs:
             payload["think"] = False
@@ -307,6 +391,7 @@ class OllamaEngine(InferenceEngine):
                 resp.raise_for_status()
 
                 finish_reason: str | None = None
+                stream_state = {"in_reasoning": False}
                 for line in resp.iter_lines():
                     if not line.strip():
                         continue
@@ -316,7 +401,10 @@ class OllamaEngine(InferenceEngine):
                         continue
 
                     message = chunk.get("message", {}) or {}
-                    content = message.get("content", "")
+                    content = _visible_stream_delta(
+                        message.get("content", ""),
+                        stream_state,
+                    )
                     raw_tool_calls = message.get("tool_calls") or []
 
                     if content:

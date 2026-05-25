@@ -23,7 +23,7 @@ def engine() -> OllamaEngine:
 class TestOllamaGenerate:
     def test_generate_returns_content(self, engine: OllamaEngine) -> None:
         with respx.mock:
-            respx.post("http://testhost:11434/api/chat").mock(
+            route = respx.post("http://testhost:11434/api/chat").mock(
                 return_value=httpx.Response(
                     200,
                     json={
@@ -41,6 +41,46 @@ class TestOllamaGenerate:
         assert result["usage"]["prompt_tokens"] == 10
         assert result["usage"]["completion_tokens"] == 5
         assert result["usage"]["total_tokens"] == 15
+        payload = json.loads(route.calls.last.request.content)
+        assert payload["think"] is False
+        assert payload["options"]["num_predict"] == 1024
+        assert payload["options"]["repeat_penalty"] == 1.08
+        assert "<|endoftext|>" in payload["options"]["stop"]
+
+    def test_generate_cleans_reasoning_leak(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={
+                        "message": {
+                            "role": "assistant",
+                            "content": "I should reason privately.</think>\nDone.",
+                        },
+                        "model": "qwen3:8b",
+                    },
+                )
+            )
+            result = engine.generate(
+                [Message(role=Role.USER, content="Hi")], model="qwen3:8b"
+            )
+        assert result["content"] == "Done."
+
+    def test_generate_clamps_large_token_request(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            route = respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"message": {"role": "assistant", "content": "Hello!"}},
+                )
+            )
+            engine.generate(
+                [Message(role=Role.USER, content="Hi")],
+                model="qwen3:8b",
+                max_tokens=999999,
+            )
+        payload = json.loads(route.calls.last.request.content)
+        assert payload["options"]["num_predict"] == 2048
 
     def test_generate_connection_error(self, engine: OllamaEngine) -> None:
         with respx.mock:
@@ -100,3 +140,24 @@ class TestOllamaStream:
             ):
                 tokens.append(tok)
         assert "Hello" in tokens
+
+    @pytest.mark.asyncio
+    async def test_stream_suppresses_tagged_reasoning(
+        self, engine: OllamaEngine
+    ) -> None:
+        lines = [
+            json.dumps({"message": {"content": "<think>private"}, "done": False}),
+            json.dumps({"message": {"content": " thought</think>"}, "done": False}),
+            json.dumps({"message": {"content": "Visible"}, "done": True}),
+        ]
+        body = "\n".join(lines)
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(200, text=body)
+            )
+            tokens = []
+            async for tok in engine.stream(
+                [Message(role=Role.USER, content="Hi")], model="qwen3:8b"
+            ):
+                tokens.append(tok)
+        assert tokens == ["Visible"]

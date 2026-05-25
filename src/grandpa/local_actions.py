@@ -49,7 +49,7 @@ ActionKind = Literal[
 ]
 
 BLOCKED_MESSAGE = "I blocked this action for safety."
-CONFIRMATION_PREFIX = "This action needs your confirmation before I run it."
+CONFIRMATION_PREFIX = "Confirmation required before I run this action."
 CANCELLED_MESSAGE = "Cancelled the pending local action."
 
 
@@ -187,12 +187,12 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
 
     try:
         executed = _execute(result)
-    except Exception as exc:  # pragma: no cover - defensive edge
+    except Exception:  # pragma: no cover - defensive edge
         executed = LocalActionResult(
             status="error",
             kind=result.kind,
             target=result.target,
-            message=f"I could not complete that local action: {exc}",
+            message="I couldn't complete that local action.",
             tts_text="I could not complete that local action.",
             permission=result.permission,
         )
@@ -256,12 +256,12 @@ def approve_pending_action(action_id: str | None = None) -> LocalActionResult:
                 permission="allowed",
                 pending_action=_pending_metadata(pending),
             )
-        except Exception as exc:  # pragma: no cover - defensive edge
+        except Exception:  # pragma: no cover - defensive edge
             result = LocalActionResult(
                 status="error",
                 kind=pending["kind"],
                 target=pending["target"],
-                message=f"I could not complete that local action: {exc}",
+                message="I couldn't complete that local action.",
                 tts_text="I could not complete that local action.",
                 permission="allowed",
                 pending_action=_pending_metadata(pending),
@@ -343,13 +343,7 @@ def _with_permission(command: str, result: LocalActionResult) -> LocalActionResu
         message=result.message,
         tts_text=result.tts_text,
     )
-    message = (
-        f"{CONFIRMATION_PREFIX}\n\n"
-        f"Action: {command}\n"
-        f"Permission: requires_confirmation\n"
-        f"Action ID: {pending['id']}\n\n"
-        "Reply with yes/confirm to approve, or cancel to deny."
-    )
+    message = _confirmation_message(command, result, pending["id"])
     return LocalActionResult(
         status="requires_confirmation",
         kind=result.kind,
@@ -359,6 +353,44 @@ def _with_permission(command: str, result: LocalActionResult) -> LocalActionResu
         permission="requires_confirmation",
         pending_action=_pending_metadata(pending),
     )
+
+
+def _confirmation_message(
+    command: str,
+    result: LocalActionResult,
+    action_id: str,
+) -> str:
+    summary = _confirmation_summary(command, result)
+    return (
+        f"{summary}\n\n"
+        "Reply with yes/confirm to approve, or cancel to deny.\n"
+        f"Action ID: {action_id}"
+    )
+
+
+def _confirmation_summary(command: str, result: LocalActionResult) -> str:
+    if result.kind == "window" and result.target.startswith("close|"):
+        return f"Confirmation required before closing {_target_label(result.target)}."
+    if result.kind == "automation":
+        if result.target.startswith("type|"):
+            return "Confirmation required before typing into the active app."
+        if result.target.startswith("hotkey|ctrl+v"):
+            return "Confirmation required before pasting into the active app."
+        if result.target.startswith("click|"):
+            return "Confirmation required before clicking the screen."
+        return "Confirmation required before controlling the active app."
+    if result.kind == "folder":
+        return "Confirmation required before opening that folder."
+    if result.kind == "url":
+        return "Confirmation required before opening that URL."
+    return CONFIRMATION_PREFIX
+
+
+def _target_label(target: str) -> str:
+    raw = target.split("|", 1)[-1].replace("_", " ").strip()
+    if not raw:
+        return "that window"
+    return _APP_ALLOWLIST.get(raw, (raw, raw.title()))[1]
 
 
 def classify_permission(command: str, result: LocalActionResult) -> PermissionStatus:
