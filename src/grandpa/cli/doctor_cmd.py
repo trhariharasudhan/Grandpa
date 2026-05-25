@@ -61,6 +61,25 @@ def _check_config_exists() -> CheckResult:
     )
 
 
+def _windows_setup_hint(tool: str) -> str:
+    hints = {
+        "ollama": "Install Ollama from https://ollama.com/download and run `ollama serve`.",
+        "docker": "Install Docker Desktop and wait until the engine is running.",
+        "node": "Install Node.js 22+ from https://nodejs.org/.",
+        "pillow": "Run `uv sync --extra server --link-mode=copy`; Pillow is a project dependency.",
+        "pyautogui": (
+            "Run `uv sync --extra server --link-mode=copy`; "
+            "pyautogui is a project dependency."
+        ),
+        "pytesseract": (
+            "Run `uv sync --extra server --link-mode=copy`; "
+            "pytesseract is a project dependency."
+        ),
+        "tesseract": "Install Tesseract OCR for Windows and add tesseract.exe to PATH.",
+    }
+    return hints[tool]
+
+
 def _check_config_parses() -> CheckResult:
     """Check that the config file parses successfully."""
     if not DEFAULT_CONFIG_PATH.exists():
@@ -268,10 +287,7 @@ def _check_nodejs() -> CheckResult:
             "Node.js",
             "warn",
             "Not found",
-            details=(
-                "Node.js 22+ is required for ClaudeCodeAgent and the "
-                "WhatsApp Baileys channel bridge."
-            ),
+            details=_windows_setup_hint("node"),
         )
     try:
         result = subprocess.run(
@@ -290,9 +306,7 @@ def _check_nodejs() -> CheckResult:
             "Node.js",
             "warn",
             f"{version_str} (requires >= v22)",
-            details=(
-                "Upgrade Node.js for ClaudeCodeAgent and WhatsApp Baileys support."
-            ),
+            details=_windows_setup_hint("node"),
         )
     except Exception as exc:
         return CheckResult("Node.js", "warn", f"Error checking version: {exc}")
@@ -327,7 +341,7 @@ def _check_ollama_reachable() -> CheckResult:
         "Ollama reachable",
         "warn",
         "Missing/optional",
-        details=f"Start Ollama. Last error: {detail}",
+        details=f"{_windows_setup_hint('ollama')} Last error: {detail}",
     )
 
 
@@ -351,7 +365,7 @@ def _check_daily_default_model() -> CheckResult:
         "Default model available",
         "warn",
         "Missing/optional",
-        details=f"Start Ollama to verify {model}. Last error: {detail}",
+        details=f"{_windows_setup_hint('ollama')} Last error: {detail}",
     )
 
 
@@ -520,7 +534,7 @@ def _check_screenshot_backend() -> CheckResult:
         "Screenshot backend",
         "warn",
         "Missing/optional",
-        details="Install Pillow or pyautogui.",
+        details=f"{_windows_setup_hint('pillow')} {_windows_setup_hint('pyautogui')}",
     )
 
 
@@ -536,7 +550,7 @@ def _check_ocr_backend() -> List[CheckResult]:
                 "OCR backend: pytesseract",
                 "warn",
                 "Missing/optional",
-                details="Install pytesseract.",
+                details=_windows_setup_hint("pytesseract"),
             )
         )
     if shutil.which("tesseract"):
@@ -547,7 +561,7 @@ def _check_ocr_backend() -> List[CheckResult]:
                 "OCR backend: Tesseract executable",
                 "warn",
                 "Missing/optional",
-                details="Install Tesseract OCR and add it to PATH.",
+                details=_windows_setup_hint("tesseract"),
             )
         )
     return results
@@ -563,7 +577,7 @@ def _check_desktop_automation_backend() -> CheckResult:
             "Desktop automation backend",
             "warn",
             "Missing/optional",
-            details="Install pyautogui.",
+            details=_windows_setup_hint("pyautogui"),
         )
 
 
@@ -584,13 +598,13 @@ def _check_docker_readiness() -> List[CheckResult]:
                 "Docker command available",
                 "warn",
                 "Missing/optional",
-                details="Install Docker Desktop.",
+                details=_windows_setup_hint("docker"),
             ),
             CheckResult(
                 "Docker daemon reachable",
                 "warn",
                 "Missing/optional",
-                details="Install and start Docker Desktop.",
+                details=_windows_setup_hint("docker"),
             ),
         ]
     results = [CheckResult("Docker command available", "ok", "Ready", docker)]
@@ -615,7 +629,7 @@ def _check_docker_readiness() -> List[CheckResult]:
                     "Docker daemon reachable",
                     "warn",
                     "Missing/optional",
-                    details="Start Docker Desktop.",
+                    details=_windows_setup_hint("docker"),
                 )
             )
     except Exception as exc:
@@ -624,7 +638,7 @@ def _check_docker_readiness() -> List[CheckResult]:
                 "Docker daemon reachable",
                 "warn",
                 "Missing/optional",
-                details=f"Start Docker Desktop. Last error: {exc}",
+                details=f"{_windows_setup_hint('docker')} Last error: {exc}",
             )
         )
     return results

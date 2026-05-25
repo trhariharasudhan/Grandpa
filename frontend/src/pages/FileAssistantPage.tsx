@@ -90,11 +90,13 @@ export function FileAssistantPage() {
           </div>
           <button
             onClick={load}
+            disabled={loading}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors self-start md:self-auto"
             style={{
               background: 'var(--color-bg-secondary)',
               border: '1px solid var(--color-border)',
               color: 'var(--color-text-secondary)',
+              opacity: loading ? 0.65 : 1,
             }}
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -141,7 +143,7 @@ export function FileAssistantPage() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search files about FastAPI..."
+                placeholder="Search files about FastAPI"
                 className="bg-transparent outline-none flex-1 text-sm"
                 style={{ color: 'var(--color-text)' }}
               />
@@ -156,7 +158,7 @@ export function FileAssistantPage() {
                 opacity: searching || !query.trim() ? 0.55 : 1,
               }}
             >
-              {searching ? 'Searching...' : 'Search'}
+              {searching ? 'Searching' : 'Search'}
             </button>
           </form>
           {searchResult && (

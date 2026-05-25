@@ -606,7 +606,7 @@ export function SettingsPage() {
             {!speechBackendAvailable && speechBackendAvailable !== null && (
               <div className="text-xs mt-2 px-1" style={{ color: 'var(--color-text-tertiary)' }}>
                 Set up a speech backend to use voice input.
-                See the <a href="https://grandpa.github.io/Grandpa/user-guide/tools/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)' }}>documentation</a> for details.
+                See the <a href="https://grandpa.github.io/grandpa/user-guide/tools/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-accent)' }}>documentation</a> for details.
               </div>
             )}
           </Section>
@@ -677,7 +677,7 @@ export function SettingsPage() {
                 disabled={updateCheckState === 'checking'}
               >
                 <RefreshCw size={12} className={updateCheckState === 'checking' ? 'animate-spin' : ''} />
-                {updateCheckState === 'checking' && 'Checking...'}
+                {updateCheckState === 'checking' && 'Checking'}
                 {updateCheckState === 'available' && 'Update available — see banner above'}
                 {updateCheckState === 'latest' && 'Already up to date'}
                 {updateCheckState === 'idle' && 'Check now'}
@@ -689,22 +689,22 @@ export function SettingsPage() {
           <Section title="About">
             <div className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
               <p className="mb-2">
-                <span className="font-semibold" style={{ color: 'var(--color-text)' }}>Grandpa</span> — Programming abstractions for on-device AI.
+                <span className="font-semibold" style={{ color: 'var(--color-text)' }}>Grandpa</span> — Personal AI assistant for local-first daily work.
               </p>
               <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                Part of Intelligence Per Watt, a research initiative at Stanford SAIL.
+                Local actions, memory, files, routines, and assistant settings stay under your control.
               </p>
               <div className="flex gap-3 mt-3 text-xs">
                 <a
-                  href="https://scalingintelligence.stanford.edu/blogs/Grandpa/"
+                  href="https://github.com/grandpa/grandpa"
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ color: 'var(--color-accent)' }}
                 >
-                  Project site
+                  Project
                 </a>
                 <a
-                  href="https://grandpa.github.io/Grandpa/"
+                  href="https://grandpa.github.io/grandpa/"
                   target="_blank"
                   rel="noopener noreferrer"
                   style={{ color: 'var(--color-accent)' }}

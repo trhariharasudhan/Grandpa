@@ -86,11 +86,13 @@ export function MemoryPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={load}
+              disabled={loading}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors"
               style={{
                 background: 'var(--color-bg-secondary)',
                 border: '1px solid var(--color-border)',
                 color: 'var(--color-text-secondary)',
+                opacity: loading ? 0.65 : 1,
               }}
             >
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -239,7 +241,7 @@ export function MemoryPage() {
 
         {summary?.storage && (
           <div className="mt-5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-            Storage: {summary.storage.backend}, local only
+            Storage: {summary.storage.backend} · local only
           </div>
         )}
       </div>

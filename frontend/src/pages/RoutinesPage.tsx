@@ -99,30 +99,34 @@ export function RoutinesPage() {
               </p>
             </div>
           </div>
-          <button
-            onClick={load}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors self-start md:self-auto"
-            style={{
-              background: 'var(--color-bg-secondary)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text-secondary)',
-            }}
-          >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
-            Refresh
-          </button>
-          <button
-            onClick={requestNotifications}
-            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors self-start md:self-auto"
-            style={{
-              background: 'var(--color-bg-secondary)',
-              border: '1px solid var(--color-border)',
-              color: 'var(--color-text-secondary)',
-            }}
-          >
-            <Bell size={15} />
-            Browser Alerts
-          </button>
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+            <button
+              onClick={load}
+              disabled={loading}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors"
+              style={{
+                background: 'var(--color-bg-secondary)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-secondary)',
+                opacity: loading ? 0.65 : 1,
+              }}
+            >
+              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              Refresh
+            </button>
+            <button
+              onClick={requestNotifications}
+              className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm transition-colors"
+              style={{
+                background: 'var(--color-bg-secondary)',
+                border: '1px solid var(--color-border)',
+                color: 'var(--color-text-secondary)',
+              }}
+            >
+              <Bell size={15} />
+              Browser Alerts
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
@@ -136,8 +140,13 @@ export function RoutinesPage() {
             <div className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-tertiary)' }}>
               Scheduler
             </div>
-            <div className="text-sm mt-1" style={{ color: summary?.daemon?.running ? 'var(--color-success)' : 'var(--color-error)' }}>
-              {summary?.daemon?.running ? 'Online' : 'Offline'}
+            <div
+              className="text-sm mt-1"
+              style={{
+                color: summary?.daemon?.running ? 'var(--color-success)' : 'var(--color-error)',
+              }}
+            >
+              {loading ? 'Checking' : summary?.daemon?.running ? 'Online' : 'Offline'}
             </div>
           </div>
           <div
@@ -152,8 +161,11 @@ export function RoutinesPage() {
             </div>
             <div className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
               {summary?.daemon?.last_tick_at
-                ? new Date(summary.daemon.last_tick_at * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                : 'Waiting'}
+                ? new Date(summary.daemon.last_tick_at * 1000).toLocaleTimeString(
+                    [],
+                    { hour: '2-digit', minute: '2-digit' },
+                  )
+                : loading ? 'Checking' : 'Waiting'}
             </div>
           </div>
           <div
@@ -167,7 +179,11 @@ export function RoutinesPage() {
               Running
             </div>
             <div className="text-sm mt-1" style={{ color: 'var(--color-text-secondary)' }}>
-              {summary?.routines.some((routine) => routine.last_status === 'running') ? 'Routine active' : 'Idle'}
+              {loading
+                ? 'Checking'
+                : summary?.routines.some((routine) => routine.last_status === 'running')
+                  ? 'Routine active'
+                  : 'Idle'}
             </div>
           </div>
         </div>
