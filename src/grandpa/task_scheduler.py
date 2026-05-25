@@ -29,6 +29,12 @@ SAFE_ROUTINE_ACTIONS = {
     "open youtube",
     "open downloads folder",
     "open downloads",
+    "open notepad",
+    "open calculator",
+    "open file explorer",
+    "open control panel",
+    "open settings",
+    "open task manager",
 }
 
 
@@ -67,7 +73,10 @@ class SchedulerStore:
                     schedule TEXT,
                     actions_json TEXT NOT NULL,
                     enabled INTEGER NOT NULL DEFAULT 1,
-                    next_run_at REAL
+                    next_run_at REAL,
+                    last_run_at REAL,
+                    last_status TEXT,
+                    last_message TEXT
                 )
                 """
             )
@@ -80,9 +89,43 @@ class SchedulerStore:
                     text TEXT NOT NULL,
                     schedule TEXT NOT NULL,
                     enabled INTEGER NOT NULL DEFAULT 1,
-                    next_run_at REAL
+                    next_run_at REAL,
+                    last_triggered_at REAL,
+                    last_status TEXT,
+                    last_message TEXT
                 )
                 """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS scheduler_notifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at REAL NOT NULL,
+                    kind TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    source_id INTEGER,
+                    read_at REAL
+                )
+                """
+            )
+            _ensure_columns(
+                conn,
+                "routines",
+                {
+                    "last_run_at": "REAL",
+                    "last_status": "TEXT",
+                    "last_message": "TEXT",
+                },
+            )
+            _ensure_columns(
+                conn,
+                "reminders",
+                {
+                    "last_triggered_at": "REAL",
+                    "last_status": "TEXT",
+                    "last_message": "TEXT",
+                },
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_routines_next_run "
@@ -91,6 +134,10 @@ class SchedulerStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_reminders_next_run "
                 "ON reminders(enabled, next_run_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_scheduler_notifications_created "
+                "ON scheduler_notifications(created_at DESC)"
             )
 
     def upsert_routine(
@@ -133,7 +180,8 @@ class SchedulerStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT id, created_at, updated_at, name, schedule, actions_json, enabled, next_run_at
+                SELECT id, created_at, updated_at, name, schedule, actions_json, enabled,
+                       next_run_at, last_run_at, last_status, last_message
                 FROM routines
                 WHERE lower(name) = lower(?)
                 """,
@@ -145,7 +193,8 @@ class SchedulerStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, created_at, updated_at, name, schedule, actions_json, enabled, next_run_at
+                SELECT id, created_at, updated_at, name, schedule, actions_json, enabled,
+                       next_run_at, last_run_at, last_status, last_message
                 FROM routines
                 ORDER BY enabled DESC, name ASC
                 """
@@ -192,7 +241,8 @@ class SchedulerStore:
         with self._connect() as conn:
             row = conn.execute(
                 """
-                SELECT id, created_at, updated_at, text, schedule, enabled, next_run_at
+                SELECT id, created_at, updated_at, text, schedule, enabled,
+                       next_run_at, last_triggered_at, last_status, last_message
                 FROM reminders
                 WHERE id = ?
                 """,
@@ -204,12 +254,130 @@ class SchedulerStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, created_at, updated_at, text, schedule, enabled, next_run_at
+                SELECT id, created_at, updated_at, text, schedule, enabled,
+                       next_run_at, last_triggered_at, last_status, last_message
                 FROM reminders
                 ORDER BY enabled DESC, next_run_at ASC, id DESC
                 """
             ).fetchall()
         return [_reminder_row(row) for row in rows]
+
+    def claim_due_routines(self, now: float | None = None, *, limit: int = 5) -> list[dict[str, Any]]:
+        now = time.time() if now is None else now
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, created_at, updated_at, name, schedule, actions_json, enabled,
+                       next_run_at, last_run_at, last_status, last_message
+                FROM routines
+                WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
+                ORDER BY next_run_at ASC
+                LIMIT ?
+                """,
+                (now, limit),
+            ).fetchall()
+            routines = [_routine_row(row) for row in rows]
+            for routine in routines:
+                conn.execute(
+                    """
+                    UPDATE routines
+                    SET next_run_at = ?, last_run_at = ?, last_status = 'running',
+                        last_message = 'Running', updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        _next_run_timestamp(routine["schedule"], after=datetime.fromtimestamp(now)),
+                        now,
+                        now,
+                        routine["id"],
+                    ),
+                )
+        return routines
+
+    def claim_due_reminders(self, now: float | None = None, *, limit: int = 10) -> list[dict[str, Any]]:
+        now = time.time() if now is None else now
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, created_at, updated_at, text, schedule, enabled,
+                       next_run_at, last_triggered_at, last_status, last_message
+                FROM reminders
+                WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
+                ORDER BY next_run_at ASC
+                LIMIT ?
+                """,
+                (now, limit),
+            ).fetchall()
+            reminders = [_reminder_row(row) for row in rows]
+            for reminder in reminders:
+                conn.execute(
+                    """
+                    UPDATE reminders
+                    SET next_run_at = ?, last_triggered_at = ?, last_status = 'handled',
+                        last_message = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (
+                        _next_run_timestamp(reminder["schedule"], after=datetime.fromtimestamp(now)),
+                        now,
+                        f"Reminder: {reminder['text']}",
+                        now,
+                        reminder["id"],
+                    ),
+                )
+        return reminders
+
+    def complete_routine(self, routine_id: int, status: str, message: str) -> None:
+        now = time.time()
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE routines
+                SET last_status = ?, last_message = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status, message[:2000], now, routine_id),
+            )
+
+    def add_notification(
+        self,
+        *,
+        kind: str,
+        title: str,
+        message: str,
+        source_id: int | None = None,
+    ) -> dict[str, Any]:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO scheduler_notifications(created_at, kind, title, message, source_id, read_at)
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                (now, kind, title, message, source_id),
+            )
+        return {
+            "id": cur.lastrowid,
+            "created_at": now,
+            "kind": kind,
+            "title": title,
+            "message": message,
+            "source_id": source_id,
+            "read_at": None,
+        }
+
+    def list_notifications(self, limit: int = 20) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, created_at, kind, title, message, source_id, read_at
+                FROM scheduler_notifications
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [{key: row[key] for key in row.keys()} for row in rows]
 
 
 def handle_scheduler_command(
@@ -310,6 +478,7 @@ def scheduler_summary() -> dict[str, Any]:
     return {
         "routines": store.list_routines(),
         "reminders": store.list_reminders(),
+        "notifications": store.list_notifications(limit=10),
         "storage": {"backend": "sqlite", "path": str(store.db_path), "local_only": True},
     }
 
@@ -319,7 +488,7 @@ def run_routine(name: str) -> dict[str, Any]:
     routine = store.get_routine(_routine_name(name))
     if not routine:
         return {"status": "not_found", "message": f"I could not find a routine named {name}."}
-    result = _run_routine(routine, execute=True)
+    result = _run_routine(routine, execute=True, automatic=False)
     return {
         "status": result.status,
         "message": result.message,
@@ -335,7 +504,44 @@ def set_routine_enabled(name: str, enabled: bool) -> dict[str, Any]:
     return {"status": "ok", "routine": routine}
 
 
-def _run_routine(routine: dict[str, Any], *, execute: bool) -> SchedulerResult:
+def execute_due_once(store: SchedulerStore | None = None, *, now: float | None = None) -> dict[str, Any]:
+    store = store or SchedulerStore()
+    due_time = time.time() if now is None else now
+    reminders = store.claim_due_reminders(due_time)
+    routines = store.claim_due_routines(due_time)
+    events: list[dict[str, Any]] = []
+
+    for reminder in reminders:
+        message = f"Reminder: {reminder['text']}"
+        notification = store.add_notification(
+            kind="reminder",
+            title="Grandpa Reminder",
+            message=message,
+            source_id=reminder["id"],
+        )
+        _record_scheduler_activity("reminder", "trigger", reminder["text"], reminder["schedule"], "handled")
+        events.append(notification)
+
+    for routine in routines:
+        result = _run_routine(routine, execute=True, automatic=True)
+        store.complete_routine(routine["id"], result.status, result.message)
+        notification = store.add_notification(
+            kind="routine",
+            title=f"Routine: {routine['name']}",
+            message=result.message,
+            source_id=routine["id"],
+        )
+        events.append(notification)
+
+    return {
+        "status": "ok",
+        "routines_run": len(routines),
+        "reminders_triggered": len(reminders),
+        "events": events,
+    }
+
+
+def _run_routine(routine: dict[str, Any], *, execute: bool, automatic: bool = False) -> SchedulerResult:
     if not routine.get("enabled", True):
         return SchedulerResult(
             "handled",
@@ -346,21 +552,29 @@ def _run_routine(routine: dict[str, Any], *, execute: bool) -> SchedulerResult:
     lines = [f"Running {routine['name']}:"]
     statuses: list[str] = []
     for action in routine["actions"]:
-        if _is_risky_routine_action(action):
-            lines.append(f"- {action}: needs confirmation, skipped in automatic routine run")
-            statuses.append("requires_confirmation")
-            continue
         from grandpa.local_actions import handle_local_action
 
         result = handle_local_action(action, execute=execute)
+        if automatic and result.status == "requires_confirmation":
+            lines.append(f"- {action}: pending approval created")
+            statuses.append(result.status)
+            continue
         lines.append(f"- {action}: {result.message or result.status}")
         statuses.append(result.status)
-    status = "handled" if any(item == "handled" for item in statuses) else "unsupported"
+    status = "handled" if any(item == "handled" for item in statuses) else (
+        "requires_confirmation" if any(item == "requires_confirmation" for item in statuses) else "unsupported"
+    )
     _record_scheduler_activity("routine", "run", routine["name"], "; ".join(routine["actions"]), status)
     return SchedulerResult(status, "scheduler", routine["name"], "\n".join(lines), f"Ran {routine['name']}.")
 
 
 def _parse_reminder(command: str) -> dict[str, str] | None:
+    match = re.fullmatch(r"remind me every minute to (.+)", command)
+    if match:
+        return {"text": match.group(1).strip(), "schedule": "minutely"}
+    match = re.fullmatch(r"remind me to (.+) every minute", command)
+    if match:
+        return {"text": match.group(1).strip(), "schedule": "minutely"}
     match = re.fullmatch(r"remind me every hour to (.+)", command)
     if match:
         return {"text": match.group(1).strip(), "schedule": "hourly"}
@@ -415,10 +629,12 @@ def _is_risky_routine_action(action: str) -> bool:
     return action.startswith(("type ", "paste", "click ", "press ", "scroll ", "switch "))
 
 
-def _next_run_timestamp(schedule: str | None) -> float | None:
+def _next_run_timestamp(schedule: str | None, *, after: datetime | None = None) -> float | None:
     if not schedule:
         return None
-    now = datetime.now()
+    now = after or datetime.now()
+    if schedule == "minutely":
+        return (now + timedelta(minutes=1)).timestamp()
     if schedule == "hourly":
         return (now + timedelta(hours=1)).timestamp()
     match = re.fullmatch(r"daily:([0-9]{2}):([0-9]{2})", schedule)
@@ -459,6 +675,10 @@ def _routine_row(row: sqlite3.Row) -> dict[str, Any]:
         "enabled": bool(row["enabled"]),
         "next_run_at": row["next_run_at"],
         "next_run_label": _time_label(row["next_run_at"]),
+        "last_run_at": row["last_run_at"],
+        "last_run_label": _time_label(row["last_run_at"]),
+        "last_status": row["last_status"],
+        "last_message": row["last_message"],
     }
 
 
@@ -473,12 +693,18 @@ def _reminder_row(row: sqlite3.Row) -> dict[str, Any]:
         "enabled": bool(row["enabled"]),
         "next_run_at": row["next_run_at"],
         "next_run_label": _time_label(row["next_run_at"]),
+        "last_triggered_at": row["last_triggered_at"],
+        "last_triggered_label": _time_label(row["last_triggered_at"]),
+        "last_status": row["last_status"],
+        "last_message": row["last_message"],
     }
 
 
 def _schedule_label(schedule: str | None) -> str:
     if not schedule:
         return "manual"
+    if schedule == "minutely":
+        return "every minute"
     if schedule == "hourly":
         return "every hour"
     match = re.fullmatch(r"daily:([0-9]{2}):([0-9]{2})", schedule)
@@ -512,6 +738,16 @@ def _blocked(message: str) -> SchedulerResult:
     return SchedulerResult("blocked", "scheduler", "routine", message, message, permission="blocked")
 
 
+def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+    existing = {
+        row["name"]
+        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+    }
+    for name, column_type in columns.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {column_type}")
+
+
 def _fallback() -> SchedulerResult:
     return SchedulerResult("no_match", "scheduler", None, "", None, should_fallback=True)
 
@@ -520,6 +756,7 @@ __all__ = [
     "SchedulerResult",
     "SchedulerStore",
     "handle_scheduler_command",
+    "execute_due_once",
     "run_routine",
     "scheduler_summary",
     "set_routine_enabled",

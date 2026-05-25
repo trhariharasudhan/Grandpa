@@ -222,6 +222,7 @@ def create_app(
     app.state.speech_backend = speech_backend
     app.state.agent_manager = agent_manager
     app.state.agent_scheduler = agent_scheduler
+    app.state.routine_scheduler_daemon = None
     app.state.session_start = time.time()
 
     # Wire up trace store if traces are enabled
@@ -281,6 +282,22 @@ def create_app(
                         pass
     except Exception as _exc:
         logger.debug("Analytics init skipped: %s", _exc)
+
+    try:
+        from grandpa.scheduler_daemon import BackgroundSchedulerDaemon
+
+        routine_scheduler = BackgroundSchedulerDaemon()
+        app.state.routine_scheduler_daemon = routine_scheduler
+
+        @app.on_event("startup")
+        async def _startup_routine_scheduler() -> None:
+            routine_scheduler.start()
+
+        @app.on_event("shutdown")
+        async def _shutdown_routine_scheduler() -> None:
+            routine_scheduler.stop()
+    except Exception as exc:
+        logger.debug("Routine scheduler daemon init skipped: %s", exc)
 
     app.include_router(router)
     app.include_router(dashboard_router)

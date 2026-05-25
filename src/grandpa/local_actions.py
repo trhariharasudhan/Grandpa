@@ -11,7 +11,6 @@ import logging
 import os
 import platform
 import re
-import subprocess
 import sys
 import urllib.parse
 import webbrowser
@@ -44,6 +43,7 @@ ActionKind = Literal[
     "screenshot",
     "browser",
     "automation",
+    "app_lookup",
     "blocked",
 ]
 
@@ -68,16 +68,23 @@ class LocalActionResult:
 
 
 _APP_ALLOWLIST: dict[str, tuple[str, str]] = {
-    "notepad": ("notepad.exe", "Notepad"),
-    "calculator": ("calc.exe", "Calculator"),
-    "calc": ("calc.exe", "Calculator"),
-    "chrome": ("chrome.exe", "Chrome"),
-    "google chrome": ("chrome.exe", "Chrome"),
-    "edge": ("msedge.exe", "Microsoft Edge"),
-    "microsoft edge": ("msedge.exe", "Microsoft Edge"),
-    "vs code": ("code", "VS Code"),
-    "vscode": ("code", "VS Code"),
-    "visual studio code": ("code", "VS Code"),
+    "notepad": ("notepad", "Notepad"),
+    "calculator": ("calculator", "Calculator"),
+    "calc": ("calculator", "Calculator"),
+    "chrome": ("chrome", "Chrome"),
+    "google chrome": ("chrome", "Chrome"),
+    "edge": ("edge", "Microsoft Edge"),
+    "microsoft edge": ("edge", "Microsoft Edge"),
+    "vs code": ("vscode", "VS Code"),
+    "vscode": ("vscode", "VS Code"),
+    "visual studio code": ("vscode", "VS Code"),
+    "file explorer": ("explorer", "File Explorer"),
+    "explorer": ("explorer", "File Explorer"),
+    "windows explorer": ("explorer", "File Explorer"),
+    "control panel": ("control_panel", "Control Panel"),
+    "settings": ("settings", "Settings"),
+    "windows settings": ("settings", "Settings"),
+    "task manager": ("task_manager", "Task Manager"),
 }
 
 _URL_ALLOWLIST: dict[str, tuple[str, str]] = {
@@ -360,7 +367,7 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
         return "requires_confirmation"
     if result.kind == "url" and not _is_known_safe_url(result.target):
         return "requires_confirmation"
-    if result.kind in {"app", "folder", "url", "browser", "time", "system_info", "screen", "screenshot"}:
+    if result.kind in {"app", "folder", "url", "browser", "time", "system_info", "screen", "screenshot", "app_lookup"}:
         return "allowed"
     if result.kind == "blocked":
         return "blocked"
@@ -450,6 +457,26 @@ def _parse_safe_action(command: str) -> LocalActionResult:
             tts_text="Here is your basic system info.",
         )
 
+    if command in {"find installed apps", "list installed apps", "show installed apps"}:
+        return LocalActionResult(
+            status="handled",
+            kind="app_lookup",
+            target="installed_apps",
+            message="Finding installed apps.",
+            tts_text="Finding installed apps.",
+        )
+
+    app_location_match = re.fullmatch(r"where is (.+?) installed", command)
+    if app_location_match:
+        app_name = app_location_match.group(1).strip()
+        return LocalActionResult(
+            status="handled",
+            kind="app_lookup",
+            target=app_name,
+            message=f"Finding where {app_name} is installed.",
+            tts_text=f"Finding {app_name}.",
+        )
+
     open_target = _strip_open_prefix(command)
     if open_target is None:
         return LocalActionResult(status="no_match")
@@ -485,11 +512,11 @@ def _parse_safe_action(command: str) -> LocalActionResult:
         )
 
     if open_target in _APP_ALLOWLIST:
-        executable, label = _APP_ALLOWLIST[open_target]
+        app_id, label = _APP_ALLOWLIST[open_target]
         return LocalActionResult(
             status="handled",
             kind="app",
-            target=executable,
+            target=app_id,
             message=f"Opening {label}.",
             tts_text=f"Opening {label}.",
         )
@@ -755,6 +782,42 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
     if result.kind == "time" or result.kind == "system_info":
         return result
 
+    if result.kind == "app_lookup":
+        from grandpa.windows_app_resolver import describe_app, list_installed_apps
+
+        if result.target == "installed_apps":
+            apps = list_installed_apps()
+            if apps and all(app["status"] == "unsupported" for app in apps):
+                return LocalActionResult(
+                    status="unsupported",
+                    kind="app_lookup",
+                    target=result.target,
+                    message="Windows app discovery is only supported on Windows desktop.",
+                    tts_text="Windows app discovery is only supported on Windows desktop.",
+                )
+            lines = ["Installed app resolver:"]
+            for app in apps:
+                status = app["status"]
+                target = app["launch_target"] or app["message"]
+                lines.append(f"- {app['display_name']}: {status} ({target})")
+            return LocalActionResult(
+                status="handled",
+                kind="app_lookup",
+                target=result.target,
+                message="\n".join(lines),
+                tts_text="Here are the installed app results.",
+            )
+
+        message = describe_app(result.target)
+        status = "unsupported" if "only supported on Windows" in message else "handled"
+        return LocalActionResult(
+            status=status,
+            kind="app_lookup",
+            target=result.target,
+            message=message,
+            tts_text=message,
+        )
+
     if result.kind == "screen":
         from grandpa.screen_awareness import describe_screen, get_active_window_info
 
@@ -813,8 +876,25 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         )
 
     if result.kind == "app":
-        subprocess.Popen([result.target], shell=False)  # noqa: S603
-        return result
+        from grandpa.windows_app_resolver import launch_app
+
+        launched = launch_app(result.target)
+        if launched.status == "found":
+            return LocalActionResult(
+                status="handled",
+                kind="app",
+                target=launched.launch_target,
+                message=f"Opening {launched.display_name}.",
+                tts_text=f"Opening {launched.display_name}.",
+            )
+        status = "unsupported" if launched.status == "unsupported" else "error"
+        return LocalActionResult(
+            status=status,
+            kind="app",
+            target=result.target,
+            message=launched.message,
+            tts_text=launched.message,
+        )
 
     if result.kind == "folder":
         path = Path(result.target)

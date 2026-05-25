@@ -894,11 +894,36 @@ async def file_assistant_search(request: Request):
 
 
 @router.get("/v1/routines")
-async def routines():
+async def routines(request: Request):
     """Return local routines and reminders."""
     from grandpa.task_scheduler import scheduler_summary
 
-    return scheduler_summary()
+    summary = scheduler_summary()
+    daemon = getattr(request.app.state, "routine_scheduler_daemon", None)
+    summary["daemon"] = (
+        daemon.status()
+        if daemon is not None
+        else {
+            "running": False,
+            "poll_interval_seconds": None,
+            "started_at": None,
+            "last_tick_at": None,
+            "last_result": None,
+            "last_error": "not configured",
+        }
+    )
+    return summary
+
+
+@router.post("/v1/routines/tick")
+async def tick_routine_scheduler(request: Request):
+    """Run one scheduler tick for diagnostics/tests."""
+    daemon = getattr(request.app.state, "routine_scheduler_daemon", None)
+    if daemon is not None:
+        return daemon.tick()
+    from grandpa.task_scheduler import execute_due_once
+
+    return execute_due_once()
 
 
 @router.post("/v1/routines/{routine_name:path}/run")

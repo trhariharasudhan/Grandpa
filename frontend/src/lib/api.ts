@@ -1025,6 +1025,10 @@ export interface RoutineItem {
   enabled: boolean;
   next_run_at?: number | null;
   next_run_label: string;
+  last_run_at?: number | null;
+  last_run_label: string;
+  last_status?: string | null;
+  last_message?: string | null;
 }
 
 export interface ReminderItem {
@@ -1037,11 +1041,36 @@ export interface ReminderItem {
   enabled: boolean;
   next_run_at?: number | null;
   next_run_label: string;
+  last_triggered_at?: number | null;
+  last_triggered_label: string;
+  last_status?: string | null;
+  last_message?: string | null;
+}
+
+export interface SchedulerNotification {
+  id: number;
+  created_at: number;
+  kind: string;
+  title: string;
+  message: string;
+  source_id?: number | null;
+  read_at?: number | null;
+}
+
+export interface SchedulerDaemonStatus {
+  running: boolean;
+  poll_interval_seconds?: number | null;
+  started_at?: number | null;
+  last_tick_at?: number | null;
+  last_result?: Record<string, unknown> | null;
+  last_error?: string | null;
 }
 
 export interface RoutinesSummary {
   routines: RoutineItem[];
   reminders: ReminderItem[];
+  notifications: SchedulerNotification[];
+  daemon: SchedulerDaemonStatus;
   storage: {
     backend: string;
     path: string;
