@@ -425,17 +425,20 @@ class Grandpa:
         }
 
     def _resolve_model(self, query: str) -> Optional[str]:
-        """Resolve model using config fallback chain."""
-        if self._config.intelligence.default_model:
-            return self._config.intelligence.default_model
-        # Try first available from engine
-        try:
-            models = self._engine.list_models()
-            if models:
-                return models[0]
-        except Exception as exc:
-            logger.warning("Failed to list models from engine: %s", exc)
-        return self._config.intelligence.fallback_model or None
+        """Smart automatic model router."""
+        q = query.lower()
+
+        image_keywords = ["image", "photo", "picture", "screenshot", "vision", "analyze image", "describe image"]
+        coding_keywords = ["code", "python", "javascript", "html", "css", "fastapi", "flask", "bug", "debug", "build", "program", "developer", "api", "backend", "frontend"]
+        reasoning_keywords = ["explain", "why", "how", "physics", "quantum", "black hole", "deeply", "architecture", "design", "reason", "compare"]
+
+        if any(k in q for k in image_keywords):
+            return "llava"
+        if any(k in q for k in coding_keywords):
+            return "deepseek-coder:6.7b"
+        if any(k in q for k in reasoning_keywords):
+            return "qwen3:4b"
+        return "qwen2.5:3b"
 
     def _run_agent(
         self,

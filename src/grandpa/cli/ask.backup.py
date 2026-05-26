@@ -809,23 +809,11 @@ def ask(
     for ek, model_ids in all_models.items():
         merge_discovered_models(ek, model_ids)
 
-    # Resolve model via smart local router unless --model is explicitly provided
+    # Resolve model via config fallback chain
     if model_name is None:
-        q = query_text.lower()
-        image_keywords = ["image", "photo", "picture", "screenshot", "vision", "analyze image", "describe image"]
-        coding_keywords = ["code", "python", "javascript", "html", "css", "fastapi", "flask", "bug", "debug", "build", "program", "developer", "api", "backend", "frontend"]
-        reasoning_keywords = ["explain", "why", "how", "physics", "quantum", "black hole", "deeply", "architecture", "design", "reason", "compare"]
-
-        if any(k in q for k in image_keywords):
-            model_name = "llava"
-        elif any(k in q for k in coding_keywords):
-            model_name = "deepseek-coder:6.7b"
-        elif any(k in q for k in reasoning_keywords):
-            model_name = "qwen2.5:3b"
-        else:
-            model_name = config.intelligence.default_model or "qwen2.5:3b"
-
+        model_name = config.intelligence.default_model
     if not model_name:
+        # Try first available from engine
         engine_models = all_models.get(engine_name, [])
         if engine_models:
             model_name = engine_models[0]

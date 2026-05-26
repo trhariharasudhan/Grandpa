@@ -586,18 +586,6 @@ def _parse_safe_action(command: str) -> LocalActionResult:
 
 
 def _parse_automation_action(command: str) -> LocalActionResult:
-    match = re.fullmatch(r"type (.+?) in (notepad)", command)
-    if match:
-        text = match.group(1).strip()
-        app = match.group(2).strip()
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target=f"focus|{app}||type|{text}",
-            message=f'Typing "{text}" in {app.title()}.',
-            tts_text=f"Typing that in {app.title()}.",
-        )
-
     match = re.fullmatch(r"type (.+)", command)
     if match:
         text = match.group(1).strip()

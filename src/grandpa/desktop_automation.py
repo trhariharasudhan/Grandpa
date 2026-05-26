@@ -83,6 +83,19 @@ def execute_automation(spec: str) -> AutomationResult:
 
 def requires_confirmation(spec: str) -> bool:
     """Return True for action specs that should require future confirmation."""
+    if "||" in spec:
+        messages = []
+        final_result = None
+        for part in spec.split("||"):
+            result = _execute_with_pyautogui(pyautogui, part)
+            final_result = result
+            messages.append(result.message)
+        return AutomationResult(
+            status=final_result.status if final_result else "error",
+            message=" ".join(messages),
+            tts_text=final_result.tts_text if final_result else "",
+        )
+
     action, value = _split_spec(spec)
     if action in {"paste", "click_highlighted"}:
         return True
