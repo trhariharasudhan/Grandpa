@@ -4,7 +4,20 @@ import { MessageBubble } from './MessageBubble';
 import { InputArea } from './InputArea';
 import { StreamingDots } from './StreamingDots';
 import { useAppStore } from '../../lib/store';
-import { Sparkles, PanelRightOpen, PanelRightClose, Database, MessageSquare, X, Brain, Zap } from 'lucide-react';
+import {
+  Sparkles,
+  PanelRightOpen,
+  PanelRightClose,
+  Database,
+  MessageSquare,
+  X,
+  Brain,
+  Zap,
+  FolderOpen,
+  Workflow,
+  Settings,
+  ShieldCheck,
+} from 'lucide-react';
 import { listConnectors } from '../../lib/connectors-api';
 
 function getGreeting(): string {
@@ -180,6 +193,60 @@ export function ChatArea() {
                 </span>
               </button>
             </div>
+
+            <div className="mt-5 w-full max-w-2xl">
+              <div className="mb-2 text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--color-text-tertiary)' }}>
+                Daily access
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <NavCard icon={Brain} title="Memory" detail="Saved facts" onClick={() => navigate('/memory')} />
+                <NavCard icon={FolderOpen} title="Files" detail="Notes & recent" onClick={() => navigate('/files')} />
+                <NavCard icon={Workflow} title="Routines" detail="Reminders" onClick={() => navigate('/routines')} />
+                <NavCard icon={Settings} title="Settings" detail="Voice & model" onClick={() => navigate('/settings')} />
+              </div>
+            </div>
+
+            <div className="mt-5 w-full max-w-2xl rounded-2xl p-4 text-left"
+              style={{
+                background: 'color-mix(in srgb, var(--color-bg-secondary) 70%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--color-accent) 20%, var(--color-border))',
+                boxShadow: 'inset 0 1px 0 color-mix(in srgb, var(--color-text) 5%, transparent)',
+              }}
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <ShieldCheck size={14} style={{ color: 'var(--color-accent-amber)' }} />
+                <div>
+                  <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Test Grandpa</div>
+                  <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Click a command to load it, then press Enter. Use "type hello" to test the approval card.
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  'open notepad',
+                  'type hello',
+                  'show recent files',
+                  'remember my project is Grandpa',
+                  'remind me every minute to stretch',
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => usePrompt(prompt)}
+                    className="rounded-full px-3 py-1.5 text-xs transition-colors cursor-pointer"
+                    style={{
+                      background: 'var(--color-bg-tertiary)',
+                      border: '1px solid var(--color-border)',
+                      color: prompt === 'type hello' ? 'var(--color-accent-amber)' : 'var(--color-text-secondary)',
+                    }}
+                    title={prompt === 'type hello' ? 'Creates a local-action approval card' : `Try: ${prompt}`}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         ) : (
           <div className="max-w-[var(--chat-max-width)] mx-auto px-4 pb-8 pt-4">
@@ -211,6 +278,37 @@ export function ChatArea() {
       </div>
       <InputArea />
     </div>
+  );
+}
+
+function NavCard({
+  icon: Icon,
+  title,
+  detail,
+  onClick,
+}: {
+  icon: typeof Brain;
+  title: string;
+  detail: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-xl px-3 py-3 text-left transition-all cursor-pointer"
+      style={{
+        background: 'color-mix(in srgb, var(--color-bg-secondary) 74%, transparent)',
+        border: '1px solid var(--color-border)',
+        color: 'var(--color-text-secondary)',
+      }}
+      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--color-accent)')}
+      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--color-border)')}
+    >
+      <Icon size={15} style={{ color: 'var(--color-accent-amber)' }} />
+      <span className="mt-2 block text-xs font-medium" style={{ color: 'var(--color-text)' }}>{title}</span>
+      <span className="block text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>{detail}</span>
+    </button>
   );
 }
 

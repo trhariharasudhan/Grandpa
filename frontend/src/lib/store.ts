@@ -87,7 +87,7 @@ function loadSettings(): Settings {
     defaultAgent: '',
     temperature: 0.7,
     maxTokens: 4096,
-    speechEnabled: false,
+    speechEnabled: true,
     speechOutputEnabled: true,
     speechShortRepliesOnly: true,
     speechRate: 1,

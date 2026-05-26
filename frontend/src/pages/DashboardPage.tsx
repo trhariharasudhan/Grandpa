@@ -5,11 +5,14 @@ import {
   Brain,
   Cpu,
   Database,
+  FolderOpen,
   GitBranch,
   MessageSquare,
   Radio,
   Settings,
+  ShieldCheck,
   Sparkles,
+  Workflow,
   Zap,
 } from 'lucide-react';
 import { EnergyDashboard } from '../components/Dashboard/EnergyDashboard';
@@ -75,15 +78,40 @@ export function DashboardPage() {
               />
               <AssistantAction
                 icon={Database}
-                title="Connect Context"
-                description="Let Grandpa answer from your own sources."
-                onClick={() => navigate('/data-sources')}
+                title="Memory"
+                description="Review saved preferences, facts, and recall."
+                onClick={() => navigate('/memory')}
+              />
+              <AssistantAction
+                icon={FolderOpen}
+                title="Files"
+                description="Open notes, recent files, and file search."
+                onClick={() => navigate('/files')}
+              />
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-3">
+              <AssistantAction
+                icon={Workflow}
+                title="Routines"
+                description="Check reminders and run saved routines."
+                onClick={() => navigate('/routines')}
               />
               <AssistantAction
                 icon={Settings}
                 title="Tune Assistant"
                 description="Adjust model, voice, memory, and defaults."
                 onClick={() => navigate('/settings')}
+              />
+              <AssistantAction
+                icon={ShieldCheck}
+                title="Test Approval"
+                description='Open chat and send "type hello".'
+                onClick={() => {
+                  navigate('/');
+                  window.setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('grandpa:set-draft', { detail: 'type hello' }));
+                  }, 120);
+                }}
               />
             </div>
           </div>

@@ -105,16 +105,22 @@ function CopyMessageButton({ content }: { content: string }) {
 function LocalActionConfirmationCard({ content }: { content: string }) {
   const [busy, setBusy] = useState<'approve' | 'deny' | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const activeId = useAppStore((s) => s.activeId);
   const addMessage = useAppStore((s) => s.addMessage);
   const match = content.match(/Action ID:\s*([a-f0-9]{32})/i);
   const actionMatch = content.match(/Action:\s*(.+)/i);
+  const summary = content
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line && !line.toLowerCase().startsWith('reply with') && !line.toLowerCase().startsWith('action id'));
   const actionId = match?.[1];
   if (!actionId) return null;
 
   const finish = async (decision: 'approve' | 'deny') => {
     if (!activeId || busy || done) return;
     setBusy(decision);
+    setError(null);
     try {
       const result = decision === 'approve'
         ? await approveLocalAction(actionId)
@@ -127,10 +133,12 @@ function LocalActionConfirmationCard({ content }: { content: string }) {
       });
       setDone(decision === 'approve' ? 'Approved' : 'Denied');
     } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not update local action.';
+      setError(message);
       addMessage(activeId, {
         id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
         role: 'assistant',
-        content: err instanceof Error ? err.message : 'Could not update local action.',
+        content: message,
         timestamp: Date.now(),
       });
     } finally {
@@ -159,13 +167,16 @@ function LocalActionConfirmationCard({ content }: { content: string }) {
             Confirm local action
           </div>
           <div className="text-xs mb-3" style={{ color: 'var(--color-text-secondary)' }}>
-            {actionMatch?.[1] || 'Grandpa wants to run a medium-risk local action.'}
+            {actionMatch?.[1] || summary || 'Grandpa wants to run a medium-risk local action.'}
+          </div>
+          <div className="text-[11px] mb-3" style={{ color: 'var(--color-text-tertiary)' }}>
+            Test flow: type <span className="font-mono" style={{ color: 'var(--color-accent-amber)' }}>type hello</span>, then approve or deny here.
           </div>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => finish('approve')}
               disabled={!!busy || !!done}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer disabled:cursor-default"
               style={{
                 background: 'var(--color-accent)',
                 color: 'var(--color-on-accent)',
@@ -178,7 +189,7 @@ function LocalActionConfirmationCard({ content }: { content: string }) {
             <button
               onClick={() => finish('deny')}
               disabled={!!busy || !!done}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium cursor-pointer disabled:cursor-default"
               style={{
                 background: 'var(--color-bg-tertiary)',
                 border: '1px solid var(--color-border)',
@@ -192,6 +203,11 @@ function LocalActionConfirmationCard({ content }: { content: string }) {
             {done && (
               <span className="text-xs self-center" style={{ color: 'var(--color-text-tertiary)' }}>
                 {done}
+              </span>
+            )}
+            {error && (
+              <span className="text-xs self-center" style={{ color: 'var(--color-error)' }}>
+                {error}
               </span>
             )}
           </div>

@@ -63,6 +63,11 @@ export function Sidebar() {
   const supportItems = [
     { path: '/logs', icon: ScrollText, label: 'Activity Log' },
   ];
+  const dailyItems = [
+    { path: '/memory', icon: Brain, label: 'Memory' },
+    { path: '/files', icon: FolderOpen, label: 'Files' },
+    { path: '/routines', icon: Workflow, label: 'Routines' },
+  ];
 
   return (
     <>
@@ -134,6 +139,31 @@ export function Sidebar() {
               <Plus size={16} />
               New Chat
             </button>
+          </div>
+
+          <div className="px-3 pb-3">
+            <div className="grid grid-cols-3 gap-1.5">
+              {dailyItems.map((item) => {
+                const isActive = location.pathname === item.path;
+                return (
+                  <button
+                    key={item.path}
+                    type="button"
+                    onClick={() => navigate(item.path)}
+                    title={`Open ${item.label}`}
+                    className="flex flex-col items-center gap-1 rounded-xl px-2 py-2 text-[11px] transition-colors cursor-pointer"
+                    style={{
+                      background: isActive ? 'var(--color-accent-subtle)' : 'color-mix(in srgb, var(--color-bg-secondary) 74%, transparent)',
+                      border: `1px solid ${isActive ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                      color: isActive ? 'var(--color-text)' : 'var(--color-text-secondary)',
+                    }}
+                  >
+                    <item.icon size={14} style={{ color: isActive ? 'var(--color-accent)' : 'var(--color-accent-amber)' }} />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Search */}

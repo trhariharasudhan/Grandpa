@@ -8,7 +8,7 @@ interface MicButtonProps {
   onClick: () => void;
   onStopSpeaking?: () => void;
   disabled?: boolean;
-  reason?: 'not-enabled' | 'no-backend' | 'streaming';
+  reason?: 'not-enabled' | 'unsupported' | 'streaming';
   error?: string | null;
 }
 
@@ -17,9 +17,9 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
 
   const tooltipText =
     reason === 'not-enabled'
-      ? 'Enable in Settings'
-      : reason === 'no-backend'
-        ? 'Speech backend not configured'
+      ? 'Click to enable voice input'
+      : reason === 'unsupported'
+        ? 'Voice input is not supported in this browser. Try Chrome/Edge or enable speech settings.'
         : reason === 'streaming'
           ? 'Wait for response'
           : state === 'wake-listening'
@@ -58,6 +58,7 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
       <button
         onClick={handleClick}
         disabled={isInactive}
+        aria-label={tooltipText}
         className="relative p-2 rounded-xl transition-all shrink-0"
         style={{
           background: active
@@ -84,6 +85,8 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
             : passive
               ? '0 0 18px color-mix(in srgb, var(--color-accent-amber) 28%, transparent)'
               : 'none',
+          pointerEvents: 'auto',
+          zIndex: 2,
         }}
         title={tooltipText}
       >

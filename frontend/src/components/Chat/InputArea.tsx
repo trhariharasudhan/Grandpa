@@ -129,6 +129,7 @@ export function InputArea() {
   const speechRate = useAppStore((s) => s.settings.speechRate);
   const speechPitch = useAppStore((s) => s.settings.speechPitch);
   const wakeWordEnabled = useAppStore((s) => s.settings.wakeWordEnabled);
+  const updateSettings = useAppStore((s) => s.updateSettings);
   const maxTokens = useAppStore((s) => s.settings.maxTokens);
   const temperature = useAppStore((s) => s.settings.temperature);
   const createConversation = useAppStore((s) => s.createConversation);
@@ -142,7 +143,7 @@ export function InputArea() {
   const setDeepResearch = useAppStore((s) => s.setDeepResearch);
   const corpusSync = useResearchCorpusSync(deepResearch);
 
-  const { state: speechState, error: speechError, available: speechAvailable, startRecording, stopRecording } = useSpeech();
+  const { state: speechState, error: speechError, available: speechAvailable, mode: speechMode, startRecording, stopRecording } = useSpeech();
 
   useEffect(() => {
     if (voiceStatus === 'speaking' || voiceStatus === 'thinking') return;
@@ -184,10 +185,10 @@ export function InputArea() {
     prevModelRef.current = selectedModel;
   }, [selectedModel, streamState.isStreaming, resetStream]);
 
-  const micDisabled = !speechEnabled || !speechAvailable || streamState.isStreaming;
-  const micReason: 'not-enabled' | 'no-backend' | 'streaming' | undefined =
+  const micDisabled = !speechAvailable || streamState.isStreaming;
+  const micReason: 'not-enabled' | 'unsupported' | 'streaming' | undefined =
     !speechEnabled ? 'not-enabled'
-    : !speechAvailable ? 'no-backend'
+    : !speechAvailable ? 'unsupported'
     : streamState.isStreaming ? 'streaming'
     : undefined;
 
@@ -607,6 +608,9 @@ export function InputArea() {
   };
 
   const handleMicClick = useCallback(async () => {
+    if (!speechEnabled) {
+      updateSettings({ speechEnabled: true });
+    }
     if (speechState === 'listening') {
       try {
         const text = await stopRecording();
@@ -623,7 +627,7 @@ export function InputArea() {
       stopSpeaking();
       await startRecording();
     }
-  }, [speechState, startRecording, stopRecording, stopSpeaking, sendMessage]);
+  }, [speechEnabled, speechState, startRecording, stopRecording, stopSpeaking, sendMessage, updateSettings]);
 
   const wake = useWakeWord({
     enabled: speechEnabled
@@ -799,8 +803,11 @@ export function InputArea() {
           {speechEnabled && (
             <>
               <span>&middot;</span>
-              <span style={{ color: voiceStatus === 'error' ? 'var(--color-error)' : 'var(--color-text-tertiary)' }}>
-                Voice: {voiceStatus}
+              <span
+                title={speechMode === 'browser' ? 'Using browser speech input' : speechMode === 'backend' ? 'Using backend transcription' : undefined}
+                style={{ color: voiceStatus === 'error' ? 'var(--color-error)' : 'var(--color-text-tertiary)' }}
+              >
+                Voice: {voiceStatus}{speechMode !== 'none' ? ` (${speechMode})` : ''}
               </span>
             </>
           )}
