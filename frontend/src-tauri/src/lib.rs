@@ -7,7 +7,7 @@ use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
 const OLLAMA_PORT: u16 = 11434;
-const JARVIS_PORT: u16 = 8000;
+const GRANDPA_PORT: u16 = 8000;
 
 /// Small, fast model pulled at startup so the app opens quickly.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
@@ -599,7 +599,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             .build()
             .unwrap();
         if client
-            .get(format!("http://127.0.0.1:{}/health", JARVIS_PORT))
+            .get(format!("http://127.0.0.1:{}/health", GRANDPA_PORT))
             .send()
             .await
             .is_ok()
@@ -608,7 +608,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
             #[cfg(unix)]
             {
                 let _ = tokio::process::Command::new("fuser")
-                    .args(["-k", &format!("{}/tcp", JARVIS_PORT)])
+                    .args(["-k", &format!("{}/tcp", GRANDPA_PORT)])
                     .output()
                     .await;
                 tokio::time::sleep(Duration::from_secs(2)).await;
@@ -619,7 +619,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 if let Ok(output) = tokio::process::Command::new("cmd")
                     .args(["/C", &format!(
                         "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{port} ^| findstr LISTENING') do taskkill /PID %a /F",
-                        port = JARVIS_PORT,
+                        port = GRANDPA_PORT,
                     )])
                     .output()
                     .await
@@ -676,7 +676,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         "grandpa",
         "serve",
         "--port",
-        &JARVIS_PORT.to_string(),
+        &GRANDPA_PORT.to_string(),
         "--model",
         startup_model,
         "--agent",
@@ -708,7 +708,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-    let server_url = format!("http://127.0.0.1:{}/health", JARVIS_PORT);
+    let server_url = format!("http://127.0.0.1:{}/health", GRANDPA_PORT);
     let server_ok = wait_for_url(&server_url, Duration::from_secs(600)).await;
 
     if !server_ok {
@@ -770,7 +770,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
 // ---------------------------------------------------------------------------
 
 fn api_base() -> String {
-    format!("http://127.0.0.1:{}", JARVIS_PORT)
+    format!("http://127.0.0.1:{}", GRANDPA_PORT)
 }
 
 #[tauri::command]
@@ -1089,7 +1089,7 @@ async fn save_cloud_key(key_name: String, key_value: String) -> Result<(), Strin
 
     // Tell the running server to hot-reload its cloud engine so the user
     // doesn't need to restart the app after entering an API key.
-    let reload_url = format!("http://127.0.0.1:{}/v1/cloud/reload", JARVIS_PORT);
+    let reload_url = format!("http://127.0.0.1:{}/v1/cloud/reload", GRANDPA_PORT);
     let _ = reqwest::Client::new()
         .post(&reload_url)
         .timeout(std::time::Duration::from_secs(10))
@@ -1613,7 +1613,7 @@ pub fn run() {
             // Create native macOS overlay panel
             #[cfg(target_os = "macos")]
             unsafe {
-                native_overlay::create(include_str!("overlay.html"), JARVIS_PORT);
+                native_overlay::create(include_str!("overlay.html"), GRANDPA_PORT);
             }
 
             // Register Cmd+Shift+Space to toggle the overlay

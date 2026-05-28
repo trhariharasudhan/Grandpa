@@ -133,6 +133,18 @@ APP_DEFINITIONS: dict[str, AppDefinition] = {
         ("taskmgr.exe",),
         system_command="taskmgr.exe",
     ),
+    "terminal": AppDefinition(
+        "terminal",
+        "Windows Terminal",
+        ("terminal", "windows terminal", "wt"),
+        ("wt.exe",),
+        (
+            "%LocalAppData%/Microsoft/WindowsApps/wt.exe",
+            "%ProgramFiles%/WindowsApps/Microsoft.WindowsTerminal_8wekyb3d8bbwe/wt.exe",
+        ),
+        ("Windows Terminal.lnk", "Terminal.lnk"),
+        system_command="wt.exe",
+    ),
 }
 
 

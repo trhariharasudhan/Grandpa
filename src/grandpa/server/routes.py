@@ -967,6 +967,38 @@ async def clear_personal_memory():
     return clear_memory()
 
 
+@router.post("/api/local-action")
+async def run_structured_local_action(payload: dict[str, Any]):
+    """Run or stage a structured local PC action."""
+    from grandpa.pc_control import run_local_action
+
+    return run_local_action(payload).to_dict()
+
+
+@router.post("/api/local-action/emergency-stop")
+async def emergency_stop_local_actions():
+    """Cancel pending structured PC actions and pause risky queued actions."""
+    from grandpa.pc_control import emergency_stop
+
+    return emergency_stop().to_dict()
+
+
+@router.post("/api/local-action/{action_id}/approve")
+async def approve_structured_local_action(action_id: str):
+    """Approve a pending structured PC action."""
+    from grandpa.pc_control import approve_local_action
+
+    return approve_local_action(action_id).to_dict()
+
+
+@router.post("/api/local-action/{action_id}/reject")
+async def reject_structured_local_action(action_id: str):
+    """Reject a pending structured PC action."""
+    from grandpa.pc_control import reject_local_action
+
+    return reject_local_action(action_id).to_dict()
+
+
 @router.get("/v1/local-actions/pending")
 async def pending_local_actions():
     """List pending local actions awaiting user confirmation."""
