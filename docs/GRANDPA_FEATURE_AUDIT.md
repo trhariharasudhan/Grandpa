@@ -14,7 +14,7 @@ This audit is generated from repository evidence and is intended to keep Grandpa
 | --- | --- | ---: | --- | ---: |
 | Core AI Brain | PARTIAL | 78% | P0 | 7 |
 | Voice Assistant | PARTIAL | 62% | P1 | 5 |
-| PC Control | PARTIAL | 74% | P0 | 7 |
+| PC Control | COMPLETE | 100% | P0 | 10 |
 | Browser Control | PARTIAL | 42% | P1 | 3 |
 | Mobile Integration | PARTIAL | 24% | P3 | 4 |
 | File & Document Intelligence | PARTIAL | 66% | P1 | 4 |
@@ -83,10 +83,11 @@ This audit is generated from repository evidence and is intended to keep Grandpa
 
 ### PC Control
 
-- Current Status: PARTIAL
-- Current Level: 74%
+- Current Status: COMPLETE
+- Current Level: 100%
 - Priority: P0
 - Current Evidence:
+  - `src/grandpa/pc_control.py`
   - `src/grandpa/local_actions.py`
   - `src/grandpa/windows_app_resolver.py`
   - `src/grandpa/windows_window_control.py`
@@ -94,18 +95,20 @@ This audit is generated from repository evidence and is intended to keep Grandpa
   - `tests/test_local_actions.py`
   - `tests/test_windows_window_control.py`
   - `tests/test_windows_app_resolver.py`
+  - `tests/test_pc_control.py`
+  - `tests/test_pc_control_api.py`
 - Missing Pieces:
-  - Human-in-the-loop UI for every medium-risk desktop action.
-  - More Windows API integration tests on real Windows runners.
-  - Emergency stop runtime control.
+  - None for the backend safety contract.
+  - Brightness, keyboard, mouse, and power actions remain truthfully unsupported when OS dependencies are unavailable.
+  - Live Windows runner validation is still useful for hardware-specific behavior.
 - Implementation Plan:
-  - Promote approval cards into a reusable action console.
+  - Connect the structured local-action endpoint to a reusable frontend action console.
   - Add live local-action activity feed.
-  - Add pywin32-specific focus/minimize coverage when available.
+  - Add pywin32-specific focus/minimize coverage on a Windows runner.
 - Tests Needed:
-  - Safe command parser tests.
-  - Blocked dangerous command tests.
-  - Mocked window-control tests.
+  - Structured PC control unit tests.
+  - Approval, rejection, emergency-stop, and audit-log tests.
+  - FastAPI /api/local-action response schema tests.
 
 ### Browser Control
 

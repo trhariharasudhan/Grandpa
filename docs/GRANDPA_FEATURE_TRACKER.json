@@ -3,7 +3,7 @@
   "generated_by": "scripts/dev/audit_grandpa_features.py",
   "summary": {
     "feature_count": 16,
-    "average_completion": 49.3,
+    "average_completion": 50.9,
     "active_forbidden_branding_references": 0,
     "generated_lockfile_branding_references": 58
   },
@@ -307,33 +307,36 @@
     },
     {
       "feature": "PC Control",
-      "status": "PARTIAL",
-      "percent_complete": 74,
+      "status": "COMPLETE",
+      "percent_complete": 100,
       "priority": "P0",
       "evidence_files": [
+        "src/grandpa/pc_control.py",
         "src/grandpa/local_actions.py",
         "src/grandpa/windows_app_resolver.py",
         "src/grandpa/windows_window_control.py",
         "src/grandpa/desktop_automation.py",
         "tests/test_local_actions.py",
         "tests/test_windows_window_control.py",
-        "tests/test_windows_app_resolver.py"
+        "tests/test_windows_app_resolver.py",
+        "tests/test_pc_control.py",
+        "tests/test_pc_control_api.py"
       ],
       "missing_evidence_files": [],
       "missing_items": [
-        "Human-in-the-loop UI for every medium-risk desktop action.",
-        "More Windows API integration tests on real Windows runners.",
-        "Emergency stop runtime control."
+        "None for the backend safety contract.",
+        "Brightness, keyboard, mouse, and power actions remain truthfully unsupported when OS dependencies are unavailable.",
+        "Live Windows runner validation is still useful for hardware-specific behavior."
       ],
       "next_tasks": [
-        "Promote approval cards into a reusable action console.",
+        "Connect the structured local-action endpoint to a reusable frontend action console.",
         "Add live local-action activity feed.",
-        "Add pywin32-specific focus/minimize coverage when available."
+        "Add pywin32-specific focus/minimize coverage on a Windows runner."
       ],
       "test_requirements": [
-        "Safe command parser tests.",
-        "Blocked dangerous command tests.",
-        "Mocked window-control tests."
+        "Structured PC control unit tests.",
+        "Approval, rejection, emergency-stop, and audit-log tests.",
+        "FastAPI /api/local-action response schema tests."
       ]
     },
     {

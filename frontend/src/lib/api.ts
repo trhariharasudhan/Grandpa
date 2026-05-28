@@ -1102,6 +1102,87 @@ export async function setRoutineEnabled(name: string, enabled: boolean): Promise
 }
 
 // ---------------------------------------------------------------------------
+// Structured PC Control Safety Console
+// ---------------------------------------------------------------------------
+
+export type PcRiskLevel = 'LOW' | 'MEDIUM' | 'HIGH' | 'BLOCKED';
+
+export interface StructuredLocalActionPending {
+  id: string;
+  action_id: string;
+  action_type: string;
+  target: string;
+  risk_level: PcRiskLevel;
+  status: string;
+  decision: string;
+  created_at: number;
+  expires_at: number;
+  dry_run: boolean;
+  require_approval: boolean;
+}
+
+export interface StructuredLocalActionAuditEntry {
+  timestamp: number;
+  action_type: string;
+  target: string;
+  risk_level: PcRiskLevel;
+  status: string;
+  decision: string;
+  dry_run: boolean;
+  ok: boolean;
+  action_id?: string | null;
+}
+
+export interface StructuredLocalActionResponse {
+  ok: boolean;
+  action_id: string | null;
+  status: string;
+  message: string;
+  approval_required: boolean;
+  risk_level: PcRiskLevel;
+  evidence: Record<string, unknown>;
+  error: string | null;
+}
+
+export async function fetchStructuredLocalActionPending(): Promise<StructuredLocalActionPending[]> {
+  const res = await fetch(`${getBase()}/api/local-action/pending`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.actions || [];
+}
+
+export async function fetchStructuredLocalActionAudit(limit = 100): Promise<StructuredLocalActionAuditEntry[]> {
+  const res = await fetch(`${getBase()}/api/local-action/audit?limit=${encodeURIComponent(String(limit))}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.entries || [];
+}
+
+export async function approveStructuredLocalAction(actionId: string): Promise<StructuredLocalActionResponse> {
+  const res = await fetch(`${getBase()}/api/local-action/${encodeURIComponent(actionId)}/approve`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function rejectStructuredLocalAction(actionId: string): Promise<StructuredLocalActionResponse> {
+  const res = await fetch(`${getBase()}/api/local-action/${encodeURIComponent(actionId)}/reject`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function emergencyStopStructuredLocalActions(): Promise<StructuredLocalActionResponse> {
+  const res = await fetch(`${getBase()}/api/local-action/emergency-stop`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Approvals
 // ---------------------------------------------------------------------------
 

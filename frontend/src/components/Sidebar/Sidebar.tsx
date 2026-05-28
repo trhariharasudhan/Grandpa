@@ -18,6 +18,7 @@ import {
   Brain,
   FolderOpen,
   Workflow,
+  ShieldCheck,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -56,6 +57,7 @@ export function Sidebar() {
     { path: '/memory', icon: Brain, label: 'Memory' },
     { path: '/files', icon: FolderOpen, label: 'Files' },
     { path: '/routines', icon: Workflow, label: 'Routines' },
+    { path: '/safety', icon: ShieldCheck, label: 'Safety' },
     { path: '/agents', icon: Bot, label: 'Agents' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },

@@ -17,8 +17,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-from grandpa.core.config import DEFAULT_CONFIG_DIR
-
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 ActionStatus = Literal[
     "completed",
@@ -34,7 +32,7 @@ RUNTIME_DIR = Path("runtime")
 AUDIT_LOG_PATH = RUNTIME_DIR / "logs" / "local_actions.jsonl"
 PENDING_TTL_SECONDS = 300
 
-_PENDING_ACTIONS: dict[str, "LocalActionRequest"] = {}
+_PENDING_ACTIONS: dict[str, "PendingLocalAction"] = {}
 _EMERGENCY_STOP_ACTIVE = False
 
 LOW_RISK_ACTIONS = {
@@ -46,6 +44,7 @@ LOW_RISK_ACTIONS = {
     "volume_mute",
     "volume_unmute",
     "brightness_get",
+    "brightness_set",
     "clipboard_read",
     "clipboard_write",
     "clipboard_clear",
@@ -108,6 +107,13 @@ class LocalActionRequest:
     args: dict[str, Any] = field(default_factory=dict)
     require_approval: bool = False
     dry_run: bool = False
+
+
+@dataclass(frozen=True)
+class PendingLocalAction:
+    request: LocalActionRequest
+    created_at: float
+    expires_at: float
 
 
 @dataclass
@@ -201,8 +207,8 @@ def run_local_action(payload: dict[str, Any] | LocalActionRequest) -> LocalActio
 
 
 def approve_local_action(action_id: str) -> LocalActionResponse:
-    request = _PENDING_ACTIONS.pop(action_id, None)
-    if request is None:
+    pending = _PENDING_ACTIONS.pop(action_id, None)
+    if pending is None:
         return LocalActionResponse(
             ok=False,
             action_id=action_id,
@@ -212,6 +218,7 @@ def approve_local_action(action_id: str) -> LocalActionResponse:
             risk_level="LOW",
             error="missing_pending_action",
         )
+    request = pending.request
     risk = classify_risk(request)
     if _EMERGENCY_STOP_ACTIVE and risk in {"MEDIUM", "HIGH"}:
         response = LocalActionResponse(
@@ -232,8 +239,8 @@ def approve_local_action(action_id: str) -> LocalActionResponse:
 
 
 def reject_local_action(action_id: str) -> LocalActionResponse:
-    request = _PENDING_ACTIONS.pop(action_id, None)
-    if request is None:
+    pending = _PENDING_ACTIONS.pop(action_id, None)
+    if pending is None:
         return LocalActionResponse(
             ok=False,
             action_id=action_id,
@@ -243,6 +250,7 @@ def reject_local_action(action_id: str) -> LocalActionResponse:
             risk_level="LOW",
             error="missing_pending_action",
         )
+    request = pending.request
     response = LocalActionResponse(
         ok=True,
         action_id=action_id,
@@ -283,6 +291,59 @@ def reset_emergency_stop() -> None:
 def pending_action_count() -> int:
     _expire_pending()
     return len(_PENDING_ACTIONS)
+
+
+def list_pending_actions() -> list[dict[str, Any]]:
+    _expire_pending()
+    actions: list[dict[str, Any]] = []
+    for action_id, pending in sorted(_PENDING_ACTIONS.items(), key=lambda item: item[1].created_at):
+        request = pending.request
+        risk = classify_risk(request)
+        actions.append(
+            {
+                "id": action_id,
+                "action_id": action_id,
+                "action_type": request.action_type,
+                "target": _redact_target(request.action_type, request.target),
+                "risk_level": risk,
+                "status": "pending",
+                "decision": "pending",
+                "created_at": pending.created_at,
+                "expires_at": pending.expires_at,
+                "dry_run": request.dry_run,
+                "require_approval": request.require_approval,
+            }
+        )
+    return actions
+
+
+def read_recent_audit_entries(limit: int = 100) -> list[dict[str, Any]]:
+    path = get_audit_log_path()
+    if not path.exists():
+        return []
+    safe_limit = max(1, min(int(limit or 100), 500))
+    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-safe_limit:]
+    entries: list[dict[str, Any]] = []
+    for line in lines:
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        action_type = str(raw.get("action_type", ""))
+        entries.append(
+            {
+                "timestamp": float(raw.get("timestamp") or 0),
+                "action_type": action_type,
+                "target": _redact_target(action_type, str(raw.get("target", ""))),
+                "risk_level": str(raw.get("risk_level", "LOW")),
+                "status": str(raw.get("status", "")),
+                "decision": str(raw.get("approval_status", raw.get("decision", ""))),
+                "dry_run": bool(raw.get("dry_run", False)),
+                "ok": bool(raw.get("ok", False)),
+                "action_id": raw.get("action_id"),
+            }
+        )
+    return entries
 
 
 def classify_risk(request: LocalActionRequest) -> RiskLevel:
@@ -471,11 +532,13 @@ def _execute_file(request: LocalActionRequest, action: str) -> LocalActionRespon
     if action == "file_rename":
         if destination is None:
             destination = target.with_name(str(request.args["new_name"]))
+        destination.parent.mkdir(parents=True, exist_ok=True)
         target.rename(destination)
         return LocalActionResponse(True, None, "completed", "Renamed item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
     if action == "file_move":
         if destination is None:
             raise ValueError("destination is required")
+        destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(target), str(destination))
         return LocalActionResponse(True, None, "completed", "Moved item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
     if action == "file_copy":
@@ -577,15 +640,21 @@ def _approval_message(request: LocalActionRequest) -> str:
 
 def _create_pending(request: LocalActionRequest) -> str:
     _expire_pending()
+    now = time.time()
     action_id = uuid.uuid4().hex
-    _PENDING_ACTIONS[action_id] = request
+    _PENDING_ACTIONS[action_id] = PendingLocalAction(
+        request=request,
+        created_at=now,
+        expires_at=now + PENDING_TTL_SECONDS,
+    )
     return action_id
 
 
 def _expire_pending() -> None:
-    # Pending actions are intentionally in-memory for this structured API. They
-    # expire when the backend process exits; future persistence can store args.
-    return None
+    now = time.time()
+    expired = [action_id for action_id, pending in _PENDING_ACTIONS.items() if pending.expires_at <= now]
+    for action_id in expired:
+        _PENDING_ACTIONS.pop(action_id, None)
 
 
 def _audit(request: LocalActionRequest, response: LocalActionResponse, *, approval_status: str) -> None:
@@ -678,7 +747,9 @@ __all__ = [
     "classify_risk",
     "emergency_stop",
     "get_audit_log_path",
+    "list_pending_actions",
     "pending_action_count",
+    "read_recent_audit_entries",
     "reject_local_action",
     "reset_emergency_stop",
     "run_local_action",

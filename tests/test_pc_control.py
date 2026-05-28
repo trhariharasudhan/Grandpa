@@ -88,6 +88,13 @@ def test_brightness_unsupported_path():
     assert result.status == "unsupported"
 
 
+def test_brightness_set_is_allowed_but_truthful_when_unsupported():
+    result = run_local_action({"action_type": "brightness_set", "target": "50"})
+
+    assert result.status in {"completed", "unsupported"}
+    assert result.risk_level == "LOW"
+
+
 def test_clipboard_read_write_mocked(monkeypatch):
     clipboard = {"value": ""}
     monkeypatch.setitem(
@@ -128,6 +135,10 @@ def test_delete_requires_approval(tmp_path):
     assert result.status == "approval_required"
     assert result.approval_required is True
     assert target.exists()
+    pending = pc_control.list_pending_actions()
+    assert pending[0]["action_type"] == "file_delete"
+    assert pending[0]["target"] == str(target)
+    assert pending[0]["decision"] == "pending"
 
 
 def test_protected_path_blocked():
@@ -193,3 +204,17 @@ def test_audit_log_schema_redacts_clipboard(monkeypatch):
     record = json.loads(line)
     assert record["target"] == "[redacted]"
     assert "sensitive clipboard" not in line
+
+
+def test_recent_audit_entries_are_redacted(monkeypatch):
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "pyperclip",
+        SimpleNamespace(copy=lambda _text: None, paste=lambda: "sensitive clipboard"),
+    )
+    run_local_action({"action_type": "clipboard_write", "target": "sensitive clipboard"})
+
+    entries = pc_control.read_recent_audit_entries()
+
+    assert entries[-1]["target"] == "[redacted]"
+    assert "sensitive clipboard" not in json.dumps(entries)

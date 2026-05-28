@@ -11,6 +11,7 @@ import { LogsPage } from './pages/LogsPage';
 import { MemoryPage } from './pages/MemoryPage';
 import { FileAssistantPage } from './pages/FileAssistantPage';
 import { RoutinesPage } from './pages/RoutinesPage';
+import { SafetyPage } from './pages/SafetyPage';
 import { CommandPalette } from './components/CommandPalette';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
@@ -146,6 +147,7 @@ export default function App() {
           <Route path="memory" element={<MemoryPage />} />
           <Route path="files" element={<FileAssistantPage />} />
           <Route path="routines" element={<RoutinesPage />} />
+          <Route path="safety" element={<SafetyPage />} />
           <Route path="agents" element={<AgentsPage />} />
           <Route path="logs" element={<LogsPage />} />
         </Route>

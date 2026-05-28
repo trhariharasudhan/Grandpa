@@ -6,7 +6,7 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from grandpa.core.types import Message, Role
@@ -973,6 +973,22 @@ async def run_structured_local_action(payload: dict[str, Any]):
     from grandpa.pc_control import run_local_action
 
     return run_local_action(payload).to_dict()
+
+
+@router.get("/api/local-action/pending")
+async def pending_structured_local_actions():
+    """List structured PC actions awaiting user confirmation."""
+    from grandpa.pc_control import list_pending_actions
+
+    return {"actions": list_pending_actions()}
+
+
+@router.get("/api/local-action/audit")
+async def recent_structured_local_action_audit(limit: int = Query(default=100, ge=1, le=500)):
+    """Read recent redacted structured PC action audit entries."""
+    from grandpa.pc_control import read_recent_audit_entries
+
+    return {"entries": read_recent_audit_entries(limit)}
 
 
 @router.post("/api/local-action/emergency-stop")
