@@ -90,6 +90,7 @@ _APP_ALLOWLIST: dict[str, tuple[str, str]] = {
 
 _URL_ALLOWLIST: dict[str, tuple[str, str]] = {
     "youtube": ("https://www.youtube.com", "YouTube"),
+    "gmail": ("https://mail.google.com", "Gmail"),
 }
 
 _DANGEROUS_PATTERNS = (
@@ -383,6 +384,12 @@ def _confirmation_summary(command: str, result: LocalActionResult) -> str:
         return "Confirmation required before opening that folder."
     if result.kind == "url":
         return "Confirmation required before opening that URL."
+    if result.kind == "browser":
+        if result.target.startswith("click|"):
+            return "Confirmation required before clicking a visible browser element."
+        if result.target.startswith("focus_search|"):
+            return "Confirmation required before focusing a browser input."
+        return "Confirmation required before controlling the visible browser."
     return CONFIRMATION_PREFIX
 
 
@@ -403,6 +410,17 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
     if result.kind == "folder" and not _is_known_safe_folder(result.target):
         return "requires_confirmation"
     if result.kind == "url" and not _is_known_safe_url(result.target):
+        return "requires_confirmation"
+    if result.kind == "browser" and result.target.startswith("click|"):
+        if any(
+            word in result.target.lower()
+            for word in ("submit", "checkout", "payment", "purchase", "buy", "login")
+        ):
+            return "blocked"
+        return "requires_confirmation"
+    if result.kind == "browser" and result.target.startswith(
+        ("focus_search|", "back|", "forward|", "reload|")
+    ):
         return "requires_confirmation"
     if result.kind in {
         "app",
@@ -471,13 +489,13 @@ def _parse_safe_action(command: str) -> LocalActionResult:
     if window_result.status != "no_match":
         return window_result
 
-    screen_result = _parse_screen_action(command)
-    if screen_result.status != "no_match":
-        return screen_result
-
     browser_result = _parse_browser_action(command)
     if browser_result.status != "no_match":
         return browser_result
+
+    screen_result = _parse_screen_action(command)
+    if screen_result.status != "no_match":
+        return screen_result
 
     automation_result = _parse_automation_action(command)
     if automation_result.status != "no_match":
@@ -831,6 +849,112 @@ def _parse_screen_action(command: str) -> LocalActionResult:
 
 
 def _parse_browser_action(command: str) -> LocalActionResult:
+    if command in {"what page am i on", "what webpage am i on", "what browser page am i on"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="context|active",
+            message="Checking the active browser page.",
+            tts_text="Checking the active browser page.",
+        )
+
+    if command in {"what tabs are open", "what browser tabs are open", "list browser tabs"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="tabs|recent",
+            message="Checking recent browser tabs.",
+            tts_text="Checking recent browser tabs.",
+        )
+
+    if command in {
+        "summarize this webpage",
+        "summarise this webpage",
+        "summarize current webpage",
+        "summarize this web page",
+        "summarize this page",
+        "summarise this page",
+    }:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="summary|visible",
+            message="Summarizing the visible webpage.",
+            tts_text="Summarizing the visible webpage.",
+        )
+
+    if command in {"read the visible headings", "read visible headings", "what headings are visible"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="headings|visible",
+            message="Reading visible browser headings.",
+            tts_text="Reading visible browser headings.",
+        )
+
+    if command in {"show links on this page", "show page links", "what links are visible", "read visible links"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="links|visible",
+            message="Reading visible browser links.",
+            tts_text="Reading visible browser links.",
+        )
+
+    if command in {"what buttons are visible", "what buttons are visible?", "show visible buttons", "read visible buttons"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="buttons|visible",
+            message="Reading visible browser buttons.",
+            tts_text="Reading visible browser buttons.",
+        )
+
+    if command in {"focus the search box", "focus search box", "focus the browser search box"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="focus_search|visible",
+            message="Focusing the visible browser search box.",
+            tts_text="Focusing the visible browser search box.",
+        )
+
+    if command in {"click the first video", "click first video"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="click|first video",
+            message="Clicking the first visible video.",
+            tts_text="Clicking the first visible video.",
+        )
+
+    if command in {"browser back", "go back", "back in browser"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="back|visible",
+            message="Going back in the visible browser.",
+            tts_text="Going back in the visible browser.",
+        )
+
+    if command in {"browser forward", "go forward", "forward in browser"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="forward|visible",
+            message="Going forward in the visible browser.",
+            tts_text="Going forward in the visible browser.",
+        )
+
+    if command in {"reload browser", "reload page", "refresh page"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="reload|visible",
+            message="Reloading the visible browser page.",
+            tts_text="Reloading the visible browser page.",
+        )
+
     match = re.fullmatch(r"search google for (.+)", command)
     if match:
         query = match.group(1).strip()
@@ -1080,11 +1204,31 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         return result
 
     if result.kind == "browser":
-        if result.target == "about:blank":
-            webbrowser.open_new_tab(result.target)
+        from grandpa.browser_control import execute_browser_action
+
+        if "|" in result.target:
+            action, _, target = result.target.partition("|")
+            browser_result = execute_browser_action(action, target)
+        elif result.target == "about:blank":
+            browser_result = execute_browser_action("new_tab", result.target)
+        elif "youtube.com/results" in result.target:
+            parsed = urllib.parse.urlparse(result.target)
+            query = urllib.parse.parse_qs(parsed.query).get("search_query", [""])[0]
+            browser_result = execute_browser_action("youtube_search", query)
+        elif "google.com/search" in result.target:
+            parsed = urllib.parse.urlparse(result.target)
+            query = urllib.parse.parse_qs(parsed.query).get("q", [""])[0]
+            browser_result = execute_browser_action("search", query)
         else:
-            webbrowser.open(result.target)
-        return result
+            browser_result = execute_browser_action("open", result.target)
+        return LocalActionResult(
+            status=browser_result.status,
+            kind="browser",
+            target=result.target,
+            message=browser_result.message,
+            tts_text=browser_result.message,
+            permission=result.permission,
+        )
 
     return result
 

@@ -6,12 +6,13 @@ import {
   Hash,
   X,
   Gauge,
+  Globe2,
   MessageSquare,
   Brain,
   Cpu,
 } from 'lucide-react';
 import { useAppStore } from '../../lib/store';
-import { getBase } from '../../lib/api';
+import { fetchBrowserContext, getBase, type BrowserContextSummary } from '../../lib/api';
 
 interface EnergyData {
   total_energy_j?: number;
@@ -34,6 +35,7 @@ export function SystemPanel() {
   const liveEnergy = useAppStore((s) => s.liveEnergy);
   const [energy, setEnergy] = useState<EnergyData | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryStats | null>(null);
+  const [browserContext, setBrowserContext] = useState<BrowserContextSummary | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -48,6 +50,9 @@ export function SystemPanel() {
       if (telRes.status === 'fulfilled' && telRes.value) {
         setTelemetry(telRes.value as TelemetryStats);
       }
+      fetchBrowserContext()
+        .then(setBrowserContext)
+        .catch(() => setBrowserContext(null));
     } catch {
       // best-effort
     }
@@ -129,8 +134,55 @@ export function SystemPanel() {
           <div className="flex flex-col gap-2">
             <CoreLine icon={Cpu} label="Model" value={selectedModel || serverInfo?.model || 'Select model'} />
             <CoreLine icon={Brain} label="Runtime" value={serverInfo?.engine || 'local'} />
+            <CoreLine
+              icon={Globe2}
+              label="Browser"
+              value={
+                browserContext?.extension?.connected
+                  ? 'Extension connected'
+                  : browserContext?.context.supported
+                  ? browserContext.context.title || browserContext.context.browser || 'Visible'
+                  : 'Extension offline'
+              }
+            />
           </div>
         </section>
+
+        {(browserContext?.context.supported || browserContext?.extension) && (
+          <section
+            className="rounded-xl px-3 py-3"
+            style={{
+              background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border))',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Globe2 size={13} style={{ color: 'var(--color-accent)' }} />
+              <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                Visible Browser
+              </span>
+              <span
+                className="ml-auto text-[10px]"
+                style={{
+                  color: browserContext.extension?.connected ? 'var(--color-success)' : 'var(--color-warning)',
+                }}
+              >
+                {browserContext.extension?.connected ? 'extension connected' : 'not connected'}
+              </span>
+            </div>
+            <div className="text-[11px] leading-5 truncate" style={{ color: 'var(--color-text-secondary)' }}>
+              {browserContext.context.title || browserContext.context.active_window_title || 'Load the browser extension'}
+            </div>
+            {browserContext.context.url && (
+              <div className="text-[10px] leading-5 truncate" style={{ color: 'var(--color-text-tertiary)' }}>
+                {browserContext.context.url}
+              </div>
+            )}
+            <div className="text-[10px] mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+              {browserContext.context.headings.length} headings · {browserContext.context.links.length} links · {browserContext.context.buttons.length} buttons · local only
+            </div>
+          </section>
+        )}
 
         {/* Session Stats */}
         <section>

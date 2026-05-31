@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from grandpa.memory_context import MemoryStore, handle_memory_command
+from grandpa.memory_context import MemoryStore, handle_memory_command, search_personal_memory
 
 
 def test_remember_and_recall_project(tmp_path):
@@ -50,3 +50,78 @@ def test_unmatched_memory_command_falls_back(tmp_path):
     result = handle_memory_command("What is Python?", store=store)
 
     assert result.should_fallback is True
+
+
+def test_semantic_recall_project_without_exact_words(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember my project is Grandpa", store=store)
+
+    result = handle_memory_command("what AI assistant am I building?", store=store)
+
+    assert result.status == "handled"
+    assert "Grandpa" in result.message
+    assert "confidence" in result.message
+
+
+def test_semantic_recall_editor_preference(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember I use VS Code", store=store)
+
+    result = handle_memory_command("what editor do I prefer?", store=store)
+
+    assert result.status == "handled"
+    assert "VS Code" in result.message
+
+
+def test_semantic_search_category_filter(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember my project is Grandpa", store=store)
+    handle_memory_command("remember I use VS Code", store=store)
+
+    results = store.search_memories("what editor do I prefer?", category="apps_tools")
+
+    assert results
+    assert results[0]["category"] == "apps_tools"
+    assert results[0]["score"] > 0
+
+
+def test_semantic_low_confidence_does_not_invent_memory(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember my project is Grandpa", store=store)
+
+    result = handle_memory_command("what reminder do I have for my dentist?", store=store)
+
+    assert result.status == "handled"
+    assert "not confident" in result.message or "do not have" in result.message
+
+
+def test_embedding_fallback_creates_local_metadata(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember my project is Grandpa", store=store)
+
+    status = store.semantic_status()
+
+    assert status["backend"] == "local-sqlite"
+    assert status["embeddings"] == 1
+    assert status["local_only"] is True
+
+
+def test_memory_search_response_reports_uncertain(monkeypatch, tmp_path):
+    db_path = tmp_path / "memory.db"
+    store = MemoryStore(db_path)
+    handle_memory_command("remember my project is Grandpa", store=store)
+    monkeypatch.setattr("grandpa.memory_context.DEFAULT_MEMORY_DB", db_path)
+
+    response = search_personal_memory("dentist reminder", category="routines")
+
+    assert response["category"] == "routines"
+    assert response["uncertain"] is True
+
+
+def test_sensitive_semantic_memory_is_still_blocked(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+
+    result = handle_memory_command("remember my API key is abc123", store=store)
+
+    assert result.status == "blocked"
+    assert store.semantic_status()["embeddings"] == 0

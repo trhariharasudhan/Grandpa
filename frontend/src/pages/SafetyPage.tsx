@@ -13,12 +13,14 @@ import {
   approveStructuredLocalAction,
   emergencyStopStructuredLocalActions,
   fetchStructuredLocalActionAudit,
-  fetchStructuredLocalActionPending,
+  fetchStructuredLocalActionApprovals,
   rejectStructuredLocalAction,
   type PcRiskLevel,
   type StructuredLocalActionAuditEntry,
   type StructuredLocalActionPending,
 } from '../lib/api';
+
+type ApprovalFilter = 'pending' | 'approved' | 'rejected' | 'expired';
 
 const RISK_STYLES: Record<PcRiskLevel, { color: string; background: string; border: string }> = {
   LOW: {
@@ -51,6 +53,14 @@ function formatTime(seconds: number): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatCountdown(expiresAt: number): string {
+  const remaining = Math.max(0, Math.floor(expiresAt - Date.now() / 1000));
+  if (remaining <= 0) return 'expired';
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return `${minutes}m ${seconds.toString().padStart(2, '0')}s left`;
 }
 
 function RiskBadge({ level }: { level: PcRiskLevel | string }) {
@@ -123,8 +133,21 @@ function SafetyCard({
 }
 
 export function SafetyPage() {
-  const [pending, setPending] = useState<StructuredLocalActionPending[]>([]);
+  const [approvals, setApprovals] = useState<StructuredLocalActionPending[]>([]);
   const [audit, setAudit] = useState<StructuredLocalActionAuditEntry[]>([]);
+  const [storage, setStorage] = useState<{ backend: string; path: string; persistent: boolean; local_only: boolean } | null>(null);
+  const [retention, setRetention] = useState<{ approval_retention_days: number; audit_max_bytes: number; audit_keep_recent_lines: number } | null>(null);
+  const [maintenance, setMaintenance] = useState<{
+    completed_at: number | null;
+    storage_healthy: boolean;
+    cleanup_completed: boolean;
+    errors: string[];
+    expired_approvals: number;
+    deleted_approval_records: number;
+    audit_rotated: boolean;
+    audit_kept_lines: number;
+  } | null>(null);
+  const [filter, setFilter] = useState<ApprovalFilter>('pending');
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,11 +156,14 @@ export function SafetyPage() {
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const [pendingActions, auditEntries] = await Promise.all([
-        fetchStructuredLocalActionPending(),
+      const [approvalState, auditEntries] = await Promise.all([
+        fetchStructuredLocalActionApprovals(100),
         fetchStructuredLocalActionAudit(100),
       ]);
-      setPending(pendingActions);
+      setApprovals(approvalState.actions);
+      setStorage(approvalState.storage);
+      setRetention(approvalState.retention);
+      setMaintenance(approvalState.maintenance);
       setAudit(auditEntries.slice().reverse());
     } catch {
       setError('Could not load the safety console. Check that the Grandpa backend is running.');
@@ -153,6 +179,20 @@ export function SafetyPage() {
   }, [refresh]);
 
   const counts = useMemo(() => {
+    return approvals.reduce(
+      (acc, entry) => {
+        acc.total += 1;
+        if (entry.status === 'pending') acc.pending += 1;
+        if (entry.status === 'completed' || entry.status === 'approved') acc.approved += 1;
+        if (entry.status === 'rejected') acc.rejected += 1;
+        if (entry.status === 'expired') acc.expired += 1;
+        return acc;
+      },
+      { total: 0, pending: 0, approved: 0, rejected: 0, expired: 0 },
+    );
+  }, [approvals]);
+
+  const auditCounts = useMemo(() => {
     return audit.reduce(
       (acc, entry) => {
         acc.total += 1;
@@ -163,6 +203,13 @@ export function SafetyPage() {
       { total: 0, high: 0, blocked: 0 },
     );
   }, [audit]);
+
+  const filteredApprovals = useMemo(() => {
+    if (filter === 'approved') {
+      return approvals.filter((item) => item.status === 'approved' || item.status === 'completed');
+    }
+    return approvals.filter((item) => item.status === filter);
+  }, [approvals, filter]);
 
   const decide = async (actionId: string, decision: 'approve' | 'reject') => {
     setBusyId(actionId);
@@ -220,6 +267,11 @@ export function SafetyPage() {
                 <p className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
                   Inspect PC-control requests, approvals, and redacted local action history.
                 </p>
+                {storage && (
+                  <p className="mt-1 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Persistence: {storage.backend} {storage.persistent ? 'enabled' : 'disabled'} · local only
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -254,6 +306,55 @@ export function SafetyPage() {
           <SafetyCard icon={Octagon} title="Blocked actions" copy="Dangerous actions and protected paths are blocked by policy and never run directly." />
         </div>
 
+        <section
+          className="grid gap-3 lg:grid-cols-3"
+        >
+          <div
+            className="rounded-xl p-4"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+          >
+            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--color-text-tertiary)' }}>
+              Retention Policy
+            </div>
+            <div className="mt-2 text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+              {retention ? `${retention.approval_retention_days} days` : 'Loading'}
+            </div>
+            <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              Pending approvals are kept. Old decided approvals are cleaned locally.
+            </p>
+          </div>
+          <div
+            className="rounded-xl p-4"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+          >
+            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--color-text-tertiary)' }}>
+              Database Health
+            </div>
+            <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: maintenance?.storage_healthy ? 'var(--color-success)' : 'var(--color-warning)' }}>
+              <span className="h-2 w-2 rounded-full" style={{ background: maintenance?.storage_healthy ? 'var(--color-success)' : 'var(--color-warning)' }} />
+              {maintenance?.storage_healthy ? 'storage healthy' : 'checking storage'}
+            </div>
+            <p className="mt-1 truncate text-xs" title={storage?.path} style={{ color: 'var(--color-text-secondary)' }}>
+              {storage?.backend || 'sqlite'} · {storage?.local_only ? 'local only' : 'local'}
+            </p>
+          </div>
+          <div
+            className="rounded-xl p-4"
+            style={{ background: 'var(--color-surface)', border: '1px solid var(--color-border)' }}
+          >
+            <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--color-text-tertiary)' }}>
+              Last Cleanup
+            </div>
+            <div className="mt-2 flex items-center gap-2 text-sm font-semibold" style={{ color: maintenance?.cleanup_completed ? 'var(--color-success)' : 'var(--color-warning)' }}>
+              <span className="h-2 w-2 rounded-full" style={{ background: maintenance?.cleanup_completed ? 'var(--color-success)' : 'var(--color-warning)' }} />
+              {maintenance?.cleanup_completed ? 'cleanup completed' : 'cleanup warning'}
+            </div>
+            <p className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+              {maintenance?.completed_at ? formatTime(maintenance.completed_at) : 'Not run yet'} · removed {maintenance?.deleted_approval_records || 0}
+            </p>
+          </div>
+        </section>
+
         {(error || notice) && (
           <div
             className="rounded-xl px-4 py-3 text-sm"
@@ -278,29 +379,47 @@ export function SafetyPage() {
           <div className="mb-4 flex items-center justify-between">
             <div>
               <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-                Pending Approvals
+                Approval Queue
               </h2>
               <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                Review staged PC actions before they run.
+                Review staged PC actions and see restart-safe decisions.
               </p>
             </div>
             <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              {pending.length} waiting
+              {counts.pending} waiting · {counts.approved} approved · {counts.rejected} rejected · {counts.expired} expired
             </span>
+          </div>
+
+          <div className="mb-4 flex flex-wrap gap-2">
+            {(['pending', 'approved', 'rejected', 'expired'] as ApprovalFilter[]).map((status) => (
+              <button
+                key={status}
+                type="button"
+                onClick={() => setFilter(status)}
+                className="rounded-full px-3 py-1.5 text-xs font-semibold capitalize transition-colors"
+                style={{
+                  color: filter === status ? 'var(--color-on-accent)' : 'var(--color-text-secondary)',
+                  background: filter === status ? 'var(--color-accent)' : 'var(--color-bg-secondary)',
+                  border: `1px solid ${filter === status ? 'var(--color-accent)' : 'var(--color-border)'}`,
+                }}
+              >
+                {status}
+              </button>
+            ))}
           </div>
 
           {loading ? (
             <div className="py-8 text-sm" style={{ color: 'var(--color-text-secondary)' }}>Loading safety state...</div>
-          ) : pending.length === 0 ? (
+          ) : filteredApprovals.length === 0 ? (
             <div
               className="rounded-xl px-4 py-8 text-center text-sm"
               style={{ color: 'var(--color-text-tertiary)', background: 'var(--color-bg-secondary)', border: '1px dashed var(--color-border)' }}
             >
-              No PC-control approvals are waiting right now.
+              No {filter} PC-control approvals. Grandpa will keep restart-safe records here as decisions happen.
             </div>
           ) : (
             <div className="space-y-3">
-              {pending.map((item) => (
+              {filteredApprovals.map((item) => (
                 <div
                   key={item.id}
                   className="flex flex-col gap-3 rounded-xl p-4 lg:flex-row lg:items-center lg:justify-between"
@@ -311,7 +430,7 @@ export function SafetyPage() {
                       <RiskBadge level={item.risk_level} />
                       <StatusPill status={item.status} />
                       <span className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                        expires {formatTime(item.expires_at)}
+                        {item.status === 'pending' ? formatCountdown(item.expires_at) : `decided ${formatTime(item.decision_timestamp || item.created_at)}`}
                       </span>
                     </div>
                     <div className="font-mono text-sm" style={{ color: 'var(--color-text)' }}>
@@ -321,6 +440,7 @@ export function SafetyPage() {
                       {item.target || 'current target'}
                     </div>
                   </div>
+                  {item.status === 'pending' ? (
                   <div className="flex shrink-0 items-center gap-2">
                     <button
                       type="button"
@@ -341,6 +461,11 @@ export function SafetyPage() {
                       <CheckCircle2 size={13} /> Approve
                     </button>
                   </div>
+                  ) : (
+                    <div className="text-xs capitalize" style={{ color: 'var(--color-text-tertiary)' }}>
+                      {item.decision}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -365,9 +490,9 @@ export function SafetyPage() {
               </p>
             </div>
             <div className="flex gap-2 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-              <span>{counts.total} entries</span>
-              <span>{counts.high} high-risk</span>
-              <span>{counts.blocked} blocked</span>
+              <span>{auditCounts.total} entries</span>
+              <span>{auditCounts.high} high-risk</span>
+              <span>{auditCounts.blocked} blocked</span>
             </div>
           </div>
 

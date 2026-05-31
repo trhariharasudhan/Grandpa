@@ -853,6 +853,10 @@ export interface PersonalMemoryItem {
   key: string;
   value: string;
   source: string;
+  score?: number;
+  relevance_score?: number;
+  match_type?: string;
+  embedding_model?: string;
 }
 
 export interface PersonalActivityItem {
@@ -868,11 +872,29 @@ export interface PersonalActivityItem {
 export interface PersonalMemorySummary {
   memories: PersonalMemoryItem[];
   recent_activity: PersonalActivityItem[];
+  categories: string[];
+  semantic: {
+    enabled: boolean;
+    backend: string;
+    embedding_model: string;
+    dimensions: number;
+    memories: number;
+    embeddings: number;
+    local_only: boolean;
+  };
   storage: {
     backend: string;
     path: string;
     local_only: boolean;
   };
+}
+
+export interface PersonalMemorySearchResponse {
+  query: string;
+  category: string;
+  results: PersonalMemoryItem[];
+  uncertain: boolean;
+  semantic: PersonalMemorySummary['semantic'];
 }
 
 export async function getMemoryStats(): Promise<MemoryStats> {
@@ -920,6 +942,20 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
 export async function fetchPersonalMemory(): Promise<PersonalMemorySummary> {
   const res = await fetch(`${getBase()}/v1/personal-memory`);
   if (!res.ok) throw new Error('Failed to fetch personal memory');
+  return res.json();
+}
+
+export async function searchPersonalMemory(
+  query: string,
+  category: string = 'all',
+  limit: number = 8,
+): Promise<PersonalMemorySearchResponse> {
+  const res = await fetch(`${getBase()}/v1/personal-memory/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, category, limit }),
+  });
+  if (!res.ok) throw new Error('Failed to search personal memory');
   return res.json();
 }
 
@@ -1084,6 +1120,42 @@ export async function fetchRoutinesSummary(): Promise<RoutinesSummary> {
   return res.json();
 }
 
+export interface BrowserContextSummary {
+  context: {
+    supported: boolean;
+    browser: string | null;
+    title: string | null;
+    url: string | null;
+    active_window_title: string | null;
+    headings: string[];
+    buttons: string[];
+    links: Array<{ text: string; href: string }>;
+    inputs: Array<{ label: string; type: string }>;
+    visible_text: string;
+    message: string;
+    local_only: boolean;
+  };
+  recent_activity: Array<{
+    id: number;
+    created_at: number;
+    action: string;
+    title?: string | null;
+    url?: string | null;
+    query?: string | null;
+    status: string;
+  }>;
+  extension: {
+    connected: boolean;
+    snapshot_age_seconds?: number | null;
+  };
+}
+
+export async function fetchBrowserContext(): Promise<BrowserContextSummary> {
+  const res = await fetch(`${getBase()}/v1/browser/context`);
+  if (!res.ok) throw new Error('Failed to fetch browser context');
+  return res.json();
+}
+
 export async function runRoutine(name: string): Promise<{ status: string; message: string }> {
   const res = await fetch(`${getBase()}/v1/routines/${encodeURIComponent(name)}/run`, {
     method: 'POST',
@@ -1117,8 +1189,38 @@ export interface StructuredLocalActionPending {
   decision: string;
   created_at: number;
   expires_at: number;
+  decision_timestamp?: number | null;
   dry_run: boolean;
-  require_approval: boolean;
+  approval_required: boolean;
+  require_approval?: boolean;
+}
+
+export interface StructuredLocalActionApprovalsResponse {
+  actions: StructuredLocalActionPending[];
+  storage: {
+    backend: string;
+    path: string;
+    persistent: boolean;
+    local_only: boolean;
+  };
+  retention: {
+    approval_retention_days: number;
+    audit_max_bytes: number;
+    audit_keep_recent_lines: number;
+  };
+  maintenance: {
+    started_at: number;
+    completed_at: number | null;
+    storage_healthy: boolean;
+    cleanup_completed: boolean;
+    errors: string[];
+    expired_approvals: number;
+    deleted_approval_records: number;
+    audit_rotated: boolean;
+    audit_archived_path?: string | null;
+    audit_kept_lines: number;
+  };
+  counts: Record<string, number>;
 }
 
 export interface StructuredLocalActionAuditEntry {
@@ -1149,6 +1251,12 @@ export async function fetchStructuredLocalActionPending(): Promise<StructuredLoc
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   const data = await res.json();
   return data.actions || [];
+}
+
+export async function fetchStructuredLocalActionApprovals(limit = 100): Promise<StructuredLocalActionApprovalsResponse> {
+  const res = await fetch(`${getBase()}/api/local-action/approvals?limit=${encodeURIComponent(String(limit))}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
 }
 
 export async function fetchStructuredLocalActionAudit(limit = 100): Promise<StructuredLocalActionAuditEntry[]> {

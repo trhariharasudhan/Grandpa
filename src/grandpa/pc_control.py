@@ -10,12 +10,17 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import sys
+import threading
 import time
 import uuid
+import gzip
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
+
+from grandpa.core.config import DEFAULT_CONFIG_DIR
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 ActionStatus = Literal[
@@ -26,14 +31,21 @@ ActionStatus = Literal[
     "blocked",
     "unsupported",
     "failed",
+    "expired",
 ]
 
 RUNTIME_DIR = Path("runtime")
 AUDIT_LOG_PATH = RUNTIME_DIR / "logs" / "local_actions.jsonl"
 PENDING_TTL_SECONDS = 300
+DEFAULT_APPROVAL_DB = DEFAULT_CONFIG_DIR / "pc_control_approvals.db"
+DEFAULT_RETENTION_CONFIG = DEFAULT_CONFIG_DIR / "pc_control_retention.json"
+DEFAULT_RETENTION_DAYS = 30
+DEFAULT_AUDIT_MAX_BYTES = 5 * 1024 * 1024
+DEFAULT_AUDIT_KEEP_RECENT_LINES = 1000
 
-_PENDING_ACTIONS: dict[str, "PendingLocalAction"] = {}
 _EMERGENCY_STOP_ACTIVE = False
+_STORE_LOCK = threading.RLock()
+_LAST_MAINTENANCE_SUMMARY: dict[str, Any] | None = None
 
 LOW_RISK_ACTIONS = {
     "open_app",
@@ -49,6 +61,15 @@ LOW_RISK_ACTIONS = {
     "clipboard_write",
     "clipboard_clear",
     "file_create",
+    "browser_context",
+    "browser_tabs",
+    "browser_summary",
+    "browser_headings",
+    "browser_links",
+    "browser_buttons",
+    "browser_open",
+    "browser_search",
+    "browser_new_tab",
 }
 MEDIUM_RISK_ACTIONS = {
     "close_app",
@@ -65,6 +86,11 @@ MEDIUM_RISK_ACTIONS = {
     "mouse_move",
     "mouse_click",
     "mouse_scroll",
+    "browser_click",
+    "browser_focus",
+    "browser_back",
+    "browser_forward",
+    "browser_reload",
 }
 HIGH_RISK_ACTIONS = {
     "file_delete",
@@ -73,7 +99,14 @@ HIGH_RISK_ACTIONS = {
     "system_shutdown",
     "system_lock",
 }
-BLOCKED_ACTIONS = {"file_permanent_delete", "script_run", "shell_run"}
+BLOCKED_ACTIONS = {
+    "file_permanent_delete",
+    "script_run",
+    "shell_run",
+    "browser_submit_form",
+    "browser_extract_password",
+    "browser_purchase",
+}
 
 SAFE_APP_ALIASES = {
     "notepad": "notepad",
@@ -100,6 +133,13 @@ PROTECTED_PATH_PARTS = {
 SECRET_KEYS = {"content", "text", "value", "clipboard", "password", "secret", "token"}
 
 
+DEFAULT_RETENTION_POLICY = {
+    "approval_retention_days": DEFAULT_RETENTION_DAYS,
+    "audit_max_bytes": DEFAULT_AUDIT_MAX_BYTES,
+    "audit_keep_recent_lines": DEFAULT_AUDIT_KEEP_RECENT_LINES,
+}
+
+
 @dataclass(frozen=True)
 class LocalActionRequest:
     action_type: str
@@ -111,9 +151,14 @@ class LocalActionRequest:
 
 @dataclass(frozen=True)
 class PendingLocalAction:
+    action_id: str
     request: LocalActionRequest
+    risk_level: RiskLevel
     created_at: float
     expires_at: float
+    status: str = "pending"
+    decision: str = "pending"
+    decision_timestamp: float | None = None
 
 
 @dataclass
@@ -207,19 +252,41 @@ def run_local_action(payload: dict[str, Any] | LocalActionRequest) -> LocalActio
 
 
 def approve_local_action(action_id: str) -> LocalActionResponse:
-    pending = _PENDING_ACTIONS.pop(action_id, None)
-    if pending is None:
-        return LocalActionResponse(
-            ok=False,
-            action_id=action_id,
-            status="failed",
-            message="No pending local action was found for that ID.",
-            approval_required=False,
-            risk_level="LOW",
-            error="missing_pending_action",
-        )
-    request = pending.request
-    risk = classify_risk(request)
+    with _STORE_LOCK:
+        _expire_pending()
+        pending = _load_pending_record(action_id)
+        if pending is None:
+            return _missing_or_decided_action(action_id)
+        request = pending.request
+        risk = classify_risk(request)
+        if pending.expires_at <= time.time():
+            _mark_pending_decision(action_id, status="expired", decision="expired")
+            response = LocalActionResponse(
+                ok=False,
+                action_id=action_id,
+                status="expired",
+                message="That local action approval has expired and was not run.",
+                approval_required=False,
+                risk_level=risk,
+                error="approval_expired",
+            )
+            _audit(request, response, approval_status="expired")
+            return response
+        if _EMERGENCY_STOP_ACTIVE and risk in {"MEDIUM", "HIGH"}:
+            _mark_pending_decision(action_id, status="cancelled", decision="emergency_stop")
+            response = LocalActionResponse(
+                ok=False,
+                action_id=action_id,
+                status="blocked",
+                message="Emergency stop is active. This pending action was not run.",
+                approval_required=False,
+                risk_level=risk,
+                error="emergency_stop_active",
+            )
+            _audit(request, response, approval_status="approved_blocked")
+            return response
+        _mark_pending_decision(action_id, status="approved", decision="approved")
+
     if _EMERGENCY_STOP_ACTIVE and risk in {"MEDIUM", "HIGH"}:
         response = LocalActionResponse(
             ok=False,
@@ -234,23 +301,22 @@ def approve_local_action(action_id: str) -> LocalActionResponse:
         return response
     response = _execute(request, risk)
     response.action_id = action_id
+    if response.ok:
+        _set_approval_status(action_id, status="completed", decision="approved")
+    else:
+        _set_approval_status(action_id, status=response.status, decision="approved")
     _audit(request, response, approval_status="approved")
     return response
 
 
 def reject_local_action(action_id: str) -> LocalActionResponse:
-    pending = _PENDING_ACTIONS.pop(action_id, None)
-    if pending is None:
-        return LocalActionResponse(
-            ok=False,
-            action_id=action_id,
-            status="failed",
-            message="No pending local action was found for that ID.",
-            approval_required=False,
-            risk_level="LOW",
-            error="missing_pending_action",
-        )
-    request = pending.request
+    with _STORE_LOCK:
+        _expire_pending()
+        pending = _load_pending_record(action_id)
+        if pending is None:
+            return _missing_or_decided_action(action_id)
+        request = pending.request
+        _mark_pending_decision(action_id, status="rejected", decision="rejected")
     response = LocalActionResponse(
         ok=True,
         action_id=action_id,
@@ -266,8 +332,8 @@ def reject_local_action(action_id: str) -> LocalActionResponse:
 
 def emergency_stop() -> LocalActionResponse:
     global _EMERGENCY_STOP_ACTIVE
-    count = len(_PENDING_ACTIONS)
-    _PENDING_ACTIONS.clear()
+    _expire_pending()
+    count = _mark_all_pending_cancelled()
     _EMERGENCY_STOP_ACTIVE = True
     request = LocalActionRequest("emergency_stop", "local_actions")
     response = LocalActionResponse(
@@ -290,31 +356,95 @@ def reset_emergency_stop() -> None:
 
 def pending_action_count() -> int:
     _expire_pending()
-    return len(_PENDING_ACTIONS)
+    return len(list_pending_actions())
+
+
+def initialize_pc_control_store() -> dict[str, Any]:
+    return run_pc_control_maintenance()
+
+
+def run_pc_control_maintenance() -> dict[str, Any]:
+    global _LAST_MAINTENANCE_SUMMARY
+    started_at = time.time()
+    summary: dict[str, Any] = {
+        "started_at": started_at,
+        "completed_at": None,
+        "storage_healthy": False,
+        "cleanup_completed": False,
+        "errors": [],
+        "expired_approvals": 0,
+        "deleted_approval_records": 0,
+        "audit_rotated": False,
+        "audit_archived_path": None,
+        "audit_kept_lines": 0,
+        "retention": load_retention_policy(),
+        "counts": {},
+        "storage": {
+            "backend": "sqlite",
+            "path": str(get_approval_db_path()),
+            "persistent": True,
+            "local_only": True,
+        },
+    }
+    with _STORE_LOCK:
+        try:
+            summary["expired_approvals"] = _expire_pending()
+        except Exception as exc:
+            summary["errors"].append(f"expire_pending:{exc.__class__.__name__}")
+        try:
+            summary["deleted_approval_records"] = _cleanup_old_approval_records(summary["retention"])
+        except Exception as exc:
+            summary["errors"].append(f"approval_cleanup:{exc.__class__.__name__}")
+        try:
+            rotation = _rotate_audit_log_if_needed(summary["retention"])
+            summary.update(rotation)
+        except Exception as exc:
+            summary["errors"].append(f"audit_rotation:{exc.__class__.__name__}")
+        try:
+            summary["counts"] = _approval_counts_by_status()
+            summary["storage_healthy"] = _approval_db_is_healthy()
+        except Exception as exc:
+            summary["errors"].append(f"health:{exc.__class__.__name__}")
+    summary["cleanup_completed"] = not summary["errors"]
+    summary["completed_at"] = time.time()
+    _LAST_MAINTENANCE_SUMMARY = summary
+    return summary
+
+
+def get_pc_control_runtime_health() -> dict[str, Any]:
+    summary = _LAST_MAINTENANCE_SUMMARY or run_pc_control_maintenance()
+    return {
+        "storage": summary.get("storage", {}),
+        "retention": summary.get("retention", load_retention_policy()),
+        "maintenance": summary,
+        "counts": _approval_counts_by_status(),
+    }
 
 
 def list_pending_actions() -> list[dict[str, Any]]:
     _expire_pending()
-    actions: list[dict[str, Any]] = []
-    for action_id, pending in sorted(_PENDING_ACTIONS.items(), key=lambda item: item[1].created_at):
-        request = pending.request
-        risk = classify_risk(request)
-        actions.append(
-            {
-                "id": action_id,
-                "action_id": action_id,
-                "action_type": request.action_type,
-                "target": _redact_target(request.action_type, request.target),
-                "risk_level": risk,
-                "status": "pending",
-                "decision": "pending",
-                "created_at": pending.created_at,
-                "expires_at": pending.expires_at,
-                "dry_run": request.dry_run,
-                "require_approval": request.require_approval,
-            }
-        )
-    return actions
+    return list_approval_records(statuses=("pending",))
+
+
+def list_approval_records(
+    *,
+    statuses: tuple[str, ...] = ("pending", "approved", "completed", "rejected", "expired", "cancelled", "blocked", "failed"),
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    _expire_pending()
+    safe_limit = max(1, min(int(limit or 100), 500))
+    placeholders = ",".join("?" for _ in statuses)
+    with _connect_approval_db() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM pc_control_approvals
+            WHERE status IN ({placeholders})
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (*statuses, safe_limit),
+        ).fetchall()
+    return [_approval_row_to_dict(row) for row in rows]
 
 
 def read_recent_audit_entries(limit: int = 100) -> list[dict[str, Any]]:
@@ -322,7 +452,10 @@ def read_recent_audit_entries(limit: int = 100) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     safe_limit = max(1, min(int(limit or 100), 500))
-    lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-safe_limit:]
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-safe_limit:]
+    except OSError:
+        return []
     entries: list[dict[str, Any]] = []
     for line in lines:
         try:
@@ -380,6 +513,8 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
             return _execute_input(request, action)
         if action.startswith("system_"):
             return _execute_system(request, action)
+        if action.startswith("browser_"):
+            return _execute_browser(request, action)
     except Exception as exc:
         return LocalActionResponse(
             ok=False,
@@ -606,6 +741,55 @@ def _execute_system(request: LocalActionRequest, action: str) -> LocalActionResp
     return LocalActionResponse(True, None, "completed", "Started the requested power action.", False, "HIGH", {"system_action": action})
 
 
+def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionResponse:
+    from grandpa.browser_control import execute_browser_action
+
+    mapping = {
+        "browser_context": ("context", "active"),
+        "browser_tabs": ("tabs", "recent"),
+        "browser_summary": ("summary", "visible"),
+        "browser_headings": ("headings", "visible"),
+        "browser_links": ("links", "visible"),
+        "browser_buttons": ("buttons", "visible"),
+        "browser_open": ("open", request.target),
+        "browser_search": ("search", request.target),
+        "browser_new_tab": ("new_tab", request.target or "about:blank"),
+        "browser_click": ("click", request.target),
+        "browser_focus": ("focus_search", request.target or "visible"),
+        "browser_back": ("back", "visible"),
+        "browser_forward": ("forward", "visible"),
+        "browser_reload": ("reload", "visible"),
+    }
+    browser_action = mapping.get(action)
+    if browser_action is None:
+        return _blocked("I blocked this browser action for safety.")
+    result = execute_browser_action(*browser_action)
+    status: ActionStatus = {
+        "handled": "completed",
+        "requires_confirmation": "unsupported",
+        "blocked": "blocked",
+        "unsupported": "unsupported",
+        "error": "failed",
+    }.get(result.status, "failed")  # type: ignore[assignment]
+    return LocalActionResponse(
+        ok=status == "completed",
+        action_id=None,
+        status=status,
+        message=result.message,
+        approval_required=False,
+        risk_level=(
+            result.risk_level
+            if result.risk_level in {"LOW", "MEDIUM", "HIGH", "BLOCKED"}
+            else classify_risk(request)
+        ),
+        evidence={
+            "browser": result.context.to_dict() if result.context else {},
+            "visible_only": True,
+        },
+        error=None if status == "completed" else result.status,
+    )
+
+
 def _preflight_guard(request: LocalActionRequest, risk: RiskLevel) -> LocalActionResponse | None:
     action = _normalise_action_type(request.action_type)
     if action.startswith("file_"):
@@ -638,23 +822,314 @@ def _approval_message(request: LocalActionRequest) -> str:
     return f"Approval required before running {request.action_type} on {request.target or 'this PC'}."
 
 
+def get_approval_db_path() -> Path:
+    configured = os.environ.get("GRANDPA_PC_CONTROL_DB")
+    if configured:
+        return Path(configured)
+    return DEFAULT_APPROVAL_DB
+
+
+def get_retention_config_path() -> Path:
+    configured = os.environ.get("GRANDPA_PC_CONTROL_RETENTION_CONFIG")
+    if configured:
+        return Path(configured)
+    return DEFAULT_RETENTION_CONFIG
+
+
+def load_retention_policy() -> dict[str, int]:
+    path = get_retention_config_path()
+    policy = dict(DEFAULT_RETENTION_POLICY)
+    try:
+        if path.exists():
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                for key in policy:
+                    value = loaded.get(key)
+                    if isinstance(value, int) and value > 0:
+                        policy[key] = value
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(policy, indent=2, sort_keys=True), encoding="utf-8")
+    except OSError:
+        return policy
+    except json.JSONDecodeError:
+        return policy
+    return policy
+
+
+def _connect_approval_db() -> sqlite3.Connection:
+    path = get_approval_db_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pc_control_approvals (
+            action_id TEXT PRIMARY KEY,
+            action_type TEXT NOT NULL,
+            target TEXT NOT NULL,
+            args_json TEXT NOT NULL,
+            risk_level TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            status TEXT NOT NULL,
+            approval_required INTEGER NOT NULL,
+            decision TEXT NOT NULL,
+            decision_timestamp REAL
+        )
+        """
+    )
+    return conn
+
+
+def _approval_db_is_healthy() -> bool:
+    with _connect_approval_db() as conn:
+        result = conn.execute("PRAGMA quick_check").fetchone()
+    return bool(result and result[0] == "ok")
+
+
+def _approval_counts_by_status() -> dict[str, int]:
+    with _connect_approval_db() as conn:
+        rows = conn.execute(
+            "SELECT status, COUNT(*) AS count FROM pc_control_approvals GROUP BY status"
+        ).fetchall()
+    counts = {str(row["status"]): int(row["count"]) for row in rows}
+    for status in ("pending", "completed", "approved", "rejected", "expired", "cancelled", "blocked", "failed"):
+        counts.setdefault(status, 0)
+    return counts
+
+
+def _request_from_row(row: sqlite3.Row) -> LocalActionRequest:
+    try:
+        args = json.loads(str(row["args_json"] or "{}"))
+    except json.JSONDecodeError:
+        args = {}
+    if not isinstance(args, dict):
+        args = {}
+    return LocalActionRequest(
+        action_type=str(row["action_type"]),
+        target=str(row["target"] or ""),
+        args=args,
+        require_approval=bool(row["approval_required"]),
+        dry_run=False,
+    )
+
+
+def _pending_from_row(row: sqlite3.Row) -> PendingLocalAction:
+    return PendingLocalAction(
+        action_id=str(row["action_id"]),
+        request=_request_from_row(row),
+        risk_level=str(row["risk_level"]),  # type: ignore[arg-type]
+        created_at=float(row["created_at"]),
+        expires_at=float(row["expires_at"]),
+        status=str(row["status"]),
+        decision=str(row["decision"]),
+        decision_timestamp=float(row["decision_timestamp"]) if row["decision_timestamp"] is not None else None,
+    )
+
+
+def _approval_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
+    action_type = str(row["action_type"])
+    return {
+        "id": str(row["action_id"]),
+        "action_id": str(row["action_id"]),
+        "action_type": action_type,
+        "target": _redact_target(action_type, str(row["target"] or "")),
+        "risk_level": str(row["risk_level"]),
+        "status": str(row["status"]),
+        "decision": str(row["decision"]),
+        "created_at": float(row["created_at"]),
+        "expires_at": float(row["expires_at"]),
+        "decision_timestamp": float(row["decision_timestamp"]) if row["decision_timestamp"] is not None else None,
+        "approval_required": bool(row["approval_required"]),
+        "dry_run": False,
+    }
+
+
+def _load_pending_record(action_id: str) -> PendingLocalAction | None:
+    with _connect_approval_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM pc_control_approvals WHERE action_id = ? AND status = 'pending'",
+            (action_id,),
+        ).fetchone()
+    return _pending_from_row(row) if row is not None else None
+
+
+def _load_approval_record(action_id: str) -> PendingLocalAction | None:
+    with _connect_approval_db() as conn:
+        row = conn.execute(
+            "SELECT * FROM pc_control_approvals WHERE action_id = ?",
+            (action_id,),
+        ).fetchone()
+    return _pending_from_row(row) if row is not None else None
+
+
+def _mark_pending_decision(action_id: str, *, status: str, decision: str) -> bool:
+    with _connect_approval_db() as conn:
+        cur = conn.execute(
+            """
+            UPDATE pc_control_approvals
+            SET status = ?, decision = ?, decision_timestamp = ?
+            WHERE action_id = ? AND status = 'pending'
+            """,
+            (status, decision, time.time(), action_id),
+        )
+        return cur.rowcount == 1
+
+
+def _set_approval_status(action_id: str, *, status: str, decision: str) -> None:
+    with _connect_approval_db() as conn:
+        conn.execute(
+            """
+            UPDATE pc_control_approvals
+            SET status = ?, decision = ?, decision_timestamp = ?
+            WHERE action_id = ?
+            """,
+            (status, decision, time.time(), action_id),
+        )
+
+
+def _mark_all_pending_cancelled() -> int:
+    with _connect_approval_db() as conn:
+        cur = conn.execute(
+            """
+            UPDATE pc_control_approvals
+            SET status = 'cancelled', decision = 'emergency_stop', decision_timestamp = ?
+            WHERE status = 'pending'
+            """,
+            (time.time(),),
+        )
+        return int(cur.rowcount)
+
+
+def _missing_or_decided_action(action_id: str) -> LocalActionResponse:
+    record = _load_approval_record(action_id)
+    if record is None:
+        return LocalActionResponse(
+            ok=False,
+            action_id=action_id,
+            status="failed",
+            message="No pending local action was found for that ID.",
+            approval_required=False,
+            risk_level="LOW",
+            error="missing_pending_action",
+        )
+    status = "expired" if record.status == "expired" else "failed"
+    return LocalActionResponse(
+        ok=False,
+        action_id=action_id,
+        status=status,  # type: ignore[arg-type]
+        message=f"That local action is already {record.status} and will not run again.",
+        approval_required=False,
+        risk_level=record.risk_level,
+        error=f"already_{record.status}",
+    )
+
+
 def _create_pending(request: LocalActionRequest) -> str:
     _expire_pending()
     now = time.time()
     action_id = uuid.uuid4().hex
-    _PENDING_ACTIONS[action_id] = PendingLocalAction(
-        request=request,
-        created_at=now,
-        expires_at=now + PENDING_TTL_SECONDS,
-    )
+    risk = classify_risk(request)
+    args_json = json.dumps(request.args, ensure_ascii=True, sort_keys=True, default=str)
+    with _connect_approval_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO pc_control_approvals (
+                action_id, action_type, target, args_json, risk_level, created_at,
+                expires_at, status, approval_required, decision, decision_timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending', NULL)
+            """,
+            (
+                action_id,
+                request.action_type,
+                request.target,
+                args_json,
+                risk,
+                now,
+                now + PENDING_TTL_SECONDS,
+                int(request.require_approval or risk == "HIGH"),
+            ),
+        )
     return action_id
 
 
-def _expire_pending() -> None:
+def _cleanup_old_approval_records(policy: dict[str, int]) -> int:
+    retention_days = max(1, int(policy.get("approval_retention_days", DEFAULT_RETENTION_DAYS)))
+    cutoff = time.time() - retention_days * 86400
+    with _connect_approval_db() as conn:
+        cur = conn.execute(
+            """
+            DELETE FROM pc_control_approvals
+            WHERE status != 'pending'
+              AND COALESCE(decision_timestamp, created_at) < ?
+            """,
+            (cutoff,),
+        )
+        return int(cur.rowcount)
+
+
+def _rotate_audit_log_if_needed(policy: dict[str, int]) -> dict[str, Any]:
+    path = get_audit_log_path()
+    max_bytes = max(1, int(policy.get("audit_max_bytes", DEFAULT_AUDIT_MAX_BYTES)))
+    keep_lines = max(1, int(policy.get("audit_keep_recent_lines", DEFAULT_AUDIT_KEEP_RECENT_LINES)))
+    result = {
+        "audit_rotated": False,
+        "audit_archived_path": None,
+        "audit_kept_lines": 0,
+    }
+    if not path.exists():
+        return result
+    try:
+        if path.stat().st_size <= max_bytes:
+            return result
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return result
+    archive_lines = lines[:-keep_lines]
+    keep = lines[-keep_lines:]
+    timestamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    archive_path = path.with_name(f"{path.name}.{timestamp}.gz")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if archive_lines:
+        with gzip.open(archive_path, "wt", encoding="utf-8") as fh:
+            fh.write("\n".join(archive_lines) + "\n")
+        result["audit_archived_path"] = str(archive_path)
+    path.write_text(("\n".join(keep) + "\n") if keep else "", encoding="utf-8")
+    result["audit_rotated"] = True
+    result["audit_kept_lines"] = len(keep)
+    return result
+
+
+def _expire_pending() -> int:
     now = time.time()
-    expired = [action_id for action_id, pending in _PENDING_ACTIONS.items() if pending.expires_at <= now]
-    for action_id in expired:
-        _PENDING_ACTIONS.pop(action_id, None)
+    with _connect_approval_db() as conn:
+        rows = conn.execute(
+            "SELECT * FROM pc_control_approvals WHERE status = 'pending' AND expires_at <= ?",
+            (now,),
+        ).fetchall()
+        conn.execute(
+            """
+            UPDATE pc_control_approvals
+            SET status = 'expired', decision = 'expired', decision_timestamp = ?
+            WHERE status = 'pending' AND expires_at <= ?
+            """,
+            (now, now),
+        )
+    for row in rows:
+        request = _request_from_row(row)
+        response = LocalActionResponse(
+            ok=False,
+            action_id=str(row["action_id"]),
+            status="expired",
+            message="That local action approval has expired and was not run.",
+            approval_required=False,
+            risk_level=str(row["risk_level"]),  # type: ignore[arg-type]
+            error="approval_expired",
+        )
+        _audit(request, response, approval_status="expired")
+    return len(rows)
 
 
 def _audit(request: LocalActionRequest, response: LocalActionResponse, *, approval_status: str) -> None:
@@ -747,10 +1222,17 @@ __all__ = [
     "classify_risk",
     "emergency_stop",
     "get_audit_log_path",
+    "get_approval_db_path",
+    "get_pc_control_runtime_health",
+    "get_retention_config_path",
+    "initialize_pc_control_store",
+    "list_approval_records",
     "list_pending_actions",
+    "load_retention_policy",
     "pending_action_count",
     "read_recent_audit_entries",
     "reject_local_action",
     "reset_emergency_stop",
+    "run_pc_control_maintenance",
     "run_local_action",
 ]

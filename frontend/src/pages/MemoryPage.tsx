@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Brain, Clock3, Database, RefreshCw, Trash2 } from 'lucide-react';
+import { Brain, Clock3, Database, RefreshCw, Search, Trash2 } from 'lucide-react';
 import {
   clearPersonalMemory,
   fetchPersonalMemory,
+  searchPersonalMemory,
   type PersonalMemorySummary,
+  type PersonalMemoryItem,
 } from '../lib/api';
 
 const formatTime = (seconds: number) =>
@@ -19,6 +21,11 @@ export function MemoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [clearing, setClearing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<PersonalMemoryItem[] | null>(null);
+  const [searchUncertain, setSearchUncertain] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -38,12 +45,21 @@ export function MemoryPage() {
 
   const groupedMemories = useMemo(() => {
     const groups = new Map<string, NonNullable<PersonalMemorySummary['memories']>>();
-    for (const item of summary?.memories || []) {
+    const visible = searchResults ?? (summary?.memories || []);
+    for (const item of visible) {
+      if (!searchResults && categoryFilter !== 'all' && item.category !== categoryFilter) continue;
       const list = groups.get(item.category) || [];
       list.push(item);
       groups.set(item.category, list);
     }
     return Array.from(groups.entries());
+  }, [summary, searchResults, categoryFilter]);
+
+  const categories = useMemo(() => {
+    const fromSummary = summary?.categories?.length
+      ? summary.categories
+      : Array.from(new Set((summary?.memories || []).map((item) => item.category)));
+    return ['all', ...fromSummary.sort()];
   }, [summary]);
 
   const handleClear = async () => {
@@ -55,6 +71,32 @@ export function MemoryPage() {
     } finally {
       setClearing(false);
     }
+  };
+
+  const handleSemanticSearch = async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setSearchResults(null);
+      setSearchUncertain(false);
+      return;
+    }
+    setSearching(true);
+    setError(null);
+    try {
+      const response = await searchPersonalMemory(query, categoryFilter, 8);
+      setSearchResults(response.results);
+      setSearchUncertain(response.uncertain);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to search memory');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults(null);
+    setSearchUncertain(false);
   };
 
   return (
@@ -139,17 +181,93 @@ export function MemoryPage() {
           >
             <div className="flex items-center gap-2 mb-4">
               <Database size={17} style={{ color: 'var(--color-accent)' }} />
-              <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
-                Remembered Facts
-              </h2>
+              <div className="flex-1">
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                  Remembered Facts
+                </h2>
+                {summary?.semantic && (
+                  <div className="text-[11px]" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Semantic recall · {summary.semantic.embedding_model} · local only
+                  </div>
+                )}
+              </div>
             </div>
+            <div className="mb-4 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
+              <div
+                className="flex items-center gap-2 rounded-xl px-3 py-2"
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                <Search size={15} style={{ color: 'var(--color-text-tertiary)' }} />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') handleSemanticSearch();
+                  }}
+                  placeholder="Search by meaning, like “what editor do I prefer?”"
+                  className="w-full bg-transparent text-sm outline-none"
+                  style={{ color: 'var(--color-text)' }}
+                />
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={categoryFilter}
+                  onChange={(event) => {
+                    setCategoryFilter(event.target.value);
+                    setSearchResults(null);
+                    setSearchUncertain(false);
+                  }}
+                  className="rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{
+                    background: 'var(--color-bg-secondary)',
+                    border: '1px solid var(--color-border)',
+                    color: 'var(--color-text-secondary)',
+                  }}
+                >
+                  {categories.map((category) => (
+                    <option key={category} value={category}>
+                      {category === 'all' ? 'All categories' : category.replace(/_/g, ' ')}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={handleSemanticSearch}
+                  disabled={searching}
+                  className="px-3 py-2 rounded-xl text-sm"
+                  style={{
+                    background: 'var(--color-accent)',
+                    color: 'white',
+                    opacity: searching ? 0.65 : 1,
+                  }}
+                >
+                  {searching ? 'Searching' : 'Search'}
+                </button>
+              </div>
+            </div>
+            {searchResults && (
+              <div className="mb-4 flex items-center justify-between gap-3 text-xs">
+                <span style={{ color: searchUncertain ? 'var(--color-warning)' : 'var(--color-text-secondary)' }}>
+                  {searchUncertain
+                    ? 'Low-confidence semantic match. Grandpa will avoid guessing.'
+                    : `${searchResults.length} semantic match${searchResults.length === 1 ? '' : 'es'} found.`}
+                </span>
+                <button onClick={clearSearch} style={{ color: 'var(--color-accent)' }}>
+                  Show all
+                </button>
+              </div>
+            )}
             {loading ? (
               <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
                 Loading memory...
               </p>
             ) : groupedMemories.length === 0 ? (
               <div className="text-sm leading-6" style={{ color: 'var(--color-text-secondary)' }}>
-                No remembered facts yet. Try saying “remember my project is Grandpa”.
+                {searchResults
+                  ? 'No semantic memory matched that search.'
+                  : 'No remembered facts yet. Try saying “remember my project is Grandpa”.'}
               </div>
             ) : (
               <div className="space-y-5">
@@ -177,8 +295,16 @@ export function MemoryPage() {
                           <div className="text-sm" style={{ color: 'var(--color-text)' }}>
                             {item.value}
                           </div>
-                          <div className="text-[11px] mt-3" style={{ color: 'var(--color-text-tertiary)' }}>
-                            Updated {formatTime(item.updated_at)}
+                          <div
+                            className="flex items-center justify-between gap-3 text-[11px] mt-3"
+                            style={{ color: 'var(--color-text-tertiary)' }}
+                          >
+                            <span>Updated {formatTime(item.updated_at)}</span>
+                            {typeof item.score === 'number' && (
+                              <span style={{ color: 'var(--color-accent-amber)' }}>
+                                {Math.round(item.score * 100)}% match
+                              </span>
+                            )}
                           </div>
                         </div>
                       ))}

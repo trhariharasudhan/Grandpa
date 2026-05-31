@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import sqlite3
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,10 +17,10 @@ from grandpa.windows_window_control import WindowControlResult
 @pytest.fixture(autouse=True)
 def _isolated_pc_control(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl"))
-    pc_control._PENDING_ACTIONS.clear()
+    monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db"))
+    monkeypatch.setenv("GRANDPA_PC_CONTROL_RETENTION_CONFIG", str(tmp_path / "retention.json"))
     pc_control.reset_emergency_stop()
     yield
-    pc_control._PENDING_ACTIONS.clear()
     pc_control.reset_emergency_stop()
 
 
@@ -179,6 +181,51 @@ def test_approval_approve_reject_flow(tmp_path):
     assert not target.exists()
 
 
+def test_duplicate_approval_does_not_execute_twice(tmp_path):
+    target = tmp_path / "delete-me.txt"
+    target.write_text("x", encoding="utf-8")
+    pending = run_local_action({"action_type": "file_delete", "target": str(target)})
+
+    first = pc_control.approve_local_action(pending.action_id or "")
+    second = pc_control.approve_local_action(pending.action_id or "")
+    rejected = pc_control.reject_local_action(pending.action_id or "")
+
+    assert first.ok is True
+    assert second.ok is False
+    assert second.error == "already_completed"
+    assert rejected.ok is False
+    assert rejected.error == "already_completed"
+
+
+def test_expired_approval_cannot_execute(tmp_path):
+    target = tmp_path / "delete-me.txt"
+    target.write_text("x", encoding="utf-8")
+    pending = run_local_action({"action_type": "file_delete", "target": str(target)})
+    with sqlite3.connect(pc_control.get_approval_db_path()) as conn:
+        conn.execute(
+            "UPDATE pc_control_approvals SET expires_at = ? WHERE action_id = ?",
+            (time.time() - 1, pending.action_id),
+        )
+
+    approved = pc_control.approve_local_action(pending.action_id or "")
+
+    assert approved.status == "expired"
+    assert approved.error == "already_expired"
+    assert target.exists()
+
+
+def test_persistent_approval_reload(tmp_path):
+    target = tmp_path / "delete-me.txt"
+    target.write_text("x", encoding="utf-8")
+    pending = run_local_action({"action_type": "file_delete", "target": str(target)})
+
+    pending_after_reload = pc_control.list_pending_actions()
+
+    assert pending_after_reload[0]["action_id"] == pending.action_id
+    assert pending_after_reload[0]["status"] == "pending"
+    assert Path(pc_control.get_approval_db_path()).exists()
+
+
 def test_emergency_stop_cancels_pending_actions(tmp_path):
     target = tmp_path / "delete-me.txt"
     target.write_text("x", encoding="utf-8")
@@ -186,9 +233,11 @@ def test_emergency_stop_cancels_pending_actions(tmp_path):
 
     stopped = pc_control.emergency_stop()
     approved = pc_control.approve_local_action(pending.action_id or "")
+    records = pc_control.list_approval_records()
 
     assert stopped.evidence["cancelled_pending_actions"] == 1
     assert approved.ok is False
+    assert records[0]["status"] == "cancelled"
     assert target.exists()
 
 
@@ -218,3 +267,86 @@ def test_recent_audit_entries_are_redacted(monkeypatch):
 
     assert entries[-1]["target"] == "[redacted]"
     assert "sensitive clipboard" not in json.dumps(entries)
+
+
+def test_retention_cleanup_removes_old_decided_records_but_keeps_pending(tmp_path):
+    old_target = tmp_path / "old.txt"
+    old_target.write_text("x", encoding="utf-8")
+    old = run_local_action({"action_type": "file_delete", "target": str(old_target)})
+    pc_control.reject_local_action(old.action_id or "")
+    pending_target = tmp_path / "pending.txt"
+    pending_target.write_text("x", encoding="utf-8")
+    pending = run_local_action({"action_type": "file_delete", "target": str(pending_target)})
+    old_time = time.time() - 40 * 86400
+    with sqlite3.connect(pc_control.get_approval_db_path()) as conn:
+        conn.execute(
+            "UPDATE pc_control_approvals SET decision_timestamp = ?, created_at = ? WHERE action_id = ?",
+            (old_time, old_time, old.action_id),
+        )
+
+    summary = pc_control.run_pc_control_maintenance()
+    records = pc_control.list_approval_records()
+
+    assert summary["deleted_approval_records"] == 1
+    assert [record["action_id"] for record in records] == [pending.action_id]
+    assert records[0]["status"] == "pending"
+
+
+def test_expired_approval_preserved_until_retention_window(tmp_path):
+    target = tmp_path / "delete-me.txt"
+    target.write_text("x", encoding="utf-8")
+    pending = run_local_action({"action_type": "file_delete", "target": str(target)})
+    with sqlite3.connect(pc_control.get_approval_db_path()) as conn:
+        conn.execute(
+            "UPDATE pc_control_approvals SET expires_at = ? WHERE action_id = ?",
+            (time.time() - 1, pending.action_id),
+        )
+
+    summary = pc_control.run_pc_control_maintenance()
+    records = pc_control.list_approval_records()
+
+    assert summary["expired_approvals"] == 1
+    assert records[0]["status"] == "expired"
+    assert target.exists()
+
+
+def test_audit_log_rotation_keeps_newest_entries(monkeypatch, tmp_path):
+    policy_path = Path(pc_control.get_retention_config_path())
+    policy_path.write_text(
+        json.dumps({"approval_retention_days": 30, "audit_max_bytes": 100, "audit_keep_recent_lines": 2}),
+        encoding="utf-8",
+    )
+    audit_path = Path(pc_control.get_audit_log_path())
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit_path.write_text(
+        "\n".join(
+            json.dumps({"timestamp": i, "action_type": "open_app", "target": f"app-{i}", "risk_level": "LOW", "status": "completed"})
+            for i in range(5)
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    summary = pc_control.run_pc_control_maintenance()
+    entries = pc_control.read_recent_audit_entries(10)
+
+    assert summary["audit_rotated"] is True
+    assert summary["audit_kept_lines"] == 2
+    assert [entry["target"] for entry in entries] == ["app-3", "app-4"]
+    assert list(audit_path.parent.glob("local_actions.jsonl.*.gz"))
+
+
+def test_corrupted_audit_entry_recovery():
+    audit_path = Path(pc_control.get_audit_log_path())
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    audit_path.write_text(
+        "{not-json}\n"
+        + json.dumps({"timestamp": 1, "action_type": "open_app", "target": "notepad", "risk_level": "LOW", "status": "completed"})
+        + "\n",
+        encoding="utf-8",
+    )
+
+    entries = pc_control.read_recent_audit_entries()
+
+    assert len(entries) == 1
+    assert entries[0]["target"] == "notepad"

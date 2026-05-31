@@ -13,10 +13,10 @@ from grandpa.server.routes import router
 @pytest.fixture(autouse=True)
 def _isolated_pc_control_api(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl"))
-    pc_control._PENDING_ACTIONS.clear()
+    monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db"))
+    monkeypatch.setenv("GRANDPA_PC_CONTROL_RETENTION_CONFIG", str(tmp_path / "retention.json"))
     pc_control.reset_emergency_stop()
     yield
-    pc_control._PENDING_ACTIONS.clear()
     pc_control.reset_emergency_stop()
 
 
@@ -57,6 +57,12 @@ def test_local_action_endpoint_approval_reject_flow(client: TestClient, tmp_path
     pending_list = client.get("/api/local-action/pending").json()
     assert pending_list["actions"][0]["action_id"] == pending["action_id"]
     assert pending_list["actions"][0]["decision"] == "pending"
+    approvals = client.get("/api/local-action/approvals").json()
+    assert approvals["actions"][0]["action_id"] == pending["action_id"]
+    assert approvals["storage"]["backend"] == "sqlite"
+    assert approvals["storage"]["persistent"] is True
+    assert approvals["retention"]["approval_retention_days"] == 30
+    assert approvals["maintenance"]["storage_healthy"] is True
 
     reject_response = client.post(f"/api/local-action/{pending['action_id']}/reject")
     rejected = reject_response.json()
@@ -105,3 +111,12 @@ def test_local_action_audit_endpoint_returns_redacted_entries(client: TestClient
     assert body["entries"]
     assert body["entries"][-1]["target"] == "[redacted]"
     assert "secret" not in str(body["entries"])
+
+
+def test_local_action_health_endpoint(client: TestClient):
+    body = client.get("/api/local-action/health").json()
+
+    assert body["storage"]["backend"] == "sqlite"
+    assert body["retention"]["approval_retention_days"] == 30
+    assert body["maintenance"]["cleanup_completed"] is True
+    assert "pending" in body["counts"]

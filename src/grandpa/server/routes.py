@@ -882,6 +882,68 @@ async def personal_memory():
     return memory_summary()
 
 
+@router.get("/v1/browser/context")
+async def browser_context():
+    """Return safe visible-browser context for the HUD."""
+    from grandpa.browser_control import BrowserContextStore, get_visible_browser_context, latest_browser_snapshot
+
+    context = get_visible_browser_context()
+    latest = latest_browser_snapshot()
+    return {
+        "context": context.to_dict(),
+        "recent_activity": BrowserContextStore().recent(limit=8),
+        "extension": {
+            "connected": bool(latest.get("connected")),
+            "snapshot_age_seconds": (
+                latest.get("snapshot", {}).get("age_seconds")
+                if latest.get("snapshot")
+                else None
+            ),
+        },
+    }
+
+
+@router.post("/v1/browser/snapshot")
+async def browser_snapshot_ingest(request: Request):
+    """Ingest a safe visible-page snapshot from the local browser extension."""
+    from grandpa.browser_control import store_browser_snapshot
+
+    body = await request.json()
+    return {"status": "ok", "snapshot": store_browser_snapshot(body)}
+
+
+@router.get("/v1/browser/snapshot/latest")
+async def browser_snapshot_latest():
+    """Return the latest safe browser extension snapshot."""
+    from grandpa.browser_control import latest_browser_snapshot
+
+    return latest_browser_snapshot()
+
+
+@router.delete("/v1/browser/snapshot")
+async def browser_snapshot_clear():
+    """Clear stored browser extension snapshots."""
+    from grandpa.browser_control import clear_browser_snapshot
+
+    return clear_browser_snapshot()
+
+
+@router.post("/v1/personal-memory/search")
+async def personal_memory_search(request: Request):
+    """Search local personal memory with semantic recall metadata."""
+    from grandpa.memory_context import search_personal_memory
+
+    body = await request.json()
+    query = str(body.get("query", "")).strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="'query' field is required")
+    category = body.get("category")
+    if category is not None:
+        category = str(category).strip() or None
+    limit = int(body.get("limit", 8))
+    return search_personal_memory(query, category=category, limit=max(1, min(limit, 25)))
+
+
 @router.get("/v1/file-assistant")
 async def file_assistant():
     """Return local file assistant history and notes."""
@@ -981,6 +1043,29 @@ async def pending_structured_local_actions():
     from grandpa.pc_control import list_pending_actions
 
     return {"actions": list_pending_actions()}
+
+
+@router.get("/api/local-action/approvals")
+async def structured_local_action_approvals(limit: int = Query(default=100, ge=1, le=500)):
+    """List structured PC approval records across lifecycle states."""
+    from grandpa.pc_control import get_pc_control_runtime_health, list_approval_records
+
+    health = get_pc_control_runtime_health()
+    return {
+        "actions": list_approval_records(limit=limit),
+        "storage": health["storage"],
+        "retention": health["retention"],
+        "maintenance": health["maintenance"],
+        "counts": health["counts"],
+    }
+
+
+@router.get("/api/local-action/health")
+async def structured_local_action_health():
+    """Return safe storage, retention, and cleanup health for PC actions."""
+    from grandpa.pc_control import get_pc_control_runtime_health
+
+    return get_pc_control_runtime_health()
 
 
 @router.get("/api/local-action/audit")

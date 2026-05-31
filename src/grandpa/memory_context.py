@@ -12,6 +12,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from math import sqrt
 from pathlib import Path
 from typing import Any
 
@@ -19,11 +20,44 @@ from grandpa.core.config import DEFAULT_CONFIG_DIR
 
 
 DEFAULT_MEMORY_DB = DEFAULT_CONFIG_DIR / "personal_memory.db"
+SEMANTIC_DIMENSIONS = 128
+SEMANTIC_MODEL = "grandpa-local-semantic-v1"
+SEMANTIC_MIN_CONFIDENCE = 0.18
 SENSITIVE_PATTERN = re.compile(
     r"\b(password|passcode|credential|secret|token|api\s*key|credit\s*card|"
     r"card\s*number|cvv|otp|pin|private\s*key|seed\s*phrase)\b",
     re.IGNORECASE,
 )
+
+MEMORY_CATEGORY_ALIASES: dict[str, set[str]] = {
+    "project": {"project", "assistant", "ai", "app", "building", "working", "work"},
+    "preferences": {"prefer", "preferred", "preference", "like", "default"},
+    "apps_tools": {"app", "apps", "tool", "tools", "editor", "coding", "code", "vscode", "browser"},
+    "routines": {"routine", "routines", "reminder", "reminders", "schedule"},
+    "people": {"person", "people", "friend", "family", "team", "client"},
+    "work_context": {"work", "task", "context", "recent", "lately"},
+    "note": {"note", "memory", "remembered", "fact"},
+}
+
+TOKEN_ALIASES: dict[str, set[str]] = {
+    "ai": {"assistant", "project", "app"},
+    "assistant": {"ai", "project", "app", "grandpa"},
+    "app": {"application", "project", "assistant", "tool"},
+    "building": {"project", "working", "creating"},
+    "coding": {"code", "editor", "tool", "vscode"},
+    "code": {"coding", "editor", "vscode", "vs"},
+    "editor": {"coding", "code", "vscode", "tool"},
+    "prefer": {"preferred", "preference", "use"},
+    "preferred": {"prefer", "preference", "use"},
+    "project": {"assistant", "building", "work"},
+    "tool": {"app", "editor", "coding"},
+    "use": {"uses", "prefer", "tool"},
+    "uses": {"use", "prefer", "tool"},
+    "vscode": {"vs", "code", "editor", "coding"},
+    "vs": {"vscode", "code", "editor"},
+    "work": {"project", "lately", "context"},
+    "working": {"project", "building", "lately"},
+}
 
 
 @dataclass(frozen=True)
@@ -39,8 +73,8 @@ class MemoryCommandResult:
 class MemoryStore:
     """SQLite-backed personal memory store."""
 
-    def __init__(self, db_path: Path | str = DEFAULT_MEMORY_DB) -> None:
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path or DEFAULT_MEMORY_DB)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -79,12 +113,30 @@ class MemoryStore:
                 """
             )
             conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS memory_embeddings (
+                    memory_id INTEGER PRIMARY KEY,
+                    updated_at REAL NOT NULL,
+                    model TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL,
+                    embedding TEXT NOT NULL,
+                    text TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}',
+                    FOREIGN KEY(memory_id) REFERENCES memories(id) ON DELETE CASCADE
+                )
+                """
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_activity_created "
                 "ON activity(created_at)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_memory_lookup "
                 "ON memories(category, key)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_embedding_model "
+                "ON memory_embeddings(model)"
             )
 
     def remember(
@@ -108,14 +160,45 @@ class MemoryStore:
                 """,
                 (now, now, category, key, value, source),
             )
+            row = conn.execute(
+                "SELECT id, updated_at FROM memories WHERE category = ? AND key = ?",
+                (category, key),
+            ).fetchone()
+            if row:
+                item = {
+                    "id": row["id"],
+                    "updated_at": row["updated_at"],
+                    "category": category,
+                    "key": key,
+                    "value": value,
+                    "source": source,
+                }
+                self._store_embedding(conn, item)
 
     def forget(self, query: str) -> int:
         needle = f"%{query.strip().lower()}%"
         if not query.strip() or query.strip().lower() in {"all", "everything"}:
             with self._connect() as conn:
+                conn.execute("DELETE FROM memory_embeddings")
                 cur = conn.execute("DELETE FROM memories")
                 return cur.rowcount
         with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM memories
+                WHERE lower(category) LIKE ?
+                   OR lower(key) LIKE ?
+                   OR lower(value) LIKE ?
+                """,
+                (needle, needle, needle),
+            ).fetchall()
+            memory_ids = [row["id"] for row in rows]
+            if memory_ids:
+                placeholders = ",".join("?" for _ in memory_ids)
+                conn.execute(
+                    f"DELETE FROM memory_embeddings WHERE memory_id IN ({placeholders})",
+                    memory_ids,
+                )
             cur = conn.execute(
                 """
                 DELETE FROM memories
@@ -129,6 +212,7 @@ class MemoryStore:
 
     def clear_all(self) -> None:
         with self._connect() as conn:
+            conn.execute("DELETE FROM memory_embeddings")
             conn.execute("DELETE FROM memories")
             conn.execute("DELETE FROM activity")
 
@@ -145,20 +229,57 @@ class MemoryStore:
             ).fetchall()
         return [_row_to_dict(row) for row in rows]
 
-    def search_memories(self, query: str, limit: int = 8) -> list[dict[str, Any]]:
-        query_tokens = _tokens(query)
+    def search_memories(
+        self,
+        query: str,
+        limit: int = 8,
+        *,
+        category: str | None = None,
+        min_confidence: float = SEMANTIC_MIN_CONFIDENCE,
+    ) -> list[dict[str, Any]]:
+        query_tokens = _expanded_tokens(query)
         candidates = self.list_memories(limit=250)
-        scored: list[tuple[int, float, dict[str, Any]]] = []
+        if category and category != "all":
+            candidates = [item for item in candidates if item["category"] == category]
+        self._ensure_embeddings(candidates)
+        query_embedding = _embed_text(query)
+        scored: list[tuple[float, float, dict[str, Any]]] = []
         for item in candidates:
             haystack = f"{item['category']} {item['key']} {item['value']}"
-            tokens = _tokens(haystack)
+            tokens = _expanded_tokens(haystack)
             overlap = len(query_tokens & tokens)
             direct = 1 if query.lower() in haystack.lower() else 0
-            score = overlap + direct * 3
-            if score > 0:
-                scored.append((score, float(item["updated_at"]), item))
+            inferred_categories = _infer_query_categories(query)
+            category_hint = 1 if item["category"] in inferred_categories else 0
+            semantic = self._embedding_similarity(int(item["id"]), query_embedding)
+            lexical = min(1.0, overlap / max(1, len(query_tokens)))
+            confidence = max(semantic, lexical * 0.72, direct * 0.95)
+            confidence = min(1.0, confidence + category_hint * 0.12)
+            if inferred_categories and not category_hint and not direct:
+                confidence *= 0.45
+            if confidence >= min_confidence or direct or overlap >= 2:
+                enriched = dict(item)
+                enriched["score"] = round(confidence, 4)
+                enriched["relevance_score"] = round(confidence, 4)
+                enriched["match_type"] = "semantic" if semantic >= lexical else "keyword"
+                enriched["embedding_model"] = SEMANTIC_MODEL
+                scored.append((confidence, float(item["updated_at"]), enriched))
         scored.sort(key=lambda pair: (pair[0], pair[1]), reverse=True)
         return [item for _, _, item in scored[:limit]]
+
+    def semantic_status(self) -> dict[str, Any]:
+        with self._connect() as conn:
+            memories = conn.execute("SELECT COUNT(*) AS count FROM memories").fetchone()["count"]
+            embeddings = conn.execute("SELECT COUNT(*) AS count FROM memory_embeddings").fetchone()["count"]
+        return {
+            "enabled": True,
+            "backend": "local-sqlite",
+            "embedding_model": SEMANTIC_MODEL,
+            "dimensions": SEMANTIC_DIMENSIONS,
+            "memories": memories,
+            "embeddings": embeddings,
+            "local_only": True,
+        }
 
     def record_activity(
         self,
@@ -207,6 +328,70 @@ class MemoryStore:
             ).fetchall()
         return [_row_to_dict(row) for row in rows]
 
+    def _store_embedding(self, conn: sqlite3.Connection, item: dict[str, Any]) -> None:
+        text = _memory_embedding_text(item)
+        embedding = _embed_text(text)
+        conn.execute(
+            """
+            INSERT INTO memory_embeddings(
+                memory_id, updated_at, model, dimensions, embedding, text, metadata
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(memory_id)
+            DO UPDATE SET updated_at=excluded.updated_at,
+                          model=excluded.model,
+                          dimensions=excluded.dimensions,
+                          embedding=excluded.embedding,
+                          text=excluded.text,
+                          metadata=excluded.metadata
+            """,
+            (
+                item["id"],
+                item["updated_at"],
+                SEMANTIC_MODEL,
+                SEMANTIC_DIMENSIONS,
+                _serialize_vector(embedding),
+                text,
+                '{"source":"local"}',
+            ),
+        )
+
+    def _ensure_embeddings(self, items: list[dict[str, Any]]) -> None:
+        if not items:
+            return
+        ids = [int(item["id"]) for item in items]
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT memory_id, updated_at, model FROM memory_embeddings "
+                f"WHERE memory_id IN ({placeholders})",
+                ids,
+            ).fetchall()
+            current = {
+                int(row["memory_id"]): (float(row["updated_at"]), str(row["model"]))
+                for row in rows
+            }
+            for item in items:
+                memory_id = int(item["id"])
+                stored = current.get(memory_id)
+                if stored == (float(item["updated_at"]), SEMANTIC_MODEL):
+                    continue
+                self._store_embedding(conn, item)
+
+    def _embedding_similarity(self, memory_id: int, query_embedding: list[float]) -> float:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT embedding FROM memory_embeddings WHERE memory_id = ?",
+                (memory_id,),
+            ).fetchone()
+        if not row:
+            return 0.0
+        try:
+            embedding = _deserialize_vector(row["embedding"])
+        except ValueError:
+            return 0.0
+        return _cosine_similarity(query_embedding, embedding)
+
 
 def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> MemoryCommandResult:
     """Handle explicit memory commands, returning fallback when not matched."""
@@ -250,6 +435,9 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
     }
     if lower in project_questions:
         return _recall_specific(store, "project", "project", "I do not know your project yet.")
+
+    if _looks_like_memory_recall(original):
+        return _recall(store, original)
 
     if lower.startswith("what apps did i open"):
         return _apps_opened_today(store)
@@ -302,9 +490,12 @@ def record_activity(
 
 def memory_summary(limit: int = 100) -> dict[str, Any]:
     store = MemoryStore()
+    memories = store.list_memories(limit=limit)
     return {
-        "memories": store.list_memories(limit=limit),
+        "memories": memories,
         "recent_activity": store.list_activity(limit=50),
+        "categories": sorted({str(item["category"]) for item in memories}),
+        "semantic": store.semantic_status(),
         "storage": {
             "backend": "sqlite",
             "path": str(store.db_path),
@@ -317,6 +508,24 @@ def clear_memory() -> dict[str, Any]:
     store = MemoryStore()
     store.clear_all()
     return {"status": "ok", "message": "Personal memory cleared"}
+
+
+def search_personal_memory(
+    query: str,
+    *,
+    category: str | None = None,
+    limit: int = 8,
+) -> dict[str, Any]:
+    store = MemoryStore()
+    results = store.search_memories(query, limit=limit, category=category)
+    uncertain = not results or float(results[0].get("score", 0.0)) < SEMANTIC_MIN_CONFIDENCE
+    return {
+        "query": query,
+        "category": category or "all",
+        "results": results,
+        "uncertain": uncertain,
+        "semantic": store.semantic_status(),
+    }
 
 
 def _remember_fact(store: MemoryStore, fact: str) -> MemoryCommandResult:
@@ -343,19 +552,19 @@ def _parse_fact(fact: str) -> dict[str, str]:
         ),
         (
             r"^my\s+preferred\s+browser\s+is\s+(.+)$",
-            "preference",
+            "preferences",
             "preferred_browser",
             "I will remember: your preferred browser is {value}.",
         ),
         (
             r"^i\s+use\s+(.+)$",
-            "preference",
+            "apps_tools",
             "uses_{value_slug}",
             "I will remember: you use {value}.",
         ),
         (
             r"^my\s+(.+?)\s+is\s+(.+)$",
-            "preference",
+            "preferences",
             None,
             "I will remember: your {key} is {value}.",
         ),
@@ -397,10 +606,15 @@ def _recall(store: MemoryStore, query: str) -> MemoryCommandResult:
     if not results:
         message = "I do not have a matching memory yet."
         return MemoryCommandResult("handled", "memory", query, message, message)
+    top_score = float(results[0].get("score", 0.0))
+    if top_score < SEMANTIC_MIN_CONFIDENCE:
+        message = "I am not confident I have a matching memory for that yet."
+        return MemoryCommandResult("handled", "memory", query, message, message)
     lines = ["Here is what I remember:"]
     for item in results[:5]:
         label = _friendly_label(item)
-        lines.append(f"- {label}: {item['value']}")
+        score = float(item.get("score", 0.0))
+        lines.append(f"- {label}: {item['value']} ({score:.0%} confidence)")
     message = "\n".join(lines)
     return MemoryCommandResult("handled", "memory", query, message, "I found a few local memories.")
 
@@ -475,8 +689,119 @@ def _looks_sensitive(text: str) -> bool:
     return bool(SENSITIVE_PATTERN.search(text))
 
 
+def _looks_like_memory_recall(text: str) -> bool:
+    lower = text.lower().strip(" ?!.")
+    if not re.match(r"^(what|which|who|where|when|tell me|do you know|can you remember)", lower):
+        return False
+    if "what apps did i open" in lower or "what windows" in lower:
+        return False
+    has_personal_marker = bool(
+        re.search(r"\b(my|me|i)\b", lower)
+        or "you remember" in lower
+        or "i told you" in lower
+    )
+    recall_markers = {
+        "assistant",
+        "project",
+        "building",
+        "working",
+        "lately",
+        "coding",
+        "editor",
+        "prefer",
+        "preferred",
+        "use",
+        "tool",
+        "app",
+        "reminder",
+        "routine",
+    }
+    tokens = _tokens(lower)
+    return has_personal_marker and bool(tokens & recall_markers)
+
+
 def _tokens(text: str) -> set[str]:
     return {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
+
+
+def _expanded_tokens(text: str) -> set[str]:
+    tokens = _tokens(text)
+    expanded = set(tokens)
+    joined = " ".join(tokens)
+    if "vs code" in text.lower() or {"vs", "code"}.issubset(tokens):
+        expanded.add("vscode")
+    for token in list(tokens):
+        expanded.update(TOKEN_ALIASES.get(token, set()))
+    for category, aliases in MEMORY_CATEGORY_ALIASES.items():
+        if tokens & aliases:
+            expanded.add(category)
+            expanded.update(aliases)
+    if "grandpa" in tokens:
+        expanded.update({"assistant", "project", "app"})
+    return expanded
+
+
+def _infer_query_categories(query: str) -> set[str]:
+    tokens = _tokens(query)
+    if "vs code" in query.lower() or {"vs", "code"}.issubset(tokens):
+        tokens.add("vscode")
+    categories: set[str] = set()
+    for category, aliases in MEMORY_CATEGORY_ALIASES.items():
+        if tokens & aliases or category in tokens:
+            categories.add(category)
+    return categories
+
+
+def _memory_embedding_text(item: dict[str, Any]) -> str:
+    category = str(item.get("category", "note"))
+    parts = [
+        category,
+        str(item.get("key", "")),
+        str(item.get("value", "")),
+        " ".join(sorted(MEMORY_CATEGORY_ALIASES.get(category, set()))),
+    ]
+    return " ".join(parts)
+
+
+def _embed_text(text: str, dimensions: int = SEMANTIC_DIMENSIONS) -> list[float]:
+    vector = [0.0] * dimensions
+    tokens = _expanded_tokens(text)
+    for token in tokens:
+        index = _stable_hash(token) % dimensions
+        vector[index] += 1.0
+        if len(token) > 4:
+            for idx in range(len(token) - 2):
+                ngram = token[idx : idx + 3]
+                vector[_stable_hash(f"ng:{ngram}") % dimensions] += 0.18
+    norm = sqrt(sum(value * value for value in vector))
+    if norm <= 0:
+        return vector
+    return [value / norm for value in vector]
+
+
+def _stable_hash(text: str) -> int:
+    value = 2166136261
+    for char in text:
+        value ^= ord(char)
+        value = (value * 16777619) & 0xFFFFFFFF
+    return value
+
+
+def _serialize_vector(vector: list[float]) -> str:
+    return ",".join(f"{value:.6f}" for value in vector)
+
+
+def _deserialize_vector(raw: str) -> list[float]:
+    values = [float(part) for part in raw.split(",") if part]
+    if len(values) != SEMANTIC_DIMENSIONS:
+        raise ValueError("unexpected memory embedding dimensions")
+    return values
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if len(left) != len(right):
+        return 0.0
+    return max(0.0, min(1.0, sum(a * b for a, b in zip(left, right))))
 
 
 def _slug(text: str) -> str:
@@ -504,4 +829,5 @@ __all__ = [
     "memory_summary",
     "record_activity",
     "remember_conversation",
+    "search_personal_memory",
 ]

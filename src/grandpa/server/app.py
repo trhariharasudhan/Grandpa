@@ -284,6 +284,15 @@ def create_app(
         logger.debug("Analytics init skipped: %s", _exc)
 
     try:
+        from grandpa.pc_control import initialize_pc_control_store
+
+        @app.on_event("startup")
+        async def _startup_pc_control_store() -> None:
+            initialize_pc_control_store()
+    except Exception as exc:
+        logger.debug("PC control approval store init skipped: %s", exc)
+
+    try:
         from grandpa.scheduler_daemon import BackgroundSchedulerDaemon
 
         routine_scheduler = BackgroundSchedulerDaemon()

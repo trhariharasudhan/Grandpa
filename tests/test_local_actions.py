@@ -82,6 +82,63 @@ def test_youtube_search_command_is_allowlisted_without_execution():
     assert result.target.endswith("search_query=python+tutorials")
 
 
+def test_browser_context_question_is_recognized_without_execution():
+    result = handle_local_action("what page am I on?", execute=False)
+
+    assert result.status == "handled"
+    assert result.kind == "browser"
+    assert result.target == "context|active"
+
+
+def test_browser_dom_summary_is_recognized_without_execution():
+    result = handle_local_action("summarize this webpage", execute=False)
+
+    assert result.status == "handled"
+    assert result.kind == "browser"
+    assert result.target == "summary|visible"
+
+
+def test_browser_links_command_is_recognized_without_execution():
+    result = handle_local_action("show links on this page", execute=False)
+
+    assert result.status == "handled"
+    assert result.kind == "browser"
+    assert result.target == "links|visible"
+
+
+def test_browser_buttons_command_is_recognized_without_execution():
+    result = handle_local_action("what buttons are visible?", execute=False)
+
+    assert result.status == "handled"
+    assert result.kind == "browser"
+    assert result.target == "buttons|visible"
+
+
+def test_browser_click_requires_confirmation():
+    result = handle_local_action("click the first video", execute=False)
+
+    assert result.status == "requires_confirmation"
+    assert result.kind == "browser"
+    assert result.permission == "requires_confirmation"
+    assert result.pending_action
+
+
+def test_browser_high_risk_click_is_blocked():
+    result = local_actions._with_permission(
+        "click checkout",
+        local_actions.LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="click|checkout payment button",
+            message="Clicking checkout.",
+            tts_text="Clicking checkout.",
+        ),
+    )
+
+    assert result.status == "blocked"
+    assert result.permission == "blocked"
+
+
 def test_screen_question_is_recognized_without_execution():
     result = handle_local_action("What is on my screen?", execute=False)
 
