@@ -69,8 +69,8 @@ GENERATED_EXCEPTION_FILES = {
 }
 
 FORBIDDEN_PATTERNS = (
-    re.compile("open" + "jar" + "vis", re.IGNORECASE),
-    re.compile("jar" + "vis", re.IGNORECASE),
+    re.compile("".join(map(chr, (111, 112, 101, 110, 106, 97, 114, 118, 105, 115))), re.I),
+    re.compile("".join(map(chr, (106, 97, 114, 118, 105, 115))), re.I),
 )
 
 
