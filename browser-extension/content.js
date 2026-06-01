@@ -1,6 +1,8 @@
 const GRANDPA_MAX_ITEMS = 40;
 const GRANDPA_MAX_TEXT = 6000;
 const GRANDPA_POST_INTERVAL_MS = 5000;
+const GRANDPA_COMMAND_INTERVAL_MS = 1200;
+const GRANDPA_COMMAND_ENDPOINT = 'http://127.0.0.1:8000/v1/browser/command';
 
 const SENSITIVE_RE = /(password|passcode|secret|token|api[_ -]?key|credential|credit card|card number|cvv|otp|pin|private key|seed phrase|payment|checkout)/i;
 const SECRET_VALUE_RE = [
@@ -73,6 +75,77 @@ function collectInputs() {
     .slice(0, GRANDPA_MAX_ITEMS);
 }
 
+function stableElementId(element, index) {
+  const role = element.getAttribute('role') || element.tagName.toLowerCase();
+  const text = cleanText(element.innerText || element.value || element.getAttribute('aria-label') || element.getAttribute('title') || '', 60);
+  return `${role}:${index}:${text}`.toLowerCase().replace(/[^a-z0-9:_-]+/g, '-').slice(0, 80);
+}
+
+function collectElements() {
+  return Array.from(document.querySelectorAll('a[href],button,[role="button"],input,textarea,select,h1,h2,h3,video,audio'))
+    .filter(isVisible)
+    .map((element, index) => {
+      const tag = element.tagName.toLowerCase();
+      const role = tag === 'a' ? 'link'
+        : ['h1', 'h2', 'h3'].includes(tag) ? 'heading'
+        : tag === 'video' || tag === 'audio' ? 'media'
+        : tag === 'input' || tag === 'textarea' || tag === 'select' ? 'input'
+        : 'button';
+      const text = cleanText(element.innerText || element.value || element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.getAttribute('title') || role);
+      if (SENSITIVE_RE.test(`${role} ${text}`)) return null;
+      return { id: stableElementId(element, index), role, text, visible: true };
+    })
+    .filter(Boolean)
+    .slice(0, GRANDPA_MAX_ITEMS * 2);
+}
+
+function collectMedia() {
+  return Array.from(document.querySelectorAll('video,audio'))
+    .filter(isVisible)
+    .map((element) => ({
+      kind: element.tagName.toLowerCase(),
+      paused: !!element.paused,
+      muted: !!element.muted,
+      duration: Number.isFinite(element.duration) ? element.duration : 0,
+      current_time: Number.isFinite(element.currentTime) ? element.currentTime : 0,
+      label: cleanText(element.getAttribute('aria-label') || document.title || 'media'),
+    }))
+    .slice(0, 10);
+}
+
+function collectForms() {
+  return Array.from(document.querySelectorAll('form'))
+    .filter(isVisible)
+    .map((form) => {
+      const fields = Array.from(form.querySelectorAll('input,textarea,select'))
+        .filter(isVisible)
+        .map((element) => {
+          const type = String(element.getAttribute('type') || element.tagName || 'text').toLowerCase();
+          const label = cleanText(element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.getAttribute('name') || '');
+          if (type === 'password' || type === 'hidden' || SENSITIVE_RE.test(`${type} ${label}`)) return null;
+          return { type, label };
+        })
+        .filter(Boolean);
+      return {
+        label: cleanText(form.getAttribute('aria-label') || form.getAttribute('name') || 'form'),
+        fields,
+        submit_count: form.querySelectorAll('button[type="submit"],input[type="submit"]').length,
+      };
+    })
+    .slice(0, 10);
+}
+
+function collectSession() {
+  return {
+    visibility: document.visibilityState,
+    focused: document.hasFocus(),
+    origin: location.origin,
+    path: location.pathname,
+    is_youtube: /(^|\.)youtube\.com$/.test(location.hostname) || /(^|\.)youtu\.be$/.test(location.hostname),
+    is_whatsapp: location.hostname === 'web.whatsapp.com',
+  };
+}
+
 function collectVisibleBodyText() {
   const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT, {
     acceptNode(node) {
@@ -102,6 +175,10 @@ function buildSnapshot() {
     links: collectLinks(),
     buttons: collectButtons(),
     inputs: collectInputs(),
+    media: collectMedia(),
+    forms: collectForms(),
+    elements: collectElements(),
+    session: collectSession(),
     visible_text: collectVisibleBodyText(),
     captured_at: Date.now(),
   };
@@ -125,3 +202,51 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) postSnapshot(true);
 });
 setInterval(() => postSnapshot(false), GRANDPA_POST_INTERVAL_MS);
+
+function applyMediaCommand(target) {
+  const media = Array.from(document.querySelectorAll('video,audio')).filter(isVisible)[0];
+  if (!media) return { ok: false, message: 'No visible media element.' };
+  const command = String(target || '').toLowerCase();
+  if (command.includes('play')) {
+    media.play();
+    return { ok: true, message: 'Playing visible media.' };
+  }
+  if (command.includes('pause')) {
+    media.pause();
+    return { ok: true, message: 'Paused visible media.' };
+  }
+  if (command.includes('unmute')) {
+    media.muted = false;
+    return { ok: true, message: 'Unmuted visible media.' };
+  }
+  if (command.includes('mute')) {
+    media.muted = true;
+    return { ok: true, message: 'Muted visible media.' };
+  }
+  return { ok: false, message: 'Unsupported media command.' };
+}
+
+async function pollCommand() {
+  try {
+    const response = await fetch(`${GRANDPA_COMMAND_ENDPOINT}/next?url=${encodeURIComponent(location.href)}`);
+    if (!response.ok) return;
+    const body = await response.json();
+    const command = body && body.command;
+    if (!command || !command.id) return;
+    let result = { ok: false, message: 'Unsupported browser command.' };
+    if (command.action === 'media') result = applyMediaCommand(command.target);
+    await fetch(`${GRANDPA_COMMAND_ENDPOINT}/${encodeURIComponent(command.id)}/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: result.ok ? 'completed' : 'failed',
+        result,
+      }),
+    });
+    postSnapshot(true);
+  } catch {
+    // Grandpa backend may be offline; keep the extension quiet.
+  }
+}
+
+setInterval(pollCommand, GRANDPA_COMMAND_INTERVAL_MS);

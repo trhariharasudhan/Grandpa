@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any
@@ -18,6 +19,7 @@ from grandpa.server.models import (
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatMessage,
     Choice,
     ChoiceMessage,
     ComplexityInfo,
@@ -85,23 +87,91 @@ def _local_action_response(
     )
 
 
+def _record_brain_result(brain_analysis, action_result) -> None:
+    if brain_analysis is None:
+        return
+    try:
+        from grandpa.core_ai_brain import record_assistant_outcome
+
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=action_result.message,
+            kind=getattr(action_result, "kind", None),
+            target=getattr(action_result, "target", None),
+            status=getattr(action_result, "status", None),
+        )
+    except Exception:
+        logging.getLogger("grandpa.server").debug(
+            "Brain outcome logging failed",
+            exc_info=True,
+        )
+
+
+def _available_engine_models(engine) -> list[str]:
+    try:
+        return list(engine.list_models())
+    except Exception:
+        return []
+
+
+def _apply_ai_routing(engine, request_body: ChatCompletionRequest, user_text: str) -> dict[str, Any] | None:
+    if not user_text:
+        return None
+    try:
+        from grandpa.advanced_ai import build_plan
+
+        models = _available_engine_models(engine)
+        cloud_allowed = any(
+            model.startswith(("gpt-", "o1-", "o3-", "o4-", "claude-", "gemini-", "openrouter/"))
+            for model in models
+        )
+        plan = build_plan(
+            user_text,
+            requested_model=request_body.model,
+            available_models=models,
+            cloud_allowed=cloud_allowed,
+        )
+        selected = plan.routing.selected_model
+        if selected and selected != request_body.model:
+            request_body.model = selected
+        return plan.to_dict()
+    except Exception:
+        logging.getLogger("grandpa.server").debug(
+            "Advanced AI routing failed",
+            exc_info=True,
+        )
+        return None
+
+
 @router.post("/v1/chat/completions")
 async def chat_completions(request_body: ChatCompletionRequest, request: Request):
     """Handle chat completion requests (streaming and non-streaming)."""
     engine = request.app.state.engine
     agent = getattr(request.app.state, "agent", None)
-    model = request_body.model
     original_user_text = _last_user_text(request_body)
+    brain_analysis = None
+    effective_user_text = original_user_text
     if original_user_text:
         try:
+            from grandpa.core_ai_brain import process_user_message
             from grandpa.memory_context import remember_conversation
 
             remember_conversation("user", original_user_text)
+            brain_analysis = process_user_message(original_user_text)
+            effective_user_text = brain_analysis.effective_text
+            if effective_user_text != original_user_text:
+                for message in reversed(request_body.messages):
+                    if message.role == "user" and message.content:
+                        message.content = effective_user_text
+                        break
         except Exception:
             logging.getLogger("grandpa.server").debug(
-                "Conversation memory logging failed",
+                "Conversation brain/memory logging failed",
                 exc_info=True,
             )
+
+    ai_plan = _apply_ai_routing(engine, request_body, effective_user_text)
+    model = request_body.model
 
     # Inject memory context into messages before dispatching
     config = getattr(request.app.state, "config", None)
@@ -158,7 +228,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
 
     # Run complexity analysis on the last user message
     complexity_info = None
-    query_text_for_complexity = original_user_text
+    query_text_for_complexity = effective_user_text
     if query_text_for_complexity:
         try:
             from grandpa.learning.routing.complexity import (
@@ -187,13 +257,31 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             )
 
     if original_user_text:
+        try:
+            from grandpa.core_ai_brain import build_brain_context
+
+            if brain_analysis is not None:
+                request_body.messages.insert(
+                    0,
+                    ChatMessage(
+                        role="system",
+                        content=build_brain_context(brain_analysis),
+                    ),
+                )
+        except Exception:
+            logging.getLogger("grandpa.server").debug(
+                "Brain context injection failed",
+                exc_info=True,
+            )
+
         from grandpa.file_assistant import handle_file_command
         from grandpa.memory_context import handle_memory_command
         from grandpa.local_actions import handle_local_action
         from grandpa.task_scheduler import handle_scheduler_command
 
-        memory_result = handle_memory_command(original_user_text)
+        memory_result = handle_memory_command(effective_user_text)
         if not memory_result.should_fallback:
+            _record_brain_result(brain_analysis, memory_result)
             if request_body.stream:
                 return await _handle_local_action_stream(
                     model,
@@ -202,8 +290,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 )
             return _local_action_response(model, memory_result, complexity_info)
 
-        action_result = handle_local_action(original_user_text)
+        action_result = handle_local_action(effective_user_text)
         if not action_result.should_fallback:
+            _record_brain_result(brain_analysis, action_result)
             if request_body.stream:
                 return await _handle_local_action_stream(
                     model,
@@ -212,8 +301,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 )
             return _local_action_response(model, action_result, complexity_info)
 
-        file_result = handle_file_command(original_user_text)
+        file_result = handle_file_command(effective_user_text)
         if not file_result.should_fallback:
+            _record_brain_result(brain_analysis, file_result)
             if request_body.stream:
                 return await _handle_local_action_stream(
                     model,
@@ -222,8 +312,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 )
             return _local_action_response(model, file_result, complexity_info)
 
-        scheduler_result = handle_scheduler_command(original_user_text)
+        scheduler_result = handle_scheduler_command(effective_user_text)
         if not scheduler_result.should_fallback:
+            _record_brain_result(brain_analysis, scheduler_result)
             if request_body.stream:
                 return await _handle_local_action_stream(
                     model,
@@ -874,6 +965,40 @@ async def server_info(request: Request):
     }
 
 
+@router.get("/v1/ai/diagnostics")
+async def ai_diagnostics(request: Request, query: str = ""):
+    """Return local-first AI orchestration diagnostics."""
+    from grandpa.advanced_ai import ai_diagnostics as build_diagnostics
+
+    engine = getattr(request.app.state, "engine", None)
+    model = getattr(request.app.state, "model", "")
+    return build_diagnostics(engine=engine, model=model, query=query)
+
+
+@router.post("/v1/ai/plan")
+async def ai_plan(request: Request):
+    """Build a read-only plan for a user request without executing it."""
+    from grandpa.advanced_ai import build_plan
+
+    body = await request.json()
+    query = str(body.get("query", "")).strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="'query' field is required")
+    requested_model = str(body.get("model") or getattr(request.app.state, "model", "")).strip()
+    engine = getattr(request.app.state, "engine", None)
+    models = _available_engine_models(engine) if engine is not None else []
+    cloud_allowed = bool(body.get("cloud_allowed", False)) or any(
+        model.startswith(("gpt-", "o1-", "o3-", "o4-", "claude-", "gemini-", "openrouter/"))
+        for model in models
+    )
+    return build_plan(
+        query,
+        requested_model=requested_model,
+        available_models=models,
+        cloud_allowed=cloud_allowed,
+    ).to_dict()
+
+
 @router.get("/v1/personal-memory")
 async def personal_memory():
     """Return local personal memory and recent activity."""
@@ -920,12 +1045,61 @@ async def browser_snapshot_latest():
     return latest_browser_snapshot()
 
 
+@router.get("/v1/browser/diagnostics")
+async def browser_diagnostics():
+    """Return local-only browser adapter diagnostics."""
+    from grandpa.browser_control import execute_browser_action
+
+    result = execute_browser_action("diagnostics", "browser")
+    return {
+        "status": result.status,
+        "message": result.message,
+        "risk_level": result.risk_level,
+        "details": json.loads(result.target) if result.target.startswith("{") else {},
+        "context": result.context.to_dict() if result.context else {},
+    }
+
+
 @router.delete("/v1/browser/snapshot")
 async def browser_snapshot_clear():
     """Clear stored browser extension snapshots."""
     from grandpa.browser_control import clear_browser_snapshot
 
     return clear_browser_snapshot()
+
+
+@router.get("/v1/browser/command/next")
+async def browser_command_next(url: str = ""):
+    """Return the next localhost-only browser command for the visible page adapter."""
+    from grandpa.browser_control import next_browser_command
+
+    return next_browser_command(url)
+
+
+@router.post("/v1/browser/command/{command_id}/complete")
+async def browser_command_complete(command_id: int, request: Request):
+    """Mark a browser extension command as completed or failed."""
+    from grandpa.browser_control import complete_browser_command
+
+    body = await request.json()
+    return complete_browser_command(command_id, body)
+
+
+@router.get("/v1/screen/diagnostics")
+async def screen_awareness_diagnostics():
+    """Return local-only screen-awareness diagnostics for the HUD."""
+    from grandpa.screen_awareness import screen_diagnostics
+
+    return screen_diagnostics()
+
+
+@router.get("/v1/screen/context")
+async def screen_awareness_context():
+    """Return structured screen context without exposing it outside localhost."""
+    from grandpa.screen_awareness import describe_screen
+
+    context = describe_screen(include_ocr=True)
+    return context.to_dict()
 
 
 @router.post("/v1/personal-memory/search")
@@ -952,6 +1126,34 @@ async def file_assistant():
     return file_assistant_summary()
 
 
+@router.get("/v1/file-intelligence/diagnostics")
+async def file_intelligence_diagnostics():
+    from grandpa.document_intelligence import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/file-intelligence/search")
+async def file_intelligence_search(request: Request):
+    from grandpa.document_intelligence import search_documents
+
+    body = await request.json()
+    query = str(body.get("query", "")).strip()
+    if not query:
+        raise HTTPException(status_code=400, detail="'query' field is required")
+    result = search_documents(query)
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.post("/v1/file-intelligence/organize-plan")
+async def file_intelligence_organize_plan(request: Request):
+    from grandpa.document_intelligence import organization_plan
+
+    body = await request.json()
+    result = organization_plan(str(body.get("query", "")).strip(), dry_run=bool(body.get("dry_run", True)))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
 @router.post("/v1/file-assistant/search")
 async def file_assistant_search(request: Request):
     """Search safe local document folders."""
@@ -962,6 +1164,179 @@ async def file_assistant_search(request: Request):
     if not query:
         raise HTTPException(status_code=400, detail="'query' field is required")
     return search_files(query)
+
+
+@router.get("/v1/office/diagnostics")
+async def office_diagnostics():
+    from grandpa.office_productivity import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/office/report")
+async def office_report(request: Request):
+    from grandpa.office_productivity import generate_report
+
+    body = await request.json()
+    result = generate_report(str(body.get("title", "Report")), str(body.get("source_text", "")))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.post("/v1/office/presentation-outline")
+async def office_presentation_outline(request: Request):
+    from grandpa.office_productivity import create_presentation_outline
+
+    body = await request.json()
+    result = create_presentation_outline(str(body.get("topic", "Grandpa Assistant")), slides=int(body.get("slides", 6)))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.get("/v1/automation/diagnostics")
+async def smart_automation_diagnostics():
+    from grandpa.smart_automation import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/automation/workflows")
+async def smart_automation_create_workflow(request: Request):
+    from grandpa.smart_automation import create_workflow_from_text
+
+    body = await request.json()
+    text = str(body.get("text", "")).strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="'text' field is required")
+    result = create_workflow_from_text(text)
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.post("/v1/automation/workflows/{name}/simulate")
+async def smart_automation_simulate(name: str):
+    from grandpa.smart_automation import simulate_workflow
+
+    result = simulate_workflow(name)
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.get("/v1/developer/diagnostics")
+async def developer_diagnostics():
+    from grandpa.developer_assistant import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/developer/terminal-plan")
+async def developer_terminal_plan(request: Request):
+    from grandpa.developer_assistant import terminal_plan
+
+    body = await request.json()
+    command = str(body.get("command", "")).strip()
+    if not command:
+        raise HTTPException(status_code=400, detail="'command' field is required")
+    result = terminal_plan(command, dry_run=bool(body.get("dry_run", True)))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.get("/v1/security/diagnostics")
+async def security_diagnostics():
+    from grandpa.security_safety import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/security/suspicious-action")
+async def security_suspicious_action(request: Request):
+    from grandpa.security_safety import suspicious_action_score
+
+    body = await request.json()
+    return suspicious_action_score(str(body.get("text", "")))
+
+
+@router.get("/v1/mobile/diagnostics")
+async def mobile_diagnostics():
+    from grandpa.mobile_integration import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/mobile/pairing")
+async def mobile_pairing(request: Request):
+    from grandpa.mobile_integration import MobileBridgeStore
+
+    body = await request.json()
+    return MobileBridgeStore().create_pairing(str(body.get("name", "Android device")))
+
+
+@router.post("/v1/mobile/remote-command")
+async def mobile_remote_command(request: Request):
+    from grandpa.mobile_integration import plan_remote_command
+
+    body = await request.json()
+    result = plan_remote_command(str(body.get("command", "")), device_id=str(body.get("device_id", "")))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.get("/v1/communication/diagnostics")
+async def communication_diagnostics():
+    from grandpa.communication_integration import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/communication/reply-plan")
+async def communication_reply_plan(request: Request):
+    from grandpa.communication_integration import reply_plan
+
+    body = await request.json()
+    result = reply_plan(str(body.get("service", "gmail")), str(body.get("recipient", "")), str(body.get("intent", "")))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.get("/v1/real-world/diagnostics")
+async def real_world_diagnostics():
+    from grandpa.real_world_tasks import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/real-world/shopping-plan")
+async def real_world_shopping_plan(request: Request):
+    from grandpa.real_world_tasks import shopping_plan
+
+    body = await request.json()
+    result = shopping_plan(str(body.get("query", "")))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.get("/v1/iot/diagnostics")
+async def iot_diagnostics():
+    from grandpa.iot_smart_home import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/iot/discovery-plan")
+async def iot_discovery_plan(request: Request):
+    from grandpa.iot_smart_home import discovery_plan
+
+    body = await request.json()
+    result = discovery_plan(str(body.get("cidr", "192.168.1.0/24")))
+    return {"status": result.status, "message": result.message, **result.data}
+
+
+@router.get("/v1/future/diagnostics")
+async def future_diagnostics():
+    from grandpa.future_features import diagnostics
+
+    return diagnostics()
+
+
+@router.post("/v1/future/overlay-simulation")
+async def future_overlay_simulation():
+    from grandpa.future_features import overlay_simulation
+
+    result = overlay_simulation()
+    return {"status": result.status, "message": result.message, **result.data}
 
 
 @router.get("/v1/routines")

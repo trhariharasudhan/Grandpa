@@ -18,7 +18,7 @@ import {
   Brain,
   RefreshCw,
 } from 'lucide-react';
-import { useAppStore, type ThemeMode } from '../lib/store';
+import { useAppStore, type ThemeMode, type VoicePersonality } from '../lib/store';
 import { checkHealth, fetchSpeechHealth, getMemoryStats } from '../lib/api';
 import { isAutoUpdateDisabled, setAutoUpdateDisabled } from '../components/Desktop/UpdateChecker';
 
@@ -113,6 +113,13 @@ const themeOptions: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
+];
+
+const voicePersonalityOptions: { value: VoicePersonality; label: string }[] = [
+  { value: 'warm', label: 'Warm' },
+  { value: 'calm', label: 'Calm' },
+  { value: 'concise', label: 'Concise' },
+  { value: 'energetic', label: 'Energetic' },
 ];
 
 export function SettingsPage() {
@@ -559,11 +566,61 @@ export function SettingsPage() {
                 />
               </button>
             </SettingRow>
+            <SettingRow label="Background voice mode" description="Keep wake listening active while Grandpa is open">
+              <button
+                onClick={() => { updateSettings({ backgroundVoiceEnabled: !settings.backgroundVoiceEnabled, wakeWordEnabled: !settings.backgroundVoiceEnabled ? true : settings.wakeWordEnabled }); showSaved(); }}
+                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
+                style={{
+                  background: settings.backgroundVoiceEnabled ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
+                  style={{
+                    transform: settings.backgroundVoiceEnabled ? 'translateX(20px)' : 'translateX(0)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                />
+              </button>
+            </SettingRow>
+            <SettingRow label="Noise filtering" description="Ignore filler sounds and very low-confidence transcripts">
+              <button
+                onClick={() => { updateSettings({ voiceNoiseFiltering: !settings.voiceNoiseFiltering }); showSaved(); }}
+                className="relative w-11 h-6 rounded-full transition-colors cursor-pointer"
+                style={{
+                  background: settings.voiceNoiseFiltering ? 'var(--color-accent)' : 'var(--color-bg-tertiary)',
+                }}
+              >
+                <span
+                  className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full transition-transform bg-white"
+                  style={{
+                    transform: settings.voiceNoiseFiltering ? 'translateX(20px)' : 'translateX(0)',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                />
+              </button>
+            </SettingRow>
             {settings.wakeWordEnabled && (
               <div className="text-xs mt-2 px-1" style={{ color: 'var(--color-text-tertiary)' }}>
-                Wake mode uses browser speech recognition for the wake phrase and sends only recognized commands to Grandpa.
+                Wake mode uses browser speech recognition locally in Chrome/Edge and sends only recognized commands to Grandpa.
               </div>
             )}
+            <SettingRow label="Voice personality" description="Changes browser voice selection, rate, and pitch style">
+              <select
+                value={settings.voicePersonality}
+                onChange={(e) => { updateSettings({ voicePersonality: e.target.value as VoicePersonality }); showSaved(); }}
+                className="text-sm px-3 py-1.5 rounded-lg outline-none cursor-pointer"
+                style={{
+                  background: 'var(--color-bg-secondary)',
+                  color: 'var(--color-text)',
+                  border: '1px solid var(--color-border)',
+                }}
+              >
+                {voicePersonalityOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </SettingRow>
             <SettingRow label="Voice rate" description={`${settings.speechRate.toFixed(1)}x`}>
               <input
                 type="range"
@@ -583,6 +640,17 @@ export function SettingsPage() {
                 step="0.1"
                 value={settings.speechPitch}
                 onChange={(e) => { updateSettings({ speechPitch: parseFloat(e.target.value) }); showSaved(); }}
+                className="w-32 cursor-pointer accent-[var(--color-accent)]"
+              />
+            </SettingRow>
+            <SettingRow label="Conversation timeout" description={`${Math.round(settings.voiceSilenceTimeoutMs / 1000)}s`}>
+              <input
+                type="range"
+                min="4000"
+                max="20000"
+                step="1000"
+                value={settings.voiceSilenceTimeoutMs}
+                onChange={(e) => { updateSettings({ voiceSilenceTimeoutMs: parseInt(e.target.value) }); showSaved(); }}
                 className="w-32 cursor-pointer accent-[var(--color-accent)]"
               />
             </SettingRow>

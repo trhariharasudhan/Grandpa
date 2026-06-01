@@ -44,6 +44,7 @@ export function MicButton({ state, onClick, onStopSpeaking, disabled, reason, er
   const handleClick = () => {
     if (state === 'speaking') {
       onStopSpeaking?.();
+      onClick();
       return;
     }
     onClick();

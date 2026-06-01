@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Activity, Camera, ChevronDown, Cpu, Loader2, Search, Send, Sparkles, Square } from 'lucide-react';
-import { useAppStore, generateId } from '../../lib/store';
+import { useAppStore, generateId, type VoicePersonality } from '../../lib/store';
 import { streamChat, streamResearch } from '../../lib/sse';
 import { fetchRuntimeUsage, getBase } from '../../lib/api';
 import { listConnectors, getSyncStatus } from '../../lib/connectors-api';
@@ -80,6 +80,23 @@ function canSpeakText(text: string, shortRepliesOnly: boolean, force = false) {
   return text.length <= 260 && text.split(/\s+/).length <= 42;
 }
 
+const VOICE_PERSONALITY: Record<VoicePersonality, { rate: number; pitch: number; hint: RegExp }> = {
+  calm: { rate: 0.92, pitch: 0.94, hint: /calm|natural|default|zira|aria/i },
+  warm: { rate: 0.98, pitch: 1.04, hint: /aria|jenny|natural|female|google/i },
+  concise: { rate: 1.12, pitch: 0.98, hint: /david|guy|mark|natural|default/i },
+  energetic: { rate: 1.08, pitch: 1.14, hint: /aria|jenny|google|natural/i },
+};
+
+function chooseBrowserVoice(personality: VoicePersonality): SpeechSynthesisVoice | undefined {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return undefined;
+  const voices = window.speechSynthesis.getVoices();
+  const english = voices.filter((voice) => /^en([-_]|$)/i.test(voice.lang));
+  return english.find((voice) => VOICE_PERSONALITY[personality].hint.test(voice.name))
+    || english.find((voice) => voice.localService)
+    || english[0]
+    || voices[0];
+}
+
 function speakBrowserResponse(
   text: string | undefined,
   options: {
@@ -87,6 +104,7 @@ function speakBrowserResponse(
     shortRepliesOnly: boolean;
     rate: number;
     pitch: number;
+    personality: VoicePersonality;
     force?: boolean;
     onStart?: () => void;
     onEnd?: () => void;
@@ -95,9 +113,12 @@ function speakBrowserResponse(
   if (!options.enabled || !text || typeof window === 'undefined' || !('speechSynthesis' in window)) return false;
   if (!canSpeakText(text, options.shortRepliesOnly, options.force)) return false;
   try {
+    const style = VOICE_PERSONALITY[options.personality] || VOICE_PERSONALITY.warm;
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = options.rate;
-    utterance.pitch = options.pitch;
+    utterance.rate = Math.max(0.6, Math.min(1.6, options.rate * style.rate));
+    utterance.pitch = Math.max(0.6, Math.min(1.6, options.pitch * style.pitch));
+    const voice = chooseBrowserVoice(options.personality);
+    if (voice) utterance.voice = voice;
     utterance.onstart = options.onStart || null;
     utterance.onend = options.onEnd || null;
     utterance.onerror = options.onEnd || null;
@@ -129,6 +150,10 @@ export function InputArea() {
   const speechRate = useAppStore((s) => s.settings.speechRate);
   const speechPitch = useAppStore((s) => s.settings.speechPitch);
   const wakeWordEnabled = useAppStore((s) => s.settings.wakeWordEnabled);
+  const backgroundVoiceEnabled = useAppStore((s) => s.settings.backgroundVoiceEnabled);
+  const voiceNoiseFiltering = useAppStore((s) => s.settings.voiceNoiseFiltering);
+  const voicePersonality = useAppStore((s) => s.settings.voicePersonality);
+  const voiceSilenceTimeoutMs = useAppStore((s) => s.settings.voiceSilenceTimeoutMs);
   const updateSettings = useAppStore((s) => s.updateSettings);
   const maxTokens = useAppStore((s) => s.settings.maxTokens);
   const temperature = useAppStore((s) => s.settings.temperature);
@@ -143,7 +168,18 @@ export function InputArea() {
   const setDeepResearch = useAppStore((s) => s.setDeepResearch);
   const corpusSync = useResearchCorpusSync(deepResearch);
 
-  const { state: speechState, error: speechError, available: speechAvailable, mode: speechMode, startRecording, stopRecording } = useSpeech();
+  const {
+    state: speechState,
+    error: speechError,
+    available: speechAvailable,
+    mode: speechMode,
+    diagnostics: speechDiagnostics,
+    startRecording,
+    stopRecording,
+  } = useSpeech({
+    noiseFiltering: voiceNoiseFiltering,
+    silenceTimeoutMs: voiceSilenceTimeoutMs,
+  });
 
   useEffect(() => {
     if (voiceStatus === 'speaking' || voiceStatus === 'thinking') return;
@@ -341,7 +377,7 @@ export function InputArea() {
             accumulatedContent += ev.text;
             setStreamState({ content: accumulatedContent, phase: '' });
             const now = Date.now();
-            if (now - lastFlush >= 80) {
+            if (now - lastFlush >= 50) {
               updateLastAssistant(
                 convId,
                 accumulatedContent,
@@ -452,6 +488,7 @@ export function InputArea() {
                 shortRepliesOnly: speechShortRepliesOnly,
                 rate: speechRate,
                 pitch: speechPitch,
+                personality: voicePersonality,
                 force: true,
                 onStart: () => setVoiceStatus('speaking'),
                 onEnd: () => setVoiceStatus('idle'),
@@ -467,7 +504,7 @@ export function InputArea() {
               setStreamState({ content: accumulatedContent, phase: '' });
 
               const now = Date.now();
-              if (now - lastFlush >= 80) {
+              if (now - lastFlush >= 50) {
                 updateLastAssistant(
                   convId,
                   accumulatedContent,
@@ -556,6 +593,7 @@ export function InputArea() {
           shortRepliesOnly: speechShortRepliesOnly,
           rate: speechRate,
           pitch: speechPitch,
+          personality: voicePersonality,
           onStart: () => setVoiceStatus('speaking'),
           onEnd: () => setVoiceStatus('idle'),
         });
@@ -565,6 +603,7 @@ export function InputArea() {
           shortRepliesOnly: speechShortRepliesOnly,
           rate: speechRate,
           pitch: speechPitch,
+          personality: voicePersonality,
           onStart: () => setVoiceStatus('speaking'),
           onEnd: () => setVoiceStatus('idle'),
         });
@@ -598,6 +637,7 @@ export function InputArea() {
     speechShortRepliesOnly,
     speechRate,
     speechPitch,
+    voicePersonality,
   ]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -618,6 +658,8 @@ export function InputArea() {
           setInput(text);
           setVoiceStatus('thinking');
           await sendMessage(text, { fromVoice: true });
+        } else {
+          setVoiceStatus('idle');
         }
       } catch {
         // Error is captured in useSpeech
@@ -634,8 +676,8 @@ export function InputArea() {
       && wakeWordEnabled
       && !streamState.isStreaming
       && speechState === 'idle'
-      && voiceStatus !== 'speaking'
-      && voiceStatus !== 'thinking',
+      && voiceStatus !== 'thinking'
+      && (backgroundVoiceEnabled || voiceStatus !== 'speaking'),
     onWake: () => setVoiceStatus('active-listening'),
     onCommand: (text) => {
       const command = text.trim();
@@ -644,6 +686,8 @@ export function InputArea() {
       setVoiceStatus('thinking');
       void sendMessage(command, { fromVoice: true });
     },
+    timeoutMs: voiceSilenceTimeoutMs,
+    noiseFiltering: voiceNoiseFiltering,
   });
 
   useEffect(() => {
@@ -653,6 +697,12 @@ export function InputArea() {
       setVoiceStatus(wake.state);
     }
   }, [wake.state, wakeWordEnabled, speechEnabled, voiceStatus]);
+
+  useEffect(() => {
+    if (voiceStatus !== 'thinking') return;
+    const timeout = window.setTimeout(() => setVoiceStatus('idle'), Math.max(15000, voiceSilenceTimeoutMs * 2));
+    return () => window.clearTimeout(timeout);
+  }, [voiceStatus, voiceSilenceTimeoutMs]);
 
   const prepareScreenAnalysis = () => {
     setInput('What is on my screen?');
@@ -816,6 +866,14 @@ export function InputArea() {
               <span>&middot;</span>
               <span style={{ color: wake.state === 'error' ? 'var(--color-error)' : 'var(--color-accent-amber)' }}>
                 Wake: {voiceStatus === 'speaking' ? 'speaking' : wake.state === 'wake-listening' ? 'sleeping' : wake.state === 'active-listening' ? 'listening' : wake.state}
+              </span>
+            </>
+          )}
+          {speechEnabled && (
+            <>
+              <span>&middot;</span>
+              <span title={`Permission: ${speechDiagnostics.permission}; filtered: ${speechDiagnostics.rejectedNoiseCount}`}>
+                {voicePersonality} voice
               </span>
             </>
           )}

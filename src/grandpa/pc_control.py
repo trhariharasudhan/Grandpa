@@ -60,6 +60,14 @@ LOW_RISK_ACTIONS = {
     "clipboard_read",
     "clipboard_write",
     "clipboard_clear",
+    "clipboard_inspect",
+    "clipboard_history",
+    "list_monitors",
+    "monitor_info",
+    "active_process",
+    "list_processes",
+    "desktop_summary",
+    "pc_diagnostics",
     "file_create",
     "browser_context",
     "browser_tabs",
@@ -70,6 +78,9 @@ LOW_RISK_ACTIONS = {
     "browser_open",
     "browser_search",
     "browser_new_tab",
+    "browser_diagnostics",
+    "browser_media",
+    "browser_task",
 }
 MEDIUM_RISK_ACTIONS = {
     "close_app",
@@ -86,11 +97,16 @@ MEDIUM_RISK_ACTIONS = {
     "mouse_move",
     "mouse_click",
     "mouse_scroll",
+    "mouse_drag",
+    "desktop_navigate",
     "browser_click",
     "browser_focus",
     "browser_back",
     "browser_forward",
     "browser_reload",
+    "browser_form_fill",
+    "browser_download",
+    "browser_whatsapp",
 }
 HIGH_RISK_ACTIONS = {
     "file_delete",
@@ -413,11 +429,18 @@ def run_pc_control_maintenance() -> dict[str, Any]:
 
 def get_pc_control_runtime_health() -> dict[str, Any]:
     summary = _LAST_MAINTENANCE_SUMMARY or run_pc_control_maintenance()
+    try:
+        from grandpa.desktop_context import pc_control_diagnostics
+
+        diagnostics = pc_control_diagnostics()
+    except Exception as exc:
+        diagnostics = {"error": exc.__class__.__name__}
     return {
         "storage": summary.get("storage", {}),
         "retention": summary.get("retention", load_retention_policy()),
         "maintenance": summary,
         "counts": _approval_counts_by_status(),
+        "diagnostics": diagnostics,
     }
 
 
@@ -507,6 +530,10 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
             return _execute_brightness(request, action)
         if action.startswith("clipboard_"):
             return _execute_clipboard(request, action)
+        if action in {"list_monitors", "monitor_info"}:
+            return _execute_monitor(request, action)
+        if action in {"active_process", "list_processes", "desktop_summary", "pc_diagnostics"}:
+            return _execute_desktop_context(request, action)
         if action.startswith("file_"):
             return _execute_file(request, action)
         if action.startswith("keyboard_") or action.startswith("mouse_"):
@@ -631,11 +658,77 @@ def _execute_brightness(request: LocalActionRequest, action: str) -> LocalAction
     return LocalActionResponse(True, None, "completed", f"Brightness set to {value}%.", False, "LOW", {"brightness": value})
 
 
+def _execute_monitor(request: LocalActionRequest, action: str) -> LocalActionResponse:
+    from grandpa.desktop_context import list_monitors
+
+    result = list_monitors()
+    monitors = result.evidence.get("monitors", [])
+    if action == "monitor_info" and request.target:
+        target = str(request.target).lower().strip()
+        monitors = [
+            monitor for monitor in monitors
+            if target in {str(monitor.get("id", "")).lower(), "primary" if monitor.get("primary") else ""}
+        ]
+    ok = result.supported and (action == "list_monitors" or bool(monitors))
+    message = result.message if action == "list_monitors" else (
+        f"Found monitor {request.target}." if monitors else f"I could not find monitor {request.target}."
+    )
+    return LocalActionResponse(
+        ok=ok,
+        action_id=None,
+        status="completed" if ok else ("unsupported" if not result.supported else "failed"),
+        message=message,
+        approval_required=False,
+        risk_level="LOW",
+        evidence={**result.evidence, "monitors": monitors},
+        error=None if ok else ("unsupported" if not result.supported else "monitor_not_found"),
+    )
+
+
+def _execute_desktop_context(request: LocalActionRequest, action: str) -> LocalActionResponse:
+    from grandpa.desktop_context import (
+        desktop_session_summary,
+        get_active_process,
+        list_processes,
+        pc_control_diagnostics,
+    )
+
+    if action == "active_process":
+        result = get_active_process()
+    elif action == "list_processes":
+        result = list_processes(int(request.args.get("limit", 50)))
+    elif action == "desktop_summary":
+        result = desktop_session_summary()
+    else:
+        diagnostics = pc_control_diagnostics()
+        return LocalActionResponse(
+            ok=True,
+            action_id=None,
+            status="completed",
+            message="PC control diagnostics are ready.",
+            approval_required=False,
+            risk_level="LOW",
+            evidence=diagnostics,
+        )
+    return LocalActionResponse(
+        ok=result.supported,
+        action_id=None,
+        status="completed" if result.supported else "unsupported",
+        message=result.message,
+        approval_required=False,
+        risk_level="LOW",
+        evidence=result.evidence,
+        error=None if result.supported else "unsupported",
+    )
+
+
 def _execute_clipboard(request: LocalActionRequest, action: str) -> LocalActionResponse:
     import pyperclip
+    from grandpa.desktop_context import inspect_clipboard_text, read_clipboard_history, record_clipboard_metadata
 
     if action == "clipboard_read":
         text = pyperclip.paste()
+        metadata = record_clipboard_metadata(text, source="read")
         return LocalActionResponse(
             True,
             None,
@@ -643,14 +736,33 @@ def _execute_clipboard(request: LocalActionRequest, action: str) -> LocalActionR
             "Clipboard read.",
             False,
             "LOW",
-            {"clipboard_text": text, "characters": len(text)},
+            {"clipboard_text": text, **metadata},
         )
     if action == "clipboard_write":
         text = str(request.args.get("content", request.target))
         pyperclip.copy(text)
-        return LocalActionResponse(True, None, "completed", "Clipboard updated.", False, "LOW", {"characters": len(text)})
+        metadata = record_clipboard_metadata(text, source="write")
+        return LocalActionResponse(True, None, "completed", "Clipboard updated.", False, "LOW", metadata)
+    if action == "clipboard_inspect":
+        text = pyperclip.paste()
+        metadata = inspect_clipboard_text(text)
+        record_clipboard_metadata(text, source="inspect")
+        return LocalActionResponse(True, None, "completed", "Clipboard inspected.", False, "LOW", metadata)
+    if action == "clipboard_history":
+        result = read_clipboard_history(int(request.args.get("limit", 20)))
+        return LocalActionResponse(
+            result.supported,
+            None,
+            "completed" if result.supported else "failed",
+            result.message,
+            False,
+            "LOW",
+            result.evidence,
+            None if result.supported else "clipboard_history_unavailable",
+        )
     pyperclip.copy("")
-    return LocalActionResponse(True, None, "completed", "Clipboard cleared.", False, "LOW", {"cleared": True})
+    metadata = record_clipboard_metadata("", source="clear")
+    return LocalActionResponse(True, None, "completed", "Clipboard cleared.", False, "LOW", {"cleared": True, **metadata})
 
 
 def _execute_file(request: LocalActionRequest, action: str) -> LocalActionResponse:
@@ -719,6 +831,29 @@ def _execute_input(request: LocalActionRequest, action: str) -> LocalActionRespo
     if action == "mouse_scroll":
         pyautogui.scroll(int(request.args.get("amount", request.target or 0)))
         return LocalActionResponse(True, None, "completed", "Scrolled mouse.", False, "MEDIUM", {"amount": request.args.get("amount", request.target)})
+    if action == "mouse_drag":
+        start_x = int(request.args.get("start_x", request.args.get("x", 0)))
+        start_y = int(request.args.get("start_y", request.args.get("y", 0)))
+        end_x = int(request.args.get("end_x", request.args.get("to_x", 0)))
+        end_y = int(request.args.get("end_y", request.args.get("to_y", 0)))
+        duration = max(0.1, min(2.0, float(request.args.get("duration", 0.25))))
+        pyautogui.moveTo(start_x, start_y)
+        pyautogui.dragTo(end_x, end_y, duration=duration, button=str(request.args.get("button", "left")))
+        return LocalActionResponse(
+            True,
+            None,
+            "completed",
+            "Dragged the mouse.",
+            False,
+            "MEDIUM",
+            {"start": [start_x, start_y], "end": [end_x, end_y], "duration": duration},
+        )
+    if action == "desktop_navigate":
+        direction = str(request.args.get("direction", request.target)).lower()
+        if direction not in {"up", "down", "left", "right"}:
+            return _blocked("I blocked this navigation action for safety.")
+        pyautogui.press(direction)
+        return LocalActionResponse(True, None, "completed", f"Moved selection {direction}.", False, "MEDIUM", {"direction": direction})
     return _blocked("I blocked this automation action for safety.")
 
 
@@ -754,11 +889,17 @@ def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionRes
         "browser_open": ("open", request.target),
         "browser_search": ("search", request.target),
         "browser_new_tab": ("new_tab", request.target or "about:blank"),
+        "browser_diagnostics": ("diagnostics", "browser"),
+        "browser_media": ("media", request.target),
+        "browser_task": ("task", request.target),
         "browser_click": ("click", request.target),
         "browser_focus": ("focus_search", request.target or "visible"),
         "browser_back": ("back", "visible"),
         "browser_forward": ("forward", "visible"),
         "browser_reload": ("reload", "visible"),
+        "browser_form_fill": ("form_fill", request.target),
+        "browser_download": ("download", request.target),
+        "browser_whatsapp": ("whatsapp", request.target),
     }
     browser_action = mapping.get(action)
     if browser_action is None:
@@ -784,6 +925,7 @@ def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionRes
         ),
         evidence={
             "browser": result.context.to_dict() if result.context else {},
+            "details": _browser_result_details(result.target),
             "visible_only": True,
         },
         error=None if status == "completed" else result.status,
@@ -811,7 +953,32 @@ def _preflight_guard(request: LocalActionRequest, risk: RiskLevel) -> LocalActio
                 )
     if action == "file_permanent_delete":
         return _blocked("Permanent delete is blocked by Grandpa's safety policy.")
+    if action in {"keyboard_type", "keyboard_hotkey", "mouse_click", "mouse_drag"}:
+        try:
+            from grandpa.desktop_context import active_window_is_protected
+
+            if active_window_is_protected():
+                return LocalActionResponse(
+                    ok=False,
+                    action_id=None,
+                    status="blocked",
+                    message="I blocked this automation action because the active window appears sensitive.",
+                    approval_required=False,
+                    risk_level="HIGH",
+                    evidence={"protected_window": True},
+                    error="protected_window",
+                )
+        except Exception:
+            pass
     return None
+
+
+def _browser_result_details(target: str) -> dict[str, Any]:
+    try:
+        value = json.loads(target)
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def _dry_run_message(request: LocalActionRequest, risk: RiskLevel) -> str:

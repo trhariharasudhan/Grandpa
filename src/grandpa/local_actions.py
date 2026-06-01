@@ -45,6 +45,7 @@ ActionKind = Literal[
     "automation",
     "window",
     "app_lookup",
+    "pc_control",
     "blocked",
 ]
 
@@ -389,6 +390,12 @@ def _confirmation_summary(command: str, result: LocalActionResult) -> str:
             return "Confirmation required before clicking a visible browser element."
         if result.target.startswith("focus_search|"):
             return "Confirmation required before focusing a browser input."
+        if result.target.startswith("form_fill|"):
+            return "Confirmation required before filling a browser field."
+        if result.target.startswith("download|"):
+            return "Confirmation required before starting a browser download."
+        if result.target.startswith("whatsapp|message"):
+            return "Confirmation required before sending a WhatsApp Web message."
         return "Confirmation required before controlling the visible browser."
     return CONFIRMATION_PREFIX
 
@@ -422,6 +429,10 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
         ("focus_search|", "back|", "forward|", "reload|")
     ):
         return "requires_confirmation"
+    if result.kind == "browser" and result.target.startswith(
+        ("form_fill|", "download|", "whatsapp|message")
+    ):
+        return "requires_confirmation"
     if result.kind in {
         "app",
         "folder",
@@ -433,6 +444,7 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
         "screenshot",
         "window",
         "app_lookup",
+        "pc_control",
     }:
         return "allowed"
     if result.kind == "blocked":
@@ -500,6 +512,10 @@ def _parse_safe_action(command: str) -> LocalActionResult:
     automation_result = _parse_automation_action(command)
     if automation_result.status != "no_match":
         return automation_result
+
+    pc_control_result = _parse_pc_control_action(command)
+    if pc_control_result.status != "no_match":
+        return pc_control_result
 
     if command in {"what time is it", "what's the time", "time", "current time"}:
         now = datetime.now().strftime("%I:%M %p").lstrip("0")
@@ -601,6 +617,37 @@ def _parse_safe_action(command: str) -> LocalActionResult:
         )
 
     return LocalActionResult(status="no_match")
+
+
+def _parse_pc_control_action(command: str) -> LocalActionResult:
+    mapping = {
+        "list monitors": ("list_monitors", "monitors"),
+        "show monitors": ("list_monitors", "monitors"),
+        "detect monitors": ("list_monitors", "monitors"),
+        "what monitors are connected": ("list_monitors", "monitors"),
+        "what process is active": ("active_process", "active"),
+        "what app is active": ("active_process", "active"),
+        "show active process": ("active_process", "active"),
+        "list processes": ("list_processes", "processes"),
+        "show running processes": ("list_processes", "processes"),
+        "desktop summary": ("desktop_summary", "desktop"),
+        "summarize desktop": ("desktop_summary", "desktop"),
+        "pc control diagnostics": ("pc_diagnostics", "diagnostics"),
+        "show pc diagnostics": ("pc_diagnostics", "diagnostics"),
+        "inspect clipboard": ("clipboard_inspect", "clipboard"),
+        "clipboard history": ("clipboard_history", "clipboard"),
+        "show clipboard history": ("clipboard_history", "clipboard"),
+    }
+    if command not in mapping:
+        return LocalActionResult(status="no_match")
+    action_type, target = mapping[command]
+    return LocalActionResult(
+        status="handled",
+        kind="pc_control",
+        target=f"{action_type}|{target}",
+        message="Checking PC control context.",
+        tts_text="Checking PC control context.",
+    )
 
 
 def _parse_automation_action(command: str) -> LocalActionResult:
@@ -809,6 +856,20 @@ def _parse_screen_action(command: str) -> LocalActionResult:
         )
 
     if command in {
+        "screen diagnostics",
+        "show screen diagnostics",
+        "visual diagnostics",
+        "screen awareness diagnostics",
+    }:
+        return LocalActionResult(
+            status="handled",
+            kind="screen",
+            target="screen_diagnostics",
+            message="Checking screen-awareness diagnostics.",
+            tts_text="Checking screen diagnostics.",
+        )
+
+    if command in {
         "what window is open",
         "what window is open right now",
         "what app is open",
@@ -865,6 +926,75 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             target="tabs|recent",
             message="Checking recent browser tabs.",
             tts_text="Checking recent browser tabs.",
+        )
+
+    if command in {"browser diagnostics", "show browser diagnostics", "browser status"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="diagnostics|browser",
+            message="Checking browser diagnostics.",
+            tts_text="Checking browser diagnostics.",
+        )
+
+    if command in {"play video", "pause video", "play youtube", "pause youtube", "mute video", "unmute video"}:
+        action = command.replace("youtube", "video")
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target=f"media|{action}",
+            message=f"{action.title()}.",
+            tts_text=f"{action.title()}.",
+        )
+
+    fill_match = re.fullmatch(r"fill (?:the )?(.+?) (?:field )?with (.+)", command)
+    if fill_match:
+        field = fill_match.group(1).strip()
+        value = fill_match.group(2).strip()
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target=f"form_fill|{field}={value}",
+            message=f"Fill {field}.",
+            tts_text=f"Fill {field}.",
+        )
+
+    if command in {"download this file", "download selected file", "download this page file"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="download|visible selection",
+            message="Prepare browser download.",
+            tts_text="Prepare browser download.",
+        )
+
+    if command in {"open whatsapp", "open whatsapp web"}:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target="whatsapp|open",
+            message="Opening WhatsApp Web.",
+            tts_text="Opening WhatsApp Web.",
+        )
+
+    whatsapp_match = re.fullmatch(r"(?:send|message) (.+?) on whatsapp(?: web)?", command)
+    if whatsapp_match:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target=f"whatsapp|message {whatsapp_match.group(1).strip()}",
+            message="Prepare WhatsApp Web message.",
+            tts_text="Prepare WhatsApp Web message.",
+        )
+
+    task_match = re.fullmatch(r"(?:remember|continue|track) browser task (.+)", command)
+    if task_match:
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target=f"task|{task_match.group(1).strip()}",
+            message="Recording browser task context.",
+            tts_text="Recording browser task context.",
         )
 
     if command in {
@@ -1084,7 +1214,7 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         )
 
     if result.kind == "screen":
-        from grandpa.screen_awareness import describe_screen, get_active_window_info
+        from grandpa.screen_awareness import describe_screen, get_active_window_info, screen_diagnostics
 
         if result.target == "active_window":
             info = get_active_window_info()
@@ -1105,6 +1235,28 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
                 target=result.target,
                 message=info.message,
                 tts_text=info.message,
+            )
+
+        if result.target == "screen_diagnostics":
+            diagnostics = screen_diagnostics()
+            screenshot = diagnostics.get("screenshot", {})
+            ocr = diagnostics.get("ocr", {})
+            active = diagnostics.get("active_window", {})
+            message = (
+                "Screen awareness diagnostics:\n"
+                f"- Platform: {diagnostics.get('platform')}\n"
+                f"- Active window: {'ready' if active.get('supported') else 'unavailable'}\n"
+                f"- Screenshot backends: {', '.join(screenshot.get('backends') or []) or 'none'}\n"
+                f"- OCR backend: {ocr.get('backend') or 'unavailable'}\n"
+                f"- Visible windows: {diagnostics.get('visible_window_count', 0)}\n"
+                "- Local only: yes"
+            )
+            return LocalActionResult(
+                status="handled" if diagnostics.get("supported") else "unsupported",
+                kind="screen",
+                target=result.target,
+                message=message,
+                tts_text="Screen diagnostics are ready.",
             )
 
         info = describe_screen(include_ocr=True)
@@ -1162,6 +1314,20 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
             target=result.target,
             message=window_result.message,
             tts_text=window_result.message,
+            permission=result.permission,
+        )
+
+    if result.kind == "pc_control":
+        from grandpa.pc_control import run_local_action
+
+        action_type, _, target = result.target.partition("|")
+        response = run_local_action({"action_type": action_type, "target": target})
+        return LocalActionResult(
+            status="handled" if response.ok else response.status if response.status in {"blocked", "unsupported"} else "error",
+            kind="pc_control",
+            target=result.target,
+            message=response.message,
+            tts_text=response.message,
             permission=result.permission,
         )
 
@@ -1252,6 +1418,7 @@ def _log_attempt(command: str, result: LocalActionResult) -> None:
             "screenshot",
             "automation",
             "window",
+            "pc_control",
         }:
             action = result.kind
         record_activity(

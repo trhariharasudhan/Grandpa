@@ -19,6 +19,8 @@ import {
   FolderOpen,
   Workflow,
   ShieldCheck,
+  Globe2,
+  Sparkles,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -58,6 +60,8 @@ export function Sidebar() {
     { path: '/files', icon: FolderOpen, label: 'Files' },
     { path: '/routines', icon: Workflow, label: 'Routines' },
     { path: '/safety', icon: ShieldCheck, label: 'Safety' },
+    { path: '/browser', icon: Globe2, label: 'Browser' },
+    { path: '/capabilities', icon: Sparkles, label: 'Capabilities' },
     { path: '/agents', icon: Bot, label: 'Agents' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },

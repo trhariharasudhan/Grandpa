@@ -257,6 +257,12 @@ class MemoryStore:
             confidence = min(1.0, confidence + category_hint * 0.12)
             if inferred_categories and not category_hint and not direct:
                 confidence *= 0.45
+            try:
+                from grandpa.core_ai_brain import BrainStore
+
+                confidence = min(1.0, confidence + BrainStore().habit_score(haystack))
+            except Exception:
+                pass
             if confidence >= min_confidence or direct or overlap >= 2:
                 enriched = dict(item)
                 enriched["score"] = round(confidence, 4)
@@ -434,6 +440,12 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
         "what's my project name",
     }
     if lower in project_questions:
+        return _recall_specific(store, "project", "project", "I do not know your project yet.")
+
+    if "project" in lower and (
+        re.search(r"[\u0B80-\u0BFF]", original)
+        or any(word in lower for word in {"enna", "yenna", "my", "namma"})
+    ):
         return _recall_specific(store, "project", "project", "I do not know your project yet.")
 
     if _looks_like_memory_recall(original):

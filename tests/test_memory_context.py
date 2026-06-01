@@ -63,6 +63,16 @@ def test_semantic_recall_project_without_exact_words(tmp_path):
     assert "confidence" in result.message
 
 
+def test_mixed_tamil_english_project_recall(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember my project is Grandpa", store=store)
+
+    result = handle_memory_command("Grandpa என்ன project?", store=store)
+
+    assert result.status == "handled"
+    assert result.message == "Your project is Grandpa."
+
+
 def test_semantic_recall_editor_preference(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember I use VS Code", store=store)

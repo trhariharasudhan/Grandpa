@@ -141,6 +141,12 @@ def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
             timeout=120,
         ),
         ValidationStep(
+            "capability foundations",
+            ["uv", "run", "python", "-c", _CAPABILITY_DIAGNOSTICS],
+            timeout=120,
+            expected_text="capabilities ok",
+        ),
+        ValidationStep(
             "routine reminder",
             ["uv", "run", "grandpa", "ask", "remind me every hour to drink water"],
             timeout=120,
@@ -225,6 +231,18 @@ _LOCAL_ACTION_DRY_RUN = (
     "from grandpa.local_actions import handle_local_action; "
     "result = handle_local_action('open notepad', execute=False); "
     "print(result.status)"
+)
+
+_CAPABILITY_DIAGNOSTICS = (
+    "from grandpa import communication_integration, future_features, iot_smart_home, "
+    "mobile_integration, real_world_tasks; "
+    "checks=[mobile_integration.diagnostics()['status'], "
+    "communication_integration.diagnostics()['status'], "
+    "real_world_tasks.diagnostics()['status'], "
+    "iot_smart_home.diagnostics()['status'], "
+    "future_features.diagnostics()['status']]; "
+    "assert all(item == 'ready' for item in checks), checks; "
+    "print('capabilities ok')"
 )
 
 

@@ -120,3 +120,5 @@ def test_local_action_health_endpoint(client: TestClient):
     assert body["retention"]["approval_retention_days"] == 30
     assert body["maintenance"]["cleanup_completed"] is True
     assert "pending" in body["counts"]
+    assert "diagnostics" in body
+    assert "clipboard" in body["diagnostics"]

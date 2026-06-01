@@ -123,6 +123,25 @@ def test_browser_click_requires_confirmation():
     assert result.pending_action
 
 
+@pytest.mark.parametrize(
+    ("command", "target", "message_part"),
+    [
+        ("fill search with python", "form_fill|search=python", "filling a browser field"),
+        ("download this file", "download|visible selection", "browser download"),
+        ("send hello on whatsapp", "whatsapp|message hello", "WhatsApp Web message"),
+    ],
+)
+def test_browser_workflow_actions_require_confirmation(command, target, message_part):
+    result = handle_local_action(command, execute=False)
+
+    assert result.status == "requires_confirmation"
+    assert result.kind == "browser"
+    assert result.target == target
+    assert result.permission == "requires_confirmation"
+    assert result.pending_action
+    assert message_part in result.message
+
+
 def test_browser_high_risk_click_is_blocked():
     result = local_actions._with_permission(
         "click checkout",
@@ -145,6 +164,14 @@ def test_screen_question_is_recognized_without_execution():
     assert result.status == "handled"
     assert result.kind == "screen"
     assert result.target == "screen_context"
+
+
+def test_screen_diagnostics_command_is_recognized_without_execution():
+    result = handle_local_action("screen diagnostics", execute=False)
+
+    assert result.status == "handled"
+    assert result.kind == "screen"
+    assert result.target == "screen_diagnostics"
 
 
 def test_screenshot_command_is_unsupported_off_windows(monkeypatch):

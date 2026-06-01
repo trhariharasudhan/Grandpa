@@ -26,7 +26,7 @@ MAX_SCAN_FILES = 5000
 MAX_READ_CHARS = 12000
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", "build", "cache", ".cache"}
 TEXT_EXTENSIONS = {".txt", ".md", ".markdown", ".log", ".csv", ".json", ".toml", ".yaml", ".yml"}
-DOCUMENT_EXTENSIONS = TEXT_EXTENSIONS | {".pdf"}
+DOCUMENT_EXTENSIONS = TEXT_EXTENSIONS | {".pdf", ".docx", ".xlsx", ".pptx"}
 
 
 @dataclass(frozen=True)
@@ -114,6 +114,26 @@ def handle_file_command(text: str, *, store: FileAssistantStore | None = None) -
     if command in {"find pdf files", "show pdf files", "search pdf files"}:
         return _find_files("pdf", store)
 
+    match = re.fullmatch(r"find (?:excel|xlsx|spreadsheet|word|docx|powerpoint|pptx|resume|invoice)(?: files| sheets| documents)?(?: about (.+))?", command)
+    if match:
+        query = match.group(1) or command.replace("find ", "")
+        return _document_search(query, store)
+
+    match = re.fullmatch(r"show invoices from last month", command)
+    if match:
+        return _document_search("invoices last month", store)
+
+    if command in {"file intelligence diagnostics", "document diagnostics", "file diagnostics"}:
+        return _document_diagnostics()
+
+    match = re.fullmatch(r"suggest (?:file )?renames(?: for (.+))?", command)
+    if match:
+        return _rename_suggestions(match.group(1) or "")
+
+    match = re.fullmatch(r"organize files(?: about (.+))?", command)
+    if match:
+        return _organization_dry_run(match.group(1) or "")
+
     match = re.fullmatch(r"search files about (.+)", command)
     if match:
         return _search_files(match.group(1).strip(), store)
@@ -162,6 +182,43 @@ def file_assistant_summary() -> dict[str, Any]:
 def search_files(query: str) -> dict[str, Any]:
     result = _search_files(query, FileAssistantStore())
     return {"message": result.message, "status": result.status}
+
+
+def _document_search(query: str, store: FileAssistantStore) -> FileAssistantResult:
+    from grandpa.document_intelligence import search_documents
+
+    result = search_documents(query)
+    store.record("document_search", query, result.status)
+    return FileAssistantResult(result.status, "file", query, result.message, "I searched your local documents.")
+
+
+def _document_diagnostics() -> FileAssistantResult:
+    from grandpa.document_intelligence import diagnostics
+
+    data = diagnostics()
+    counts = ", ".join(f"{key}: {value}" for key, value in sorted(data["type_counts"].items())) or "none indexed yet"
+    message = (
+        "File intelligence diagnostics:\n"
+        f"- Supported: {', '.join(data['supported_types'])}\n"
+        f"- Indexed documents: {data['indexed_documents']}\n"
+        f"- Type counts: {counts}\n"
+        "- Local only: yes"
+    )
+    return FileAssistantResult("handled", "file", "diagnostics", message, "File diagnostics are ready.")
+
+
+def _rename_suggestions(query: str) -> FileAssistantResult:
+    from grandpa.document_intelligence import suggest_renames
+
+    result = suggest_renames(query)
+    return FileAssistantResult(result.status, "file", "rename_suggestions", result.message, "Prepared rename suggestions.")
+
+
+def _organization_dry_run(query: str) -> FileAssistantResult:
+    from grandpa.document_intelligence import organization_plan
+
+    result = organization_plan(query, dry_run=True)
+    return FileAssistantResult(result.status, "file", "organization_plan", result.message, "Prepared an organization dry run.")
 
 
 def _show_recent_files(store: FileAssistantStore) -> FileAssistantResult:
@@ -314,27 +371,20 @@ def _extract_text(path: Path) -> str:
     if suffix in TEXT_EXTENSIONS:
         return path.read_text(encoding="utf-8", errors="ignore")[:MAX_READ_CHARS]
     if suffix == ".pdf":
-        try:
-            import pdfplumber  # type: ignore[import-untyped]
-        except ImportError:
-            return ""
-        chunks = []
-        with pdfplumber.open(str(path)) as pdf:
-            for page in pdf.pages[:8]:
-                chunks.append(page.extract_text() or "")
-        return "\n".join(chunks)[:MAX_READ_CHARS]
+        from grandpa.document_intelligence import extract_document_text
+
+        return extract_document_text(path)[:MAX_READ_CHARS]
+    if suffix in {".docx", ".xlsx", ".pptx"}:
+        from grandpa.document_intelligence import extract_document_text
+
+        return extract_document_text(path)[:MAX_READ_CHARS]
     return ""
 
 
 def _simple_summary(text: str) -> str:
-    clean = re.sub(r"\s+", " ", text).strip()
-    if not clean:
-        return "No readable text found."
-    sentences = re.split(r"(?<=[.!?])\s+", clean)
-    selected = [s for s in sentences if len(s) > 30][:5]
-    if not selected:
-        selected = [clean[:500]]
-    return "\n".join(f"- {sentence[:360].strip()}" for sentence in selected)
+    from grandpa.document_intelligence import smart_summary
+
+    return smart_summary(text)
 
 
 def _iter_safe_files() -> list[Path]:

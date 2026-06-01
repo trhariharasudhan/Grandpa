@@ -10,9 +10,12 @@ import {
   MessageSquare,
   Brain,
   Cpu,
+  Mic,
+  Monitor,
+  Route,
 } from 'lucide-react';
 import { useAppStore } from '../../lib/store';
-import { fetchBrowserContext, getBase, type BrowserContextSummary } from '../../lib/api';
+import { fetchAiDiagnostics, fetchBrowserContext, fetchScreenDiagnostics, getBase, type AiDiagnostics, type BrowserContextSummary, type ScreenDiagnostics } from '../../lib/api';
 
 interface EnergyData {
   total_energy_j?: number;
@@ -31,11 +34,14 @@ export function SystemPanel() {
   const runtimeUsage = useAppStore((s) => s.runtimeUsage);
   const selectedModel = useAppStore((s) => s.selectedModel);
   const serverInfo = useAppStore((s) => s.serverInfo);
+  const settings = useAppStore((s) => s.settings);
   const toggleSystemPanel = useAppStore((s) => s.toggleSystemPanel);
   const liveEnergy = useAppStore((s) => s.liveEnergy);
   const [energy, setEnergy] = useState<EnergyData | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryStats | null>(null);
   const [browserContext, setBrowserContext] = useState<BrowserContextSummary | null>(null);
+  const [screenDiagnostics, setScreenDiagnostics] = useState<ScreenDiagnostics | null>(null);
+  const [aiDiagnostics, setAiDiagnostics] = useState<AiDiagnostics | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
@@ -53,6 +59,12 @@ export function SystemPanel() {
       fetchBrowserContext()
         .then(setBrowserContext)
         .catch(() => setBrowserContext(null));
+      fetchScreenDiagnostics()
+        .then(setScreenDiagnostics)
+        .catch(() => setScreenDiagnostics(null));
+      fetchAiDiagnostics('What can Grandpa help with?')
+        .then(setAiDiagnostics)
+        .catch(() => setAiDiagnostics(null));
     } catch {
       // best-effort
     }
@@ -145,8 +157,87 @@ export function SystemPanel() {
                   : 'Extension offline'
               }
             />
+            <CoreLine
+              icon={Monitor}
+              label="Screen"
+              value={
+                screenDiagnostics?.supported
+                  ? `${screenDiagnostics.active_window?.app_name || 'visible'} · ${screenDiagnostics.visible_window_count || 0} windows`
+                  : 'Diagnostics offline'
+              }
+            />
+            <CoreLine
+              icon={Route}
+              label="AI Plan"
+              value={
+                aiDiagnostics?.planner?.last_plan
+                  ? `${aiDiagnostics.planner.last_plan.task_type} · ${aiDiagnostics.planner.last_plan.complexity.tier}`
+                  : 'Planner warming up'
+              }
+            />
           </div>
         </section>
+
+        {aiDiagnostics && (
+          <section
+            className="rounded-xl px-3 py-3"
+            style={{
+              background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border))',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Route size={13} style={{ color: 'var(--color-accent)' }} />
+              <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                AI Orchestration
+              </span>
+              <span
+                className="ml-auto text-[10px]"
+                style={{ color: aiDiagnostics.status === 'ready' ? 'var(--color-success)' : 'var(--color-warning)' }}
+              >
+                {aiDiagnostics.status}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <MiniStat icon={Brain} label="Task" value={aiDiagnostics.planner.last_plan.task_type} />
+              <MiniStat icon={Gauge} label="Priority" value={`${Math.round(aiDiagnostics.planner.last_plan.priority * 100)}%`} />
+              <MiniStat icon={Cpu} label="Model" value={aiDiagnostics.planner.last_plan.routing.selected_model || 'auto'} />
+              <MiniStat icon={Hash} label="Models" value={`${aiDiagnostics.models.local_chat}/${aiDiagnostics.models.total}`} />
+            </div>
+            <div className="text-[10px] mt-2 leading-4" style={{ color: 'var(--color-text-tertiary)' }}>
+              {aiDiagnostics.planner.last_plan.self_analysis}
+            </div>
+          </section>
+        )}
+
+        {screenDiagnostics && (
+          <section
+            className="rounded-xl px-3 py-3"
+            style={{
+              background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border))',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Monitor size={13} style={{ color: 'var(--color-accent-amber)' }} />
+              <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+                Screen Awareness
+              </span>
+              <span
+                className="ml-auto text-[10px]"
+                style={{ color: screenDiagnostics.supported ? 'var(--color-success)' : 'var(--color-warning)' }}
+              >
+                {screenDiagnostics.supported ? 'ready' : 'limited'}
+              </span>
+            </div>
+            <div className="text-[11px] leading-5 truncate" style={{ color: 'var(--color-text-secondary)' }}>
+              {screenDiagnostics.active_window?.title || screenDiagnostics.active_window?.message || 'No visible window data'}
+            </div>
+            <div className="text-[10px] mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+              OCR {screenDiagnostics.ocr?.backend || 'unavailable'} · {screenDiagnostics.screenshot?.backends?.length || 0} capture backends · local only
+            </div>
+          </section>
+        )}
 
         {(browserContext?.context.supported || browserContext?.extension) && (
           <section
@@ -183,6 +274,36 @@ export function SystemPanel() {
             </div>
           </section>
         )}
+
+        <section
+          className="rounded-xl px-3 py-3"
+          style={{
+            background: 'color-mix(in srgb, var(--color-bg-secondary) 72%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--color-accent) 14%, var(--color-border))',
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Mic size={13} style={{ color: settings.speechEnabled ? 'var(--color-accent-amber)' : 'var(--color-text-tertiary)' }} />
+            <span className="text-xs font-medium" style={{ color: 'var(--color-text)' }}>
+              Voice Diagnostics
+            </span>
+            <span
+              className="ml-auto text-[10px]"
+              style={{ color: settings.speechEnabled ? 'var(--color-success)' : 'var(--color-text-tertiary)' }}
+            >
+              {settings.speechEnabled ? 'enabled' : 'off'}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <MiniStat icon={Mic} label="Wake" value={settings.wakeWordEnabled ? 'On' : 'Off'} />
+            <MiniStat icon={Mic} label="Background" value={settings.backgroundVoiceEnabled ? 'On' : 'Off'} />
+            <MiniStat icon={Mic} label="Noise Filter" value={settings.voiceNoiseFiltering ? 'On' : 'Off'} />
+            <MiniStat icon={Mic} label="Style" value={settings.voicePersonality} />
+          </div>
+          <div className="text-[10px] mt-2 leading-4" style={{ color: 'var(--color-text-tertiary)' }}>
+            Browser speech stays local to Chrome/Edge permissions; backend STT is optional fallback.
+          </div>
+        </section>
 
         {/* Session Stats */}
         <section>

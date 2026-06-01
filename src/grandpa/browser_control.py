@@ -78,6 +78,10 @@ class BrowserContext:
     links: tuple[dict[str, str], ...] = ()
     inputs: tuple[dict[str, str], ...] = ()
     visible_text: str = ""
+    media: tuple[dict[str, Any], ...] = ()
+    forms: tuple[dict[str, Any], ...] = ()
+    elements: tuple[dict[str, Any], ...] = ()
+    session: dict[str, Any] | None = None
     message: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -92,6 +96,10 @@ class BrowserContext:
             "links": list(self.links),
             "inputs": list(self.inputs),
             "visible_text": self.visible_text,
+            "media": list(self.media),
+            "forms": list(self.forms),
+            "elements": list(self.elements),
+            "session": self.session or {},
             "message": self.message,
             "local_only": True,
         }
@@ -147,10 +155,15 @@ class BrowserContextStore:
                     buttons_json TEXT NOT NULL,
                     inputs_json TEXT NOT NULL,
                     visible_text TEXT NOT NULL,
-                    source TEXT NOT NULL DEFAULT 'extension'
+                    source TEXT NOT NULL DEFAULT 'extension',
+                    media_json TEXT NOT NULL DEFAULT '[]',
+                    forms_json TEXT NOT NULL DEFAULT '[]',
+                    elements_json TEXT NOT NULL DEFAULT '[]',
+                    session_json TEXT NOT NULL DEFAULT '{}'
                 )
                 """
             )
+            _ensure_snapshot_columns(conn)
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_browser_activity_created "
                 "ON browser_activity(created_at)"
@@ -158,6 +171,24 @@ class BrowserContextStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_browser_snapshots_created "
                 "ON browser_snapshots(created_at)"
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS browser_commands (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at REAL NOT NULL,
+                    completed_at REAL,
+                    action TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    page_url TEXT,
+                    status TEXT NOT NULL,
+                    result_json TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_browser_commands_status "
+                "ON browser_commands(status, created_at)"
             )
 
     def record(
@@ -201,9 +232,10 @@ class BrowserContextStore:
                 """
                 INSERT INTO browser_snapshots(
                     created_at, title, url, headings_json, links_json,
-                    buttons_json, inputs_json, visible_text, source
+                    buttons_json, inputs_json, visible_text, source,
+                    media_json, forms_json, elements_json, session_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     created_at,
@@ -215,6 +247,10 @@ class BrowserContextStore:
                     json.dumps(snapshot.get("inputs") or []),
                     snapshot.get("visible_text") or "",
                     str(payload.get("source") or "extension")[:80],
+                    json.dumps(snapshot.get("media") or []),
+                    json.dumps(snapshot.get("forms") or []),
+                    json.dumps(snapshot.get("elements") or []),
+                    json.dumps(snapshot.get("session") or {}),
                 ),
             )
             conn.execute(
@@ -234,7 +270,8 @@ class BrowserContextStore:
             row = conn.execute(
                 """
                 SELECT id, created_at, title, url, headings_json, links_json,
-                       buttons_json, inputs_json, visible_text, source
+                       buttons_json, inputs_json, visible_text, source,
+                       media_json, forms_json, elements_json, session_json
                 FROM browser_snapshots
                 ORDER BY created_at DESC
                 LIMIT 1
@@ -257,6 +294,10 @@ class BrowserContextStore:
             "inputs": _json_list(row["inputs_json"]),
             "visible_text": row["visible_text"],
             "source": row["source"],
+            "media": _json_list(row["media_json"]),
+            "forms": _json_list(row["forms_json"]),
+            "elements": _json_list(row["elements_json"]),
+            "session": _json_dict(row["session_json"]),
             "connected": True,
         }
 
@@ -264,6 +305,53 @@ class BrowserContextStore:
         with self._connect() as conn:
             cur = conn.execute("DELETE FROM browser_snapshots")
             return int(cur.rowcount or 0)
+
+    def enqueue_command(self, action: str, target: str, *, page_url: str | None = None) -> dict[str, Any]:
+        now = time.time()
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO browser_commands(created_at, action, target, page_url, status, result_json)
+                VALUES (?, ?, ?, ?, 'pending', '{}')
+                """,
+                (now, action, target, page_url),
+            )
+            command_id = int(cur.lastrowid)
+        return {"id": command_id, "action": action, "target": target, "page_url": page_url, "status": "pending"}
+
+    def next_command(self, *, page_url: str = "") -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, created_at, action, target, page_url, status
+                FROM browser_commands
+                WHERE status = 'pending'
+                  AND (? = '' OR page_url IS NULL OR page_url = '' OR page_url = ?)
+                ORDER BY created_at ASC
+                LIMIT 1
+                """,
+                (page_url, page_url),
+            ).fetchone()
+            if not row:
+                return None
+            conn.execute(
+                "UPDATE browser_commands SET status = 'claimed' WHERE id = ? AND status = 'pending'",
+                (row["id"],),
+            )
+        return {key: row[key] for key in row.keys()}
+
+    def complete_command(self, command_id: int, *, status: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
+        clean_status = "completed" if status == "completed" else "failed"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE browser_commands
+                SET status = ?, completed_at = ?, result_json = ?
+                WHERE id = ?
+                """,
+                (clean_status, time.time(), json.dumps(result or {}, ensure_ascii=True), command_id),
+            )
+        return {"id": command_id, "status": clean_status}
 
 
 def get_visible_browser_context() -> BrowserContext:
@@ -309,6 +397,10 @@ def get_visible_browser_context() -> BrowserContext:
         links=tuple(dom.get("links") or ()),
         inputs=tuple(dom.get("inputs") or ()),
         visible_text=str(dom.get("visible_text") or ""),
+        media=tuple(dom.get("media") or ()),
+        forms=tuple(dom.get("forms") or ()),
+        elements=tuple(dom.get("elements") or ()),
+        session=dom.get("session") or {},
         message="Visible browser context is available.",
     )
     try:
@@ -343,6 +435,32 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
             label = item.get("title") or item.get("query") or item.get("url") or item["action"]
             lines.append(f"- {label}")
         return BrowserActionResult("handled", action, target, "\n".join(lines), context=context)
+
+    if action == "diagnostics":
+        context = get_visible_browser_context()
+        latest = latest_browser_snapshot()
+        recent = BrowserContextStore().recent(limit=10)
+        message = "Browser diagnostics are ready."
+        if not latest.get("connected"):
+            message = "Browser diagnostics are ready, but the extension is not connected."
+        details = {
+            "extension_connected": bool(latest.get("connected")),
+            "snapshot_age_seconds": latest.get("snapshot", {}).get("age_seconds") if latest.get("snapshot") else None,
+            "current_title": context.title,
+            "current_url": context.url,
+            "counts": {
+                "headings": len(context.headings),
+                "links": len(context.links),
+                "buttons": len(context.buttons),
+                "inputs": len(context.inputs),
+                "media": len(context.media),
+                "forms": len(context.forms),
+                "elements": len(context.elements),
+            },
+            "recent_activity": recent,
+            "local_only": True,
+        }
+        return BrowserActionResult("handled", action, json.dumps(details), message, context=context)
 
     if action == "headings":
         context = get_visible_browser_context()
@@ -409,6 +527,60 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
         summary = _summarize_visible_text(text)
         return BrowserActionResult("handled", action, target, summary, context=context)
 
+    if action == "media":
+        context = get_visible_browser_context()
+        if not context.supported:
+            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+        return _browser_media_action(target, context)
+
+    if action == "form_fill":
+        if _looks_high_risk(target):
+            return BrowserActionResult("blocked", action, target, "I blocked this form action for safety.", risk_level="BLOCKED")
+        context = get_visible_browser_context()
+        if not context.supported:
+            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+        return BrowserActionResult(
+            "requires_confirmation",
+            action,
+            target,
+            "Confirmation required before filling a visible form field.",
+            risk_level="MEDIUM",
+            context=context,
+        )
+
+    if action == "download":
+        if _looks_high_risk(target):
+            return BrowserActionResult("blocked", action, target, "I blocked this download action for safety.", risk_level="BLOCKED")
+        context = get_visible_browser_context()
+        return BrowserActionResult(
+            "requires_confirmation",
+            action,
+            target,
+            "Confirmation required before starting a browser download.",
+            risk_level="MEDIUM",
+            context=context,
+        )
+
+    if action == "whatsapp":
+        context = get_visible_browser_context()
+        if "send" in target.lower() or "message" in target.lower():
+            return BrowserActionResult(
+                "requires_confirmation",
+                action,
+                target,
+                "Confirmation required before interacting with WhatsApp Web.",
+                risk_level="MEDIUM",
+                context=context,
+            )
+        webbrowser.open("https://web.whatsapp.com")
+        BrowserContextStore().record("whatsapp_open", url="https://web.whatsapp.com", status="handled")
+        return BrowserActionResult("handled", action, target, "Opening WhatsApp Web.", context=context)
+
+    if action == "task":
+        store = BrowserContextStore()
+        store.record("task", query=target, status="handled")
+        return BrowserActionResult("handled", action, target, f"Browser task noted: {target}.")
+
     if action == "open":
         webbrowser.open(target)
         BrowserContextStore().record("open", url=target, status="handled")
@@ -464,6 +636,10 @@ def extract_dom_snapshot(html: str, *, title: str = "", url: str = "") -> Browse
         links=tuple(parser.links),
         inputs=tuple(parser.inputs),
         visible_text=_clean_text(" ".join(parser.text_chunks))[:4000],
+        media=(),
+        forms=(),
+        elements=(),
+        session={"origin": urllib.parse.urlparse(url).netloc if url else ""},
         message="DOM snapshot extracted from visible page context.",
     )
 
@@ -489,6 +665,17 @@ def clear_browser_snapshot() -> dict[str, Any]:
     return {"status": "ok", "removed": removed}
 
 
+def next_browser_command(page_url: str = "") -> dict[str, Any]:
+    command = BrowserContextStore().next_command(page_url=page_url)
+    return {"command": command, "local_only": True}
+
+
+def complete_browser_command(command_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+    status = str(payload.get("status") or "failed")
+    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
+    return BrowserContextStore().complete_command(command_id, status=status, result=result)
+
+
 def _context_from_snapshot(snapshot: dict[str, Any]) -> BrowserContext:
     return BrowserContext(
         supported=True,
@@ -501,6 +688,10 @@ def _context_from_snapshot(snapshot: dict[str, Any]) -> BrowserContext:
         links=tuple(snapshot.get("links") or ()),
         inputs=tuple(snapshot.get("inputs") or ()),
         visible_text=str(snapshot.get("visible_text") or ""),
+        media=tuple(snapshot.get("media") or ()),
+        forms=tuple(snapshot.get("forms") or ()),
+        elements=tuple(snapshot.get("elements") or ()),
+        session=dict(snapshot.get("session") or {}),
         message="Browser extension snapshot is available.",
     )
 
@@ -561,8 +752,25 @@ def _sanitize_dom_context(data: dict[str, Any]) -> dict[str, Any]:
         "buttons": _safe_strings(data.get("buttons")),
         "links": _safe_links(data.get("links")),
         "inputs": _safe_inputs(data.get("inputs")),
+        "media": _safe_media(data.get("media")),
+        "forms": _safe_forms(data.get("forms")),
+        "elements": _safe_elements(data.get("elements")),
+        "session": _safe_session(data.get("session"), str(data.get("url") or "")),
         "visible_text": _redact_sensitive_visible_text(visible_text)[:4000],
     }
+
+
+def _ensure_snapshot_columns(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("PRAGMA table_info(browser_snapshots)").fetchall()
+    existing = {str(row[1]) for row in rows}
+    for name, default in {
+        "media_json": "'[]'",
+        "forms_json": "'[]'",
+        "elements_json": "'[]'",
+        "session_json": "'{}'",
+    }.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE browser_snapshots ADD COLUMN {name} TEXT NOT NULL DEFAULT {default}")
 
 
 def _safe_strings(value: Any) -> list[str]:
@@ -603,6 +811,114 @@ def _safe_inputs(value: Any) -> list[dict[str, str]]:
         label = _redact_sensitive_visible_text(raw_label)[:160]
         inputs.append({"label": label, "type": input_type or "text"})
     return inputs
+
+
+def _safe_media(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    media = []
+    for item in value[:20]:
+        if not isinstance(item, dict):
+            continue
+        media.append(
+            {
+                "kind": str(item.get("kind") or "media")[:30],
+                "paused": bool(item.get("paused", False)),
+                "muted": bool(item.get("muted", False)),
+                "duration": float(item.get("duration") or 0),
+                "current_time": float(item.get("current_time") or item.get("currentTime") or 0),
+                "label": _redact_sensitive_visible_text(str(item.get("label") or ""))[:160],
+            }
+        )
+    return media
+
+
+def _safe_forms(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    forms = []
+    for item in value[:10]:
+        if not isinstance(item, dict):
+            continue
+        label = _redact_sensitive_visible_text(str(item.get("label") or item.get("name") or "form"))[:160]
+        fields = []
+        for field in item.get("fields") or []:
+            if not isinstance(field, dict):
+                continue
+            raw = f"{field.get('type', '')} {field.get('label', '')}"
+            if _looks_high_risk(raw):
+                continue
+            fields.append({
+                "label": _redact_sensitive_visible_text(str(field.get("label") or ""))[:120],
+                "type": str(field.get("type") or "text")[:40],
+            })
+        forms.append({"label": label, "fields": fields[:20], "submit_count": int(item.get("submit_count") or 0)})
+    return forms
+
+
+def _safe_elements(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    elements = []
+    for item in value[:80]:
+        if not isinstance(item, dict):
+            continue
+        text = _redact_sensitive_visible_text(str(item.get("text") or item.get("label") or ""))[:160]
+        role = str(item.get("role") or "")[:40].lower()
+        if role not in _SAFE_ELEMENT_ROLES and role not in {"media", "form", "tab"}:
+            role = "element"
+        if _looks_high_risk(text):
+            continue
+        elements.append({
+            "id": str(item.get("id") or "")[:80],
+            "role": role,
+            "text": text,
+            "visible": bool(item.get("visible", True)),
+        })
+    return elements
+
+
+def _safe_session(value: Any, url: str) -> dict[str, Any]:
+    parsed = urllib.parse.urlparse(url)
+    session = {
+        "origin": parsed.netloc,
+        "path": parsed.path[:240],
+        "is_youtube": "youtube.com" in parsed.netloc or "youtu.be" in parsed.netloc,
+        "is_whatsapp": "web.whatsapp.com" in parsed.netloc,
+    }
+    if isinstance(value, dict):
+        session["visibility"] = str(value.get("visibility") or "")[:40]
+        session["focused"] = bool(value.get("focused", False))
+    return session
+
+
+def _json_dict(raw: str) -> dict[str, Any]:
+    try:
+        value = json.loads(raw or "{}")
+    except Exception:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _browser_media_action(target: str, context: BrowserContext) -> BrowserActionResult:
+    command = target.lower().strip()
+    if not context.media:
+        return BrowserActionResult("unsupported", "media", target, "I do not see visible media controls in the latest browser snapshot.", context=context)
+    if any(word in command for word in ("play", "pause", "mute", "unmute", "volume", "seek", "next", "previous")):
+        risk = "LOW" if any(word in command for word in ("play", "pause", "mute", "unmute")) else "MEDIUM"
+        status: BrowserActionStatus = "handled" if risk == "LOW" else "requires_confirmation"
+        store = BrowserContextStore()
+        store.record("media", title=context.title, url=context.url, query=target, status=status)
+        queued = store.enqueue_command("media", target, page_url=context.url) if status == "handled" else None
+        return BrowserActionResult(
+            status,
+            "media",
+            target,
+            f"Queued visible media action: {target}." if queued else f"Prepared visible media action: {target}.",
+            risk_level=risk,
+            context=context,
+        )
+    return BrowserActionResult("unsupported", "media", target, "That media action is not supported yet.", context=context)
 
 
 def _redact_sensitive_visible_text(text: str) -> str:
@@ -709,4 +1025,6 @@ __all__ = [
     "store_browser_snapshot",
     "latest_browser_snapshot",
     "clear_browser_snapshot",
+    "next_browser_command",
+    "complete_browser_command",
 ]

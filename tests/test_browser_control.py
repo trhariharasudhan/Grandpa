@@ -138,6 +138,102 @@ def test_snapshot_ingestion_and_latest_retrieval():
     assert latest is not None
     assert latest["headings"] == ["Overview"]
     assert latest["links"][0]["text"] == "Install"
+    assert latest["media"] == []
+
+
+def test_snapshot_ingestion_tracks_media_forms_and_session():
+    store = BrowserContextStore()
+
+    latest = store.store_snapshot(
+        {
+            "title": "YouTube",
+            "url": "https://www.youtube.com/watch?v=1",
+            "media": [{"kind": "video", "paused": True, "muted": False, "duration": 120, "current_time": 5, "label": "Python"}],
+            "forms": [{"label": "Search", "fields": [{"label": "Search", "type": "text"}], "submit_count": 1}],
+            "elements": [{"id": "button-1", "role": "button", "text": "Play", "visible": True}],
+            "session": {"focused": True, "visibility": "visible"},
+            "visible_text": "Python tutorial video.",
+        }
+    )
+
+    assert latest["media"][0]["kind"] == "video"
+    assert latest["forms"][0]["fields"][0]["label"] == "Search"
+    assert latest["session"]["is_youtube"] is True
+
+
+def test_youtube_media_control_uses_visible_snapshot():
+    BrowserContextStore().store_snapshot(
+        {
+            "title": "YouTube",
+            "url": "https://www.youtube.com/watch?v=1",
+            "media": [{"kind": "video", "paused": True, "muted": False, "duration": 120, "current_time": 0}],
+            "visible_text": "A video is visible.",
+        }
+    )
+
+    result = execute_browser_action("media", "pause video")
+    command = BrowserContextStore().next_command(page_url="https://www.youtube.com/watch?v=1")
+
+    assert result.status == "handled"
+    assert result.risk_level == "LOW"
+    assert command is not None
+    assert command["action"] == "media"
+
+
+def test_safe_form_fill_requires_confirmation():
+    BrowserContextStore().store_snapshot(
+        {
+            "title": "Search",
+            "url": "https://example.test",
+            "forms": [{"label": "Search", "fields": [{"label": "Search", "type": "text"}]}],
+        }
+    )
+
+    result = execute_browser_action("form_fill", "search=python")
+
+    assert result.status == "requires_confirmation"
+    assert result.risk_level == "MEDIUM"
+
+
+def test_sensitive_form_fill_blocked():
+    result = execute_browser_action("form_fill", "password=hunter2")
+
+    assert result.status == "blocked"
+    assert result.risk_level == "BLOCKED"
+
+
+def test_download_requires_confirmation():
+    result = execute_browser_action("download", "visible link")
+
+    assert result.status == "requires_confirmation"
+    assert result.risk_level == "MEDIUM"
+
+
+def test_whatsapp_message_requires_confirmation():
+    result = execute_browser_action("whatsapp", "message hello")
+
+    assert result.status == "requires_confirmation"
+    assert result.risk_level == "MEDIUM"
+
+
+def test_browser_diagnostics_reports_counts():
+    BrowserContextStore().store_snapshot(
+        {
+            "title": "Docs",
+            "url": "https://example.test",
+            "headings": ["Overview"],
+            "buttons": ["Continue"],
+            "links": [{"text": "Setup", "href": "https://example.test/setup"}],
+            "media": [{"kind": "video"}],
+        }
+    )
+
+    result = execute_browser_action("diagnostics", "browser")
+    details = json.loads(result.target)
+
+    assert result.status == "handled"
+    assert details["extension_connected"] is True
+    assert details["counts"]["headings"] == 1
 
 
 def test_snapshot_backend_redacts_sensitive_values():
@@ -228,3 +324,17 @@ def test_browser_snapshot_routes():
 
     cleared = client.delete("/v1/browser/snapshot")
     assert cleared.status_code == 200
+
+
+def test_browser_command_queue_routes():
+    app = FastAPI()
+    app.include_router(router)
+    client = TestClient(app)
+    BrowserContextStore().enqueue_command("media", "pause video", page_url="https://example.test")
+
+    next_command = client.get("/v1/browser/command/next?url=https%3A%2F%2Fexample.test")
+    command = next_command.json()["command"]
+    completed = client.post(f"/v1/browser/command/{command['id']}/complete", json={"status": "completed", "result": {"ok": True}})
+
+    assert command["action"] == "media"
+    assert completed.json()["status"] == "completed"

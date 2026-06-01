@@ -1,17 +1,7 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useCallback, useRef } from 'react';
 import { Routes, Route } from 'react-router';
 import { Layout } from './components/Layout';
 import { ChatPage } from './pages/ChatPage';
-import { DashboardPage } from './pages/DashboardPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { GetStartedPage } from './pages/GetStartedPage';
-import { AgentsPage } from './pages/AgentsPage';
-import { DataSourcesPage } from './pages/DataSourcesPage';
-import { LogsPage } from './pages/LogsPage';
-import { MemoryPage } from './pages/MemoryPage';
-import { FileAssistantPage } from './pages/FileAssistantPage';
-import { RoutinesPage } from './pages/RoutinesPage';
-import { SafetyPage } from './pages/SafetyPage';
 import { CommandPalette } from './components/CommandPalette';
 import { SetupScreen } from './components/SetupScreen';
 import { Toaster } from './components/ui/sonner';
@@ -19,6 +9,19 @@ import { useAppStore } from './lib/store';
 import { fetchModels, fetchServerInfo, fetchRuntimeUsage, isTauri } from './lib/api';
 import { UpdateChecker } from './components/Desktop/UpdateChecker';
 import { track, hashId } from './lib/analytics';
+
+const DashboardPage = lazy(() => import('./pages/DashboardPage').then((m) => ({ default: m.DashboardPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const GetStartedPage = lazy(() => import('./pages/GetStartedPage').then((m) => ({ default: m.GetStartedPage })));
+const AgentsPage = lazy(() => import('./pages/AgentsPage').then((m) => ({ default: m.AgentsPage })));
+const DataSourcesPage = lazy(() => import('./pages/DataSourcesPage').then((m) => ({ default: m.DataSourcesPage })));
+const LogsPage = lazy(() => import('./pages/LogsPage').then((m) => ({ default: m.LogsPage })));
+const MemoryPage = lazy(() => import('./pages/MemoryPage').then((m) => ({ default: m.MemoryPage })));
+const FileAssistantPage = lazy(() => import('./pages/FileAssistantPage').then((m) => ({ default: m.FileAssistantPage })));
+const RoutinesPage = lazy(() => import('./pages/RoutinesPage').then((m) => ({ default: m.RoutinesPage })));
+const SafetyPage = lazy(() => import('./pages/SafetyPage').then((m) => ({ default: m.SafetyPage })));
+const BrowserPage = lazy(() => import('./pages/BrowserPage').then((m) => ({ default: m.BrowserPage })));
+const CapabilitiesPage = lazy(() => import('./pages/CapabilitiesPage').then((m) => ({ default: m.CapabilitiesPage })));
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -137,23 +140,46 @@ export default function App() {
   return (
     <>
       <UpdateChecker />
-      <Routes>
-        <Route element={<Layout />}>
-          <Route index element={<ChatPage />} />
-          <Route path="dashboard" element={<DashboardPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-          <Route path="get-started" element={<GetStartedPage />} />
-          <Route path="data-sources" element={<DataSourcesPage />} />
-          <Route path="memory" element={<MemoryPage />} />
-          <Route path="files" element={<FileAssistantPage />} />
-          <Route path="routines" element={<RoutinesPage />} />
-          <Route path="safety" element={<SafetyPage />} />
-          <Route path="agents" element={<AgentsPage />} />
-          <Route path="logs" element={<LogsPage />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<RouteFallback />}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route index element={<ChatPage />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+            <Route path="get-started" element={<GetStartedPage />} />
+            <Route path="data-sources" element={<DataSourcesPage />} />
+            <Route path="memory" element={<MemoryPage />} />
+            <Route path="files" element={<FileAssistantPage />} />
+            <Route path="routines" element={<RoutinesPage />} />
+            <Route path="safety" element={<SafetyPage />} />
+            <Route path="browser" element={<BrowserPage />} />
+            <Route path="capabilities" element={<CapabilitiesPage />} />
+            <Route path="agents" element={<AgentsPage />} />
+            <Route path="logs" element={<LogsPage />} />
+          </Route>
+        </Routes>
+      </Suspense>
       <Toaster position="bottom-right" />
       {commandPaletteOpen && <CommandPalette />}
     </>
+  );
+}
+
+function RouteFallback() {
+  return (
+    <div
+      className="h-screen w-screen flex items-center justify-center"
+      style={{ background: 'var(--color-bg)', color: 'var(--color-text-secondary)' }}
+    >
+      <div
+        className="rounded-2xl px-4 py-3 text-sm"
+        style={{
+          background: 'var(--color-bg-secondary)',
+          border: '1px solid var(--color-border)',
+        }}
+      >
+        Loading Grandpa workspace...
+      </div>
+    </div>
   );
 }

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from grandpa import pc_control
+from grandpa.desktop_context import DesktopContextResult
 from grandpa.pc_control import run_local_action
 from grandpa.windows_app_resolver import AppResolution
 from grandpa.windows_window_control import WindowControlResult
@@ -19,6 +20,7 @@ def _isolated_pc_control(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl"))
     monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db"))
     monkeypatch.setenv("GRANDPA_PC_CONTROL_RETENTION_CONFIG", str(tmp_path / "retention.json"))
+    monkeypatch.setenv("GRANDPA_CLIPBOARD_HISTORY_DB", str(tmp_path / "clipboard_history.db"))
     pc_control.reset_emergency_stop()
     yield
     pc_control.reset_emergency_stop()
@@ -97,6 +99,46 @@ def test_brightness_set_is_allowed_but_truthful_when_unsupported():
     assert result.risk_level == "LOW"
 
 
+def test_multi_monitor_detection(monkeypatch):
+    monkeypatch.setattr(
+        "grandpa.desktop_context.list_monitors",
+        lambda: DesktopContextResult(
+            True,
+            "Detected 2 monitors.",
+            {
+                "count": 2,
+                "monitors": [
+                    {"id": "monitor-1", "left": 0, "top": 0, "width": 1920, "height": 1080, "primary": True},
+                    {"id": "monitor-2", "left": 1920, "top": 0, "width": 1280, "height": 1024, "primary": False},
+                ],
+            },
+        ),
+        raising=False,
+    )
+
+    result = run_local_action({"action_type": "list_monitors"})
+
+    assert result.ok is True
+    assert result.evidence["count"] == 2
+
+
+def test_active_process_awareness(monkeypatch):
+    monkeypatch.setattr(
+        "grandpa.desktop_context.get_active_process",
+        lambda: DesktopContextResult(
+            True,
+            "Active process: notepad.exe.",
+            {"process": {"pid": 123, "name": "notepad.exe", "title": "Untitled - Notepad", "executable": "notepad.exe"}},
+        ),
+        raising=False,
+    )
+
+    result = run_local_action({"action_type": "active_process"})
+
+    assert result.ok is True
+    assert result.evidence["process"]["name"] == "notepad.exe"
+
+
 def test_clipboard_read_write_mocked(monkeypatch):
     clipboard = {"value": ""}
     monkeypatch.setitem(
@@ -113,6 +155,24 @@ def test_clipboard_read_write_mocked(monkeypatch):
     log_text = Path(pc_control.get_audit_log_path()).read_text(encoding="utf-8")
     assert "secret text" not in log_text
     assert "[redacted]" in log_text
+
+
+def test_clipboard_inspect_and_history_are_metadata_only(monkeypatch):
+    clipboard = {"value": "https://example.com/private-token"}
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "pyperclip",
+        SimpleNamespace(copy=lambda text: clipboard.update(value=text), paste=lambda: clipboard["value"]),
+    )
+
+    inspect_result = run_local_action({"action_type": "clipboard_inspect"})
+    history = run_local_action({"action_type": "clipboard_history"})
+
+    assert inspect_result.ok is True
+    assert inspect_result.evidence["content_type"] == "url"
+    assert history.ok is True
+    assert history.evidence["metadata_only"] is True
+    assert "private-token" not in json.dumps(history.evidence)
 
 
 def test_safe_file_create_rename_move_copy(tmp_path):
@@ -157,6 +217,60 @@ def test_keyboard_mouse_dry_run():
     assert key.ok is True
     assert mouse.ok is True
     assert key.risk_level == "MEDIUM"
+
+
+def test_mouse_drag_dry_run():
+    result = run_local_action({
+        "action_type": "mouse_drag",
+        "args": {"start_x": 1, "start_y": 2, "end_x": 30, "end_y": 40},
+        "dry_run": True,
+    })
+
+    assert result.ok is True
+    assert result.risk_level == "MEDIUM"
+
+
+def test_protected_active_window_blocks_automation(monkeypatch):
+    monkeypatch.setattr(pc_control.sys, "platform", "win32")
+    monkeypatch.setattr("grandpa.desktop_context.active_window_is_protected", lambda: True)
+
+    result = run_local_action({"action_type": "keyboard_type", "target": "hello"})
+
+    assert result.status == "blocked"
+    assert result.error == "protected_window"
+
+
+def test_desktop_session_summary(monkeypatch):
+    monkeypatch.setattr(
+        "grandpa.desktop_context.desktop_session_summary",
+        lambda: DesktopContextResult(
+            True,
+            "Detected 1 monitor. Active process: chrome.exe.",
+            {"monitors": {"count": 1}, "active_process": {"name": "chrome.exe"}, "process_count": 10},
+        ),
+    )
+
+    result = run_local_action({"action_type": "desktop_summary"})
+
+    assert result.ok is True
+    assert result.evidence["active_process"]["name"] == "chrome.exe"
+
+
+def test_pc_control_diagnostics_contains_richer_sections(monkeypatch):
+    monkeypatch.setattr(
+        "grandpa.desktop_context.pc_control_diagnostics",
+        lambda: {
+            "monitors": {"supported": True, "count": 1},
+            "active_process": {"supported": True},
+            "automation": {"pyautogui": True},
+            "clipboard": {"metadata_only": True},
+        },
+    )
+
+    result = run_local_action({"action_type": "pc_diagnostics"})
+
+    assert result.ok is True
+    assert result.evidence["clipboard"]["metadata_only"] is True
 
 
 def test_high_risk_power_command_requires_approval():

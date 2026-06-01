@@ -61,6 +61,7 @@ function saveConversations(store: ConversationStore): void {
 }
 
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type VoicePersonality = 'calm' | 'warm' | 'concise' | 'energetic';
 
 interface Settings {
   theme: ThemeMode;
@@ -76,6 +77,10 @@ interface Settings {
   speechRate: number;
   speechPitch: number;
   wakeWordEnabled: boolean;
+  backgroundVoiceEnabled: boolean;
+  voiceNoiseFiltering: boolean;
+  voicePersonality: VoicePersonality;
+  voiceSilenceTimeoutMs: number;
 }
 
 function loadSettings(): Settings {
@@ -93,6 +98,10 @@ function loadSettings(): Settings {
     speechRate: 1,
     speechPitch: 1,
     wakeWordEnabled: false,
+    backgroundVoiceEnabled: false,
+    voiceNoiseFiltering: true,
+    voicePersonality: 'warm',
+    voiceSilenceTimeoutMs: 8000,
   };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);

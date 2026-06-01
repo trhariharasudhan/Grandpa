@@ -2,12 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 
 export type WakeWordState = 'idle' | 'wake-listening' | 'active-listening' | 'error';
 
+export interface WakeWordDiagnostics {
+  supported: boolean;
+  lastHeard: string;
+  lastWakeAt: number | null;
+  restartCount: number;
+  rejectedNoiseCount: number;
+}
+
 interface UseWakeWordOptions {
   enabled: boolean;
   onCommand: (command: string) => void;
   onWake?: () => void;
   timeoutMs?: number;
   cooldownMs?: number;
+  noiseFiltering?: boolean;
 }
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionLike;
@@ -17,7 +26,7 @@ interface SpeechRecognitionLike {
   interimResults: boolean;
   lang: string;
   onresult: ((event: SpeechRecognitionEventLike) => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((event?: { error?: string }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -31,7 +40,8 @@ interface SpeechRecognitionEventLike {
   }>;
 }
 
-const WAKE_PATTERN = /\b(?:hey|okay)\s+grandpa\b/i;
+const WAKE_PATTERN = /\b(?:hey|okay|ok|hello|yo)\s+grandpa\b/i;
+const GRANDPA_ONLY_PATTERN = /\bgrandpa\b/i;
 
 function getRecognitionCtor(): SpeechRecognitionCtor | null {
   if (typeof window === 'undefined') return null;
@@ -43,7 +53,20 @@ function getRecognitionCtor(): SpeechRecognitionCtor | null {
 }
 
 function commandAfterWake(transcript: string): string {
-  return transcript.replace(WAKE_PATTERN, '').trim().replace(/^[,.;:\s]+/, '');
+  return transcript.replace(WAKE_PATTERN, '').replace(GRANDPA_ONLY_PATTERN, '').trim().replace(/^[,.;:\s]+/, '');
+}
+
+function normalizeTranscript(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+function isLikelyNoise(text: string): boolean {
+  const normalized = normalizeTranscript(text).toLowerCase();
+  if (!normalized) return true;
+  if (/^(uh|um|hmm|mmm|ah|er|background noise|noise)$/i.test(normalized)) return true;
+  if (/^(.)\1{4,}$/.test(normalized.replace(/\s/g, ''))) return true;
+  const useful = normalized.replace(/[^a-z0-9\u0B80-\u0BFF]/gi, '');
+  return useful.length < Math.max(2, normalized.length * 0.35);
 }
 
 export function useWakeWord({
@@ -52,9 +75,17 @@ export function useWakeWord({
   onWake,
   timeoutMs = 8000,
   cooldownMs = 1800,
+  noiseFiltering = true,
 }: UseWakeWordOptions) {
   const [state, setState] = useState<WakeWordState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<WakeWordDiagnostics>({
+    supported: !!getRecognitionCtor(),
+    lastHeard: '',
+    lastWakeAt: null,
+    restartCount: 0,
+    rejectedNoiseCount: 0,
+  });
   const commandRef = useRef(onCommand);
   const wakeRef = useRef(onWake);
   const activeRef = useRef(false);
@@ -111,11 +142,17 @@ export function useWakeWord({
     recognition.onresult = (event) => {
       for (let i = event.resultIndex; i < event.results.length; i += 1) {
         const result = event.results[i];
-        const transcript = result[0]?.transcript?.trim() || '';
+        const transcript = normalizeTranscript(result[0]?.transcript || '');
         if (!transcript) continue;
+        if (noiseFiltering && isLikelyNoise(transcript)) {
+          setDiagnostics((d) => ({ ...d, rejectedNoiseCount: d.rejectedNoiseCount + 1 }));
+          continue;
+        }
+        setDiagnostics((d) => ({ ...d, lastHeard: transcript }));
 
-        if (WAKE_PATTERN.test(transcript)) {
+        if (WAKE_PATTERN.test(transcript) || (result.isFinal && GRANDPA_ONLY_PATTERN.test(transcript))) {
           activate();
+          setDiagnostics((d) => ({ ...d, lastWakeAt: Date.now() }));
           const command = commandAfterWake(transcript);
           if (command && result.isFinal) {
             if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -136,10 +173,18 @@ export function useWakeWord({
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       if (stopped) return;
+      if (event?.error === 'no-speech') {
+        setState('wake-listening');
+        return;
+      }
       setState('error');
-      setError('Wake listening is unavailable or microphone permission was denied.');
+      setError(
+        event?.error === 'not-allowed'
+          ? 'Wake listening needs microphone permission.'
+          : 'Wake listening is unavailable or microphone permission was denied.',
+      );
     };
 
     recognition.onend = () => {
@@ -147,6 +192,7 @@ export function useWakeWord({
       window.setTimeout(() => {
         try {
           recognition.start();
+          setDiagnostics((d) => ({ ...d, restartCount: d.restartCount + 1 }));
           if (!activeRef.current) setState('wake-listening');
         } catch {
           setState('error');
@@ -173,11 +219,12 @@ export function useWakeWord({
         // Optional browser API; ignore stop failures.
       }
     };
-  }, [enabled, timeoutMs, cooldownMs]);
+  }, [enabled, timeoutMs, cooldownMs, noiseFiltering]);
 
   return {
     state,
     error,
     supported: !!getRecognitionCtor(),
+    diagnostics,
   };
 }

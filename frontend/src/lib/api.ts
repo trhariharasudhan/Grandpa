@@ -1132,6 +1132,10 @@ export interface BrowserContextSummary {
     links: Array<{ text: string; href: string }>;
     inputs: Array<{ label: string; type: string }>;
     visible_text: string;
+    media: Array<{ kind: string; paused: boolean; muted: boolean; duration: number; current_time: number; label: string }>;
+    forms: Array<{ label: string; fields: Array<{ label: string; type: string }>; submit_count: number }>;
+    elements: Array<{ id: string; role: string; text: string; visible: boolean }>;
+    session: Record<string, unknown>;
     message: string;
     local_only: boolean;
   };
@@ -1154,6 +1158,239 @@ export async function fetchBrowserContext(): Promise<BrowserContextSummary> {
   const res = await fetch(`${getBase()}/v1/browser/context`);
   if (!res.ok) throw new Error('Failed to fetch browser context');
   return res.json();
+}
+
+export async function fetchBrowserDiagnostics(): Promise<{
+  status: string;
+  message: string;
+  risk_level: string;
+  details: {
+    extension_connected?: boolean;
+    snapshot_age_seconds?: number | null;
+    current_title?: string | null;
+    current_url?: string | null;
+    counts?: Record<string, number>;
+    recent_activity?: BrowserContextSummary['recent_activity'];
+    local_only?: boolean;
+  };
+  context: BrowserContextSummary['context'];
+}> {
+  const res = await fetch(`${getBase()}/v1/browser/diagnostics`);
+  if (!res.ok) throw new Error('Failed to fetch browser diagnostics');
+  return res.json();
+}
+
+export interface ScreenDiagnostics {
+  platform: string;
+  supported: boolean;
+  active_window: {
+    supported: boolean;
+    title: string;
+    app_name: string;
+    message: string;
+  };
+  screenshot: {
+    supported: boolean;
+    backends: string[];
+    last_path: string;
+  };
+  ocr: {
+    available: boolean;
+    text: string;
+    confidence: number;
+    backend: string;
+    lines: string[];
+    message: string;
+  };
+  visible_window_count: number;
+  local_only: boolean;
+}
+
+export async function fetchScreenDiagnostics(): Promise<ScreenDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/screen/diagnostics`);
+  if (!res.ok) throw new Error('Failed to fetch screen diagnostics');
+  return res.json();
+}
+
+export interface AiDiagnostics {
+  status: string;
+  timestamp: number;
+  engine: {
+    id: string;
+    healthy: boolean | null;
+  };
+  models: {
+    total: number;
+    local_chat: number;
+    cloud: number;
+    embedding: number;
+    available: string[];
+  };
+  planner: {
+    enabled: boolean;
+    last_plan: {
+      task_type: string;
+      priority: number;
+      complexity: {
+        score: number;
+        tier: string;
+        suggested_max_tokens: number;
+      };
+      routing: {
+        selected_model: string;
+        engine_hint: string;
+        confidence: number;
+        reason: string;
+        fallback_used: boolean;
+      };
+      steps: Array<{ name: string; purpose: string; tool_hint: string; risk: string; status: string }>;
+      tool_order: string[];
+      self_analysis: string;
+    };
+  };
+  orchestration: {
+    tool_routing: boolean;
+    workflow_decomposition: boolean;
+    semantic_memory: Record<string, unknown>;
+    fallback_model: string;
+  };
+  local_only: boolean;
+}
+
+export async function fetchAiDiagnostics(query = ''): Promise<AiDiagnostics> {
+  const suffix = query ? `?query=${encodeURIComponent(query)}` : '';
+  const res = await fetch(`${getBase()}/v1/ai/diagnostics${suffix}`);
+  if (!res.ok) throw new Error('Failed to fetch AI diagnostics');
+  return res.json();
+}
+
+export interface CapabilityDiagnostics {
+  fileIntelligence: {
+    status: string;
+    supported_types: string[];
+    indexed_documents: number;
+    type_counts: Record<string, number>;
+    storage: { backend: string; path: string; local_only: boolean };
+    safety: Record<string, unknown>;
+  };
+  office: {
+    status: string;
+    templates: string[];
+    features: Record<string, boolean>;
+    safety: Record<string, unknown>;
+  };
+  automation: {
+    status: string;
+    workflow_count: number;
+    enabled_count: number;
+    templates: Array<{ name: string; trigger: Record<string, unknown>; steps: Array<Record<string, unknown>> }>;
+    history: Array<Record<string, unknown>>;
+    features: Record<string, unknown>;
+    safety: Record<string, unknown>;
+    storage: { backend: string; path: string; local_only: boolean };
+  };
+  developer: {
+    status: string;
+    git: Record<string, unknown>;
+    project: { checks?: Record<string, boolean>; missing?: string[]; repo?: string };
+    docker: Record<string, unknown>;
+    allowlist_prefixes: string[];
+    templates: string[];
+    safety: Record<string, unknown>;
+  };
+  security: {
+    status: string;
+    policies: Record<string, unknown>;
+    health: { score: number; label: string };
+    recent_events: Array<Record<string, unknown>>;
+    suspicious_detection: boolean;
+    encrypted_sensitive_memory: boolean;
+    audit_export_requires_approval: boolean;
+    storage: { backend: string; path: string; local_only: boolean };
+  };
+  mobile: {
+    status: string;
+    connected_devices: number;
+    devices: Array<Record<string, unknown>>;
+    notifications: Array<Record<string, unknown>>;
+    features: Record<string, unknown>;
+    safety: Record<string, unknown>;
+  };
+  communication: {
+    status: string;
+    services: Array<Record<string, unknown>>;
+    unread_counts: Record<string, number>;
+    pending_replies: Array<Record<string, unknown>>;
+    workflow_suggestions: string[];
+    safety: Record<string, unknown>;
+  };
+  realWorld: {
+    status: string;
+    active_workflows: Array<Record<string, unknown>>;
+    features: Record<string, unknown>;
+    safety: Record<string, unknown>;
+  };
+  iot: {
+    status: string;
+    devices: Array<Record<string, unknown>>;
+    raspberry_pi: Record<string, unknown>;
+    features: Record<string, unknown>;
+    safety: Record<string, unknown>;
+  };
+  future: {
+    status: string;
+    avatar: Record<string, unknown>;
+    overlay: Record<string, unknown>;
+    connectors: Array<Record<string, unknown>>;
+    hardware: Record<string, unknown>;
+    safety: Record<string, unknown>;
+  };
+}
+
+export async function fetchCapabilityDiagnostics(): Promise<CapabilityDiagnostics> {
+  const [fileIntelligence, office, automation, developer, security, mobile, communication, realWorld, iot, future] = await Promise.all([
+    fetch(`${getBase()}/v1/file-intelligence/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch file intelligence diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/office/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch office diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/automation/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch automation diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/developer/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch developer diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/security/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch security diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/mobile/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch mobile diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/communication/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch communication diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/real-world/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch real-world diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/iot/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch smart home diagnostics');
+      return r.json();
+    }),
+    fetch(`${getBase()}/v1/future/diagnostics`).then((r) => {
+      if (!r.ok) throw new Error('Failed to fetch future diagnostics');
+      return r.json();
+    }),
+  ]);
+  return { fileIntelligence, office, automation, developer, security, mobile, communication, realWorld, iot, future };
 }
 
 export async function runRoutine(name: string): Promise<{ status: string; message: string }> {

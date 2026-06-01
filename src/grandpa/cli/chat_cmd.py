@@ -202,14 +202,29 @@ def chat(
                     console.print(f"[bold]{role}:[/bold] {msg.content[:200]}")
             continue
 
+        from grandpa.core_ai_brain import (
+            build_brain_context,
+            process_user_message,
+            record_assistant_outcome,
+        )
         from grandpa.memory_context import handle_memory_command, remember_conversation
 
         remember_conversation("user", user_input)
-        memory_result = handle_memory_command(user_input)
+        brain_analysis = process_user_message(user_input)
+        effective_user_input = brain_analysis.effective_text
+
+        memory_result = handle_memory_command(effective_user_input)
         if not memory_result.should_fallback:
             history.append(Message(role=Role.USER, content=user_input))
             history.append(Message(role=Role.ASSISTANT, content=memory_result.message))
             remember_conversation("assistant", memory_result.message)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=memory_result.message,
+                kind=memory_result.kind,
+                target=memory_result.target,
+                status=memory_result.status,
+            )
             console.print()
             console.print(Markdown(memory_result.message))
             console.print()
@@ -217,11 +232,18 @@ def chat(
 
         from grandpa.local_actions import handle_local_action
 
-        local_action = handle_local_action(user_input)
+        local_action = handle_local_action(effective_user_input)
         if not local_action.should_fallback:
             history.append(Message(role=Role.USER, content=user_input))
             history.append(Message(role=Role.ASSISTANT, content=local_action.message))
             remember_conversation("assistant", local_action.message)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=local_action.message,
+                kind=local_action.kind,
+                target=local_action.target,
+                status=local_action.status,
+            )
             console.print()
             console.print(Markdown(local_action.message))
             console.print()
@@ -229,11 +251,18 @@ def chat(
 
         from grandpa.file_assistant import handle_file_command
 
-        file_action = handle_file_command(user_input)
+        file_action = handle_file_command(effective_user_input)
         if not file_action.should_fallback:
             history.append(Message(role=Role.USER, content=user_input))
             history.append(Message(role=Role.ASSISTANT, content=file_action.message))
             remember_conversation("assistant", file_action.message)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=file_action.message,
+                kind=getattr(file_action, "kind", "file"),
+                target=getattr(file_action, "target", None),
+                status=file_action.status,
+            )
             console.print()
             console.print(Markdown(file_action.message))
             console.print()
@@ -241,28 +270,39 @@ def chat(
 
         from grandpa.task_scheduler import handle_scheduler_command
 
-        scheduler_action = handle_scheduler_command(user_input)
+        scheduler_action = handle_scheduler_command(effective_user_input)
         if not scheduler_action.should_fallback:
             history.append(Message(role=Role.USER, content=user_input))
             history.append(Message(role=Role.ASSISTANT, content=scheduler_action.message))
             remember_conversation("assistant", scheduler_action.message)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=scheduler_action.message,
+                kind=getattr(scheduler_action, "kind", "routine"),
+                target=getattr(scheduler_action, "target", None),
+                status=scheduler_action.status,
+            )
             console.print()
             console.print(Markdown(scheduler_action.message))
             console.print()
             continue
 
         # Add user message
-        history.append(Message(role=Role.USER, content=user_input))
+        history.append(Message(role=Role.USER, content=effective_user_input))
 
         # Generate response
         try:
+            model_history = [
+                Message(role=Role.SYSTEM, content=build_brain_context(brain_analysis)),
+                *history,
+            ]
             if agent is not None:
-                response = agent.run(user_input)
+                response = agent.run(effective_user_input)
                 content = (
                     response.content if hasattr(response, "content") else str(response)
                 )
             else:
-                result = engine.generate(history, model=model)
+                result = engine.generate(model_history, model=model)
                 content = (
                     result.get("content", "")
                     if isinstance(result, dict)
@@ -270,6 +310,13 @@ def chat(
                 )
             content = clean_assistant_response(content)
             remember_conversation("assistant", content)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=content,
+                kind="assistant",
+                target=None,
+                status="handled",
+            )
 
             history.append(Message(role=Role.ASSISTANT, content=content))
             console.print()

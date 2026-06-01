@@ -606,12 +606,27 @@ def ask(
     console = Console(stderr=True)
     query_text = " ".join(query)
 
+    from grandpa.core_ai_brain import (
+        build_brain_context,
+        process_user_message,
+        record_assistant_outcome,
+    )
     from grandpa.memory_context import handle_memory_command, remember_conversation
 
     remember_conversation("user", query_text)
-    memory_result = handle_memory_command(query_text)
+    brain_analysis = process_user_message(query_text)
+    effective_query_text = brain_analysis.effective_text
+
+    memory_result = handle_memory_command(effective_query_text)
     if not memory_result.should_fallback:
         remember_conversation("assistant", memory_result.message)
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=memory_result.message,
+            kind=memory_result.kind,
+            target=memory_result.target,
+            status=memory_result.status,
+        )
         if output_json:
             click.echo(
                 json_mod.dumps(
@@ -632,9 +647,16 @@ def ask(
 
     from grandpa.local_actions import handle_local_action
 
-    local_action = handle_local_action(query_text)
+    local_action = handle_local_action(effective_query_text)
     if not local_action.should_fallback:
         remember_conversation("assistant", local_action.message)
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=local_action.message,
+            kind=local_action.kind,
+            target=local_action.target,
+            status=local_action.status,
+        )
         if output_json:
             click.echo(
                 json_mod.dumps(
@@ -655,9 +677,16 @@ def ask(
 
     from grandpa.file_assistant import handle_file_command
 
-    file_action = handle_file_command(query_text)
+    file_action = handle_file_command(effective_query_text)
     if not file_action.should_fallback:
         remember_conversation("assistant", file_action.message)
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=file_action.message,
+            kind=getattr(file_action, "kind", "file"),
+            target=getattr(file_action, "target", None),
+            status=file_action.status,
+        )
         if output_json:
             click.echo(
                 json_mod.dumps(
@@ -678,9 +707,16 @@ def ask(
 
     from grandpa.task_scheduler import handle_scheduler_command
 
-    scheduler_action = handle_scheduler_command(query_text)
+    scheduler_action = handle_scheduler_command(effective_query_text)
     if not scheduler_action.should_fallback:
         remember_conversation("assistant", scheduler_action.message)
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=scheduler_action.message,
+            kind=getattr(scheduler_action, "kind", "routine"),
+            target=getattr(scheduler_action, "target", None),
+            status=scheduler_action.status,
+        )
         if output_json:
             click.echo(
                 json_mod.dumps(
@@ -860,7 +896,7 @@ def ask(
         try:
             result = _run_agent(
                 agent_name,
-                query_text,
+                effective_query_text,
                 engine,
                 model_name,
                 parsed_tools,
@@ -899,6 +935,13 @@ def ask(
         else:
             click.echo(clean_content)
         remember_conversation("assistant", clean_content)
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=clean_content,
+            kind="assistant",
+            target=None,
+            status="handled",
+        )
 
         if enable_profile:
             _print_profile(
@@ -918,7 +961,11 @@ def ask(
         return
 
     # Direct-to-engine mode (no agent)
-    messages = [Message(role=Role.USER, content=query_text)]
+    brain_context = build_brain_context(brain_analysis)
+    messages = [
+        Message(role=Role.SYSTEM, content=brain_context),
+        Message(role=Role.USER, content=effective_query_text),
+    ]
 
     # Memory-augmented context injection
     if not no_context and config.agent.context_from_memory:
@@ -936,7 +983,7 @@ def ask(
                     max_context_tokens=(config.memory.context_max_tokens),
                 )
                 messages = inject_context(
-                    query_text,
+                    effective_query_text,
                     messages,
                     backend,
                     config=ctx_cfg,
@@ -964,6 +1011,13 @@ def ask(
     content = clean_assistant_response(result.get("content", ""))
     result["content"] = content
     remember_conversation("assistant", content)
+    record_assistant_outcome(
+        brain_analysis,
+        assistant_text=content,
+        kind="assistant",
+        target=None,
+        status="handled",
+    )
     if output_json:
         click.echo(json_mod.dumps(result, indent=2))
     else:
