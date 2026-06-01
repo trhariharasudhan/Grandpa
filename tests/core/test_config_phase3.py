@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from grandpa.core.config import (
     AgentConfig,
-    HardwareInfo,
     GrandpaConfig,
+    HardwareInfo,
     ServerConfig,
     generate_default_toml,
 )

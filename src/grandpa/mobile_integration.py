@@ -12,7 +12,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_MOBILE_DB = DEFAULT_CONFIG_DIR / "mobile_integration.db"
 
 

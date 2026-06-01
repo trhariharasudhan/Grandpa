@@ -5,7 +5,6 @@ import json
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "dev" / "audit_grandpa_features.py"
 AUDIT = ROOT / "docs" / "GRANDPA_FEATURE_AUDIT.md"

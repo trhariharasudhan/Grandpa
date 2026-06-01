@@ -25,6 +25,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+import grandpa
+
 
 @dataclass(frozen=True)
 class InstallInfo:
@@ -42,8 +44,6 @@ def detect_install() -> InstallInfo:
     once and checks for marker directories. No subprocess calls.
     """
     try:
-        import Grandpa
-
         pkg_file = Path(grandpa.__file__).resolve()
     except Exception:
         return InstallInfo(

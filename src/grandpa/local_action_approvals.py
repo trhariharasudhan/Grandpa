@@ -11,7 +11,6 @@ from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 PermissionDecision = Literal["allowed", "requires_confirmation", "blocked", "unsupported"]
 
 DEFAULT_APPROVAL_DB = DEFAULT_CONFIG_DIR / "local_action_approvals.db"

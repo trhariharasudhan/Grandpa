@@ -21,7 +21,6 @@ from xml.etree import ElementTree as ET
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_DOCUMENT_DB = DEFAULT_CONFIG_DIR / "document_intelligence.db"
 SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".log", ".csv", ".json", ".pdf", ".docx", ".xlsx", ".pptx"}
 MAX_TEXT_CHARS = 20000

@@ -18,7 +18,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_SCHEDULER_DB = DEFAULT_CONFIG_DIR / "scheduler.db"
 SAFE_ROUTINE_ACTIONS = {
     "open chrome",

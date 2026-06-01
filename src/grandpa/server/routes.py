@@ -19,7 +19,6 @@ from grandpa.server.models import (
     ChatCompletionChunk,
     ChatCompletionRequest,
     ChatCompletionResponse,
-    ChatMessage,
     Choice,
     ChoiceMessage,
     ComplexityInfo,
@@ -170,7 +169,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 exc_info=True,
             )
 
-    ai_plan = _apply_ai_routing(engine, request_body, effective_user_text)
+    _apply_ai_routing(engine, request_body, effective_user_text)
     model = request_body.model
 
     # Inject memory context into messages before dispatching
@@ -275,8 +274,8 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             )
 
         from grandpa.file_assistant import handle_file_command
-        from grandpa.memory_context import handle_memory_command
         from grandpa.local_actions import handle_local_action
+        from grandpa.memory_context import handle_memory_command
         from grandpa.task_scheduler import handle_scheduler_command
 
         memory_result = handle_memory_command(effective_user_text)
@@ -1010,7 +1009,11 @@ async def personal_memory():
 @router.get("/v1/browser/context")
 async def browser_context():
     """Return safe visible-browser context for the HUD."""
-    from grandpa.browser_control import BrowserContextStore, get_visible_browser_context, latest_browser_snapshot
+    from grandpa.browser_control import (
+        BrowserContextStore,
+        get_visible_browser_context,
+        latest_browser_snapshot,
+    )
 
     context = get_visible_browser_context()
     latest = latest_browser_snapshot()

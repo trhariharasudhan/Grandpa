@@ -14,7 +14,6 @@ from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_APP_CACHE_DB = DEFAULT_CONFIG_DIR / "app_resolver.db"
 LaunchKind = Literal["path", "shortcut", "command", "uri", "missing", "unsupported"]
 

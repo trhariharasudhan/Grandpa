@@ -16,7 +16,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_SECURITY_DB = DEFAULT_CONFIG_DIR / "security_safety.db"
 SENSITIVE_PATTERN = re.compile(r"\b(password|secret|token|api[_ -]?key|credential|private key)\b", re.I)
 SUSPICIOUS_PATTERN = re.compile(r"\b(delete|format|wipe|shutdown|restart|payment|purchase|password|credential|registry|powershell)\b", re.I)

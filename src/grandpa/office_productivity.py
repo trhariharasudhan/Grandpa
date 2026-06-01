@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from grandpa.document_intelligence import extract_document_text, extract_tables, smart_summary
+from grandpa.document_intelligence import (
+    extract_tables,
+    smart_summary,
+)
 
 
 @dataclass(frozen=True)

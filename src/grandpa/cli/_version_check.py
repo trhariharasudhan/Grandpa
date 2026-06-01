@@ -9,6 +9,8 @@ import sys
 import time
 from pathlib import Path
 
+import grandpa
+
 logger = logging.getLogger(__name__)
 
 _CACHE_PATH = Path("~/.grandpa/version-check.json").expanduser()
@@ -114,8 +116,6 @@ def check_for_updates(command_name: str) -> None:
 
 
 def _do_check() -> None:
-    import Grandpa
-
     current = grandpa.__version__
     latest = _get_latest_version(current)
     if latest is None:

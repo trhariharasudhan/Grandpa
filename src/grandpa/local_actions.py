@@ -886,10 +886,10 @@ def _parse_screen_action(command: str) -> LocalActionResult:
 
     if command in {
         "what is on my screen",
-	"read my screen",
-	"analyze my screen",
-	"describe my screen",
-	"screen analysis",
+        "read my screen",
+        "analyze my screen",
+        "describe my screen",
+        "screen analysis",
         "what's on my screen",
         "read this error message",
         "read the error message",
@@ -1214,7 +1214,11 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         )
 
     if result.kind == "screen":
-        from grandpa.screen_awareness import describe_screen, get_active_window_info, screen_diagnostics
+        from grandpa.screen_awareness import (
+            describe_screen,
+            get_active_window_info,
+            screen_diagnostics,
+        )
 
         if result.target == "active_window":
             info = get_active_window_info()

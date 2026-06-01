@@ -1,5 +1,5 @@
-from pathlib import Path
 import time
+from pathlib import Path
 
 from grandpa import local_actions, task_scheduler
 from grandpa.local_actions import LocalActionResult

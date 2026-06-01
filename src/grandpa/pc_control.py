@@ -7,6 +7,7 @@ mocked OS calls so dangerous operations never run during validation.
 
 from __future__ import annotations
 
+import gzip
 import json
 import os
 import shutil
@@ -15,7 +16,6 @@ import sys
 import threading
 import time
 import uuid
-import gzip
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -724,7 +724,12 @@ def _execute_desktop_context(request: LocalActionRequest, action: str) -> LocalA
 
 def _execute_clipboard(request: LocalActionRequest, action: str) -> LocalActionResponse:
     import pyperclip
-    from grandpa.desktop_context import inspect_clipboard_text, read_clipboard_history, record_clipboard_metadata
+
+    from grandpa.desktop_context import (
+        inspect_clipboard_text,
+        read_clipboard_history,
+        record_clipboard_metadata,
+    )
 
     if action == "clipboard_read":
         text = pyperclip.paste()

@@ -7,7 +7,13 @@ from pathlib import Path
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from grandpa import developer_assistant, document_intelligence, office_productivity, security_safety, smart_automation
+from grandpa import (
+    developer_assistant,
+    document_intelligence,
+    office_productivity,
+    security_safety,
+    smart_automation,
+)
 from grandpa.server.routes import router
 
 

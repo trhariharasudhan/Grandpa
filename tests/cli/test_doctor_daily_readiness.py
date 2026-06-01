@@ -8,8 +8,8 @@ from grandpa.cli.doctor_cmd import (
     _check_docker_readiness,
     _check_existing_sqlite_db,
     _check_known_app,
-    _readiness_label,
     _fetch_ollama_models,
+    _readiness_label,
 )
 from grandpa.windows_app_resolver import AppResolution
 

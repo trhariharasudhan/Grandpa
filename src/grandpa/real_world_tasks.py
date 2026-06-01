@@ -11,7 +11,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_REAL_WORLD_DB = DEFAULT_CONFIG_DIR / "real_world_tasks.db"
 PURCHASE_RISK = re.compile(r"\b(checkout|buy now|purchase|pay|payment|card|place order|book now|confirm booking)\b", re.I)
 

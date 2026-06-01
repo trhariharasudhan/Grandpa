@@ -19,7 +19,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_FILE_DB = DEFAULT_CONFIG_DIR / "file_assistant.db"
 NOTES_DIR = DEFAULT_CONFIG_DIR / "notes"
 MAX_SCAN_FILES = 5000

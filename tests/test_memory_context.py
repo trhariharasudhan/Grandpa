@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from grandpa.memory_context import MemoryStore, handle_memory_command, search_personal_memory
+from grandpa.memory_context import (
+    MemoryStore,
+    handle_memory_command,
+    search_personal_memory,
+)
 
 
 def test_remember_and_recall_project(tmp_path):

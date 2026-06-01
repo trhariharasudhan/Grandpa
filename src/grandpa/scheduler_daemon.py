@@ -10,7 +10,6 @@ from typing import Any
 
 from grandpa.task_scheduler import SchedulerStore, execute_due_once
 
-
 logger = logging.getLogger(__name__)
 
 

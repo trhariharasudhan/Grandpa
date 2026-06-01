@@ -11,7 +11,6 @@ import ctypes
 import logging
 import re
 import sys
-import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -266,8 +265,8 @@ def extract_text_from_image(path: str) -> str:
 def extract_ocr_result(path: str) -> OcrResult:
     """Run local OCR with lightweight preprocessing and confidence metadata."""
     try:
-        from PIL import Image  # type: ignore
         import pytesseract  # type: ignore
+        from PIL import Image  # type: ignore
 
         image = Image.open(path)
         variants = [image]

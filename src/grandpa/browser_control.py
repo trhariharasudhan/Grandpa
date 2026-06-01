@@ -22,7 +22,6 @@ from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_BROWSER_DB = DEFAULT_CONFIG_DIR / "browser_context.db"
 _BROWSER_SUFFIXES = (
     " - Google Chrome",
@@ -698,7 +697,10 @@ def _context_from_snapshot(snapshot: dict[str, Any]) -> BrowserContext:
 
 def _active_window_title() -> str:
     try:
-        from grandpa.windows_window_control import _get_foreground_window, _get_window_title
+        from grandpa.windows_window_control import (
+            _get_foreground_window,
+            _get_window_title,
+        )
 
         return _get_window_title(_get_foreground_window())
     except Exception:

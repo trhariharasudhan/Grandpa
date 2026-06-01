@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-
 REPO_ROOT = Path("D:/Grandpa")
 BLOCKED_COMMAND_PATTERNS = re.compile(r"\b(rm|del|format|shutdown|restart|reg\s+delete|git\s+reset\s+--hard)\b", re.I)
 ALLOWLIST_PREFIXES = (

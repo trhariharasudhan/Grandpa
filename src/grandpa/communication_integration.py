@@ -11,7 +11,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_COMM_DB = DEFAULT_CONFIG_DIR / "communication_integration.db"
 SERVICES = ("whatsapp_web", "telegram", "discord", "slack", "gmail", "teams")
 

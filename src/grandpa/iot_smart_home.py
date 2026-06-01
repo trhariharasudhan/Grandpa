@@ -11,7 +11,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_IOT_DB = DEFAULT_CONFIG_DIR / "iot_smart_home.db"
 
 

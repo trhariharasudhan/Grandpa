@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import grandpa.screen_awareness as screen_awareness
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import grandpa.screen_awareness as screen_awareness
 from grandpa.server.routes import router
 
 

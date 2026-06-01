@@ -7,7 +7,6 @@ import sys
 from dataclasses import dataclass
 from typing import Literal
 
-
 WindowAction = Literal["focus", "close", "minimize", "maximize", "restore", "list"]
 WindowStatus = Literal[
     "handled",

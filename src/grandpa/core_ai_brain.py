@@ -16,7 +16,6 @@ from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_BRAIN_DB = DEFAULT_CONFIG_DIR / "core_brain.db"
 TAMIL_RE = re.compile(r"[\u0B80-\u0BFF]")
 

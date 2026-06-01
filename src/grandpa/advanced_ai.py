@@ -15,7 +15,6 @@ from typing import Any, Iterable
 
 from grandpa.learning.routing.complexity import score_complexity
 
-
 _CLOUD_PREFIXES = ("gpt-", "o1-", "o3-", "o4-", "claude-", "gemini-", "openrouter/")
 _EMBEDDING_HINTS = ("embed", "embedding", "nomic-embed")
 _LOCAL_PRIORITY = (

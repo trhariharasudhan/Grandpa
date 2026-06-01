@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from grandpa.core.config import (
-    HardwareInfo,
     GrandpaConfig,
+    HardwareInfo,
     LearningConfig,
     generate_default_toml,
     load_config,

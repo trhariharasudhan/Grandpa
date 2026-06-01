@@ -18,7 +18,6 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-
 DEFAULT_MEMORY_DB = DEFAULT_CONFIG_DIR / "personal_memory.db"
 SEMANTIC_DIMENSIONS = 128
 SEMANTIC_MODEL = "grandpa-local-semantic-v1"
@@ -739,7 +738,6 @@ def _tokens(text: str) -> set[str]:
 def _expanded_tokens(text: str) -> set[str]:
     tokens = _tokens(text)
     expanded = set(tokens)
-    joined = " ".join(tokens)
     if "vs code" in text.lower() or {"vs", "code"}.issubset(tokens):
         expanded.add("vscode")
     for token in list(tokens):
