@@ -3,7 +3,7 @@
   "generated_by": "scripts/dev/audit_grandpa_features.py",
   "summary": {
     "feature_count": 16,
-    "average_completion": 50.9,
+    "average_completion": 54.6,
     "active_forbidden_branding_references": 0,
     "generated_lockfile_branding_references": 58
   },
@@ -369,28 +369,36 @@
     {
       "feature": "Mobile Integration",
       "status": "PARTIAL",
-      "percent_complete": 24,
-      "priority": "P3",
+      "percent_complete": 84,
+      "priority": "P1",
       "evidence_files": [
-        "src/grandpa/channels",
-        "src/grandpa/daemon",
-        "docs/user-guide/channels.md",
-        "docs/tutorials/messaging-hub.md"
+        "src/grandpa/mobile_integration.py",
+        "src/grandpa/server/routes.py",
+        "frontend/src/pages/MobileCompanionPage.tsx",
+        "frontend/src/lib/api.ts",
+        "mobile/android_companion/pubspec.yaml",
+        "mobile/android_companion/lib/main.dart",
+        "mobile/android_companion/android/app/src/main/AndroidManifest.xml",
+        "mobile/android_companion/android/app/src/main/kotlin/com/grandpa/companion/GrandpaNotificationListenerService.kt",
+        "mobile/android_companion/android/app/src/main/kotlin/com/grandpa/companion/MainActivity.kt",
+        "tests/test_mobile_companion.py",
+        "tests/test_integration_foundations.py"
       ],
       "missing_evidence_files": [],
       "missing_items": [
-        "Mobile companion app.",
-        "Push notification bridge.",
-        "Device pairing and local network trust model."
+        "Physical Android-device validation for notification listener behavior.",
+        "Physical Android-device validation for microphone relay quality.",
+        "Flutter SDK build validation on a machine where the SDK cache is writable."
       ],
       "next_tasks": [
-        "Design mobile companion architecture.",
-        "Add QR/device pairing plan.",
-        "Define mobile notification permissions."
+        "Test APK on a real Android phone and verify notification-listener consent flow.",
+        "Tune microphone relay latency and reconnect behavior on real Wi-Fi.",
+        "Move Flutter SDK to a user-writable location or fix cache permissions for CI builds."
       ],
       "test_requirements": [
-        "Channel gateway tests.",
-        "Future mobile pairing integration tests."
+        "Flutter widget tests for pairing and reconnect states.",
+        "Android instrumentation tests for notification permission flow.",
+        "Backend WebSocket reconnect and malformed-event tests."
       ]
     },
     {

@@ -177,9 +177,10 @@ export function CapabilitiesPage() {
             status={data?.mobile.status}
             metric={`${data?.mobile.connected_devices ?? 0} paired`}
             details={[
-              `Pairing: local LAN`,
+              `Pairing: local LAN WebSocket`,
+              `Online: ${data?.mobile.online_devices ?? 0}`,
               `Notifications: ${data?.mobile.notifications?.length ?? 0} synced`,
-              `Hidden scraping: blocked`,
+              `Clipboard sync: approval gated`,
             ]}
           />
           <CapabilityCard

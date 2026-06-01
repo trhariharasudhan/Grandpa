@@ -1,0 +1,22 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace = "com.grandpa.companion"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.grandpa.companion"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.2.0"
+    }
+}
+
+flutter {
+    source = "../.."
+}

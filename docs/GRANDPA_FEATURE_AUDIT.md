@@ -16,7 +16,7 @@ This audit is generated from repository evidence and is intended to keep Grandpa
 | Voice Assistant | PARTIAL | 62% | P1 | 5 |
 | PC Control | COMPLETE | 100% | P0 | 10 |
 | Browser Control | PARTIAL | 42% | P1 | 3 |
-| Mobile Integration | PARTIAL | 24% | P3 | 4 |
+| Mobile Integration | PARTIAL | 84% | P1 | 11 |
 | File & Document Intelligence | PARTIAL | 66% | P1 | 4 |
 | Office Productivity | MISSING | 12% | P2 | 2 |
 | Smart Automation | PARTIAL | 71% | P0 | 5 |
@@ -135,24 +135,32 @@ This audit is generated from repository evidence and is intended to keep Grandpa
 ### Mobile Integration
 
 - Current Status: PARTIAL
-- Current Level: 24%
-- Priority: P3
+- Current Level: 84%
+- Priority: P1
 - Current Evidence:
-  - `src/grandpa/channels`
-  - `src/grandpa/daemon`
-  - `docs/user-guide/channels.md`
-  - `docs/tutorials/messaging-hub.md`
+  - `src/grandpa/mobile_integration.py`
+  - `src/grandpa/server/routes.py`
+  - `frontend/src/pages/MobileCompanionPage.tsx`
+  - `frontend/src/lib/api.ts`
+  - `mobile/android_companion/pubspec.yaml`
+  - `mobile/android_companion/lib/main.dart`
+  - `mobile/android_companion/android/app/src/main/AndroidManifest.xml`
+  - `mobile/android_companion/android/app/src/main/kotlin/com/grandpa/companion/GrandpaNotificationListenerService.kt`
+  - `mobile/android_companion/android/app/src/main/kotlin/com/grandpa/companion/MainActivity.kt`
+  - `tests/test_mobile_companion.py`
+  - `tests/test_integration_foundations.py`
 - Missing Pieces:
-  - Mobile companion app.
-  - Push notification bridge.
-  - Device pairing and local network trust model.
+  - Physical Android-device validation for notification listener behavior.
+  - Physical Android-device validation for microphone relay quality.
+  - Flutter SDK build validation on a machine where the SDK cache is writable.
 - Implementation Plan:
-  - Design mobile companion architecture.
-  - Add QR/device pairing plan.
-  - Define mobile notification permissions.
+  - Test APK on a real Android phone and verify notification-listener consent flow.
+  - Tune microphone relay latency and reconnect behavior on real Wi-Fi.
+  - Move Flutter SDK to a user-writable location or fix cache permissions for CI builds.
 - Tests Needed:
-  - Channel gateway tests.
-  - Future mobile pairing integration tests.
+  - Flutter widget tests for pairing and reconnect states.
+  - Android instrumentation tests for notification permission flow.
+  - Backend WebSocket reconnect and malformed-event tests.
 
 ### File & Document Intelligence
 

@@ -21,6 +21,7 @@ const FileAssistantPage = lazy(() => import('./pages/FileAssistantPage').then((m
 const RoutinesPage = lazy(() => import('./pages/RoutinesPage').then((m) => ({ default: m.RoutinesPage })));
 const SafetyPage = lazy(() => import('./pages/SafetyPage').then((m) => ({ default: m.SafetyPage })));
 const BrowserPage = lazy(() => import('./pages/BrowserPage').then((m) => ({ default: m.BrowserPage })));
+const MobileCompanionPage = lazy(() => import('./pages/MobileCompanionPage').then((m) => ({ default: m.MobileCompanionPage })));
 const CapabilitiesPage = lazy(() => import('./pages/CapabilitiesPage').then((m) => ({ default: m.CapabilitiesPage })));
 
 export default function App() {
@@ -153,6 +154,7 @@ export default function App() {
             <Route path="routines" element={<RoutinesPage />} />
             <Route path="safety" element={<SafetyPage />} />
             <Route path="browser" element={<BrowserPage />} />
+            <Route path="mobile" element={<MobileCompanionPage />} />
             <Route path="capabilities" element={<CapabilitiesPage />} />
             <Route path="agents" element={<AgentsPage />} />
             <Route path="logs" element={<LogsPage />} />

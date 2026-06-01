@@ -1311,6 +1311,7 @@ export interface CapabilityDiagnostics {
   mobile: {
     status: string;
     connected_devices: number;
+    online_devices?: number;
     devices: Array<Record<string, unknown>>;
     notifications: Array<Record<string, unknown>>;
     features: Record<string, unknown>;
@@ -1345,6 +1346,95 @@ export interface CapabilityDiagnostics {
     hardware: Record<string, unknown>;
     safety: Record<string, unknown>;
   };
+}
+
+export interface MobileDeviceStatus {
+  device_name?: string;
+  battery?: number | null;
+  charging?: boolean | null;
+  connectivity?: string;
+  platform?: string;
+  app_version?: string;
+}
+
+export interface MobileDevice {
+  device_id: string;
+  created_at: number;
+  name: string;
+  paired: boolean;
+  trusted: boolean;
+  online: boolean;
+  last_seen_at?: number | null;
+  status: MobileDeviceStatus;
+  permissions: Record<string, boolean>;
+}
+
+export interface MobileNotification {
+  id: number;
+  created_at: number;
+  device_id: string;
+  kind: string;
+  app: string;
+  title: string;
+  summary: string;
+  redacted: boolean | number;
+}
+
+export interface MobileEvent {
+  id: number;
+  created_at: number;
+  device_id: string;
+  event_type: string;
+  summary: string;
+  payload: Record<string, unknown>;
+}
+
+export interface MobileDiagnostics {
+  status: string;
+  architecture: Record<string, unknown>;
+  devices: MobileDevice[];
+  connected_devices: number;
+  online_devices: number;
+  notifications: MobileNotification[];
+  commands: Array<Record<string, unknown>>;
+  events: MobileEvent[];
+  features: Record<string, unknown>;
+  safety: Record<string, unknown>;
+  storage: { backend: string; path: string; local_only: boolean };
+}
+
+export interface MobilePairingResponse {
+  device_id: string;
+  pairing_code: string;
+  expires_in_seconds: number;
+  local_only: boolean;
+  websocket_path: string;
+}
+
+export async function fetchMobileDiagnostics(): Promise<MobileDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/mobile/diagnostics`);
+  if (!res.ok) throw new Error('Failed to fetch mobile diagnostics');
+  return res.json();
+}
+
+export async function createMobilePairing(name: string): Promise<MobilePairingResponse> {
+  const res = await fetch(`${getBase()}/v1/mobile/pairing`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) throw new Error('Failed to create mobile pairing code');
+  return res.json();
+}
+
+export async function sendMobileRemoteCommand(command: string, deviceId = ''): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/mobile/remote-command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ command, device_id: deviceId }),
+  });
+  if (!res.ok) throw new Error('Failed to send mobile command simulation');
+  return res.json();
 }
 
 export async function fetchCapabilityDiagnostics(): Promise<CapabilityDiagnostics> {

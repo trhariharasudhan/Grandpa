@@ -7,7 +7,14 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import StreamingResponse
 
 from grandpa.core.types import Message, Role
@@ -1267,16 +1274,230 @@ async def mobile_pairing(request: Request):
     from grandpa.mobile_integration import MobileBridgeStore
 
     body = await request.json()
-    return MobileBridgeStore().create_pairing(str(body.get("name", "Android device")))
+    result = MobileBridgeStore().create_pairing(str(body.get("name", "Android device")))
+    host = str(body.get("host", "")).strip()
+    if host:
+        result["qr_payload"]["host"] = host
+    return result
+
+
+@router.get("/v1/mobile/pairing/{device_id}/qr")
+async def mobile_pairing_qr(device_id: str, code: str = Query(default="")):
+    from grandpa.mobile_integration import pairing_qr_payload
+
+    if not code:
+        raise HTTPException(status_code=400, detail="'code' query parameter is required")
+    return pairing_qr_payload(device_id, code)
+
+
+@router.post("/v1/mobile/pairing/confirm")
+async def mobile_pairing_confirm(request: Request):
+    from grandpa.mobile_integration import MobileBridgeStore
+
+    body = await request.json()
+    result = MobileBridgeStore().confirm_pairing(
+        str(body.get("device_id", "")),
+        str(body.get("pairing_code", "")),
+        status=body.get("status") if isinstance(body.get("status"), dict) else None,
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("message", "Pairing failed"))
+    return result
+
+
+@router.get("/v1/mobile/devices")
+async def mobile_devices():
+    from grandpa.mobile_integration import MobileBridgeStore
+
+    store = MobileBridgeStore()
+    return {"devices": store.devices(), "events": store.events(limit=20)}
+
+
+@router.post("/v1/mobile/heartbeat")
+async def mobile_heartbeat(request: Request):
+    from grandpa.mobile_integration import MobileBridgeStore
+
+    body = await request.json()
+    store = MobileBridgeStore()
+    device_id = str(body.get("device_id", ""))
+    token = str(body.get("trusted_token", body.get("token", "")))
+    if not store.authenticate(device_id, token):
+        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
+    status = body.get("status") if isinstance(body.get("status"), dict) else {}
+    return store.update_status(device_id, status)
+
+
+@router.post("/v1/mobile/notifications")
+async def mobile_notification_sync(request: Request):
+    from grandpa.mobile_integration import MobileBridgeStore
+
+    body = await request.json()
+    store = MobileBridgeStore()
+    device_id = str(body.get("device_id", ""))
+    token = str(body.get("trusted_token", body.get("token", "")))
+    if not store.authenticate(device_id, token):
+        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
+    return store.record_notification(
+        device_id,
+        str(body.get("kind", "app")),
+        str(body.get("app", "Android")),
+        str(body.get("title", "")),
+        str(body.get("summary", "")),
+    )
 
 
 @router.post("/v1/mobile/remote-command")
 async def mobile_remote_command(request: Request):
-    from grandpa.mobile_integration import plan_remote_command
+    from grandpa.mobile_integration import MobileBridgeStore, plan_remote_command
 
     body = await request.json()
-    result = plan_remote_command(str(body.get("command", "")), device_id=str(body.get("device_id", "")))
-    return {"status": result.status, "message": result.message, **result.data}
+    store = MobileBridgeStore()
+    device_id = str(body.get("device_id", ""))
+    token = str(body.get("trusted_token", body.get("token", "")))
+    if token and not store.authenticate(device_id, token):
+        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
+    result = plan_remote_command(str(body.get("command", "")), device_id=device_id)
+    return store.record_remote_command(device_id, str(body.get("command", "")), result)
+
+
+@router.post("/v1/mobile/voice-relay")
+async def mobile_voice_relay(request: Request):
+    from grandpa.mobile_integration import MobileBridgeStore, voice_relay_plan
+
+    body = await request.json()
+    store = MobileBridgeStore()
+    device_id = str(body.get("device_id", ""))
+    token = str(body.get("trusted_token", body.get("token", "")))
+    if not store.authenticate(device_id, token):
+        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
+    result = voice_relay_plan(str(body.get("transcript", "")), device_id=device_id)
+    return store.record_remote_command(device_id, str(body.get("transcript", "")), result)
+
+
+@router.post("/v1/mobile/clipboard-sync-plan")
+async def mobile_clipboard_sync_plan(request: Request):
+    from grandpa.mobile_integration import MobileBridgeStore, clipboard_sync_plan
+
+    body = await request.json()
+    store = MobileBridgeStore()
+    device_id = str(body.get("device_id", ""))
+    token = str(body.get("trusted_token", body.get("token", "")))
+    if not store.authenticate(device_id, token):
+        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
+    result = clipboard_sync_plan(device_id, str(body.get("direction", "phone_to_desktop")))
+    return store.record_remote_command(device_id, "clipboard sync", result)
+
+
+@router.post("/v1/mobile/push")
+async def mobile_push_notification(request: Request):
+    from grandpa.mobile_integration import MobileBridgeStore
+
+    body = await request.json()
+    store = MobileBridgeStore()
+    device_id = str(body.get("device_id", ""))
+    return store.queue_push_notification(
+        device_id,
+        str(body.get("title", "Grandpa")),
+        str(body.get("body", "")),
+    )
+
+
+@router.get("/v1/mobile/outbox/{device_id}")
+async def mobile_outbox(device_id: str):
+    from grandpa.mobile_integration import MobileBridgeStore
+
+    store = MobileBridgeStore()
+    return {"items": store.pending_outbox(device_id)}
+
+
+@router.websocket("/v1/mobile/ws")
+async def mobile_companion_websocket(websocket: WebSocket):
+    """Local LAN WebSocket for the Android companion app."""
+    from grandpa.mobile_integration import (
+        MobileBridgeStore,
+        plan_remote_command,
+        voice_relay_plan,
+    )
+
+    await websocket.accept()
+    store = MobileBridgeStore()
+    device_id = ""
+    authenticated = False
+    try:
+        await websocket.send_json(
+            {
+                "type": "hello",
+                "message": "Grandpa mobile companion bridge ready.",
+                "local_only": True,
+            }
+        )
+        while True:
+            message = await websocket.receive_json()
+            event_type = str(message.get("type", ""))
+            if event_type == "pair_request":
+                pairing = store.create_pairing(str(message.get("device_name", "Android device")))
+                device_id = pairing["device_id"]
+                await websocket.send_json({"type": "pairing_code", **pairing})
+                continue
+
+            if event_type == "pair_confirm":
+                result = store.confirm_pairing(
+                    str(message.get("device_id", "")),
+                    str(message.get("pairing_code", "")),
+                    status=message.get("status") if isinstance(message.get("status"), dict) else None,
+                )
+                authenticated = bool(result.get("ok"))
+                device_id = str(result.get("device_id", message.get("device_id", "")))
+                await websocket.send_json({"type": "paired" if authenticated else "error", **result})
+                continue
+
+            if event_type == "authenticate":
+                device_id = str(message.get("device_id", ""))
+                token = str(message.get("trusted_token", message.get("token", "")))
+                authenticated = store.authenticate(device_id, token)
+                await websocket.send_json({"type": "authenticated", "ok": authenticated})
+                if authenticated:
+                    pending = store.pending_outbox(device_id)
+                    if pending:
+                        await websocket.send_json({"type": "outbox", "items": pending})
+                        store.mark_outbox_delivered([int(item["id"]) for item in pending])
+                continue
+
+            if not authenticated:
+                await websocket.send_json({"type": "error", "message": "Pair or authenticate before sending events."})
+                continue
+
+            if event_type == "heartbeat":
+                status = message.get("status") if isinstance(message.get("status"), dict) else {}
+                await websocket.send_json({"type": "heartbeat_ack", **store.update_status(device_id, status)})
+                pending = store.pending_outbox(device_id)
+                if pending:
+                    await websocket.send_json({"type": "outbox", "items": pending})
+                    store.mark_outbox_delivered([int(item["id"]) for item in pending])
+            elif event_type == "notification":
+                notification = message.get("notification") if isinstance(message.get("notification"), dict) else message
+                recorded = store.record_notification(
+                    device_id,
+                    str(notification.get("kind", "app")),
+                    str(notification.get("app", "Android")),
+                    str(notification.get("title", "")),
+                    str(notification.get("summary", "")),
+                )
+                await websocket.send_json({"type": "notification_ack", "notification": recorded})
+            elif event_type == "remote_command":
+                command = str(message.get("command", ""))
+                result = plan_remote_command(command, device_id=device_id)
+                recorded = store.record_remote_command(device_id, command, result)
+                await websocket.send_json({"type": "remote_command_result", **recorded})
+            elif event_type == "voice_relay":
+                transcript = str(message.get("transcript", ""))
+                result = voice_relay_plan(transcript, device_id=device_id)
+                recorded = store.record_remote_command(device_id, transcript, result)
+                await websocket.send_json({"type": "voice_relay_result", **recorded})
+            else:
+                await websocket.send_json({"type": "error", "message": f"Unsupported mobile event: {event_type}"})
+    except WebSocketDisconnect:
+        return
 
 
 @router.get("/v1/communication/diagnostics")
