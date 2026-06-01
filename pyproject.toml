@@ -141,8 +141,8 @@ mining-pearl-cpu = [
 ]
 framework-comparison = ["polars>=1.0"]
 docs = [
-    "mkdocs>=1.6",
-    "mkdocs-material>=9.5",
+    "mkdocs>=1.6,<2.0",
+    "mkdocs-material>=9.5,<9.7",
     "mkdocstrings[python]>=0.25",
     "mkdocs-gen-files>=0.5",
     "mkdocs-literate-nav>=0.6",
