@@ -311,6 +311,13 @@ def definition_for(name: str) -> AppDefinition | None:
             return definition
     return None
 
+def _safe_which(executable: str) -> str | None:
+    """Return PATH resolution result without crashing under mocked Windows tests."""
+
+    try:
+        return shutil.which(executable)
+    except AttributeError:
+        return None
 
 def _discover_app(definition: AppDefinition) -> AppResolution:
     for path in _candidate_common_paths(definition):
@@ -332,7 +339,7 @@ def _discover_app(definition: AppDefinition) -> AppResolution:
             return _found(definition, "shortcut", str(shortcut), "start_menu")
 
     for exe in definition.executable_names:
-        found = shutil.which(exe)
+        found = _safe_which(exe)
         if found:
             return _found(definition, "path", found, "path")
 
