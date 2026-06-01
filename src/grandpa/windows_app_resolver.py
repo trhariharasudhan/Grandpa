@@ -319,6 +319,16 @@ def _safe_which(executable: str) -> str | None:
     except AttributeError:
         return None
 
+
+def _expand_windows_envvars(raw_path: str) -> str:
+    """Expand Windows-style %VAR% paths even when tests run on Linux."""
+
+    expanded = raw_path
+    for key, value in os.environ.items():
+        expanded = expanded.replace(f"%{key}%", value)
+    return os.path.expandvars(expanded)
+
+
 def _discover_app(definition: AppDefinition) -> AppResolution:
     for path in _candidate_common_paths(definition):
         if path.is_file():
@@ -361,7 +371,7 @@ def _discover_app(definition: AppDefinition) -> AppResolution:
 
 
 def _candidate_common_paths(definition: AppDefinition) -> list[Path]:
-    return [Path(os.path.expandvars(raw)) for raw in definition.common_paths]
+    return [Path(_expand_windows_envvars(raw)) for raw in definition.common_paths]
 
 
 def _registry_app_paths(definition: AppDefinition) -> list[str]:
