@@ -23,6 +23,7 @@ const SafetyPage = lazy(() => import('./pages/SafetyPage').then((m) => ({ defaul
 const BrowserPage = lazy(() => import('./pages/BrowserPage').then((m) => ({ default: m.BrowserPage })));
 const MobileCompanionPage = lazy(() => import('./pages/MobileCompanionPage').then((m) => ({ default: m.MobileCompanionPage })));
 const CapabilitiesPage = lazy(() => import('./pages/CapabilitiesPage').then((m) => ({ default: m.CapabilitiesPage })));
+const SkillsPage = lazy(() => import('./pages/SkillsPage').then((m) => ({ default: m.SkillsPage })));
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -156,6 +157,7 @@ export default function App() {
             <Route path="browser" element={<BrowserPage />} />
             <Route path="mobile" element={<MobileCompanionPage />} />
             <Route path="capabilities" element={<CapabilitiesPage />} />
+            <Route path="skills" element={<SkillsPage />} />
             <Route path="agents" element={<AgentsPage />} />
             <Route path="logs" element={<LogsPage />} />
           </Route>

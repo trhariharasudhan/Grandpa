@@ -22,6 +22,7 @@ import {
   Globe2,
   Phone,
   Sparkles,
+  Wrench,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -64,6 +65,7 @@ export function Sidebar() {
     { path: '/browser', icon: Globe2, label: 'Browser' },
     { path: '/mobile', icon: Phone, label: 'Mobile' },
     { path: '/capabilities', icon: Sparkles, label: 'Capabilities' },
+    { path: '/skills', icon: Wrench, label: 'Skills' },
     { path: '/agents', icon: Bot, label: 'Agents' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },

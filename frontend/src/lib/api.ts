@@ -1649,3 +1649,58 @@ export async function denyAction(actionId: string): Promise<void> {
   const res = await fetch(`${getBase()}/v1/approvals/${actionId}/deny`, { method: 'POST' });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
 }
+
+// ---------------------------------------------------------------------------
+// Runtime Skills
+// ---------------------------------------------------------------------------
+
+export interface RuntimeSkill {
+  name: string;
+  description: string;
+  category: string;
+  risk_level: PcRiskLevel;
+  approval_required: boolean;
+  parameters: Array<{
+    name: string;
+    description: string;
+    required: boolean;
+    type: string;
+  }>;
+  dry_run_supported: boolean;
+  aliases: string[];
+  source?: string;
+}
+
+export interface RuntimeSkillCategory {
+  name: string;
+  count: number;
+}
+
+export interface RuntimeSkillDiagnostics {
+  status: string;
+  skill_count: number;
+  categories: RuntimeSkillCategory[];
+  approval_required_count: number;
+  loaded_skills: RuntimeSkill[];
+  history: Array<{
+    skill: string;
+    category: string;
+    status: string;
+    ok: boolean;
+    risk_level: PcRiskLevel;
+    approval_required: boolean;
+    source: string;
+  }>;
+  runtime_ready: boolean;
+}
+
+export interface RuntimeSkillsResponse {
+  skills: RuntimeSkill[];
+  runtime: RuntimeSkillDiagnostics;
+}
+
+export async function fetchRuntimeSkills(): Promise<RuntimeSkillsResponse> {
+  const res = await fetch(`${getBase()}/v1/skills`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}

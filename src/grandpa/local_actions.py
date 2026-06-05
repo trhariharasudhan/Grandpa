@@ -859,14 +859,17 @@ def _parse_screen_action(command: str) -> LocalActionResult:
         "screen diagnostics",
         "show screen diagnostics",
         "visual diagnostics",
+        "visual targeting diagnostics",
+        "show visual diagnostics",
+        "visual automation diagnostics",
         "screen awareness diagnostics",
     }:
         return LocalActionResult(
             status="handled",
             kind="screen",
-            target="screen_diagnostics",
-            message="Checking screen-awareness diagnostics.",
-            tts_text="Checking screen diagnostics.",
+            target="visual_diagnostics" if "visual" in command else "screen_diagnostics",
+            message="Checking visual targeting diagnostics." if "visual" in command else "Checking screen-awareness diagnostics.",
+            tts_text="Checking visual diagnostics." if "visual" in command else "Checking screen diagnostics.",
         )
 
     if command in {
@@ -1177,6 +1180,10 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
     if result.kind == "time" or result.kind == "system_info":
         return result
 
+    registry_result = _execute_runtime_skill(result)
+    if registry_result is not None:
+        return registry_result
+
     if result.kind == "app_lookup":
         from grandpa.windows_app_resolver import describe_app, list_installed_apps
 
@@ -1401,6 +1408,60 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         )
 
     return result
+
+
+def _execute_runtime_skill(result: LocalActionResult) -> LocalActionResult | None:
+    """Delegate migrated read-only actions to the runtime skill registry."""
+    skill_name = ""
+    params: dict[str, Any] = {}
+    if result.kind == "pc_control":
+        action_type, _, target = result.target.partition("|")
+        skill_name = {
+            "desktop_summary": "desktop.summary",
+            "list_monitors": "desktop.monitors",
+            "pc_diagnostics": "desktop.diagnostics",
+        }.get(action_type, "")
+        params = {"target": target}
+    elif result.kind == "browser" and result.target == "diagnostics|browser":
+        skill_name = "browser.diagnostics"
+    elif result.kind == "screen" and result.target in {"screen_diagnostics", "visual_diagnostics"}:
+        skill_name = "vision.visual_diagnostics" if result.target == "visual_diagnostics" else "vision.screen_diagnostics"
+
+    if not skill_name:
+        return None
+
+    try:
+        from grandpa.skills.registry import (
+            ensure_default_skills_registered,
+            execute_skill,
+        )
+        from grandpa.skills.runtime import SkillExecutionContext
+
+        ensure_default_skills_registered()
+        skill_result = execute_skill(
+            skill_name,
+            params,
+            SkillExecutionContext(
+                user_request=result.message,
+                source="local_actions",
+                dry_run=False,
+            ),
+        )
+    except Exception:
+        logger.debug("Runtime skill delegation failed for %s", skill_name, exc_info=True)
+        return None
+
+    status: ActionStatus = "handled" if skill_result.ok else (
+        "unsupported" if skill_result.status == "unsupported" else "blocked" if skill_result.status == "blocked" else "error"
+    )
+    return LocalActionResult(
+        status=status,
+        kind=result.kind,
+        target=result.target,
+        message=skill_result.message,
+        tts_text=skill_result.message,
+        permission=result.permission,
+    )
 
 
 def _log_attempt(command: str, result: LocalActionResult) -> None:

@@ -410,17 +410,85 @@ skills_router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
 @skills_router.get("")
 async def list_skills(request: Request):
-    """List installed skills."""
+    """List installed skills and runtime skill wrappers."""
     try:
+        from grandpa.skills.registry import (
+            ensure_default_skills_registered,
+            registry_diagnostics,
+        )
+        from grandpa.skills.registry import (
+            list_skills as list_runtime_skills,
+        )
+
+        ensure_default_skills_registered()
+        diagnostics = registry_diagnostics()
         from grandpa.core.registry import SkillRegistry
 
         skills = []
         for key in sorted(SkillRegistry.keys()):
-            skills.append({"name": key})
-        return {"skills": skills}
+            skills.append({"name": key, "source": "manifest"})
+        runtime_skills = [item.to_dict() for item in list_runtime_skills()]
+        return {
+            "skills": runtime_skills + skills,
+            "runtime": diagnostics,
+        }
     except Exception as exc:
         logger.warning("Failed to list skills: %s", exc)
-        return {"skills": []}
+        return {"skills": [], "runtime": {"status": "unavailable", "error": exc.__class__.__name__}}
+
+
+@skills_router.get("/categories")
+async def skill_categories():
+    """List runtime skill categories."""
+    from grandpa.skills.registry import (
+        ensure_default_skills_registered,
+        list_categories,
+    )
+
+    ensure_default_skills_registered()
+    return {"categories": list_categories()}
+
+
+@skills_router.get("/{skill_name}")
+async def get_runtime_skill(skill_name: str):
+    """Return one runtime skill by name or alias."""
+    from grandpa.skills.registry import ensure_default_skills_registered, get_skill
+
+    ensure_default_skills_registered()
+    try:
+        return get_skill(skill_name).to_dict()
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+
+
+@skills_router.post("/execute")
+async def execute_runtime_skill(request: Request):
+    """Execute a runtime skill through the central registry."""
+    from grandpa.skills.registry import ensure_default_skills_registered, execute_skill
+    from grandpa.skills.runtime import SkillExecutionContext
+
+    ensure_default_skills_registered()
+    body = await request.json()
+    name = str(body.get("name") or body.get("skill") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="'name' field is required")
+    params = body.get("params") or {}
+    if not isinstance(params, dict):
+        raise HTTPException(status_code=400, detail="'params' must be an object")
+    context = SkillExecutionContext(
+        workflow_id=body.get("workflow_id"),
+        user_request=str(body.get("user_request") or ""),
+        dry_run=bool(body.get("dry_run", False)),
+        approval_state=str(body.get("approval_state") or "none"),
+        source=str(body.get("source") or "api"),
+        timeout=float(body["timeout"]) if body.get("timeout") is not None else None,
+        metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
+    )
+    try:
+        result = execute_skill(name, params, context)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Skill not found") from exc
+    return result.to_dict()
 
 
 @skills_router.post("")
