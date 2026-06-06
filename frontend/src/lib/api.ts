@@ -1283,6 +1283,10 @@ export interface CapabilityDiagnostics {
     status: string;
     workflow_count: number;
     enabled_count: number;
+    schema_versions?: Record<string, number>;
+    skill_backed_workflow_count?: number;
+    legacy_workflow_count?: number;
+    conversion_ready?: Record<string, unknown>;
     templates: Array<{ name: string; trigger: Record<string, unknown>; steps: Array<Record<string, unknown>> }>;
     history: Array<Record<string, unknown>>;
     features: Record<string, unknown>;
@@ -1701,6 +1705,242 @@ export interface RuntimeSkillsResponse {
 
 export async function fetchRuntimeSkills(): Promise<RuntimeSkillsResponse> {
   const res = await fetch(`${getBase()}/v1/skills`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Planner / Native Agent Runtime
+// ---------------------------------------------------------------------------
+
+export interface PlannerStep {
+  id: string;
+  title: string;
+  skill: string;
+  params: Record<string, unknown>;
+  dependencies: string[];
+  risk_level: PcRiskLevel;
+  approval_required: boolean;
+  retry_count: number;
+  rollback_safe: boolean;
+}
+
+export interface PlannerAnalysis {
+  request: string;
+  intent: string;
+  goal_class: string;
+  required_skills: string[];
+  dependencies: Record<string, string[]>;
+  estimated_risk: PcRiskLevel;
+  approval_needed_steps: string[];
+  workflow_suitable: boolean;
+  confidence: number;
+  reasoning_summary: string;
+  steps: PlannerStep[];
+  graph: {
+    nodes: Array<{
+      id: string;
+      skill: string;
+      params: Record<string, unknown>;
+      dependencies: string[];
+      risk_level: PcRiskLevel;
+      approval_required: boolean;
+      status: string;
+    }>;
+    workflow_suitable: boolean;
+    handoff_reason: string;
+  };
+  memory_context: Record<string, unknown>;
+  unsupported_reason: string;
+}
+
+export interface AgentRuntimeTask {
+  task_id: string;
+  request: string;
+  status: string;
+  analysis: PlannerAnalysis;
+  results: Array<Record<string, unknown>>;
+  workflow_handoff: Record<string, unknown>;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function fetchPlannerDiagnostics(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/planner/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function analyzePlannerRequest(request: string): Promise<PlannerAnalysis> {
+  const res = await fetch(`${getBase()}/v1/planner/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function runAgentGoal(request: string, execute = false): Promise<AgentRuntimeTask> {
+  const res = await fetch(`${getBase()}/v1/agent/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request, execute }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAgentRuntimeTasks(): Promise<AgentRuntimeTask[]> {
+  const res = await fetch(`${getBase()}/v1/agent/tasks`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.tasks || [];
+}
+
+export async function fetchMcpTools(): Promise<Array<Record<string, unknown>>> {
+  const res = await fetch(`${getBase()}/v1/mcp/tools`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.tools || [];
+}
+
+// ---------------------------------------------------------------------------
+// Desktop Control Services
+// ---------------------------------------------------------------------------
+
+export interface DesktopControlService {
+  service: string;
+  ready: boolean;
+  risk_levels?: Record<string, string>;
+  dependencies?: Record<string, unknown> | string[];
+  safety?: Record<string, unknown>;
+  support?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface DesktopControlDiagnostics {
+  status: string;
+  service_count: number;
+  ready_count: number;
+  services: DesktopControlService[];
+  support_matrix: Record<string, unknown>;
+  local_only: boolean;
+}
+
+export async function fetchDesktopControlDiagnostics(): Promise<DesktopControlDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/desktop/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Intent Router
+// ---------------------------------------------------------------------------
+
+export interface IntentRoute {
+  request_text: string;
+  intent: string;
+  category: string;
+  confidence: number;
+  skill_name: string;
+  params: Record<string, unknown>;
+  risk_level: PcRiskLevel;
+  approval_required: boolean;
+  fallback_reason: string;
+  execution_source: string;
+  planner_suitable: boolean;
+  created_at: number;
+  status?: string;
+  route_source?: string;
+}
+
+export interface IntentRouterDiagnostics {
+  status: string;
+  router: string;
+  skill_routes: Record<string, { skill_name: string; intent: string; category: string }>;
+  skill_routed_count: number;
+  planner_routed_count: number;
+  legacy_routed_count: number;
+  fallback_count: number;
+  risky_route_count: number;
+  recent_routes: IntentRoute[];
+  local_only: boolean;
+}
+
+export async function fetchIntentRouterDiagnostics(): Promise<IntentRouterDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/router/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function analyzeIntentRoute(request: string): Promise<IntentRoute> {
+  const res = await fetch(`${getBase()}/v1/router/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Plugins
+// ---------------------------------------------------------------------------
+
+export interface PluginManifestSkill {
+  name: string;
+  description: string;
+  category: string;
+  risk_level: PcRiskLevel;
+  approval_required: boolean;
+  aliases: string[];
+  kind: string;
+  response: string;
+  data: Record<string, unknown>;
+}
+
+export interface PluginInfo {
+  name: string;
+  version: string;
+  description: string;
+  permissions: string[];
+  skills: PluginManifestSkill[];
+  path: string;
+  enabled_by_default: boolean;
+  enabled: boolean;
+  status: 'enabled' | 'disabled' | 'invalid';
+  error: string;
+}
+
+export interface PluginDiagnostics {
+  status: string;
+  plugin_count: number;
+  enabled_count: number;
+  invalid_count: number;
+  plugin_skill_count: number;
+  plugins: PluginInfo[];
+  roots: string[];
+  local_only: boolean;
+  arbitrary_code_execution: boolean;
+}
+
+export async function fetchPluginDiagnostics(): Promise<PluginDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/plugins`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function reloadPlugins(): Promise<{ diagnostics: PluginDiagnostics; reload: Record<string, unknown> }> {
+  const res = await fetch(`${getBase()}/v1/plugins/reload`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function setPluginEnabled(name: string, enabled: boolean): Promise<unknown> {
+  const res = await fetch(`${getBase()}/v1/plugins/${encodeURIComponent(name)}/${enabled ? 'enable' : 'disable'}`, {
+    method: 'POST',
+  });
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
 }

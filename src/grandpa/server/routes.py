@@ -1667,6 +1667,22 @@ async def structured_local_action_health():
     return get_pc_control_runtime_health()
 
 
+@router.get("/v1/desktop/diagnostics")
+async def desktop_control_diagnostics():
+    """Return read-only desktop control domain diagnostics."""
+    from grandpa.desktop.control import desktop_control_diagnostics
+
+    return desktop_control_diagnostics()
+
+
+@router.get("/v1/desktop/services")
+async def desktop_control_services():
+    """Return registered desktop control services and readiness metadata."""
+    from grandpa.desktop.control import list_desktop_services
+
+    return {"services": list_desktop_services(), "local_only": True}
+
+
 @router.get("/api/local-action/audit")
 async def recent_structured_local_action_audit(limit: int = Query(default=100, ge=1, le=500)):
     """Read recent redacted structured PC action audit entries."""

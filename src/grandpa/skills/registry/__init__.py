@@ -10,6 +10,7 @@ from grandpa.skills.registry.core import (
     match_skill,
     register_skill,
     registry_diagnostics,
+    unregister_skill,
 )
 from grandpa.skills.registry.defaults import ensure_default_skills_registered
 
@@ -24,4 +25,5 @@ __all__ = [
     "match_skill",
     "register_skill",
     "registry_diagnostics",
+    "unregister_skill",
 ]

@@ -1,5 +1,6 @@
-"""MCP (Model Context Protocol) layer for grandpa."""
+"""MCP (Model Context Protocol) layer for Grandpa."""
 
+from grandpa.mcp.bridge import execute_tool, list_tools, tool_diagnostics
 from grandpa.mcp.client import MCPClient
 from grandpa.mcp.protocol import MCPError, MCPNotification, MCPRequest, MCPResponse
 from grandpa.mcp.server import MCPServer
@@ -19,8 +20,11 @@ __all__ = [
     "MCPResponse",
     "MCPServer",
     "MCPTransport",
+    "execute_tool",
     "InProcessTransport",
+    "list_tools",
     "SSETransport",
     "StdioTransport",
     "StreamableHTTPTransport",
+    "tool_diagnostics",
 ]

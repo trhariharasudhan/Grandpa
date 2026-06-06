@@ -145,6 +145,8 @@ export function CapabilitiesPage() {
             metric={`${data?.automation.workflow_count ?? 0} workflows`}
             details={[
               `${data?.automation.enabled_count ?? 0} enabled`,
+              `${data?.automation.skill_backed_workflow_count ?? 0} skill-backed / ${data?.automation.legacy_workflow_count ?? 0} legacy`,
+              `Schema v2 steps: ${data?.automation.schema_versions?.skill_graph_v2 ?? 0}`,
               `Triggers: ${Array.isArray(data?.automation.features?.triggers) ? data?.automation.features?.triggers.join(', ') : 'time, app, browser'}`,
               `Dry-run simulation: ${data?.automation.features?.dry_run ? 'ready' : 'unknown'}`,
             ]}

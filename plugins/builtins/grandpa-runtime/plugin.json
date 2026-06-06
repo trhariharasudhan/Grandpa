@@ -1,0 +1,23 @@
+{
+  "name": "grandpa-runtime",
+  "version": "1.0.0",
+  "description": "Built-in manifest package that exposes safe runtime plugin diagnostics.",
+  "enabled_by_default": true,
+  "permissions": ["diagnostics.read", "skills.read"],
+  "skills": [
+    {
+      "name": "plugins.diagnostics",
+      "description": "Report that Grandpa's manifest-driven plugin runtime is available.",
+      "category": "plugins",
+      "risk_level": "LOW",
+      "approval_required": false,
+      "aliases": ["plugin diagnostics", "plugins diagnostics"],
+      "kind": "static_response",
+      "response": "Plugin runtime is ready. Manifest-driven plugins are local-only and cannot execute arbitrary code.",
+      "data": {
+        "local_only": true,
+        "arbitrary_code_execution": false
+      }
+    }
+  ]
+}

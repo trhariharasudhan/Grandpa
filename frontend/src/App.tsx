@@ -21,9 +21,13 @@ const FileAssistantPage = lazy(() => import('./pages/FileAssistantPage').then((m
 const RoutinesPage = lazy(() => import('./pages/RoutinesPage').then((m) => ({ default: m.RoutinesPage })));
 const SafetyPage = lazy(() => import('./pages/SafetyPage').then((m) => ({ default: m.SafetyPage })));
 const BrowserPage = lazy(() => import('./pages/BrowserPage').then((m) => ({ default: m.BrowserPage })));
+const DesktopServicesPage = lazy(() => import('./pages/DesktopServicesPage').then((m) => ({ default: m.DesktopServicesPage })));
 const MobileCompanionPage = lazy(() => import('./pages/MobileCompanionPage').then((m) => ({ default: m.MobileCompanionPage })));
 const CapabilitiesPage = lazy(() => import('./pages/CapabilitiesPage').then((m) => ({ default: m.CapabilitiesPage })));
 const SkillsPage = lazy(() => import('./pages/SkillsPage').then((m) => ({ default: m.SkillsPage })));
+const PluginsPage = lazy(() => import('./pages/PluginsPage').then((m) => ({ default: m.PluginsPage })));
+const PlannerPage = lazy(() => import('./pages/PlannerPage').then((m) => ({ default: m.PlannerPage })));
+const RouterDiagnosticsPage = lazy(() => import('./pages/RouterDiagnosticsPage').then((m) => ({ default: m.RouterDiagnosticsPage })));
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -155,9 +159,13 @@ export default function App() {
             <Route path="routines" element={<RoutinesPage />} />
             <Route path="safety" element={<SafetyPage />} />
             <Route path="browser" element={<BrowserPage />} />
+            <Route path="desktop" element={<DesktopServicesPage />} />
             <Route path="mobile" element={<MobileCompanionPage />} />
             <Route path="capabilities" element={<CapabilitiesPage />} />
             <Route path="skills" element={<SkillsPage />} />
+            <Route path="plugins" element={<PluginsPage />} />
+            <Route path="planner" element={<PlannerPage />} />
+            <Route path="router" element={<RouterDiagnosticsPage />} />
             <Route path="agents" element={<AgentsPage />} />
             <Route path="logs" element={<LogsPage />} />
           </Route>

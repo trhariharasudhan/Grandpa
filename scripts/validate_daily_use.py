@@ -15,7 +15,6 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -37,34 +36,41 @@ class ValidationResult:
 
 
 def _run_step(step: ValidationStep) -> ValidationResult:
+    creationflags = 0
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             step.command,
             cwd=step.cwd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             encoding="utf-8",
             errors="replace",
             text=True,
-            timeout=step.timeout,
+            creationflags=creationflags,
         )
+        try:
+            stdout, stderr = process.communicate(timeout=step.timeout)
+        except subprocess.TimeoutExpired:
+            _terminate_process_tree(process)
+            status = "fail" if step.required else "warn"
+            return ValidationResult(step.name, status, f"Timed out after {step.timeout}s")
     except FileNotFoundError as exc:
         status = "fail" if step.required else "warn"
         return ValidationResult(step.name, status, f"Command not found: {exc}")
-    except subprocess.TimeoutExpired:
-        status = "fail" if step.required else "warn"
-        return ValidationResult(step.name, status, f"Timed out after {step.timeout}s")
 
     output = "\n".join(
         part.strip()
-        for part in (completed.stdout or "", completed.stderr or "")
+        for part in (stdout or "", stderr or "")
         if part.strip()
     )
-    if completed.returncode != 0:
+    if process.returncode != 0:
         status = "fail" if step.required else "warn"
         return ValidationResult(
             step.name,
             status,
-            f"exit {completed.returncode}: {_tail(output)}",
+            f"exit {process.returncode}: {_tail(output)}",
         )
     if step.expected_text and step.expected_text.lower() not in output.lower():
         status = "fail" if step.required else "warn"
@@ -74,6 +80,27 @@ def _run_step(step: ValidationStep) -> ValidationResult:
             f"expected {step.expected_text!r}; got: {_tail(output)}",
         )
     return ValidationResult(step.name, "ok", _tail(output) or "completed")
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    """Terminate a subprocess and its children on Windows when possible."""
+    if process.poll() is not None:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            return
+        except Exception:
+            pass
+    try:
+        process.kill()
+    except Exception:
+        pass
 
 
 def _tail(text: str, *, max_chars: int = 500) -> str:
@@ -247,8 +274,11 @@ _CAPABILITY_DIAGNOSTICS = (
 
 
 def run_validation(args: argparse.Namespace) -> int:
-    results = [_run_step(step) for step in build_steps(args)]
-    for result in results:
+    results = []
+    for step in build_steps(args):
+        print(_console_safe(f"RUN {step.name}: {' '.join(step.command)}"), flush=True)
+        result = _run_step(step)
+        results.append(result)
         icon = {"ok": "PASS", "warn": "WARN", "fail": "FAIL"}[result.status]
         print(_console_safe(f"{icon} {result.name}: {result.status}"))
         if result.detail and (args.verbose or result.status != "ok"):

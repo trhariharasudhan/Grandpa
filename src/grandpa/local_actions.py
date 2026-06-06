@@ -46,6 +46,7 @@ ActionKind = Literal[
     "window",
     "app_lookup",
     "pc_control",
+    "agent_plan",
     "blocked",
 ]
 
@@ -161,6 +162,13 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
         _log_attempt(command, result)
         return result
 
+    if execute:
+        routed = _route_with_intent_router(command)
+        if routed is not None:
+            _audit_decision(command, routed, routed.status)
+            _log_attempt(command, routed)
+            return routed
+
     result = _parse_safe_action(command)
     if result.status == "no_match":
         return result
@@ -202,6 +210,17 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
     _audit_decision(command, executed, executed.status)
     _log_attempt(command, executed)
     return executed
+
+
+def _route_with_intent_router(command: str) -> LocalActionResult | None:
+    """Try the new intent router while preserving legacy fallback behavior."""
+    try:
+        from grandpa.router import route_local_intent
+
+        return route_local_intent(command)
+    except Exception:
+        logger.debug("Intent router failed; using legacy local action parser.", exc_info=True)
+        return None
 
 
 def approve_pending_action(action_id: str | None = None) -> LocalActionResult:
@@ -517,6 +536,10 @@ def _parse_safe_action(command: str) -> LocalActionResult:
     if pc_control_result.status != "no_match":
         return pc_control_result
 
+    agent_plan_result = _parse_agent_plan_action(command)
+    if agent_plan_result.status != "no_match":
+        return agent_plan_result
+
     if command in {"what time is it", "what's the time", "time", "current time"}:
         now = datetime.now().strftime("%I:%M %p").lstrip("0")
         message = f"It is {now}."
@@ -648,6 +671,29 @@ def _parse_pc_control_action(command: str) -> LocalActionResult:
         message="Checking PC control context.",
         tts_text="Checking PC control context.",
     )
+
+
+def _parse_agent_plan_action(command: str) -> LocalActionResult:
+    if any(
+        phrase in command
+        for phrase in (
+            "set up my coding workspace",
+            "setup my coding workspace",
+            "start my coding workspace",
+            "research python tutorials and summarize",
+            "research python tutorials and summarise",
+            "organize my downloads folder",
+            "organise my downloads folder",
+        )
+    ):
+        return LocalActionResult(
+            status="handled",
+            kind="agent_plan",
+            target=command,
+            message="Building a safe local execution plan.",
+            tts_text="Building a safe local execution plan.",
+        )
+    return LocalActionResult(status="no_match")
 
 
 def _parse_automation_action(command: str) -> LocalActionResult:
@@ -1339,6 +1385,32 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
             target=result.target,
             message=response.message,
             tts_text=response.message,
+            permission=result.permission,
+        )
+
+    if result.kind == "agent_plan":
+        from grandpa.agents.runtime import run_agent_goal
+
+        task = run_agent_goal(result.target, execute=False, source="local_actions")
+        analysis = task.analysis
+        lines = [
+            f"Agent plan: {analysis.intent}.",
+            f"- Confidence: {analysis.confidence:.0%}",
+            f"- Risk: {analysis.estimated_risk}",
+            f"- Skills: {', '.join(analysis.required_skills) or 'none'}",
+            f"- Workflow handoff: {'ready' if analysis.workflow_suitable else 'not needed'}",
+        ]
+        if analysis.approval_needed_steps:
+            lines.append(f"- Approval needed: {', '.join(analysis.approval_needed_steps)}")
+        if analysis.unsupported_reason:
+            lines.append(f"- Note: {analysis.unsupported_reason}")
+        lines.append(analysis.reasoning_summary)
+        return LocalActionResult(
+            status="handled" if task.status != "unsupported" else "unsupported",
+            kind="agent_plan",
+            target=task.task_id,
+            message="\n".join(lines),
+            tts_text="I prepared a safe local execution plan.",
             permission=result.permission,
         )
 

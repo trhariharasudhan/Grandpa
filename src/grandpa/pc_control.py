@@ -10,7 +10,6 @@ from __future__ import annotations
 import gzip
 import json
 import os
-import shutil
 import sqlite3
 import sys
 import threading
@@ -435,12 +434,19 @@ def get_pc_control_runtime_health() -> dict[str, Any]:
         diagnostics = pc_control_diagnostics()
     except Exception as exc:
         diagnostics = {"error": exc.__class__.__name__}
+    try:
+        from grandpa.desktop.control import desktop_control_diagnostics
+
+        services = desktop_control_diagnostics(platform=sys.platform)
+    except Exception as exc:
+        services = {"status": "failed", "error": exc.__class__.__name__, "services": []}
     return {
         "storage": summary.get("storage", {}),
         "retention": summary.get("retention", load_retention_policy()),
         "maintenance": summary,
         "counts": _approval_counts_by_status(),
         "diagnostics": diagnostics,
+        "desktop_services": services,
     }
 
 
@@ -564,321 +570,69 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
 
 
 def _execute_app(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    app_id = _app_id(request.target)
-    if not app_id:
-        return _blocked("Unknown app is not in Grandpa's safe app allowlist.")
-    from grandpa.windows_app_resolver import launch_app, resolve_app
+    from grandpa.desktop.control import get_application_service
 
-    resolution = resolve_app(app_id)
-    evidence = {"app_id": app_id, "resolution": resolution.to_dict()}
-    if resolution.status not in {"found", "available"}:
-        return LocalActionResponse(
-            ok=False,
-            action_id=None,
-            status="unsupported" if resolution.status == "unsupported" else "failed",
-            message=resolution.message,
-            approval_required=False,
-            risk_level="LOW",
-            evidence=evidence,
-            error=resolution.status,
-        )
-    if action == "detect_app":
-        return LocalActionResponse(True, None, "completed", resolution.message, False, "LOW", evidence)
-    launch = launch_app(app_id)
-    evidence["launch"] = launch.to_dict()
-    ok = launch.status == "found"
-    return LocalActionResponse(
-        ok=ok,
-        action_id=None,
-        status="completed" if ok else "failed",
-        message=launch.message,
-        approval_required=False,
-        risk_level="LOW",
-        evidence=evidence,
-        error=None if ok else launch.status,
-    )
+    return get_application_service().execute(request, action)
 
 
 def _execute_window_alias(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    return _execute_window(LocalActionRequest(f"{action}_window", request.target, request.args), f"{action}_window")
+    from grandpa.desktop.control import get_window_service
+
+    return get_window_service().execute_alias(request, action)
 
 
 def _execute_window(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    from grandpa.windows_window_control import control_window, list_open_windows
+    from grandpa.desktop.control import get_window_service
 
-    if action == "list_windows":
-        result = list_open_windows()
-    else:
-        verb = action.removesuffix("_window")
-        result = control_window(verb, request.target or "active")
-    ok = result.status == "handled"
-    status: ActionStatus = "completed" if ok else "failed"
-    if result.status == "unsupported":
-        status = "unsupported"
-    if result.status == "blocked":
-        status = "blocked"
-    return LocalActionResponse(
-        ok=ok,
-        action_id=None,
-        status=status,
-        message=result.message,
-        approval_required=False,
-        risk_level="LOW" if action == "list_windows" else "MEDIUM",
-        evidence={"window_status": result.status, "windows": [w.title for w in getattr(result, "windows", ())]},
-        error=None if ok else result.status,
-    )
+    return get_window_service().execute(request, action)
 
 
 def _execute_volume(action: str) -> LocalActionResponse:
-    if sys.platform != "win32":
-        return _unsupported("Volume control is only supported on Windows desktop.", "LOW")
-    key = {
-        "volume_up": "volumeup",
-        "volume_down": "volumedown",
-        "volume_mute": "volumemute",
-        "volume_unmute": "volumemute",
-    }[action]
-    import pyautogui  # type: ignore
+    from grandpa.desktop.control import get_power_service
 
-    pyautogui.press(key)
-    label = action.replace("volume_", "volume ").replace("_", " ")
-    return LocalActionResponse(True, None, "completed", f"Adjusted {label}.", False, "LOW", {"key": key})
+    return get_power_service().execute_volume(action, platform=sys.platform)
 
 
 def _execute_brightness(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    try:
-        import screen_brightness_control as sbc  # type: ignore
-    except Exception:
-        return _unsupported("Brightness control is not supported on this system.", "LOW")
-    if action == "brightness_get":
-        value = sbc.get_brightness()
-        return LocalActionResponse(True, None, "completed", "Brightness read.", False, "LOW", {"brightness": value})
-    value = int(request.args.get("level", request.target or 0))
-    sbc.set_brightness(max(0, min(100, value)))
-    return LocalActionResponse(True, None, "completed", f"Brightness set to {value}%.", False, "LOW", {"brightness": value})
+    from grandpa.desktop.control import get_power_service
+
+    return get_power_service().execute_brightness(request, action)
 
 
 def _execute_monitor(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    from grandpa.desktop_context import list_monitors
+    from grandpa.desktop.control import get_monitor_service
 
-    result = list_monitors()
-    monitors = result.evidence.get("monitors", [])
-    if action == "monitor_info" and request.target:
-        target = str(request.target).lower().strip()
-        monitors = [
-            monitor for monitor in monitors
-            if target in {str(monitor.get("id", "")).lower(), "primary" if monitor.get("primary") else ""}
-        ]
-    ok = result.supported and (action == "list_monitors" or bool(monitors))
-    message = result.message if action == "list_monitors" else (
-        f"Found monitor {request.target}." if monitors else f"I could not find monitor {request.target}."
-    )
-    return LocalActionResponse(
-        ok=ok,
-        action_id=None,
-        status="completed" if ok else ("unsupported" if not result.supported else "failed"),
-        message=message,
-        approval_required=False,
-        risk_level="LOW",
-        evidence={**result.evidence, "monitors": monitors},
-        error=None if ok else ("unsupported" if not result.supported else "monitor_not_found"),
-    )
+    return get_monitor_service().execute(request, action)
 
 
 def _execute_desktop_context(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    from grandpa.desktop_context import (
-        desktop_session_summary,
-        get_active_process,
-        list_processes,
-        pc_control_diagnostics,
-    )
+    from grandpa.desktop.control import get_diagnostics_service
 
-    if action == "active_process":
-        result = get_active_process()
-    elif action == "list_processes":
-        result = list_processes(int(request.args.get("limit", 50)))
-    elif action == "desktop_summary":
-        result = desktop_session_summary()
-    else:
-        diagnostics = pc_control_diagnostics()
-        return LocalActionResponse(
-            ok=True,
-            action_id=None,
-            status="completed",
-            message="PC control diagnostics are ready.",
-            approval_required=False,
-            risk_level="LOW",
-            evidence=diagnostics,
-        )
-    return LocalActionResponse(
-        ok=result.supported,
-        action_id=None,
-        status="completed" if result.supported else "unsupported",
-        message=result.message,
-        approval_required=False,
-        risk_level="LOW",
-        evidence=result.evidence,
-        error=None if result.supported else "unsupported",
-    )
+    return get_diagnostics_service().execute(request, action)
 
 
 def _execute_clipboard(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    import pyperclip
+    from grandpa.desktop.control import get_clipboard_service
 
-    from grandpa.desktop_context import (
-        inspect_clipboard_text,
-        read_clipboard_history,
-        record_clipboard_metadata,
-    )
-
-    if action == "clipboard_read":
-        text = pyperclip.paste()
-        metadata = record_clipboard_metadata(text, source="read")
-        return LocalActionResponse(
-            True,
-            None,
-            "completed",
-            "Clipboard read.",
-            False,
-            "LOW",
-            {"clipboard_text": text, **metadata},
-        )
-    if action == "clipboard_write":
-        text = str(request.args.get("content", request.target))
-        pyperclip.copy(text)
-        metadata = record_clipboard_metadata(text, source="write")
-        return LocalActionResponse(True, None, "completed", "Clipboard updated.", False, "LOW", metadata)
-    if action == "clipboard_inspect":
-        text = pyperclip.paste()
-        metadata = inspect_clipboard_text(text)
-        record_clipboard_metadata(text, source="inspect")
-        return LocalActionResponse(True, None, "completed", "Clipboard inspected.", False, "LOW", metadata)
-    if action == "clipboard_history":
-        result = read_clipboard_history(int(request.args.get("limit", 20)))
-        return LocalActionResponse(
-            result.supported,
-            None,
-            "completed" if result.supported else "failed",
-            result.message,
-            False,
-            "LOW",
-            result.evidence,
-            None if result.supported else "clipboard_history_unavailable",
-        )
-    pyperclip.copy("")
-    metadata = record_clipboard_metadata("", source="clear")
-    return LocalActionResponse(True, None, "completed", "Clipboard cleared.", False, "LOW", {"cleared": True, **metadata})
+    return get_clipboard_service().execute(request, action)
 
 
 def _execute_file(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    target = _resolve_path(request.target)
-    destination = _resolve_path(str(request.args.get("destination", ""))) if request.args.get("destination") else None
-    if action == "file_create":
-        kind = request.args.get("kind", "file")
-        if kind == "folder":
-            target.mkdir(parents=True, exist_ok=False)
-        else:
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(str(request.args.get("content", "")), encoding="utf-8")
-        return LocalActionResponse(True, None, "completed", f"Created {kind}.", False, "LOW", {"path": str(target), "kind": kind})
-    if action == "file_rename":
-        if destination is None:
-            destination = target.with_name(str(request.args["new_name"]))
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        target.rename(destination)
-        return LocalActionResponse(True, None, "completed", "Renamed item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
-    if action == "file_move":
-        if destination is None:
-            raise ValueError("destination is required")
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(target), str(destination))
-        return LocalActionResponse(True, None, "completed", "Moved item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
-    if action == "file_copy":
-        if destination is None:
-            raise ValueError("destination is required")
-        if target.is_dir():
-            shutil.copytree(target, destination)
-        else:
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(target, destination)
-        return LocalActionResponse(True, None, "completed", "Copied item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
-    if action == "file_delete":
-        if target.is_dir():
-            shutil.rmtree(target)
-        else:
-            target.unlink()
-        return LocalActionResponse(True, None, "completed", "Deleted item.", False, "HIGH", {"path": str(target)})
-    return _blocked("I blocked this file action for safety.")
+    from grandpa.desktop.control import get_file_service
+
+    return get_file_service().execute(request, action)
 
 
 def _execute_input(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    if sys.platform != "win32":
-        return _unsupported("Keyboard and mouse control is only supported on Windows desktop.", "MEDIUM")
-    import pyautogui  # type: ignore
+    from grandpa.desktop.control import get_automation_service
 
-    pyautogui.FAILSAFE = True
-    if action == "keyboard_type":
-        text = str(request.args.get("text", request.target))
-        pyautogui.write(text, interval=0.01)
-        return LocalActionResponse(True, None, "completed", "Typed text.", False, "MEDIUM", {"characters": len(text)})
-    if action == "keyboard_hotkey":
-        keys = request.args.get("keys", request.target)
-        if isinstance(keys, str):
-            keys = [part.strip() for part in keys.split("+") if part.strip()]
-        pyautogui.hotkey(*keys)
-        return LocalActionResponse(True, None, "completed", "Pressed hotkey.", False, "MEDIUM", {"keys": keys})
-    if action == "mouse_move":
-        pyautogui.moveTo(int(request.args.get("x", 0)), int(request.args.get("y", 0)))
-        return LocalActionResponse(True, None, "completed", "Moved mouse.", False, "MEDIUM", {"x": request.args.get("x"), "y": request.args.get("y")})
-    if action == "mouse_click":
-        pyautogui.click(int(request.args.get("x", 0)), int(request.args.get("y", 0)))
-        return LocalActionResponse(True, None, "completed", "Clicked mouse.", False, "MEDIUM", {"x": request.args.get("x"), "y": request.args.get("y")})
-    if action == "mouse_scroll":
-        pyautogui.scroll(int(request.args.get("amount", request.target or 0)))
-        return LocalActionResponse(True, None, "completed", "Scrolled mouse.", False, "MEDIUM", {"amount": request.args.get("amount", request.target)})
-    if action == "mouse_drag":
-        start_x = int(request.args.get("start_x", request.args.get("x", 0)))
-        start_y = int(request.args.get("start_y", request.args.get("y", 0)))
-        end_x = int(request.args.get("end_x", request.args.get("to_x", 0)))
-        end_y = int(request.args.get("end_y", request.args.get("to_y", 0)))
-        duration = max(0.1, min(2.0, float(request.args.get("duration", 0.25))))
-        pyautogui.moveTo(start_x, start_y)
-        pyautogui.dragTo(end_x, end_y, duration=duration, button=str(request.args.get("button", "left")))
-        return LocalActionResponse(
-            True,
-            None,
-            "completed",
-            "Dragged the mouse.",
-            False,
-            "MEDIUM",
-            {"start": [start_x, start_y], "end": [end_x, end_y], "duration": duration},
-        )
-    if action == "desktop_navigate":
-        direction = str(request.args.get("direction", request.target)).lower()
-        if direction not in {"up", "down", "left", "right"}:
-            return _blocked("I blocked this navigation action for safety.")
-        pyautogui.press(direction)
-        return LocalActionResponse(True, None, "completed", f"Moved selection {direction}.", False, "MEDIUM", {"direction": direction})
-    return _blocked("I blocked this automation action for safety.")
+    return get_automation_service().execute(request, action, platform=sys.platform)
 
 
 def _execute_system(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    if sys.platform != "win32":
-        return _unsupported("Power control is only supported on Windows desktop.", "HIGH")
-    if action == "system_lock":
-        import ctypes
+    from grandpa.desktop.control import get_power_service
 
-        ctypes.windll.user32.LockWorkStation()
-        return LocalActionResponse(True, None, "completed", "Locked the screen.", False, "HIGH", {"system_action": "lock"})
-    command = {
-        "system_sleep": ["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"],
-        "system_restart": ["shutdown", "/r", "/t", "0"],
-        "system_shutdown": ["shutdown", "/s", "/t", "0"],
-    }[action]
-    import subprocess
-
-    subprocess.Popen(command)
-    return LocalActionResponse(True, None, "completed", "Started the requested power action.", False, "HIGH", {"system_action": action})
+    return get_power_service().execute_system(action, platform=sys.platform)
 
 
 def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionResponse:
@@ -1347,14 +1101,15 @@ def _normalise_action_type(value: str) -> str:
 
 
 def _app_id(name: str) -> str | None:
-    return SAFE_APP_ALIASES.get(name.strip().lower())
+    from grandpa.desktop.control import get_application_service
+
+    return get_application_service().app_id(name)
 
 
 def _resolve_path(path: str) -> Path:
-    if not path:
-        raise ValueError("path is required")
-    candidate = Path(path).expanduser()
-    return candidate.resolve(strict=False)
+    from grandpa.desktop.control import get_file_service
+
+    return get_file_service().resolve_path(path)
 
 
 def _is_protected_path(path: Path) -> bool:

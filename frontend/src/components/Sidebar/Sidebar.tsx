@@ -23,6 +23,9 @@ import {
   Phone,
   Sparkles,
   Wrench,
+  Network,
+  Route,
+  Boxes,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -63,9 +66,13 @@ export function Sidebar() {
     { path: '/routines', icon: Workflow, label: 'Routines' },
     { path: '/safety', icon: ShieldCheck, label: 'Safety' },
     { path: '/browser', icon: Globe2, label: 'Browser' },
+    { path: '/desktop', icon: Monitor, label: 'Desktop' },
     { path: '/mobile', icon: Phone, label: 'Mobile' },
     { path: '/capabilities', icon: Sparkles, label: 'Capabilities' },
     { path: '/skills', icon: Wrench, label: 'Skills' },
+    { path: '/plugins', icon: Boxes, label: 'Plugins' },
+    { path: '/planner', icon: Network, label: 'Planner' },
+    { path: '/router', icon: Route, label: 'Router' },
     { path: '/agents', icon: Bot, label: 'Agents' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },

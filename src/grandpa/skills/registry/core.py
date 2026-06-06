@@ -41,6 +41,21 @@ def register_skill(skill: RuntimeSkill, *, replace: bool = False) -> RuntimeSkil
     return skill
 
 
+def unregister_skill(name: str) -> None:
+    """Remove a skill by name or alias if it is currently registered."""
+    key = _key(name)
+    with _LOCK:
+        canonical = _ALIASES.get(key, key)
+        skill = _SKILLS.pop(canonical, None)
+        if skill is None:
+            return
+        aliases = {_key(alias) for alias in skill.aliases}
+        aliases.add(canonical)
+        for alias in list(_ALIASES):
+            if alias in aliases or _ALIASES.get(alias) == canonical:
+                _ALIASES.pop(alias, None)
+
+
 def get_skill(name: str) -> RuntimeSkill:
     """Return a skill by name or alias."""
     key = _key(name)
@@ -141,4 +156,5 @@ __all__ = [
     "match_skill",
     "register_skill",
     "registry_diagnostics",
+    "unregister_skill",
 ]

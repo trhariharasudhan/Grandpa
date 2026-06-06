@@ -113,13 +113,55 @@ def _screen_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext
 
 
 def _workflow_status(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
-    from grandpa.autonomous_workflows import workflow_diagnostics
+    from grandpa.smart_automation import diagnostics
 
-    info = workflow_diagnostics()
+    info = diagnostics()
     return SkillResult(
         ok=True,
         status="completed",
         message="Workflow runtime diagnostics are ready.",
+        data=info,
+        risk_level="LOW",
+    )
+
+
+def _clipboard_history(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+    from grandpa.pc_control import run_local_action
+
+    limit = int(params.get("limit", 20))
+    response = run_local_action({"action_type": "clipboard_history", "target": "clipboard", "args": {"limit": limit}})
+    return SkillResult(
+        ok=response.ok,
+        status="completed" if response.ok else response.status if response.status in {"unsupported", "blocked"} else "failed",
+        message=response.message,
+        data={"evidence": response.evidence, "action_id": response.action_id},
+        risk_level=response.risk_level,
+        approval_required=response.approval_required,
+        error=response.error,
+    )
+
+
+def _planner_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+    from grandpa.planner import planner_diagnostics
+
+    info = planner_diagnostics()
+    return SkillResult(
+        ok=True,
+        status="completed",
+        message="Planner diagnostics are ready.",
+        data=info,
+        risk_level="LOW",
+    )
+
+
+def _skills_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+    from grandpa.skills.registry.core import registry_diagnostics
+
+    info = registry_diagnostics()
+    return SkillResult(
+        ok=True,
+        status="completed",
+        message=f"Skill runtime is ready with {info.get('skill_count', 0)} loaded skills.",
         data=info,
         risk_level="LOW",
     )
@@ -226,6 +268,34 @@ def ensure_default_skills_registered() -> None:
             aliases=("workflow status", "workflow diagnostics", "show workflow status"),
         ),
         RuntimeSkill(
+            name="desktop.clipboard_history",
+            description="Show metadata-only clipboard history without exposing clipboard contents.",
+            category="desktop",
+            risk_level="LOW",
+            approval_required=False,
+            parameters=(SkillParameter("limit", "Maximum history rows", required=False, type="integer"),),
+            executor=_clipboard_history,
+            aliases=("clipboard history", "show clipboard history"),
+        ),
+        RuntimeSkill(
+            name="planner.diagnostics",
+            description="Report native planner and workflow handoff readiness.",
+            category="planner",
+            risk_level="LOW",
+            approval_required=False,
+            executor=_planner_diagnostics,
+            aliases=("planner diagnostics", "show planner diagnostics"),
+        ),
+        RuntimeSkill(
+            name="skills.diagnostics",
+            description="Report runtime skill registry readiness.",
+            category="skills",
+            risk_level="LOW",
+            approval_required=False,
+            executor=_skills_diagnostics,
+            aliases=("skills diagnostics", "skill diagnostics"),
+        ),
+        RuntimeSkill(
             name="memory.recall",
             description="Search Grandpa's local memory for a user query.",
             category="memory",
@@ -249,6 +319,13 @@ def ensure_default_skills_registered() -> None:
     ]
     for skill in skills:
         register_skill(skill)
+    try:
+        from grandpa.plugins import load_enabled_plugins
+
+        load_enabled_plugins(force=True)
+    except Exception:
+        # Plugin loading is optional and must never block built-in skills.
+        pass
     _REGISTERED = True
 
 

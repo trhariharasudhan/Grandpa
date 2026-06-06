@@ -406,6 +406,11 @@ async def telemetry_energy(request: Request):
 # ---- Skills routes ----
 
 skills_router = APIRouter(prefix="/v1/skills", tags=["skills"])
+plugins_router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
+planner_router = APIRouter(prefix="/v1/planner", tags=["planner"])
+agent_runtime_router = APIRouter(prefix="/v1/agent", tags=["agent-runtime"])
+mcp_router = APIRouter(prefix="/v1/mcp", tags=["mcp"])
+intent_router = APIRouter(prefix="/v1/router", tags=["intent-router"])
 
 
 @skills_router.get("")
@@ -507,6 +512,141 @@ async def remove_skill(skill_name: str, request: Request):
         "status": "not_implemented",
         "message": "Skill removal not yet supported via API",
     }
+
+
+# ---- Plugin runtime routes ----
+
+
+@plugins_router.get("")
+async def list_plugins_route():
+    """List local manifest-driven plugins."""
+    from grandpa.plugins import plugin_diagnostics
+
+    return plugin_diagnostics()
+
+
+@plugins_router.get("/{plugin_name}")
+async def get_plugin_route(plugin_name: str):
+    """Return one plugin manifest and status."""
+    from grandpa.plugins import get_plugin
+
+    plugin = get_plugin(plugin_name)
+    if plugin is None:
+        raise HTTPException(status_code=404, detail="Plugin not found")
+    return plugin
+
+
+@plugins_router.post("/reload")
+async def reload_plugins_route():
+    """Reload enabled plugin manifests and re-register plugin skills."""
+    from grandpa.plugins import plugin_diagnostics, reload_plugins
+
+    reload_result = reload_plugins()
+    return {"reload": reload_result, "diagnostics": plugin_diagnostics()}
+
+
+@plugins_router.post("/{plugin_name}/enable")
+async def enable_plugin_route(plugin_name: str):
+    """Enable a plugin and reload plugin-provided skills."""
+    from grandpa.plugins import enable_plugin
+
+    try:
+        return enable_plugin(plugin_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Plugin not found") from exc
+
+
+@plugins_router.post("/{plugin_name}/disable")
+async def disable_plugin_route(plugin_name: str):
+    """Disable a plugin and unregister its provided skills."""
+    from grandpa.plugins import disable_plugin
+
+    try:
+        return disable_plugin(plugin_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Plugin not found") from exc
+
+
+# ---- Planner / Agent Runtime / Local MCP bridge ----
+
+
+@planner_router.get("/diagnostics")
+async def planner_runtime_diagnostics():
+    """Return planner, skill runtime, workflow handoff, and MCP bridge readiness."""
+    from grandpa.agents.runtime import agent_diagnostics
+    from grandpa.mcp import tool_diagnostics
+    from grandpa.planner import planner_diagnostics
+
+    return {
+        "planner": planner_diagnostics(),
+        "agent": agent_diagnostics(),
+        "mcp": tool_diagnostics(),
+    }
+
+
+@planner_router.post("/analyze")
+async def planner_analyze(request: Request):
+    """Analyze a user request without executing tools."""
+    from grandpa.planner import analyze_request
+
+    body = await request.json()
+    text = str(body.get("request") or body.get("query") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="'request' field is required")
+    return analyze_request(text).to_dict()
+
+
+@agent_runtime_router.post("/run")
+async def agent_runtime_run(request: Request):
+    """Create a native agent task from a planner goal."""
+    from grandpa.agents.runtime import run_agent_goal
+
+    body = await request.json()
+    text = str(body.get("request") or body.get("goal") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="'request' field is required")
+    task = run_agent_goal(
+        text,
+        execute=bool(body.get("execute", False)),
+        source=str(body.get("source") or "api"),
+    )
+    return task.to_dict()
+
+
+@agent_runtime_router.get("/tasks")
+async def agent_runtime_tasks(limit: int = 50):
+    """List recent native planner-agent tasks."""
+    from grandpa.agents.runtime import list_agent_tasks
+
+    return {"tasks": list_agent_tasks(limit=limit)}
+
+
+@mcp_router.get("/tools")
+async def mcp_tools():
+    """Return local MCP-style tool schemas backed by runtime skills."""
+    from grandpa.mcp import list_tools
+
+    return {"tools": list_tools(), "local_only": True, "networking_enabled": False}
+
+
+@intent_router.get("/diagnostics")
+async def intent_router_diagnostics():
+    """Return intent-router route counts and recent decisions."""
+    from grandpa.router import router_diagnostics
+
+    return router_diagnostics()
+
+
+@intent_router.post("/analyze")
+async def intent_router_analyze(request: Request):
+    """Analyze a local-action request without executing it."""
+    from grandpa.router import analyze_intent
+
+    body = await request.json()
+    text = str(body.get("request") or body.get("query") or body.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="'request' field is required")
+    return analyze_intent(text).to_dict()
 
 
 # ---- Sessions routes ----
@@ -961,6 +1101,11 @@ def include_all_routes(app) -> None:
     app.include_router(traces_router)
     app.include_router(telemetry_router)
     app.include_router(skills_router)
+    app.include_router(plugins_router)
+    app.include_router(planner_router)
+    app.include_router(agent_runtime_router)
+    app.include_router(mcp_router)
+    app.include_router(intent_router)
     app.include_router(sessions_router)
     app.include_router(budget_router)
     app.include_router(metrics_router)
@@ -1010,6 +1155,11 @@ __all__ = [
     "traces_router",
     "telemetry_router",
     "skills_router",
+    "plugins_router",
+    "planner_router",
+    "agent_runtime_router",
+    "mcp_router",
+    "intent_router",
     "sessions_router",
     "budget_router",
     "metrics_router",
