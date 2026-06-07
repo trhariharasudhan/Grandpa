@@ -17,7 +17,7 @@ class GrandpaDirectBackend(InferenceBackend):
     """
 
     backend_id = "Grandpa-direct"
-    framework_name = "Grandpa"
+    framework_name = "grandpa"
 
     def __init__(
         self,
@@ -116,7 +116,7 @@ class GrandpaDirectBackend(InferenceBackend):
             "throughput_tok_per_sec": telemetry_data.get("throughput_tok_per_sec", 0.0),
             "tool_calls": 0,
             "turn_count": 1,
-            "framework": "Grandpa",
+            "framework": "grandpa",
             "framework_commit": Grandpa_commit(),
             "error": None,
         }

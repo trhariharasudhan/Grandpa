@@ -25,7 +25,8 @@ class SessionStore:
             db_path = str(Path.home() / ".grandpa" / "sessions.db")
         from grandpa.security.file_utils import secure_create
 
-        secure_create(Path(db_path))
+        if db_path != ":memory:":
+            secure_create(Path(db_path))
         self._db = sqlite3.connect(db_path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._create_tables()

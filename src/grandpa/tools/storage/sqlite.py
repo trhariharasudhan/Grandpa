@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import time
+import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -38,11 +40,18 @@ class SQLiteMemory(MemoryBackend):
 
         self._db_path = str(db_path)
 
-        from grandpa._rust_bridge import get_rust_module
+        try:
+            from grandpa._rust_bridge import get_rust_module
 
-        _rust = get_rust_module()
-        self._rust_impl = _rust.SQLiteMemory(self._db_path)
-        self._conn = None  # type: ignore[assignment]
+            _rust = get_rust_module()
+            self._rust_impl = _rust.SQLiteMemory(self._db_path)
+            self._conn = None  # type: ignore[assignment]
+        except Exception:
+            self._rust_impl = None
+            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+            self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
+            self._conn.row_factory = sqlite3.Row
+            self._create_tables()
 
     def _create_tables(self) -> None:
         self._conn.executescript("""
@@ -71,7 +80,20 @@ class SQLiteMemory(MemoryBackend):
     ) -> str:
         """Persist *content* and return a unique document id."""
         meta_json = json.dumps(metadata) if metadata else None
-        doc_id = self._rust_impl.store(content, source, meta_json)
+        if self._rust_impl is not None:
+            doc_id = self._rust_impl.store(content, source, meta_json)
+        else:
+            doc_id = str(uuid.uuid4())
+            assert self._conn is not None
+            with self._conn:
+                self._conn.execute(
+                    "INSERT INTO documents(id, content, source, metadata, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (doc_id, content, source, meta_json or "{}", time.time()),
+                )
+                self._conn.execute(
+                    "INSERT INTO documents_fts(rowid, content, source) VALUES ((SELECT rowid FROM documents WHERE id = ?), ?, ?)",
+                    (doc_id, content, source),
+                )
         bus = get_event_bus()
         bus.publish(
             EventType.MEMORY_STORE,
@@ -94,11 +116,48 @@ class SQLiteMemory(MemoryBackend):
         if not query.strip():
             return []
 
-        from grandpa._rust_bridge import retrieval_results_from_json
+        if self._rust_impl is not None:
+            from grandpa._rust_bridge import retrieval_results_from_json
 
-        results = retrieval_results_from_json(
-            self._rust_impl.retrieve(query, top_k),
-        )
+            results = retrieval_results_from_json(
+                self._rust_impl.retrieve(query, top_k),
+            )
+        else:
+            assert self._conn is not None
+            if _check_fts5(self._conn):
+                rows = self._conn.execute(
+                    """
+                    SELECT d.id, d.content, d.source, d.metadata, bm25(documents_fts) AS score
+                    FROM documents_fts
+                    JOIN documents d ON d.rowid = documents_fts.rowid
+                    WHERE documents_fts MATCH ?
+                    ORDER BY score
+                    LIMIT ?
+                    """,
+                    (query, top_k),
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    """
+                    SELECT id, content, source, metadata, 0.0 AS score
+                    FROM documents
+                    WHERE content LIKE ? OR source LIKE ?
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (f"%{query}%", f"%{query}%", top_k),
+                ).fetchall()
+            results = [
+                RetrievalResult(
+                    content=row["content"],
+                    source=row["source"],
+                    score=max(0.0, -float(row["score"]))
+                    if _check_fts5(self._conn)
+                    else float(row["score"]),
+                    metadata=json.loads(row["metadata"] or "{}"),
+                )
+                for row in rows
+            ]
         bus = get_event_bus()
         bus.publish(
             EventType.MEMORY_RETRIEVE,
@@ -111,20 +170,42 @@ class SQLiteMemory(MemoryBackend):
         return results
 
     def delete(self, doc_id: str) -> bool:
-        """Delete a document by id — always via Rust backend."""
-        return self._rust_impl.delete(doc_id)
+        """Delete a document by id."""
+        if self._rust_impl is not None:
+            return self._rust_impl.delete(doc_id)
+        assert self._conn is not None
+        with self._conn:
+            row = self._conn.execute(
+                "SELECT rowid FROM documents WHERE id = ?",
+                (doc_id,),
+            ).fetchone()
+            if row is None:
+                return False
+            self._conn.execute("DELETE FROM documents_fts WHERE rowid = ?", (row["rowid"],))
+            self._conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+        return True
 
     def clear(self) -> None:
-        """Remove all stored documents — always via Rust backend."""
-        self._rust_impl.clear()
+        """Remove all stored documents."""
+        if self._rust_impl is not None:
+            self._rust_impl.clear()
+            return
+        assert self._conn is not None
+        with self._conn:
+            self._conn.execute("DELETE FROM documents_fts")
+            self._conn.execute("DELETE FROM documents")
 
     def count(self) -> int:
-        """Return the number of stored documents — always via Rust backend."""
-        return self._rust_impl.count()
+        """Return the number of stored documents."""
+        if self._rust_impl is not None:
+            return self._rust_impl.count()
+        assert self._conn is not None
+        return int(self._conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
 
     def close(self) -> None:
         """Close the database connection."""
-        pass
+        if self._conn is not None:
+            self._conn.close()
 
 
 __all__ = ["SQLiteMemory"]

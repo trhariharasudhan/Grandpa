@@ -36,7 +36,7 @@ def _find_source_root() -> Path | None:
                 content = py.read_text(encoding="utf-8")
             except OSError:
                 continue
-            if 'name = "Grandpa"' in content.lower():
+            if 'name = "grandpa"' in content.lower():
                 return candidate
     return None
 

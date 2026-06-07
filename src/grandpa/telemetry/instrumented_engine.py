@@ -127,6 +127,12 @@ class InstrumentedEngine(InferenceEngine):
             )
 
         latency = time.time() - t0
+        sample_duration = getattr(energy_sample, "duration_seconds", 0.0) if energy_sample is not None else 0.0
+        if latency <= 0 and sample_duration > 0:
+            latency = float(sample_duration)
+        sample_duration = getattr(energy_sample, "duration_seconds", 0.0) if energy_sample is not None else 0.0
+        if latency <= 0 and sample_duration > 0:
+            latency = float(sample_duration)
 
         usage = result.get("usage", {})
         completion_tokens = usage.get("completion_tokens", 0)
@@ -183,7 +189,7 @@ class InstrumentedEngine(InferenceEngine):
         prefill_energy = 0.0
         decode_energy = 0.0
         if energy_joules > 0 and prefill_latency > 0 and latency > 0:
-            prefill_frac = prefill_latency / latency
+            prefill_frac = min(1.0, max(0.0, prefill_latency / latency))
             prefill_energy = energy_joules * prefill_frac
             decode_energy = energy_joules * (1.0 - prefill_frac)
 
@@ -409,7 +415,7 @@ class InstrumentedEngine(InferenceEngine):
         prefill_energy = 0.0
         decode_energy = 0.0
         if energy_joules > 0 and prefill_latency > 0 and latency > 0:
-            prefill_frac = prefill_latency / latency
+            prefill_frac = min(1.0, max(0.0, prefill_latency / latency))
             prefill_energy = energy_joules * prefill_frac
             decode_energy = energy_joules * (1.0 - prefill_frac)
 

@@ -3,11 +3,11 @@ command (and run the right upgrade command for ``Grandpa self-update``).
 
 Three install paths are supported today:
 
-- **PyPI** (``pip install Grandpa``). The package lives somewhere
-  inside ``site-packages``. Upgrade with ``pip install --upgrade Grandpa``.
-- **uv tool** (``uv tool install Grandpa``). Lives in a uv-managed
+- **PyPI** (``pip install grandpa``). The package lives somewhere
+  inside ``site-packages``. Upgrade with ``pip install --upgrade grandpa``.
+- **uv tool** (``uv tool install grandpa``). Lives in a uv-managed
   isolated venv under ``~/.local/share/uv/tools/``. Upgrade with
-  ``uv tool upgrade Grandpa``.
+  ``uv tool upgrade grandpa``.
 - **Editable git checkout** (``uv sync`` / ``pip install -e .`` from a
   cloned repo). The package's ``__file__`` is inside a working tree
   with a ``.git`` directory at the repo root. Upgrade with
@@ -48,7 +48,7 @@ def detect_install() -> InstallInfo:
     except Exception:
         return InstallInfo(
             kind="unknown",
-            upgrade_command="pip install --upgrade Grandpa",
+            upgrade_command="pip install --upgrade grandpa",
         )
 
     parts = [p.lower() for p in pkg_file.parts]
@@ -56,7 +56,7 @@ def detect_install() -> InstallInfo:
     if "uv" in parts and "tools" in parts:
         return InstallInfo(
             kind="uv-tool",
-            upgrade_command="uv tool upgrade Grandpa",
+            upgrade_command="uv tool upgrade grandpa",
         )
 
     # Editable install: a ``.git`` dir within a few parents of the
@@ -78,10 +78,10 @@ def detect_install() -> InstallInfo:
     if "site-packages" in parts:
         return InstallInfo(
             kind="pypi",
-            upgrade_command="pip install --upgrade Grandpa",
+            upgrade_command="pip install --upgrade grandpa",
         )
 
     return InstallInfo(
         kind="unknown",
-        upgrade_command="pip install --upgrade Grandpa",
+        upgrade_command="pip install --upgrade grandpa",
     )

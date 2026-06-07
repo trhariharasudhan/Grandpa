@@ -7,6 +7,11 @@ from pathlib import Path
 from grandpa.cli import _bg_state
 
 
+def _write_model_marker(home: Path, model_id: str, state: str, text: str = "") -> None:
+    marker = _bg_state.model_marker_name(model_id, state)
+    (home / ".state" / "models" / marker).write_text(text)
+
+
 def test_get_status_empty(tmp_grandpa_home: Path) -> None:
     """No state files = everything 'pending'."""
     s = _bg_state.get_status()
@@ -28,48 +33,41 @@ def test_get_status_rust_failed(tmp_grandpa_home: Path) -> None:
 
 
 def test_get_status_model_downloading(tmp_grandpa_home: Path) -> None:
-    (tmp_grandpa_home / ".state" / "models" / "qwen3.5:9b.downloading").write_text(
-        ""
-    )
+    _write_model_marker(tmp_grandpa_home, "qwen3.5:9b", "downloading")
     s = _bg_state.get_status()
     assert s.models == {"qwen3.5:9b": "downloading"}
 
 
 def test_get_status_model_ready(tmp_grandpa_home: Path) -> None:
-    (tmp_grandpa_home / ".state" / "models" / "qwen3.5:9b.ready").write_text("")
+    _write_model_marker(tmp_grandpa_home, "qwen3.5:9b", "ready")
     s = _bg_state.get_status()
     assert s.models == {"qwen3.5:9b": "ready"}
 
 
 def test_get_status_model_failed(tmp_grandpa_home: Path) -> None:
-    (tmp_grandpa_home / ".state" / "models" / "qwen3.5:9b.failed").write_text(
-        "net error"
-    )
+    _write_model_marker(tmp_grandpa_home, "qwen3.5:9b", "failed", "net error")
     s = _bg_state.get_status()
     assert s.models == {"qwen3.5:9b": "failed"}
 
 
 def test_get_status_ready_supersedes_downloading(tmp_grandpa_home: Path) -> None:
     """If both .downloading and .ready exist (race window), .ready wins."""
-    models_dir = tmp_grandpa_home / ".state" / "models"
-    (models_dir / "qwen3.5:9b.downloading").write_text("")
-    (models_dir / "qwen3.5:9b.ready").write_text("")
+    _write_model_marker(tmp_grandpa_home, "qwen3.5:9b", "downloading")
+    _write_model_marker(tmp_grandpa_home, "qwen3.5:9b", "ready")
     s = _bg_state.get_status()
     assert s.models["qwen3.5:9b"] == "ready"
 
 
 def test_all_ready_true_when_all_ready(tmp_grandpa_home: Path) -> None:
     (tmp_grandpa_home / ".state" / "extension-built").write_text("")
-    (tmp_grandpa_home / ".state" / "models" / "qwen3.5:9b.ready").write_text("")
+    _write_model_marker(tmp_grandpa_home, "qwen3.5:9b", "ready")
     s = _bg_state.get_status()
     assert s.all_ready() is True
 
 
 def test_all_ready_false_when_anything_pending(tmp_grandpa_home: Path) -> None:
     (tmp_grandpa_home / ".state" / "extension-built").write_text("")
-    (tmp_grandpa_home / ".state" / "models" / "qwen3.5:9b.downloading").write_text(
-        ""
-    )
+    _write_model_marker(tmp_grandpa_home, "qwen3.5:9b", "downloading")
     s = _bg_state.get_status()
     assert s.all_ready() is False
 

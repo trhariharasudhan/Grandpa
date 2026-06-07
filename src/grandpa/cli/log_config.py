@@ -25,7 +25,7 @@ def setup_logging(
     quiet: bool = False,
     log_file: Optional[Union[str, Path]] = None,
 ) -> logging.Logger:
-    """Configure the ``Grandpa`` logger.
+    """Configure the ``grandpa`` logger.
 
     Parameters
     ----------
@@ -40,9 +40,9 @@ def setup_logging(
 
     Returns
     -------
-    The configured ``Grandpa`` logger.
+    The configured ``grandpa`` logger.
     """
-    logger = logging.getLogger("Grandpa")
+    logger = logging.getLogger("grandpa")
 
     # Clear existing handlers to avoid duplication across calls
     logger.handlers.clear()
@@ -67,8 +67,9 @@ def setup_logging(
     if verbose or log_file is not None:
         if log_file is None:
             from grandpa.security.file_utils import secure_mkdir
+            from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-            log_dir = Path.home() / ".grandpa"
+            log_dir = DEFAULT_CONFIG_DIR
             secure_mkdir(log_dir)
             log_file = log_dir / "cli.log"
         file_handler = RotatingFileHandler(

@@ -1834,6 +1834,87 @@ export async function fetchDesktopControlDiagnostics(): Promise<DesktopControlDi
   return res.json();
 }
 
+export interface DesktopKernelDiagnostics {
+  status: string;
+  approvals: Record<string, unknown>;
+  audits: Record<string, unknown>;
+  risk: Record<string, unknown>;
+  requests: Record<string, unknown>;
+  execution: Record<string, unknown>;
+  emergency: Record<string, unknown>;
+  local_only: boolean;
+}
+
+export async function fetchDesktopKernelDiagnostics(): Promise<DesktopKernelDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/desktop/kernel`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// API Service Layer
+// ---------------------------------------------------------------------------
+
+export interface ApiServiceDiagnostic {
+  name: string;
+  description: string;
+  ready: boolean;
+  health: {
+    name?: string;
+    ready?: boolean;
+    status?: string;
+    message?: string;
+    dependencies?: Record<string, unknown>;
+    [key: string]: unknown;
+  };
+  readiness: Record<string, unknown>;
+  dependencies: Record<string, unknown>;
+  diagnostics: Record<string, unknown>;
+}
+
+export interface ApiServicesResponse {
+  status: string;
+  service_count: number;
+  ready_count: number;
+  services: ApiServiceDiagnostic[];
+  local_only: boolean;
+}
+
+export async function fetchApiServices(): Promise<ApiServicesResponse> {
+  const res = await fetch(`${getBase()}/v1/services`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Local Action Decomposition
+// ---------------------------------------------------------------------------
+
+export interface ActionDiagnostics {
+  status: string;
+  router: string;
+  migrated_handlers: Record<string, number>;
+  migrated_count: number;
+  legacy_handlers: Record<string, string>;
+  legacy_count: number;
+  routing_coverage: number;
+  fallback_count: number;
+  migrated_route_count: number;
+  recent_routes: Array<{
+    request: string;
+    domain: string;
+    source: string;
+    kind: string;
+  }>;
+  local_only: boolean;
+}
+
+export async function fetchActionDiagnostics(): Promise<ActionDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/actions/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Intent Router
 // ---------------------------------------------------------------------------
@@ -1941,6 +2022,58 @@ export async function setPluginEnabled(name: string, enabled: boolean): Promise<
   const res = await fetch(`${getBase()}/v1/plugins/${encodeURIComponent(name)}/${enabled ? 'enable' : 'disable'}`, {
     method: 'POST',
   });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Final Release Gate
+// ---------------------------------------------------------------------------
+
+export interface ReleaseGateCheck {
+  name: string;
+  status: 'pass' | 'fail' | 'warn' | 'skipped';
+  required: boolean;
+  command: string;
+  cwd: string;
+  duration_seconds: number;
+  summary: string;
+  warning_classification?: string;
+}
+
+export interface ReleaseGateReport {
+  schema_version?: number;
+  status?: string;
+  started_at?: string;
+  finished_at?: string;
+  overall_status: string;
+  pass: boolean;
+  ready_to_commit?: boolean;
+  ready_to_push?: boolean;
+  ready_to_package?: boolean;
+  recommendation?: string;
+  message?: string;
+  blockers?: ReleaseGateCheck[];
+  warnings?: ReleaseGateCheck[];
+  skipped_optional?: ReleaseGateCheck[];
+  checks?: ReleaseGateCheck[];
+  summary?: {
+    passed?: number;
+    warnings?: number;
+    blockers?: number;
+    skipped_optional?: number;
+  };
+  report_path?: string;
+}
+
+export async function fetchReleaseGateLatest(): Promise<ReleaseGateReport> {
+  const res = await fetch(`${getBase()}/v1/release-gate/latest`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchReleaseGateStatus(): Promise<ReleaseGateReport> {
+  const res = await fetch(`${getBase()}/v1/release-gate/status`);
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
 }

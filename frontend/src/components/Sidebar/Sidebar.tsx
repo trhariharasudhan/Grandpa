@@ -26,6 +26,10 @@ import {
   Network,
   Route,
   Boxes,
+  CheckCircle2,
+  Server,
+  Layers3,
+  Cpu,
 } from 'lucide-react';
 import { ConversationList } from './ConversationList';
 import { useAppStore } from '../../lib/store';
@@ -67,12 +71,16 @@ export function Sidebar() {
     { path: '/safety', icon: ShieldCheck, label: 'Safety' },
     { path: '/browser', icon: Globe2, label: 'Browser' },
     { path: '/desktop', icon: Monitor, label: 'Desktop' },
+    { path: '/desktop-kernel', icon: Cpu, label: 'PC Kernel' },
     { path: '/mobile', icon: Phone, label: 'Mobile' },
     { path: '/capabilities', icon: Sparkles, label: 'Capabilities' },
     { path: '/skills', icon: Wrench, label: 'Skills' },
     { path: '/plugins', icon: Boxes, label: 'Plugins' },
+    { path: '/services', icon: Server, label: 'Services' },
+    { path: '/actions', icon: Layers3, label: 'Actions' },
     { path: '/planner', icon: Network, label: 'Planner' },
     { path: '/router', icon: Route, label: 'Router' },
+    { path: '/release-gate', icon: CheckCircle2, label: 'Release Gate' },
     { path: '/agents', icon: Bot, label: 'Agents' },
     { path: '/settings', icon: Settings, label: 'Settings' },
     { path: '/get-started', icon: Rocket, label: 'Get Started' },

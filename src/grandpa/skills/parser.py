@@ -40,8 +40,8 @@ SPEC_FIELDS = frozenset(
 
 # Each entry maps a non-spec top-level field name to (target_kind, attr).
 # When target_kind is "field" the value is set directly on the SkillManifest
-# dataclass attribute.  When target_kind is "Grandpa_meta" the value is
-# stored under manifest.metadata["Grandpa"][attr].
+# dataclass attribute.  When target_kind is "grandpa_meta" the value is
+# stored under manifest.metadata["grandpa"][attr].
 FIELD_MAPPING: Dict[str, tuple[str, str]] = {
     "version": ("field", "version"),
     "author": ("field", "author"),
@@ -50,8 +50,8 @@ FIELD_MAPPING: Dict[str, tuple[str, str]] = {
     "required_capabilities": ("field", "required_capabilities"),
     "user_invocable": ("field", "user_invocable"),
     "disable_model_invocation": ("field", "disable_model_invocation"),
-    "platforms": ("Grandpa_meta", "platforms"),
-    "prerequisites": ("Grandpa_meta", "prerequisites"),
+    "platforms": ("grandpa_meta", "platforms"),
+    "prerequisites": ("grandpa_meta", "prerequisites"),
 }
 
 # Naming pattern: lowercase alnum + hyphens, no leading/trailing/consecutive hyphens
@@ -176,8 +176,9 @@ class SkillParser:
         raw_metadata = frontmatter.get("metadata") or {}
         if not isinstance(raw_metadata, dict):
             raw_metadata = {}
-        # Initialize Grandpa namespace
-        oj_meta = dict(raw_metadata.get("Grandpa") or {})
+        # Initialize Grandpa namespace. Read the legacy capitalized key for
+        # compatibility, but write the canonical lowercase key.
+        oj_meta = dict(raw_metadata.get("grandpa") or raw_metadata.get("Grandpa") or {})
 
         # Apply FIELD_MAPPING for non-spec top-level fields
         unmapped: Dict[str, Any] = {}
@@ -188,7 +189,7 @@ class SkillParser:
                 target, attr = FIELD_MAPPING[key]
                 if target == "field":
                     setattr(manifest, attr, value)
-                else:  # "Grandpa_meta"
+                else:  # "grandpa_meta"
                     oj_meta[attr] = value
             else:
                 unmapped[key] = value
@@ -220,7 +221,8 @@ class SkillParser:
         # Stash the Grandpa metadata block back
         if oj_meta:
             new_metadata = dict(raw_metadata)
-            new_metadata["Grandpa"] = oj_meta
+            new_metadata.pop("Grandpa", None)
+            new_metadata["grandpa"] = oj_meta
             manifest.metadata = new_metadata
         else:
             manifest.metadata = raw_metadata

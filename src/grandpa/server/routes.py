@@ -1683,6 +1683,14 @@ async def desktop_control_services():
     return {"services": list_desktop_services(), "local_only": True}
 
 
+@router.get("/v1/desktop/kernel")
+async def desktop_control_kernel():
+    """Return PC-control kernel diagnostics."""
+    from grandpa.desktop.kernel import diagnostics
+
+    return diagnostics()
+
+
 @router.get("/api/local-action/audit")
 async def recent_structured_local_action_audit(limit: int = Query(default=100, ge=1, le=500)):
     """Read recent redacted structured PC action audit entries."""

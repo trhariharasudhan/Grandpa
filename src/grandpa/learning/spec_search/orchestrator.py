@@ -51,7 +51,8 @@ class SpecSearchOrchestrator:
         judge: Any,
         session_store: Any,
         checkpoint_store: Any,
-        Grandpa_home: Path,
+        Grandpa_home: Path | None = None,
+        grandpa_home: Path | None = None,
         scorer: Callable[..., BenchmarkSnapshot] | None = None,
     ) -> "SpecSearchOrchestrator":
         """Build a single-session orchestrator from a SpecSearchLearningConfig.
@@ -75,6 +76,7 @@ class SpecSearchOrchestrator:
             session_store=session_store,
             checkpoint_store=checkpoint_store,
             Grandpa_home=Grandpa_home,
+            grandpa_home=grandpa_home,
             autonomy_mode=autonomy,
             scorer=scorer,
             benchmark_version=config.benchmark_version,
@@ -97,7 +99,8 @@ class SpecSearchOrchestrator:
         judge: Any,
         session_store: Any,
         checkpoint_store: Any,
-        Grandpa_home: Path,
+        Grandpa_home: Path | None = None,
+        grandpa_home: Path | None = None,
         autonomy_mode: AutonomyMode = AutonomyMode.TIERED,
         scorer: Callable[..., BenchmarkSnapshot] | None = None,
         benchmark_version: str = "personal_v1",
@@ -116,7 +119,10 @@ class SpecSearchOrchestrator:
         self._judge = judge
         self._session_store = session_store
         self._checkpoint_store = checkpoint_store
-        self._home = Path(Grandpa_home)
+        home = grandpa_home if grandpa_home is not None else Grandpa_home
+        if home is None:
+            raise TypeError("SpecSearchOrchestrator requires grandpa_home")
+        self._home = Path(home)
         self._autonomy = autonomy_mode
         self._scorer = scorer
         self._bench_version = benchmark_version

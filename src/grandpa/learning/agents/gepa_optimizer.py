@@ -145,6 +145,9 @@ class GrandpaGEPAAdapter:
         return dataset
 
 
+grandpaGEPAAdapter = GrandpaGEPAAdapter
+
+
 class GEPAAgentOptimizer:
     """Optimize agent configs using GEPA evolutionary optimization.
 

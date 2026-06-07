@@ -201,8 +201,21 @@ class LocalActionResponse:
 
 
 def run_local_action(payload: dict[str, Any] | LocalActionRequest) -> LocalActionResponse:
+    from grandpa.desktop.kernel.requests import coerce_request
+    from grandpa.desktop.kernel.risk import classify
+
+    request = coerce_request(payload)
+    risk = classify(request)
+    return _run_local_action_impl(request, risk=risk)
+
+
+def _run_local_action_impl(
+    payload: dict[str, Any] | LocalActionRequest,
+    *,
+    risk: RiskLevel | None = None,
+) -> LocalActionResponse:
     request = _coerce_request(payload)
-    risk = classify_risk(request)
+    risk = risk or classify_risk(request)
     if risk == "BLOCKED":
         response = LocalActionResponse(
             ok=False,
@@ -267,6 +280,12 @@ def run_local_action(payload: dict[str, Any] | LocalActionRequest) -> LocalActio
 
 
 def approve_local_action(action_id: str) -> LocalActionResponse:
+    from grandpa.desktop.kernel.approvals import approve
+
+    return approve(action_id)
+
+
+def _approve_local_action_impl(action_id: str) -> LocalActionResponse:
     with _STORE_LOCK:
         _expire_pending()
         pending = _load_pending_record(action_id)
@@ -325,6 +344,12 @@ def approve_local_action(action_id: str) -> LocalActionResponse:
 
 
 def reject_local_action(action_id: str) -> LocalActionResponse:
+    from grandpa.desktop.kernel.approvals import reject
+
+    return reject(action_id)
+
+
+def _reject_local_action_impl(action_id: str) -> LocalActionResponse:
     with _STORE_LOCK:
         _expire_pending()
         pending = _load_pending_record(action_id)
@@ -346,6 +371,12 @@ def reject_local_action(action_id: str) -> LocalActionResponse:
 
 
 def emergency_stop() -> LocalActionResponse:
+    from grandpa.desktop.kernel.emergency import activate
+
+    return activate()
+
+
+def _emergency_stop_impl() -> LocalActionResponse:
     global _EMERGENCY_STOP_ACTIVE
     _expire_pending()
     count = _mark_all_pending_cancelled()
@@ -365,20 +396,42 @@ def emergency_stop() -> LocalActionResponse:
 
 
 def reset_emergency_stop() -> None:
+    from grandpa.desktop.kernel.emergency import reset
+
+    reset()
+
+
+def _reset_emergency_stop_impl() -> None:
     global _EMERGENCY_STOP_ACTIVE
     _EMERGENCY_STOP_ACTIVE = False
 
 
 def pending_action_count() -> int:
+    from grandpa.desktop.kernel.approvals import count_pending
+
+    return count_pending()
+
+
+def _pending_action_count_impl() -> int:
     _expire_pending()
     return len(list_pending_actions())
 
 
 def initialize_pc_control_store() -> dict[str, Any]:
-    return run_pc_control_maintenance()
+    return _initialize_pc_control_store_impl()
+
+
+def _initialize_pc_control_store_impl() -> dict[str, Any]:
+    return _run_pc_control_maintenance_impl()
 
 
 def run_pc_control_maintenance() -> dict[str, Any]:
+    from grandpa.desktop.kernel.audits import cleanup
+
+    return cleanup()
+
+
+def _run_pc_control_maintenance_impl() -> dict[str, Any]:
     global _LAST_MAINTENANCE_SUMMARY
     started_at = time.time()
     summary: dict[str, Any] = {
@@ -427,6 +480,10 @@ def run_pc_control_maintenance() -> dict[str, Any]:
 
 
 def get_pc_control_runtime_health() -> dict[str, Any]:
+    return _get_pc_control_runtime_health_impl()
+
+
+def _get_pc_control_runtime_health_impl() -> dict[str, Any]:
     summary = _LAST_MAINTENANCE_SUMMARY or run_pc_control_maintenance()
     try:
         from grandpa.desktop_context import pc_control_diagnostics
@@ -451,11 +508,25 @@ def get_pc_control_runtime_health() -> dict[str, Any]:
 
 
 def list_pending_actions() -> list[dict[str, Any]]:
+    from grandpa.desktop.kernel.approvals import pending
+
+    return pending()
+
+
+def _list_pending_actions_impl() -> list[dict[str, Any]]:
     _expire_pending()
     return list_approval_records(statuses=("pending",))
 
 
 def list_approval_records(
+    *,
+    statuses: tuple[str, ...] = ("pending", "approved", "completed", "rejected", "expired", "cancelled", "blocked", "failed"),
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    return _list_approval_records_impl(statuses=statuses, limit=limit)
+
+
+def _list_approval_records_impl(
     *,
     statuses: tuple[str, ...] = ("pending", "approved", "completed", "rejected", "expired", "cancelled", "blocked", "failed"),
     limit: int = 100,
@@ -477,6 +548,12 @@ def list_approval_records(
 
 
 def read_recent_audit_entries(limit: int = 100) -> list[dict[str, Any]]:
+    from grandpa.desktop.kernel.audits import recent
+
+    return recent(limit)
+
+
+def _read_recent_audit_entries_impl(limit: int = 100) -> list[dict[str, Any]]:
     path = get_audit_log_path()
     if not path.exists():
         return []
@@ -509,6 +586,12 @@ def read_recent_audit_entries(limit: int = 100) -> list[dict[str, Any]]:
 
 
 def classify_risk(request: LocalActionRequest) -> RiskLevel:
+    from grandpa.desktop.kernel.risk import classify
+
+    return classify(request)  # type: ignore[return-value]
+
+
+def _classify_risk_impl(request: LocalActionRequest) -> RiskLevel:
     action = _normalise_action_type(request.action_type)
     if action in BLOCKED_ACTIONS:
         return "BLOCKED"
@@ -749,6 +832,10 @@ def _approval_message(request: LocalActionRequest) -> str:
 
 
 def get_approval_db_path() -> Path:
+    return _get_approval_db_path_impl()
+
+
+def _get_approval_db_path_impl() -> Path:
     configured = os.environ.get("GRANDPA_PC_CONTROL_DB")
     if configured:
         return Path(configured)
@@ -756,6 +843,10 @@ def get_approval_db_path() -> Path:
 
 
 def get_retention_config_path() -> Path:
+    return _get_retention_config_path_impl()
+
+
+def _get_retention_config_path_impl() -> Path:
     configured = os.environ.get("GRANDPA_PC_CONTROL_RETENTION_CONFIG")
     if configured:
         return Path(configured)
@@ -763,6 +854,12 @@ def get_retention_config_path() -> Path:
 
 
 def load_retention_policy() -> dict[str, int]:
+    from grandpa.desktop.kernel.audits import retention_policy
+
+    return retention_policy()
+
+
+def _load_retention_policy_impl() -> dict[str, int]:
     path = get_retention_config_path()
     policy = dict(DEFAULT_RETENTION_POLICY)
     try:
@@ -1077,6 +1174,10 @@ def _audit(request: LocalActionRequest, response: LocalActionResponse, *, approv
 
 
 def get_audit_log_path() -> Path:
+    return _get_audit_log_path_impl()
+
+
+def _get_audit_log_path_impl() -> Path:
     configured = os.environ.get("GRANDPA_LOCAL_ACTION_LOG")
     if configured:
         return Path(configured)

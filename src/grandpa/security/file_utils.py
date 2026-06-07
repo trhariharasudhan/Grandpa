@@ -17,7 +17,13 @@ def secure_mkdir(path: Path, mode: int = 0o700) -> Path:
     target directory (even if it already exists).
     """
     path.mkdir(parents=True, exist_ok=True)
-    os.chmod(path, mode)
+    try:
+        os.chmod(path, mode)
+    except PermissionError:
+        # Windows can deny chmod on user-profile directories even when the
+        # directory is readable/writable by the current user. Treat that as a
+        # platform permission limitation, not a config-load failure.
+        pass
     return path
 
 
@@ -30,5 +36,8 @@ def secure_create(path: Path, mode: int = 0o600) -> Path:
     secure_mkdir(path.parent, mode=0o700)
     if not path.exists():
         path.touch()
-    os.chmod(path, mode)
+    try:
+        os.chmod(path, mode)
+    except PermissionError:
+        pass
     return path

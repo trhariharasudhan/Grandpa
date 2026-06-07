@@ -169,7 +169,8 @@ class TestStreamingResilience:
         # Should contain partial content + error message + [DONE]
         text = resp.text
         assert "partial" in text
-        assert "model not found" in text
+        assert "Sorry, generation failed" in text
+        assert "model not found" not in text
         assert "[DONE]" in text
 
     def test_stream_tokens_arrive(self):

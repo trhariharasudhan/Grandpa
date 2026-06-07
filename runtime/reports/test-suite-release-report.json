@@ -1,0 +1,30 @@
+{
+  "started_at": "2026-06-06T16:39:38.846977+00:00",
+  "finished_at": "2026-06-06T16:40:12.683675+00:00",
+  "status": "pass",
+  "blockers": [],
+  "suites": [
+    {
+      "name": "release",
+      "command": "uv run --extra dev --extra framework-comparison --python 3.11 python -m pytest -m release -q --tb=short",
+      "status": "pass",
+      "exit_code": 0,
+      "duration_seconds": 33.835719,
+      "passed": 156,
+      "failed": 0,
+      "skipped": 7,
+      "xfailed": 0,
+      "errors": 0,
+      "warnings": 138,
+      "summary": "\ntests/server/test_routes.py: 23 warnings\n  D:\\Grandpa\\src\\grandpa\\server\\app.py:305: DeprecationWarning: \n          on_event is deprecated, use lifespan event handlers instead.\n  \n          Read more about it in the\n          [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).\n          \n    @app.on_event(\"shutdown\")\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n156 passed, 7 skipped, 6919 deselected, 138 warnings in 26.33s"
+    }
+  ],
+  "classification": {
+    "core": "Deterministic local tests that should pass in ordinary development.",
+    "release": "Curated release blockers used by the final release gate.",
+    "integration": "Cross-module tests; may be core or optional depending on resources.",
+    "optional": "Requires opt-in dependency, credential, external service, or live device.",
+    "environment": "Requires a platform/backend such as Docker, Android, browser, microphone, Rust extension, or Linux RAPL.",
+    "slow": "Long-running tests excluded from quick loops unless explicitly selected."
+  }
+}

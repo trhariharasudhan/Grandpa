@@ -420,16 +420,16 @@ def print_completion(
         if be_power is not None:
             lines.append(f"  [cyan]Bench Power:[/cyan]  {be_power:.1f} W")
     if output_path:
-        lines.append(f"  [cyan]JSONL:[/cyan]   {output_path}")
+        lines.append(f"  [cyan]JSONL:[/cyan]   {output_path.as_posix()}")
         summary_path = (
             output_path.with_suffix(".summary.json")
             if hasattr(output_path, "with_suffix")
             else None
         )
         if summary_path:
-            lines.append(f"  [cyan]Summary:[/cyan] {summary_path}")
+            lines.append(f"  [cyan]Summary:[/cyan] {summary_path.as_posix()}")
     if traces_dir:
-        lines.append(f"  [cyan]Traces:[/cyan]  {traces_dir}")
+        lines.append(f"  [cyan]Traces:[/cyan]  {traces_dir.as_posix()}")
     body = "\n".join(lines)
     panel = Panel(body, border_style="green", expand=False)
     console.print(panel)

@@ -33,7 +33,7 @@ except ModuleNotFoundError:
 # Hardware dataclasses
 # ---------------------------------------------------------------------------
 
-DEFAULT_CONFIG_DIR = Path.home() / ".grandpa"
+DEFAULT_CONFIG_DIR = Path(os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")).expanduser()
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
 
 
@@ -1328,7 +1328,7 @@ class SandboxConfig:
     """Container sandbox settings."""
 
     enabled: bool = False
-    image: str = "Grandpa-sandbox:latest"
+    image: str = "grandpa-sandbox:latest"
     timeout: int = 300
     workspace: str = ""
     mount_allowlist_path: str = ""

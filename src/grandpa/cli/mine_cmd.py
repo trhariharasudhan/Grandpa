@@ -15,7 +15,12 @@ from typing import Any
 
 import click
 
-from grandpa.core.config import HardwareInfo, detect_hardware, load_config
+from grandpa.core.config import (
+    DEFAULT_CONFIG_DIR,
+    HardwareInfo,
+    detect_hardware,
+    load_config,
+)
 from grandpa.core.registry import MinerRegistry
 from grandpa.mining._constants import (
     DEFAULT_GATEWAY_METRICS_PORT,
@@ -285,7 +290,7 @@ def doctor() -> None:
     _row("Daemon", ok, info)
 
     click.echo("Disk")
-    ok, info = check_disk_free(Path.home())
+    ok, info = check_disk_free(DEFAULT_CONFIG_DIR)
     _row("Free space", ok, info)
 
     click.echo("Pearl node")
@@ -455,7 +460,7 @@ def init(
         if not ok:
             raise click.ClickException(f"Docker unavailable: {info}")
 
-        ok, info = check_disk_free(Path.home())
+        ok, info = check_disk_free(DEFAULT_CONFIG_DIR)
         if not ok:
             raise click.ClickException(f"Insufficient disk: {info}")
     else:

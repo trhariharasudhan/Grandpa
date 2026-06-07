@@ -100,6 +100,11 @@ class WhatsAppBaileysChannel(BaseChannel):
                 "Node.js is required for WhatsAppBaileysChannel but 'node' "
                 "was not found on PATH.  Install Node.js 22+ and try again."
             )
+        if shutil.which("npm") is None:
+            raise RuntimeError(
+                "npm is required for WhatsAppBaileysChannel but 'npm' "
+                "was not found on PATH. Install Node.js/npm and try again."
+            )
 
         runtime = self._runtime_dir
         runtime.mkdir(parents=True, exist_ok=True)
@@ -150,7 +155,7 @@ class WhatsAppBaileysChannel(BaseChannel):
 
         try:
             bridge_js = self._ensure_bridge()
-        except RuntimeError as exc:
+        except (RuntimeError, FileNotFoundError, subprocess.SubprocessError) as exc:
             logger.error("Bridge setup failed: %s", exc)
             self._status = ChannelStatus.ERROR
             return

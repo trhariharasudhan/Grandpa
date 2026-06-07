@@ -10,12 +10,13 @@ from grandpa.evals.core.config import load_eval_config
 
 def _write_config(tmp_path: Path, split_value: str | None) -> Path:
     split_line = f'split = "{split_value}"' if split_value else ""
+    output_dir = (tmp_path / "out").as_posix()
     toml = f"""
 [meta]
 name = "split-parse-test"
 
 [run]
-output_dir = "{tmp_path / "out"}"
+output_dir = "{output_dir}"
 seed = 42
 
 [[models]]

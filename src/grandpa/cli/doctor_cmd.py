@@ -694,6 +694,51 @@ def _check_frontend_readiness() -> CheckResult:
         "warn",
         "Missing/optional",
         details="Frontend assets were not detected.",
+        )
+
+
+def _check_release_gate_status() -> CheckResult:
+    """Report the latest final release gate status without rerunning it."""
+    import os
+
+    if os.environ.get("GRANDPA_DOCTOR_SKIP_RELEASE_GATE") == "1":
+        return CheckResult(
+            "Final release gate",
+            "ok",
+            "Running now",
+            "The active final release gate is executing doctor as one of its checks.",
+        )
+    try:
+        from grandpa.release_gate import release_gate_status
+
+        status = release_gate_status()
+    except Exception as exc:
+        return CheckResult(
+            "Final release gate",
+            "warn",
+            "Missing/optional",
+            f"Could not read latest gate report: {exc.__class__.__name__}",
+        )
+    overall = str(status.get("overall_status") or "NOT RUN")
+    if status.get("status") == "not_run":
+        return CheckResult(
+            "Final release gate",
+            "warn",
+            "Not run yet",
+            "Run `scripts\\release\\final-release-gate.ps1` before packaging or pushing a release.",
+        )
+    if status.get("pass"):
+        summary = status.get("summary", {})
+        detail = (
+            f"Finished {status.get('finished_at')}. "
+            f"{summary.get('passed', 0)} passed, {summary.get('warnings', 0)} warnings."
+        )
+        return CheckResult("Final release gate", "ok", overall, detail)
+    return CheckResult(
+        "Final release gate",
+        "fail",
+        overall,
+        str(status.get("recommendation") or "Fix release gate blockers before packaging."),
     )
 
 
@@ -865,6 +910,7 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
             _check_notifications_ready(),
             _check_background_scheduler_ready(),
             _check_frontend_readiness(),
+            _check_release_gate_status(),
         ]
     )
     system_integration.extend(_check_background_tasks())

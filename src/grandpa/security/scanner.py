@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from typing import Dict, Tuple
 
-from grandpa._rust_bridge import get_rust_module, scan_result_from_json
 from grandpa.security._stubs import BaseScanner
-from grandpa.security.types import ScanResult, ThreatLevel
+from grandpa.security.types import ScanFinding, ScanResult, ThreatLevel
 
 # ---------------------------------------------------------------------------
 # SecretScanner
@@ -19,8 +19,13 @@ class SecretScanner(BaseScanner):
     scanner_id = "secrets"
 
     def __init__(self) -> None:
-        _rust = get_rust_module()
-        self._rust_impl = _rust.SecretScanner()
+        try:
+            from grandpa._rust_bridge import get_rust_module
+
+            _rust = get_rust_module()
+            self._rust_impl = _rust.SecretScanner()
+        except Exception:
+            self._rust_impl = None
 
     PATTERNS: Dict[str, Tuple[str, ThreatLevel, str]] = {
         "openai_key": (
@@ -75,13 +80,46 @@ class SecretScanner(BaseScanner):
         ),
     }
 
+    def _scan_python(self, text: str) -> ScanResult:
+        findings: list[ScanFinding] = []
+        for name, (pattern, level, description) in self.PATTERNS.items():
+            for match in re.finditer(pattern, text):
+                findings.append(
+                    ScanFinding(
+                        pattern_name=name,
+                        matched_text=match.group(0),
+                        threat_level=level,
+                        start=match.start(),
+                        end=match.end(),
+                        description=description,
+                    )
+                )
+        return ScanResult(findings=findings)
+
     def scan(self, text: str) -> ScanResult:
-        """Scan *text* for secret patterns — always via Rust backend."""
-        return scan_result_from_json(self._rust_impl.scan(text))
+        """Scan *text* for secret patterns."""
+        if self._rust_impl is not None:
+            from grandpa._rust_bridge import scan_result_from_json
+
+            return scan_result_from_json(self._rust_impl.scan(text))
+        return self._scan_python(text)
 
     def redact(self, text: str) -> str:
         """Replace secret matches with ``[REDACTED:{pattern_name}]``."""
-        return self._rust_impl.redact(text)
+        if self._rust_impl is not None:
+            return self._rust_impl.redact(text)
+        redacted = text
+        for finding in sorted(
+            self._scan_python(text).findings,
+            key=lambda item: item.start,
+            reverse=True,
+        ):
+            redacted = (
+                redacted[: finding.start]
+                + f"[REDACTED:{finding.pattern_name}]"
+                + redacted[finding.end :]
+            )
+        return redacted
 
 
 # ---------------------------------------------------------------------------
@@ -95,8 +133,13 @@ class PIIScanner(BaseScanner):
     scanner_id = "pii"
 
     def __init__(self) -> None:
-        _rust = get_rust_module()
-        self._rust_impl = _rust.PIIScanner()
+        try:
+            from grandpa._rust_bridge import get_rust_module
+
+            _rust = get_rust_module()
+            self._rust_impl = _rust.PIIScanner()
+        except Exception:
+            self._rust_impl = None
 
     PATTERNS: Dict[str, Tuple[str, ThreatLevel, str]] = {
         "email": (
@@ -136,13 +179,46 @@ class PIIScanner(BaseScanner):
         ),
     }
 
+    def _scan_python(self, text: str) -> ScanResult:
+        findings: list[ScanFinding] = []
+        for name, (pattern, level, description) in self.PATTERNS.items():
+            for match in re.finditer(pattern, text):
+                findings.append(
+                    ScanFinding(
+                        pattern_name=name,
+                        matched_text=match.group(0),
+                        threat_level=level,
+                        start=match.start(),
+                        end=match.end(),
+                        description=description,
+                    )
+                )
+        return ScanResult(findings=findings)
+
     def scan(self, text: str) -> ScanResult:
-        """Scan *text* for PII patterns — always via Rust backend."""
-        return scan_result_from_json(self._rust_impl.scan(text))
+        """Scan *text* for PII patterns."""
+        if self._rust_impl is not None:
+            from grandpa._rust_bridge import scan_result_from_json
+
+            return scan_result_from_json(self._rust_impl.scan(text))
+        return self._scan_python(text)
 
     def redact(self, text: str) -> str:
         """Replace PII matches with ``[REDACTED:{pattern_name}]``."""
-        return self._rust_impl.redact(text)
+        if self._rust_impl is not None:
+            return self._rust_impl.redact(text)
+        redacted = text
+        for finding in sorted(
+            self._scan_python(text).findings,
+            key=lambda item: item.start,
+            reverse=True,
+        ):
+            redacted = (
+                redacted[: finding.start]
+                + f"[REDACTED:{finding.pattern_name}]"
+                + redacted[finding.end :]
+            )
+        return redacted
 
 
 __all__ = ["PIIScanner", "SecretScanner"]

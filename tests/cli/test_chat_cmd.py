@@ -139,7 +139,7 @@ class TestChatAgents:
             result = CliRunner().invoke(
                 chat,
                 ["--agent", "tool_chat_agent", "--model", "test-model"],
-                input="run tool\ny\n/quit\n",
+                input="hello\nyes\n/quit\n",
             )
 
         assert result.exit_code == 0

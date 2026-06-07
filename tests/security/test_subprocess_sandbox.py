@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 
 from grandpa.security.subprocess_sandbox import (
@@ -71,22 +72,33 @@ class TestRunSandboxed:
         assert not result.killed
 
     def test_timeout_kills_process(self) -> None:
-        result = run_sandboxed("sleep 60", timeout=1.0)
+        command = (
+            f'"{sys.executable}" -c "import time; time.sleep(60)"'
+            if sys.platform == "win32"
+            else "sleep 60"
+        )
+        result = run_sandboxed(command, timeout=1.0)
         assert result.timed_out
         assert result.killed
         assert result.returncode == -1
 
     def test_working_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            result = run_sandboxed("pwd", working_dir=tmpdir, timeout=10.0)
+            command = "cd" if sys.platform == "win32" else "pwd"
+            result = run_sandboxed(command, working_dir=tmpdir, timeout=10.0)
             assert result.returncode == 0
             assert tmpdir in result.stdout.strip()
 
     def test_env_isolation(self) -> None:
         os.environ["TEST_SECRET"] = "super_secret_value"
         try:
+            command = (
+                "echo val=%TEST_SECRET%"
+                if sys.platform == "win32"
+                else 'echo "val=$TEST_SECRET"'
+            )
             result = run_sandboxed(
-                'echo "val=$TEST_SECRET"',
+                command,
                 timeout=10.0,
             )
             assert result.returncode == 0
@@ -96,8 +108,9 @@ class TestRunSandboxed:
 
     def test_output_truncation(self) -> None:
         # Generate output larger than max_output_bytes
+        python_cmd = f"\"{sys.executable}\" -c \"print('A' * 200)\""
         result = run_sandboxed(
-            "python3 -c \"print('A' * 200)\"",
+            python_cmd,
             timeout=10.0,
             max_output_bytes=50,
         )
@@ -105,7 +118,12 @@ class TestRunSandboxed:
         assert len(result.stdout) <= 50
 
     def test_non_zero_exit_code(self) -> None:
-        result = run_sandboxed("exit 42", timeout=10.0)
+        command = (
+            f'"{sys.executable}" -c "import sys; sys.exit(42)"'
+            if sys.platform == "win32"
+            else "exit 42"
+        )
+        result = run_sandboxed(command, timeout=10.0)
         assert result.returncode == 42
         assert not result.timed_out
 

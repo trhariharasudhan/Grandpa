@@ -115,9 +115,9 @@ class TrialRunner:
             backend_name = "Grandpa-agent"
 
         model_slug = model.replace("/", "-").replace(":", "-")
-        output_path = str(
-            Path(self.output_dir) / f"{trial.trial_id}_{model_slug}.jsonl",
-        )
+        output_path = (
+            Path(self.output_dir) / f"{trial.trial_id}_{model_slug}.jsonl"
+        ).as_posix()
 
         max_tokens = recipe.max_tokens if recipe.max_tokens is not None else 2048
 

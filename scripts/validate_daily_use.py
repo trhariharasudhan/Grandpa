@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+VALIDATION_HOME = ROOT / "runtime" / "daily-use-home"
 
 
 @dataclass(frozen=True)
@@ -39,10 +40,14 @@ def _run_step(step: ValidationStep) -> ValidationResult:
     creationflags = 0
     if os.name == "nt":
         creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    env = os.environ.copy()
+    env.setdefault("GRANDPA_HOME", str(VALIDATION_HOME))
+    VALIDATION_HOME.mkdir(parents=True, exist_ok=True)
     try:
         process = subprocess.Popen(
             step.command,
             cwd=step.cwd,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             encoding="utf-8",
@@ -147,7 +152,17 @@ def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
         ValidationStep("doctor dashboard", ["uv", "run", "grandpa", "doctor"], timeout=240),
         ValidationStep(
             "normal AI question",
-            ["uv", "run", "grandpa", "ask", "What is Python?"],
+            [
+                "uv",
+                "run",
+                "grandpa",
+                "ask",
+                "--engine",
+                "ollama",
+                "--model",
+                "qwen2.5:3b",
+                "What is Python?",
+            ],
             timeout=240,
         ),
         ValidationStep(

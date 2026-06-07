@@ -1,0 +1,184 @@
+{
+  "schema_version": 1,
+  "started_at": "2026-06-06T16:37:08.408145+00:00",
+  "finished_at": "2026-06-06T16:42:03.716618+00:00",
+  "overall_status": "READY",
+  "pass": true,
+  "ready_to_commit": true,
+  "ready_to_push": false,
+  "ready_to_package": true,
+  "recommendation": "Ready after reviewing and committing intentional working-tree changes.",
+  "blockers": [],
+  "warnings": [
+    {
+      "name": "git status summary",
+      "status": "warn",
+      "required": false,
+      "command": "git status --short",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 0.560692,
+      "summary": "Working tree has 91 changed/untracked item(s). Commit before pushing a release.",
+      "warning_classification": ""
+    },
+    {
+      "name": "doctor dashboard",
+      "status": "pass",
+      "required": true,
+      "command": "uv run grandpa doctor",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 22.061865,
+      "summary": "...\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 System Integration \u2502  \u2713  \u2502 Docker command          \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502 available               \u2502   C:\\Program           \u2502\n\u2502                    \u2502     \u2502                         \u2502 Files\\Docker\\Docker\\r\u2026 \u2502\n\u2502                    \u2502  !  \u2502 Docker daemon reachable \u2502 Missing/optional       \u2502\n\u2502                    \u2502     \u2502                         \u2502   Install Docker       \u2502\n\u2502                    \u2502     \u2502                         \u2502 Desktop and wait until \u2502\n\u2502                    \u2502     \u2502                         \u2502 the engine is running. \u2502\n\u2502                    \u2502  \u2713  \u2502 Notifications           \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502                         \u2502   Routine and reminder \u2502\n\u2502                    \u2502     \u2502                         \u2502 notifications can be   \u2502\n\u2502                    \u2502     \u2502                         \u2502 stored locally.        \u2502\n\u2502                    \u2502  \u2713  \u2502 Background scheduler    \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502                         \u2502   Backend startup can  \u2502\n\u2502                    \u2502     \u2502                         \u2502 register the routine   \u2502\n\u2502                    \u2502     \u2502                         \u2502 scheduler daemon.      \u2502\n\u2502                    \u2502  \u2713  \u2502 Frontend readiness      \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502                         \u2502   D:\\Grandpa\\src\\gran\u2026 \u2502\n\u2502                    \u2502  \u2713  \u2502 Final release gate      \u2502 Running now            \u2502\n\u2502                    \u2502     \u2502                         \u2502   The active final     \u2502\n\u2502                    \u2502     \u2502                         \u2502 release gate is        \u2502\n\u2502                    \u2502     \u2502                         \u2502 executing doctor as    \u2502\n\u2502                    \u2502     \u2502                         \u2502 one of its checks.     \u2502\n\u2502                    \u2502  !  \u2502 Rust extension          \u2502 Missing/optional       \u2502\n\u2502                    \u2502     \u2502 background task         \u2502   Rust extension is    \u2502\n\u2502                    \u2502     \u2502                         \u2502 building in the        \u2502\n\u2502                    \u2502     \u2502                         \u2502 background.            \u2502\n\u2502                    \u2502  \u2713  \u2502 Background model        \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502 downloads               \u2502   No model downloads   \u2502\n\u2502                    \u2502     \u2502                         \u2502 are currently tracked. \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\nFinal Summary\n  34 passed, 15 warnings, 0 failures\n  Overall readiness: PARTIALLY READY",
+      "warning_classification": "Docker daemon off is optional unless you are publishing container images."
+    },
+    {
+      "name": "frontend build",
+      "status": "pass",
+      "required": true,
+      "command": "C:\\Program Files\\nodejs\\npm.cmd run build",
+      "cwd": "D:\\Grandpa\\frontend",
+      "duration_seconds": 57.203746,
+      "summary": "...[1m\u001b[2m 13.68 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.88 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/GetStartedPage-BlWa2aL5.js                \u001b[39m\u001b[1m\u001b[2m 14.17 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.70 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/SafetyPage-Dj0PvGWW.js                    \u001b[39m\u001b[1m\u001b[2m 16.50 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   4.26 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/DashboardPage-DClclAOj.js                 \u001b[39m\u001b[1m\u001b[2m 18.61 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.09 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/SettingsPage-BXb-mMzV.js                  \u001b[39m\u001b[1m\u001b[2m 23.16 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.69 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/router-DS8tesSE.js                        \u001b[39m\u001b[1m\u001b[2m 44.59 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  16.01 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/AgentsPage-DtSGA2ll.js                    \u001b[39m\u001b[1m\u001b[2m 96.82 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  22.74 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/DataSourcesPage-DHb5Ny5x.js               \u001b[39m\u001b[1m\u001b[2m167.91 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  51.71 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/markdown-8lJBaJcI.js                      \u001b[39m\u001b[1m\u001b[2m335.57 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 101.91 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/charts-BFGfIsz7.js                        \u001b[39m\u001b[1m\u001b[2m358.80 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 107.19 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/index-CvnNqX-3.js                         \u001b[39m\u001b[1m\u001b[33m859.09 kB\u001b[39m\u001b[22m\u001b[2m \u2502 gzip: 258.09 kB\u001b[22m\n\u001b[32m\u2713 built in 22.53s\u001b[39m\n\nPWA v1.2.0\nmode      generateSW\nprecache  42 entries (2109.70 KiB)\nfiles generated\n  ../src/grandpa/server/static/sw.js\n  ../src/grandpa/server/static/workbox-8c29f6e4.js\n\u001b[33mGenerated an empty chunk: \"react\".\u001b[39m\n\u001b[33m[plugin vite:reporter] \n(!) D:/Grandpa/frontend/src/lib/analytics.ts is dynamically imported by D:/Grandpa/frontend/src/lib/store.ts but also statically imported by D:/Grandpa/frontend/src/App.tsx, D:/Grandpa/frontend/src/main.tsx, dynamic import will not move module into another chunk.\n\u001b[39m\n\u001b[33m\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\u001b[39m",
+      "warning_classification": "Vite chunk warnings are size/performance guidance, not release blockers."
+    },
+    {
+      "name": "tauri frontend build",
+      "status": "pass",
+      "required": true,
+      "command": "C:\\Program Files\\nodejs\\npm.cmd run build:tauri",
+      "cwd": "D:\\Grandpa\\frontend",
+      "duration_seconds": 53.760332,
+      "summary": "...                  \u001b[39m\u001b[1m\u001b[2m 10.93 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   2.69 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/CapabilitiesPage-CP_dee21.js              \u001b[39m\u001b[1m\u001b[2m 11.07 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.59 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/connectors-CzBred3u.js                    \u001b[39m\u001b[1m\u001b[2m 13.68 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.88 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/GetStartedPage-BlWa2aL5.js                \u001b[39m\u001b[1m\u001b[2m 14.17 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.70 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/SafetyPage-Dj0PvGWW.js                    \u001b[39m\u001b[1m\u001b[2m 16.50 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   4.26 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/DashboardPage-DClclAOj.js                 \u001b[39m\u001b[1m\u001b[2m 18.61 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.09 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/SettingsPage-BXb-mMzV.js                  \u001b[39m\u001b[1m\u001b[2m 23.16 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.69 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/router-DS8tesSE.js                        \u001b[39m\u001b[1m\u001b[2m 44.59 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  16.01 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/AgentsPage-DtSGA2ll.js                    \u001b[39m\u001b[1m\u001b[2m 96.82 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  22.74 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/DataSourcesPage-DHb5Ny5x.js               \u001b[39m\u001b[1m\u001b[2m167.91 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  51.71 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/markdown-8lJBaJcI.js                      \u001b[39m\u001b[1m\u001b[2m335.57 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 101.91 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/charts-BFGfIsz7.js                        \u001b[39m\u001b[1m\u001b[2m358.80 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 107.19 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/index-CvnNqX-3.js                         \u001b[39m\u001b[1m\u001b[33m859.09 kB\u001b[39m\u001b[22m\u001b[2m \u2502 gzip: 258.09 kB\u001b[22m\n\u001b[32m\u2713 built in 20.02s\u001b[39m\n\nPWA v1.2.0\nmode      generateSW\nprecache  42 entries (2109.70 KiB)\nfiles generated\n  dist/sw.js\n  dist/workbox-8c29f6e4.js\n\u001b[33mGenerated an empty chunk: \"react\".\u001b[39m\n\u001b[33m[plugin vite:reporter] \n(!) D:/Grandpa/frontend/src/lib/analytics.ts is dynamically imported by D:/Grandpa/frontend/src/lib/store.ts but also statically imported by D:/Grandpa/frontend/src/App.tsx, D:/Grandpa/frontend/src/main.tsx, dynamic import will not move module into another chunk.\n\u001b[39m\n\u001b[33m\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\u001b[39m",
+      "warning_classification": "Vite chunk warnings are size/performance guidance, not release blockers."
+    }
+  ],
+  "skipped_optional": [
+    {
+      "name": "android apk build",
+      "status": "skipped",
+      "required": false,
+      "command": "flutter build apk",
+      "cwd": "D:\\Grandpa\\mobile\\android_companion",
+      "duration_seconds": 0,
+      "summary": "Skipped by gate option.",
+      "warning_classification": "Flutter/Android build gaps are optional unless shipping the Android APK."
+    }
+  ],
+  "checks": [
+    {
+      "name": "git status summary",
+      "status": "warn",
+      "required": false,
+      "command": "git status --short",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 0.560692,
+      "summary": "Working tree has 91 changed/untracked item(s). Commit before pushing a release.",
+      "warning_classification": ""
+    },
+    {
+      "name": "ignored/generated artifact check",
+      "status": "pass",
+      "required": true,
+      "command": "git ls-files",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 0.311017,
+      "summary": "No tracked generated artifacts found.",
+      "warning_classification": ""
+    },
+    {
+      "name": "dependency sanity",
+      "status": "pass",
+      "required": true,
+      "command": "uv sync --extra server --link-mode=copy",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 0.89952,
+      "summary": "Resolved 409 packages in 11ms\nUninstalled 18 packages in 543ms\n - cfgv==3.5.0\n - coverage==7.13.4\n - distlib==0.4.0\n - identify==2.6.18\n - iniconfig==2.3.0\n - nodeenv==1.10.0\n - platformdirs==4.9.2\n - pluggy==1.6.0\n - polars==1.40.1\n - polars-runtime-32==1.40.1\n - pre-commit==4.5.1\n - pytest==9.0.2\n - pytest-asyncio==1.3.0\n - pytest-cov==7.0.0\n - python-discovery==1.2.0\n - respx==0.22.0\n - ruff==0.15.1\n - virtualenv==21.2.0",
+      "warning_classification": ""
+    },
+    {
+      "name": "doctor dashboard",
+      "status": "pass",
+      "required": true,
+      "command": "uv run grandpa doctor",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 22.061865,
+      "summary": "...\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2524\n\u2502 System Integration \u2502  \u2713  \u2502 Docker command          \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502 available               \u2502   C:\\Program           \u2502\n\u2502                    \u2502     \u2502                         \u2502 Files\\Docker\\Docker\\r\u2026 \u2502\n\u2502                    \u2502  !  \u2502 Docker daemon reachable \u2502 Missing/optional       \u2502\n\u2502                    \u2502     \u2502                         \u2502   Install Docker       \u2502\n\u2502                    \u2502     \u2502                         \u2502 Desktop and wait until \u2502\n\u2502                    \u2502     \u2502                         \u2502 the engine is running. \u2502\n\u2502                    \u2502  \u2713  \u2502 Notifications           \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502                         \u2502   Routine and reminder \u2502\n\u2502                    \u2502     \u2502                         \u2502 notifications can be   \u2502\n\u2502                    \u2502     \u2502                         \u2502 stored locally.        \u2502\n\u2502                    \u2502  \u2713  \u2502 Background scheduler    \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502                         \u2502   Backend startup can  \u2502\n\u2502                    \u2502     \u2502                         \u2502 register the routine   \u2502\n\u2502                    \u2502     \u2502                         \u2502 scheduler daemon.      \u2502\n\u2502                    \u2502  \u2713  \u2502 Frontend readiness      \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502                         \u2502   D:\\Grandpa\\src\\gran\u2026 \u2502\n\u2502                    \u2502  \u2713  \u2502 Final release gate      \u2502 Running now            \u2502\n\u2502                    \u2502     \u2502                         \u2502   The active final     \u2502\n\u2502                    \u2502     \u2502                         \u2502 release gate is        \u2502\n\u2502                    \u2502     \u2502                         \u2502 executing doctor as    \u2502\n\u2502                    \u2502     \u2502                         \u2502 one of its checks.     \u2502\n\u2502                    \u2502  !  \u2502 Rust extension          \u2502 Missing/optional       \u2502\n\u2502                    \u2502     \u2502 background task         \u2502   Rust extension is    \u2502\n\u2502                    \u2502     \u2502                         \u2502 building in the        \u2502\n\u2502                    \u2502     \u2502                         \u2502 background.            \u2502\n\u2502                    \u2502  \u2713  \u2502 Background model        \u2502 Ready                  \u2502\n\u2502                    \u2502     \u2502 downloads               \u2502   No model downloads   \u2502\n\u2502                    \u2502     \u2502                         \u2502 are currently tracked. \u2502\n\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2534\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\n\nFinal Summary\n  34 passed, 15 warnings, 0 failures\n  Overall readiness: PARTIALLY READY",
+      "warning_classification": "Docker daemon off is optional unless you are publishing container images."
+    },
+    {
+      "name": "daily-use validator",
+      "status": "pass",
+      "required": true,
+      "command": "uv run --python 3.11 python scripts\\validate_daily_use.py --skip-app-launch --skip-docker",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 126.094926,
+      "summary": "RUN doctor dashboard: uv run grandpa doctor\nPASS doctor dashboard: ok\nRUN normal AI question: uv run grandpa ask --engine ollama --model qwen2.5:3b What is Python?\nPASS normal AI question: ok\nRUN memory remember: uv run grandpa ask remember my project is Grandpa\nPASS memory remember: ok\nRUN memory recall: uv run grandpa ask what is my project?\nPASS memory recall: ok\nRUN file assistant: uv run grandpa ask show recent files\nPASS file assistant: ok\nRUN capability foundations: uv run python -c from grandpa import communication_integration, future_features, iot_smart_home, mobile_integration, real_world_tasks; checks=[mobile_integration.diagnostics()['status'], communication_integration.diagnostics()['status'], real_world_tasks.diagnostics()['status'], iot_smart_home.diagnostics()['status'], future_features.diagnostics()['status']]; assert all(item == 'ready' for item in checks), checks; print('capabilities ok')\nPASS capability foundations: ok\nRUN routine reminder: uv run grandpa ask remind me every hour to drink water\nPASS routine reminder: ok\nRUN blocked dangerous command: uv run grandpa ask delete all files\nPASS blocked dangerous command: ok\nRUN safe app command parser: uv run python -c from grandpa.local_actions import handle_local_action; result = handle_local_action('open notepad', execute=False); print(result.status)\nPASS safe app command parser: ok\nRUN frontend build: C:\\Program Files\\nodejs\\npm.cmd run build\nPASS frontend build: ok\n\nDaily-use validation: 10 passed, 0 warnings, 0 failures",
+      "warning_classification": ""
+    },
+    {
+      "name": "release-grade pytest",
+      "status": "pass",
+      "required": true,
+      "command": "uv run --python 3.11 python scripts\\testing\\test_suite_report.py --release-only",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 34.401069,
+      "summary": "Test suite report: pass\nJSON: D:\\Grandpa\\runtime\\reports\\test-suite-release-report.json\nMarkdown: D:\\Grandpa\\runtime\\reports\\test-suite-release-report.md",
+      "warning_classification": ""
+    },
+    {
+      "name": "frontend build",
+      "status": "pass",
+      "required": true,
+      "command": "C:\\Program Files\\nodejs\\npm.cmd run build",
+      "cwd": "D:\\Grandpa\\frontend",
+      "duration_seconds": 57.203746,
+      "summary": "...[1m\u001b[2m 13.68 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.88 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/GetStartedPage-BlWa2aL5.js                \u001b[39m\u001b[1m\u001b[2m 14.17 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.70 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/SafetyPage-Dj0PvGWW.js                    \u001b[39m\u001b[1m\u001b[2m 16.50 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   4.26 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/DashboardPage-DClclAOj.js                 \u001b[39m\u001b[1m\u001b[2m 18.61 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.09 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/SettingsPage-BXb-mMzV.js                  \u001b[39m\u001b[1m\u001b[2m 23.16 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.69 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/router-DS8tesSE.js                        \u001b[39m\u001b[1m\u001b[2m 44.59 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  16.01 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/AgentsPage-DtSGA2ll.js                    \u001b[39m\u001b[1m\u001b[2m 96.82 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  22.74 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/DataSourcesPage-DHb5Ny5x.js               \u001b[39m\u001b[1m\u001b[2m167.91 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  51.71 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/markdown-8lJBaJcI.js                      \u001b[39m\u001b[1m\u001b[2m335.57 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 101.91 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/charts-BFGfIsz7.js                        \u001b[39m\u001b[1m\u001b[2m358.80 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 107.19 kB\u001b[22m\n\u001b[2m../src/grandpa/server/static/\u001b[22m\u001b[36massets/index-CvnNqX-3.js                         \u001b[39m\u001b[1m\u001b[33m859.09 kB\u001b[39m\u001b[22m\u001b[2m \u2502 gzip: 258.09 kB\u001b[22m\n\u001b[32m\u2713 built in 22.53s\u001b[39m\n\nPWA v1.2.0\nmode      generateSW\nprecache  42 entries (2109.70 KiB)\nfiles generated\n  ../src/grandpa/server/static/sw.js\n  ../src/grandpa/server/static/workbox-8c29f6e4.js\n\u001b[33mGenerated an empty chunk: \"react\".\u001b[39m\n\u001b[33m[plugin vite:reporter] \n(!) D:/Grandpa/frontend/src/lib/analytics.ts is dynamically imported by D:/Grandpa/frontend/src/lib/store.ts but also statically imported by D:/Grandpa/frontend/src/App.tsx, D:/Grandpa/frontend/src/main.tsx, dynamic import will not move module into another chunk.\n\u001b[39m\n\u001b[33m\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\u001b[39m",
+      "warning_classification": "Vite chunk warnings are size/performance guidance, not release blockers."
+    },
+    {
+      "name": "tauri frontend build",
+      "status": "pass",
+      "required": true,
+      "command": "C:\\Program Files\\nodejs\\npm.cmd run build:tauri",
+      "cwd": "D:\\Grandpa\\frontend",
+      "duration_seconds": 53.760332,
+      "summary": "...                  \u001b[39m\u001b[1m\u001b[2m 10.93 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   2.69 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/CapabilitiesPage-CP_dee21.js              \u001b[39m\u001b[1m\u001b[2m 11.07 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.59 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/connectors-CzBred3u.js                    \u001b[39m\u001b[1m\u001b[2m 13.68 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.88 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/GetStartedPage-BlWa2aL5.js                \u001b[39m\u001b[1m\u001b[2m 14.17 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   3.70 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/SafetyPage-Dj0PvGWW.js                    \u001b[39m\u001b[1m\u001b[2m 16.50 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   4.26 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/DashboardPage-DClclAOj.js                 \u001b[39m\u001b[1m\u001b[2m 18.61 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.09 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/SettingsPage-BXb-mMzV.js                  \u001b[39m\u001b[1m\u001b[2m 23.16 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:   5.69 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/router-DS8tesSE.js                        \u001b[39m\u001b[1m\u001b[2m 44.59 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  16.01 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/AgentsPage-DtSGA2ll.js                    \u001b[39m\u001b[1m\u001b[2m 96.82 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  22.74 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/DataSourcesPage-DHb5Ny5x.js               \u001b[39m\u001b[1m\u001b[2m167.91 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip:  51.71 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/markdown-8lJBaJcI.js                      \u001b[39m\u001b[1m\u001b[2m335.57 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 101.91 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/charts-BFGfIsz7.js                        \u001b[39m\u001b[1m\u001b[2m358.80 kB\u001b[22m\u001b[1m\u001b[22m\u001b[2m \u2502 gzip: 107.19 kB\u001b[22m\n\u001b[2mdist/\u001b[22m\u001b[36massets/index-CvnNqX-3.js                         \u001b[39m\u001b[1m\u001b[33m859.09 kB\u001b[39m\u001b[22m\u001b[2m \u2502 gzip: 258.09 kB\u001b[22m\n\u001b[32m\u2713 built in 20.02s\u001b[39m\n\nPWA v1.2.0\nmode      generateSW\nprecache  42 entries (2109.70 KiB)\nfiles generated\n  dist/sw.js\n  dist/workbox-8c29f6e4.js\n\u001b[33mGenerated an empty chunk: \"react\".\u001b[39m\n\u001b[33m[plugin vite:reporter] \n(!) D:/Grandpa/frontend/src/lib/analytics.ts is dynamically imported by D:/Grandpa/frontend/src/lib/store.ts but also statically imported by D:/Grandpa/frontend/src/App.tsx, D:/Grandpa/frontend/src/main.tsx, dynamic import will not move module into another chunk.\n\u001b[39m\n\u001b[33m\n(!) Some chunks are larger than 500 kB after minification. Consider:\n- Using dynamic import() to code-split the application\n- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks\n- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.\u001b[39m",
+      "warning_classification": "Vite chunk warnings are size/performance guidance, not release blockers."
+    },
+    {
+      "name": "release manifest sanity",
+      "status": "pass",
+      "required": false,
+      "command": "D:\\Grandpa\\dist\\releases\\grandpa-v1.0.1\\release-manifest.json",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 0,
+      "summary": "Valid manifest: D:\\Grandpa\\dist\\releases\\grandpa-v1.0.1\\release-manifest.json",
+      "warning_classification": ""
+    },
+    {
+      "name": "full pytest suite status",
+      "status": "pass",
+      "required": false,
+      "command": "D:\\Grandpa\\runtime\\reports\\test-suite-full-report.json",
+      "cwd": "D:\\Grandpa",
+      "duration_seconds": 0,
+      "summary": "Latest full-suite report status: pass; suites recorded: 1.",
+      "warning_classification": ""
+    },
+    {
+      "name": "android apk build",
+      "status": "skipped",
+      "required": false,
+      "command": "flutter build apk",
+      "cwd": "D:\\Grandpa\\mobile\\android_companion",
+      "duration_seconds": 0,
+      "summary": "Skipped by gate option.",
+      "warning_classification": "Flutter/Android build gaps are optional unless shipping the Android APK."
+    }
+  ],
+  "summary": {
+    "passed": 9,
+    "warnings": 4,
+    "blockers": 0,
+    "skipped_optional": 1
+  }
+}

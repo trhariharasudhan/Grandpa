@@ -152,7 +152,11 @@ class BaseAgent(ABC):
                 cfg = load_config()
                 effective_system_prompt = cfg.agent.default_system_prompt or None
             except Exception:
-                effective_system_prompt = None
+                from grandpa.core.config import GrandpaConfig
+
+                effective_system_prompt = (
+                    GrandpaConfig().agent.default_system_prompt or None
+                )
         if effective_system_prompt:
             messages.append(Message(role=Role.SYSTEM, content=effective_system_prompt))
         if context and context.conversation.messages:

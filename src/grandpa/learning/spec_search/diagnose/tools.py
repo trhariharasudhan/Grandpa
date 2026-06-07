@@ -51,7 +51,7 @@ def build_diagnostic_tools(
     session_id :
         Current session id for tagging traces.
     """
-    Grandpa_home = config["Grandpa_home"]
+    Grandpa_home = config.get("grandpa_home") or config["Grandpa_home"]
 
     # ------------------------------------------------------------------
     # list_traces

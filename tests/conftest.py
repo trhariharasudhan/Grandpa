@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import grandpa.core.config as _config
 from grandpa.core.config import GpuInfo, HardwareInfo
 from grandpa.core.events import EventBus, reset_event_bus
 from grandpa.core.registry import (
@@ -27,6 +29,126 @@ from grandpa.core.registry import (
     ToolRegistry,
     TTSRegistry,
 )
+
+_TEST_HOME = Path(os.environ.get("GRANDPA_TEST_HOME", Path.cwd() / "runtime" / "test-home"))
+_TEST_HOME.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault("GRANDPA_HOME", str(_TEST_HOME))
+_config.DEFAULT_CONFIG_DIR = _TEST_HOME
+_config.DEFAULT_CONFIG_PATH = _TEST_HOME / "config.toml"
+
+_OPTIONAL_ENVIRONMENT_TESTS = {
+    "tests/connectors/test_live_smoke.py": (
+        "GRANDPA_RUN_LIVE_CONNECTOR_TESTS",
+        "live connector smoke test; set GRANDPA_RUN_LIVE_CONNECTOR_TESTS=1 to run",
+    ),
+    "tests/connectors/test_new_connectors_live.py": (
+        "GRANDPA_RUN_LIVE_CONNECTOR_TESTS",
+        "live connector credentials/network test; set GRANDPA_RUN_LIVE_CONNECTOR_TESTS=1 to run",
+    ),
+    "tests/evals/comparison/test_openclaw_runner_contract.py": (
+        "GRANDPA_RUN_EXTERNAL_RUNNER_TESTS",
+        "external OpenClaw runner contract requires a working Node runtime outside sandbox constraints",
+    ),
+    "tests/evals/comparison/test_hermes_runner_contract.py": (
+        "GRANDPA_RUN_EXTERNAL_RUNNER_TESTS",
+        "external Hermes runner contract requires a working Node runtime outside sandbox constraints",
+    ),
+    "tests/evals/datasets/test_external_agent_datasets.py": (
+        "GRANDPA_RUN_EXTERNAL_RUNNER_TESTS",
+        "external agent dataset tests require foreign framework fixtures",
+    ),
+    "tests/skills/test_integration_live.py": (
+        "GRANDPA_RUN_LIVE_SKILL_TESTS",
+        "live skill integration tests require a running inference engine and installed user skills",
+    ),
+}
+_RUST_EXTENSION_AVAILABLE = importlib.util.find_spec("grandpa_rust") is not None
+_RELEASE_TEST_PATHS = {
+    "tests/test_actions_decomposition.py",
+    "tests/test_autonomous_workflows.py",
+    "tests/test_browser_control.py",
+    "tests/test_desktop_control_services.py",
+    "tests/test_intent_router.py",
+    "tests/test_local_actions.py",
+    "tests/test_native_agent_planner.py",
+    "tests/test_pc_control.py",
+    "tests/test_pc_control_api.py",
+    "tests/test_pc_control_kernel.py",
+    "tests/test_plugin_runtime.py",
+    "tests/test_release_gate.py",
+    "tests/test_services_layer.py",
+    "tests/test_skill_runtime.py",
+    "tests/test_visual_targeting.py",
+    "tests/test_workflow_skill_graph.py",
+    "tests/server/test_routes.py",
+}
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Classify optional/environment suites and keep default full runs local."""
+    for item in items:
+        rel_path = item.path.as_posix()
+        if rel_path.startswith(str(Path.cwd()).replace("\\", "/")):
+            rel_path = Path(rel_path).relative_to(Path.cwd()).as_posix()
+        optional_rule = _OPTIONAL_ENVIRONMENT_TESTS.get(rel_path)
+        if optional_rule:
+            env_var, reason = optional_rule
+            item.add_marker(pytest.mark.integration)
+            item.add_marker(pytest.mark.optional)
+            item.add_marker(pytest.mark.environment)
+            if os.environ.get(env_var) != "1":
+                item.add_marker(pytest.mark.skip(reason=reason))
+        if rel_path == "tests/core/test_rust_bridge.py" and (
+            "TestGetRustModule" in item.nodeid or "TestRustBackedModules" in item.nodeid
+        ):
+            item.add_marker(pytest.mark.optional)
+            item.add_marker(pytest.mark.environment)
+            if not _RUST_EXTENSION_AVAILABLE:
+                item.add_marker(pytest.mark.skip(reason="grandpa_rust extension is not built"))
+        if rel_path == "tests/core/test_credentials.py" and item.name == "test_file_permissions":
+            item.add_marker(pytest.mark.environment)
+            if os.name == "nt":
+                item.add_marker(
+                    pytest.mark.skip(reason="POSIX chmod mode assertions are not reliable on Windows")
+                )
+        if rel_path == "tests/telemetry/test_energy_rapl.py":
+            item.add_marker(pytest.mark.environment)
+            if os.name == "nt":
+                item.add_marker(
+                    pytest.mark.skip(reason="Linux RAPL sysfs paths cannot be represented on Windows")
+                )
+        if rel_path == "tests/engine/test_gemma_cpp.py" and "TestGemmaCppLive" in item.nodeid:
+            item.add_marker(pytest.mark.live)
+            item.add_marker(pytest.mark.optional)
+            item.add_marker(pytest.mark.environment)
+            if os.environ.get("GEMMA_CPP_MODEL_PATH") is None:
+                item.add_marker(
+                    pytest.mark.skip(reason="gemma.cpp live tests require GEMMA_CPP_MODEL_PATH")
+                )
+        if rel_path == "tests/evals/test_dataset_splits_integration.py":
+            remote_dataset_params = (
+                "grandpa.evals.datasets.gaia",
+                "grandpa.evals.datasets.liveresearchbench",
+                "grandpa.evals.datasets.taubench",
+                "grandpa.evals.datasets.livecodebench",
+            )
+            if any(param in item.nodeid for param in remote_dataset_params):
+                item.add_marker(pytest.mark.optional)
+                item.add_marker(pytest.mark.environment)
+                item.add_marker(pytest.mark.slow)
+            if os.environ.get("GRANDPA_RUN_HF_DATASET_TESTS") != "1":
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason="remote/gated dataset split test; set GRANDPA_RUN_HF_DATASET_TESTS=1 to run"
+                    )
+                )
+        if rel_path in _RELEASE_TEST_PATHS:
+            item.add_marker(pytest.mark.release)
+        marker_names = {marker.name for marker in item.iter_markers()}
+        if not marker_names.intersection(
+            {"optional", "environment", "slow", "live", "live_channel", "live_external"}
+        ):
+            item.add_marker(pytest.mark.core)
 
 
 @pytest.fixture(autouse=True)

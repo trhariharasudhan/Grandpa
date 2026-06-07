@@ -24,8 +24,8 @@ from grandpa.mining._constants import (
     PEARL_REPO,
 )
 
-CONTAINER_NAME = "Grandpa-pearl-miner"
-LOCAL_MODEL_BIND_PATH = "/models/Grandpa-local-pearl-model"
+CONTAINER_NAME = "grandpa-pearl-miner"
+LOCAL_MODEL_BIND_PATH = "/models/grandpa-local-pearl-model"
 
 _SECRET_LOG_PATTERNS = (
     (re.compile(r"(rpc_password:\s*)\S+", re.IGNORECASE), r"\1[REDACTED]"),

@@ -516,6 +516,10 @@ def _is_dangerous(command: str) -> bool:
 
 
 def _parse_safe_action(command: str) -> LocalActionResult:
+    action_result = _route_with_action_modules(command)
+    if action_result is not None:
+        return action_result
+
     window_result = _parse_window_action(command)
     if window_result.status != "no_match":
         return window_result
@@ -640,6 +644,17 @@ def _parse_safe_action(command: str) -> LocalActionResult:
         )
 
     return LocalActionResult(status="no_match")
+
+
+def _route_with_action_modules(command: str) -> LocalActionResult | None:
+    """Try decomposed low-risk action handlers before legacy parser branches."""
+    try:
+        from grandpa.actions import route_action
+
+        return route_action(command)
+    except Exception:
+        logger.debug("Action module router failed; using legacy parser.", exc_info=True)
+        return None
 
 
 def _parse_pc_control_action(command: str) -> LocalActionResult:
@@ -1492,6 +1507,8 @@ def _execute_runtime_skill(result: LocalActionResult) -> LocalActionResult | Non
             "desktop_summary": "desktop.summary",
             "list_monitors": "desktop.monitors",
             "pc_diagnostics": "desktop.diagnostics",
+            "workflow_status": "automation.workflow_status",
+            "runtime_skill": target,
         }.get(action_type, "")
         params = {"target": target}
     elif result.kind == "browser" and result.target == "diagnostics|browser":

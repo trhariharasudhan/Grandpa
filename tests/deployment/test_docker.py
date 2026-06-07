@@ -18,7 +18,7 @@ class TestDockerFiles:
     def test_dockerfile_has_entrypoint(self):
         content = (DOCKER_DIR / "Dockerfile").read_text()
         assert "ENTRYPOINT" in content
-        assert "Grandpa" in content
+        assert 'ENTRYPOINT ["grandpa"]' in content
 
     def test_docker_compose_valid_yaml(self):
         import importlib

@@ -38,8 +38,12 @@ class BrainStore:
 
     def __init__(self, db_path: Path | str | None = None) -> None:
         self.db_path = Path(db_path or DEFAULT_BRAIN_DB)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        self.disabled = False
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
+        except (OSError, sqlite3.Error):
+            self.disabled = True
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -87,31 +91,43 @@ class BrainStore:
             )
 
     def last_action(self) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT user_text, effective_text, assistant_text, kind, target, status,
-                       language, tone, confidence, created_at
-                FROM brain_turns
-                WHERE kind IS NOT NULL AND target IS NOT NULL AND target != ''
-                ORDER BY created_at DESC
-                LIMIT 1
-                """
-            ).fetchone()
+        if self.disabled:
+            return None
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT user_text, effective_text, assistant_text, kind, target, status,
+                           language, tone, confidence, created_at
+                    FROM brain_turns
+                    WHERE kind IS NOT NULL AND target IS NOT NULL AND target != ''
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+        except sqlite3.Error:
+            self.disabled = True
+            return None
         return _row_to_dict(row) if row else None
 
     def recent_turns(self, limit: int = 8) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT user_text, effective_text, assistant_text, kind, target, status,
-                       language, tone, confidence, created_at
-                FROM brain_turns
-                ORDER BY created_at DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+        if self.disabled:
+            return []
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT user_text, effective_text, assistant_text, kind, target, status,
+                           language, tone, confidence, created_at
+                    FROM brain_turns
+                    ORDER BY created_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error:
+            self.disabled = True
+            return []
         return [_row_to_dict(row) for row in rows]
 
     def record_turn(
@@ -123,29 +139,35 @@ class BrainStore:
         target: str | None = None,
         status: str | None = None,
     ) -> None:
+        if self.disabled:
+            return
         now = time.time()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO brain_turns(
-                    created_at, user_text, effective_text, assistant_text, kind, target,
-                    status, language, tone, confidence
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO brain_turns(
+                        created_at, user_text, effective_text, assistant_text, kind, target,
+                        status, language, tone, confidence
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        now,
+                        analysis.original_text,
+                        analysis.effective_text,
+                        assistant_text,
+                        kind,
+                        target,
+                        status,
+                        analysis.language,
+                        analysis.tone,
+                        analysis.confidence,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    now,
-                    analysis.original_text,
-                    analysis.effective_text,
-                    assistant_text,
-                    kind,
-                    target,
-                    status,
-                    analysis.language,
-                    analysis.tone,
-                    analysis.confidence,
-                ),
-            )
+        except sqlite3.Error:
+            self.disabled = True
+            return
         self._learn_habits(analysis.effective_text, kind=kind, target=target, status=status)
 
     def _learn_habits(
@@ -176,20 +198,25 @@ class BrainStore:
             self.upsert_habit(habit_type, key, label)
 
     def upsert_habit(self, habit_type: str, key: str, label: str) -> None:
+        if self.disabled:
+            return
         now = time.time()
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO brain_habits(updated_at, habit_type, key, label, count, last_seen_at)
-                VALUES (?, ?, ?, ?, 1, ?)
-                ON CONFLICT(habit_type, key)
-                DO UPDATE SET updated_at=excluded.updated_at,
-                              count=brain_habits.count + 1,
-                              last_seen_at=excluded.last_seen_at,
-                              label=excluded.label
-                """,
-                (now, habit_type, key, label, now),
-            )
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO brain_habits(updated_at, habit_type, key, label, count, last_seen_at)
+                    VALUES (?, ?, ?, ?, 1, ?)
+                    ON CONFLICT(habit_type, key)
+                    DO UPDATE SET updated_at=excluded.updated_at,
+                                  count=brain_habits.count + 1,
+                                  last_seen_at=excluded.last_seen_at,
+                                  label=excluded.label
+                    """,
+                    (now, habit_type, key, label, now),
+                )
+        except sqlite3.Error:
+            self.disabled = True
 
     def habit_score(self, text: str) -> float:
         tokens = {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
@@ -203,16 +230,22 @@ class BrainStore:
         return min(score, 0.3)
 
     def habits(self, limit: int = 20) -> list[dict[str, Any]]:
-        with self._connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT habit_type, key, label, count, last_seen_at, updated_at
-                FROM brain_habits
-                ORDER BY count DESC, last_seen_at DESC
-                LIMIT ?
-                """,
-                (limit,),
-            ).fetchall()
+        if self.disabled:
+            return []
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT habit_type, key, label, count, last_seen_at, updated_at
+                    FROM brain_habits
+                    ORDER BY count DESC, last_seen_at DESC
+                    LIMIT ?
+                    """,
+                    (limit,),
+                ).fetchall()
+        except sqlite3.Error:
+            self.disabled = True
+            return []
         return [_row_to_dict(row) for row in rows]
 
 

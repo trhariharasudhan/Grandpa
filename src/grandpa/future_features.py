@@ -23,8 +23,12 @@ class FutureResult:
 class FutureFeatureStore:
     def __init__(self, db_path: Path | str = DEFAULT_FUTURE_DB) -> None:
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        self.disabled = False
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
+        except (OSError, sqlite3.Error):
+            self.disabled = True
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -47,6 +51,8 @@ class FutureFeatureStore:
             )
 
     def ensure_demo_connectors(self) -> None:
+        if self.disabled:
+            return
         for item in [
             ("avatar_presence", "avatar", "Grandpa Presence", "simulation", "ready"),
             ("ar_overlay", "overlay", "AR Overlay", "simulation", "foundation"),
@@ -54,16 +60,28 @@ class FutureFeatureStore:
             ("drone_connector", "device", "Drone Connector", "simulation", "placeholder"),
             ("car_connector", "device", "Car Connector", "simulation", "placeholder"),
         ]:
-            with self._connect() as conn:
-                conn.execute(
-                    "INSERT OR IGNORE INTO future_connectors(id, created_at, kind, name, mode, status) VALUES (?, ?, ?, ?, ?, ?)",
-                    (item[0], time.time(), item[1], item[2], item[3], item[4]),
-                )
+            try:
+                with self._connect() as conn:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO future_connectors(id, created_at, kind, name, mode, status) VALUES (?, ?, ?, ?, ?, ?)",
+                        (item[0], time.time(), item[1], item[2], item[3], item[4]),
+                    )
+            except sqlite3.Error:
+                self.disabled = True
+                return
 
     def connectors(self) -> list[dict[str, Any]]:
         self.ensure_demo_connectors()
-        with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM future_connectors ORDER BY created_at ASC").fetchall()
+        if self.disabled:
+            return []
+        try:
+            with self._connect() as conn:
+                rows = conn.execute(
+                    "SELECT * FROM future_connectors ORDER BY created_at ASC"
+                ).fetchall()
+        except sqlite3.Error:
+            self.disabled = True
+            return []
         return [{key: row[key] for key in row.keys()} for row in rows]
 
 

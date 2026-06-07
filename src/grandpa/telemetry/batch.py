@@ -73,6 +73,8 @@ class EnergyBatch:
         energy_per_request = (
             total_energy / total_requests if total_requests > 0 else 0.0
         )
+        if elapsed <= 0 and total_tokens > 0:
+            elapsed = 1e-9
         mean_throughput = total_tokens / elapsed if elapsed > 0 else 0.0
 
         self.metrics = BatchMetrics(

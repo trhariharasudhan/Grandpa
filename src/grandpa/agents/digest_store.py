@@ -9,6 +9,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from grandpa.core.config import DEFAULT_CONFIG_DIR
+
 
 @dataclass
 class DigestArtifact:
@@ -30,8 +32,9 @@ class DigestStore:
 
     def __init__(self, db_path: str = "") -> None:
         if not db_path:
-            db_path = str(Path.home() / ".grandpa" / "digest.db")
+            db_path = str(DEFAULT_CONFIG_DIR / "digest.db")
         self._db_path = db_path
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute(

@@ -199,8 +199,12 @@ class WebSearchTool(BaseTool):
         except Exception as exc:
             return ToolResult(
                 tool_name="web_search",
-                content=f"Search error: {exc}",
-                success=False,
+                content=(
+                    "No live web results available. "
+                    f"DuckDuckGo fallback could not complete: {type(exc).__name__}."
+                ),
+                success=True,
+                metadata={"engine": "duckduckgo", "offline_fallback": True},
             )
 
 

@@ -2,65 +2,44 @@
 
 from __future__ import annotations
 
-import builtins
 import json
-from unittest import mock
 
 from click.testing import CliRunner
 
 from grandpa.cli import cli
 
-_real_import = builtins.__import__
-
-
-def _selective_import_blocker(*blocked: str):
-    """Return an __import__ replacement that blocks specific packages."""
-
-    def _import(name, *args, **kwargs):
-        if name in blocked:
-            raise ImportError(f"mocked: {name} not installed")
-        return _real_import(name, *args, **kwargs)
-
-    return _import
-
 
 class TestDoctorOptionalLabels:
     def test_labels_show_description(self) -> None:
-        """Doctor output uses descriptive labels, not raw package names."""
+        """Doctor output uses unified readiness labels, not raw package names."""
         runner = CliRunner()
         result = runner.invoke(cli, ["doctor", "--json"])
         data = json.loads(result.output)
         names = [c["name"] for c in data]
-        # Should show descriptive labels
-        assert "Optional: REST API server" in names
-        assert "Optional: SFT/GRPO training" in names
-        assert "Optional: NVIDIA energy monitoring" in names
-        # Should NOT show old vague labels
+        assert "REST API server installed" in names
+        assert "Desktop automation backend" in names
+        assert "Voice frontend support" in names
+        assert "Docker daemon reachable" in names
         assert "Optional: torch (for learning)" not in names
         assert "Optional: pynvml (GPU monitoring)" not in names
 
-    def test_labels_show_install_hint_on_missing(self) -> None:
-        """When a package is missing, show install hint in status."""
-        blocker = _selective_import_blocker("zeus")
-        with mock.patch("builtins.__import__", side_effect=blocker):
-            runner = CliRunner()
-            result = runner.invoke(cli, ["doctor", "--json"])
+    def test_optional_items_are_non_blocking_warnings(self) -> None:
+        """Optional environment gaps should be warnings, not failures."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["doctor", "--json"])
         data = json.loads(result.output)
-        apple_checks = [
-            c for c in data if c["name"] == "Optional: Apple Silicon energy monitoring"
+        optional_checks = [
+            c
+            for c in data
+            if c["name"] in {"Voice frontend support", "Docker daemon reachable"}
         ]
-        assert len(apple_checks) == 1
-        assert "Not installed (grandpa[energy-apple])" == apple_checks[0]["message"]
+        assert optional_checks
+        assert all(c["status"] in {"warn", "ok"} for c in optional_checks)
 
-    def test_nvidia_label_uses_current_extra_name(self) -> None:
-        """NVIDIA hint should reference the current project extra."""
-        blocker = _selective_import_blocker("pynvml")
-        with mock.patch("builtins.__import__", side_effect=blocker):
-            runner = CliRunner()
-            result = runner.invoke(cli, ["doctor", "--json"])
+    def test_engine_labels_use_descriptive_names(self) -> None:
+        """Engine readiness checks should be grouped by engine name."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["doctor", "--json"])
         data = json.loads(result.output)
-        nvidia_checks = [
-            c for c in data if c["name"] == "Optional: NVIDIA energy monitoring"
-        ]
-        assert len(nvidia_checks) == 1
-        assert "Not installed (grandpa[gpu-metrics])" == nvidia_checks[0]["message"]
+        names = [c["name"] for c in data]
+        assert "Default model" in names

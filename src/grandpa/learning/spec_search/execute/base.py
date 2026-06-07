@@ -16,12 +16,29 @@ from typing import ClassVar
 from grandpa.learning.spec_search.models import Edit, EditOp
 
 
-@dataclass
+@dataclass(init=False)
 class ApplyContext:
     """Shared context passed to all appliers."""
 
     Grandpa_home: Path
     session_id: str
+
+    def __init__(
+        self,
+        Grandpa_home: Path | None = None,
+        session_id: str = "",
+        *,
+        grandpa_home: Path | None = None,
+    ) -> None:
+        home = grandpa_home if grandpa_home is not None else Grandpa_home
+        if home is None:
+            raise TypeError("ApplyContext requires grandpa_home")
+        self.Grandpa_home = Path(home)
+        self.session_id = session_id
+
+    @property
+    def grandpa_home(self) -> Path:
+        return self.Grandpa_home
 
     @property
     def config_path(self) -> Path:

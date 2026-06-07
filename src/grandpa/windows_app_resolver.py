@@ -150,8 +150,12 @@ APP_DEFINITIONS: dict[str, AppDefinition] = {
 class AppResolverCache:
     def __init__(self, db_path: Path | str = DEFAULT_APP_CACHE_DB) -> None:
         self.db_path = Path(db_path)
-        self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._init_db()
+        self.disabled = False
+        try:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._init_db()
+        except (OSError, sqlite3.Error):
+            self.disabled = True
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
@@ -175,15 +179,21 @@ class AppResolverCache:
             )
 
     def get(self, app_id: str, max_age_seconds: int = 86400) -> AppResolution | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT app_id, display_name, status, launch_kind, launch_target, source, discovered_at
-                FROM app_cache
-                WHERE app_id = ?
-                """,
-                (app_id,),
-            ).fetchone()
+        if self.disabled:
+            return None
+        try:
+            with self._connect() as conn:
+                row = conn.execute(
+                    """
+                    SELECT app_id, display_name, status, launch_kind, launch_target, source, discovered_at
+                    FROM app_cache
+                    WHERE app_id = ?
+                    """,
+                    (app_id,),
+                ).fetchone()
+        except sqlite3.Error:
+            self.disabled = True
+            return None
         if not row or time.time() - row["discovered_at"] > max_age_seconds:
             return None
         definition = APP_DEFINITIONS.get(app_id)
@@ -199,31 +209,36 @@ class AppResolverCache:
         )
 
     def set(self, resolution: AppResolution) -> None:
-        with self._connect() as conn:
-            conn.execute(
-                """
-                INSERT INTO app_cache(
-                    app_id, display_name, status, launch_kind, launch_target, source, discovered_at
+        if self.disabled:
+            return
+        try:
+            with self._connect() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO app_cache(
+                        app_id, display_name, status, launch_kind, launch_target, source, discovered_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(app_id) DO UPDATE SET
+                        display_name = excluded.display_name,
+                        status = excluded.status,
+                        launch_kind = excluded.launch_kind,
+                        launch_target = excluded.launch_target,
+                        source = excluded.source,
+                        discovered_at = excluded.discovered_at
+                    """,
+                    (
+                        resolution.app_id,
+                        resolution.display_name,
+                        resolution.status,
+                        resolution.launch_kind,
+                        resolution.launch_target,
+                        resolution.source,
+                        time.time(),
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(app_id) DO UPDATE SET
-                    display_name = excluded.display_name,
-                    status = excluded.status,
-                    launch_kind = excluded.launch_kind,
-                    launch_target = excluded.launch_target,
-                    source = excluded.source,
-                    discovered_at = excluded.discovered_at
-                """,
-                (
-                    resolution.app_id,
-                    resolution.display_name,
-                    resolution.status,
-                    resolution.launch_kind,
-                    resolution.launch_target,
-                    resolution.source,
-                    time.time(),
-                ),
-            )
+        except sqlite3.Error:
+            self.disabled = True
 
 
 def resolve_app(name: str, *, refresh: bool = False, cache: AppResolverCache | None = None) -> AppResolution:

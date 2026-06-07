@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Optional
+from urllib.parse import quote, unquote
 
 from grandpa.core import config
 
@@ -40,6 +41,21 @@ def _safe_read(path: Path) -> Optional[str]:
         return None
 
 
+def model_marker_name(model_id: str, state: str) -> str:
+    """Return a portable state-marker filename for an Ollama model id."""
+    safe_model = quote(model_id, safe="")
+    return f"{safe_model}.{state}"
+
+
+def _parse_model_marker(filename: str) -> Optional[tuple[str, str]]:
+    """Parse encoded and legacy model marker filenames."""
+    for suffix in (".downloading", ".ready", ".failed"):
+        if filename.endswith(suffix):
+            raw_model_id = filename[: -len(suffix)]
+            return unquote(raw_model_id), suffix.lstrip(".")
+    return None
+
+
 def get_status(home: Optional[Path] = None) -> BgStatus:
     """Snapshot the background-work state from the state directory."""
     home = home or config.DEFAULT_CONFIG_DIR
@@ -62,10 +78,10 @@ def get_status(home: Optional[Path] = None) -> BgStatus:
         # First pass: capture every model id we see.
         seen: Dict[str, str] = {}
         for f in models_dir.iterdir():
-            if f.suffix not in (".downloading", ".ready", ".failed"):
+            parsed = _parse_model_marker(f.name)
+            if parsed is None:
                 continue
-            model_id = f.name[: -len(f.suffix)]
-            new_state = f.suffix.lstrip(".")
+            model_id, new_state = parsed
             current = seen.get(model_id, "")
             # Precedence: ready > failed > downloading
             if current == "ready":

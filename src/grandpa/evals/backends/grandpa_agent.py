@@ -18,7 +18,7 @@ class GrandpaAgentBackend(InferenceBackend):
     """
 
     backend_id = "Grandpa-agent"
-    framework_name = "Grandpa"
+    framework_name = "grandpa"
 
     def __init__(
         self,
@@ -186,7 +186,7 @@ class GrandpaAgentBackend(InferenceBackend):
             "trace_data": trace_data,
             "tool_calls": tool_calls_count,
             "turn_count": turn_count,
-            "framework": "Grandpa",
+            "framework": "grandpa",
             "framework_commit": Grandpa_commit(),
             "error": None,
         }

@@ -329,7 +329,7 @@ class EvalRunner:
                 trace_data=full.get("trace_data"),
                 framework=full.get(
                     "framework",
-                    getattr(self._backend, "framework_name", "Grandpa"),
+                    getattr(self._backend, "framework_name", "grandpa"),
                 ),
                 framework_commit=full.get(
                     "framework_commit",
@@ -497,7 +497,7 @@ class EvalRunner:
                 estimated_flops=estimated_flops,
                 trace_data=full.get("trace_data"),
                 # Spec §6.2 extended fields for cross-framework comparison
-                framework=full.get("framework", "Grandpa"),
+                framework=full.get("framework", "grandpa"),
                 framework_commit=full.get("framework_commit", ""),
                 tool_calls=int(full.get("tool_calls", 0)),
                 turn_count=int(full.get("turn_count", 0)),
@@ -508,7 +508,7 @@ class EvalRunner:
                 record_id=record.record_id,
                 model_answer="",
                 error=str(exc),
-                framework=getattr(self._backend, "framework_name", "Grandpa"),
+                framework=getattr(self._backend, "framework_name", "grandpa"),
                 framework_commit=getattr(self._backend, "framework_commit_value", "")
                 or "",
                 tool_calls=0,
@@ -792,7 +792,7 @@ class EvalRunner:
                 # Spec §6.2 extended fields. framework/commit are constant
                 # per backend, so the last turn's value is correct. tool_calls
                 # / turn_count come from the interactive loop itself.
-                framework=full.get("framework", "Grandpa"),
+                framework=full.get("framework", "grandpa"),
                 framework_commit=full.get("framework_commit", ""),
                 tool_calls=int(full.get("tool_calls", 0)),
                 turn_count=len(all_responses),
@@ -808,7 +808,7 @@ class EvalRunner:
                 model_answer="",
                 error=str(exc),
                 scoring_metadata={"interactive": True, "error": str(exc)},
-                framework=getattr(self._backend, "framework_name", "Grandpa"),
+                framework=getattr(self._backend, "framework_name", "grandpa"),
                 framework_commit=getattr(self._backend, "framework_commit_value", "")
                 or "",
                 tool_calls=0,
@@ -1283,7 +1283,7 @@ def _summary_to_dict(
     # In addition to the existing rich schema, emit framework / commit /
     # per-metric stats so framework-comparison `table_gen.load_results`
     # can parse this file as a `_SummarySchema` row.
-    fwk = "Grandpa"
+    fwk = "grandpa"
     fwk_commit = ""
     if results:
         for r in results:

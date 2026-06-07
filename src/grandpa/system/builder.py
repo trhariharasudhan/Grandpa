@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, List, Optional
 
 from grandpa.core.config import GrandpaConfig, load_config
@@ -548,7 +549,11 @@ class SystemBuilder:
             from grandpa.learning.training.lora import LoRATrainingConfig
             from grandpa.traces.store import TraceStore
 
-            trace_store = TraceStore(db_path=config.traces.db_path)
+            trace_db_path = Path(config.traces.db_path)
+            default_trace_path = Path.home() / ".grandpa" / "traces.db"
+            if not config.traces.db_path or trace_db_path == default_trace_path:
+                trace_db_path = DEFAULT_CONFIG_DIR / "traces.db"
+            trace_store = TraceStore(db_path=trace_db_path)
             config_dir = DEFAULT_CONFIG_DIR / "agent_configs"
 
             sft_cfg = config.learning.intelligence.sft

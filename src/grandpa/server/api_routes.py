@@ -407,6 +407,9 @@ async def telemetry_energy(request: Request):
 
 skills_router = APIRouter(prefix="/v1/skills", tags=["skills"])
 plugins_router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
+release_gate_router = APIRouter(prefix="/v1/release-gate", tags=["release-gate"])
+services_router = APIRouter(prefix="/v1/services", tags=["services"])
+actions_router = APIRouter(prefix="/v1/actions", tags=["actions"])
 planner_router = APIRouter(prefix="/v1/planner", tags=["planner"])
 agent_runtime_router = APIRouter(prefix="/v1/agent", tags=["agent-runtime"])
 mcp_router = APIRouter(prefix="/v1/mcp", tags=["mcp"])
@@ -417,26 +420,9 @@ intent_router = APIRouter(prefix="/v1/router", tags=["intent-router"])
 async def list_skills(request: Request):
     """List installed skills and runtime skill wrappers."""
     try:
-        from grandpa.skills.registry import (
-            ensure_default_skills_registered,
-            registry_diagnostics,
-        )
-        from grandpa.skills.registry import (
-            list_skills as list_runtime_skills,
-        )
+        from grandpa.services import skill_service
 
-        ensure_default_skills_registered()
-        diagnostics = registry_diagnostics()
-        from grandpa.core.registry import SkillRegistry
-
-        skills = []
-        for key in sorted(SkillRegistry.keys()):
-            skills.append({"name": key, "source": "manifest"})
-        runtime_skills = [item.to_dict() for item in list_runtime_skills()]
-        return {
-            "skills": runtime_skills + skills,
-            "runtime": diagnostics,
-        }
+        return skill_service.list_skills()
     except Exception as exc:
         logger.warning("Failed to list skills: %s", exc)
         return {"skills": [], "runtime": {"status": "unavailable", "error": exc.__class__.__name__}}
@@ -445,23 +431,18 @@ async def list_skills(request: Request):
 @skills_router.get("/categories")
 async def skill_categories():
     """List runtime skill categories."""
-    from grandpa.skills.registry import (
-        ensure_default_skills_registered,
-        list_categories,
-    )
+    from grandpa.services import skill_service
 
-    ensure_default_skills_registered()
-    return {"categories": list_categories()}
+    return skill_service.categories()
 
 
 @skills_router.get("/{skill_name}")
 async def get_runtime_skill(skill_name: str):
     """Return one runtime skill by name or alias."""
-    from grandpa.skills.registry import ensure_default_skills_registered, get_skill
+    from grandpa.services import skill_service
 
-    ensure_default_skills_registered()
     try:
-        return get_skill(skill_name).to_dict()
+        return skill_service.get_skill(skill_name)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Skill not found") from exc
 
@@ -469,31 +450,17 @@ async def get_runtime_skill(skill_name: str):
 @skills_router.post("/execute")
 async def execute_runtime_skill(request: Request):
     """Execute a runtime skill through the central registry."""
-    from grandpa.skills.registry import ensure_default_skills_registered, execute_skill
-    from grandpa.skills.runtime import SkillExecutionContext
+    from grandpa.services import skill_service
 
-    ensure_default_skills_registered()
     body = await request.json()
-    name = str(body.get("name") or body.get("skill") or "").strip()
-    if not name:
-        raise HTTPException(status_code=400, detail="'name' field is required")
-    params = body.get("params") or {}
-    if not isinstance(params, dict):
-        raise HTTPException(status_code=400, detail="'params' must be an object")
-    context = SkillExecutionContext(
-        workflow_id=body.get("workflow_id"),
-        user_request=str(body.get("user_request") or ""),
-        dry_run=bool(body.get("dry_run", False)),
-        approval_state=str(body.get("approval_state") or "none"),
-        source=str(body.get("source") or "api"),
-        timeout=float(body["timeout"]) if body.get("timeout") is not None else None,
-        metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
-    )
     try:
-        result = execute_skill(name, params, context)
+        return skill_service.execute_skill_from_body(body)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="'name' field is required")
+    except TypeError:
+        raise HTTPException(status_code=400, detail="'params' must be an object")
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Skill not found") from exc
-    return result.to_dict()
 
 
 @skills_router.post("")
@@ -520,17 +487,17 @@ async def remove_skill(skill_name: str, request: Request):
 @plugins_router.get("")
 async def list_plugins_route():
     """List local manifest-driven plugins."""
-    from grandpa.plugins import plugin_diagnostics
+    from grandpa.services import plugin_service
 
-    return plugin_diagnostics()
+    return plugin_service.diagnostics()
 
 
 @plugins_router.get("/{plugin_name}")
 async def get_plugin_route(plugin_name: str):
     """Return one plugin manifest and status."""
-    from grandpa.plugins import get_plugin
+    from grandpa.services import plugin_service
 
-    plugin = get_plugin(plugin_name)
+    plugin = plugin_service.get(plugin_name)
     if plugin is None:
         raise HTTPException(status_code=404, detail="Plugin not found")
     return plugin
@@ -539,19 +506,18 @@ async def get_plugin_route(plugin_name: str):
 @plugins_router.post("/reload")
 async def reload_plugins_route():
     """Reload enabled plugin manifests and re-register plugin skills."""
-    from grandpa.plugins import plugin_diagnostics, reload_plugins
+    from grandpa.services import plugin_service
 
-    reload_result = reload_plugins()
-    return {"reload": reload_result, "diagnostics": plugin_diagnostics()}
+    return plugin_service.reload()
 
 
 @plugins_router.post("/{plugin_name}/enable")
 async def enable_plugin_route(plugin_name: str):
     """Enable a plugin and reload plugin-provided skills."""
-    from grandpa.plugins import enable_plugin
+    from grandpa.services import plugin_service
 
     try:
-        return enable_plugin(plugin_name)
+        return plugin_service.enable(plugin_name)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Plugin not found") from exc
 
@@ -559,12 +525,47 @@ async def enable_plugin_route(plugin_name: str):
 @plugins_router.post("/{plugin_name}/disable")
 async def disable_plugin_route(plugin_name: str):
     """Disable a plugin and unregister its provided skills."""
-    from grandpa.plugins import disable_plugin
+    from grandpa.services import plugin_service
 
     try:
-        return disable_plugin(plugin_name)
+        return plugin_service.disable(plugin_name)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Plugin not found") from exc
+
+
+# ---- Final release gate routes ----
+
+
+@services_router.get("")
+async def services_diagnostics_route():
+    """Return registered API service facade diagnostics."""
+    from grandpa.services import service_diagnostics
+
+    return service_diagnostics()
+
+
+@actions_router.get("/diagnostics")
+async def actions_diagnostics_route():
+    """Return local action decomposition and legacy fallback diagnostics."""
+    from grandpa.actions import action_diagnostics
+
+    return action_diagnostics()
+
+
+@release_gate_router.get("/latest")
+async def release_gate_latest():
+    """Return the latest full final release gate report."""
+    from grandpa.services import release_service
+
+    return release_service.latest()
+
+
+@release_gate_router.get("/status")
+async def release_gate_status_route():
+    """Return compact final release gate status."""
+    from grandpa.services import release_service
+
+    return release_service.status()
 
 
 # ---- Planner / Agent Runtime / Local MCP bridge ----
@@ -573,80 +574,69 @@ async def disable_plugin_route(plugin_name: str):
 @planner_router.get("/diagnostics")
 async def planner_runtime_diagnostics():
     """Return planner, skill runtime, workflow handoff, and MCP bridge readiness."""
-    from grandpa.agents.runtime import agent_diagnostics
-    from grandpa.mcp import tool_diagnostics
-    from grandpa.planner import planner_diagnostics
+    from grandpa.services import planner_service
 
-    return {
-        "planner": planner_diagnostics(),
-        "agent": agent_diagnostics(),
-        "mcp": tool_diagnostics(),
-    }
+    return planner_service.diagnostics()
 
 
 @planner_router.post("/analyze")
 async def planner_analyze(request: Request):
     """Analyze a user request without executing tools."""
-    from grandpa.planner import analyze_request
+    from grandpa.services import planner_service
 
     body = await request.json()
     text = str(body.get("request") or body.get("query") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="'request' field is required")
-    return analyze_request(text).to_dict()
+    return planner_service.analyze_request(text)
 
 
 @agent_runtime_router.post("/run")
 async def agent_runtime_run(request: Request):
     """Create a native agent task from a planner goal."""
-    from grandpa.agents.runtime import run_agent_goal
+    from grandpa.services import planner_service
 
     body = await request.json()
-    text = str(body.get("request") or body.get("goal") or "").strip()
-    if not text:
+    try:
+        return planner_service.run_agent_goal_from_body(body)
+    except ValueError:
         raise HTTPException(status_code=400, detail="'request' field is required")
-    task = run_agent_goal(
-        text,
-        execute=bool(body.get("execute", False)),
-        source=str(body.get("source") or "api"),
-    )
-    return task.to_dict()
 
 
 @agent_runtime_router.get("/tasks")
 async def agent_runtime_tasks(limit: int = 50):
     """List recent native planner-agent tasks."""
-    from grandpa.agents.runtime import list_agent_tasks
+    from grandpa.services import planner_service
 
-    return {"tasks": list_agent_tasks(limit=limit)}
+    return planner_service.list_agent_tasks(limit=limit)
 
 
 @mcp_router.get("/tools")
 async def mcp_tools():
     """Return local MCP-style tool schemas backed by runtime skills."""
-    from grandpa.mcp import list_tools
+    from grandpa.services import planner_service
 
-    return {"tools": list_tools(), "local_only": True, "networking_enabled": False}
+    return planner_service.mcp_tools()
 
 
 @intent_router.get("/diagnostics")
 async def intent_router_diagnostics():
     """Return intent-router route counts and recent decisions."""
-    from grandpa.router import router_diagnostics
+    from grandpa.services import planner_service
 
-    return router_diagnostics()
+    return planner_service.router_diagnostics()
 
 
 @intent_router.post("/analyze")
 async def intent_router_analyze(request: Request):
     """Analyze a local-action request without executing it."""
-    from grandpa.router import analyze_intent
+    from grandpa.services import planner_service
 
     body = await request.json()
     text = str(body.get("request") or body.get("query") or body.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="'request' field is required")
-    return analyze_intent(text).to_dict()
+    return planner_service.analyze_intent(text)
 
 
 # ---- Sessions routes ----
@@ -731,7 +721,10 @@ async def prometheus_metrics(request: Request):
         if not db_path.exists():
             from starlette.responses import PlainTextResponse
 
-            return PlainTextResponse("# no telemetry data\n", media_type="text/plain")
+            return PlainTextResponse(
+                "# grandpa: no telemetry data\n",
+                media_type="text/plain",
+            )
 
         agg = TelemetryAggregator(db_path)
         stats = agg.summary()
@@ -1102,6 +1095,9 @@ def include_all_routes(app) -> None:
     app.include_router(telemetry_router)
     app.include_router(skills_router)
     app.include_router(plugins_router)
+    app.include_router(release_gate_router)
+    app.include_router(services_router)
+    app.include_router(actions_router)
     app.include_router(planner_router)
     app.include_router(agent_runtime_router)
     app.include_router(mcp_router)
@@ -1156,6 +1152,9 @@ __all__ = [
     "telemetry_router",
     "skills_router",
     "plugins_router",
+    "release_gate_router",
+    "services_router",
+    "actions_router",
     "planner_router",
     "agent_runtime_router",
     "mcp_router",

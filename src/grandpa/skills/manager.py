@@ -112,9 +112,10 @@ class SkillManager:
                 manifest.description = overlay.description
             if overlay.few_shot:
                 new_metadata = dict(manifest.metadata) if manifest.metadata else {}
-                oj = dict(new_metadata.get("Grandpa", {}) or {})
+                oj = dict(new_metadata.get("grandpa") or new_metadata.get("Grandpa") or {})
                 oj["few_shot"] = list(overlay.few_shot)
-                new_metadata["Grandpa"] = oj
+                new_metadata.pop("Grandpa", None)
+                new_metadata["grandpa"] = oj
                 manifest.metadata = new_metadata
 
     # ------------------------------------------------------------------
@@ -218,7 +219,12 @@ class SkillManager:
         """
         examples: List[str] = []
         for name, manifest in self._skills.items():
-            oj = manifest.metadata.get("Grandpa", {}) if manifest.metadata else {}
+            oj = (
+                manifest.metadata.get("grandpa")
+                or manifest.metadata.get("Grandpa", {})
+                if manifest.metadata
+                else {}
+            )
             few_shot = oj.get("few_shot", []) or []
             for ex in few_shot:
                 if not isinstance(ex, dict):

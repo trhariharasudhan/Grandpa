@@ -70,11 +70,19 @@ def is_private_ip(ip_str: str) -> bool:
 
 
 def check_ssrf(url: str) -> Optional[str]:
-    """Check a URL for SSRF vulnerabilities — always via Rust backend."""
-    from grandpa._rust_bridge import get_rust_module
+    """Check a URL for SSRF vulnerabilities.
 
-    _rust = get_rust_module()
-    return _rust.check_ssrf(url)
+    The Rust backend is used when available, but SSRF protection must remain
+    active in ordinary editable installs where the optional native extension is
+    not built.
+    """
+    try:
+        from grandpa._rust_bridge import get_rust_module
+
+        _rust = get_rust_module()
+        return _rust.check_ssrf(url)
+    except Exception:
+        return _check_ssrf_python(url)
 
 
 def _check_ssrf_python(url: str) -> Optional[str]:
@@ -84,7 +92,7 @@ def _check_ssrf_python(url: str) -> Optional[str]:
     parsed = urlparse(url)
     hostname = parsed.hostname
     if not hostname:
-        return "No hostname in URL"
+        return "Invalid URL: no hostname"
 
     # Check blocked hosts
     if hostname in _BLOCKED_HOSTS:

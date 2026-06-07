@@ -243,6 +243,61 @@ def _get_memory_backend(config):
         return None
 
 
+_LIGHTWEIGHT_CHAT_MODELS = (
+    "qwen2.5:3b",
+    "llama3.2:3b",
+    "phi3:mini",
+    "gemma:2b",
+    "llama3.2:1b",
+    "qwen3:1.7b",
+    "gemma3:1b",
+)
+
+
+def _looks_like_model_load_failure(exc: BaseException) -> bool:
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "out-of-memory",
+            "out of memory",
+            "failed to allocate",
+            "not enough memory",
+            "failed to initialize the context",
+        )
+    )
+
+
+def _fallback_chat_models(
+    current_model: str,
+    available_models: list[str],
+    configured_fallback: str | None,
+) -> list[str]:
+    available = {model.lower(): model for model in available_models}
+    candidates: list[str] = []
+    if configured_fallback:
+        candidates.append(configured_fallback)
+    candidates.extend(_LIGHTWEIGHT_CHAT_MODELS)
+    candidates.extend(
+        model
+        for model in available_models
+        if "embed" not in model.lower() and "nomic" not in model.lower()
+    )
+
+    seen: set[str] = {current_model.lower()}
+    resolved: list[str] = []
+    for candidate in candidates:
+        actual = available.get(candidate.lower(), candidate)
+        key = actual.lower()
+        if key in seen:
+            continue
+        if available_models and key not in available:
+            continue
+        seen.add(key)
+        resolved.append(actual)
+    return resolved
+
+
 _MEMORY_TOOLS = frozenset(
     {"retrieval", "memory_store", "memory_search", "memory_index", "memory_retrieve"}
 )
@@ -992,6 +1047,7 @@ def ask(
             logger.debug("Failed to inject memory context: %s", exc)
 
     # Generate (InstrumentedEngine handles telemetry + energy recording)
+    used_fallback_model: str | None = None
     try:
         with console.status("[bold green]Generating...[/bold green]"):
             result = engine.generate(
@@ -1004,11 +1060,66 @@ def ask(
         console.print(f"[red]Engine error:[/red] {exc}")
         console.print(hint_no_engine())
         sys.exit(1)
+    except RuntimeError as exc:
+        if not _looks_like_model_load_failure(exc):
+            console.print("[red]Engine error:[/red] Generation failed.")
+            sys.exit(1)
+        fallback_models = _fallback_chat_models(
+            model_name,
+            all_models.get(engine_name, []),
+            config.intelligence.fallback_model,
+        )
+        result = None
+        for fallback_model in fallback_models:
+            try:
+                with console.status(
+                    f"[bold green]Trying lighter model {fallback_model}...[/bold green]"
+                ):
+                    result = engine.generate(
+                        messages,
+                        model=fallback_model,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                used_fallback_model = fallback_model
+                break
+            except RuntimeError as fallback_exc:
+                if not _looks_like_model_load_failure(fallback_exc):
+                    logger.debug(
+                        "Fallback model %s failed: %s",
+                        fallback_model,
+                        fallback_exc,
+                    )
+                    continue
+                logger.debug(
+                    "Fallback model %s could not load: %s",
+                    fallback_model,
+                    fallback_exc,
+                )
+            except EngineConnectionError as fallback_exc:
+                logger.debug(
+                    "Fallback model %s connection failed: %s",
+                    fallback_model,
+                    fallback_exc,
+                )
+        if result is None:
+            console.print(
+                "[red]Engine error:[/red] The local models could not load with the available memory."
+            )
+            console.print(
+                "Try closing other apps, starting Ollama again, or pulling a smaller chat model."
+            )
+            sys.exit(1)
 
     # Output
     from grandpa.response_cleanup import clean_assistant_response
 
     content = clean_assistant_response(result.get("content", ""))
+    if used_fallback_model:
+        content = (
+            "The default model was too heavy, so I used a lighter local model.\n\n"
+            f"{content}"
+        )
     result["content"] = content
     remember_conversation("assistant", content)
     record_assistant_outcome(

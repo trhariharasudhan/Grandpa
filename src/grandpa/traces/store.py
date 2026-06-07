@@ -85,6 +85,7 @@ class TraceStore:
         if self._db_path != ":memory:":
             from grandpa.security.file_utils import secure_create
 
+            Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
             secure_create(Path(self._db_path))
         # check_same_thread=False is safe with WAL mode.  The
         # AgenticRunner dispatches agent work to a ThreadPoolExecutor
@@ -245,6 +246,12 @@ class TraceStore:
     def close(self) -> None:
         """Close the underlying SQLite connection."""
         self._conn.close()
+
+    def __enter__(self) -> "TraceStore":
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        self.close()
 
     # -- internal helpers ------------------------------------------------------
 

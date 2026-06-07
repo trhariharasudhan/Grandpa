@@ -47,7 +47,7 @@ class MCPServer:
         all registered tools from ``ToolRegistry``.
     """
 
-    SERVER_NAME = "Grandpa"
+    SERVER_NAME = "grandpa"
     SERVER_VERSION = "0.1.0"
     PROTOCOL_VERSION = "2025-11-25"
 

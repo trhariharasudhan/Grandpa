@@ -50,7 +50,7 @@ class EvalResult:
     trace_energy_joules: float = 0.0
     trace_data: Optional[Dict[str, Any]] = None
     # Spec §6.2 extended fields for cross-framework comparison
-    framework: str = "Grandpa"
+    framework: str = "grandpa"
     framework_commit: str = ""
     tool_calls: int = 0
     turn_count: int = 0

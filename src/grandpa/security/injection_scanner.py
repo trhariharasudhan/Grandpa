@@ -125,16 +125,45 @@ class InjectionScanner:
             (re.compile(pat), name, level, desc)
             for pat, name, level, desc in _INJECTION_PATTERNS
         ]
-        from grandpa._rust_bridge import get_rust_module
+        try:
+            from grandpa._rust_bridge import get_rust_module
 
-        _rust = get_rust_module()
-        self._rust_impl = _rust.InjectionScanner()
+            _rust = get_rust_module()
+            self._rust_impl = _rust.InjectionScanner()
+        except Exception:
+            self._rust_impl = None
 
     def scan(self, text: str) -> InjectionScanResult:
-        """Scan text for injection patterns — always via Rust backend."""
-        from grandpa._rust_bridge import injection_result_from_json
+        """Scan text for injection patterns."""
+        if self._rust_impl is not None:
+            from grandpa._rust_bridge import injection_result_from_json
 
-        return injection_result_from_json(self._rust_impl.scan(text))
+            return injection_result_from_json(self._rust_impl.scan(text))
+
+        findings: list[ScanFinding] = []
+        for pattern, name, threat_level, description in self._patterns:
+            for match in pattern.finditer(text):
+                findings.append(
+                    ScanFinding(
+                        pattern_name=name,
+                        matched_text=match.group(0),
+                        threat_level=threat_level,
+                        start=match.start(),
+                        end=match.end(),
+                        description=description,
+                    )
+                )
+        highest = ThreatLevel.LOW
+        for finding in findings:
+            if _THREAT_ORDER.index(finding.threat_level) > _THREAT_ORDER.index(
+                highest
+            ):
+                highest = finding.threat_level
+        return InjectionScanResult(
+            is_clean=not findings,
+            findings=findings,
+            threat_level=highest,
+        )
 
 
 __all__ = ["InjectionScanner", "InjectionScanResult"]
