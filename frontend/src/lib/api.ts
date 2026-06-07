@@ -1402,6 +1402,11 @@ export interface MobileDiagnostics {
   notifications: MobileNotification[];
   commands: Array<Record<string, unknown>>;
   events: MobileEvent[];
+  websocket?: Record<string, unknown>;
+  permission_state?: Record<string, unknown>;
+  relay_state?: Record<string, unknown>;
+  last_mobile_event?: MobileEvent | null;
+  real_device_validation?: Record<string, unknown>;
   features: Record<string, unknown>;
   safety: Record<string, unknown>;
   storage: { backend: string; path: string; local_only: boolean };

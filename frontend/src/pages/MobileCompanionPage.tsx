@@ -4,11 +4,13 @@ import {
   Bell,
   CheckCircle2,
   Copy,
+  Mic,
   Link2,
   Phone,
   RefreshCw,
   Send,
   ShieldCheck,
+  TriangleAlert,
   Wifi,
 } from 'lucide-react';
 import {
@@ -117,6 +119,27 @@ export function MobileCompanionPage() {
           <StatCard icon={Bell} label="Synced Notifications" value={String(data?.notifications?.length ?? 0)} />
         </div>
 
+        <section className="rounded-2xl p-4 mb-5" style={panelStyle}>
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>Real Device Readiness</h2>
+              <p className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>
+                Grandpa reports only what the Android companion has actually paired, permitted, and heartbeated over LAN.
+              </p>
+            </div>
+            <StatusPill>{String(data?.websocket?.status ?? 'waiting')}</StatusPill>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <ReadinessTile icon={Wifi} label="WebSocket" value={String(data?.websocket?.status ?? 'waiting for phone')} />
+            <ReadinessTile icon={Bell} label="Notifications" value={String(data?.permission_state?.notification_listener ?? 'needs Android permission')} />
+            <ReadinessTile icon={Mic} label="Voice Relay" value={String(data?.relay_state?.voice_relay ?? 'waiting for phone')} />
+            <ReadinessTile icon={RefreshCw} label="Heartbeat Age" value={formatHeartbeatAge(data?.websocket?.last_heartbeat_age_seconds)} />
+          </div>
+          <div className="mt-3 rounded-xl px-3 py-2 text-xs" style={{ background: 'var(--color-bg)', color: 'var(--color-text-secondary)' }}>
+            Use the APK on a real phone with USB debugging for install, then keep phone and desktop on the same LAN. Android may limit background sync unless notification access and battery settings are allowed by the user.
+          </div>
+        </section>
+
         <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.25fr] gap-5">
           <section className="rounded-2xl p-4" style={panelStyle}>
             <div className="flex items-center gap-2 mb-3">
@@ -143,6 +166,12 @@ export function MobileCompanionPage() {
             <div className="mt-4 rounded-xl p-3" style={{ background: 'var(--color-bg)' }}>
               <div className="text-xs uppercase tracking-[0.16em]" style={{ color: 'var(--color-text-tertiary)' }}>WebSocket</div>
               <div className="font-mono text-xs mt-1 break-all" style={{ color: 'var(--color-text-secondary)' }}>{wsUrl}</div>
+            </div>
+            <div className="mt-3 rounded-xl p-3" style={{ background: 'var(--color-bg)' }}>
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                <TriangleAlert size={14} style={{ color: 'var(--color-warning)' }} />
+                If the phone cannot connect, use the desktop LAN IP instead of 127.0.0.1 in the Android app.
+              </div>
             </div>
             {pairing && (
               <div className="mt-3 rounded-xl p-3" style={{ background: 'color-mix(in srgb, var(--color-accent) 14%, transparent)' }}>
@@ -228,6 +257,11 @@ const panelStyle = {
   boxShadow: '0 18px 44px -38px var(--color-accent)',
 } as const;
 
+function formatHeartbeatAge(value: unknown) {
+  if (typeof value !== 'number') return 'none yet';
+  return value < 60 ? `${value}s ago` : `${Math.round(value / 60)}m ago`;
+}
+
 function StatCard({ icon: Icon, label, value }: { icon: typeof Phone; label: string; value: string }) {
   return (
     <section className="rounded-2xl p-4" style={panelStyle}>
@@ -235,6 +269,17 @@ function StatCard({ icon: Icon, label, value }: { icon: typeof Phone; label: str
       <div className="text-2xl font-semibold mt-2" style={{ color: 'var(--color-text)' }}>{value}</div>
       <div className="text-xs mt-1" style={{ color: 'var(--color-text-secondary)' }}>{label}</div>
     </section>
+  );
+}
+
+function ReadinessTile({ icon: Icon, label, value }: { icon: typeof Phone; label: string; value: string }) {
+  const ready = /ready|online/i.test(value);
+  return (
+    <div className="rounded-xl px-3 py-3" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+      <Icon size={16} style={{ color: ready ? 'var(--color-success)' : 'var(--color-warning)' }} />
+      <div className="text-[11px] mt-2" style={{ color: 'var(--color-text-tertiary)' }}>{label}</div>
+      <div className="text-xs mt-1" style={{ color: 'var(--color-text)' }}>{value.replace(/_/g, ' ')}</div>
+    </div>
   );
 }
 

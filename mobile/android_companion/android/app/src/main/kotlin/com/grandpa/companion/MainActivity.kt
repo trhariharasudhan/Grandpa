@@ -1,7 +1,10 @@
 package com.grandpa.companion
 
 import android.content.Intent
+import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
+import android.text.TextUtils
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -18,15 +21,36 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "startHeartbeatService" -> {
-                    startService(Intent(this, GrandpaHeartbeatService::class.java))
+                    val intent = Intent(this, GrandpaHeartbeatService::class.java)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        startForegroundService(intent)
+                    } else {
+                        startService(intent)
+                    }
                     result.success(null)
                 }
                 "stopHeartbeatService" -> {
                     stopService(Intent(this, GrandpaHeartbeatService::class.java))
                     result.success(null)
                 }
+                "isNotificationListenerEnabled" -> {
+                    result.success(isNotificationListenerEnabled())
+                }
+                "isBatteryOptimizationIgnored" -> {
+                    val powerManager = getSystemService(POWER_SERVICE) as PowerManager
+                    result.success(powerManager.isIgnoringBatteryOptimizations(packageName))
+                }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    private fun isNotificationListenerEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners")
+        if (enabled.isNullOrBlank()) return false
+        val packageName = packageName
+        return TextUtils.split(enabled, ":").any { component ->
+            component.contains(packageName, ignoreCase = true)
         }
     }
 

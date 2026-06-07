@@ -21,13 +21,26 @@ def test_pairing_token_heartbeat_and_diagnostics(tmp_path):
     assert store.authenticate(pairing["device_id"], confirmed["trusted_token"])
     heartbeat = store.update_status(
         pairing["device_id"],
-        {"battery": 82, "charging": False, "connectivity": "wifi"},
+        {
+            "battery": 82,
+            "charging": False,
+            "connectivity": "wifi",
+            "websocket_state": "connected",
+            "notification_listener_enabled": True,
+            "microphone_ready": True,
+            "background_heartbeat": True,
+        },
     )
     assert heartbeat["online"] is True
+    assert heartbeat["permissions"]["notifications"] is True
+    assert heartbeat["permissions"]["voice_relay"] is True
 
     diagnostics = mobile_integration.diagnostics(store)
     assert diagnostics["connected_devices"] == 1
     assert diagnostics["online_devices"] == 1
+    assert diagnostics["websocket"]["status"] == "online"
+    assert diagnostics["permission_state"]["notification_listener"] == "ready"
+    assert diagnostics["relay_state"]["voice_relay"] == "ready"
     assert diagnostics["features"]["trusted_device_tokens"] is True
     assert diagnostics["features"]["qr_pairing"] is True
 

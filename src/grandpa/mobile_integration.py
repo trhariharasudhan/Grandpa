@@ -227,20 +227,26 @@ class MobileBridgeStore:
 
     def update_status(self, device_id: str, status: dict[str, Any]) -> dict[str, Any]:
         safe = _safe_status(status)
+        permissions = _safe_permissions(status.get("permissions") if isinstance(status.get("permissions"), dict) else status)
         now = time.time()
         with self._connect() as conn:
             conn.execute(
-                "UPDATE mobile_devices SET last_seen_at=?, status_json=? WHERE device_id=?",
-                (now, json.dumps(safe), device_id),
+                "UPDATE mobile_devices SET last_seen_at=?, status_json=?, permissions_json=? WHERE device_id=?",
+                (now, json.dumps(safe), json.dumps(permissions), device_id),
             )
             _record_event(
                 conn,
                 device_id,
                 "heartbeat",
                 "Device heartbeat received.",
-                {"battery": safe.get("battery"), "charging": safe.get("charging")},
+                {
+                    "battery": safe.get("battery"),
+                    "charging": safe.get("charging"),
+                    "websocket_state": safe.get("websocket_state"),
+                    "background_heartbeat": safe.get("background_heartbeat"),
+                },
             )
-        return {"ok": True, "device_id": device_id, "status": safe, "online": True}
+        return {"ok": True, "device_id": device_id, "status": safe, "permissions": permissions, "online": True}
 
     def expire_stale_heartbeats(self) -> dict[str, Any]:
         """Return heartbeat health without mutating trusted pairing records."""
@@ -557,6 +563,11 @@ def diagnostics(store: MobileBridgeStore | None = None) -> dict[str, Any]:
     notifications = store.notifications(limit=10)
     commands = store.commands(limit=10)
     online = [device for device in devices if device["online"]]
+    latest_event = store.events(limit=1)
+    heartbeat = store.expire_stale_heartbeats()
+    notification_ready = any(device["permissions"].get("notifications") for device in devices)
+    mic_ready = any(device["permissions"].get("voice_relay") for device in devices)
+    background_ready = any(device["status"].get("background_heartbeat") for device in devices)
     return {
         "status": "ready",
         "architecture": {
@@ -572,7 +583,24 @@ def diagnostics(store: MobileBridgeStore | None = None) -> dict[str, Any]:
         "notifications": notifications,
         "commands": commands,
         "events": store.events(limit=12),
-        "heartbeat": store.expire_stale_heartbeats(),
+        "heartbeat": heartbeat,
+        "websocket": {
+            "path": "/v1/mobile/ws",
+            "status": "online" if online else "waiting_for_device",
+            "online_devices": len(online),
+            "last_heartbeat_age_seconds": _last_heartbeat_age(devices),
+        },
+        "permission_state": {
+            "notification_listener": "ready" if notification_ready else "needs_android_permission",
+            "microphone": "ready" if mic_ready else "needs_android_permission",
+            "background_heartbeat": "ready" if background_ready else "foreground_only_or_not_reported",
+        },
+        "relay_state": {
+            "voice_relay": "ready" if mic_ready and online else "waiting_for_online_device",
+            "notification_sync": "ready" if notification_ready and online else "waiting_for_permission_or_device",
+            "remote_commands": "ready" if online else "waiting_for_online_device",
+        },
+        "last_mobile_event": latest_event[0] if latest_event else None,
         "features": {
             "secure_pairing": True,
             "trusted_device_tokens": True,
@@ -596,6 +624,12 @@ def diagnostics(store: MobileBridgeStore | None = None) -> dict[str, Any]:
             "sensitive_notifications_redacted": True,
         },
         "storage": {"backend": "sqlite", "path": str(store.db_path), "local_only": True},
+        "real_device_validation": {
+            "adb_required_for_install": True,
+            "usb_debugging_required": True,
+            "same_lan_required": True,
+            "background_limits": "Android may pause background work unless the user allows notification and battery settings.",
+        },
     }
 
 
@@ -632,6 +666,22 @@ def _default_permissions() -> dict[str, bool]:
     }
 
 
+def _safe_permissions(raw: dict[str, Any]) -> dict[str, bool]:
+    defaults = _default_permissions()
+    return {
+        **defaults,
+        "notifications": bool(
+            raw.get("notifications")
+            or raw.get("notification_listener_enabled")
+            or raw.get("notification_access")
+        ),
+        "battery_status": True,
+        "remote_commands": True,
+        "voice_relay": bool(raw.get("voice_relay") or raw.get("microphone_ready") or raw.get("microphone")),
+        "clipboard_sync": bool(raw.get("clipboard_sync")),
+    }
+
+
 def _safe_status(status: dict[str, Any]) -> dict[str, Any]:
     return {
         "device_name": str(status.get("device_name") or status.get("name") or "")[:80],
@@ -640,6 +690,12 @@ def _safe_status(status: dict[str, Any]) -> dict[str, Any]:
         "connectivity": _safe_label(str(status.get("connectivity", "unknown")), default="unknown"),
         "platform": _safe_label(str(status.get("platform", "android")), default="android"),
         "app_version": str(status.get("app_version", ""))[:40],
+        "websocket_state": _safe_label(str(status.get("websocket_state", "unknown")), default="unknown"),
+        "notification_listener_enabled": bool(status.get("notification_listener_enabled")),
+        "microphone_ready": bool(status.get("microphone_ready") or status.get("voice_relay")),
+        "background_heartbeat": bool(status.get("background_heartbeat")),
+        "battery_optimization_ignored": bool(status.get("battery_optimization_ignored")),
+        "last_error": _redact(str(status.get("last_error", "")))[:160],
     }
 
 
@@ -661,6 +717,13 @@ def _loads(raw: str) -> dict[str, Any]:
         return value if isinstance(value, dict) else {}
     except json.JSONDecodeError:
         return {}
+
+
+def _last_heartbeat_age(devices: list[dict[str, Any]]) -> float | None:
+    last_seen_values = [float(device["last_seen_at"]) for device in devices if device.get("last_seen_at")]
+    if not last_seen_values:
+        return None
+    return round(time.time() - max(last_seen_values), 1)
 
 
 def _safe_label(value: str, *, default: str) -> str:

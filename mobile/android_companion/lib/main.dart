@@ -62,10 +62,14 @@ class _CompanionHomeState extends State<CompanionHome> {
   Timer? _heartbeatTimer;
   bool _speechReady = false;
   bool _autoReconnect = true;
+  bool _notificationAccessReady = false;
+  bool _backgroundHeartbeat = false;
+  bool _batteryOptimizationIgnored = false;
   String _connectionState = 'offline';
   String _deviceId = '';
   String _trustedToken = '';
   String _latestMessage = 'Not connected';
+  String _lastError = '';
   String _lastTranscript = '';
   final List<String> _events = <String>[];
   final Set<int> _deliveredOutbox = <int>{};
@@ -75,6 +79,7 @@ class _CompanionHomeState extends State<CompanionHome> {
     super.initState();
     _restoreTrustedSession();
     _initializeLocalNotifications();
+    _refreshNativeReadiness();
     _native.setMethodCallHandler(_handleNativeEvent);
   }
 
@@ -129,7 +134,17 @@ class _CompanionHomeState extends State<CompanionHome> {
     await Permission.notification.request();
     await _native.invokeMethod<void>('openNotificationListenerSettings');
     await _initializeSpeech();
+    await _refreshNativeReadiness();
     _addEvent('Permission onboarding opened. Enable Grandpa notification access only if you want notification sync.');
+  }
+
+  Future<void> _refreshNativeReadiness() async {
+    final notificationAccess = await _native.invokeMethod<bool>('isNotificationListenerEnabled').catchError((_) => false);
+    final batteryOptimizationIgnored = await _native.invokeMethod<bool>('isBatteryOptimizationIgnored').catchError((_) => false);
+    setState(() {
+      _notificationAccessReady = notificationAccess ?? false;
+      _batteryOptimizationIgnored = batteryOptimizationIgnored ?? false;
+    });
   }
 
   Future<void> _initializeSpeech() async {
@@ -168,6 +183,7 @@ class _CompanionHomeState extends State<CompanionHome> {
       if (_deviceId.isNotEmpty && _trustedToken.isNotEmpty) {
         _authenticate();
       }
+      await _refreshNativeReadiness();
       _startHeartbeat();
     } catch (error) {
       _setError('Could not connect: $error');
@@ -241,6 +257,7 @@ class _CompanionHomeState extends State<CompanionHome> {
     setState(() {
       _connectionState = 'error';
       _latestMessage = message;
+      _lastError = message;
     });
     _addEvent(message);
   }
@@ -307,8 +324,6 @@ class _CompanionHomeState extends State<CompanionHome> {
       return;
     }
     await _speech.listen(
-      listenFor: const Duration(seconds: 10),
-      pauseFor: const Duration(seconds: 2),
       onResult: (result) {
         _lastTranscript = result.recognizedWords;
         setState(() {});
@@ -316,7 +331,27 @@ class _CompanionHomeState extends State<CompanionHome> {
           _send({'type': 'voice_relay', 'transcript': _lastTranscript.trim()});
         }
       },
+      listenOptions: SpeechListenOptions(
+        listenFor: const Duration(seconds: 10),
+        pauseFor: const Duration(seconds: 2),
+        listenMode: ListenMode.confirmation,
+        partialResults: true,
+      ),
     );
+  }
+
+  Future<void> _toggleBackgroundHeartbeat() async {
+    if (_backgroundHeartbeat) {
+      await _native.invokeMethod<void>('stopHeartbeatService').catchError((_) {});
+      setState(() => _backgroundHeartbeat = false);
+      _addEvent('Background heartbeat service stopped.');
+      return;
+    }
+    await _native.invokeMethod<void>('startHeartbeatService').catchError((error) {
+      _setError('Could not start background heartbeat: $error');
+    });
+    setState(() => _backgroundHeartbeat = true);
+    _addEvent('Background heartbeat service started. Android may still pause it unless battery optimization is relaxed.');
   }
 
   Future<Map<String, Object?>> _statusPayload() async {
@@ -330,6 +365,19 @@ class _CompanionHomeState extends State<CompanionHome> {
       'connectivity': connectivity.map((item) => item.name).join(','),
       'platform': 'android',
       'app_version': '0.2.0',
+      'websocket_state': _connectionState,
+      'notification_listener_enabled': _notificationAccessReady,
+      'microphone_ready': _speechReady,
+      'background_heartbeat': _backgroundHeartbeat,
+      'battery_optimization_ignored': _batteryOptimizationIgnored,
+      'last_error': _lastError,
+      'permissions': {
+        'notifications': _notificationAccessReady,
+        'voice_relay': _speechReady,
+        'battery_status': true,
+        'remote_commands': true,
+        'clipboard_sync': false,
+      },
     };
   }
 
@@ -381,7 +429,8 @@ class _CompanionHomeState extends State<CompanionHome> {
                   label: const Text('Open Permission Setup'),
                 ),
                 _StatusLine(label: 'Microphone', value: _speechReady ? 'ready' : 'needs permission'),
-                const _StatusLine(label: 'Notifications', value: 'Android listener opens in system settings'),
+                _StatusLine(label: 'Notifications', value: _notificationAccessReady ? 'listener enabled' : 'open Android notification access'),
+                _StatusLine(label: 'Battery optimization', value: _batteryOptimizationIgnored ? 'ignored' : 'may limit background mode'),
                 const _StatusLine(label: 'Token storage', value: 'Flutter secure storage'),
               ],
             ),
@@ -420,6 +469,10 @@ class _CompanionHomeState extends State<CompanionHome> {
             _Panel(
               children: [
                 FilledButton(onPressed: _heartbeat, child: const Text('Send Heartbeat')),
+                FilledButton.tonal(
+                  onPressed: _toggleBackgroundHeartbeat,
+                  child: Text(_backgroundHeartbeat ? 'Stop Background Heartbeat' : 'Start Background Heartbeat'),
+                ),
                 TextField(controller: _notificationController, decoration: const InputDecoration(labelText: 'Notification summary simulation')),
                 FilledButton.tonal(onPressed: _sendNotification, child: const Text('Sync Notification')),
                 const Text('Real notification sync uses Android notification listener access and redacts sensitive content before sending.'),
