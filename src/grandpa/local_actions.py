@@ -162,7 +162,24 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
         _log_attempt(command, result)
         return result
 
-    if execute:
+    if _is_safe_desktop_operator_request(command):
+        result = _parse_desktop_operator_action(command)
+        if result.status != "no_match":
+            if result.permission == "requires_confirmation":
+                result = _with_permission(command, result)
+            _audit_decision(command, result, result.status)
+            _log_attempt(command, result)
+            return result
+
+    user_skill_result = _parse_user_skill_action(command)
+    if user_skill_result.status != "no_match":
+        if user_skill_result.permission == "requires_confirmation":
+            user_skill_result = _with_permission(command, user_skill_result)
+        _audit_decision(command, user_skill_result, user_skill_result.status)
+        _log_attempt(command, user_skill_result)
+        return user_skill_result
+
+    if execute and not _prefer_deterministic_browser_route(command):
         routed = _route_with_intent_router(command)
         if routed is not None:
             _audit_decision(command, routed, routed.status)
@@ -210,6 +227,44 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
     _audit_decision(command, executed, executed.status)
     _log_attempt(command, executed)
     return executed
+
+
+def _prefer_deterministic_browser_route(command: str) -> bool:
+    """Keep explicit visible-browser commands out of generic planner routing."""
+
+    exact = {
+        "browser diagnostics",
+        "show browser diagnostics",
+        "browser status",
+        "summarize this webpage",
+        "summarise this webpage",
+        "summarize current webpage",
+        "summarize this web page",
+        "summarize this page",
+        "summarise this page",
+        "read the visible headings",
+        "read visible headings",
+        "what headings are visible",
+        "show links on this page",
+        "show page links",
+        "what links are visible",
+        "read visible links",
+        "what buttons are visible",
+        "what buttons are visible?",
+        "show visible buttons",
+        "read visible buttons",
+        "download this file",
+        "download selected file",
+        "download this page file",
+    }
+    if command in exact:
+        return True
+    return bool(
+        re.fullmatch(r"search (?!google for\b)(?!youtube for\b)(.+)", command)
+        or re.fullmatch(r"search google for (.+)", command)
+        or re.fullmatch(r"open youtube and search(?: for)? (.+)", command)
+        or re.fullmatch(r"fill (?:the )?(.+?) (?:field )?with (.+)", command)
+    )
 
 
 def _route_with_intent_router(command: str) -> LocalActionResult | None:
@@ -326,7 +381,7 @@ def _handle_confirmation_command(command: str) -> LocalActionResult:
 
 
 def _with_permission(command: str, result: LocalActionResult) -> LocalActionResult:
-    permission = classify_permission(command, result)
+    permission = result.permission if result.permission == "requires_confirmation" else classify_permission(command, result)
     if permission == "allowed":
         return LocalActionResult(
             status=result.status,
@@ -512,6 +567,8 @@ def _normalise(text: str) -> str:
 
 
 def _is_dangerous(command: str) -> bool:
+    if _is_safe_desktop_operator_request(command):
+        return False
     return any(re.search(pattern, command) for pattern in _DANGEROUS_PATTERNS)
 
 
@@ -519,6 +576,10 @@ def _parse_safe_action(command: str) -> LocalActionResult:
     action_result = _route_with_action_modules(command)
     if action_result is not None:
         return action_result
+
+    operator_result = _parse_desktop_operator_action(command)
+    if operator_result.status != "no_match":
+        return operator_result
 
     window_result = _parse_window_action(command)
     if window_result.status != "no_match":
@@ -646,6 +707,115 @@ def _parse_safe_action(command: str) -> LocalActionResult:
     return LocalActionResult(status="no_match")
 
 
+def _is_safe_desktop_operator_request(command: str) -> bool:
+    return bool(
+        re.fullmatch(r"open terminal in (vs\s*code|vscode|visual studio code)", command)
+        or command
+        in {
+            "summarize current desktop state",
+            "detect active app and suggest actions",
+            "desktop operator diagnostics",
+            "operator diagnostics",
+        }
+    )
+
+
+def _parse_desktop_operator_action(command: str) -> LocalActionResult:
+    if not _is_safe_desktop_operator_request(command):
+        return LocalActionResult(status="no_match")
+    try:
+        from grandpa.desktop.operator import active_app_actions, build_ui_navigation_plan, operator_diagnostics
+
+        if command in {"desktop operator diagnostics", "operator diagnostics"}:
+            diagnostics = operator_diagnostics()
+            message = (
+                "Desktop operator is ready with "
+                f"{diagnostics.get('profile_count', 0)} app profile(s), bounded retries, and approval-gated risky actions."
+            )
+            return LocalActionResult(status="handled", kind="pc_control", target="desktop_operator|diagnostics", message=message, tts_text=message)
+        if command == "detect active app and suggest actions":
+            actions = active_app_actions()
+            suggestions = ", ".join(actions.get("suggested_actions") or []) or "no app-specific suggestions"
+            message = f"Active app: {actions.get('active_app', 'unknown')}. Suggested actions: {suggestions}."
+            return LocalActionResult(status="handled", kind="pc_control", target="desktop_operator|active_app", message=message, tts_text=message)
+
+        plan = build_ui_navigation_plan(command)
+        task = plan.get("task", {})
+        summary = str(task.get("result_summary") or "Prepared a desktop operator plan.")
+        target = f"desktop_operator|{task.get('task_id', 'planned')}"
+        if task.get("status") == "waiting_approval":
+            return LocalActionResult(
+                status="handled",
+                kind="pc_control",
+                target=target,
+                message=summary,
+                tts_text="Confirmation required for this desktop operator plan.",
+                permission="requires_confirmation",
+                pending_action={"operator_task": task},
+            )
+        if task.get("status") == "blocked":
+            return LocalActionResult(status="blocked", kind="blocked", target=target, message=summary, tts_text=summary, permission="blocked")
+        return LocalActionResult(status="handled", kind="pc_control", target=target, message=summary, tts_text=summary)
+    except Exception as exc:
+        logger.debug("Desktop operator routing failed: %s", exc, exc_info=True)
+        return LocalActionResult(
+            status="error",
+            kind="pc_control",
+            target="desktop_operator",
+            message="Desktop operator is unavailable right now.",
+            tts_text="Desktop operator is unavailable right now.",
+        )
+
+
+def _parse_user_skill_action(command: str) -> LocalActionResult:
+    try:
+        from grandpa.skill_builder import create_user_skill, list_user_skills, run_user_skill
+
+        if re.fullmatch(r"(list|show) (custom|user) skills", command):
+            skills = list_user_skills(limit=20)["skills"]
+            if not skills:
+                message = "No custom user skills saved yet."
+            else:
+                names = ", ".join(skill["name"] for skill in skills[:8])
+                message = f"Custom skills: {names}."
+            return LocalActionResult(status="handled", kind="pc_control", target="user_skills|list", message=message, tts_text=message)
+
+        if re.match(r"^(create a skill called|remember this workflow|save this automation)", command):
+            created = create_user_skill({"request": command})
+            skill = created["skill"]
+            message = f"Saved user skill '{skill['name']}' with {len(skill['workflow_steps'])} declarative step(s)."
+            return LocalActionResult(
+                status="handled",
+                kind="pc_control",
+                target=f"user_skill|{skill['skill_id']}",
+                message=message,
+                tts_text=message,
+            )
+
+        for skill in list_user_skills(limit=500)["skills"]:
+            triggers = {str(item).strip().lower() for item in skill.get("trigger_phrases", [])}
+            if command in triggers or command == str(skill.get("name", "")).strip().lower():
+                result = run_user_skill(skill["skill_id"], params={"user_request": command})
+                return LocalActionResult(
+                    status="handled" if result["ok"] else ("requires_confirmation" if result["status"] == "approval_required" else "error"),
+                    kind="pc_control",
+                    target=f"user_skill|{skill['skill_id']}",
+                    message=result["message"],
+                    tts_text=result["message"],
+                    permission="requires_confirmation" if result["status"] == "approval_required" else None,
+                )
+    except Exception as exc:
+        logger.debug("User skill routing failed: %s", exc, exc_info=True)
+        return LocalActionResult(
+            status="error",
+            kind="pc_control",
+            target="user_skill",
+            message="User skill runtime is unavailable right now.",
+            tts_text="User skill runtime is unavailable right now.",
+        )
+    return LocalActionResult(status="no_match")
+
+
 def _route_with_action_modules(command: str) -> LocalActionResult | None:
     """Try decomposed low-risk action handlers before legacy parser branches."""
     try:
@@ -699,6 +869,9 @@ def _parse_agent_plan_action(command: str) -> LocalActionResult:
             "research python tutorials and summarise",
             "organize my downloads folder",
             "organise my downloads folder",
+            "check grandpa readiness and report issues",
+            "summarize current webpage and save notes",
+            "summarise current webpage and save notes",
         )
     ):
         return LocalActionResult(
@@ -1161,6 +1334,18 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text=f"Searching Google for {query}.",
         )
 
+    match = re.fullmatch(r"search (?!google for\b)(?!youtube for\b)(.+)", command)
+    if match:
+        query = match.group(1).strip()
+        url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+        return LocalActionResult(
+            status="handled",
+            kind="browser",
+            target=url,
+            message=f"Searching Google for {query}.",
+            tts_text=f"Searching Google for {query}.",
+        )
+
     match = re.fullmatch(r"open youtube and search for (.+)", command)
     if match:
         query = match.group(1).strip()
@@ -1404,28 +1589,30 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         )
 
     if result.kind == "agent_plan":
-        from grandpa.agents.runtime import run_agent_goal
+        from grandpa.agents.goal_mode import create_goal
 
-        task = run_agent_goal(result.target, execute=False, source="local_actions")
-        analysis = task.analysis
+        goal = create_goal(result.target, execute=True)
+        analysis = goal.plan
         lines = [
-            f"Agent plan: {analysis.intent}.",
-            f"- Confidence: {analysis.confidence:.0%}",
-            f"- Risk: {analysis.estimated_risk}",
-            f"- Skills: {', '.join(analysis.required_skills) or 'none'}",
-            f"- Workflow handoff: {'ready' if analysis.workflow_suitable else 'not needed'}",
+            f"Agent plan goal {goal.status}: {analysis.get('intent', 'local goal')}.",
+            f"- Phase: {goal.current_phase}",
+            f"- Confidence: {float(analysis.get('confidence', 0.0)):.0%}",
+            f"- Risk: {analysis.get('estimated_risk', 'LOW')}",
+            f"- Skills: {', '.join(analysis.get('required_skills', [])) or 'none'}",
+            f"- Actions taken: {len(goal.actions_taken)}",
         ]
-        if analysis.approval_needed_steps:
-            lines.append(f"- Approval needed: {', '.join(analysis.approval_needed_steps)}")
-        if analysis.unsupported_reason:
-            lines.append(f"- Note: {analysis.unsupported_reason}")
-        lines.append(analysis.reasoning_summary)
+        if goal.approvals_needed:
+            lines.append(f"- Approval needed: {', '.join(item.get('step_id', '') for item in goal.approvals_needed)}")
+        if goal.result_summary:
+            lines.append(goal.result_summary)
+        else:
+            lines.append(str(analysis.get("reasoning_summary", "Grandpa prepared a safe local goal plan.")))
         return LocalActionResult(
-            status="handled" if task.status != "unsupported" else "unsupported",
+            status="handled" if goal.status not in {"failed", "cancelled"} else "unsupported",
             kind="agent_plan",
-            target=task.task_id,
+            target=goal.goal_id,
             message="\n".join(lines),
-            tts_text="I prepared a safe local execution plan.",
+            tts_text="I processed the autonomous goal safely.",
             permission=result.permission,
         )
 

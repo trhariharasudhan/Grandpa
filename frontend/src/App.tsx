@@ -26,12 +26,20 @@ const DesktopKernelPage = lazy(() => import('./pages/DesktopKernelPage').then((m
 const MobileCompanionPage = lazy(() => import('./pages/MobileCompanionPage').then((m) => ({ default: m.MobileCompanionPage })));
 const CapabilitiesPage = lazy(() => import('./pages/CapabilitiesPage').then((m) => ({ default: m.CapabilitiesPage })));
 const SkillsPage = lazy(() => import('./pages/SkillsPage').then((m) => ({ default: m.SkillsPage })));
+const SkillsBuilderPage = lazy(() => import('./pages/SkillsBuilderPage').then((m) => ({ default: m.SkillsBuilderPage })));
 const PluginsPage = lazy(() => import('./pages/PluginsPage').then((m) => ({ default: m.PluginsPage })));
 const ServicesPage = lazy(() => import('./pages/ServicesPage').then((m) => ({ default: m.ServicesPage })));
 const ActionsPage = lazy(() => import('./pages/ActionsPage').then((m) => ({ default: m.ActionsPage })));
 const PlannerPage = lazy(() => import('./pages/PlannerPage').then((m) => ({ default: m.PlannerPage })));
 const RouterDiagnosticsPage = lazy(() => import('./pages/RouterDiagnosticsPage').then((m) => ({ default: m.RouterDiagnosticsPage })));
 const ReleaseGatePage = lazy(() => import('./pages/ReleaseGatePage').then((m) => ({ default: m.ReleaseGatePage })));
+const BurnInPage = lazy(() => import('./pages/BurnInPage').then((m) => ({ default: m.BurnInPage })));
+const AuditPage = lazy(() => import('./pages/AuditPage').then((m) => ({ default: m.AuditPage })));
+const AgentModePage = lazy(() => import('./pages/AgentModePage').then((m) => ({ default: m.AgentModePage })));
+const MultiAgentPage = lazy(() => import('./pages/MultiAgentPage').then((m) => ({ default: m.MultiAgentPage })));
+const KnowledgePage = lazy(() => import('./pages/KnowledgePage').then((m) => ({ default: m.KnowledgePage })));
+const VoicePage = lazy(() => import('./pages/VoicePage').then((m) => ({ default: m.VoicePage })));
+const CodingPage = lazy(() => import('./pages/CodingPage').then((m) => ({ default: m.CodingPage })));
 
 export default function App() {
   const [setupDone, setSetupDone] = useState(!isTauri());
@@ -168,12 +176,20 @@ export default function App() {
             <Route path="mobile" element={<MobileCompanionPage />} />
             <Route path="capabilities" element={<CapabilitiesPage />} />
             <Route path="skills" element={<SkillsPage />} />
+            <Route path="skills-builder" element={<SkillsBuilderPage />} />
             <Route path="plugins" element={<PluginsPage />} />
             <Route path="services" element={<ServicesPage />} />
             <Route path="actions" element={<ActionsPage />} />
             <Route path="planner" element={<PlannerPage />} />
             <Route path="router" element={<RouterDiagnosticsPage />} />
             <Route path="release-gate" element={<ReleaseGatePage />} />
+            <Route path="burnin" element={<BurnInPage />} />
+            <Route path="audit" element={<AuditPage />} />
+            <Route path="agent-mode" element={<AgentModePage />} />
+            <Route path="multi-agent" element={<MultiAgentPage />} />
+            <Route path="knowledge" element={<KnowledgePage />} />
+            <Route path="voice" element={<VoicePage />} />
+            <Route path="coding" element={<CodingPage />} />
             <Route path="agents" element={<AgentsPage />} />
             <Route path="logs" element={<LogsPage />} />
           </Route>

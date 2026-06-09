@@ -16,6 +16,7 @@ SERVICE_MODULES: tuple[tuple[str, str, str], ...] = (
     ("planner", "grandpa.services.planner_service", "Planner, agent runtime, MCP, and intent routing"),
     ("plugins", "grandpa.services.plugin_service", "Manifest-driven plugin runtime"),
     ("release_gate", "grandpa.services.release_service", "Production release readiness gate"),
+    ("burnin", "grandpa.services.burnin_service", "Daily-use burn-in validation and stability reports"),
 )
 
 

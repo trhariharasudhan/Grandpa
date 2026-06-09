@@ -13,9 +13,17 @@ Supports two modes:
 from __future__ import annotations
 
 import concurrent.futures
+import json
+import os
 import re
+import sqlite3
+import time
+import uuid
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, List, Optional
 
+from grandpa.core.config import DEFAULT_CONFIG_DIR
 from grandpa.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
 from grandpa.core.events import EventBus
 from grandpa.core.registry import AgentRegistry
@@ -373,4 +381,351 @@ class OrchestratorAgent(ToolUsingAgent):
         )
 
 
-__all__ = ["OrchestratorAgent"]
+DEFAULT_MULTI_AGENT_DB = DEFAULT_CONFIG_DIR / "agents" / "multi_agent.db"
+
+
+@dataclass(frozen=True)
+class MultiAgentTask:
+    """Persisted multi-agent collaboration task."""
+
+    task_id: str
+    user_request: str
+    participating_agents: tuple[str, ...]
+    status: str
+    observations: dict[str, Any]
+    outputs: list[dict[str, Any]]
+    summary: str
+    created_at: float
+    updated_at: float
+    completed_at: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["participating_agents"] = list(self.participating_agents)
+        return payload
+
+
+class MultiAgentTaskStore:
+    """SQLite persistence for deterministic multi-agent tasks."""
+
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        self.db_path = Path(db_path or os.environ.get("GRANDPA_MULTI_AGENT_DB") or DEFAULT_MULTI_AGENT_DB)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_db()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _init_db(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS multi_agent_tasks (
+                    task_id TEXT PRIMARY KEY,
+                    user_request TEXT NOT NULL,
+                    participating_agents TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    observations TEXT NOT NULL,
+                    outputs TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    completed_at REAL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS multi_agent_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    task_id TEXT NOT NULL,
+                    timestamp REAL NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    phase TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    data TEXT NOT NULL DEFAULT '{}'
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_multi_agent_tasks_updated "
+                "ON multi_agent_tasks(updated_at)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_multi_agent_events_task "
+                "ON multi_agent_events(task_id, timestamp)"
+            )
+
+    def save(self, task: MultiAgentTask) -> MultiAgentTask:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO multi_agent_tasks(
+                    task_id, user_request, participating_agents, status,
+                    observations, outputs, summary, created_at, updated_at, completed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(task_id) DO UPDATE SET
+                    participating_agents=excluded.participating_agents,
+                    status=excluded.status,
+                    observations=excluded.observations,
+                    outputs=excluded.outputs,
+                    summary=excluded.summary,
+                    updated_at=excluded.updated_at,
+                    completed_at=excluded.completed_at
+                """,
+                (
+                    task.task_id,
+                    task.user_request,
+                    json.dumps(list(task.participating_agents), ensure_ascii=True),
+                    task.status,
+                    json.dumps(task.observations, ensure_ascii=True),
+                    json.dumps(task.outputs, ensure_ascii=True),
+                    task.summary,
+                    task.created_at,
+                    task.updated_at,
+                    task.completed_at,
+                ),
+            )
+        return task
+
+    def add_event(
+        self,
+        task_id: str,
+        agent_id: str,
+        phase: str,
+        status: str,
+        message: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO multi_agent_events(task_id, timestamp, agent_id, phase, status, message, data)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, time.time(), agent_id, phase, status, message, json.dumps(data or {}, ensure_ascii=True)),
+            )
+
+    def list(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM multi_agent_tasks
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [_task_from_row(row).to_dict() for row in rows]
+
+    def get(self, task_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM multi_agent_tasks WHERE task_id = ?", (task_id,)).fetchone()
+        return _task_from_row(row).to_dict() if row else None
+
+    def events(self, task_id: str, limit: int = 100) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM multi_agent_events
+                WHERE task_id = ?
+                ORDER BY timestamp ASC
+                LIMIT ?
+                """,
+                (task_id, limit),
+            ).fetchall()
+        return [
+            {
+                "id": row["id"],
+                "task_id": row["task_id"],
+                "timestamp": row["timestamp"],
+                "agent_id": row["agent_id"],
+                "phase": row["phase"],
+                "status": row["status"],
+                "message": row["message"],
+                "data": _loads_dict(row["data"]),
+            }
+            for row in rows
+        ]
+
+    def count(self) -> int:
+        with self._connect() as conn:
+            row = conn.execute("SELECT COUNT(*) AS count FROM multi_agent_tasks").fetchone()
+        return int(row["count"] if row else 0)
+
+
+def orchestrate_goal(user_request: str, *, store: MultiAgentTaskStore | None = None) -> MultiAgentTask:
+    """Run a deterministic multi-agent collaboration and persist the result."""
+
+    from grandpa.agents.context import build_shared_context
+    from grandpa.agents.registry import select_agents_for_goal
+
+    task_store = store or MultiAgentTaskStore()
+    context = build_shared_context(user_request)
+    selected_agents = select_agents_for_goal(user_request)
+    now = time.time()
+    task = MultiAgentTask(
+        task_id=context.task_id,
+        user_request=user_request.strip(),
+        participating_agents=tuple(agent.agent_id for agent in selected_agents),
+        status="running",
+        observations=context.to_dict(),
+        outputs=[],
+        summary="Multi-agent task started.",
+        created_at=now,
+        updated_at=now,
+    )
+    task_store.save(task)
+    outputs: list[dict[str, Any]] = []
+    for agent in selected_agents:
+        task_store.add_event(task.task_id, agent.agent_id, "execute", "running", "Agent started.")
+        try:
+            result = agent.executor(context)
+            output = {
+                "agent_id": agent.agent_id,
+                "name": agent.name,
+                "status": result.get("status", "completed"),
+                "ok": bool(result.get("ok", True)),
+                "message": str(result.get("message", "")),
+                "data": result.get("data", {}),
+            }
+        except Exception as exc:
+            output = {
+                "agent_id": agent.agent_id,
+                "name": agent.name,
+                "status": "failed",
+                "ok": False,
+                "message": f"{agent.name} could not complete its local check.",
+                "data": {"error": exc.__class__.__name__},
+            }
+        task_store.add_event(task.task_id, agent.agent_id, "execute", output["status"], output["message"], output)
+        outputs.append(output)
+
+    final_status = "completed" if all(item.get("ok") for item in outputs) else "completed_with_warnings"
+    summary = _summarize_outputs(user_request, outputs)
+    completed = time.time()
+    final_task = MultiAgentTask(
+        task_id=task.task_id,
+        user_request=task.user_request,
+        participating_agents=task.participating_agents,
+        status=final_status,
+        observations=task.observations,
+        outputs=outputs,
+        summary=summary,
+        created_at=task.created_at,
+        updated_at=completed,
+        completed_at=completed,
+    )
+    task_store.save(final_task)
+    task_store.add_event(task.task_id, "orchestrator", "summary", final_status, summary)
+    _safe_memory_writeback(final_task)
+    return final_task
+
+
+def list_multi_agent_tasks(limit: int = 50, *, store: MultiAgentTaskStore | None = None) -> list[dict[str, Any]]:
+    return (store or MultiAgentTaskStore()).list(limit=limit)
+
+
+def get_multi_agent_task(task_id: str, *, store: MultiAgentTaskStore | None = None) -> dict[str, Any] | None:
+    task_store = store or MultiAgentTaskStore()
+    task = task_store.get(task_id)
+    if task:
+        task["events"] = task_store.events(task_id)
+    return task
+
+
+def multi_agent_diagnostics(*, store: MultiAgentTaskStore | None = None) -> dict[str, Any]:
+    from grandpa.agents.registry import agent_registry_diagnostics
+
+    task_store = store or MultiAgentTaskStore()
+    registry = agent_registry_diagnostics()
+    return {
+        "status": "ready",
+        "ready": True,
+        "db_path": str(task_store.db_path),
+        "task_count": task_store.count(),
+        "registry": registry,
+        "collaboration_flows": [
+            "research Python tutorials",
+            "analyze Grandpa health",
+            "summarize current webpage",
+            "prepare coding environment",
+            "collect diagnostics report",
+        ],
+        "local_only": True,
+        "approval_safe": True,
+    }
+
+
+def _task_from_row(row: sqlite3.Row) -> MultiAgentTask:
+    return MultiAgentTask(
+        task_id=row["task_id"],
+        user_request=row["user_request"],
+        participating_agents=tuple(_loads_list(row["participating_agents"])),
+        status=row["status"],
+        observations=_loads_dict(row["observations"]),
+        outputs=_loads_list(row["outputs"]),
+        summary=row["summary"],
+        created_at=float(row["created_at"]),
+        updated_at=float(row["updated_at"]),
+        completed_at=float(row["completed_at"]) if row["completed_at"] is not None else None,
+    )
+
+
+def _loads_dict(value: str) -> dict[str, Any]:
+    try:
+        loaded = json.loads(value or "{}")
+        return loaded if isinstance(loaded, dict) else {}
+    except Exception:
+        return {}
+
+
+def _loads_list(value: str) -> list[Any]:
+    try:
+        loaded = json.loads(value or "[]")
+        return loaded if isinstance(loaded, list) else []
+    except Exception:
+        return []
+
+
+def _summarize_outputs(user_request: str, outputs: list[dict[str, Any]]) -> str:
+    completed = [item for item in outputs if item.get("ok")]
+    warnings = [item for item in outputs if not item.get("ok")]
+    agent_names = ", ".join(item["name"] for item in completed) or "No agents"
+    suffix = f" {len(warnings)} agent check needs attention." if warnings else ""
+    return f"Grandpa coordinated {agent_names} for: {user_request.strip()}.{suffix}"
+
+
+def _safe_memory_writeback(task: MultiAgentTask) -> None:
+    if not task.summary or _looks_sensitive(task.user_request):
+        return
+    try:
+        from grandpa.memory_context import MemoryStore
+
+        MemoryStore().remember(
+            "work_context",
+            f"multi_agent_{task.task_id}",
+            f"{task.user_request}: {task.summary}",
+            source="multi_agent",
+        )
+    except Exception:
+        return
+
+
+def _looks_sensitive(text: str) -> bool:
+    return bool(re.search(r"\b(password|token|api\s*key|secret|otp|credential|credit\s*card|cvv)\b", text, re.I))
+
+
+__all__ = [
+    "MultiAgentTask",
+    "MultiAgentTaskStore",
+    "OrchestratorAgent",
+    "get_multi_agent_task",
+    "list_multi_agent_tasks",
+    "multi_agent_diagnostics",
+    "orchestrate_goal",
+]

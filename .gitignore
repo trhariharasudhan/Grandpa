@@ -49,6 +49,7 @@ Thumbs.db
 *.npz
 *.log
 runtime/reports/
+runtime/burnin/
 runtime/**/*.jsonl
 runtime/**/*.db
 runtime/**/*.sqlite

@@ -25,6 +25,22 @@ class AgentMessageRequest(BaseModel):
     message: str
 
 
+class MultiAgentOrchestrateRequest(BaseModel):
+    user_request: Optional[str] = None
+    request: Optional[str] = None
+    goal: Optional[str] = None
+
+
+class KnowledgeImportRequest(BaseModel):
+    source: str = "manual"
+    title: Optional[str] = None
+    content: Optional[str] = None
+    path: Optional[str] = None
+    tags: Optional[List[str]] = None
+    metadata: Optional[Dict[str, Any]] = None
+    import_project_docs: bool = False
+
+
 class MemoryStoreRequest(BaseModel):
     content: str
     metadata: Optional[Dict[str, Any]] = None
@@ -55,6 +71,39 @@ class OptimizeRunRequest(BaseModel):
     max_trials: int = 20
     optimizer_model: str = "claude-sonnet-4-6"
     max_samples: int = 50
+
+
+class VoiceSpeakRequest(BaseModel):
+    text: str
+    interrupt: bool = False
+    dry_run: bool = False
+
+
+class VoiceListenRequest(BaseModel):
+    text: Optional[str] = None
+    audio_base64: Optional[str] = None
+    speak_response: bool = False
+    require_wake_word: bool = False
+
+
+class DesktopOperatorPlanRequest(BaseModel):
+    request: Optional[str] = None
+    goal: Optional[str] = None
+    persist: bool = True
+
+
+class UserSkillCreateRequest(BaseModel):
+    name: Optional[str] = None
+    request: Optional[str] = None
+    description: Optional[str] = None
+    trigger_phrases: Optional[List[str]] = None
+    workflow_steps: Optional[List[Dict[str, Any]]] = None
+    approval_requirements: Optional[Dict[str, Any]] = None
+
+
+class UserSkillRunRequest(BaseModel):
+    params: Optional[Dict[str, Any]] = None
+    dry_run: bool = False
 
 
 # ---- Agent routes ----
@@ -90,7 +139,15 @@ async def list_agents(request: Request):
     except ImportError:
         pass
 
-    return {"registered": registered, "running": running}
+    multi_agent = {}
+    try:
+        from grandpa.agents.registry import agent_registry_diagnostics
+
+        multi_agent = agent_registry_diagnostics()
+    except Exception as exc:
+        logger.debug("Multi-agent registry diagnostics unavailable: %s", exc)
+
+    return {"registered": registered, "running": running, "multi_agent": multi_agent}
 
 
 @agents_router.post("")
@@ -115,6 +172,44 @@ async def create_agent(req: AgentCreateRequest, request: Request):
         }
     except ImportError:
         raise HTTPException(status_code=501, detail="Agent tools not available")
+
+
+@agents_router.get("/diagnostics")
+async def multi_agent_diagnostics_route():
+    """Return multi-agent registry and task-store diagnostics."""
+    from grandpa.agents.orchestrator import multi_agent_diagnostics
+
+    return multi_agent_diagnostics()
+
+
+@agents_router.post("/orchestrate")
+async def orchestrate_agents(req: MultiAgentOrchestrateRequest):
+    """Run a deterministic multi-agent collaboration."""
+    from grandpa.agents.orchestrator import orchestrate_goal
+
+    user_request = (req.user_request or req.request or req.goal or "").strip()
+    if not user_request:
+        raise HTTPException(status_code=400, detail="user_request is required")
+    return orchestrate_goal(user_request).to_dict()
+
+
+@agents_router.get("/tasks")
+async def list_multi_agent_tasks_route(limit: int = 50):
+    """List persisted multi-agent collaboration tasks."""
+    from grandpa.agents.orchestrator import list_multi_agent_tasks
+
+    return {"tasks": list_multi_agent_tasks(limit=max(1, min(limit, 200)))}
+
+
+@agents_router.get("/tasks/{task_id}")
+async def get_multi_agent_task_route(task_id: str):
+    """Return one persisted multi-agent task and its event timeline."""
+    from grandpa.agents.orchestrator import get_multi_agent_task
+
+    task = get_multi_agent_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Multi-agent task not found")
+    return task
 
 
 @agents_router.delete("/{agent_id}")
@@ -406,14 +501,20 @@ async def telemetry_energy(request: Request):
 # ---- Skills routes ----
 
 skills_router = APIRouter(prefix="/v1/skills", tags=["skills"])
+user_skills_router = APIRouter(prefix="/v1/user-skills", tags=["user-skills"])
 plugins_router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 release_gate_router = APIRouter(prefix="/v1/release-gate", tags=["release-gate"])
+burnin_router = APIRouter(prefix="/v1/burnin", tags=["burnin"])
+audit_router = APIRouter(prefix="/v1/audit", tags=["audit"])
 services_router = APIRouter(prefix="/v1/services", tags=["services"])
 actions_router = APIRouter(prefix="/v1/actions", tags=["actions"])
+desktop_operator_router = APIRouter(prefix="/v1/desktop/operator", tags=["desktop-operator"])
 planner_router = APIRouter(prefix="/v1/planner", tags=["planner"])
 agent_runtime_router = APIRouter(prefix="/v1/agent", tags=["agent-runtime"])
 mcp_router = APIRouter(prefix="/v1/mcp", tags=["mcp"])
 intent_router = APIRouter(prefix="/v1/router", tags=["intent-router"])
+knowledge_router = APIRouter(prefix="/v1/knowledge", tags=["knowledge"])
+coding_router = APIRouter(prefix="/v1/coding", tags=["coding"])
 
 
 @skills_router.get("")
@@ -479,6 +580,227 @@ async def remove_skill(skill_name: str, request: Request):
         "status": "not_implemented",
         "message": "Skill removal not yet supported via API",
     }
+
+
+@user_skills_router.get("/diagnostics")
+async def user_skill_diagnostics():
+    from grandpa.skill_builder import diagnostics
+
+    return diagnostics()
+
+
+@user_skills_router.get("")
+async def list_user_skills(limit: int = 100, query: str = ""):
+    from grandpa.skill_builder import list_user_skills, search_user_skills
+
+    if query:
+        return search_user_skills(query, limit=limit)
+    return list_user_skills(limit=limit)
+
+
+@user_skills_router.get("/{skill_id}")
+async def get_user_skill(skill_id: str):
+    from grandpa.skill_builder import get_user_skill
+
+    try:
+        return get_user_skill(skill_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="User skill not found") from exc
+
+
+@user_skills_router.post("/create")
+async def create_user_skill_route(payload: UserSkillCreateRequest):
+    from grandpa.skill_builder import create_user_skill
+    from grandpa.skill_builder.validator import SkillValidationError
+
+    try:
+        return create_user_skill(payload.model_dump(exclude_none=True))
+    except SkillValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@user_skills_router.post("/{skill_id}/run")
+async def run_user_skill_route(skill_id: str, payload: UserSkillRunRequest):
+    from grandpa.skill_builder import run_user_skill
+
+    try:
+        params = dict(payload.params or {})
+        params["dry_run"] = payload.dry_run
+        return run_user_skill(skill_id, params=params, source="api")
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="User skill not found") from exc
+
+
+@user_skills_router.post("/{skill_id}/delete")
+async def delete_user_skill_route(skill_id: str):
+    from grandpa.skill_builder import delete_user_skill
+
+    try:
+        return delete_user_skill(skill_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="User skill not found") from exc
+
+
+# ---- Coding agent routes ----
+
+
+@coding_router.get("/projects")
+async def coding_projects():
+    from grandpa.coding.project_scanner import scan_projects
+
+    return scan_projects()
+
+
+@coding_router.get("/project-summary")
+async def coding_project_summary():
+    from grandpa.coding.code_summary import summarize_project
+
+    return summarize_project()
+
+
+@coding_router.get("/architecture")
+async def coding_architecture():
+    from grandpa.coding.architecture_analysis import analyze_architecture
+
+    return analyze_architecture()
+
+
+@coding_router.get("/dependencies")
+async def coding_dependencies():
+    from grandpa.coding.dependency_analysis import analyze_dependencies
+
+    return analyze_dependencies()
+
+
+@coding_router.get("/diagnostics")
+async def coding_diagnostics_route():
+    from grandpa.coding.diagnostics import coding_diagnostics
+
+    return coding_diagnostics()
+
+
+# ---- Knowledge routes ----
+
+
+@knowledge_router.post("/import")
+async def import_knowledge(req: KnowledgeImportRequest):
+    """Import local text, markdown, JSON, notes, or project documentation into the knowledge engine."""
+    from grandpa.knowledge.engine import KnowledgeEngine
+
+    engine = KnowledgeEngine()
+    try:
+        if req.import_project_docs:
+            return engine.import_project_docs(req.path or "docs")
+        if req.path:
+            return engine.import_file(req.path, tags=req.tags)
+        if not req.content:
+            raise HTTPException(status_code=400, detail="content, path, or import_project_docs is required")
+        return engine.import_document(
+            source=req.source,
+            content=req.content,
+            title=req.title,
+            tags=req.tags,
+            metadata=req.metadata,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@knowledge_router.get("/search")
+async def search_knowledge_route(
+    q: str = "",
+    tag: str = "",
+    title: str = "",
+    project_only: bool = False,
+    limit: int = 20,
+):
+    """Search local knowledge by keyword, title, tag, recency, or project marker."""
+    from grandpa.knowledge.engine import KnowledgeEngine
+
+    return KnowledgeEngine().search(
+        q,
+        tag=tag,
+        title=title,
+        project_only=project_only,
+        limit=max(1, min(limit, 100)),
+    )
+
+
+@knowledge_router.get("/semantic-search")
+async def semantic_search_knowledge_route(q: str, tag: str = "", project_only: bool = False, limit: int = 10):
+    """Search local knowledge using stored chunk embeddings when available."""
+    from grandpa.knowledge.engine import KnowledgeEngine
+
+    return KnowledgeEngine().semantic_search(q, tag=tag, project_only=project_only, limit=max(1, min(limit, 50)))
+
+
+@knowledge_router.get("/context")
+async def knowledge_context_route(q: str, project_only: bool = False, limit: int = 5):
+    """Build a compact local knowledge context packet for planners and agents."""
+    from grandpa.knowledge.engine import KnowledgeEngine
+
+    return KnowledgeEngine().context(q, project_only=project_only, limit=max(1, min(limit, 20)))
+
+
+@knowledge_router.get("/related")
+async def related_knowledge_route(document_id: str, limit: int = 8):
+    """Return documents related to a local knowledge document."""
+    from grandpa.knowledge.engine import KnowledgeEngine
+
+    try:
+        return KnowledgeEngine().related(document_id, limit=max(1, min(limit, 50)))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Knowledge document not found") from exc
+
+
+@knowledge_router.get("/embedding-status")
+async def knowledge_embedding_status_route():
+    """Return embedding backend and chunk-vector coverage."""
+    from grandpa.knowledge.engine import knowledge_embedding_status
+
+    return knowledge_embedding_status()
+
+
+@knowledge_router.get("/documents")
+async def list_knowledge_documents_route(limit: int = 100):
+    """List local indexed knowledge documents."""
+    from grandpa.knowledge.engine import list_knowledge_documents
+
+    return list_knowledge_documents(limit=max(1, min(limit, 500)))
+
+
+@knowledge_router.get("/document/{document_id}")
+async def get_knowledge_document_route(document_id: str):
+    """Return one local knowledge document."""
+    from grandpa.knowledge.engine import KnowledgeEngine
+
+    document = KnowledgeEngine().get_document(document_id)
+    if not document:
+        raise HTTPException(status_code=404, detail="Knowledge document not found")
+    return document
+
+
+@knowledge_router.get("/summary")
+async def knowledge_summary_route(document_id: str = "", topic: str = "", project: bool = False):
+    """Generate deterministic local knowledge summaries."""
+    from grandpa.knowledge.engine import KnowledgeEngine
+
+    try:
+        return KnowledgeEngine().summary(document_id=document_id, topic=topic, project=project)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Knowledge document not found") from exc
+
+
+@knowledge_router.get("/diagnostics")
+async def knowledge_diagnostics_route():
+    """Return knowledge engine readiness and retrieval capabilities."""
+    from grandpa.knowledge.engine import knowledge_diagnostics
+
+    return knowledge_diagnostics()
 
 
 # ---- Plugin runtime routes ----
@@ -552,6 +874,41 @@ async def actions_diagnostics_route():
     return action_diagnostics()
 
 
+@desktop_operator_router.get("/diagnostics")
+async def desktop_operator_diagnostics_route():
+    """Return Desktop Operator v2 readiness and safety diagnostics."""
+    from grandpa.desktop.operator import operator_diagnostics
+
+    return operator_diagnostics()
+
+
+@desktop_operator_router.post("/plan")
+async def desktop_operator_plan_route(req: DesktopOperatorPlanRequest):
+    """Build a safe UI navigation plan for a desktop task."""
+    from grandpa.desktop.operator import build_ui_navigation_plan
+
+    text = (req.request or req.goal or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="request or goal is required")
+    return build_ui_navigation_plan(text, persist=req.persist)
+
+
+@desktop_operator_router.get("/tasks")
+async def desktop_operator_tasks_route(limit: int = 50):
+    """List recent persisted Desktop Operator tasks."""
+    from grandpa.desktop.operator import list_operator_tasks
+
+    return list_operator_tasks(limit=max(1, min(limit, 200)))
+
+
+@desktop_operator_router.get("/profiles")
+async def desktop_operator_profiles_route():
+    """List deterministic app profiles used by Desktop Operator v2."""
+    from grandpa.desktop.operator import list_app_profiles
+
+    return list_app_profiles()
+
+
 @release_gate_router.get("/latest")
 async def release_gate_latest():
     """Return the latest full final release gate report."""
@@ -566,6 +923,38 @@ async def release_gate_status_route():
     from grandpa.services import release_service
 
     return release_service.status()
+
+
+@burnin_router.get("/latest")
+async def burnin_latest():
+    """Return the latest daily-use burn-in report."""
+    from grandpa.services import burnin_service
+
+    return burnin_service.latest()
+
+
+@burnin_router.get("/status")
+async def burnin_status_route():
+    """Return compact daily-use burn-in status."""
+    from grandpa.services import burnin_service
+
+    return burnin_service.status()
+
+
+@audit_router.get("/latest")
+async def production_audit_latest():
+    """Return the latest real-device production audit report."""
+    from grandpa.production_audit import latest_report
+
+    return latest_report()
+
+
+@audit_router.get("/status")
+async def production_audit_status_route():
+    """Return compact real-device production audit status."""
+    from grandpa.production_audit import status as audit_status
+
+    return audit_status()
 
 
 # ---- Planner / Agent Runtime / Local MCP bridge ----
@@ -609,6 +998,79 @@ async def agent_runtime_tasks(limit: int = 50):
     from grandpa.services import planner_service
 
     return planner_service.list_agent_tasks(limit=limit)
+
+
+@agent_runtime_router.post("/goals")
+async def create_autonomous_agent_goal(request: Request):
+    """Create and optionally run a persistent autonomous goal."""
+    from grandpa.agents.goal_mode import create_goal
+
+    body = await request.json()
+    user_request = str(body.get("user_request") or body.get("request") or "").strip()
+    if not user_request:
+        raise HTTPException(status_code=400, detail="'user_request' field is required")
+    priority = str(body.get("priority") or "normal")
+    execute = bool(body.get("execute", True))
+    return create_goal(user_request, priority=priority, execute=execute).to_dict()
+
+
+@agent_runtime_router.get("/goals")
+async def list_autonomous_agent_goals(limit: int = 50):
+    """List persistent autonomous goals."""
+    from grandpa.agents.goal_mode import list_goals
+
+    return {"goals": list_goals(limit=limit)}
+
+
+@agent_runtime_router.get("/goals/{goal_id}")
+async def get_autonomous_agent_goal(goal_id: str):
+    """Return one persistent autonomous goal."""
+    from grandpa.agents.goal_mode import get_goal
+
+    goal = get_goal(goal_id)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    return goal
+
+
+@agent_runtime_router.post("/goals/{goal_id}/continue")
+async def continue_autonomous_agent_goal(goal_id: str):
+    """Continue a queued or paused autonomous goal."""
+    from grandpa.agents.goal_mode import continue_goal
+
+    goal = continue_goal(goal_id)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    return goal.to_dict()
+
+
+@agent_runtime_router.post("/goals/{goal_id}/cancel")
+async def cancel_autonomous_agent_goal(goal_id: str):
+    """Cancel an autonomous goal."""
+    from grandpa.agents.goal_mode import cancel_goal
+
+    goal = cancel_goal(goal_id)
+    if goal is None:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    return goal.to_dict()
+
+
+@agent_runtime_router.get("/goals/{goal_id}/events")
+async def autonomous_agent_goal_events(goal_id: str):
+    """Return persistent lifecycle events for one autonomous goal."""
+    from grandpa.agents.goal_mode import get_goal, goal_events
+
+    if get_goal(goal_id) is None:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    return {"events": goal_events(goal_id)}
+
+
+@agent_runtime_router.get("/diagnostics")
+async def autonomous_agent_diagnostics():
+    """Return autonomous goal-mode diagnostics."""
+    from grandpa.agents.goal_mode import agent_goal_diagnostics
+
+    return agent_goal_diagnostics()
 
 
 @mcp_router.get("/tools")
@@ -984,6 +1446,60 @@ async def speech_health(request: Request):
     }
 
 
+# ---- Voice runtime routes ----
+
+voice_router = APIRouter(prefix="/v1/voice", tags=["voice"])
+
+
+@voice_router.get("/status")
+async def voice_status():
+    """Return Grandpa voice runtime status and local engine readiness."""
+    from grandpa.voice import get_voice_runtime
+
+    return get_voice_runtime().status()
+
+
+@voice_router.post("/start")
+async def voice_start():
+    """Start the local voice conversation session."""
+    from grandpa.voice import get_voice_runtime
+
+    return get_voice_runtime().start()
+
+
+@voice_router.post("/stop")
+async def voice_stop():
+    """Stop listening/speaking state for the local voice session."""
+    from grandpa.voice import get_voice_runtime
+
+    return get_voice_runtime().stop()
+
+
+@voice_router.post("/speak")
+async def voice_speak(req: VoiceSpeakRequest):
+    """Speak text through the local TTS adapter when available."""
+    from grandpa.voice import get_voice_runtime
+
+    if not req.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+    return get_voice_runtime().speak(req.text, interrupt=req.interrupt, dry_run=req.dry_run)
+
+
+@voice_router.post("/listen")
+async def voice_listen(req: VoiceListenRequest):
+    """Process a voice transcript/audio payload through Grandpa's normal brain."""
+    from grandpa.voice import get_voice_runtime
+
+    if not (req.text and req.text.strip()) and not req.audio_base64:
+        raise HTTPException(status_code=400, detail="text or audio_base64 is required")
+    return get_voice_runtime().listen(
+        text=req.text,
+        audio_base64=req.audio_base64,
+        speak_response=req.speak_response,
+        require_wake_word=req.require_wake_word,
+    )
+
+
 # ---- Feedback routes ----
 
 feedback_router = APIRouter(prefix="/v1/feedback", tags=["feedback"])
@@ -1094,10 +1610,16 @@ def include_all_routes(app) -> None:
     app.include_router(traces_router)
     app.include_router(telemetry_router)
     app.include_router(skills_router)
+    app.include_router(user_skills_router)
+    app.include_router(coding_router)
+    app.include_router(knowledge_router)
     app.include_router(plugins_router)
     app.include_router(release_gate_router)
+    app.include_router(burnin_router)
+    app.include_router(audit_router)
     app.include_router(services_router)
     app.include_router(actions_router)
+    app.include_router(desktop_operator_router)
     app.include_router(planner_router)
     app.include_router(agent_runtime_router)
     app.include_router(mcp_router)
@@ -1108,6 +1630,7 @@ def include_all_routes(app) -> None:
     app.include_router(websocket_router)
     app.include_router(learning_router)
     app.include_router(speech_router)
+    app.include_router(voice_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
 
@@ -1151,10 +1674,16 @@ __all__ = [
     "traces_router",
     "telemetry_router",
     "skills_router",
+    "user_skills_router",
+    "coding_router",
+    "knowledge_router",
     "plugins_router",
     "release_gate_router",
+    "burnin_router",
+    "audit_router",
     "services_router",
     "actions_router",
+    "desktop_operator_router",
     "planner_router",
     "agent_runtime_router",
     "mcp_router",
@@ -1165,6 +1694,7 @@ __all__ = [
     "websocket_router",
     "learning_router",
     "speech_router",
+    "voice_router",
     "feedback_router",
     "optimize_router",
 ]

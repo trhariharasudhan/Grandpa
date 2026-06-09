@@ -23,6 +23,17 @@ def _check_fts5(conn: sqlite3.Connection) -> bool:
         return False
 
 
+def _quote_fts_query(query: str) -> str:
+    """Convert a plain user query into safe FTS5 terms."""
+    terms = [term for term in (part.strip('"') for part in query.split()) if term]
+    cleaned = []
+    for term in terms:
+        token = "".join(ch for ch in term if ch.isalnum() or ch in {"_", "-"})
+        if token:
+            cleaned.append(f'"{token}"')
+    return " OR ".join(cleaned)
+
+
 @MemoryRegistry.register("sqlite")
 class SQLiteMemory(MemoryBackend):
     """Full-text search memory backend using SQLite FTS5.
@@ -120,22 +131,34 @@ class SQLiteMemory(MemoryBackend):
             from grandpa._rust_bridge import retrieval_results_from_json
 
             results = retrieval_results_from_json(
-                self._rust_impl.retrieve(query, top_k),
+                self._rust_impl.retrieve(_quote_fts_query(query) or query, top_k),
             )
         else:
             assert self._conn is not None
             if _check_fts5(self._conn):
-                rows = self._conn.execute(
-                    """
-                    SELECT d.id, d.content, d.source, d.metadata, bm25(documents_fts) AS score
-                    FROM documents_fts
-                    JOIN documents d ON d.rowid = documents_fts.rowid
-                    WHERE documents_fts MATCH ?
-                    ORDER BY score
-                    LIMIT ?
-                    """,
-                    (query, top_k),
-                ).fetchall()
+                try:
+                    rows = self._conn.execute(
+                        """
+                        SELECT d.id, d.content, d.source, d.metadata, bm25(documents_fts) AS score
+                        FROM documents_fts
+                        JOIN documents d ON d.rowid = documents_fts.rowid
+                        WHERE documents_fts MATCH ?
+                        ORDER BY score
+                        LIMIT ?
+                        """,
+                        (_quote_fts_query(query) or query, top_k),
+                    ).fetchall()
+                except sqlite3.Error:
+                    rows = self._conn.execute(
+                        """
+                        SELECT id, content, source, metadata, 0.0 AS score
+                        FROM documents
+                        WHERE content LIKE ? OR source LIKE ?
+                        ORDER BY created_at DESC
+                        LIMIT ?
+                        """,
+                        (f"%{query}%", f"%{query}%", top_k),
+                    ).fetchall()
             else:
                 rows = self._conn.execute(
                     """

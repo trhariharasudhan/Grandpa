@@ -292,6 +292,84 @@ export async function fetchSpeechHealth(): Promise<SpeechHealth> {
   return res.json();
 }
 
+export interface VoiceStatus {
+  status: string;
+  session: {
+    session_id: string;
+    active: boolean;
+    state: 'idle' | 'listening' | 'thinking' | 'speaking' | 'error';
+    current_task: string;
+    current_goal: string;
+    last_messages: Array<{ role: string; content: string; timestamp: number; metadata?: Record<string, unknown> }>;
+  };
+  wake_word: Record<string, unknown>;
+  speech_input: Record<string, unknown>;
+  speech_output: Record<string, unknown>;
+  latency_ms: number;
+  local_first: boolean;
+  high_risk_voice_block: boolean;
+}
+
+export interface VoiceListenResponse {
+  ok: boolean;
+  status: string;
+  message: string;
+  transcript?: string;
+  command_text?: string;
+  risk_level?: string;
+  approval_required?: boolean;
+  latency_ms?: number;
+  session?: VoiceStatus['session'];
+  speech_input?: Record<string, unknown>;
+  speech_output?: Record<string, unknown>;
+  planner?: Record<string, unknown> | null;
+  knowledge_context?: Record<string, unknown> | null;
+  memory_context?: Record<string, unknown> | null;
+}
+
+export async function fetchVoiceStatus(): Promise<VoiceStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/status`);
+  if (!res.ok) throw new Error(`Voice status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function startVoiceSession(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/voice/start`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Voice start failed: ${res.status}`);
+  return res.json();
+}
+
+export async function stopVoiceSession(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/voice/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Voice stop failed: ${res.status}`);
+  return res.json();
+}
+
+export async function speakVoice(text: string, interrupt = true, dryRun = false): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/voice/speak`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, interrupt, dry_run: dryRun }),
+  });
+  if (!res.ok) throw new Error(`Voice speak failed: ${res.status}`);
+  return res.json();
+}
+
+export async function listenVoice(payload: {
+  text?: string;
+  audio_base64?: string;
+  speak_response?: boolean;
+  require_wake_word?: boolean;
+}): Promise<VoiceListenResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/listen`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Voice listen failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Agent Manager
 // ---------------------------------------------------------------------------
@@ -847,16 +925,58 @@ export interface MemoryConfig {
 
 export interface PersonalMemoryItem {
   id: number;
+  memory_id?: number;
   created_at: number;
   updated_at: number;
   category: string;
   key: string;
   value: string;
   source: string;
+  tags?: string[];
+  importance_score?: number;
   score?: number;
   relevance_score?: number;
+  confidence?: number;
+  last_used?: number | null;
+  use_count?: number;
+  promoted?: boolean;
+  topic?: string;
   match_type?: string;
   embedding_model?: string;
+}
+
+export interface MemoryPreference {
+  subject: string;
+  value: string;
+  confidence: number;
+  source_memory_id?: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface MemoryTopic {
+  name: string;
+  count: number;
+  average_importance: number;
+  top_memories: PersonalMemoryItem[];
+}
+
+export interface MemoryRelationshipGraph {
+  nodes: Array<{ id: string; type: string; weight: number }>;
+  edges: Array<{ source: string; target: string; relation: string; weight: number }>;
+  local_only: boolean;
+}
+
+export interface MemoryIntelligenceProfile {
+  status: string;
+  memory_count: number;
+  preference_count: number;
+  top_preferences: MemoryPreference[];
+  top_memories: PersonalMemoryItem[];
+  promoted_memories: PersonalMemoryItem[];
+  topics: MemoryTopic[];
+  local_only: boolean;
+  summary: string;
 }
 
 export interface PersonalActivityItem {
@@ -873,6 +993,7 @@ export interface PersonalMemorySummary {
   memories: PersonalMemoryItem[];
   recent_activity: PersonalActivityItem[];
   categories: string[];
+  intelligence?: MemoryIntelligenceProfile;
   semantic: {
     enabled: boolean;
     backend: string;
@@ -942,6 +1063,30 @@ export async function getMemoryConfig(): Promise<MemoryConfig> {
 export async function fetchPersonalMemory(): Promise<PersonalMemorySummary> {
   const res = await fetch(`${getBase()}/v1/personal-memory`);
   if (!res.ok) throw new Error('Failed to fetch personal memory');
+  return res.json();
+}
+
+export async function fetchMemoryProfile(): Promise<MemoryIntelligenceProfile> {
+  const res = await fetch(`${getBase()}/v1/memory/profile`);
+  if (!res.ok) throw new Error('Failed to fetch memory profile');
+  return res.json();
+}
+
+export async function fetchMemoryPreferences(): Promise<{ preferences: MemoryPreference[]; count: number; local_only: boolean }> {
+  const res = await fetch(`${getBase()}/v1/memory/preferences`);
+  if (!res.ok) throw new Error('Failed to fetch memory preferences');
+  return res.json();
+}
+
+export async function fetchMemoryRelationships(): Promise<MemoryRelationshipGraph> {
+  const res = await fetch(`${getBase()}/v1/memory/relationships`);
+  if (!res.ok) throw new Error('Failed to fetch memory relationships');
+  return res.json();
+}
+
+export async function fetchMemoryTopics(): Promise<{ topics: MemoryTopic[]; local_only: boolean }> {
+  const res = await fetch(`${getBase()}/v1/memory/topics`);
+  if (!res.ok) throw new Error('Failed to fetch memory topics');
   return res.json();
 }
 
@@ -1177,6 +1322,61 @@ export async function fetchBrowserDiagnostics(): Promise<{
 }> {
   const res = await fetch(`${getBase()}/v1/browser/diagnostics`);
   if (!res.ok) throw new Error('Failed to fetch browser diagnostics');
+  return res.json();
+}
+
+export interface BrowserAgentTask {
+  task_id: string;
+  goal: string;
+  page_title: string;
+  page_url: string;
+  steps: Array<{
+    id: string;
+    title: string;
+    skill: string;
+    params?: Record<string, unknown>;
+    risk_level: string;
+    approval_required: boolean;
+    status: string;
+  }>;
+  risk_level: string;
+  approval_required: boolean;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  created_at_iso?: string;
+  updated_at_iso?: string;
+  result_summary: string;
+}
+
+export interface BrowserAgentDiagnostics {
+  status: string;
+  ready: boolean;
+  db_path: string;
+  task_count: number;
+  snapshot_connected: boolean;
+  snapshot_age_seconds: number | null;
+  current_title?: string;
+  current_url?: string;
+  counts: Record<string, number>;
+  safety: Record<string, boolean>;
+  recent_tasks: BrowserAgentTask[];
+  local_only: boolean;
+}
+
+export async function fetchBrowserAgentDiagnostics(): Promise<BrowserAgentDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/browser/agent/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function planBrowserAgentTask(goal: string): Promise<{ status: string; task: BrowserAgentTask; analysis: Record<string, unknown> }> {
+  const res = await fetch(`${getBase()}/v1/browser/agent/plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ goal }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
 }
 
@@ -1714,6 +1914,163 @@ export async function fetchRuntimeSkills(): Promise<RuntimeSkillsResponse> {
   return res.json();
 }
 
+export interface UserSkillStep {
+  schema_version: string;
+  skill: string;
+  title: string;
+  params: Record<string, unknown>;
+  risk_level: PcRiskLevel | string;
+  approval_required: boolean;
+  dependencies: string[];
+}
+
+export interface UserSkill {
+  skill_id: string;
+  name: string;
+  description: string;
+  trigger_phrases: string[];
+  workflow_steps: UserSkillStep[];
+  approval_requirements: Record<string, unknown>;
+  created_at: number;
+  updated_at: number;
+  usage_count: number;
+  success_count: number;
+  success_rate: number;
+}
+
+export interface UserSkillsResponse {
+  skills: UserSkill[];
+  count: number;
+  diagnostics?: Record<string, unknown>;
+  query?: string;
+}
+
+export async function fetchUserSkills(query: string = ''): Promise<UserSkillsResponse> {
+  const suffix = query ? `?query=${encodeURIComponent(query)}` : '';
+  const res = await fetch(`${getBase()}/v1/user-skills${suffix}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchUserSkillDiagnostics(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/user-skills/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function createUserSkill(payload: {
+  name?: string;
+  request?: string;
+  description?: string;
+  trigger_phrases?: string[];
+  workflow_steps?: UserSkillStep[];
+  approval_requirements?: Record<string, unknown>;
+}): Promise<{ status: string; skill: UserSkill }> {
+  const res = await fetch(`${getBase()}/v1/user-skills/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function runUserSkill(skillId: string, dryRun: boolean = false): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/user-skills/${encodeURIComponent(skillId)}/run`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dry_run: dryRun, params: { dry_run: dryRun } }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function deleteUserSkill(skillId: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/user-skills/${encodeURIComponent(skillId)}/delete`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export interface CodingProject {
+  name: string;
+  path: string;
+  is_project: boolean;
+  types: string[];
+  markers: Record<string, string>;
+  read_only: boolean;
+}
+
+export interface CodingRepositoryStats {
+  repository_size_bytes: number;
+  file_count: number;
+  module_count: number;
+  test_count: number;
+  dependency_count: number;
+  language_breakdown: Array<{ language: string; files: number; bytes: number }>;
+}
+
+export interface CodingDependencyManifest {
+  path: string;
+  file: string;
+  ecosystem: string;
+  dependencies: string[];
+  dependency_count: number;
+}
+
+export interface CodingArchitectureLayer {
+  name: string;
+  present: boolean;
+  evidence: string[];
+}
+
+export interface CodingProjectSummary {
+  project: CodingProject;
+  summary: string;
+  repository: CodingRepositoryStats;
+  architecture: {
+    present_layers: string[];
+    missing_layers: string[];
+    layers: CodingArchitectureLayer[];
+    folder_structure: Array<{ name: string; type: string; path: string }>;
+  };
+  dependencies: {
+    manifests: CodingDependencyManifest[];
+    manifest_count: number;
+    dependency_count: number;
+  };
+  read_only: boolean;
+}
+
+export async function fetchCodingProjects(): Promise<{ projects: CodingProject[]; count: number; root: string; read_only: boolean }> {
+  const res = await fetch(`${getBase()}/v1/coding/projects`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCodingProjectSummary(): Promise<CodingProjectSummary> {
+  const res = await fetch(`${getBase()}/v1/coding/project-summary`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCodingArchitecture(): Promise<CodingProjectSummary['architecture']> {
+  const res = await fetch(`${getBase()}/v1/coding/architecture`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCodingDependencies(): Promise<CodingProjectSummary['dependencies']> {
+  const res = await fetch(`${getBase()}/v1/coding/dependencies`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchCodingDiagnostics(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/coding/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Planner / Native Agent Runtime
 // ---------------------------------------------------------------------------
@@ -1810,6 +2167,76 @@ export async function fetchMcpTools(): Promise<Array<Record<string, unknown>>> {
   return data.tools || [];
 }
 
+export interface AutonomousAgentGoal {
+  goal_id: string;
+  user_request: string;
+  status: string;
+  priority: string;
+  current_phase: string;
+  plan: PlannerAnalysis | Record<string, unknown>;
+  steps: Array<Record<string, unknown>>;
+  observations: Array<Record<string, unknown>>;
+  actions_taken: Array<Record<string, unknown>>;
+  approvals_needed: Array<Record<string, unknown>>;
+  result_summary: string;
+  memory_updates: Array<Record<string, unknown>>;
+  created_at: number;
+  updated_at: number;
+  completed_at?: number | null;
+}
+
+export interface AutonomousAgentEvent {
+  id: number;
+  goal_id: string;
+  timestamp: number;
+  phase: string;
+  status: string;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+export async function createAutonomousGoal(userRequest: string, execute = true): Promise<AutonomousAgentGoal> {
+  const res = await fetch(`${getBase()}/v1/agent/goals`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_request: userRequest, execute }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAutonomousGoals(): Promise<AutonomousAgentGoal[]> {
+  const res = await fetch(`${getBase()}/v1/agent/goals`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.goals || [];
+}
+
+export async function continueAutonomousGoal(goalId: string): Promise<AutonomousAgentGoal> {
+  const res = await fetch(`${getBase()}/v1/agent/goals/${encodeURIComponent(goalId)}/continue`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function cancelAutonomousGoal(goalId: string): Promise<AutonomousAgentGoal> {
+  const res = await fetch(`${getBase()}/v1/agent/goals/${encodeURIComponent(goalId)}/cancel`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchAutonomousGoalEvents(goalId: string): Promise<AutonomousAgentEvent[]> {
+  const res = await fetch(`${getBase()}/v1/agent/goals/${encodeURIComponent(goalId)}/events`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  const data = await res.json();
+  return data.events || [];
+}
+
+export async function fetchAutonomousAgentDiagnostics(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/agent/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Desktop Control Services
 // ---------------------------------------------------------------------------
@@ -1835,6 +2262,86 @@ export interface DesktopControlDiagnostics {
 
 export async function fetchDesktopControlDiagnostics(): Promise<DesktopControlDiagnostics> {
   const res = await fetch(`${getBase()}/v1/desktop/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export interface DesktopOperatorProfile {
+  app_name: string;
+  known_windows: string[];
+  common_actions: string[];
+  visual_anchors: string[];
+  safe_shortcuts: Record<string, string>;
+  blocked_actions: string[];
+  approval_required_actions: string[];
+}
+
+export interface DesktopOperatorStep {
+  step_id: string;
+  title: string;
+  action_type: string;
+  target: string;
+  params?: Record<string, unknown>;
+  risk_level: string;
+  approval_required: boolean;
+  visual_target?: Record<string, unknown>;
+  status: string;
+  retry_count: number;
+}
+
+export interface DesktopOperatorTask {
+  task_id: string;
+  user_request: string;
+  app: string;
+  status: string;
+  steps: DesktopOperatorStep[];
+  visual_targets: Record<string, unknown>[];
+  approvals: Record<string, unknown>[];
+  result_summary: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface DesktopOperatorDiagnostics {
+  status: string;
+  ready: boolean;
+  profiles: DesktopOperatorProfile[];
+  profile_count: number;
+  storage: Record<string, unknown>;
+  visual_targeting: {
+    mode: string;
+    minimum_confidence: number;
+    max_retries: number;
+    pixel_perfect_claimed: boolean;
+  };
+  safety: Record<string, unknown>;
+  local_only: boolean;
+}
+
+export interface DesktopOperatorPlanResponse {
+  analysis: Record<string, unknown>;
+  task: DesktopOperatorTask;
+  plan: DesktopOperatorStep[];
+}
+
+export async function fetchDesktopOperatorDiagnostics(): Promise<DesktopOperatorDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/desktop/operator/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function planDesktopOperatorTask(request: string, persist: boolean = true): Promise<DesktopOperatorPlanResponse> {
+  const res = await fetch(`${getBase()}/v1/desktop/operator/plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ request, persist }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchDesktopOperatorTasks(limit: number = 20): Promise<{ tasks: DesktopOperatorTask[]; [key: string]: unknown }> {
+  const res = await fetch(`${getBase()}/v1/desktop/operator/tasks?limit=${encodeURIComponent(String(limit))}`);
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
 }
@@ -2079,6 +2586,364 @@ export async function fetchReleaseGateLatest(): Promise<ReleaseGateReport> {
 
 export async function fetchReleaseGateStatus(): Promise<ReleaseGateReport> {
   const res = await fetch(`${getBase()}/v1/release-gate/status`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Daily-Use Burn-In
+// ---------------------------------------------------------------------------
+
+export interface BurnInResult {
+  name: string;
+  category: string;
+  status: 'pass' | 'warn' | 'fail' | 'pending' | 'skipped_optional';
+  duration_seconds: number;
+  summary: string;
+  required: boolean;
+  measured: boolean;
+  metrics?: Record<string, unknown>;
+}
+
+export interface BurnInReport {
+  schema_version?: number;
+  overall_status: string;
+  pass: boolean;
+  score: number;
+  success_rate?: number;
+  started_at?: string;
+  finished_at?: string;
+  duration_seconds?: number;
+  recommendation?: string;
+  message?: string;
+  report_path?: string;
+  markdown_path?: string;
+  summary?: {
+    passed?: number;
+    warnings?: number;
+    failed?: number;
+    pending?: number;
+    skipped_optional?: number;
+  };
+  category_scores?: Record<string, {
+    score: number;
+    passed: number;
+    warnings: number;
+    failed: number;
+    pending: number;
+    skipped_optional?: number;
+  }>;
+  performance?: {
+    checks?: number;
+    latencies?: Record<string, number>;
+  };
+  blockers?: BurnInResult[];
+  warnings?: BurnInResult[];
+  results?: BurnInResult[];
+}
+
+export async function fetchBurnInLatest(): Promise<BurnInReport> {
+  const res = await fetch(`${getBase()}/v1/burnin/latest`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchBurnInStatus(): Promise<BurnInReport> {
+  const res = await fetch(`${getBase()}/v1/burnin/status`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Multi-Agent System
+// ---------------------------------------------------------------------------
+
+export interface MultiAgentSpec {
+  agent_id: string;
+  name: string;
+  capabilities: string[];
+  supported_goals: string[];
+  description?: string;
+}
+
+export interface MultiAgentDiagnostics {
+  status: string;
+  ready: boolean;
+  db_path: string;
+  task_count: number;
+  registry: {
+    status: string;
+    registered_count: number;
+    agents: MultiAgentSpec[];
+    capabilities: string[];
+    local_only: boolean;
+    approval_bypass_allowed: boolean;
+  };
+  collaboration_flows: string[];
+  local_only: boolean;
+  approval_safe: boolean;
+}
+
+export interface MultiAgentOutput {
+  agent_id: string;
+  name: string;
+  status: string;
+  ok: boolean;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+export interface MultiAgentTask {
+  task_id: string;
+  user_request: string;
+  participating_agents: string[];
+  status: string;
+  observations: Record<string, unknown>;
+  outputs: MultiAgentOutput[];
+  summary: string;
+  created_at: number;
+  updated_at: number;
+  completed_at?: number | null;
+  events?: Array<Record<string, unknown>>;
+}
+
+export async function fetchMultiAgentDiagnostics(): Promise<MultiAgentDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/agents/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function orchestrateMultiAgent(userRequest: string): Promise<MultiAgentTask> {
+  const res = await fetch(`${getBase()}/v1/agents/orchestrate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_request: userRequest }),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchMultiAgentTasks(limit = 20): Promise<{ tasks: MultiAgentTask[] }> {
+  const res = await fetch(`${getBase()}/v1/agents/tasks?limit=${encodeURIComponent(limit)}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge Engine
+// ---------------------------------------------------------------------------
+
+export interface KnowledgeDocument {
+  document_id: string;
+  source: string;
+  title: string;
+  tags: string[];
+  content?: string;
+  chunks?: Array<Record<string, unknown>>;
+  chunk_count?: number;
+  word_count?: number;
+  created_at: number;
+  updated_at: number;
+  embeddings_placeholder?: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+  score?: number;
+  semantic_score?: number;
+  keyword_score?: number;
+  recency_score?: number;
+  matched_terms?: string[];
+  chunk?: Record<string, unknown>;
+  matched_chunks?: Array<Record<string, unknown>>;
+  retrieved_chunks?: Array<Record<string, unknown>>;
+  ranking_explanation?: Record<string, unknown>;
+}
+
+export interface KnowledgeDiagnostics {
+  status: string;
+  ready: boolean;
+  db_path: string;
+  document_count: number;
+  tags: string[];
+  supported_sources: string[];
+  future_sources: string[];
+  retrieval: Record<string, boolean>;
+  embeddings: KnowledgeEmbeddingStatus;
+  local_only: boolean;
+}
+
+export interface KnowledgeSummary {
+  document_id?: string;
+  title?: string;
+  topic?: string;
+  document_count?: number;
+  summary: string;
+  keywords?: string[];
+  tags?: string[];
+  deterministic?: boolean;
+}
+
+export interface KnowledgeEmbeddingStatus {
+  status?: string;
+  preferred_model?: string;
+  ollama_available?: boolean;
+  fallback_available?: boolean;
+  fallback_model?: string;
+  embedding_version?: string;
+  true_semantic_available?: boolean;
+  embedding_count?: number;
+  true_semantic_count?: number;
+  fallback_count?: number;
+  expected_chunk_embeddings?: number;
+  complete?: boolean;
+  models?: Array<Record<string, unknown>>;
+  external_vector_db?: boolean;
+  local_only?: boolean;
+}
+
+export async function fetchKnowledgeDiagnostics(): Promise<KnowledgeDiagnostics> {
+  const res = await fetch(`${getBase()}/v1/knowledge/diagnostics`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchKnowledgeDocuments(limit = 100): Promise<{ documents: KnowledgeDocument[] }> {
+  const res = await fetch(`${getBase()}/v1/knowledge/documents?limit=${encodeURIComponent(limit)}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function searchKnowledge(query: string, tag = '', limit = 20): Promise<{
+  results: KnowledgeDocument[];
+  semantic_search: boolean;
+  semantic_mode?: string;
+  retrieval: string;
+  truthful_note?: string;
+}> {
+  const params = new URLSearchParams({ q: query, tag, limit: String(limit) });
+  const res = await fetch(`${getBase()}/v1/knowledge/search?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function semanticSearchKnowledge(query: string, tag = '', limit = 10): Promise<{
+  results: KnowledgeDocument[];
+  semantic_search: boolean;
+  semantic_mode: string;
+  truthful_note: string;
+}> {
+  const params = new URLSearchParams({ q: query, tag, limit: String(limit) });
+  const res = await fetch(`${getBase()}/v1/knowledge/semantic-search?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchKnowledgeContext(query: string, limit = 5): Promise<{
+  chunks: Array<Record<string, unknown>>;
+  documents: KnowledgeDocument[];
+  summary: KnowledgeSummary;
+  semantic_search: boolean;
+  semantic_mode: string;
+  truthful_note: string;
+}> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const res = await fetch(`${getBase()}/v1/knowledge/context?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchRelatedKnowledge(documentId: string, limit = 8): Promise<{ document_id: string; results: KnowledgeDocument[] }> {
+  const params = new URLSearchParams({ document_id: documentId, limit: String(limit) });
+  const res = await fetch(`${getBase()}/v1/knowledge/related?${params.toString()}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchKnowledgeEmbeddingStatus(): Promise<KnowledgeEmbeddingStatus> {
+  const res = await fetch(`${getBase()}/v1/knowledge/embedding-status`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function importKnowledgeDocument(payload: {
+  source?: string;
+  title?: string;
+  content?: string;
+  path?: string;
+  tags?: string[];
+  import_project_docs?: boolean;
+}): Promise<{ status: string; document?: KnowledgeDocument; summary?: KnowledgeSummary; imported?: KnowledgeDocument[]; count?: number }> {
+  const res = await fetch(`${getBase()}/v1/knowledge/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchKnowledgeSummary(params: { documentId?: string; topic?: string; project?: boolean } = {}): Promise<KnowledgeSummary> {
+  const query = new URLSearchParams();
+  if (params.documentId) query.set('document_id', params.documentId);
+  if (params.topic) query.set('topic', params.topic);
+  if (params.project) query.set('project', 'true');
+  const res = await fetch(`${getBase()}/v1/knowledge/summary?${query.toString()}`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Production Audit
+// ---------------------------------------------------------------------------
+
+export interface ProductionAuditCheck {
+  feature_area: string;
+  name: string;
+  status: 'validated' | 'partially_validated' | 'unvalidated' | 'blocked' | string;
+  summary: string;
+  evidence?: Record<string, unknown>;
+  limitations?: string[];
+  hardware_dependent?: boolean;
+  recommendation?: string;
+}
+
+export interface ProductionAuditReport {
+  schema_version?: number;
+  started_at?: string;
+  finished_at?: string;
+  duration_seconds?: number;
+  overall_status: string;
+  pass: boolean;
+  score: number;
+  core_score?: number;
+  readiness_verdict?: string;
+  recommendation?: string;
+  message?: string;
+  summary?: {
+    validated?: number;
+    partially_validated?: number;
+    unvalidated?: number;
+    blocked?: number;
+    hardware_dependent?: number;
+    total?: number;
+  };
+  feature_matrix?: ProductionAuditCheck[];
+  validated_features?: ProductionAuditCheck[];
+  partially_validated_features?: ProductionAuditCheck[];
+  unvalidated_features?: ProductionAuditCheck[];
+  blocked_features?: ProductionAuditCheck[];
+  hardware_dependent_features?: ProductionAuditCheck[];
+  known_limitations?: ProductionAuditCheck[];
+  report_path?: string;
+  markdown_path?: string;
+}
+
+export async function fetchProductionAuditLatest(): Promise<ProductionAuditReport> {
+  const res = await fetch(`${getBase()}/v1/audit/latest`);
+  if (!res.ok) throw new Error(`Failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchProductionAuditStatus(): Promise<ProductionAuditReport> {
+  const res = await fetch(`${getBase()}/v1/audit/status`);
   if (!res.ok) throw new Error(`Failed: ${res.status}`);
   return res.json();
 }

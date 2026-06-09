@@ -78,6 +78,15 @@ def test_retrieve_no_results(tmp_path: Path):
     backend.close()
 
 
+def test_retrieve_punctuation_query_is_safe(tmp_path: Path):
+    backend = _make_backend(tmp_path)
+    backend.store("Python is a programming language used by Grandpa.", source="notes.md")
+    results = backend.retrieve("What is Python?", top_k=3)
+    assert len(results) >= 1
+    assert "Python" in results[0].content
+    backend.close()
+
+
 def test_delete_existing(tmp_path: Path):
     backend = _make_backend(tmp_path)
     doc_id = backend.store("deletable content")

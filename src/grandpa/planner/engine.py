@@ -145,9 +145,16 @@ def decompose_multi_step_task(request: str) -> list[PlannerStep]:
             PlannerStep("step_1", "Check browser adapter", "browser.diagnostics"),
             PlannerStep(
                 "step_2",
+                "Prepare browser search plan",
+                "browser.search_plan",
+                {"query": request},
+                dependencies=("step_1",),
+            ),
+            PlannerStep(
+                "step_3",
                 "Prepare local research workflow handoff",
                 "automation.workflow_status",
-                dependencies=("step_1",),
+                dependencies=("step_2",),
             ),
         ]
     if goal == "file_organization":
@@ -271,10 +278,22 @@ def _match_runtime_skill(clean: str) -> str:
 
 def _memory_context(request: str) -> dict[str, Any]:
     try:
-        from grandpa.memory_context import search_personal_memory
+        from grandpa.memory.intelligence import ranked_memory_context
 
-        data = search_personal_memory(request, limit=3)
-        return {"available": True, "matches": data.get("results", [])[:3]}
+        data = ranked_memory_context(request, limit=3)
+        context = {
+            "available": True,
+            "matches": data.get("matches", [])[:3],
+            "confidence": data.get("confidence", 0.0),
+            "source": "memory_intelligence",
+        }
+        try:
+            from grandpa.knowledge.engine import planner_knowledge_context
+
+            context["knowledge"] = planner_knowledge_context(request, limit=3)
+        except Exception:
+            context["knowledge"] = {"available": False, "results": []}
+        return context
     except Exception:
         return {"available": False, "matches": []}
 

@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Brain, Clock3, Database, RefreshCw, Search, Trash2 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { Brain, Clock3, Database, GitBranch, RefreshCw, Search, Sparkles, Star, Tags, Trash2 } from 'lucide-react';
 import {
   clearPersonalMemory,
   fetchPersonalMemory,
+  fetchMemoryRelationships,
+  fetchMemoryTopics,
   searchPersonalMemory,
   type PersonalMemorySummary,
   type PersonalMemoryItem,
+  type MemoryRelationshipGraph,
+  type MemoryTopic,
 } from '../lib/api';
 
 const formatTime = (seconds: number) =>
@@ -26,12 +31,21 @@ export function MemoryPage() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<PersonalMemoryItem[] | null>(null);
   const [searchUncertain, setSearchUncertain] = useState(false);
+  const [relationships, setRelationships] = useState<MemoryRelationshipGraph | null>(null);
+  const [topics, setTopics] = useState<MemoryTopic[]>([]);
 
   const load = async () => {
     setLoading(true);
     setError(null);
     try {
-      setSummary(await fetchPersonalMemory());
+      const [memory, graph, topicData] = await Promise.all([
+        fetchPersonalMemory(),
+        fetchMemoryRelationships().catch(() => null),
+        fetchMemoryTopics().catch(() => ({ topics: [] })),
+      ]);
+      setSummary(memory);
+      setRelationships(graph);
+      setTopics(topicData.topics || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load memory');
     } finally {
@@ -61,6 +75,11 @@ export function MemoryPage() {
       : Array.from(new Set((summary?.memories || []).map((item) => item.category)));
     return ['all', ...fromSummary.sort()];
   }, [summary]);
+
+  const intelligence = summary?.intelligence;
+  const preferences = intelligence?.top_preferences || [];
+  const promoted = intelligence?.promoted_memories || [];
+  const visibleTopics = topics.length ? topics : intelligence?.topics || [];
 
   const handleClear = async () => {
     if (!window.confirm('Clear local personal memory and recent activity?')) return;
@@ -365,12 +384,154 @@ export function MemoryPage() {
           </section>
         </div>
 
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 mt-5">
+          <section
+            className="rounded-2xl p-5 xl:col-span-2"
+            style={{
+              background: 'color-mix(in srgb, var(--color-surface) 86%, transparent)',
+              border: '1px solid var(--color-border)',
+              boxShadow: '0 20px 60px -44px var(--color-accent)',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <Sparkles size={17} style={{ color: 'var(--color-accent)' }} />
+              <div>
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                  Memory Intelligence
+                </h2>
+                <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Ranking, preferences, topics, and promoted long-term context.
+                </p>
+              </div>
+            </div>
+            <p className="text-sm leading-6 mb-4" style={{ color: 'var(--color-text-secondary)' }}>
+              {intelligence?.summary || 'Grandpa will build a local profile as you save memories.'}
+            </p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <MetricCard label="Memories" value={String(intelligence?.memory_count ?? summary?.memories.length ?? 0)} />
+              <MetricCard label="Preferences" value={String(intelligence?.preference_count ?? preferences.length)} />
+              <MetricCard label="Promoted" value={String(promoted.length)} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5">
+              <MiniPanel icon={<Star size={15} />} title="Learned Preferences">
+                {preferences.length ? (
+                  preferences.slice(0, 5).map((item) => (
+                    <div key={`${item.subject}-${item.value}`} className="flex items-center justify-between gap-3 text-xs py-1">
+                      <span style={{ color: 'var(--color-text-secondary)' }}>{item.subject}</span>
+                      <span className="text-right" style={{ color: 'var(--color-text)' }}>
+                        {item.value} · {Math.round(item.confidence * 100)}%
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    No clear preferences learned yet.
+                  </p>
+                )}
+              </MiniPanel>
+              <MiniPanel icon={<Tags size={15} />} title="Topic Clusters">
+                {visibleTopics.length ? (
+                  visibleTopics.slice(0, 5).map((topic) => (
+                    <div key={topic.name} className="flex items-center justify-between gap-3 text-xs py-1">
+                      <span style={{ color: 'var(--color-text-secondary)' }}>{topic.name}</span>
+                      <span style={{ color: 'var(--color-accent-amber)' }}>
+                        {topic.count} · {Math.round(topic.average_importance * 100)}%
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                    Topic clusters appear after memories are saved.
+                  </p>
+                )}
+              </MiniPanel>
+            </div>
+          </section>
+
+          <section
+            className="rounded-2xl p-5"
+            style={{
+              background: 'color-mix(in srgb, var(--color-surface) 86%, transparent)',
+              border: '1px solid var(--color-border)',
+            }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <GitBranch size={17} style={{ color: 'var(--color-accent-amber)' }} />
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--color-text)' }}>
+                Relationship Graph
+              </h2>
+            </div>
+            {!relationships?.nodes?.length ? (
+              <p className="text-sm leading-6" style={{ color: 'var(--color-text-secondary)' }}>
+                Relationship links will appear as Grandpa learns projects, tools, and devices.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {relationships.edges.slice(0, 8).map((edge) => (
+                  <div
+                    key={`${edge.source}-${edge.target}-${edge.relation}`}
+                    className="rounded-xl px-3 py-2 text-xs"
+                    style={{
+                      background: 'var(--color-bg-secondary)',
+                      border: '1px solid var(--color-border)',
+                      color: 'var(--color-text-secondary)',
+                    }}
+                  >
+                    <span style={{ color: 'var(--color-text)' }}>{edge.source}</span>
+                    {' -> '}
+                    <span style={{ color: 'var(--color-accent-amber)' }}>{edge.target}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+
         {summary?.storage && (
           <div className="mt-5 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
             Storage: {summary.storage.backend} · local only
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: string }) {
+  return (
+    <div
+      className="rounded-xl px-4 py-3"
+      style={{
+        background: 'var(--color-bg-secondary)',
+        border: '1px solid var(--color-border)',
+      }}
+    >
+      <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--color-text-tertiary)' }}>
+        {label}
+      </div>
+      <div className="text-xl font-semibold mt-1" style={{ color: 'var(--color-text)' }}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function MiniPanel({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
+  return (
+    <div
+      className="rounded-xl p-4"
+      style={{
+        background: 'var(--color-bg-secondary)',
+        border: '1px solid var(--color-border)',
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--color-accent)' }}>
+        {icon}
+        <h3 className="text-xs font-semibold" style={{ color: 'var(--color-text)' }}>
+          {title}
+        </h3>
+      </div>
+      {children}
     </div>
   );
 }

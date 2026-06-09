@@ -56,11 +56,11 @@ def route_local_intent(request_text: str):
 
     if route.can_execute_as_planner:
         try:
-            from grandpa.agents.runtime import run_agent_goal
+            from grandpa.agents.goal_mode import create_goal
             from grandpa.router.legacy_adapter import planner_task_to_local_action
 
-            task = run_agent_goal(route.request_text, execute=False, source="intent_router")
-            result = planner_task_to_local_action(route, task)
+            goal = create_goal(route.request_text, execute=True)
+            result = planner_task_to_local_action(route, goal)
         except Exception:
             logger.debug("Intent planner route failed", exc_info=True)
             _record(route, "fallback", "planner_error")

@@ -590,6 +590,28 @@ def _check_voice_frontend_note() -> CheckResult:
     )
 
 
+def _check_voice_runtime_ready() -> CheckResult:
+    try:
+        from grandpa.voice import get_voice_runtime
+
+        status = get_voice_runtime().status()
+        input_engine = status.get("speech_input", {}).get("engine", "unknown")
+        output_engine = status.get("speech_output", {}).get("engine", "unknown")
+        return CheckResult(
+            "Voice runtime backend",
+            "ok",
+            "Ready",
+            details=f"Input: {input_engine}; output: {output_engine}; push-to-talk transcript mode available.",
+        )
+    except Exception as exc:
+        return CheckResult(
+            "Voice runtime backend",
+            "warn",
+            "Missing/optional",
+            details=f"Voice runtime could not initialize: {exc}",
+        )
+
+
 def _check_docker_readiness() -> List[CheckResult]:
     docker = shutil.which("docker")
     if not docker:
@@ -831,6 +853,7 @@ def _check_daily_use_readiness() -> List[CheckResult]:
     checks.extend(
         [
             _check_desktop_automation_backend(),
+            _check_voice_runtime_ready(),
             _check_voice_frontend_note(),
         ]
     )
@@ -899,6 +922,7 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
     daily_features.extend(
         [
             _check_desktop_automation_backend(),
+            _check_voice_runtime_ready(),
             _check_voice_frontend_note(),
         ]
     )

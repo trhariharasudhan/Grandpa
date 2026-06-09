@@ -31,6 +31,31 @@ def planner_task_to_local_action(route, task) -> "LocalActionResult":
     """Convert a native agent planner task into a local action response."""
     from grandpa.local_actions import LocalActionResult
 
+    if hasattr(task, "goal_id"):
+        analysis = getattr(task, "plan", {}) or {}
+        lines = [
+            f"Agent plan goal {task.status}: {analysis.get('intent', route.intent)}.",
+            f"- Phase: {task.current_phase}",
+            f"- Confidence: {float(analysis.get('confidence', route.confidence)):.0%}",
+            f"- Risk: {analysis.get('estimated_risk', 'LOW')}",
+            f"- Skills: {', '.join(analysis.get('required_skills', [])) or 'none'}",
+            f"- Actions taken: {len(task.actions_taken)}",
+        ]
+        if task.approvals_needed:
+            lines.append(f"- Approval needed: {', '.join(str(item.get('step_id', '')) for item in task.approvals_needed)}")
+        if task.result_summary:
+            lines.append(task.result_summary)
+        else:
+            lines.append(str(analysis.get("reasoning_summary", "Grandpa prepared a safe local goal plan.")))
+        return LocalActionResult(
+            status="handled" if task.status not in {"failed", "cancelled"} else "unsupported",
+            kind="agent_plan",
+            target=task.goal_id,
+            message="\n".join(lines),
+            tts_text="I processed the autonomous goal safely.",
+            permission="allowed",
+        )
+
     analysis = task.analysis
     lines = [
         f"Agent plan: {analysis.intent}.",

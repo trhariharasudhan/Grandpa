@@ -1078,6 +1078,45 @@ async def browser_snapshot_clear():
     return clear_browser_snapshot()
 
 
+@router.get("/v1/browser/agent/diagnostics")
+async def browser_agent_diagnostics_route():
+    """Return Browser Agent v1 diagnostics and recent task history."""
+    from grandpa.browser.agent import browser_agent_diagnostics
+
+    return browser_agent_diagnostics()
+
+
+@router.post("/v1/browser/agent/plan")
+async def browser_agent_plan(request: Request):
+    """Create a safe Browser Agent v1 workflow plan."""
+    from grandpa.browser.agent import plan_browser_workflow
+
+    body = await request.json()
+    goal = str(body.get("goal") or body.get("request") or body.get("query") or "").strip()
+    if not goal:
+        raise HTTPException(status_code=400, detail="'goal' field is required")
+    return plan_browser_workflow(goal)
+
+
+@router.get("/v1/browser/agent/tasks")
+async def browser_agent_tasks(limit: int = 30):
+    """List recent Browser Agent v1 tasks."""
+    from grandpa.browser.agent import list_browser_tasks
+
+    return list_browser_tasks(limit=max(1, min(int(limit), 100)))
+
+
+@router.get("/v1/browser/agent/tasks/{task_id}")
+async def browser_agent_task(task_id: str):
+    """Return one Browser Agent v1 task."""
+    from grandpa.browser.agent import get_browser_task
+
+    task = get_browser_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Browser agent task not found")
+    return task
+
+
 @router.get("/v1/browser/command/next")
 async def browser_command_next(url: str = ""):
     """Return the next localhost-only browser command for the visible page adapter."""
@@ -1126,6 +1165,46 @@ async def personal_memory_search(request: Request):
         category = str(category).strip() or None
     limit = int(body.get("limit", 8))
     return search_personal_memory(query, category=category, limit=max(1, min(limit, 25)))
+
+
+@router.get("/v1/memory/profile")
+async def intelligent_memory_profile():
+    """Return Grandpa's local memory intelligence profile."""
+    from grandpa.memory_context import memory_profile
+
+    return memory_profile()
+
+
+@router.get("/v1/memory/preferences")
+async def intelligent_memory_preferences():
+    """Return learned local user preferences."""
+    from grandpa.memory_context import memory_preferences
+
+    return memory_preferences()
+
+
+@router.get("/v1/memory/relationships")
+async def intelligent_memory_relationships():
+    """Return local memory relationship graph."""
+    from grandpa.memory_context import memory_relationships
+
+    return memory_relationships()
+
+
+@router.get("/v1/memory/insights")
+async def intelligent_memory_insights():
+    """Return local memory intelligence insights."""
+    from grandpa.memory_context import memory_insight_summary
+
+    return memory_insight_summary()
+
+
+@router.get("/v1/memory/topics")
+async def intelligent_memory_topics():
+    """Return local memory topic clusters."""
+    from grandpa.memory_context import memory_topics
+
+    return memory_topics()
 
 
 @router.get("/v1/file-assistant")

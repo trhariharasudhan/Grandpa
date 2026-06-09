@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 import sqlite3
 import time
+import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import sqrt
@@ -73,7 +74,7 @@ class MemoryStore:
     """SQLite-backed personal memory store."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or DEFAULT_MEMORY_DB)
+        self.db_path = Path(db_path or os.getenv("GRANDPA_PERSONAL_MEMORY_DB") or DEFAULT_MEMORY_DB)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -432,6 +433,29 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
         query = re.sub(r"^what do you remember\s*(about|for)?\s*", "", lower).strip()
         return _recall(store, query or original)
 
+    if lower in {
+        "what do you know about me",
+        "what do you know about me so far",
+        "summarize my memory",
+        "summarise my memory",
+    }:
+        return _profile_recall(store)
+
+    if lower in {
+        "summarize my preferences",
+        "summarise my preferences",
+        "what are my preferences",
+        "what do i prefer",
+    }:
+        return _preference_recall(store)
+
+    if lower in {
+        "what projects am i working on",
+        "what project am i working on",
+        "what am i working on",
+    }:
+        return _project_recall(store)
+
     project_questions = {
         "what is my project",
         "what is my project name",
@@ -502,10 +526,17 @@ def record_activity(
 def memory_summary(limit: int = 100) -> dict[str, Any]:
     store = MemoryStore()
     memories = store.list_memories(limit=limit)
+    try:
+        from grandpa.memory.intelligence import summarize_memory_profile
+
+        intelligence = summarize_memory_profile(store)
+    except Exception:
+        intelligence = {"status": "unavailable", "local_only": True}
     return {
         "memories": memories,
         "recent_activity": store.list_activity(limit=50),
         "categories": sorted({str(item["category"]) for item in memories}),
+        "intelligence": intelligence,
         "semantic": store.semantic_status(),
         "storage": {
             "backend": "sqlite",
@@ -537,6 +568,37 @@ def search_personal_memory(
         "uncertain": uncertain,
         "semantic": store.semantic_status(),
     }
+
+
+def memory_profile() -> dict[str, Any]:
+    from grandpa.memory.intelligence import summarize_memory_profile
+
+    return summarize_memory_profile(MemoryStore())
+
+
+def memory_preferences() -> dict[str, Any]:
+    from grandpa.memory.intelligence import MemoryIntelligenceStore
+
+    prefs = MemoryIntelligenceStore(MemoryStore()).preferences()
+    return {"status": "ready", "preferences": prefs, "count": len(prefs), "local_only": True}
+
+
+def memory_relationships() -> dict[str, Any]:
+    from grandpa.memory.intelligence import build_relationship_graph
+
+    return build_relationship_graph(MemoryStore())
+
+
+def memory_topics() -> dict[str, Any]:
+    from grandpa.memory.intelligence import cluster_memory_topics
+
+    return cluster_memory_topics(MemoryStore())
+
+
+def memory_insight_summary() -> dict[str, Any]:
+    from grandpa.memory.intelligence import memory_insights
+
+    return memory_insights(MemoryStore())
 
 
 def _remember_fact(store: MemoryStore, fact: str) -> MemoryCommandResult:
@@ -613,21 +675,76 @@ def _parse_fact(fact: str) -> dict[str, str]:
 
 
 def _recall(store: MemoryStore, query: str) -> MemoryCommandResult:
-    results = store.search_memories(query)
+    try:
+        from grandpa.memory.intelligence import ranked_memory_context
+
+        results = ranked_memory_context(query, limit=5, store=store).get("matches", [])
+    except Exception:
+        results = store.search_memories(query)
     if not results:
         message = "I do not have a matching memory yet."
         return MemoryCommandResult("handled", "memory", query, message, message)
-    top_score = float(results[0].get("score", 0.0))
-    if top_score < SEMANTIC_MIN_CONFIDENCE:
+    top_score = float(results[0].get("relevance_score", results[0].get("score", 0.0)))
+    if top_score < max(SEMANTIC_MIN_CONFIDENCE, 0.35):
         message = "I am not confident I have a matching memory for that yet."
         return MemoryCommandResult("handled", "memory", query, message, message)
     lines = ["Here is what I remember:"]
     for item in results[:5]:
         label = _friendly_label(item)
-        score = float(item.get("score", 0.0))
+        score = float(item.get("relevance_score", item.get("score", 0.0)))
         lines.append(f"- {label}: {item['value']} ({score:.0%} confidence)")
     message = "\n".join(lines)
     return MemoryCommandResult("handled", "memory", query, message, "I found a few local memories.")
+
+
+def _profile_recall(store: MemoryStore) -> MemoryCommandResult:
+    try:
+        from grandpa.memory.intelligence import summarize_memory_profile
+
+        profile = summarize_memory_profile(store)
+    except Exception:
+        return _recall(store, "me preferences projects tools")
+    summary = str(profile.get("summary") or "Grandpa has no personal memories yet.")
+    top = profile.get("top_memories", [])[:4]
+    lines = [summary]
+    for item in top:
+        lines.append(f"- {_friendly_label(item)}: {item['value']}")
+    message = "\n".join(lines)
+    return MemoryCommandResult("handled", "memory", "profile", message, "I summarized your local memory profile.")
+
+
+def _preference_recall(store: MemoryStore) -> MemoryCommandResult:
+    from grandpa.memory.intelligence import MemoryIntelligenceStore
+
+    prefs = MemoryIntelligenceStore(store).preferences()
+    if not prefs:
+        message = "I do not have clear saved preferences yet."
+        return MemoryCommandResult("handled", "memory", "preferences", message, message)
+    lines = ["Here are the preferences I have learned locally:"]
+    for item in prefs[:6]:
+        confidence = float(item.get("confidence", 0.0))
+        lines.append(f"- {item['subject']}: {item['value']} ({confidence:.0%} confidence)")
+    message = "\n".join(lines)
+    return MemoryCommandResult("handled", "memory", "preferences", message, "I summarized your preferences.")
+
+
+def _project_recall(store: MemoryStore) -> MemoryCommandResult:
+    try:
+        results = store.search_memories("project working app assistant grandpa", category="project", limit=5)
+        if not results:
+            from grandpa.memory.intelligence import ranked_memory_context
+
+            results = ranked_memory_context("project working app assistant grandpa", limit=5, store=store).get("matches", [])
+    except Exception:
+        results = store.search_memories("project working app assistant grandpa", limit=5)
+    if not results:
+        message = "I do not know which project you are working on yet."
+        return MemoryCommandResult("handled", "memory", "projects", message, message)
+    lines = ["Here is what I know about your current projects:"]
+    for item in results[:5]:
+        lines.append(f"- {_friendly_label(item)}: {item['value']}")
+    message = "\n".join(lines)
+    return MemoryCommandResult("handled", "memory", "projects", message, "I found your saved project context.")
 
 
 def _recall_specific(
@@ -836,7 +953,12 @@ __all__ = [
     "MemoryStore",
     "clear_memory",
     "handle_memory_command",
+    "memory_insight_summary",
+    "memory_preferences",
+    "memory_profile",
+    "memory_relationships",
     "memory_summary",
+    "memory_topics",
     "record_activity",
     "remember_conversation",
     "search_personal_memory",
