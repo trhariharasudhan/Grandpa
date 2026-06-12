@@ -10,12 +10,15 @@ import logging
 import re
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
 
 logger = logging.getLogger(__name__)
 
-AutomationStatus = Literal["handled", "blocked", "unsupported", "error"]
+AutomationStatus = Literal["handled", "blocked", "unsupported", "error", "cancelled"]
+AutomationPermission = Literal["safe", "confirm_required", "dangerous", "blocked"]
+ConfirmationCallback = Callable[[str, AutomationPermission], bool]
 
 COOLDOWN_SECONDS = 0.75
 _last_action_at = 0.0
@@ -32,6 +35,45 @@ _DANGEROUS_TEXT_PATTERNS = (
     r"\btoken\b",
 )
 
+_CONFIRM_REQUIRED_ACTIONS = {
+    "click",
+    "click_center",
+    "click_highlighted",
+    "hotkey",
+    "press",
+    "type",
+}
+
+_DANGEROUS_ACTIONS = {
+    "close",
+    "close_app",
+    "delete",
+    "run",
+    "run_command",
+    "send_message",
+    "shell",
+}
+
+_SAFE_ACTIONS = {
+    "focus",
+    "focus_app",
+    "move_center",
+    "open_known_app",
+    "volume_down",
+    "volume_mute",
+    "volume_up",
+}
+
+_BLOCKED_SPEC_PATTERNS = (
+    r"\bdelete\b.*\bsystem32\b",
+    r"\bformat\b",
+    r"\bwipe\b",
+    r"\brm\s+-",
+    r"\bdel\s+",
+    r"\bpowershell\b",
+    r"\bcmd(?:\.exe)?\b",
+)
+
 
 @dataclass(frozen=True)
 class AutomationResult:
@@ -41,7 +83,12 @@ class AutomationResult:
     tts_text: str = ""
 
 
-def execute_automation(spec: str) -> AutomationResult:
+def execute_automation(
+    spec: str,
+    *,
+    confirm_callback: ConfirmationCallback | None = None,
+    confirmed: bool = False,
+) -> AutomationResult:
     """Execute a tiny allowlisted automation spec."""
     if sys.platform != "win32":
         return AutomationResult(
@@ -67,7 +114,12 @@ def execute_automation(spec: str) -> AutomationResult:
 
     try:
         pyautogui.FAILSAFE = True
-        result = _execute_with_pyautogui(pyautogui, spec)
+        result = _execute_with_pyautogui(
+            pyautogui,
+            spec,
+            confirm_callback=confirm_callback,
+            confirmed=confirmed,
+        )
     except Exception as exc:  # pragma: no cover - device/permission edge
         result = AutomationResult(
             status="error",
@@ -83,15 +135,20 @@ def execute_automation(spec: str) -> AutomationResult:
 
 def requires_confirmation(spec: str) -> bool:
     """Return True for action specs that should require future confirmation."""
-    if "||" in spec:
-        return True
+    return classify_automation_permission(spec) in {"confirm_required", "dangerous"}
 
-    action, value = _split_spec(spec)
-    if action in {"paste", "click_highlighted"}:
-        return True
-    if action == "type" and _contains_sensitive_text(value):
-        return True
-    return False
+
+def classify_automation_permission(spec: str) -> AutomationPermission:
+    """Classify a desktop automation spec before execution."""
+    parts = _split_chain(spec)
+    classifications = [_classify_single_action(part) for part in parts]
+    if "blocked" in classifications:
+        return "blocked"
+    if "dangerous" in classifications:
+        return "dangerous"
+    if "confirm_required" in classifications:
+        return "confirm_required"
+    return "safe"
 
 
 def emergency_stop_placeholder() -> str:
@@ -101,11 +158,22 @@ def emergency_stop_placeholder() -> str:
     )
 
 
-def _execute_with_pyautogui(pyautogui, spec: str) -> AutomationResult:
+def _execute_with_pyautogui(
+    pyautogui,
+    spec: str,
+    *,
+    confirm_callback: ConfirmationCallback | None = None,
+    confirmed: bool = False,
+) -> AutomationResult:
     if "||" in spec:
         messages = []
-        for part in spec.split("||"):
-            result = _execute_with_pyautogui(pyautogui, part)
+        for part in _split_chain(spec):
+            result = _execute_with_pyautogui(
+                pyautogui,
+                part,
+                confirm_callback=confirm_callback,
+                confirmed=confirmed,
+            )
             messages.append(result.message)
             if result.status != "handled":
                 return result
@@ -115,6 +183,14 @@ def _execute_with_pyautogui(pyautogui, spec: str) -> AutomationResult:
             message=" ".join(messages),
             tts_text="Done.",
         )
+
+    permission_result = _check_permission(
+        spec,
+        confirm_callback=confirm_callback,
+        confirmed=confirmed,
+    )
+    if permission_result is not None:
+        return permission_result
 
     action, value = _split_spec(spec)
 
@@ -220,6 +296,54 @@ def _split_spec(spec: str) -> tuple[str, str]:
     return action, value
 
 
+def _split_chain(spec: str) -> list[str]:
+    return [part.strip() for part in spec.split("||") if part.strip()]
+
+
+def _classify_single_action(spec: str) -> AutomationPermission:
+    action, value = _split_spec(spec)
+    lowered_spec = spec.lower()
+    if any(re.search(pattern, lowered_spec) for pattern in _BLOCKED_SPEC_PATTERNS):
+        return "blocked"
+    if action in _DANGEROUS_ACTIONS:
+        return "dangerous"
+    if action == "type" and _contains_sensitive_text(value):
+        return "blocked"
+    if action in _CONFIRM_REQUIRED_ACTIONS:
+        return "confirm_required"
+    if action in _SAFE_ACTIONS:
+        return "safe"
+    return "safe"
+
+
+def _check_permission(
+    spec: str,
+    *,
+    confirm_callback: ConfirmationCallback | None,
+    confirmed: bool,
+) -> AutomationResult | None:
+    permission = classify_automation_permission(spec)
+    if permission == "safe":
+        return None
+    if permission == "blocked":
+        return AutomationResult(
+            status="blocked",
+            action=spec,
+            message="I blocked this action for safety.",
+            tts_text="I blocked this action for safety.",
+        )
+    if confirmed:
+        return None
+    if confirm_callback is not None and confirm_callback(spec, permission):
+        return None
+    return AutomationResult(
+        status="cancelled",
+        action=spec,
+        message="Confirmation required before controlling the active app.",
+        tts_text="Please confirm this desktop action first.",
+    )
+
+
 def _contains_sensitive_text(text: str) -> bool:
     lowered = text.lower()
     return any(re.search(pattern, lowered) for pattern in _DANGEROUS_TEXT_PATTERNS)
@@ -253,6 +377,7 @@ def _log_automation(spec: str, result: AutomationResult) -> None:
 
 __all__ = [
     "AutomationResult",
+    "classify_automation_permission",
     "emergency_stop_placeholder",
     "execute_automation",
     "requires_confirmation",
