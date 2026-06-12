@@ -1,19 +1,45 @@
 # Grandpa
 
-Grandpa is a local-first personal AI assistant framework powered by Ollama, agents, voice/text controls, and future full Windows automation.
+Grandpa - personal AI assistant backend with composable intelligence primitives.
 
-## Current Status
+## Prerequisites
 
-- Local AI chat working
-- Ollama integration working
-- OpenAI-compatible API working
-- `grandpa` CLI command working
-- Security profile enabled
-- REST API server installed
+- Python 3.10 or newer.
+- [uv](https://docs.astral.sh/uv/) for dependency management.
+- [Ollama](https://ollama.com/) for local model inference.
+- Windows, macOS, and Linux are supported for the core CLI/server workflow.
 
-## Quick Start
+For local chat, install Ollama and pull a small model such as:
 
-```bat
-cd /d D:\Grandpa
+```sh
+ollama pull qwen2.5:3b
+```
+
+## Quick start
+
+```sh
+git clone https://github.com/trhariharasudhan/Grandpa.git
+cd Grandpa
+uv sync
+cp .env.example .env
+# Edit .env if you need a custom Ollama host, cloud API keys, or integrations.
 uv run grandpa doctor
 uv run grandpa chat
+```
+
+## What works now
+
+- Local CLI chat through the `grandpa` command.
+- Ollama-backed local model routing.
+- OpenAI-compatible REST API server support through the server extra.
+- Doctor/readiness checks for engines, local runtime, safety, and daily-use features.
+- Local-first memory, knowledge, browser snapshot, desktop diagnostics, coding analysis, and safety/audit foundations.
+- Optional integrations and advanced features are available through extras and may require additional setup.
+
+## Documentation
+
+More setup, architecture, release, testing, and user guides live in [docs/](docs/).
+
+## License
+
+Apache-2.0.
