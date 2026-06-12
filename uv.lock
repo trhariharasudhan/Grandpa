@@ -2578,7 +2578,6 @@ version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
-    { name = "datasets" },
     { name = "ddgs" },
     { name = "httpx" },
     { name = "openai" },
@@ -2587,7 +2586,6 @@ dependencies = [
     { name = "pyautogui" },
     { name = "pynvml" },
     { name = "pytesseract" },
-    { name = "python-telegram-bot" },
     { name = "rich" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "tomlkit" },
@@ -2744,6 +2742,7 @@ openhands = [
     { name = "openhands-sdk", marker = "python_full_version >= '3.12'" },
 ]
 orchestrator-training = [
+    { name = "datasets" },
     { name = "torch" },
     { name = "transformers", version = "4.57.6", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version >= '3.11' and sys_platform == 'emscripten') or (python_full_version >= '3.11' and sys_platform == 'win32') or sys_platform == 'linux'" },
     { name = "transformers", version = "5.6.2", source = { registry = "https://pypi.org/simple" }, marker = "(python_full_version < '3.11' and sys_platform == 'emscripten') or (python_full_version < '3.11' and sys_platform == 'win32') or (sys_platform != 'emscripten' and sys_platform != 'linux' and sys_platform != 'win32')" },
@@ -2794,7 +2793,7 @@ requires-dist = [
     { name = "colbert-ai", marker = "extra == 'memory-colbert'", specifier = ">=0.2" },
     { name = "croniter", marker = "extra == 'scheduler'", specifier = ">=2.0" },
     { name = "cryptography", marker = "extra == 'security-signing'", specifier = ">=43" },
-    { name = "datasets", specifier = ">=4.5.0" },
+    { name = "datasets", marker = "extra == 'orchestrator-training'", specifier = ">=4.5.0" },
     { name = "ddgs", specifier = ">=9.11.4" },
     { name = "ddgs", marker = "extra == 'tools-search'", specifier = ">=9.11.4" },
     { name = "deepgram-sdk", marker = "extra == 'speech-deepgram'", specifier = ">=3.0" },
@@ -2851,7 +2850,6 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
     { name = "python-multipart", marker = "extra == 'server'", specifier = ">=0.0.9" },
-    { name = "python-telegram-bot", specifier = ">=22.6" },
     { name = "python-telegram-bot", marker = "extra == 'channel-telegram'", specifier = ">=21.0" },
     { name = "rank-bm25", marker = "extra == 'memory-bm25'", specifier = ">=0.2.2" },
     { name = "respx", marker = "extra == 'dev'", specifier = ">=0.22" },
