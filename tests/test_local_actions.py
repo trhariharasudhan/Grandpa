@@ -6,6 +6,8 @@ import grandpa.local_actions as local_actions
 from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.local_actions import BLOCKED_MESSAGE, handle_local_action
 
+pytestmark = pytest.mark.core
+
 
 @pytest.fixture(autouse=True)
 def _approval_store_fixture(tmp_path, monkeypatch):
@@ -201,6 +203,17 @@ def test_type_command_is_allowlisted_without_execution():
     assert result.pending_action
     assert "typing into the active app" in result.message
     assert "Permission:" not in result.message
+
+
+def test_type_in_notepad_command_focuses_app_before_typing():
+    result = handle_local_action("type hello in notepad", execute=False)
+
+    assert result.status == "requires_confirmation"
+    assert result.permission == "requires_confirmation"
+    assert result.kind == "automation"
+    assert result.target == "focus|notepad||type|hello"
+    assert result.pending_action
+    assert "controlling the active app" in result.message
 
 
 def test_enter_command_is_allowlisted_without_execution():

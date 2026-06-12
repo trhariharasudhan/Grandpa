@@ -111,6 +111,7 @@ def _execute_with_pyautogui(pyautogui, spec: str) -> AutomationResult:
                 return result
         return AutomationResult(
             status="handled",
+            action=spec,
             message=" ".join(messages),
             tts_text="Done.",
         )
