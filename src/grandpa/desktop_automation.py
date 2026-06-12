@@ -102,6 +102,19 @@ def emergency_stop_placeholder() -> str:
 
 
 def _execute_with_pyautogui(pyautogui, spec: str) -> AutomationResult:
+    if "||" in spec:
+        messages = []
+        for part in spec.split("||"):
+            result = _execute_with_pyautogui(pyautogui, part)
+            messages.append(result.message)
+            if result.status != "handled":
+                return result
+        return AutomationResult(
+            status="handled",
+            message=" ".join(messages),
+            tts_text="Done.",
+        )
+
     action, value = _split_spec(spec)
 
     if action == "type":
