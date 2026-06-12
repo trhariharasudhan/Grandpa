@@ -41,6 +41,7 @@ Thumbs.db
 # Secrets
 .env
 .env.*
+!.env.example
 
 # Project
 *.sqlite
@@ -60,6 +61,9 @@ coding_task_*
 get-pip.py
 # Junk from mocked-path tests that write to their mock's __repr__ as a path
 MagicMock/
+
+# Auto-generated tree dump
+TREE_STRUCTURE.md
 
 # MkDocs build output
 site/
