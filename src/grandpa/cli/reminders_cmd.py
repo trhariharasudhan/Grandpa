@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
 from grandpa.reminders import (
     ReminderSchedulerService,
     ReminderStore,
@@ -29,6 +30,30 @@ def reminders_create(message: str, due_at: str) -> None:
     try:
         reminder = ReminderStore().create(message, due_at, source={"cli": "grandpa reminders create"})
     except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise SystemExit(1) from exc
+    console.print(f"[green]Reminder created:[/green] {reminder.id}")
+    console.print(f"  Message: {reminder.message}")
+    console.print(f"  Due: {reminder.due_at.isoformat()}")
+
+
+@reminders.command("add")
+@click.argument("phrase")
+def reminders_add(phrase: str) -> None:
+    """Create a reminder from a natural-language phrase."""
+    console = Console()
+    try:
+        parsed = parse_reminder_phrase(phrase)
+        reminder = ReminderStore().create(
+            parsed.message,
+            parsed.due_at,
+            source={
+                "cli": "grandpa reminders add",
+                "input": phrase,
+                "matched_expression": parsed.matched_expression,
+            },
+        )
+    except (ReminderParseError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
         raise SystemExit(1) from exc
     console.print(f"[green]Reminder created:[/green] {reminder.id}")
