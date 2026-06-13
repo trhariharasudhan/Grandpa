@@ -312,17 +312,19 @@ def run_tray_app(
     *,
     controller: GrandpaTrayController | None = None,
     lock_path: Path = TRAY_LOCK_FILE,
+    pystray_module: Any | None = None,
 ) -> TrayActionResult:
     validate_tray_environment()
-    import pystray
+    if pystray_module is None:
+        import pystray as pystray_module
 
     tray_controller = controller or GrandpaTrayController()
     with TraySingleInstance(lock_path):
-        icon = pystray.Icon(
+        icon = pystray_module.Icon(
             "Grandpa",
             icon=create_placeholder_icon(),
             title="Grandpa",
-            menu=build_menu(pystray, tray_controller),
+            menu=build_menu(pystray_module, tray_controller),
         )
         icon.run()
     return TrayActionResult(True, "exited", "Grandpa tray exited.")

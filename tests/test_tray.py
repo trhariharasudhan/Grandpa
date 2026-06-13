@@ -55,11 +55,11 @@ def test_unsupported_platform_returns_cleanly(monkeypatch) -> None:
 
 def test_single_instance_protection(tmp_path: Path) -> None:
     lock = tmp_path / "tray.lock"
-    first = TraySingleInstance(lock)
+    first = TraySingleInstance(lock, pid_alive=lambda _pid: True)
     first.acquire()
     try:
         with pytest.raises(TrayAlreadyRunningError):
-            TraySingleInstance(lock).acquire()
+            TraySingleInstance(lock, pid_alive=lambda _pid: True).acquire()
     finally:
         first.release()
 
@@ -144,10 +144,8 @@ def test_startup_failure_after_lock_acquisition_releases_lock(monkeypatch, tmp_p
         def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
             raise RuntimeError("startup failed")
 
-    monkeypatch.setitem(__import__("sys").modules, "pystray", types.SimpleNamespace(Icon=FailingIcon))
-
     with pytest.raises(RuntimeError, match="startup failed"):
-        run_tray_app(lock_path=lock)
+        run_tray_app(lock_path=lock, pystray_module=types.SimpleNamespace(Icon=FailingIcon))
 
     assert not lock.exists()
 
@@ -165,10 +163,8 @@ def test_keyboard_interrupt_after_lock_acquisition_releases_lock(monkeypatch, tm
         def run(self):
             raise KeyboardInterrupt
 
-    monkeypatch.setitem(__import__("sys").modules, "pystray", types.SimpleNamespace(Icon=InterruptingIcon))
-
     with pytest.raises(KeyboardInterrupt):
-        run_tray_app(lock_path=lock)
+        run_tray_app(lock_path=lock, pystray_module=types.SimpleNamespace(Icon=InterruptingIcon))
 
     assert not lock.exists()
 
@@ -177,7 +173,7 @@ def test_simultaneous_acquisition_has_one_winner(tmp_path: Path) -> None:
     lock = tmp_path / "tray.lock"
     winners = 0
     errors = 0
-    guards = [TraySingleInstance(lock), TraySingleInstance(lock)]
+    guards = [TraySingleInstance(lock, pid_alive=lambda _pid: True), TraySingleInstance(lock, pid_alive=lambda _pid: True)]
 
     for guard in guards:
         context = pytest.raises(TrayAlreadyRunningError) if winners else nullcontext()
@@ -191,6 +187,39 @@ def test_simultaneous_acquisition_has_one_winner(tmp_path: Path) -> None:
 
     assert winners == 1
     assert errors == 1
+
+
+def test_run_tray_app_calls_fake_icon_run_once(monkeypatch, tmp_path: Path) -> None:
+    lock = tmp_path / "tray.lock"
+    run = MagicMock()
+    monkeypatch.setattr("grandpa.tray.validate_tray_environment", lambda: None)
+    monkeypatch.setattr("grandpa.tray.create_placeholder_icon", lambda: object())
+
+    class FakeMenu:
+        SEPARATOR = object()
+
+        def __init__(self, *items):
+            self.items = items
+
+    class FakeIcon:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            self.args = args
+            self.kwargs = kwargs
+
+        def run(self):
+            run()
+
+    fake_pystray = types.SimpleNamespace(
+        Icon=FakeIcon,
+        Menu=FakeMenu,
+        MenuItem=lambda label, action: (label, action),
+    )
+
+    result = run_tray_app(lock_path=lock, pystray_module=fake_pystray)
+
+    assert result.ok is True
+    run.assert_called_once_with()
+    assert not lock.exists()
 
 
 def test_start_calls_existing_start_lifecycle_once() -> None:
@@ -284,14 +313,9 @@ def test_startup_enable_disable_delegates_to_startup_manager() -> None:
 def test_unrelated_errors_are_not_mislabeled_as_missing_dependency(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setattr("grandpa.tray.validate_tray_environment", lambda: None)
     monkeypatch.setattr("grandpa.tray.TraySingleInstance", MagicMock(side_effect=RuntimeError("boom")))
-    monkeypatch.setitem(
-        __import__("sys").modules,
-        "pystray",
-        types.SimpleNamespace(Icon=MagicMock()),
-    )
 
     with pytest.raises(RuntimeError, match="boom"):
-        run_tray_app(lock_path=tmp_path / "tray.lock")
+        run_tray_app(lock_path=tmp_path / "tray.lock", pystray_module=types.SimpleNamespace(Icon=MagicMock()))
 
 
 def test_menu_construction_includes_required_actions() -> None:
