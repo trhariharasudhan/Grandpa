@@ -1,6 +1,7 @@
 """Voice-first runtime for Grandpa."""
 
 from grandpa.voice.conversation import VoiceConversation, VoiceMessage
+from grandpa.voice.errors import MicrophoneUnavailableError, VoiceDependencyError, VoiceError, VoiceRecognitionError
 from grandpa.voice.session import VoiceRuntime, get_voice_runtime
 from grandpa.voice.speech_input import SpeechInputEngine, SpeechInputResult
 from grandpa.voice.speech_output import SpeechOutputEngine, SpeechOutputResult
@@ -12,7 +13,11 @@ __all__ = [
     "SpeechOutputEngine",
     "SpeechOutputResult",
     "VoiceConversation",
+    "VoiceDependencyError",
+    "VoiceError",
     "VoiceMessage",
+    "VoiceRecognitionError",
+    "MicrophoneUnavailableError",
     "VoiceRuntime",
     "WakeWordConfig",
     "WakeWordDetector",

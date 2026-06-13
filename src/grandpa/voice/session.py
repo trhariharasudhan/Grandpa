@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from grandpa.voice.conversation import VoiceConversation
+from grandpa.voice.errors import VoiceError
 from grandpa.voice.speech_input import SpeechInputEngine
 from grandpa.voice.speech_output import SpeechOutputEngine
 from grandpa.voice.wake_word import WakeWordDetector
@@ -72,7 +73,11 @@ class VoiceRuntime:
 
     def speak(self, text: str, *, interrupt: bool = False, dry_run: bool = False) -> dict[str, Any]:
         self.conversation.set_state("speaking")
-        result = self.speech_output.speak(text, interrupt=interrupt, dry_run=dry_run)
+        try:
+            result = self.speech_output.speak(text, interrupt=interrupt, dry_run=dry_run)
+        except VoiceError as exc:
+            self.conversation.set_state("idle")
+            return _voice_error_response(exc, self.conversation, speech_output=True)
         self.conversation.add_message("assistant", result.spoken_text or text, {"speech_output": result.to_dict()})
         self.conversation.set_state("idle")
         return result.to_dict()
@@ -89,7 +94,12 @@ class VoiceRuntime:
         self.conversation.start()
         self.conversation.set_state("listening")
         audio_bytes = _decode_audio(audio_base64)
-        input_result = self.speech_input.listen(text=text, audio_bytes=audio_bytes)
+        try:
+            input_result = self.speech_input.listen(text=text, audio_bytes=audio_bytes)
+        except VoiceError as exc:
+            self.conversation.set_state("idle")
+            self._last_latency_ms = _elapsed_ms(started)
+            return _voice_error_response(exc, self.conversation, latency_ms=self._last_latency_ms)
         transcript = input_result.transcript.strip()
         wake_match = self.wake_detector.detect(transcript)
 
@@ -147,7 +157,10 @@ class VoiceRuntime:
         self.conversation.add_message("assistant", message, response)
         if speak_response:
             self.conversation.set_state("speaking")
-            response["speech_output"] = self.speech_output.speak(message, interrupt=True, dry_run=False).to_dict()
+            try:
+                response["speech_output"] = self.speech_output.speak(message, interrupt=True, dry_run=False).to_dict()
+            except VoiceError as exc:
+                response["speech_output"] = _voice_error_response(exc, self.conversation, speech_output=True)
         self.conversation.set_state("idle")
         self._last_latency_ms = _elapsed_ms(started)
         return {
@@ -300,6 +313,24 @@ def _decode_audio(audio_base64: str | None) -> bytes | None:
         return base64.b64decode(audio_base64)
     except Exception:
         return None
+
+
+def _voice_error_response(
+    exc: VoiceError,
+    conversation: VoiceConversation,
+    *,
+    latency_ms: float = 0.0,
+    speech_output: bool = False,
+) -> dict[str, Any]:
+    response = exc.to_dict()
+    response.update(
+        {
+            "session": conversation.to_dict(),
+            "latency_ms": latency_ms,
+            "speech_output": speech_output,
+        }
+    )
+    return response
 
 
 def _is_high_risk_voice(text: str) -> bool:

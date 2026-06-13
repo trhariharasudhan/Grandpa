@@ -1489,9 +1489,10 @@ async def voice_speak(req: VoiceSpeakRequest):
 async def voice_listen(req: VoiceListenRequest):
     """Process a voice transcript/audio payload through Grandpa's normal brain."""
     from grandpa.voice import get_voice_runtime
+    from grandpa.voice.errors import MICROPHONE_UNAVAILABLE_MESSAGE
 
     if not (req.text and req.text.strip()) and not req.audio_base64:
-        raise HTTPException(status_code=400, detail="text or audio_base64 is required")
+        raise HTTPException(status_code=400, detail=MICROPHONE_UNAVAILABLE_MESSAGE)
     return get_voice_runtime().listen(
         text=req.text,
         audio_base64=req.audio_base64,

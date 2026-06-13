@@ -7,6 +7,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from grandpa.voice.errors import MicrophoneUnavailableError, VoiceDependencyError, VoiceRecognitionError
+
 
 @dataclass(frozen=True)
 class SpeechInputResult:
@@ -70,15 +72,7 @@ class SpeechInputEngine:
             self._last_result = result
             return result
 
-        result = SpeechInputResult(
-            status="unsupported",
-            engine=self.best_available_engine(),
-            latency_ms=_elapsed_ms(started),
-            confidence=0.0,
-            fallback_reason="No audio bytes or transcript were provided. Use browser push-to-talk or configure a local Whisper backend.",
-        )
-        self._last_result = result
-        return result
+        raise MicrophoneUnavailableError()
 
     def best_available_engine(self) -> str:
         if importlib.util.find_spec("faster_whisper") is not None:
@@ -101,22 +95,8 @@ class SpeechInputEngine:
     def _transcribe_audio(self, audio_bytes: bytes, started: float, *, language: str | None) -> SpeechInputResult:
         engine = self.best_available_engine()
         if engine == "push_to_talk_transcript":
-            return SpeechInputResult(
-                status="unsupported",
-                engine=engine,
-                latency_ms=_elapsed_ms(started),
-                confidence=0.0,
-                language=language,
-                fallback_reason="Local Whisper is not installed; use browser transcript mode.",
-            )
-        return SpeechInputResult(
-            status="unsupported",
-            engine=engine,
-            latency_ms=_elapsed_ms(started),
-            confidence=0.0,
-            language=language,
-            fallback_reason="Audio byte transcription is architecture-ready but not enabled without an installed local model adapter.",
-        )
+            raise VoiceDependencyError(detail="Local Whisper/faster-whisper is required to transcribe audio bytes.")
+        raise VoiceRecognitionError(detail=f"Audio transcription adapter for {engine} is not enabled in this runtime.")
 
 
 def _elapsed_ms(started: float) -> float:

@@ -10,6 +10,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
+from grandpa.voice.errors import VoiceDependencyError
+
 
 @dataclass(frozen=True)
 class SpeechOutputResult:
@@ -78,15 +80,7 @@ class SpeechOutputEngine:
             with self._lock:
                 self._queue.clear()
                 self._state = "idle"
-            result = SpeechOutputResult(
-                "unsupported",
-                engine,
-                "No local TTS engine is available. Text response is still available.",
-                clean_text,
-                _elapsed_ms(started),
-            )
-            self._last_result = result
-            return result
+            raise VoiceDependencyError(detail="Install a local TTS backend such as pyttsx3 or Windows SAPI support.")
 
         # Keep runtime non-blocking and test-safe. Actual browser TTS remains
         # the daily-use path; native TTS can be wired into this adapter later.
