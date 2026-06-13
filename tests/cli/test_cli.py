@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import importlib
 import io
 import sys
 from pathlib import Path
 from unittest import mock
 
+import click
+import pytest
 from click.testing import CliRunner
 
 import grandpa
@@ -120,6 +123,69 @@ class TestCLI:
         assert result.exit_code == 0
         assert "send" in result.output
         assert "list" in result.output
+
+    def test_core_commands_remain_registered(self) -> None:
+        commands = set(cli.commands)
+
+        assert {"doctor", "chat", "reminders"}.issubset(commands)
+
+    def test_reminders_help_does_not_import_deep_research_modules(self) -> None:
+        with mock.patch("importlib.import_module", wraps=importlib.import_module) as spy:
+            result = CliRunner().invoke(cli, ["reminders", "--help"])
+
+        assert result.exit_code == 0
+        assert "create" in result.output
+        imported = [call.args[0] for call in spy.call_args_list]
+        assert "grandpa.cli.reminders_cmd" in imported
+        assert "grandpa.cli.deep_research_setup_cmd" not in imported
+        assert "grandpa.connectors.pipeline" not in imported
+        assert "grandpa.connectors.embeddings" not in imported
+
+    def test_deep_research_missing_optional_dependency_guidance(self) -> None:
+        real_import_module = importlib.import_module
+
+        def fake_import_module(name: str, package: str | None = None):
+            if name == "grandpa.cli.deep_research_setup_cmd":
+                raise ModuleNotFoundError("No module named 'numpy'", name="numpy")
+            return real_import_module(name, package)
+
+        with mock.patch("importlib.import_module", side_effect=fake_import_module):
+            result = CliRunner().invoke(cli, ["deep-research-setup", "--skip-chat"])
+
+        assert result.exit_code != 0
+        assert "requires optional dependencies" in result.output
+        assert "uv sync --extra memory-faiss" in result.output
+
+    def test_lazy_command_does_not_hide_programming_import_errors(self) -> None:
+        real_import_module = importlib.import_module
+
+        def fake_import_module(name: str, package: str | None = None):
+            if name == "grandpa.cli.deep_research_setup_cmd":
+                raise ModuleNotFoundError(
+                    "No module named 'grandpa.internal_typo'",
+                    name="grandpa.internal_typo",
+                )
+            return real_import_module(name, package)
+
+        with mock.patch("importlib.import_module", side_effect=fake_import_module):
+            with pytest.raises(ModuleNotFoundError):
+                CliRunner().invoke(
+                    cli,
+                    ["deep-research-setup", "--skip-chat"],
+                    catch_exceptions=False,
+                )
+
+    def test_lazy_command_preserves_unrelated_programming_errors(self) -> None:
+        command = cli.commands["reminders"]
+        assert isinstance(command, click.Command)
+
+        with mock.patch.object(command, "_load", side_effect=RuntimeError("boom")):
+            with pytest.raises(RuntimeError, match="boom"):
+                CliRunner().invoke(
+                    cli,
+                    ["reminders", "--help"],
+                    catch_exceptions=False,
+                )
 
     def test_init_creates_config(self, tmp_path: Path) -> None:
         config_dir = tmp_path / ".grandpa"

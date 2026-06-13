@@ -2,50 +2,83 @@
 
 from __future__ import annotations
 
+import importlib
+from collections.abc import Sequence
+
 import click
 
 import grandpa
-from grandpa.cli._bootstrap import bootstrap_cmd
-from grandpa.cli.add_cmd import add
-from grandpa.cli.agent_cmd import agent
-from grandpa.cli.ask import ask
-from grandpa.cli.bench_cmd import bench
-from grandpa.cli.channel_cmd import channel
-from grandpa.cli.channels_cmd import channels
-from grandpa.cli.chat_cmd import chat
-from grandpa.cli.compose_cmd import compose
-from grandpa.cli.config_cmd import config
-from grandpa.cli.connect_cmd import connect
-from grandpa.cli.daemon_cmd import restart, start, status, stop
-from grandpa.cli.deep_research_setup_cmd import deep_research_setup
-from grandpa.cli.digest_cmd import digest
-from grandpa.cli.doctor_cmd import doctor
-from grandpa.cli.eval_cmd import eval_group
-from grandpa.cli.feedback_cmd import feedback_group
-from grandpa.cli.gateway_cmd import gateway
-from grandpa.cli.host_cmd import host
-from grandpa.cli.init_cmd import init
-from grandpa.cli.memory_cmd import memory
-from grandpa.cli.mine_cmd import mine
-from grandpa.cli.model import model
-from grandpa.cli.operators_cmd import operators
-from grandpa.cli.optimize_cmd import optimize_group
-from grandpa.cli.pearl_cmd import pearl
-from grandpa.cli.quickstart_cmd import quickstart
-from grandpa.cli.registry_cmd import registry
-from grandpa.cli.reminders_cmd import reminders
-from grandpa.cli.scan_cmd import scan
-from grandpa.cli.scheduler_cmd import scheduler
-from grandpa.cli.self_update_cmd import self_update
-from grandpa.cli.serve import serve
-from grandpa.cli.skill_cmd import skill
-from grandpa.cli.telemetry_cmd import telemetry
-from grandpa.cli.tool_cmd import tool
-from grandpa.cli.vault_cmd import vault
-from grandpa.cli.workflow_cmd import workflow
+
+
+class LazyCommand(click.Command):
+    """Click command that imports its implementation only when invoked."""
+
+    def __init__(
+        self,
+        name: str,
+        import_path: str,
+        *,
+        short_help: str = "",
+        optional_modules: Sequence[str] = (),
+        install_hint: str = "",
+    ) -> None:
+        super().__init__(
+            name=name,
+            short_help=short_help,
+            add_help_option=False,
+            context_settings={
+                "ignore_unknown_options": True,
+                "allow_extra_args": True,
+            },
+        )
+        self.import_path = import_path
+        self.optional_modules = tuple(optional_modules)
+        self.install_hint = install_hint
+
+    def _load(self) -> click.Command:
+        module_name, command_name = self.import_path.rsplit(":", 1)
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError as exc:
+            if exc.name in self.optional_modules:
+                hint = self.install_hint or f"Install missing dependency: {exc.name}"
+                raise click.ClickException(
+                    f'The "{self.name}" command requires optional dependencies.\n'
+                    f"{hint}\n"
+                    "Then retry the command."
+                ) from exc
+            raise
+        return getattr(module, command_name)
+
+    def invoke(self, ctx: click.Context) -> object:
+        command = self._load()
+        return command.main(
+            args=list(ctx.args),
+            prog_name=ctx.info_name,
+            standalone_mode=False,
+            obj=ctx.obj,
+        )
+
+
+def _lazy(
+    name: str,
+    import_path: str,
+    *,
+    short_help: str = "",
+    optional_modules: Sequence[str] = (),
+    install_hint: str = "",
+) -> LazyCommand:
+    return LazyCommand(
+        name,
+        import_path,
+        short_help=short_help,
+        optional_modules=optional_modules,
+        install_hint=install_hint,
+    )
 
 
 @click.group(
+    name="grandpa",
     help="Grandpa — modular AI assistant backend",
     invoke_without_command=True,
 )
@@ -81,63 +114,66 @@ def cli(ctx: click.Context, verbose: bool, quiet: bool) -> None:
         check_and_route(ctx)
 
 
-cli.add_command(init, "init")
-cli.add_command(ask, "ask")
-cli.add_command(chat, "chat")
-cli.add_command(serve, "serve")
-cli.add_command(model, "model")
-cli.add_command(memory, "memory")
-cli.add_command(mine, "mine")
-cli.add_command(pearl, "pearl")
-cli.add_command(telemetry, "telemetry")
-cli.add_command(bench, "bench")
-cli.add_command(channel, "channel")
-cli.add_command(channels, "channels")
-cli.add_command(scheduler, "scheduler")
-cli.add_command(reminders, "reminders")
-cli.add_command(doctor, "doctor")
-cli.add_command(agent, "agents")
-cli.add_command(workflow, "workflow")
-cli.add_command(skill, "skill")
-cli.add_command(start, "start")
-cli.add_command(stop, "stop")
-cli.add_command(restart, "restart")
-cli.add_command(status, "status")
-cli.add_command(vault, "vault")
-cli.add_command(add, "add")
-cli.add_command(operators, "operators")
-cli.add_command(eval_group, "eval")
-cli.add_command(host, "host")
-cli.add_command(quickstart, "quickstart")
-cli.add_command(optimize_group, "optimize")
-cli.add_command(feedback_group, "feedback")
-cli.add_command(compose, "compose")
-cli.add_command(gateway, "gateway")
-cli.add_command(tool, "tool")
-cli.add_command(registry, "registry")
-cli.add_command(config, "config")
-cli.add_command(scan, "scan")
-cli.add_command(connect, "connect")
-cli.add_command(digest, "digest")
-cli.add_command(deep_research_setup, "deep-research-setup")
-cli.add_command(deep_research_setup, "research")
-cli.add_command(self_update, "self-update")
-cli.add_command(bootstrap_cmd, "_bootstrap")
-
-# Gateway CLI commands (lazy import to avoid pulling starlette)
-try:
-    from grandpa.cli.auth_cmd import auth
-
-    cli.add_command(auth, "auth")
-except ImportError:
-    pass
-
-try:
-    from grandpa.cli.tunnel_cmd import tunnel
-
-    cli.add_command(tunnel, "tunnel")
-except ImportError:
-    pass
+cli.add_command(_lazy("init", "grandpa.cli.init_cmd:init", short_help="Initialize Grandpa."))
+cli.add_command(_lazy("ask", "grandpa.cli.ask:ask", short_help="Ask Grandpa once."))
+cli.add_command(_lazy("chat", "grandpa.cli.chat_cmd:chat", short_help="Start chat mode."))
+cli.add_command(_lazy("serve", "grandpa.cli.serve:serve", short_help="Run the API server."))
+cli.add_command(_lazy("model", "grandpa.cli.model:model", short_help="Manage models."))
+cli.add_command(_lazy("memory", "grandpa.cli.memory_cmd:memory", short_help="Manage memory."))
+cli.add_command(_lazy("mine", "grandpa.cli.mine_cmd:mine", short_help="Manage Pearl mining."))
+cli.add_command(_lazy("pearl", "grandpa.cli.pearl_cmd:pearl", short_help="Pearl helpers."))
+cli.add_command(_lazy("telemetry", "grandpa.cli.telemetry_cmd:telemetry", short_help="Telemetry controls."))
+cli.add_command(_lazy("bench", "grandpa.cli.bench_cmd:bench", short_help="Run benchmarks."))
+cli.add_command(_lazy("channel", "grandpa.cli.channel_cmd:channel", short_help="Channel commands."))
+cli.add_command(_lazy("channels", "grandpa.cli.channels_cmd:channels", short_help="Messaging channels."))
+cli.add_command(_lazy("scheduler", "grandpa.cli.scheduler_cmd:scheduler", short_help="Scheduled tasks."))
+cli.add_command(_lazy("reminders", "grandpa.cli.reminders_cmd:reminders", short_help="Local reminders."))
+cli.add_command(_lazy("doctor", "grandpa.cli.doctor_cmd:doctor", short_help="Check readiness."))
+cli.add_command(_lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manage agents."))
+cli.add_command(_lazy("workflow", "grandpa.cli.workflow_cmd:workflow", short_help="Run workflows."))
+cli.add_command(_lazy("skill", "grandpa.cli.skill_cmd:skill", short_help="Manage skills."))
+cli.add_command(_lazy("start", "grandpa.cli.daemon_cmd:start", short_help="Start background services."))
+cli.add_command(_lazy("stop", "grandpa.cli.daemon_cmd:stop", short_help="Stop background services."))
+cli.add_command(_lazy("restart", "grandpa.cli.daemon_cmd:restart", short_help="Restart background services."))
+cli.add_command(_lazy("status", "grandpa.cli.daemon_cmd:status", short_help="Show service status."))
+cli.add_command(_lazy("vault", "grandpa.cli.vault_cmd:vault", short_help="Manage vault secrets."))
+cli.add_command(_lazy("add", "grandpa.cli.add_cmd:add", short_help="Add an MCP server."))
+cli.add_command(_lazy("operators", "grandpa.cli.operators_cmd:operators", short_help="Manage operators."))
+cli.add_command(_lazy("eval", "grandpa.cli.eval_cmd:eval_group", short_help="Run evaluations."))
+cli.add_command(_lazy("host", "grandpa.cli.host_cmd:host", short_help="Host helpers."))
+cli.add_command(_lazy("quickstart", "grandpa.cli.quickstart_cmd:quickstart", short_help="Run quickstart."))
+cli.add_command(_lazy("optimize", "grandpa.cli.optimize_cmd:optimize_group", short_help="Optimization commands."))
+cli.add_command(_lazy("feedback", "grandpa.cli.feedback_cmd:feedback_group", short_help="Feedback commands."))
+cli.add_command(_lazy("compose", "grandpa.cli.compose_cmd:compose", short_help="Compose workflows."))
+cli.add_command(_lazy("gateway", "grandpa.cli.gateway_cmd:gateway", short_help="Gateway commands."))
+cli.add_command(_lazy("tool", "grandpa.cli.tool_cmd:tool", short_help="Tool commands."))
+cli.add_command(_lazy("registry", "grandpa.cli.registry_cmd:registry", short_help="Registry commands."))
+cli.add_command(_lazy("config", "grandpa.cli.config_cmd:config", short_help="Manage config."))
+cli.add_command(_lazy("scan", "grandpa.cli.scan_cmd:scan", short_help="Run privacy scans."))
+cli.add_command(_lazy("connect", "grandpa.cli.connect_cmd:connect", short_help="Connect sources."))
+cli.add_command(_lazy("digest", "grandpa.cli.digest_cmd:digest", short_help="Digest commands."))
+cli.add_command(
+    _lazy(
+        "deep-research-setup",
+        "grandpa.cli.deep_research_setup_cmd:deep_research_setup",
+        short_help="Set up deep research.",
+        optional_modules=("numpy",),
+        install_hint="Install it with: uv sync --extra memory-faiss",
+    )
+)
+cli.add_command(
+    _lazy(
+        "research",
+        "grandpa.cli.deep_research_setup_cmd:deep_research_setup",
+        short_help="Set up deep research.",
+        optional_modules=("numpy",),
+        install_hint="Install it with: uv sync --extra memory-faiss",
+    )
+)
+cli.add_command(_lazy("self-update", "grandpa.cli.self_update_cmd:self_update", short_help="Check for updates."))
+cli.add_command(_lazy("_bootstrap", "grandpa.cli._bootstrap:bootstrap_cmd", short_help="Bootstrap helper."))
+cli.add_command(_lazy("auth", "grandpa.cli.auth_cmd:auth", short_help="Gateway auth commands."))
+cli.add_command(_lazy("tunnel", "grandpa.cli.tunnel_cmd:tunnel", short_help="Tunnel commands."))
 
 
 def main() -> None:
