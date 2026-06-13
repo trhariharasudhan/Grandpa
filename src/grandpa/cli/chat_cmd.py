@@ -12,6 +12,7 @@ from rich.markdown import Markdown
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.core.config import load_config
 from grandpa.core.types import Message, Role
+from grandpa.engine._base import EngineConnectionError
 from grandpa.response_cleanup import GENERATION_ERROR_MESSAGE, clean_assistant_response
 
 
@@ -21,6 +22,18 @@ def _read_input(prompt: str = "You> ") -> Optional[str]:
         return input(prompt)
     except (EOFError, KeyboardInterrupt):
         return None
+
+
+def _engine_unavailable_message(engine_name: str, exc: EngineConnectionError) -> str:
+    text = str(exc)
+    if engine_name == "ollama" or "ollama" in text.lower():
+        return (
+            "Ollama is not available.\n"
+            "Start it with: ollama serve\n"
+            "Verify it with: ollama list\n"
+            "Then retry the command."
+        )
+    return f"Inference engine '{engine_name}' is not available. {text}"
 
 
 @click.command()
@@ -322,6 +335,9 @@ def chat(
             console.print()
             console.print(Markdown(content))
             console.print()
+        except EngineConnectionError as exc:
+            console.print(f"\n[red]{_engine_unavailable_message(engine_name, exc)}[/red]\n")
+            raise click.exceptions.Exit(code=1) from exc
         except KeyboardInterrupt:
             console.print("\n[dim]Generation interrupted.[/dim]")
         except Exception:

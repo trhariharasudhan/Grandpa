@@ -17,6 +17,7 @@ from grandpa.cli.chat_cmd import _read_input, chat
 from grandpa.core.config import GrandpaConfig
 from grandpa.core.registry import AgentRegistry, ToolRegistry
 from grandpa.core.types import ToolCall, ToolResult
+from grandpa.engine._base import EngineConnectionError
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 
@@ -145,3 +146,57 @@ class TestChatAgents:
         assert result.exit_code == 0
         assert "Confirm:" in result.output
         assert "chat executed!" in result.output
+
+
+class TestChatOllamaUnavailable:
+    def test_ollama_connection_failure_has_actionable_message(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = EngineConnectionError(
+            "Ollama not reachable at http://localhost:11434"
+        )
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input="hello\n",
+            )
+
+        assert result.exit_code == 1
+        assert "Ollama is not available." in result.output
+        assert "Start it with: ollama serve" in result.output
+        assert "Verify it with: ollama list" in result.output
+        assert "Traceback" not in result.output
+        assert "httpx" not in result.output.lower()
+
+    def test_non_connection_error_is_not_reported_as_ollama_unavailable(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = RuntimeError("programming bug")
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input="hello\n",
+            )
+
+        assert result.exit_code == 0
+        assert "Ollama is not available." not in result.output
+        assert "ollama serve" not in result.output
+        assert "Traceback" not in result.output
