@@ -33,6 +33,7 @@ from grandpa.cli.optimize_cmd import optimize_group
 from grandpa.cli.pearl_cmd import pearl
 from grandpa.cli.quickstart_cmd import quickstart
 from grandpa.cli.registry_cmd import registry
+from grandpa.cli.reminders_cmd import reminders
 from grandpa.cli.scan_cmd import scan
 from grandpa.cli.scheduler_cmd import scheduler
 from grandpa.cli.self_update_cmd import self_update
@@ -93,6 +94,7 @@ cli.add_command(bench, "bench")
 cli.add_command(channel, "channel")
 cli.add_command(channels, "channels")
 cli.add_command(scheduler, "scheduler")
+cli.add_command(reminders, "reminders")
 cli.add_command(doctor, "doctor")
 cli.add_command(agent, "agents")
 cli.add_command(workflow, "workflow")
