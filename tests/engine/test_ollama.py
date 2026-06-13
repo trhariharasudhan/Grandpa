@@ -122,6 +122,38 @@ class TestOllamaListModels:
         assert models == ["qwen3:8b", "llama3.2:3b"]
 
 
+class TestOllamaPullModel:
+    def test_pull_model_uses_ollama_pull_endpoint(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            route = respx.post("http://testhost:11434/api/pull").mock(
+                return_value=httpx.Response(200, json={"status": "success"})
+            )
+            result = engine.pull_model("qwen2.5:3b")
+
+        payload = json.loads(route.calls.last.request.content)
+        assert payload == {"name": "qwen2.5:3b", "stream": False}
+        assert result == {"model": "qwen2.5:3b", "status": "success"}
+
+    def test_pull_model_connection_error(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            respx.post("http://testhost:11434/api/pull").mock(
+                side_effect=httpx.ConnectError("refused")
+            )
+            with pytest.raises(EngineConnectionError):
+                engine.pull_model("qwen2.5:3b")
+
+    def test_pull_model_http_error_remains_distinguishable(
+        self,
+        engine: OllamaEngine,
+    ) -> None:
+        with respx.mock:
+            respx.post("http://testhost:11434/api/pull").mock(
+                return_value=httpx.Response(500, text="internal error")
+            )
+            with pytest.raises(RuntimeError, match="Ollama pull failed with 500"):
+                engine.pull_model("qwen2.5:3b")
+
+
 class TestOllamaHealth:
     def test_health_true(self, engine: OllamaEngine) -> None:
         with respx.mock:

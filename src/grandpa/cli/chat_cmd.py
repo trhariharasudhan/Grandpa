@@ -39,13 +39,16 @@ def _engine_unavailable_message(engine_name: str, exc: EngineConnectionError) ->
 def _model_not_found_message(engine_name: str, exc: EngineModelNotFoundError) -> str:
     model = exc.model
     if engine_name == "ollama":
-        return (
-            f'Ollama is running, but model "{model}" is not installed.\n'
-            f"Install it with: ollama pull {model}\n"
-            "Verify it with: ollama list\n"
-            "Then retry the command."
-        )
+        return f'Ollama is running, but model "{model}" is not installed.'
     return f'Inference engine "{engine_name}" does not have model "{model}" installed.'
+
+
+def _model_pull_guidance(model: str) -> str:
+    return (
+        f"Install it with: ollama pull {model}\n"
+        "Verify it with: ollama list\n"
+        "Then retry the command."
+    )
 
 
 @click.command()
@@ -351,6 +354,28 @@ def chat(
             console.print(
                 f"\n[red]{_model_not_found_message(engine_name, exc)}[/red]\n"
             )
+            if engine_name == "ollama":
+                model_to_pull = exc.model
+                if not click.confirm(f'Pull "{model_to_pull}" now?', default=False):
+                    console.print(
+                        f"\n[yellow]{_model_pull_guidance(model_to_pull)}[/yellow]\n"
+                    )
+                    raise click.exceptions.Exit(code=1) from exc
+                console.print(
+                    f'\n[cyan]Pulling "{model_to_pull}" from Ollama...[/cyan]'
+                )
+                try:
+                    engine.pull_model(model_to_pull)
+                except EngineConnectionError as pull_exc:
+                    console.print(
+                        f"\n[red]{_engine_unavailable_message(engine_name, pull_exc)}[/red]\n"
+                    )
+                    raise click.exceptions.Exit(code=1) from pull_exc
+                console.print(
+                    f'[green]Model "{model_to_pull}" was installed. '
+                    "Please rerun the chat command.[/green]"
+                )
+                raise click.exceptions.Exit(code=1) from exc
             raise click.exceptions.Exit(code=1) from exc
         except EngineConnectionError as exc:
             console.print(

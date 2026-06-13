@@ -488,6 +488,24 @@ class OllamaEngine(InferenceEngine):
         data = resp.json()
         return [m["name"] for m in data.get("models", [])]
 
+    def pull_model(self, model: str) -> Dict[str, Any]:
+        """Pull an Ollama model through the local Ollama HTTP API."""
+        payload = {"name": model, "stream": False}
+        try:
+            resp = self._client.post("/api/pull", json=payload)
+            resp.raise_for_status()
+        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+            raise EngineConnectionError(
+                f"Ollama not reachable at {self._host}"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:500] if exc.response else ""
+            raise RuntimeError(
+                f"Ollama pull failed with {exc.response.status_code}: {body}"
+            ) from exc
+        data = resp.json() if resp.content else {}
+        return {"model": model, "status": data.get("status", "success")}
+
     def health(self) -> bool:
         try:
             if not local_port_is_open(self._host):

@@ -149,7 +149,7 @@ class TestChatAgents:
 
 
 class TestChatOllamaUnavailable:
-    def test_missing_ollama_model_has_actionable_message(self) -> None:
+    def test_missing_ollama_model_decline_has_manual_guidance(self) -> None:
         engine = MagicMock()
         engine.engine_id = "ollama"
         engine.generate.side_effect = EngineModelNotFoundError("qwen2.5:3b")
@@ -165,7 +165,7 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "qwen2.5:3b"],
-                input="hello\n",
+                input="hello\nn\n",
             )
 
         assert result.exit_code == 1
@@ -173,10 +173,116 @@ class TestChatOllamaUnavailable:
             'Ollama is running, but model "qwen2.5:3b" is not installed.'
             in result.output
         )
+        assert 'Pull "qwen2.5:3b" now?' in result.output
         assert "Install it with: ollama pull qwen2.5:3b" in result.output
         assert "Verify it with: ollama list" in result.output
         assert "Ollama is not available." not in result.output
         assert "Traceback" not in result.output
+        engine.pull_model.assert_not_called()
+
+    def test_missing_ollama_model_empty_confirmation_defaults_to_no(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = EngineModelNotFoundError("qwen2.5:3b")
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "qwen2.5:3b"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "qwen2.5:3b"],
+                input="hello\n\n",
+            )
+
+        assert result.exit_code == 1
+        assert "Install it with: ollama pull qwen2.5:3b" in result.output
+        engine.pull_model.assert_not_called()
+
+    def test_missing_ollama_model_acceptance_pulls_once(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = EngineModelNotFoundError("qwen2.5:3b")
+        engine.pull_model.return_value = {"model": "qwen2.5:3b", "status": "success"}
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "qwen2.5:3b"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "qwen2.5:3b"],
+                input="hello\ny\n",
+            )
+
+        assert result.exit_code == 1
+        engine.pull_model.assert_called_once_with("qwen2.5:3b")
+        assert 'Pulling "qwen2.5:3b" from Ollama' in result.output
+        assert 'Model "qwen2.5:3b" was installed.' in result.output
+        assert "Please rerun the chat command." in result.output
+        assert "Traceback" not in result.output
+
+    def test_missing_ollama_model_pull_connection_failure_uses_unavailable_message(
+        self,
+    ) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = EngineModelNotFoundError("qwen2.5:3b")
+        engine.pull_model.side_effect = EngineConnectionError(
+            "Ollama not reachable at http://localhost:11434"
+        )
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "qwen2.5:3b"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "qwen2.5:3b"],
+                input="hello\ny\n",
+            )
+
+        assert result.exit_code == 1
+        engine.pull_model.assert_called_once_with("qwen2.5:3b")
+        assert "Ollama is not available." in result.output
+        assert "Start it with: ollama serve" in result.output
+        assert "Traceback" not in result.output
+
+    def test_missing_ollama_model_pull_programming_error_is_not_swallowed(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = EngineModelNotFoundError("qwen2.5:3b")
+        engine.pull_model.side_effect = RuntimeError("pull bug")
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "qwen2.5:3b"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "qwen2.5:3b"],
+                input="hello\ny\n",
+            )
+
+        assert isinstance(result.exception, RuntimeError)
+        assert "pull bug" in str(result.exception)
+        assert "Ollama is not available." not in result.output
 
     def test_ollama_connection_failure_has_actionable_message(self) -> None:
         engine = MagicMock()
