@@ -2582,7 +2582,6 @@ dependencies = [
     { name = "httpx" },
     { name = "openai" },
     { name = "pillow" },
-    { name = "posthog" },
     { name = "pyautogui" },
     { name = "pynvml" },
     { name = "pytesseract" },
@@ -2592,6 +2591,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+analytics = [
+    { name = "posthog" },
+]
 browser = [
     { name = "playwright" },
 ]
@@ -2778,6 +2780,9 @@ tools-search = [
     { name = "ddgs" },
     { name = "tavily-python" },
 ]
+windows-notifications = [
+    { name = "winotify", marker = "sys_platform == 'win32'" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -2834,7 +2839,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.1.1" },
     { name = "playwright", marker = "extra == 'browser'", specifier = ">=1.40" },
     { name = "polars", marker = "extra == 'framework-comparison'", specifier = ">=1.0" },
-    { name = "posthog", specifier = ">=3.0" },
+    { name = "posthog", marker = "extra == 'analytics'", specifier = ">=3.0" },
     { name = "praw", marker = "extra == 'channel-reddit'", specifier = ">=7.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.0" },
     { name = "pyautogui", specifier = ">=0.9.54" },
@@ -2873,11 +2878,12 @@ requires-dist = [
     { name = "vllm", marker = "extra == 'inference-vllm'", specifier = ">=0.16.0" },
     { name = "wandb", marker = "extra == 'eval-wandb'", specifier = ">=0.17" },
     { name = "wasmtime", marker = "extra == 'sandbox-wasm'", specifier = ">=25" },
+    { name = "winotify", marker = "sys_platform == 'win32' and extra == 'windows-notifications'", specifier = ">=1.1" },
     { name = "zeus-ml", extras = ["apple"], marker = "extra == 'energy-all'" },
     { name = "zeus-ml", extras = ["apple"], marker = "extra == 'energy-apple'" },
     { name = "zulip", marker = "extra == 'channel-zulip'", specifier = ">=0.9" },
 ]
-provides-extras = ["dev", "inference-mlx", "inference-vllm", "inference-cloud", "inference-google", "inference-litellm", "inference-gemma", "tools-search", "memory-faiss", "memory-colbert", "memory-pdf", "memory-bm25", "server", "openhands", "gpu-metrics", "energy-amd", "energy-apple", "energy-all", "orchestrator-training", "learning-dspy", "learning-gepa", "channel-telegram", "channel-discord", "channel-slack", "channel-line", "channel-viber", "channel-messenger", "channel-reddit", "channel-mastodon", "channel-xmpp", "channel-rocketchat", "channel-zulip", "channel-twitter", "channel-twitch", "channel-nostr", "channel-twilio", "channel-gmail", "browser", "media", "mining-pearl-vllm", "pdf", "scheduler", "security-signing", "sandbox-wasm", "sandbox-docker", "dashboard", "speech", "speech-deepgram", "eval-wandb", "eval-sheets", "mining-pearl-cpu", "framework-comparison", "docs"]
+provides-extras = ["dev", "inference-mlx", "inference-vllm", "inference-cloud", "inference-google", "inference-litellm", "inference-gemma", "tools-search", "memory-faiss", "memory-colbert", "memory-pdf", "memory-bm25", "server", "openhands", "gpu-metrics", "energy-amd", "energy-apple", "energy-all", "orchestrator-training", "learning-dspy", "learning-gepa", "channel-telegram", "channel-discord", "channel-slack", "channel-line", "channel-viber", "channel-messenger", "channel-reddit", "channel-mastodon", "channel-xmpp", "channel-rocketchat", "channel-zulip", "channel-twitter", "channel-twitch", "channel-nostr", "channel-twilio", "channel-gmail", "browser", "media", "mining-pearl-vllm", "pdf", "scheduler", "security-signing", "sandbox-wasm", "sandbox-docker", "dashboard", "windows-notifications", "speech", "speech-deepgram", "eval-wandb", "eval-sheets", "mining-pearl-cpu", "framework-comparison", "docs", "analytics"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "maturin", specifier = ">=1.12.6" }]
@@ -10062,6 +10068,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/b3/8f/705086c9d734d3b663af0e9bb3d4de6578d08f46b1b101c2442fd9aecaa2/win32_setctime-1.2.0.tar.gz", hash = "sha256:ae1fdf948f5640aae05c511ade119313fb6a30d7eabe25fef9764dca5873c4c0", size = 4867, upload-time = "2024-12-07T15:28:28.314Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e1/07/c6fe3ad3e685340704d314d765b7912993bcb8dc198f0e7a89382d37974b/win32_setctime-1.2.0-py3-none-any.whl", hash = "sha256:95d644c4e708aba81dc3704a116d8cbc974d70b3bdb8be1d150e36be6e9d1390", size = 4083, upload-time = "2024-12-07T15:28:26.465Z" },
+]
+
+[[package]]
+name = "winotify"
+version = "1.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/b0/1b304fdd8fd810f1f8e81a2708f8bf72e0987de1a763f0ee81f6d08bcae7/winotify-1.1.0.tar.gz", hash = "sha256:f8a0d6ff00cb2c1b3dcdfe825431f46f6aa5dc8ce84ffc59e8fda8c7e36687fe", size = 10101, upload-time = "2022-02-07T12:34:46.236Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/85/6cc4c738080d60b62cad59d0f32386b8277d40e2bf8c06fd1e4101a17238/winotify-1.1.0-py3-none-any.whl", hash = "sha256:13aa9b1196b02ab3e699645b4407371ca73348421f8662565100d70c7cf552d9", size = 15034, upload-time = "2022-02-07T12:34:44.341Z" },
 ]
 
 [[package]]
