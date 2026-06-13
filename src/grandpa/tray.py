@@ -6,6 +6,7 @@ import importlib.util
 import logging
 import os
 import sys
+import uuid
 import webbrowser
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,24 +61,39 @@ REQUIRED_MENU_ACTIONS = (
 class TraySingleInstance:
     """Small lock-file guard for a single tray process per user profile."""
 
-    def __init__(self, lock_path: Path = TRAY_LOCK_FILE) -> None:
+    def __init__(
+        self,
+        lock_path: Path = TRAY_LOCK_FILE,
+        *,
+        pid_alive: Callable[[int], bool] | None = None,
+    ) -> None:
         self.lock_path = Path(lock_path)
         self._fd: int | None = None
+        self._pid = os.getpid()
+        self._token = uuid.uuid4().hex
+        self._pid_alive = pid_alive or _pid_is_alive
 
     def acquire(self) -> None:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            self._fd = os.open(str(self.lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(self._fd, str(os.getpid()).encode("ascii", errors="ignore"))
-        except FileExistsError as exc:
-            raise TrayAlreadyRunningError("Grandpa tray is already running.") from exc
-        except OSError as exc:
-            raise RuntimeError(f"Could not create tray lock: {exc}") from exc
+        for _attempt in range(3):
+            try:
+                self._fd = os.open(str(self.lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(self._fd, f"{self._pid}\n{self._token}\n".encode("ascii", errors="ignore"))
+                return
+            except FileExistsError as exc:
+                if self._existing_lock_is_live():
+                    raise TrayAlreadyRunningError("Grandpa tray is already running.") from exc
+                self._remove_stale_lock()
+            except OSError as exc:
+                raise RuntimeError(f"Could not create tray lock: {exc}") from exc
+        raise TrayAlreadyRunningError("Grandpa tray is already running.")
 
     def release(self) -> None:
         if self._fd is not None:
             os.close(self._fd)
             self._fd = None
+        if not self._owns_current_lock():
+            return
         try:
             self.lock_path.unlink(missing_ok=True)
         except OSError:
@@ -89,6 +105,74 @@ class TraySingleInstance:
 
     def __exit__(self, *_args: object) -> None:
         self.release()
+
+    def _existing_lock_is_live(self) -> bool:
+        pid = self._read_lock_pid()
+        return pid is not None and self._pid_alive(pid)
+
+    def _read_lock_pid(self) -> int | None:
+        try:
+            raw_pid = self.lock_path.read_text(encoding="ascii", errors="ignore").splitlines()[0].strip()
+            pid = int(raw_pid)
+        except (IndexError, OSError, ValueError):
+            return None
+        return pid if pid > 0 else None
+
+    def _owns_current_lock(self) -> bool:
+        try:
+            lines = self.lock_path.read_text(encoding="ascii", errors="ignore").splitlines()
+        except OSError:
+            return False
+        if len(lines) < 2:
+            return False
+        try:
+            pid = int(lines[0].strip())
+        except ValueError:
+            return False
+        return pid == self._pid and lines[1].strip() == self._token
+
+    def _remove_stale_lock(self) -> None:
+        try:
+            self.lock_path.unlink(missing_ok=True)
+        except OSError as exc:
+            raise RuntimeError(f"Could not remove stale tray lock: {exc}") from exc
+
+
+def _pid_is_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        import psutil  # type: ignore[import-not-found]
+
+        if not psutil.pid_exists(pid):
+            return False
+        if sys.platform == "win32" and not _pid_belongs_to_current_windows_user(psutil, pid):
+            return True
+        return True
+    except ImportError:
+        pass
+
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def _pid_belongs_to_current_windows_user(psutil_module: Any, pid: int) -> bool:
+    psutil_error = getattr(psutil_module, "Error", RuntimeError)
+    try:
+        import getpass
+
+        username = str(psutil_module.Process(pid).username()).lower()
+        current = getpass.getuser().lower()
+    except (AttributeError, OSError, RuntimeError, psutil_error):
+        return True
+    return username == current or username.endswith(f"\\{current}")
 
 
 class GrandpaTrayController:

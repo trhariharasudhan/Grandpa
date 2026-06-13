@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import types
+from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -63,6 +64,133 @@ def test_single_instance_protection(tmp_path: Path) -> None:
         first.release()
 
     assert not lock.exists()
+
+
+def test_single_instance_live_pid_lock_blocks(tmp_path: Path) -> None:
+    lock = tmp_path / "tray.lock"
+    lock.write_text("123\nold-token\n", encoding="ascii")
+
+    with pytest.raises(TrayAlreadyRunningError, match="already running"):
+        TraySingleInstance(lock, pid_alive=lambda pid: pid == 123).acquire()
+
+
+def test_single_instance_dead_pid_lock_recovers(tmp_path: Path) -> None:
+    lock = tmp_path / "tray.lock"
+    lock.write_text("123\nold-token\n", encoding="ascii")
+    guard = TraySingleInstance(lock, pid_alive=lambda _pid: False)
+
+    guard.acquire()
+    try:
+        assert lock.read_text(encoding="ascii").splitlines()[0].isdigit()
+        assert "old-token" not in lock.read_text(encoding="ascii")
+    finally:
+        guard.release()
+
+    assert not lock.exists()
+
+
+@pytest.mark.parametrize("content", ["", "not-a-pid\n", "-4\n", "0\n"])
+def test_single_instance_invalid_pid_lock_recovers(tmp_path: Path, content: str) -> None:
+    lock = tmp_path / "tray.lock"
+    lock.write_text(content, encoding="ascii")
+    guard = TraySingleInstance(lock, pid_alive=lambda _pid: True)
+
+    guard.acquire()
+    guard.release()
+
+    assert not lock.exists()
+
+
+def test_single_instance_unremovable_stale_lock_is_actionable(tmp_path: Path, monkeypatch) -> None:
+    lock = tmp_path / "tray.lock"
+    lock.write_text("stale\n", encoding="ascii")
+    guard = TraySingleInstance(lock, pid_alive=lambda _pid: False)
+    original_unlink = Path.unlink
+
+    def fail_unlink(self, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        if self == lock:
+            raise OSError("permission denied")
+        return original_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr("grandpa.tray.Path.unlink", fail_unlink)
+
+    with pytest.raises(RuntimeError, match="Could not remove stale tray lock"):
+        guard.acquire()
+
+
+def test_release_removes_only_owned_lock(tmp_path: Path) -> None:
+    lock = tmp_path / "tray.lock"
+    guard = TraySingleInstance(lock)
+    guard.acquire()
+    if guard._fd is not None:
+        import os
+
+        os.close(guard._fd)
+        guard._fd = None
+    lock.write_text("999\nreplacement-token\n", encoding="ascii")
+
+    guard.release()
+
+    assert lock.read_text(encoding="ascii") == "999\nreplacement-token\n"
+
+
+def test_startup_failure_after_lock_acquisition_releases_lock(monkeypatch, tmp_path: Path) -> None:
+    lock = tmp_path / "tray.lock"
+    monkeypatch.setattr("grandpa.tray.validate_tray_environment", lambda: None)
+    monkeypatch.setattr("grandpa.tray.create_placeholder_icon", lambda: object())
+    monkeypatch.setattr("grandpa.tray.build_menu", lambda _pystray, _controller: object())
+
+    class FailingIcon:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            raise RuntimeError("startup failed")
+
+    monkeypatch.setitem(__import__("sys").modules, "pystray", types.SimpleNamespace(Icon=FailingIcon))
+
+    with pytest.raises(RuntimeError, match="startup failed"):
+        run_tray_app(lock_path=lock)
+
+    assert not lock.exists()
+
+
+def test_keyboard_interrupt_after_lock_acquisition_releases_lock(monkeypatch, tmp_path: Path) -> None:
+    lock = tmp_path / "tray.lock"
+    monkeypatch.setattr("grandpa.tray.validate_tray_environment", lambda: None)
+    monkeypatch.setattr("grandpa.tray.create_placeholder_icon", lambda: object())
+    monkeypatch.setattr("grandpa.tray.build_menu", lambda _pystray, _controller: object())
+
+    class InterruptingIcon:
+        def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
+            pass
+
+        def run(self):
+            raise KeyboardInterrupt
+
+    monkeypatch.setitem(__import__("sys").modules, "pystray", types.SimpleNamespace(Icon=InterruptingIcon))
+
+    with pytest.raises(KeyboardInterrupt):
+        run_tray_app(lock_path=lock)
+
+    assert not lock.exists()
+
+
+def test_simultaneous_acquisition_has_one_winner(tmp_path: Path) -> None:
+    lock = tmp_path / "tray.lock"
+    winners = 0
+    errors = 0
+    guards = [TraySingleInstance(lock), TraySingleInstance(lock)]
+
+    for guard in guards:
+        context = pytest.raises(TrayAlreadyRunningError) if winners else nullcontext()
+        with context:
+            guard.acquire()
+            winners += 1
+    errors = len(guards) - winners
+
+    for guard in guards:
+        guard.release()
+
+    assert winners == 1
+    assert errors == 1
 
 
 def test_start_calls_existing_start_lifecycle_once() -> None:
