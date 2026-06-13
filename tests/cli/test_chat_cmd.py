@@ -17,7 +17,7 @@ from grandpa.cli.chat_cmd import _read_input, chat
 from grandpa.core.config import GrandpaConfig
 from grandpa.core.registry import AgentRegistry, ToolRegistry
 from grandpa.core.types import ToolCall, ToolResult
-from grandpa.engine._base import EngineConnectionError
+from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 
@@ -149,6 +149,35 @@ class TestChatAgents:
 
 
 class TestChatOllamaUnavailable:
+    def test_missing_ollama_model_has_actionable_message(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = EngineModelNotFoundError("qwen2.5:3b")
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "qwen2.5:3b"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "qwen2.5:3b"],
+                input="hello\n",
+            )
+
+        assert result.exit_code == 1
+        assert (
+            'Ollama is running, but model "qwen2.5:3b" is not installed.'
+            in result.output
+        )
+        assert "Install it with: ollama pull qwen2.5:3b" in result.output
+        assert "Verify it with: ollama list" in result.output
+        assert "Ollama is not available." not in result.output
+        assert "Traceback" not in result.output
+
     def test_ollama_connection_failure_has_actionable_message(self) -> None:
         engine = MagicMock()
         engine.engine_id = "ollama"
@@ -198,5 +227,7 @@ class TestChatOllamaUnavailable:
 
         assert result.exit_code == 0
         assert "Ollama is not available." not in result.output
+        assert "not installed" not in result.output
+        assert "ollama pull" not in result.output
         assert "ollama serve" not in result.output
         assert "Traceback" not in result.output

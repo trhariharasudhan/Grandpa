@@ -13,6 +13,14 @@ class EngineConnectionError(Exception):
     """Raised when an engine is unreachable."""
 
 
+class EngineModelNotFoundError(Exception):
+    """Raised when an engine is reachable but the requested model is missing."""
+
+    def __init__(self, model: str, message: str | None = None) -> None:
+        self.model = model
+        super().__init__(message or f"Model not found: {model}")
+
+
 def messages_to_dicts(messages: Sequence[Message]) -> List[Dict[str, Any]]:
     """Convert ``Message`` objects to OpenAI-format dicts."""
     out: List[Dict[str, Any]] = []
@@ -59,6 +67,7 @@ def estimate_prompt_tokens(messages: Sequence[Message]) -> int:
 
 __all__ = [
     "EngineConnectionError",
+    "EngineModelNotFoundError",
     "InferenceEngine",
     "estimate_prompt_tokens",
     "messages_to_dicts",

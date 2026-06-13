@@ -14,6 +14,7 @@ from grandpa.core.registry import EngineRegistry
 from grandpa.core.types import Message
 from grandpa.engine._base import (
     EngineConnectionError,
+    EngineModelNotFoundError,
     InferenceEngine,
     estimate_prompt_tokens,
     messages_to_dicts,
@@ -196,6 +197,11 @@ class OllamaEngine(InferenceEngine):
             ) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500] if exc.response else ""
+            if _is_model_not_found_error(exc.response.status_code, body):
+                raise EngineModelNotFoundError(
+                    model,
+                    f"Ollama model {model!r} is not installed.",
+                ) from exc
             raise RuntimeError(
                 f"Ollama returned {exc.response.status_code}: {body}"
             ) from exc
@@ -501,6 +507,14 @@ class OllamaEngine(InferenceEngine):
 
     def close(self) -> None:
         self._client.close()
+
+
+def _is_model_not_found_error(status_code: int, body: str) -> bool:
+    lowered = body.lower()
+    return status_code == 404 or (
+        "model" in lowered
+        and ("not found" in lowered or "pull" in lowered or "not installed" in lowered)
+    )
 
 
 __all__ = ["OllamaEngine"]

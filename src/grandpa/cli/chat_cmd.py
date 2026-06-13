@@ -12,7 +12,7 @@ from rich.markdown import Markdown
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.core.config import load_config
 from grandpa.core.types import Message, Role
-from grandpa.engine._base import EngineConnectionError
+from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
 from grandpa.response_cleanup import GENERATION_ERROR_MESSAGE, clean_assistant_response
 
 
@@ -34,6 +34,18 @@ def _engine_unavailable_message(engine_name: str, exc: EngineConnectionError) ->
             "Then retry the command."
         )
     return f"Inference engine '{engine_name}' is not available. {text}"
+
+
+def _model_not_found_message(engine_name: str, exc: EngineModelNotFoundError) -> str:
+    model = exc.model
+    if engine_name == "ollama":
+        return (
+            f'Ollama is running, but model "{model}" is not installed.\n'
+            f"Install it with: ollama pull {model}\n"
+            "Verify it with: ollama list\n"
+            "Then retry the command."
+        )
+    return f'Inference engine "{engine_name}" does not have model "{model}" installed.'
 
 
 @click.command()
@@ -335,8 +347,15 @@ def chat(
             console.print()
             console.print(Markdown(content))
             console.print()
+        except EngineModelNotFoundError as exc:
+            console.print(
+                f"\n[red]{_model_not_found_message(engine_name, exc)}[/red]\n"
+            )
+            raise click.exceptions.Exit(code=1) from exc
         except EngineConnectionError as exc:
-            console.print(f"\n[red]{_engine_unavailable_message(engine_name, exc)}[/red]\n")
+            console.print(
+                f"\n[red]{_engine_unavailable_message(engine_name, exc)}[/red]\n"
+            )
             raise click.exceptions.Exit(code=1) from exc
         except KeyboardInterrupt:
             console.print("\n[dim]Generation interrupted.[/dim]")

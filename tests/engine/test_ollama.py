@@ -10,7 +10,7 @@ import respx
 
 from grandpa.core.registry import EngineRegistry
 from grandpa.core.types import Message, Role
-from grandpa.engine._base import EngineConnectionError
+from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
 from grandpa.engine.ollama import OllamaEngine
 
 
@@ -91,6 +91,22 @@ class TestOllamaGenerate:
                 engine.generate(
                     [Message(role=Role.USER, content="Hi")], model="qwen3:8b"
                 )
+
+    def test_generate_model_not_found_error(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(
+                    404,
+                    text='model "missing:latest" not found, try pulling it first',
+                )
+            )
+            with pytest.raises(EngineModelNotFoundError) as exc_info:
+                engine.generate(
+                    [Message(role=Role.USER, content="Hi")],
+                    model="missing:latest",
+                )
+
+        assert exc_info.value.model == "missing:latest"
 
 
 class TestOllamaListModels:
