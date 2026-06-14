@@ -6,8 +6,8 @@ import logging
 import pathlib
 import time
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, FastAPI
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from grandpa.server.analytics_routes import router as analytics_router
@@ -16,7 +16,6 @@ from grandpa.server.comparison import comparison_router
 from grandpa.server.connectors_router import create_connectors_router
 from grandpa.server.dashboard import dashboard_router
 from grandpa.server.digest_routes import create_digest_router
-from grandpa.server.research_router import router as research_router
 from grandpa.server.routes import router
 from grandpa.server.upload_router import router as upload_router
 
@@ -138,6 +137,41 @@ class _NoCacheStaticFiles(StaticFiles):
             await send(message)
 
         await super().__call__(scope, receive, _send_with_headers)
+
+
+def _missing_research_router(module_name: str) -> APIRouter:
+    fallback = APIRouter(prefix="/api", tags=["research"])
+
+    @fallback.post("/research")
+    async def _research_unavailable() -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "research_unavailable",
+                "message": (
+                    "Research mode is unavailable because an optional dependency "
+                    f"is not installed: {module_name}."
+                ),
+                "install": "uv sync --extra memory-faiss",
+            },
+        )
+
+    return fallback
+
+
+def _load_research_router() -> APIRouter:
+    try:
+        from grandpa.server.research_router import router as research_router
+
+        return research_router
+    except ModuleNotFoundError as exc:
+        if exc.name in {"numpy", "faiss", "sentence_transformers"}:
+            logger.warning(
+                "Research routes disabled; optional dependency missing: %s",
+                exc.name,
+            )
+            return _missing_research_router(exc.name or "unknown")
+        raise
 
 
 def create_app(
@@ -314,7 +348,7 @@ def create_app(
     app.include_router(create_connectors_router())
     app.include_router(create_digest_router())
     app.include_router(upload_router)
-    app.include_router(research_router)
+    app.include_router(_load_research_router())
     app.include_router(analytics_router)
     include_all_routes(app)
 

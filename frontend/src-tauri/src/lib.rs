@@ -2,17 +2,23 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
+use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
 const OLLAMA_PORT: u16 = 11434;
 const GRANDPA_PORT: u16 = 8000;
+const FLOATING_WINDOW_LABEL: &str = "grandpa-floating";
+const FLOATING_COLLAPSED_WIDTH: f64 = 72.0;
+const FLOATING_COLLAPSED_HEIGHT: f64 = 72.0;
+const FLOATING_EXPANDED_WIDTH: f64 = 320.0;
+const FLOATING_EXPANDED_HEIGHT: f64 = 360.0;
 
-/// Small, fast model pulled at startup so the app opens quickly.
+/// Preferred small startup model. The desktop app never auto-pulls it; users
+/// confirm model downloads through the normal model/chat flow.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
 
-/// Tiny fallback model if even the startup model can't be pulled.
+/// Tiny fallback model id used only as a server default when no local model is detected.
 const FALLBACK_MODEL: &str = "qwen3:0.6b";
 
 /// Qwen3.5 model variants, ordered smallest to largest.
@@ -341,6 +347,43 @@ impl Default for SetupStatus {
 
 type SharedStatus = Arc<Mutex<SetupStatus>>;
 
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, Debug)]
+struct FloatingPosition {
+    x: f64,
+    y: f64,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+struct FloatingBackendStatus {
+    state: String,
+    detail: String,
+    api_base: String,
+}
+
+fn floating_position_path() -> std::path::PathBuf {
+    std::path::PathBuf::from(home_dir())
+        .join(".grandpa")
+        .join("floating-window.json")
+}
+
+fn read_floating_position_file() -> Option<FloatingPosition> {
+    let raw = std::fs::read_to_string(floating_position_path()).ok()?;
+    let position: FloatingPosition = serde_json::from_str(&raw).ok()?;
+    valid_floating_position(position)
+}
+
+fn valid_floating_position(position: FloatingPosition) -> Option<FloatingPosition> {
+    if position.x.is_finite()
+        && position.y.is_finite()
+        && position.x.abs() < 100_000.0
+        && position.y.abs() < 100_000.0
+    {
+        Some(position)
+    } else {
+        None
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Health-check helpers
 // ---------------------------------------------------------------------------
@@ -358,31 +401,6 @@ async fn wait_for_url(url: &str, timeout: Duration) -> bool {
             }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
-    }
-    false
-}
-
-async fn ollama_has_model(model: &str) -> bool {
-    let url = format!("http://127.0.0.1:{}/api/tags", OLLAMA_PORT);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .unwrap();
-    if let Ok(resp) = client.get(&url).send().await {
-        if let Ok(body) = resp.json::<serde_json::Value>().await {
-            if let Some(models) = body.get("models").and_then(|m| m.as_array()) {
-                return models.iter().any(|m| {
-                    m.get("name")
-                        .and_then(|n| n.as_str())
-                        .map(|n| {
-                            n == model
-                                || n.strip_suffix(":latest") == Some(model)
-                                || model.strip_suffix(":latest") == Some(n)
-                        })
-                        .unwrap_or(false)
-                });
-            }
-        }
     }
     false
 }
@@ -405,16 +423,50 @@ async fn pull_model(model: &str) -> Result<(), String> {
     Ok(())
 }
 
+fn summarize_backend_stderr(stderr: &str) -> String {
+    let trimmed = stderr.trim();
+    if trimmed.is_empty() {
+        return "Grandpa server did not start.".into();
+    }
+    if let Some(module) = missing_python_module(trimmed) {
+        return format!(
+            "Missing Python dependency: {module}. Run `uv sync --extra server` and enable the relevant optional extra for that feature."
+        );
+    }
+    let last_line = trimmed
+        .lines()
+        .rev()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("Grandpa server did not start.");
+    let line = last_line
+        .strip_prefix("RuntimeError: ")
+        .unwrap_or(last_line);
+    line.chars().take(500).collect()
+}
+
+fn missing_python_module(stderr: &str) -> Option<String> {
+    let marker = "ModuleNotFoundError: No module named ";
+    let idx = stderr.find(marker)?;
+    let rest = stderr[idx + marker.len()..].trim();
+    let quote = rest.chars().next()?;
+    if quote != '\'' && quote != '"' {
+        return None;
+    }
+    let end = rest[1..].find(quote)?;
+    Some(rest[1..1 + end].to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Backend boot sequence (runs in background after app launch)
 // ---------------------------------------------------------------------------
 
 async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
-    // Phase 1: Start Ollama
+    // Phase 1: Try Ollama briefly. Desktop UI startup must never depend on it.
     {
         let mut s = status.lock().await;
         s.phase = "ollama".into();
-        s.detail = "Starting inference engine...".into();
+        s.detail = "Checking local inference engine...".into();
     }
 
     // Try the bundled sidecar first, fall back to system ollama
@@ -437,56 +489,21 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     }
 
     let ollama_url = format!("http://127.0.0.1:{}/api/tags", OLLAMA_PORT);
-    let ollama_ok = wait_for_url(&ollama_url, Duration::from_secs(30)).await;
-
-    if !ollama_ok {
-        let mut s = status.lock().await;
-        s.error = Some("Could not start Ollama. Install it from https://ollama.com".into());
-        return;
-    }
+    let ollama_ok = wait_for_url(&ollama_url, Duration::from_secs(3)).await;
 
     {
         let mut s = status.lock().await;
-        s.ollama_ready = true;
-        s.detail = "Inference engine ready.".into();
-    }
-
-    // Phase 2: Pull one small model (qwen3.5:2b) so the app can open fast.
-    // Remaining models are pulled in the background after the server starts.
-    {
-        let mut s = status.lock().await;
-        s.phase = "model".into();
-        s.detail = format!("Checking for {}...", STARTUP_MODEL);
-    }
-
-    if !ollama_has_model(STARTUP_MODEL).await {
-        {
-            let mut s = status.lock().await;
-            s.detail = format!("Downloading {}... (this may take a minute)", STARTUP_MODEL);
-        }
-        if let Err(e) = pull_model(STARTUP_MODEL).await {
-            // If the startup model fails, try the tiny fallback
-            eprintln!("Warning: failed to pull {}: {}", STARTUP_MODEL, e);
-            if !ollama_has_model(FALLBACK_MODEL).await {
-                let mut s = status.lock().await;
-                s.detail = format!("Downloading {}...", FALLBACK_MODEL);
-                drop(s);
-                if let Err(e2) = pull_model(FALLBACK_MODEL).await {
-                    let mut s = status.lock().await;
-                    s.error = Some(format!("Failed to download model: {}", e2));
-                    return;
-                }
-            }
+        s.ollama_ready = ollama_ok;
+        s.model_ready = false;
+        if ollama_ok {
+            s.detail = "Inference engine is reachable.".into();
+        } else {
+            s.detail =
+                "Ollama is unavailable. Grandpa will start without local model downloads.".into();
         }
     }
 
-    {
-        let mut s = status.lock().await;
-        s.model_ready = true;
-        s.detail = "Model ready.".into();
-    }
-
-    // Phase 3: Start grandpa serve
+    // Phase 2: Start grandpa serve
     {
         let mut s = status.lock().await;
         s.phase = "server".into();
@@ -631,15 +648,8 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         }
     }
 
-    // Start with STARTUP_MODEL (just pulled) or preferred if already available.
-    let pref = preferred_model();
-    let startup_model = if ollama_has_model(pref).await {
-        pref
-    } else if ollama_has_model(STARTUP_MODEL).await {
-        STARTUP_MODEL
-    } else {
-        FALLBACK_MODEL
-    };
+    // Pick a lightweight default id without contacting Ollama or pulling models.
+    let startup_model = preferred_model();
 
     let root = project_root.as_ref().unwrap();
 
@@ -651,9 +661,12 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     let _ = tokio::process::Command::new(&uv_bin)
         .args([
             "sync",
-            "--extra", "server",
-            "--extra", "inference-cloud",
-            "--extra", "inference-google",
+            "--extra",
+            "server",
+            "--extra",
+            "inference-cloud",
+            "--extra",
+            "inference-google",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -709,7 +722,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
     }
 
     let server_url = format!("http://127.0.0.1:{}/health", GRANDPA_PORT);
-    let server_ok = wait_for_url(&server_url, Duration::from_secs(600)).await;
+    let server_ok = wait_for_url(&server_url, Duration::from_secs(45)).await;
 
     if !server_ok {
         // Try to read stderr from the failed process for a useful error
@@ -736,7 +749,10 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
                 root.display(),
             )
         } else {
-            format!("Server failed to start: {}", stderr_msg.trim())
+            format!(
+                "Server failed to start: {}",
+                summarize_backend_stderr(&stderr_msg)
+            )
         };
         let mut s = status.lock().await;
         s.error = Some(detail);
@@ -750,19 +766,7 @@ async fn boot_backend(backend: SharedBackend, status: SharedStatus) {
         s.detail = "All systems ready.".into();
     }
 
-    // Phase 4: Pull remaining Qwen3.5 models in the background.
-    // The app is already usable with qwen3.5:2b; as each model finishes
-    // it appears in the model list automatically.
-    let fitting = models_that_fit();
-    tokio::spawn(async move {
-        for model in fitting {
-            if model != STARTUP_MODEL && model != FALLBACK_MODEL {
-                if !ollama_has_model(model).await {
-                    let _ = pull_model(model).await;
-                }
-            }
-        }
-    });
+    // Model downloads are intentionally user-confirmed through chat/model flows.
 }
 
 // ---------------------------------------------------------------------------
@@ -798,6 +802,88 @@ async fn start_backend(
 async fn stop_backend(backend: tauri::State<'_, SharedBackend>) -> Result<(), String> {
     backend.lock().await.stop_all().await;
     Ok(())
+}
+
+#[tauri::command]
+async fn floating_backend_status(
+    status: tauri::State<'_, SharedStatus>,
+) -> Result<FloatingBackendStatus, String> {
+    let snapshot = status.lock().await.clone();
+    let state = if snapshot.error.is_some() {
+        "error"
+    } else if snapshot.server_ready {
+        "running"
+    } else if snapshot.phase == "stopped" {
+        "stopped"
+    } else {
+        "checking"
+    };
+    Ok(FloatingBackendStatus {
+        state: state.into(),
+        detail: snapshot.error.unwrap_or_else(|| snapshot.detail.clone()),
+        api_base: api_base(),
+    })
+}
+
+#[tauri::command]
+async fn floating_start_backend(
+    backend: tauri::State<'_, SharedBackend>,
+    status: tauri::State<'_, SharedStatus>,
+) -> Result<FloatingBackendStatus, String> {
+    {
+        let snapshot = status.lock().await.clone();
+        if snapshot.server_ready || (snapshot.error.is_none() && snapshot.phase != "stopped") {
+            return floating_backend_status(status).await;
+        }
+    }
+    let b = backend.inner().clone();
+    let s = status.inner().clone();
+    tauri::async_runtime::spawn(boot_backend(b, s));
+    floating_backend_status(status).await
+}
+
+#[tauri::command]
+async fn floating_stop_backend(
+    backend: tauri::State<'_, SharedBackend>,
+    status: tauri::State<'_, SharedStatus>,
+) -> Result<FloatingBackendStatus, String> {
+    backend.lock().await.stop_all().await;
+    {
+        let mut snapshot = status.lock().await;
+        snapshot.phase = "stopped".into();
+        snapshot.detail = "Grandpa backend is stopped.".into();
+        snapshot.ollama_ready = false;
+        snapshot.server_ready = false;
+        snapshot.model_ready = false;
+        snapshot.error = None;
+    }
+    floating_backend_status(status).await
+}
+
+#[tauri::command]
+fn floating_open_main_app(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show().map_err(|e| e.to_string())?;
+        window.set_focus().map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    Err("Main Grandpa window is not available.".into())
+}
+
+#[tauri::command]
+fn get_floating_position() -> Option<FloatingPosition> {
+    read_floating_position_file()
+}
+
+#[tauri::command]
+fn save_floating_position(position: FloatingPosition) -> Result<(), String> {
+    let position = valid_floating_position(position).ok_or("Invalid floating window position.")?;
+    let path = floating_position_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let data = serde_json::to_string_pretty(&position).map_err(|e| e.to_string())?;
+    std::fs::write(path, data).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1259,7 +1345,7 @@ mod native_overlay {
         // Also inject CSS to nuke any remaining background
         let js = nsstring(
             "document.documentElement.style.background='transparent';\
-             document.body.style.background='transparent';"
+             document.body.style.background='transparent';",
         );
         let nil: *mut Object = std::ptr::null_mut();
         let _: () = msg_send![wv, evaluateJavaScript: js completionHandler: nil];
@@ -1290,7 +1376,9 @@ mod native_overlay {
             let sup = Class::get("NSObject").unwrap();
             let mut decl = ClassDecl::new("GrandpaOverlayNavDelegate", sup).unwrap();
             extern "C" fn did_finish(_: &Object, _: Sel, wv: *mut Object, _nav: *mut Object) {
-                unsafe { force_transparent(wv); }
+                unsafe {
+                    force_transparent(wv);
+                }
             }
             decl.add_method(
                 sel!(webView:didFinishNavigation:),
@@ -1610,6 +1698,33 @@ pub fn run() {
                     .build(app)?;
             }
 
+            if app.get_webview_window(FLOATING_WINDOW_LABEL).is_none() {
+                let floating = WebviewWindowBuilder::new(
+                    app,
+                    FLOATING_WINDOW_LABEL,
+                    WebviewUrl::App("index.html?floating=1".into()),
+                )
+                .title("Grandpa Assistant")
+                .inner_size(FLOATING_COLLAPSED_WIDTH, FLOATING_COLLAPSED_HEIGHT)
+                .min_inner_size(FLOATING_COLLAPSED_WIDTH, FLOATING_COLLAPSED_HEIGHT)
+                .max_inner_size(FLOATING_EXPANDED_WIDTH, FLOATING_EXPANDED_HEIGHT)
+                .resizable(false)
+                .decorations(false)
+                .transparent(true)
+                .always_on_top(true)
+                .skip_taskbar(true)
+                .position(32.0, 32.0)
+                .build()?;
+
+                let floating_for_close = floating.clone();
+                floating.on_window_event(move |window_event| {
+                    if let WindowEvent::CloseRequested { api, .. } = window_event {
+                        api.prevent_close();
+                        let _ = floating_for_close.hide();
+                    }
+                });
+            }
+
             // Create native macOS overlay panel
             #[cfg(target_os = "macos")]
             unsafe {
@@ -1630,7 +1745,7 @@ pub fn run() {
                         }
                     }
                 }) {
-                    eprintln!("Warning: could not register Cmd+Shift+Space: {e}");
+                    eprintln!("Warning: could not register Cmd+Shift+Space (non-fatal): {e}");
                 }
             }
 
@@ -1644,6 +1759,12 @@ pub fn run() {
             get_api_base,
             start_backend,
             stop_backend,
+            floating_backend_status,
+            floating_start_backend,
+            floating_stop_backend,
+            floating_open_main_app,
+            get_floating_position,
+            save_floating_position,
             check_health,
             fetch_energy,
             fetch_telemetry,
@@ -1676,4 +1797,57 @@ pub fn run() {
                 });
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn floating_window_constants_match_collapsed_and_expanded_sizes() {
+        assert_eq!(FLOATING_WINDOW_LABEL, "grandpa-floating");
+        assert_eq!(FLOATING_COLLAPSED_WIDTH, 72.0);
+        assert_eq!(FLOATING_COLLAPSED_HEIGHT, 72.0);
+        assert_eq!(FLOATING_EXPANDED_WIDTH, 320.0);
+        assert_eq!(FLOATING_EXPANDED_HEIGHT, 360.0);
+    }
+
+    #[test]
+    fn floating_position_validation_rejects_malformed_values() {
+        assert!(valid_floating_position(FloatingPosition { x: 20.0, y: 40.0 }).is_some());
+        assert!(valid_floating_position(FloatingPosition {
+            x: f64::NAN,
+            y: 40.0
+        })
+        .is_none());
+        assert!(valid_floating_position(FloatingPosition {
+            x: 20.0,
+            y: f64::INFINITY
+        })
+        .is_none());
+        assert!(valid_floating_position(FloatingPosition {
+            x: 200_000.0,
+            y: 40.0
+        })
+        .is_none());
+    }
+
+    #[test]
+    fn floating_api_base_uses_localhost_loopback() {
+        assert_eq!(api_base(), "http://127.0.0.1:8000");
+    }
+
+    #[test]
+    fn backend_stderr_summary_extracts_missing_dependency_without_traceback() {
+        let stderr = "Traceback (most recent call last):\n  File \"x\", line 1\nModuleNotFoundError: No module named 'numpy'\n";
+        let summary = summarize_backend_stderr(stderr);
+        assert!(summary.contains("Missing Python dependency: numpy"));
+        assert!(!summary.contains("Traceback"));
+    }
+
+    #[test]
+    fn backend_stderr_summary_uses_last_line_for_other_errors() {
+        let summary = summarize_backend_stderr("Traceback...\nRuntimeError: port already in use\n");
+        assert_eq!(summary, "port already in use");
+    }
 }
