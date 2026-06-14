@@ -1731,7 +1731,11 @@ pub fn run() {
                 native_overlay::create(include_str!("overlay.html"), GRANDPA_PORT);
             }
 
-            // Register Cmd+Shift+Space to toggle the overlay
+            // Register Cmd+Shift+Space to toggle the native overlay.
+            // The current global shortcut action is macOS-only; registering it
+            // on Windows can conflict with OS/input shortcuts while doing
+            // nothing useful.
+            #[cfg(target_os = "macos")]
             {
                 use tauri_plugin_global_shortcut::{
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
@@ -1739,7 +1743,6 @@ pub fn run() {
                 let sc = Shortcut::new(Some(Modifiers::META | Modifiers::SHIFT), Code::Space);
                 if let Err(e) = app.global_shortcut().on_shortcut(sc, |_app, _sc, ev| {
                     if ev.state == ShortcutState::Pressed {
-                        #[cfg(target_os = "macos")]
                         unsafe {
                             native_overlay::toggle();
                         }
