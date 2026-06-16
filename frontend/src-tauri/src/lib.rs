@@ -16,6 +16,17 @@ const FLOATING_EXPANDED_HEIGHT: f64 = 340.0;
 const FLOATING_EDGE_GAP: f64 = 20.0;
 const FLOATING_TASKBAR_GAP: f64 = 72.0;
 
+#[cfg(target_os = "windows")]
+const GWL_EXSTYLE: i32 = -20;
+#[cfg(target_os = "windows")]
+const WS_EX_TRANSPARENT: isize = 0x00000020;
+
+#[cfg(target_os = "windows")]
+extern "system" {
+    fn GetWindowLongPtrW(hwnd: *mut std::ffi::c_void, n_index: i32) -> isize;
+    fn SetWindowLongPtrW(hwnd: *mut std::ffi::c_void, n_index: i32, dw_new_long: isize) -> isize;
+}
+
 /// Preferred small startup model. The desktop app never auto-pulls it; users
 /// confirm model downloads through the normal model/chat flow.
 const STARTUP_MODEL: &str = "qwen3.5:4b";
@@ -376,6 +387,7 @@ struct FloatingWindowConfig {
     skip_taskbar: bool,
     resizable: bool,
     shadow: bool,
+    focusable: bool,
 }
 
 #[derive(serde::Serialize, Clone, Debug)]
@@ -398,8 +410,24 @@ fn floating_window_config() -> FloatingWindowConfig {
         skip_taskbar: true,
         resizable: false,
         shadow: false,
+        focusable: true,
     }
 }
+
+#[cfg(target_os = "windows")]
+fn disable_floating_click_through(window: &tauri::WebviewWindow) {
+    if let Ok(hwnd) = window.hwnd() {
+        unsafe {
+            let current = GetWindowLongPtrW(hwnd.0 as _, GWL_EXSTYLE);
+            if current & WS_EX_TRANSPARENT != 0 {
+                let _ = SetWindowLongPtrW(hwnd.0 as _, GWL_EXSTYLE, current & !WS_EX_TRANSPARENT);
+            }
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn disable_floating_click_through(_window: &tauri::WebviewWindow) {}
 
 fn floating_position_path() -> std::path::PathBuf {
     std::path::PathBuf::from(home_dir())
@@ -967,6 +995,9 @@ fn show_floating_icon(app: tauri::AppHandle) -> Result<(), String> {
         .ok_or("Floating Grandpa window is not available.")?;
     window.show().map_err(|e| e.to_string())?;
     window.set_always_on_top(true).map_err(|e| e.to_string())?;
+    let _ = window.set_focusable(true);
+    let _ = window.set_ignore_cursor_events(false);
+    disable_floating_click_through(&window);
     Ok(())
 }
 
@@ -1808,6 +1839,9 @@ pub fn run() {
                             if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
                                 let _ = window.show();
                                 let _ = window.set_always_on_top(true);
+                                let _ = window.set_focusable(true);
+                                let _ = window.set_ignore_cursor_events(false);
+                                disable_floating_click_through(&window);
                             }
                         }
                         "hide_floating" => {
@@ -1874,9 +1908,13 @@ pub fn run() {
                 .always_on_top(config.always_on_top)
                 .skip_taskbar(config.skip_taskbar)
                 .shadow(config.shadow)
+                .focusable(config.focusable)
+                .accept_first_mouse(true)
                 .visible(config.visible)
                 .position(initial_position.x, initial_position.y)
                 .build()?;
+                let _ = floating.set_ignore_cursor_events(false);
+                disable_floating_click_through(&floating);
 
                 #[cfg(debug_assertions)]
                 {
@@ -2007,6 +2045,7 @@ mod tests {
         assert!(!config.decorations);
         assert!(!config.resizable);
         assert!(!config.shadow);
+        assert!(config.focusable);
         assert_eq!(config.collapsed_width, 48.0);
         assert_eq!(config.collapsed_height, 48.0);
     }

@@ -22,6 +22,7 @@ export const FLOATING_COLLAPSED_SIZE = { width: 48, height: 48 };
 export const FLOATING_EXPANDED_SIZE = { width: 300, height: 340 };
 export const FLOATING_EDGE_GAP = 20;
 export const FLOATING_DRAG_THRESHOLD = 5;
+export const FLOATING_POSITION_SAVE_DELAY_MS = 180;
 
 export function normalizeBackendState(value: unknown): FloatingBackendState {
   return value === 'running' || value === 'stopped' || value === 'error' ? value : 'checking';
@@ -106,4 +107,19 @@ export function getExpandedPosition(
     y: opensUp ? anchor.y + FLOATING_COLLAPSED_SIZE.height - FLOATING_EXPANDED_SIZE.height : anchor.y,
   };
   return clampPositionToBounds(preferred, bounds, FLOATING_EXPANDED_SIZE);
+}
+
+export function getCollapsedAnchorAfterExpand(
+  expandedPosition: FloatingPosition,
+  previousAnchor: FloatingPosition,
+  bounds: FloatingBounds,
+): FloatingPosition {
+  const expandedRight = expandedPosition.x + FLOATING_EXPANDED_SIZE.width;
+  const expandedBottom = expandedPosition.y + FLOATING_EXPANDED_SIZE.height;
+  const wasNearRight = previousAnchor.x + FLOATING_EXPANDED_SIZE.width > bounds.x + bounds.width;
+  const wasNearBottom = previousAnchor.y + FLOATING_EXPANDED_SIZE.height > bounds.y + bounds.height;
+  return clampPositionToBounds({
+    x: wasNearRight ? expandedRight - FLOATING_COLLAPSED_SIZE.width : expandedPosition.x,
+    y: wasNearBottom ? expandedBottom - FLOATING_COLLAPSED_SIZE.height : expandedPosition.y,
+  }, bounds, FLOATING_COLLAPSED_SIZE);
 }
