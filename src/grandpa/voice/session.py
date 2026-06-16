@@ -11,7 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from grandpa.voice.conversation import VoiceConversation
-from grandpa.voice.errors import VoiceError
+from grandpa.voice.errors import (
+    MICROPHONE_UNAVAILABLE_MESSAGE,
+    VOICE_DEPENDENCY_MESSAGE,
+    VoiceError,
+)
 from grandpa.voice.speech_input import SpeechInputEngine
 from grandpa.voice.speech_output import SpeechOutputEngine
 from grandpa.voice.wake_word import WakeWordDetector
@@ -60,12 +64,27 @@ class VoiceRuntime:
         return {"status": "stopped", "session": self.conversation.to_dict()}
 
     def status(self) -> dict[str, Any]:
+        speech_input = self.speech_input.diagnostics()
+        speech_output = self.speech_output.diagnostics()
+        stt_available = bool(speech_input.get("browser_transcript_supported") or speech_input.get("local_whisper_available"))
+        tts_available = speech_output.get("status") == "ready"
+        mode = "browser_transcript" if speech_input.get("browser_transcript_supported") else "unavailable"
+        if speech_input.get("local_whisper_available"):
+            mode = "local_audio"
+        setup_message = "" if stt_available else VOICE_DEPENDENCY_MESSAGE
         return {
+            "available": stt_available,
+            "stt_available": stt_available,
+            "tts_available": tts_available,
+            "microphone_available": "unknown",
+            "mode": mode,
+            "setup_message": setup_message,
+            "message": "Voice push-to-talk is ready." if stt_available else setup_message,
             "status": "active" if self.conversation.active else "idle",
             "session": self.conversation.to_dict(),
             "wake_word": self.wake_detector.diagnostics(),
-            "speech_input": self.speech_input.diagnostics(),
-            "speech_output": self.speech_output.diagnostics(),
+            "speech_input": speech_input,
+            "speech_output": speech_output,
             "latency_ms": self._last_latency_ms,
             "local_first": True,
             "high_risk_voice_block": True,
@@ -83,6 +102,58 @@ class VoiceRuntime:
         return result.to_dict()
 
     def listen(
+        self,
+        *,
+        text: str | None = None,
+        audio_base64: str | None = None,
+        speak_response: bool = False,
+        require_wake_word: bool = False,
+    ) -> dict[str, Any]:
+        return self.command(
+            text=text,
+            audio_base64=audio_base64,
+            speak_response=speak_response,
+            require_wake_word=require_wake_word,
+        )
+
+    def capture(
+        self,
+        *,
+        text: str | None = None,
+        audio_base64: str | None = None,
+    ) -> dict[str, Any]:
+        started = time.perf_counter()
+        audio_bytes = _decode_audio(audio_base64)
+        try:
+            input_result = self.speech_input.listen(text=text, audio_bytes=audio_bytes)
+        except VoiceError as exc:
+            self._last_latency_ms = _elapsed_ms(started)
+            return _voice_error_response(exc, self.conversation, latency_ms=self._last_latency_ms)
+        transcript = input_result.transcript.strip()
+        self._last_latency_ms = _elapsed_ms(started)
+        if not transcript:
+            return {
+                "ok": False,
+                "status": "recognition_failed",
+                "message": MICROPHONE_UNAVAILABLE_MESSAGE if not audio_base64 and text is None else "I could not understand the audio.\nPlease try speaking again.",
+                "transcript": "",
+                "confidence": input_result.confidence,
+                "speech_input": input_result.to_dict(),
+                "session": self.conversation.to_dict(),
+                "latency_ms": self._last_latency_ms,
+            }
+        return {
+            "ok": True,
+            "status": input_result.status,
+            "message": "Voice transcript captured.",
+            "transcript": transcript,
+            "confidence": input_result.confidence,
+            "speech_input": input_result.to_dict(),
+            "session": self.conversation.to_dict(),
+            "latency_ms": self._last_latency_ms,
+        }
+
+    def command(
         self,
         *,
         text: str | None = None,
@@ -167,6 +238,8 @@ class VoiceRuntime:
             "ok": response.get("status") not in {"blocked", "error"},
             "status": response.get("status", "handled"),
             "message": message,
+            "assistant_text": message,
+            "action_status": response.get("status", "handled"),
             "transcript": transcript,
             "command_text": command_text,
             "speech_input": input_result.to_dict(),
@@ -204,7 +277,7 @@ def _route_voice_request(command_text: str) -> dict[str, Any]:
         from grandpa.local_actions import handle_local_action
 
         result = handle_local_action(command_text, execute=True)
-        if not result.should_fallback:
+        if not result.should_fallback and result.status != "error":
             return {
                 "status": result.status,
                 "message": result.tts_text or result.message,

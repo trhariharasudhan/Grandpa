@@ -64,6 +64,17 @@ def test_voice_runtime_reports_missing_speech_dependency(monkeypatch):
     assert "Traceback" not in result["message"]
 
 
+def test_voice_runtime_capture_browser_transcript():
+    runtime = VoiceRuntime()
+
+    result = runtime.capture(text="turn on voice mode")
+
+    assert result["ok"] is True
+    assert result["status"] == "completed"
+    assert result["transcript"] == "turn on voice mode"
+    assert result["confidence"] == 0.99
+
+
 def test_voice_runtime_reports_missing_microphone():
     runtime = VoiceRuntime()
 
@@ -140,9 +151,30 @@ def test_voice_speak_reports_missing_tts_dependency(monkeypatch):
 
     result = runtime.speak("Hello Grandpa")
 
-    assert result["status"] == "dependency_missing"
-    assert "Voice mode is not fully installed." in result["message"]
-    assert "uv sync --extra speech" in result["message"]
+    assert result["status"] == "tts_unavailable"
+    assert "Voice output is not available." in result["message"]
+    assert "text-to-speech backend" in result["message"]
+
+
+def test_voice_runtime_speak_mocked_success():
+    class ReadyOutput:
+        def speak(self, text, **_kwargs):
+            from grandpa.voice import SpeechOutputResult
+
+            return SpeechOutputResult("completed", "mock_tts", "spoken", text)
+
+        def stop(self):
+            return {"status": "stopped"}
+
+        def diagnostics(self):
+            return {"status": "ready", "engine": "mock_tts"}
+
+    runtime = VoiceRuntime(speech_output=ReadyOutput())  # type: ignore[arg-type]
+
+    result = runtime.speak("Hello Grandpa")
+
+    assert result["status"] == "completed"
+    assert result["engine"] == "mock_tts"
 
 
 def test_voice_runtime_blocks_high_risk_voice_action():
@@ -154,6 +186,16 @@ def test_voice_runtime_blocks_high_risk_voice_action():
     assert result["risk_level"] == "HIGH"
     assert result["approval_required"] is True
     assert "approval flow" in result["message"].lower()
+
+
+def test_voice_runtime_command_text_path_does_not_bypass_action_permissions():
+    runtime = VoiceRuntime()
+
+    result = runtime.command(text="delete all files on my desktop")
+
+    assert result["status"] == "blocked"
+    assert result["approval_required"] is True
+    assert result["risk_level"] == "HIGH"
 
 
 def test_voice_runtime_routes_read_only_command(monkeypatch, tmp_path):
@@ -197,10 +239,44 @@ def test_voice_api_routes(monkeypatch, tmp_path):
 
     listened = client.post("/v1/voice/listen", json={"text": "Hey Grandpa desktop summary"})
     assert listened.status_code == 200
-    assert listened.json()["command_text"] == "desktop summary"
+    assert listened.json()["transcript"] == "Hey Grandpa desktop summary"
+
+    commanded = client.post("/v1/voice/command", json={"transcript": "Hey Grandpa desktop summary"})
+    assert commanded.status_code == 200
+    assert commanded.json()["command_text"] == "desktop summary"
+    assert commanded.json()["assistant_text"]
 
     spoken = client.post("/v1/voice/speak", json={"text": "Grandpa voice ready.", "dry_run": True})
     assert spoken.status_code == 200
     assert spoken.json()["status"] == "dry_run"
 
     assert client.post("/v1/voice/stop").json()["status"] == "stopped"
+
+
+def test_voice_api_returns_clean_expected_error_status(monkeypatch):
+    app = FastAPI()
+    app.include_router(voice_router)
+    client = TestClient(app)
+    monkeypatch.setattr(speech_output.importlib.util, "find_spec", lambda _name: None)
+    monkeypatch.setattr(speech_output.platform, "system", lambda: "Linux")
+
+    response = client.post("/v1/voice/speak", json={"text": "Hello"})
+
+    assert response.status_code == 503
+    assert "Voice output is not available." in response.json()["detail"]
+
+
+def test_voice_api_unrelated_runtime_error_is_not_mislabeled(monkeypatch):
+    class BuggyRuntime:
+        def capture(self, **_kwargs):
+            raise RuntimeError("unexpected bug")
+
+    monkeypatch.setattr("grandpa.voice.get_voice_runtime", lambda: BuggyRuntime())
+    app = FastAPI()
+    app.include_router(voice_router)
+    client = TestClient(app, raise_server_exceptions=False)
+
+    response = client.post("/v1/voice/listen", json={"text": "hello"})
+
+    assert response.status_code == 500
+    assert "Voice mode is not fully installed" not in response.text

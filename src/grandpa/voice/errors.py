@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-
 VOICE_DEPENDENCY_MESSAGE = (
     "Voice mode is not fully installed.\n"
     "Install it with:\n"
@@ -17,6 +16,10 @@ MICROPHONE_UNAVAILABLE_MESSAGE = (
     "Then retry voice mode."
 )
 VOICE_RECOGNITION_MESSAGE = "I could not understand the audio.\nPlease try speaking again."
+VOICE_OUTPUT_UNAVAILABLE_MESSAGE = (
+    "Voice output is not available.\n"
+    "Install or configure a supported text-to-speech backend."
+)
 
 
 class VoiceError(Exception):
@@ -59,12 +62,21 @@ class VoiceRecognitionError(VoiceError):
     user_message = VOICE_RECOGNITION_MESSAGE
 
 
+class VoiceOutputUnavailableError(VoiceError):
+    """Raised when local speech output cannot be used."""
+
+    status = "tts_unavailable"
+    user_message = VOICE_OUTPUT_UNAVAILABLE_MESSAGE
+
+
 __all__ = [
     "MICROPHONE_UNAVAILABLE_MESSAGE",
     "VOICE_DEPENDENCY_MESSAGE",
+    "VOICE_OUTPUT_UNAVAILABLE_MESSAGE",
     "VOICE_RECOGNITION_MESSAGE",
     "MicrophoneUnavailableError",
     "VoiceDependencyError",
     "VoiceError",
+    "VoiceOutputUnavailableError",
     "VoiceRecognitionError",
 ]

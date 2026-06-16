@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { transcribeAudio, fetchSpeechHealth } from '../lib/api';
+import { fetchSpeechHealth, fetchVoiceStatus, transcribeAudio } from '../lib/api';
 
 export type SpeechState = 'idle' | 'listening' | 'transcribing' | 'error';
 
@@ -13,6 +13,7 @@ export interface SpeechDiagnostics {
   rejectedNoiseCount: number;
   lastError: string | null;
   mode: SpeechMode;
+  setupMessage?: string;
 }
 
 interface UseSpeechOptions {
@@ -91,6 +92,7 @@ export function useSpeech(options: UseSpeechOptions = {}) {
     rejectedNoiseCount: 0,
     lastError: null,
     mode: 'none',
+    setupMessage: '',
   });
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
@@ -114,15 +116,21 @@ export function useSpeech(options: UseSpeechOptions = {}) {
     getMicrophonePermission().then((permission) => {
       if (mounted) setDiagnostics((d) => ({ ...d, permission }));
     });
-    fetchSpeechHealth()
-      .then((health) => {
+    Promise.all([
+      fetchSpeechHealth().catch(() => ({ available: false })),
+      fetchVoiceStatus().catch(() => null),
+    ])
+      .then(([health, voice]) => {
         if (!mounted) return;
+        const setupMessage = voice?.setup_message || voice?.message || '';
         const nextMode = browserSupported ? 'browser' : health.available ? 'backend' : 'none';
         setDiagnostics((d) => ({
           ...d,
           browserSupported,
           backendAvailable: health.available,
           mode: nextMode,
+          setupMessage,
+          lastError: nextMode === 'none' ? setupMessage || d.lastError : d.lastError,
         }));
         if (browserSupported) {
           setMode('browser');
@@ -255,8 +263,14 @@ export function useSpeech(options: UseSpeechOptions = {}) {
       return;
     }
 
+    if (mode === 'none') {
+      setVoiceError(diagnostics.setupMessage || 'Voice mode is not fully installed.\nInstall it with:\n  uv sync --extra speech\nThen retry.');
+      setState('error');
+      return;
+    }
+
     if (!navigator.mediaDevices?.getUserMedia) {
-      setVoiceError('Voice input is not supported in this browser. Try Chrome/Edge or enable speech settings.');
+      setVoiceError(diagnostics.setupMessage || 'Voice input is not supported in this browser. Try Chrome/Edge or enable speech settings.');
       setState('error');
       return;
     }
@@ -280,7 +294,7 @@ export function useSpeech(options: UseSpeechOptions = {}) {
       setVoiceError('Microphone access denied. Allow microphone permission in the browser or desktop shell.');
       setState('error');
     }
-  }, [mode, scheduleSilenceStop, setVoiceError, clearSilenceTimer]);
+  }, [mode, diagnostics.setupMessage, scheduleSilenceStop, setVoiceError, clearSilenceTimer]);
 
   const stopRecording = useCallback(async (): Promise<string> => {
     clearSilenceTimer();

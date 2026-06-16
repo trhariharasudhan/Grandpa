@@ -293,6 +293,13 @@ export async function fetchSpeechHealth(): Promise<SpeechHealth> {
 }
 
 export interface VoiceStatus {
+  available: boolean;
+  stt_available: boolean;
+  tts_available: boolean;
+  microphone_available: boolean | 'unknown';
+  mode: 'browser_transcript' | 'local_audio' | 'unavailable' | string;
+  setup_message?: string;
+  message?: string;
   status: string;
   session: {
     session_id: string;
@@ -315,6 +322,8 @@ export interface VoiceListenResponse {
   status: string;
   message: string;
   transcript?: string;
+  assistant_text?: string;
+  action_status?: string;
   command_text?: string;
   risk_level?: string;
   approval_required?: boolean;
@@ -351,23 +360,49 @@ export async function speakVoice(text: string, interrupt = true, dryRun = false)
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text, interrupt, dry_run: dryRun }),
   });
-  if (!res.ok) throw new Error(`Voice speak failed: ${res.status}`);
+  if (!res.ok) throw new Error(await readApiError(res, `Voice speak failed: ${res.status}`));
   return res.json();
 }
 
 export async function listenVoice(payload: {
   text?: string;
   audio_base64?: string;
-  speak_response?: boolean;
-  require_wake_word?: boolean;
 }): Promise<VoiceListenResponse> {
   const res = await fetch(`${getBase()}/v1/voice/listen`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error(`Voice listen failed: ${res.status}`);
+  if (!res.ok) throw new Error(await readApiError(res, `Voice listen failed: ${res.status}`));
   return res.json();
+}
+
+export async function commandVoice(payload: {
+  text?: string;
+  transcript?: string;
+  audio_base64?: string;
+  speak_response?: boolean;
+  require_wake_word?: boolean;
+}): Promise<VoiceListenResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const detail = await readApiError(res, `Voice command failed: ${res.status}`);
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+async function readApiError(res: Response, fallback: string): Promise<string> {
+  try {
+    const data = await res.json();
+    if (typeof data?.detail === 'string') return data.detail;
+    if (typeof data?.message === 'string') return data.message;
+  } catch {}
+  return fallback;
 }
 
 // ---------------------------------------------------------------------------

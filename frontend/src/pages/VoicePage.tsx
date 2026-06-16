@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ElementType, ReactNode } from 'react';
 import { Activity, Mic2, Play, RefreshCw, Send, Square, Volume2, Waves } from 'lucide-react';
 import {
+  commandVoice,
   fetchVoiceStatus,
-  listenVoice,
   speakVoice,
   startVoiceSession,
   stopVoiceSession,
@@ -53,8 +53,8 @@ export function VoicePage() {
     setBusy(true);
     setError('');
     try {
-      const result = await listenVoice({
-        text: transcript,
+      const result = await commandVoice({
+        transcript,
         speak_response: speakResponse,
         require_wake_word: wakeRequired,
       });
@@ -171,7 +171,7 @@ export function VoicePage() {
               <div className="grid gap-2 sm:grid-cols-2">
                 <button type="button" onClick={() => void runListen()} disabled={busy || !transcript.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
                   <Send size={15} />
-                  Send Voice Text
+                  Send Voice Command
                 </button>
                 <button type="button" onClick={() => void testSpeak()} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
                   <Volume2 size={15} />
@@ -204,7 +204,7 @@ export function VoicePage() {
                   <p style={{ color: 'var(--color-text)' }}>{lastResult.message}</p>
                   <div className="rounded-xl p-3 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
                     <div>Transcript: {lastResult.transcript || 'none'}</div>
-                    <div>Command: {lastResult.command_text || 'none'}</div>
+                    <div>Command: {lastResult.command_text || lastResult.transcript || 'none'}</div>
                     <div>Latency: {Math.round(lastResult.latency_ms || 0)} ms</div>
                   </div>
                 </div>

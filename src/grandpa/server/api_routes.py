@@ -82,6 +82,12 @@ class VoiceSpeakRequest(BaseModel):
 class VoiceListenRequest(BaseModel):
     text: Optional[str] = None
     audio_base64: Optional[str] = None
+
+
+class VoiceCommandRequest(BaseModel):
+    text: Optional[str] = None
+    transcript: Optional[str] = None
+    audio_base64: Optional[str] = None
     speak_response: bool = False
     require_wake_word: bool = False
 
@@ -1482,23 +1488,56 @@ async def voice_speak(req: VoiceSpeakRequest):
 
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text is required")
-    return get_voice_runtime().speak(req.text, interrupt=req.interrupt, dry_run=req.dry_run)
+    result = get_voice_runtime().speak(req.text, interrupt=req.interrupt, dry_run=req.dry_run)
+    _raise_for_expected_voice_error(result)
+    return result
 
 
 @voice_router.post("/listen")
 async def voice_listen(req: VoiceListenRequest):
-    """Process a voice transcript/audio payload through Grandpa's normal brain."""
+    """Capture a voice transcript/audio payload without running an action."""
     from grandpa.voice import get_voice_runtime
     from grandpa.voice.errors import MICROPHONE_UNAVAILABLE_MESSAGE
 
     if not (req.text and req.text.strip()) and not req.audio_base64:
         raise HTTPException(status_code=400, detail=MICROPHONE_UNAVAILABLE_MESSAGE)
-    return get_voice_runtime().listen(
+    result = get_voice_runtime().capture(
         text=req.text,
+        audio_base64=req.audio_base64,
+    )
+    _raise_for_expected_voice_error(result)
+    return result
+
+
+@voice_router.post("/command")
+async def voice_command(req: VoiceCommandRequest):
+    """Route a voice transcript/audio payload through Grandpa's safe command flow."""
+    from grandpa.voice import get_voice_runtime
+    from grandpa.voice.errors import MICROPHONE_UNAVAILABLE_MESSAGE
+
+    text = req.transcript if req.transcript is not None else req.text
+    if not (text and text.strip()) and not req.audio_base64:
+        raise HTTPException(status_code=400, detail=MICROPHONE_UNAVAILABLE_MESSAGE)
+    result = get_voice_runtime().command(
+        text=text,
         audio_base64=req.audio_base64,
         speak_response=req.speak_response,
         require_wake_word=req.require_wake_word,
     )
+    _raise_for_expected_voice_error(result)
+    return result
+
+
+def _raise_for_expected_voice_error(result: dict[str, Any]) -> None:
+    if result.get("ok", True) is not False:
+        return
+    status = result.get("status")
+    if status == "dependency_missing" or status == "tts_unavailable":
+        raise HTTPException(status_code=503, detail=result.get("message") or result)
+    if status == "microphone_unavailable":
+        raise HTTPException(status_code=400, detail=result.get("message") or result)
+    if status == "recognition_failed":
+        raise HTTPException(status_code=422, detail=result.get("message") or result)
 
 
 # ---- Feedback routes ----
