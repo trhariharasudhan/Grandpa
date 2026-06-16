@@ -33,6 +33,15 @@ const SAVE_DEBOUNCE_MS = 250;
 type UnlistenFn = () => void;
 type FloatingMode = 'collapsed' | 'resizing' | 'expanded';
 
+interface FloatingVoiceStatus {
+  available?: boolean;
+  stt_available?: boolean;
+  tts_available?: boolean;
+  mode?: string;
+  setup_message?: string;
+  message?: string;
+}
+
 function debugLog(message: string, data?: unknown) {
   if (!import.meta.env.DEV) return;
   if (data === undefined) {
@@ -46,6 +55,8 @@ export function FloatingApp() {
   const [mode, setMode] = useState<FloatingMode>('collapsed');
   const [status, setStatus] = useState<FloatingBackendStatus | null>(null);
   const [message, setMessage] = useState('');
+  const [voiceStatus, setVoiceStatus] = useState<FloatingVoiceStatus | null>(null);
+  const [voiceMessage, setVoiceMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const modeRef = useRef<FloatingMode>('collapsed');
   const resizeInFlight = useRef(false);
@@ -64,24 +75,41 @@ export function FloatingApp() {
     debugLog(`state: ${next}`);
   }, []);
 
+  const refreshVoiceStatus = useCallback(async (apiBase?: string) => {
+    const base = normalizeApiBase(apiBase || status?.api_base || 'http://127.0.0.1:8000');
+    setVoiceMessage('Checking voice...');
+    try {
+      const response = await fetch(`${base}/v1/voice/status`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Voice status failed: ${response.status}`);
+      const next = await response.json() as FloatingVoiceStatus;
+      setVoiceStatus(next);
+      setVoiceMessage(next.message || next.setup_message || 'Voice status ready.');
+    } catch (error) {
+      setVoiceStatus(null);
+      setVoiceMessage(error instanceof Error ? error.message : 'Voice status is unavailable.');
+    }
+  }, [status?.api_base]);
+
   const refreshStatus = useCallback(async () => {
     if (pollInFlight.current) return;
     pollInFlight.current = true;
     try {
       const next = await invoke<FloatingBackendStatus>('floating_backend_status');
+      const apiBase = normalizeApiBase(next.api_base || '');
       setStatus({
         ...next,
         state: normalizeBackendState(next.state),
-        api_base: normalizeApiBase(next.api_base || ''),
+        api_base: apiBase,
       });
       setMessage('');
+      void refreshVoiceStatus(apiBase);
     } catch (error) {
       setStatus({ state: 'error', detail: 'Backend status is unavailable.', api_base: '' });
       setMessage(error instanceof Error ? error.message : 'Backend status is unavailable.');
     } finally {
       pollInFlight.current = false;
     }
-  }, []);
+  }, [refreshVoiceStatus]);
 
   const saveCurrentPosition = useCallback((position: FloatingPosition) => {
     const monitorsPromise = getMonitorBounds();
@@ -420,15 +448,26 @@ export function FloatingApp() {
           </div>
 
           <div className="floating-placeholders">
-            <button type="button" disabled aria-label="Microphone coming soon">
+            <button
+              type="button"
+              disabled={busy || status?.state !== 'running'}
+              aria-label="Check voice assistant status"
+              onPointerDown={stopInteractivePropagation}
+              onClick={() => void refreshVoiceStatus()}
+            >
               <Mic size={15} />
-              Microphone: Coming soon
+              Microphone: {voiceStatus?.stt_available ? 'Ready' : 'Check status'}
             </button>
             <button type="button" disabled aria-label="Chat coming soon">
               <MessageSquare size={15} />
               Chat: Coming soon
             </button>
           </div>
+          {voiceMessage && (
+            <div className="floating-voice-note" role="status">
+              {voiceMessage}
+            </div>
+          )}
         </section>
       )}
     </main>
