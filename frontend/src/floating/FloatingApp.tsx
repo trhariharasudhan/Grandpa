@@ -8,12 +8,16 @@ import {
   PhysicalPosition,
 } from '@tauri-apps/api/window';
 import {
+  boundsForPosition,
   clampPositionToBounds,
   FLOATING_COLLAPSED_SIZE,
+  FLOATING_DRAG_THRESHOLD,
   FLOATING_EXPANDED_SIZE,
+  getExpandedPosition,
   isValidPosition,
   normalizeApiBase,
   normalizeBackendState,
+  shouldStartFloatingDrag,
   statusLabel,
   type FloatingBackendStatus,
   type FloatingBounds,
@@ -23,16 +27,20 @@ import './floating.css';
 
 const appWindow = getCurrentWindow();
 const POLL_MS = 4000;
+const SAVE_DEBOUNCE_MS = 250;
 type UnlistenFn = () => void;
 
 export function FloatingApp() {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpandedState] = useState(false);
   const [status, setStatus] = useState<FloatingBackendStatus | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const expandedRef = useRef(false);
   const pollInFlight = useRef(false);
   const dragged = useRef(false);
-  const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const dragStarted = useRef(false);
+  const pointerStart = useRef<FloatingPosition | null>(null);
+  const collapsedPosition = useRef<FloatingPosition | null>(null);
   const saveTimer = useRef<number | null>(null);
 
   const refreshStatus = useCallback(async () => {
@@ -54,18 +62,61 @@ export function FloatingApp() {
     }
   }, []);
 
+  const saveCurrentPosition = useCallback((position: FloatingPosition) => {
+    if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      void invoke('save_floating_position', { position }).catch(() => {});
+    }, SAVE_DEBOUNCE_MS);
+  }, []);
+
+  const collapsePanel = useCallback(async () => {
+    expandedRef.current = false;
+    setExpandedState(false);
+    await appWindow.setSize(new LogicalSize(FLOATING_COLLAPSED_SIZE.width, FLOATING_COLLAPSED_SIZE.height)).catch(() => {});
+    if (collapsedPosition.current) {
+      await appWindow
+        .setPosition(new PhysicalPosition(Math.round(collapsedPosition.current.x), Math.round(collapsedPosition.current.y)))
+        .catch(() => {});
+      saveCurrentPosition(collapsedPosition.current);
+    }
+  }, [saveCurrentPosition]);
+
+  const expandPanel = useCallback(async () => {
+    const current = await appWindow.outerPosition().catch(() => null);
+    const anchor = current ? { x: current.x, y: current.y } : null;
+    if (anchor) collapsedPosition.current = anchor;
+
+    const monitors = await getMonitorBounds();
+    const fallbackBounds = getFallbackBounds();
+    const bounds = anchor ? boundsForPosition(monitors, anchor) || fallbackBounds : fallbackBounds;
+    const position = getExpandedPosition(anchor || clampPositionToBounds(null, bounds), bounds);
+
+    await appWindow.setPosition(new PhysicalPosition(Math.round(position.x), Math.round(position.y))).catch(() => {});
+    await appWindow.setSize(new LogicalSize(FLOATING_EXPANDED_SIZE.width, FLOATING_EXPANDED_SIZE.height)).catch(() => {});
+    expandedRef.current = true;
+    setExpandedState(true);
+  }, []);
+
+  const toggleExpanded = useCallback(() => {
+    if (expandedRef.current) {
+      void collapsePanel();
+    } else {
+      void expandPanel();
+    }
+  }, [collapsePanel, expandPanel]);
+
   useEffect(() => {
     void restorePosition();
+    void appWindow.show().catch(() => {});
+    void appWindow.setAlwaysOnTop(true).catch(() => {});
     void refreshStatus();
     const interval = window.setInterval(refreshStatus, POLL_MS);
     let unlisten: UnlistenFn | undefined;
     appWindow.onMoved((position) => {
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        void invoke('save_floating_position', {
-          position: { x: position.payload.x, y: position.payload.y },
-        }).catch(() => {});
-      }, 250);
+      if (expandedRef.current) return;
+      const next = { x: position.payload.x, y: position.payload.y };
+      collapsedPosition.current = next;
+      saveCurrentPosition(next);
     }).then((listener) => {
       unlisten = listener;
     }).catch(() => {});
@@ -74,20 +125,15 @@ export function FloatingApp() {
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
       unlisten?.();
     };
-  }, [refreshStatus]);
-
-  useEffect(() => {
-    const size = expanded ? FLOATING_EXPANDED_SIZE : FLOATING_COLLAPSED_SIZE;
-    void appWindow.setSize(new LogicalSize(size.width, size.height));
-  }, [expanded]);
+  }, [refreshStatus, saveCurrentPosition]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setExpanded(false);
+      if (event.key === 'Escape') void collapsePanel();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [collapsePanel]);
 
   const runAction = async (command: 'floating_start_backend' | 'floating_stop_backend') => {
     setBusy(true);
@@ -108,65 +154,86 @@ export function FloatingApp() {
     }
   };
 
-  const onPointerDown = (event: React.PointerEvent) => {
+  const onIconPointerDown = (event: React.PointerEvent) => {
+    if (event.button !== 0) return;
     pointerStart.current = { x: event.clientX, y: event.clientY };
     dragged.current = false;
+    dragStarted.current = false;
+    event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const onPointerMove = (event: React.PointerEvent) => {
-    if (!pointerStart.current || dragged.current) return;
-    const dx = Math.abs(event.clientX - pointerStart.current.x);
-    const dy = Math.abs(event.clientY - pointerStart.current.y);
-    if (dx > 4 || dy > 4) {
+  const onIconPointerMove = (event: React.PointerEvent) => {
+    if (!pointerStart.current || dragStarted.current) return;
+    if (shouldStartFloatingDrag(pointerStart.current, { x: event.clientX, y: event.clientY }, FLOATING_DRAG_THRESHOLD)) {
       dragged.current = true;
+      dragStarted.current = true;
       void appWindow.startDragging().catch(() => {});
     }
   };
 
-  const onToggleClick = () => {
+  const onIconPointerUp = (event: React.PointerEvent) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    pointerStart.current = null;
+  };
+
+  const onIconClick = (event: React.MouseEvent) => {
     if (dragged.current) {
+      event.preventDefault();
+      event.stopPropagation();
       dragged.current = false;
+      dragStarted.current = false;
       return;
     }
-    setExpanded((value) => !value);
+    toggleExpanded();
   };
 
   const onToggleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      setExpanded((value) => !value);
+      toggleExpanded();
     }
+  };
+
+  const onHeaderPointerDown = (event: React.PointerEvent) => {
+    if (event.target instanceof Element && event.target.closest('button')) return;
+    if (event.button === 0) void appWindow.startDragging().catch(() => {});
   };
 
   return (
     <main className={`floating-root ${expanded ? 'is-expanded' : 'is-collapsed'}`}>
-      <button
-        className="floating-orb"
-        type="button"
-        aria-label="Grandpa Assistant"
-        title="Grandpa Assistant"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onClick={onToggleClick}
-        onKeyDown={onToggleKeyDown}
-      >
-        <span className="floating-mark" aria-hidden="true">G</span>
-        <span className={`floating-status-dot ${status?.state || 'checking'}`} aria-hidden="true" />
-      </button>
+      {!expanded && (
+        <button
+          className="floating-orb"
+          type="button"
+          aria-label="Grandpa Assistant"
+          title="Grandpa Assistant"
+          onPointerDown={onIconPointerDown}
+          onPointerMove={onIconPointerMove}
+          onPointerUp={onIconPointerUp}
+          onPointerCancel={onIconPointerUp}
+          onClick={onIconClick}
+          onKeyDown={onToggleKeyDown}
+        >
+          <span className="floating-mark" aria-hidden="true">G</span>
+          <span className={`floating-status-dot ${status?.state || 'checking'}`} aria-hidden="true" />
+        </button>
+      )}
 
       {expanded && (
         <section className="floating-panel" aria-label="Grandpa compact controls">
-          <header className="floating-panel-header">
+          <header className="floating-panel-header" onPointerDown={onHeaderPointerDown}>
             <div>
               <h1>Grandpa</h1>
               <p>{statusLabel(status)}</p>
             </div>
-            <button type="button" className="floating-icon-button" aria-label="Collapse" onClick={() => setExpanded(false)}>
+            <button type="button" className="floating-icon-button" aria-label="Collapse" onClick={() => void collapsePanel()}>
               <Minus size={16} />
             </button>
           </header>
 
-          <div className={`floating-state ${status?.state || 'checking'}`}>
+          <div className={`floating-state ${status?.state || 'checking'}`} role="status">
             <span>{status?.detail || 'Checking backend...'}</span>
           </div>
 
@@ -201,7 +268,7 @@ export function FloatingApp() {
             </button>
             <button type="button" disabled aria-label="Chat coming soon">
               <MessageSquare size={15} />
-              Chat coming soon
+              Chat: Coming soon
             </button>
           </div>
         </section>
@@ -211,17 +278,30 @@ export function FloatingApp() {
 }
 
 async function restorePosition() {
-  const monitors = await availableMonitors().catch(() => []);
-  const primary = monitors[0];
-  const bounds: FloatingBounds = primary
-    ? {
-        x: primary.position.x,
-        y: primary.position.y,
-        width: primary.size.width,
-        height: primary.size.height,
-      }
-    : { x: 0, y: 0, width: window.screen.availWidth || 1280, height: window.screen.availHeight || 720 };
+  const monitors = await getMonitorBounds();
   const saved = await invoke<FloatingPosition | null>('get_floating_position').catch(() => null);
-  const safe = clampPositionToBounds(isValidPosition(saved) ? saved : null, bounds, FLOATING_COLLAPSED_SIZE);
+  const savedPosition = isValidPosition(saved) ? saved : null;
+  const bounds = savedPosition ? boundsForPosition(monitors, savedPosition) || getFallbackBounds() : monitors[0] || getFallbackBounds();
+  const safe = clampPositionToBounds(savedPosition, bounds, FLOATING_COLLAPSED_SIZE);
+  await appWindow.setSize(new LogicalSize(FLOATING_COLLAPSED_SIZE.width, FLOATING_COLLAPSED_SIZE.height)).catch(() => {});
   await appWindow.setPosition(new PhysicalPosition(Math.round(safe.x), Math.round(safe.y))).catch(() => {});
+}
+
+async function getMonitorBounds(): Promise<FloatingBounds[]> {
+  const monitors = await availableMonitors().catch(() => []);
+  return monitors.map((monitor) => ({
+    x: monitor.position.x,
+    y: monitor.position.y,
+    width: monitor.size.width,
+    height: monitor.size.height,
+  }));
+}
+
+function getFallbackBounds(): FloatingBounds {
+  return {
+    x: 0,
+    y: 0,
+    width: window.screen.availWidth || 1280,
+    height: window.screen.availHeight || 720,
+  };
 }

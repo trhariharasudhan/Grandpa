@@ -9,10 +9,12 @@ use tokio::sync::Mutex;
 const OLLAMA_PORT: u16 = 11434;
 const GRANDPA_PORT: u16 = 8000;
 const FLOATING_WINDOW_LABEL: &str = "grandpa-floating";
-const FLOATING_COLLAPSED_WIDTH: f64 = 72.0;
-const FLOATING_COLLAPSED_HEIGHT: f64 = 72.0;
-const FLOATING_EXPANDED_WIDTH: f64 = 320.0;
-const FLOATING_EXPANDED_HEIGHT: f64 = 360.0;
+const FLOATING_COLLAPSED_WIDTH: f64 = 48.0;
+const FLOATING_COLLAPSED_HEIGHT: f64 = 48.0;
+const FLOATING_EXPANDED_WIDTH: f64 = 300.0;
+const FLOATING_EXPANDED_HEIGHT: f64 = 340.0;
+const FLOATING_EDGE_GAP: f64 = 20.0;
+const FLOATING_TASKBAR_GAP: f64 = 72.0;
 
 /// Preferred small startup model. The desktop app never auto-pulls it; users
 /// confirm model downloads through the normal model/chat flow.
@@ -353,11 +355,50 @@ struct FloatingPosition {
     y: f64,
 }
 
+#[derive(Clone, Copy, Debug)]
+struct FloatingBounds {
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct FloatingWindowConfig {
+    collapsed_width: f64,
+    collapsed_height: f64,
+    expanded_width: f64,
+    expanded_height: f64,
+    visible: bool,
+    always_on_top: bool,
+    decorations: bool,
+    transparent: bool,
+    skip_taskbar: bool,
+    resizable: bool,
+    shadow: bool,
+}
+
 #[derive(serde::Serialize, Clone, Debug)]
 struct FloatingBackendStatus {
     state: String,
     detail: String,
     api_base: String,
+}
+
+fn floating_window_config() -> FloatingWindowConfig {
+    FloatingWindowConfig {
+        collapsed_width: FLOATING_COLLAPSED_WIDTH,
+        collapsed_height: FLOATING_COLLAPSED_HEIGHT,
+        expanded_width: FLOATING_EXPANDED_WIDTH,
+        expanded_height: FLOATING_EXPANDED_HEIGHT,
+        visible: true,
+        always_on_top: true,
+        decorations: false,
+        transparent: true,
+        skip_taskbar: true,
+        resizable: false,
+        shadow: false,
+    }
 }
 
 fn floating_position_path() -> std::path::PathBuf {
@@ -382,6 +423,55 @@ fn valid_floating_position(position: FloatingPosition) -> Option<FloatingPositio
     } else {
         None
     }
+}
+
+fn default_floating_position(
+    bounds: FloatingBounds,
+    window_width: f64,
+    window_height: f64,
+) -> FloatingPosition {
+    FloatingPosition {
+        x: bounds.x + (bounds.width - window_width - FLOATING_EDGE_GAP).max(FLOATING_EDGE_GAP),
+        y: bounds.y + (bounds.height - window_height - FLOATING_TASKBAR_GAP).max(FLOATING_EDGE_GAP),
+    }
+}
+
+fn clamp_floating_position(
+    position: Option<FloatingPosition>,
+    bounds: FloatingBounds,
+    window_width: f64,
+    window_height: f64,
+) -> FloatingPosition {
+    let fallback = default_floating_position(bounds, window_width, window_height);
+    let Some(position) = position.and_then(valid_floating_position) else {
+        return fallback;
+    };
+    let max_x = bounds.x + (bounds.width - window_width).max(0.0);
+    let max_y = bounds.y + (bounds.height - window_height).max(0.0);
+    if position.x < bounds.x || position.y < bounds.y || position.x > max_x || position.y > max_y {
+        return fallback;
+    }
+    FloatingPosition {
+        x: position.x.clamp(bounds.x, max_x),
+        y: position.y.clamp(bounds.y, max_y),
+    }
+}
+
+fn bounds_for_position(
+    bounds: &[FloatingBounds],
+    position: Option<FloatingPosition>,
+) -> Option<FloatingBounds> {
+    let position = position?;
+    bounds
+        .iter()
+        .copied()
+        .find(|bounds| {
+            position.x >= bounds.x
+                && position.y >= bounds.y
+                && position.x <= bounds.x + bounds.width
+                && position.y <= bounds.y + bounds.height
+        })
+        .or_else(|| bounds.first().copied())
 }
 
 // ---------------------------------------------------------------------------
@@ -868,6 +958,24 @@ fn floating_open_main_app(app: tauri::AppHandle) -> Result<(), String> {
         return Ok(());
     }
     Err("Main Grandpa window is not available.".into())
+}
+
+#[tauri::command]
+fn show_floating_icon(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(FLOATING_WINDOW_LABEL)
+        .ok_or("Floating Grandpa window is not available.")?;
+    window.show().map_err(|e| e.to_string())?;
+    window.set_always_on_top(true).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn hide_floating_icon(app: tauri::AppHandle) -> Result<(), String> {
+    let window = app
+        .get_webview_window(FLOATING_WINDOW_LABEL)
+        .ok_or("Floating Grandpa window is not available.")?;
+    window.hide().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1661,6 +1769,10 @@ pub fn run() {
         .setup(move |app| {
             // System tray
             let show = MenuItemBuilder::with_id("show", "Show / Hide").build(app)?;
+            let show_floating =
+                MenuItemBuilder::with_id("show_floating", "Show Floating Icon").build(app)?;
+            let hide_floating =
+                MenuItemBuilder::with_id("hide_floating", "Hide Floating Icon").build(app)?;
             let health = MenuItemBuilder::with_id("health", "Health: starting...")
                 .enabled(false)
                 .build(app)?;
@@ -1668,6 +1780,8 @@ pub fn run() {
 
             let menu = MenuBuilder::new(app)
                 .item(&show)
+                .item(&show_floating)
+                .item(&hide_floating)
                 .separator()
                 .item(&health)
                 .separator()
@@ -1690,6 +1804,17 @@ pub fn run() {
                                 }
                             }
                         }
+                        "show_floating" => {
+                            if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
+                                let _ = window.show();
+                                let _ = window.set_always_on_top(true);
+                            }
+                        }
+                        "hide_floating" => {
+                            if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
+                                let _ = window.hide();
+                            }
+                        }
                         "quit" => {
                             app.exit(0);
                         }
@@ -1699,22 +1824,77 @@ pub fn run() {
             }
 
             if app.get_webview_window(FLOATING_WINDOW_LABEL).is_none() {
+                let config = floating_window_config();
+                let fallback_bounds = FloatingBounds {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1280.0,
+                    height: 720.0,
+                };
+                let saved_position = read_floating_position_file();
+                let monitor_bounds = app
+                    .available_monitors()
+                    .ok()
+                    .map(|monitors| {
+                        monitors
+                            .iter()
+                            .map(|monitor| {
+                                let position = monitor.position();
+                                let size = monitor.size();
+                                FloatingBounds {
+                                    x: position.x as f64,
+                                    y: position.y as f64,
+                                    width: size.width as f64,
+                                    height: size.height as f64,
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                let monitor_bounds =
+                    bounds_for_position(&monitor_bounds, saved_position).unwrap_or(fallback_bounds);
+                let initial_position = clamp_floating_position(
+                    saved_position,
+                    monitor_bounds,
+                    config.collapsed_width,
+                    config.collapsed_height,
+                );
                 let floating = WebviewWindowBuilder::new(
                     app,
                     FLOATING_WINDOW_LABEL,
                     WebviewUrl::App("index.html?floating=1".into()),
                 )
                 .title("Grandpa Assistant")
-                .inner_size(FLOATING_COLLAPSED_WIDTH, FLOATING_COLLAPSED_HEIGHT)
-                .min_inner_size(FLOATING_COLLAPSED_WIDTH, FLOATING_COLLAPSED_HEIGHT)
-                .max_inner_size(FLOATING_EXPANDED_WIDTH, FLOATING_EXPANDED_HEIGHT)
-                .resizable(false)
-                .decorations(false)
-                .transparent(true)
-                .always_on_top(true)
-                .skip_taskbar(true)
-                .position(32.0, 32.0)
+                .inner_size(config.collapsed_width, config.collapsed_height)
+                .min_inner_size(config.collapsed_width, config.collapsed_height)
+                .max_inner_size(config.expanded_width, config.expanded_height)
+                .resizable(config.resizable)
+                .decorations(config.decorations)
+                .transparent(config.transparent)
+                .always_on_top(config.always_on_top)
+                .skip_taskbar(config.skip_taskbar)
+                .shadow(config.shadow)
+                .visible(config.visible)
+                .position(initial_position.x, initial_position.y)
                 .build()?;
+
+                #[cfg(debug_assertions)]
+                {
+                    eprintln!("Floating window created");
+                    eprintln!(
+                        "Floating window visible: {}",
+                        floating.is_visible().unwrap_or(false)
+                    );
+                    eprintln!(
+                        "Floating window size: {}x{}",
+                        config.collapsed_width, config.collapsed_height
+                    );
+                    eprintln!(
+                        "Floating window position: {},{}",
+                        initial_position.x.round(),
+                        initial_position.y.round()
+                    );
+                }
 
                 let floating_for_close = floating.clone();
                 floating.on_window_event(move |window_event| {
@@ -1766,6 +1946,8 @@ pub fn run() {
             floating_start_backend,
             floating_stop_backend,
             floating_open_main_app,
+            show_floating_icon,
+            hide_floating_icon,
             get_floating_position,
             save_floating_position,
             check_health,
@@ -1809,10 +1991,104 @@ mod tests {
     #[test]
     fn floating_window_constants_match_collapsed_and_expanded_sizes() {
         assert_eq!(FLOATING_WINDOW_LABEL, "grandpa-floating");
-        assert_eq!(FLOATING_COLLAPSED_WIDTH, 72.0);
-        assert_eq!(FLOATING_COLLAPSED_HEIGHT, 72.0);
-        assert_eq!(FLOATING_EXPANDED_WIDTH, 320.0);
-        assert_eq!(FLOATING_EXPANDED_HEIGHT, 360.0);
+        assert_eq!(FLOATING_COLLAPSED_WIDTH, 48.0);
+        assert_eq!(FLOATING_COLLAPSED_HEIGHT, 48.0);
+        assert_eq!(FLOATING_EXPANDED_WIDTH, 300.0);
+        assert_eq!(FLOATING_EXPANDED_HEIGHT, 340.0);
+    }
+
+    #[test]
+    fn floating_window_config_keeps_icon_independent_and_chrome_free() {
+        let config = floating_window_config();
+        assert!(config.visible);
+        assert!(config.always_on_top);
+        assert!(config.transparent);
+        assert!(config.skip_taskbar);
+        assert!(!config.decorations);
+        assert!(!config.resizable);
+        assert!(!config.shadow);
+        assert_eq!(config.collapsed_width, 48.0);
+        assert_eq!(config.collapsed_height, 48.0);
+    }
+
+    #[test]
+    fn floating_default_position_stays_inside_lower_right_work_area() {
+        let bounds = FloatingBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 1920.0,
+            height: 1040.0,
+        };
+        let position = default_floating_position(bounds, 48.0, 48.0);
+        assert!(position.x >= bounds.x);
+        assert!(position.y >= bounds.y);
+        assert!(position.x + 48.0 <= bounds.x + bounds.width);
+        assert!(position.y + 48.0 <= bounds.y + bounds.height);
+        assert!(position.x > 1800.0);
+        assert!(position.y > 900.0);
+    }
+
+    #[test]
+    fn floating_position_clamp_restores_valid_saved_position() {
+        let bounds = FloatingBounds {
+            x: 100.0,
+            y: 200.0,
+            width: 800.0,
+            height: 600.0,
+        };
+        let saved = FloatingPosition { x: 320.0, y: 420.0 };
+        let position = clamp_floating_position(Some(saved), bounds, 48.0, 48.0);
+        assert_eq!(position.x, saved.x);
+        assert_eq!(position.y, saved.y);
+    }
+
+    #[test]
+    fn floating_bounds_for_position_supports_secondary_monitor() {
+        let monitors = [
+            FloatingBounds {
+                x: 0.0,
+                y: 0.0,
+                width: 1280.0,
+                height: 720.0,
+            },
+            FloatingBounds {
+                x: 1280.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+        ];
+        let bounds = bounds_for_position(
+            &monitors,
+            Some(FloatingPosition {
+                x: 1800.0,
+                y: 400.0,
+            }),
+        )
+        .expect("secondary monitor should be selected");
+        assert_eq!(bounds.x, 1280.0);
+        assert_eq!(bounds.width, 1920.0);
+    }
+
+    #[test]
+    fn floating_position_clamp_resets_offscreen_saved_position() {
+        let bounds = FloatingBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 1280.0,
+            height: 720.0,
+        };
+        let position = clamp_floating_position(
+            Some(FloatingPosition {
+                x: -4000.0,
+                y: 40.0,
+            }),
+            bounds,
+            48.0,
+            48.0,
+        );
+        assert_eq!(position.x, 1212.0);
+        assert_eq!(position.y, 600.0);
     }
 
     #[test]

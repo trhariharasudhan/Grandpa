@@ -18,8 +18,10 @@ export interface FloatingBounds {
   height: number;
 }
 
-export const FLOATING_COLLAPSED_SIZE = { width: 72, height: 72 };
-export const FLOATING_EXPANDED_SIZE = { width: 320, height: 360 };
+export const FLOATING_COLLAPSED_SIZE = { width: 48, height: 48 };
+export const FLOATING_EXPANDED_SIZE = { width: 300, height: 340 };
+export const FLOATING_EDGE_GAP = 20;
+export const FLOATING_DRAG_THRESHOLD = 5;
 
 export function normalizeBackendState(value: unknown): FloatingBackendState {
   return value === 'running' || value === 'stopped' || value === 'error' ? value : 'checking';
@@ -54,8 +56,8 @@ export function clampPositionToBounds(
   windowSize = FLOATING_COLLAPSED_SIZE,
 ): FloatingPosition {
   const fallback = {
-    x: bounds.x + Math.max(16, bounds.width - windowSize.width - 24),
-    y: bounds.y + Math.max(16, bounds.height - windowSize.height - 72),
+    x: bounds.x + Math.max(FLOATING_EDGE_GAP, bounds.width - windowSize.width - FLOATING_EDGE_GAP),
+    y: bounds.y + Math.max(FLOATING_EDGE_GAP, bounds.height - windowSize.height - 72),
   };
   if (!position || !isValidPosition(position)) return fallback;
   const maxX = bounds.x + Math.max(0, bounds.width - windowSize.width);
@@ -70,4 +72,38 @@ export function clampPositionToBounds(
     x: Math.min(Math.max(position.x, bounds.x), maxX),
     y: Math.min(Math.max(position.y, bounds.y), maxY),
   };
+}
+
+export function shouldStartFloatingDrag(
+  start: FloatingPosition | null,
+  current: FloatingPosition,
+  threshold = FLOATING_DRAG_THRESHOLD,
+): boolean {
+  if (!start) return false;
+  return Math.hypot(current.x - start.x, current.y - start.y) > threshold;
+}
+
+export function boundsForPosition(
+  monitors: FloatingBounds[],
+  position: FloatingPosition,
+): FloatingBounds | null {
+  return monitors.find((bounds) => (
+    position.x >= bounds.x &&
+    position.y >= bounds.y &&
+    position.x <= bounds.x + bounds.width &&
+    position.y <= bounds.y + bounds.height
+  )) || monitors[0] || null;
+}
+
+export function getExpandedPosition(
+  anchor: FloatingPosition,
+  bounds: FloatingBounds,
+): FloatingPosition {
+  const opensLeft = anchor.x + FLOATING_EXPANDED_SIZE.width > bounds.x + bounds.width;
+  const opensUp = anchor.y + FLOATING_EXPANDED_SIZE.height > bounds.y + bounds.height;
+  const preferred = {
+    x: opensLeft ? anchor.x + FLOATING_COLLAPSED_SIZE.width - FLOATING_EXPANDED_SIZE.width : anchor.x,
+    y: opensUp ? anchor.y + FLOATING_COLLAPSED_SIZE.height - FLOATING_EXPANDED_SIZE.height : anchor.y,
+  };
+  return clampPositionToBounds(preferred, bounds, FLOATING_EXPANDED_SIZE);
 }
