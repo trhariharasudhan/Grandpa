@@ -2,7 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::tray::TrayIconBuilder;
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    AppHandle, LogicalPosition, LogicalSize, Manager, WebviewUrl, WebviewWindow,
+    WebviewWindowBuilder, WindowEvent,
+};
 use tauri_plugin_autostart::MacosLauncher;
 use tokio::sync::Mutex;
 
@@ -15,16 +18,55 @@ const FLOATING_EXPANDED_WIDTH: f64 = 300.0;
 const FLOATING_EXPANDED_HEIGHT: f64 = 340.0;
 const FLOATING_EDGE_GAP: f64 = 20.0;
 const FLOATING_TASKBAR_GAP: f64 = 72.0;
+#[cfg(debug_assertions)]
+const FLOATING_DEBUG_VISIBLE_POSITION: FloatingPosition = FloatingPosition { x: 100.0, y: 100.0 };
+#[cfg(debug_assertions)]
+const FLOATING_DEBUG_NORMAL_WINDOW_SIZE: f64 = 300.0;
 
 #[cfg(target_os = "windows")]
 const GWL_EXSTYLE: i32 = -20;
 #[cfg(target_os = "windows")]
 const WS_EX_TRANSPARENT: isize = 0x00000020;
+#[cfg(target_os = "windows")]
+const WS_EX_LAYERED: isize = 0x00080000;
+#[cfg(target_os = "windows")]
+const WS_EX_NOACTIVATE: isize = 0x08000000;
+#[cfg(target_os = "windows")]
+const WS_EX_TOOLWINDOW: isize = 0x00000080;
+#[cfg(target_os = "windows")]
+const SWP_NOSIZE: u32 = 0x0001;
+#[cfg(target_os = "windows")]
+const SWP_NOMOVE: u32 = 0x0002;
+#[cfg(target_os = "windows")]
+const SWP_NOZORDER: u32 = 0x0004;
+#[cfg(target_os = "windows")]
+const SWP_NOACTIVATE: u32 = 0x0010;
+#[cfg(target_os = "windows")]
+const SWP_FRAMECHANGED: u32 = 0x0020;
+#[cfg(target_os = "windows")]
+const HWND_TOPMOST: isize = -1;
 
 #[cfg(target_os = "windows")]
 extern "system" {
     fn GetWindowLongPtrW(hwnd: *mut std::ffi::c_void, n_index: i32) -> isize;
     fn SetWindowLongPtrW(hwnd: *mut std::ffi::c_void, n_index: i32, dw_new_long: isize) -> isize;
+    fn SetWindowPos(
+        hwnd: *mut std::ffi::c_void,
+        hwnd_insert_after: *mut std::ffi::c_void,
+        x: i32,
+        y: i32,
+        cx: i32,
+        cy: i32,
+        flags: u32,
+    ) -> i32;
+    fn EnumChildWindows(
+        hwnd_parent: *mut std::ffi::c_void,
+        lp_enum_func: extern "system" fn(*mut std::ffi::c_void, isize) -> i32,
+        l_param: isize,
+    ) -> i32;
+    fn GetClassNameW(hwnd: *mut std::ffi::c_void, lp_class_name: *mut u16, n_max_count: i32)
+        -> i32;
+    fn GetLastError() -> u32;
 }
 
 /// Preferred small startup model. The desktop app never auto-pulls it; users
@@ -397,8 +439,42 @@ struct FloatingBackendStatus {
     api_base: String,
 }
 
+#[derive(serde::Serialize, Clone, Debug, Default)]
+struct FloatingHwndStatus {
+    hwnd: String,
+    class_name: String,
+    extended_style: String,
+    has_transparent: bool,
+    has_layered: bool,
+    has_noactivate: bool,
+    has_toolwindow: bool,
+}
+
+#[derive(serde::Serialize, Clone, Debug, Default)]
+struct FloatingInteractionStatus {
+    available: bool,
+    visible: bool,
+    focused: bool,
+    cursor_events_ignored: bool,
+    outer: Option<FloatingHwndStatus>,
+    children: Vec<FloatingHwndStatus>,
+    repairs: Vec<FloatingStyleRepair>,
+    repaired: bool,
+    errors: Vec<String>,
+}
+
+#[derive(serde::Serialize, Clone, Debug, Default)]
+struct FloatingStyleRepair {
+    hwnd: String,
+    class_name: String,
+    old_extended_style: String,
+    new_extended_style: String,
+    removed_transparent: bool,
+    removed_noactivate: bool,
+}
+
 fn floating_window_config() -> FloatingWindowConfig {
-    FloatingWindowConfig {
+    let mut config = FloatingWindowConfig {
         collapsed_width: FLOATING_COLLAPSED_WIDTH,
         collapsed_height: FLOATING_COLLAPSED_HEIGHT,
         expanded_width: FLOATING_EXPANDED_WIDTH,
@@ -411,23 +487,295 @@ fn floating_window_config() -> FloatingWindowConfig {
         resizable: false,
         shadow: false,
         focusable: true,
+    };
+    #[cfg(debug_assertions)]
+    {
+        config.collapsed_width = FLOATING_DEBUG_NORMAL_WINDOW_SIZE;
+        config.collapsed_height = FLOATING_DEBUG_NORMAL_WINDOW_SIZE;
+        config.expanded_width = FLOATING_DEBUG_NORMAL_WINDOW_SIZE;
+        config.expanded_height = FLOATING_DEBUG_NORMAL_WINDOW_SIZE;
+        config.decorations = true;
+        config.transparent = false;
+        config.skip_taskbar = false;
+        config.resizable = true;
+        config.shadow = true;
+        config.focusable = true;
+    }
+    config
+}
+
+fn args_request_hidden<I, S>(args: I) -> bool
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    args.into_iter().any(|arg| arg.as_ref() == "--hidden")
+}
+
+fn current_launch_requests_hidden() -> bool {
+    args_request_hidden(std::env::args())
+}
+
+#[cfg(target_os = "windows")]
+fn interactive_extended_style(style: isize, _top_level: bool) -> isize {
+    style & !WS_EX_TRANSPARENT & !WS_EX_NOACTIVATE
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_label(hwnd: *mut std::ffi::c_void) -> String {
+    format!("0x{:X}", hwnd as usize)
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_class_name(hwnd: *mut std::ffi::c_void) -> String {
+    let mut buffer = [0u16; 256];
+    let len = unsafe { GetClassNameW(hwnd, buffer.as_mut_ptr(), buffer.len() as i32) };
+    if len <= 0 {
+        return String::new();
+    }
+    String::from_utf16_lossy(&buffer[..len as usize])
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_extended_style(hwnd: *mut std::ffi::c_void) -> isize {
+    unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) }
+}
+
+#[cfg(target_os = "windows")]
+fn hwnd_status(hwnd: *mut std::ffi::c_void) -> FloatingHwndStatus {
+    let style = hwnd_extended_style(hwnd);
+    FloatingHwndStatus {
+        hwnd: hwnd_label(hwnd),
+        class_name: hwnd_class_name(hwnd),
+        extended_style: format!("0x{:X}", style as usize),
+        has_transparent: style & WS_EX_TRANSPARENT != 0,
+        has_layered: style & WS_EX_LAYERED != 0,
+        has_noactivate: style & WS_EX_NOACTIVATE != 0,
+        has_toolwindow: style & WS_EX_TOOLWINDOW != 0,
     }
 }
 
 #[cfg(target_os = "windows")]
-fn disable_floating_click_through(window: &tauri::WebviewWindow) {
-    if let Ok(hwnd) = window.hwnd() {
-        unsafe {
-            let current = GetWindowLongPtrW(hwnd.0 as _, GWL_EXSTYLE);
-            if current & WS_EX_TRANSPARENT != 0 {
-                let _ = SetWindowLongPtrW(hwnd.0 as _, GWL_EXSTYLE, current & !WS_EX_TRANSPARENT);
+extern "system" fn collect_child_hwnds(hwnd: *mut std::ffi::c_void, l_param: isize) -> i32 {
+    let children = unsafe { &mut *(l_param as *mut Vec<*mut std::ffi::c_void>) };
+    children.push(hwnd);
+    1
+}
+
+#[cfg(target_os = "windows")]
+fn child_hwnds(hwnd: *mut std::ffi::c_void) -> Vec<*mut std::ffi::c_void> {
+    let mut children = Vec::<*mut std::ffi::c_void>::new();
+    unsafe {
+        EnumChildWindows(hwnd, collect_child_hwnds, &mut children as *mut _ as isize);
+    }
+    children
+}
+
+#[cfg(target_os = "windows")]
+fn repair_hwnd_interactivity(
+    hwnd: *mut std::ffi::c_void,
+    top_level: bool,
+) -> Result<Option<FloatingStyleRepair>, String> {
+    let current = hwnd_extended_style(hwnd);
+    let next = interactive_extended_style(current, top_level);
+    if next == current {
+        return Ok(None);
+    }
+    let repair = FloatingStyleRepair {
+        hwnd: hwnd_label(hwnd),
+        class_name: hwnd_class_name(hwnd),
+        old_extended_style: format!("0x{:X}", current as usize),
+        new_extended_style: format!("0x{:X}", next as usize),
+        removed_transparent: current & WS_EX_TRANSPARENT != 0,
+        removed_noactivate: current & WS_EX_NOACTIVATE != 0,
+    };
+    let previous = unsafe { SetWindowLongPtrW(hwnd, GWL_EXSTYLE, next) };
+    if previous == 0 {
+        let error = unsafe { GetLastError() };
+        if error != 0 {
+            return Err(format!(
+                "{} SetWindowLongPtrW failed with Win32 error {}",
+                hwnd_label(hwnd),
+                error
+            ));
+        }
+    }
+    let ok = unsafe {
+        SetWindowPos(
+            hwnd,
+            std::ptr::null_mut(),
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        )
+    };
+    if ok == 0 {
+        return Err(format!(
+            "{} SetWindowPos(SWP_FRAMECHANGED) failed with Win32 error {}",
+            hwnd_label(hwnd),
+            unsafe { GetLastError() }
+        ));
+    }
+    Ok(Some(repair))
+}
+
+#[cfg(target_os = "windows")]
+fn force_hwnd_topmost(hwnd: *mut std::ffi::c_void) -> Result<(), String> {
+    let ok = unsafe {
+        SetWindowPos(
+            hwnd,
+            HWND_TOPMOST as *mut std::ffi::c_void,
+            0,
+            0,
+            0,
+            0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+        )
+    };
+    if ok == 0 {
+        return Err(format!(
+            "{} SetWindowPos(HWND_TOPMOST) failed with Win32 error {}",
+            hwnd_label(hwnd),
+            unsafe { GetLastError() }
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn floating_interaction_status_for_window(
+    window: &tauri::WebviewWindow,
+    repair: bool,
+) -> FloatingInteractionStatus {
+    let mut status = FloatingInteractionStatus {
+        available: true,
+        visible: window.is_visible().unwrap_or(false),
+        focused: window.is_focused().unwrap_or(false),
+        cursor_events_ignored: false,
+        outer: None,
+        children: Vec::new(),
+        repairs: Vec::new(),
+        repaired: false,
+        errors: Vec::new(),
+    };
+
+    if let Err(error) = window.set_ignore_cursor_events(false) {
+        status.cursor_events_ignored = true;
+        status
+            .errors
+            .push(format!("set_ignore_cursor_events(false) failed: {error}"));
+    }
+    if let Err(error) = window.set_focusable(true) {
+        status
+            .errors
+            .push(format!("set_focusable(true) failed: {error}"));
+    }
+
+    let Ok(hwnd) = window.hwnd() else {
+        status.errors.push("floating HWND unavailable".into());
+        return status;
+    };
+    let outer = hwnd.0 as *mut std::ffi::c_void;
+    if repair {
+        if let Err(error) = force_hwnd_topmost(outer) {
+            status.errors.push(error);
+        }
+    }
+    let mut hierarchy = vec![outer];
+    hierarchy.extend(child_hwnds(outer));
+
+    if repair {
+        for (index, hwnd) in hierarchy.iter().enumerate() {
+            match repair_hwnd_interactivity(*hwnd, index == 0) {
+                Ok(Some(repair)) => {
+                    status.repaired = true;
+                    status.repairs.push(repair);
+                }
+                Ok(None) => {}
+                Err(error) => status.errors.push(error),
             }
         }
+    }
+
+    status.outer = Some(hwnd_status(outer));
+    status.children = child_hwnds(outer).into_iter().map(hwnd_status).collect();
+    status
+}
+
+#[cfg(target_os = "windows")]
+fn ensure_floating_interactive_window(
+    window: &tauri::WebviewWindow,
+    context: &str,
+) -> FloatingInteractionStatus {
+    let status = floating_interaction_status_for_window(window, true);
+    #[cfg(debug_assertions)]
+    {
+        eprintln!(
+            "Floating interaction repair ({context}): repaired={} visible={} focused={} errors={:?}",
+            status.repaired, status.visible, status.focused, status.errors
+        );
+        for repair in &status.repairs {
+            eprintln!(
+                "Floating style repair HWND {} class={} old={} new={} removed_transparent={} removed_noactivate={}",
+                repair.hwnd,
+                repair.class_name,
+                repair.old_extended_style,
+                repair.new_extended_style,
+                repair.removed_transparent,
+                repair.removed_noactivate
+            );
+        }
+        if let Some(outer) = &status.outer {
+            eprintln!(
+                "Floating outer HWND {} class={} exstyle={} transparent={} noactivate={} layered={}",
+                outer.hwnd,
+                outer.class_name,
+                outer.extended_style,
+                outer.has_transparent,
+                outer.has_noactivate,
+                outer.has_layered
+            );
+        }
+        for child in &status.children {
+            eprintln!(
+                "Floating child HWND {} class={} exstyle={} transparent={} noactivate={} layered={}",
+                child.hwnd,
+                child.class_name,
+                child.extended_style,
+                child.has_transparent,
+                child.has_noactivate,
+                child.has_layered
+            );
+        }
+    }
+    status
+}
+
+#[cfg(not(target_os = "windows"))]
+fn ensure_floating_interactive_window(
+    _window: &tauri::WebviewWindow,
+    _context: &str,
+) -> FloatingInteractionStatus {
+    FloatingInteractionStatus {
+        available: true,
+        ..FloatingInteractionStatus::default()
     }
 }
 
 #[cfg(not(target_os = "windows"))]
-fn disable_floating_click_through(_window: &tauri::WebviewWindow) {}
+fn floating_interaction_status_for_window(
+    window: &tauri::WebviewWindow,
+    _repair: bool,
+) -> FloatingInteractionStatus {
+    FloatingInteractionStatus {
+        available: true,
+        visible: window.is_visible().unwrap_or(false),
+        focused: window.is_focused().unwrap_or(false),
+        ..FloatingInteractionStatus::default()
+    }
+}
 
 fn floating_position_path() -> std::path::PathBuf {
     std::path::PathBuf::from(home_dir())
@@ -500,6 +848,238 @@ fn bounds_for_position(
                 && position.y <= bounds.y + bounds.height
         })
         .or_else(|| bounds.first().copied())
+}
+
+fn floating_window_url() -> WebviewUrl {
+    WebviewUrl::App("index.html?floating=1".into())
+}
+
+fn monitor_bounds_for_app(app: &AppHandle) -> Vec<FloatingBounds> {
+    app.available_monitors()
+        .ok()
+        .map(|monitors| {
+            monitors
+                .iter()
+                .map(|monitor| {
+                    let scale = monitor.scale_factor();
+                    let work_area = monitor.work_area();
+                    FloatingBounds {
+                        x: work_area.position.x as f64 / scale,
+                        y: work_area.position.y as f64 / scale,
+                        width: work_area.size.width as f64 / scale,
+                        height: work_area.size.height as f64 / scale,
+                    }
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default()
+}
+
+fn fallback_floating_bounds() -> FloatingBounds {
+    FloatingBounds {
+        x: 0.0,
+        y: 0.0,
+        width: 1280.0,
+        height: 720.0,
+    }
+}
+
+fn safe_floating_position_for_app(
+    app: &AppHandle,
+    config: FloatingWindowConfig,
+) -> FloatingPosition {
+    let saved_position = read_floating_position_file();
+    let monitor_bounds = monitor_bounds_for_app(app);
+    let selected_bounds = bounds_for_position(&monitor_bounds, saved_position)
+        .unwrap_or_else(fallback_floating_bounds);
+    clamp_floating_position(
+        saved_position,
+        selected_bounds,
+        config.collapsed_width,
+        config.collapsed_height,
+    )
+}
+
+#[cfg(debug_assertions)]
+fn log_floating_windows(app: &AppHandle, context: &str) {
+    let labels = app.webview_windows().keys().cloned().collect::<Vec<_>>();
+    eprintln!("Floating diagnostics ({context}) windows: {:?}", labels);
+}
+
+#[cfg(not(debug_assertions))]
+fn log_floating_windows(_app: &AppHandle, _context: &str) {}
+
+fn apply_floating_window_state(
+    window: &WebviewWindow,
+    app: &AppHandle,
+    context: &str,
+) -> Result<(), String> {
+    let config = floating_window_config();
+    let mut position = safe_floating_position_for_app(app, config);
+    let collapsed_width = config.collapsed_width;
+    let collapsed_height = config.collapsed_height;
+    #[cfg(debug_assertions)]
+    {
+        eprintln!(
+            "Floating diagnostics ({context}) saved position file: {:?}",
+            read_floating_position_file()
+        );
+        position = FLOATING_DEBUG_VISIBLE_POSITION;
+        eprintln!(
+            "Floating diagnostics ({context}) DEV normal-window probe forced: size={}x{} position={},{} transparent={} skip_taskbar={} decorations={}",
+            collapsed_width,
+            collapsed_height,
+            position.x,
+            position.y,
+            config.transparent,
+            config.skip_taskbar,
+            config.decorations
+        );
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let monitor_bounds = monitor_bounds_for_app(app);
+        eprintln!("Floating diagnostics ({context}) show requested");
+        eprintln!(
+            "Floating diagnostics ({context}) monitor/work-area: {:?}",
+            monitor_bounds
+        );
+        eprintln!(
+            "Floating diagnostics ({context}) target position: {},{}",
+            position.x.round(),
+            position.y.round()
+        );
+    }
+
+    window
+        .set_size(LogicalSize::new(collapsed_width, collapsed_height))
+        .map_err(|error| format!("set floating size failed: {error}"))?;
+    window
+        .set_min_size(Some(LogicalSize::new(collapsed_width, collapsed_height)))
+        .map_err(|error| format!("set floating min size failed: {error}"))?;
+    window
+        .set_max_size(Some(LogicalSize::new(
+            config.expanded_width,
+            config.expanded_height,
+        )))
+        .map_err(|error| format!("set floating max size failed: {error}"))?;
+    window
+        .set_position(LogicalPosition::new(
+            position.x.round() as i32,
+            position.y.round() as i32,
+        ))
+        .map_err(|error| format!("set floating position failed: {error}"))?;
+    if window.is_minimized().unwrap_or(false) {
+        window
+            .unminimize()
+            .map_err(|error| format!("unminimize floating window failed: {error}"))?;
+    }
+    window
+        .set_always_on_top(config.always_on_top)
+        .map_err(|error| format!("set floating always-on-top failed: {error}"))?;
+    window
+        .set_skip_taskbar(config.skip_taskbar)
+        .map_err(|error| format!("set floating skip-taskbar failed: {error}"))?;
+    window
+        .set_focusable(config.focusable)
+        .map_err(|error| format!("set floating focusable failed: {error}"))?;
+    window
+        .set_ignore_cursor_events(false)
+        .map_err(|error| format!("set floating cursor events failed: {error}"))?;
+    window
+        .show()
+        .map_err(|error| format!("show floating window failed: {error}"))?;
+    #[cfg(debug_assertions)]
+    {
+        let _ = window.set_focus();
+    }
+
+    let interaction_status = ensure_floating_interactive_window(window, context);
+    if !interaction_status.errors.is_empty() {
+        return Err(interaction_status.errors.join("; "));
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let visible = window.is_visible().unwrap_or(false);
+        let size = window.outer_size().ok();
+        let position = window.outer_position().ok();
+        eprintln!("Floating diagnostics ({context}) show succeeded");
+        eprintln!("Floating diagnostics ({context}) visible: {visible}");
+        eprintln!("Floating diagnostics ({context}) size result: {:?}", size);
+        eprintln!(
+            "Floating diagnostics ({context}) position result: {:?}",
+            position
+        );
+        eprintln!("Floating diagnostics ({context}) always-on-top requested: true");
+        eprintln!("Floating diagnostics ({context}) skip-taskbar requested: true");
+        eprintln!(
+            "Floating diagnostics ({context}) transparent requested: {}",
+            config.transparent
+        );
+        eprintln!(
+            "Floating diagnostics ({context}) focusable requested: {}",
+            config.focusable
+        );
+    }
+
+    Ok(())
+}
+
+fn ensure_floating_window(app: &AppHandle, context: &str) -> Result<WebviewWindow, String> {
+    log_floating_windows(app, &format!("{context} before ensure"));
+    #[cfg(debug_assertions)]
+    eprintln!("Floating diagnostics ({context}) creation requested");
+
+    let config = floating_window_config();
+    if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
+        #[cfg(debug_assertions)]
+        eprintln!("Floating diagnostics ({context}) existing window found");
+        apply_floating_window_state(&window, app, context)?;
+        log_floating_windows(app, &format!("{context} after existing repair"));
+        return Ok(window);
+    }
+
+    #[cfg(debug_assertions)]
+    eprintln!("Floating diagnostics ({context}) existing window not found");
+    let initial_position = safe_floating_position_for_app(app, config);
+    let url = floating_window_url();
+    #[cfg(debug_assertions)]
+    eprintln!("Floating diagnostics ({context}) URL assigned: index.html?floating=1");
+
+    let floating = WebviewWindowBuilder::new(app, FLOATING_WINDOW_LABEL, url)
+        .title("Grandpa Assistant")
+        .inner_size(config.collapsed_width, config.collapsed_height)
+        .min_inner_size(config.collapsed_width, config.collapsed_height)
+        .max_inner_size(config.expanded_width, config.expanded_height)
+        .resizable(config.resizable)
+        .decorations(config.decorations)
+        .transparent(config.transparent)
+        .always_on_top(config.always_on_top)
+        .skip_taskbar(config.skip_taskbar)
+        .shadow(config.shadow)
+        .focusable(config.focusable)
+        .accept_first_mouse(true)
+        .visible(config.visible)
+        .position(initial_position.x, initial_position.y)
+        .build()
+        .map_err(|error| format!("build floating window failed: {error}"))?;
+
+    #[cfg(debug_assertions)]
+    eprintln!("Floating diagnostics ({context}) builder completed");
+
+    let floating_for_close = floating.clone();
+    floating.on_window_event(move |window_event| {
+        if let WindowEvent::CloseRequested { api, .. } = window_event {
+            api.prevent_close();
+            let _ = floating_for_close.hide();
+        }
+    });
+
+    apply_floating_window_state(&floating, app, context)?;
+    log_floating_windows(app, &format!("{context} after creation"));
+    Ok(floating)
 }
 
 // ---------------------------------------------------------------------------
@@ -990,14 +1570,7 @@ fn floating_open_main_app(app: tauri::AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 fn show_floating_icon(app: tauri::AppHandle) -> Result<(), String> {
-    let window = app
-        .get_webview_window(FLOATING_WINDOW_LABEL)
-        .ok_or("Floating Grandpa window is not available.")?;
-    window.show().map_err(|e| e.to_string())?;
-    window.set_always_on_top(true).map_err(|e| e.to_string())?;
-    let _ = window.set_focusable(true);
-    let _ = window.set_ignore_cursor_events(false);
-    disable_floating_click_through(&window);
+    ensure_floating_window(&app, "show command")?;
     Ok(())
 }
 
@@ -1007,6 +1580,25 @@ fn hide_floating_icon(app: tauri::AppHandle) -> Result<(), String> {
         .get_webview_window(FLOATING_WINDOW_LABEL)
         .ok_or("Floating Grandpa window is not available.")?;
     window.hide().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn floating_interaction_status(app: tauri::AppHandle) -> Result<FloatingInteractionStatus, String> {
+    let window = app
+        .get_webview_window(FLOATING_WINDOW_LABEL)
+        .ok_or("Floating Grandpa window is not available.")?;
+    Ok(floating_interaction_status_for_window(&window, false))
+}
+
+#[tauri::command]
+fn ensure_floating_interactive(app: tauri::AppHandle) -> Result<FloatingInteractionStatus, String> {
+    let window = app
+        .get_webview_window(FLOATING_WINDOW_LABEL)
+        .ok_or("Floating Grandpa window is not available.")?;
+    Ok(ensure_floating_interactive_window(
+        &window,
+        "frontend command",
+    ))
 }
 
 #[tauri::command]
@@ -1792,12 +2384,19 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if !args_request_hidden(args.iter().map(String::as_str)) {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.set_focus();
+                }
+            }
+            if let Err(error) = ensure_floating_window(app, "single-instance activation") {
+                eprintln!("Floating diagnostics single-instance ensure failed: {error}");
             }
         }))
         .setup(move |app| {
+            let start_hidden = current_launch_requests_hidden();
+
             // System tray
             let show = MenuItemBuilder::with_id("show", "Show / Hide").build(app)?;
             let show_floating =
@@ -1836,12 +2435,8 @@ pub fn run() {
                             }
                         }
                         "show_floating" => {
-                            if let Some(window) = app.get_webview_window(FLOATING_WINDOW_LABEL) {
-                                let _ = window.show();
-                                let _ = window.set_always_on_top(true);
-                                let _ = window.set_focusable(true);
-                                let _ = window.set_ignore_cursor_events(false);
-                                disable_floating_click_through(&window);
+                            if let Err(error) = ensure_floating_window(app, "tray show") {
+                                eprintln!("Floating diagnostics tray show failed: {error}");
                             }
                         }
                         "hide_floating" => {
@@ -1857,90 +2452,28 @@ pub fn run() {
                     .build(app)?;
             }
 
-            if app.get_webview_window(FLOATING_WINDOW_LABEL).is_none() {
-                let config = floating_window_config();
-                let fallback_bounds = FloatingBounds {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 1280.0,
-                    height: 720.0,
-                };
-                let saved_position = read_floating_position_file();
-                let monitor_bounds = app
-                    .available_monitors()
-                    .ok()
-                    .map(|monitors| {
-                        monitors
-                            .iter()
-                            .map(|monitor| {
-                                let position = monitor.position();
-                                let size = monitor.size();
-                                FloatingBounds {
-                                    x: position.x as f64,
-                                    y: position.y as f64,
-                                    width: size.width as f64,
-                                    height: size.height as f64,
-                                }
-                            })
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-                let monitor_bounds =
-                    bounds_for_position(&monitor_bounds, saved_position).unwrap_or(fallback_bounds);
-                let initial_position = clamp_floating_position(
-                    saved_position,
-                    monitor_bounds,
-                    config.collapsed_width,
-                    config.collapsed_height,
-                );
-                let floating = WebviewWindowBuilder::new(
-                    app,
-                    FLOATING_WINDOW_LABEL,
-                    WebviewUrl::App("index.html?floating=1".into()),
-                )
-                .title("Grandpa Assistant")
-                .inner_size(config.collapsed_width, config.collapsed_height)
-                .min_inner_size(config.collapsed_width, config.collapsed_height)
-                .max_inner_size(config.expanded_width, config.expanded_height)
-                .resizable(config.resizable)
-                .decorations(config.decorations)
-                .transparent(config.transparent)
-                .always_on_top(config.always_on_top)
-                .skip_taskbar(config.skip_taskbar)
-                .shadow(config.shadow)
-                .focusable(config.focusable)
-                .accept_first_mouse(true)
-                .visible(config.visible)
-                .position(initial_position.x, initial_position.y)
-                .build()?;
-                let _ = floating.set_ignore_cursor_events(false);
-                disable_floating_click_through(&floating);
-
-                #[cfg(debug_assertions)]
-                {
-                    eprintln!("Floating window created");
-                    eprintln!(
-                        "Floating window visible: {}",
-                        floating.is_visible().unwrap_or(false)
-                    );
-                    eprintln!(
-                        "Floating window size: {}x{}",
-                        config.collapsed_width, config.collapsed_height
-                    );
-                    eprintln!(
-                        "Floating window position: {},{}",
-                        initial_position.x.round(),
-                        initial_position.y.round()
-                    );
+            if start_hidden {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.hide();
                 }
+            }
 
-                let floating_for_close = floating.clone();
-                floating.on_window_event(move |window_event| {
-                    if let WindowEvent::CloseRequested { api, .. } = window_event {
-                        api.prevent_close();
-                        let _ = floating_for_close.hide();
-                    }
-                });
+            let floating = ensure_floating_window(app.handle(), "app startup")?;
+            #[cfg(debug_assertions)]
+            {
+                let config = floating_window_config();
+                eprintln!("Floating window created");
+                eprintln!(
+                    "Floating window visible: {}",
+                    floating.is_visible().unwrap_or(false)
+                );
+                eprintln!(
+                    "Floating window size: {}x{}",
+                    config.collapsed_width, config.collapsed_height
+                );
+                if let Ok(position) = floating.outer_position() {
+                    eprintln!("Floating window position: {},{}", position.x, position.y);
+                }
             }
 
             // Create native macOS overlay panel
@@ -1986,6 +2519,8 @@ pub fn run() {
             floating_open_main_app,
             show_floating_icon,
             hide_floating_icon,
+            floating_interaction_status,
+            ensure_floating_interactive,
             get_floating_position,
             save_floating_position,
             check_health,
@@ -2051,6 +2586,53 @@ mod tests {
     }
 
     #[test]
+    fn floating_autostart_hidden_arg_is_detected() {
+        assert!(args_request_hidden(["Grandpa.exe", "--hidden"]));
+        assert!(args_request_hidden(["Grandpa.exe", "--hidden", "--other"]));
+        assert!(!args_request_hidden(["Grandpa.exe"]));
+        assert!(!args_request_hidden(["Grandpa.exe", "--not-hidden"]));
+    }
+
+    #[test]
+    fn floating_window_url_renders_floating_route_immediately() {
+        let WebviewUrl::App(path) = floating_window_url() else {
+            panic!("floating window must use the app route");
+        };
+        let path = path.to_string_lossy();
+        assert_eq!(path, "index.html?floating=1");
+        assert!(!path.contains("win_chromakey"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn floating_interactive_style_removes_click_through_without_losing_existing_layering() {
+        let original = WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+        let repaired = interactive_extended_style(original, true);
+        assert_eq!(repaired & WS_EX_TRANSPARENT, 0);
+        assert_eq!(repaired & WS_EX_NOACTIVATE, 0);
+        assert_ne!(repaired & WS_EX_LAYERED, 0);
+        assert_ne!(repaired & WS_EX_TOOLWINDOW, 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn floating_interactive_style_repair_is_idempotent() {
+        let original = WS_EX_LAYERED | WS_EX_TOOLWINDOW;
+        assert_eq!(interactive_extended_style(original, true), original);
+        assert_eq!(
+            interactive_extended_style(interactive_extended_style(original, true), true),
+            original
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn floating_interactive_style_does_not_add_layering() {
+        assert_eq!(interactive_extended_style(0, true) & WS_EX_LAYERED, 0);
+        assert_eq!(interactive_extended_style(0, false) & WS_EX_LAYERED, 0);
+    }
+
+    #[test]
     fn floating_default_position_stays_inside_lower_right_work_area() {
         let bounds = FloatingBounds {
             x: 0.0,
@@ -2079,6 +2661,26 @@ mod tests {
         let position = clamp_floating_position(Some(saved), bounds, 48.0, 48.0);
         assert_eq!(position.x, saved.x);
         assert_eq!(position.y, saved.y);
+    }
+
+    #[test]
+    fn floating_position_clamp_keeps_icon_fully_inside_edges() {
+        let bounds = FloatingBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 320.0,
+            height: 240.0,
+        };
+        let position = clamp_floating_position(
+            Some(FloatingPosition { x: 272.0, y: 192.0 }),
+            bounds,
+            48.0,
+            48.0,
+        );
+        assert_eq!(position.x, 272.0);
+        assert_eq!(position.y, 192.0);
+        assert!(position.x + 48.0 <= bounds.x + bounds.width);
+        assert!(position.y + 48.0 <= bounds.y + bounds.height);
     }
 
     #[test]

@@ -4,8 +4,8 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   availableMonitors,
   getCurrentWindow,
+  LogicalPosition,
   LogicalSize,
-  PhysicalPosition,
 } from '@tauri-apps/api/window';
 import {
   boundsForPosition,
@@ -30,6 +30,8 @@ import './floating.css';
 const appWindow = getCurrentWindow();
 const POLL_MS = 4000;
 const SAVE_DEBOUNCE_MS = 250;
+const DEV_VISIBILITY_PROBE_POSITION = { x: 100, y: 100 };
+const DEV_VISIBILITY_PROBE_SIZE = { width: 300, height: 300 };
 type UnlistenFn = () => void;
 type FloatingMode = 'collapsed' | 'resizing' | 'expanded';
 
@@ -58,6 +60,7 @@ export function FloatingApp() {
   const [voiceStatus, setVoiceStatus] = useState<FloatingVoiceStatus | null>(null);
   const [voiceMessage, setVoiceMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const modeRef = useRef<FloatingMode>('collapsed');
   const resizeInFlight = useRef(false);
   const pollInFlight = useRef(false);
@@ -126,8 +129,7 @@ export function FloatingApp() {
   const persistActualPositionSoon = useCallback(() => {
     if (dragSaveTimer.current !== null) window.clearTimeout(dragSaveTimer.current);
     dragSaveTimer.current = window.setTimeout(() => {
-      void appWindow.outerPosition().then((position) => {
-        const next = { x: position.x, y: position.y };
+      void getCurrentLogicalPosition().then((next) => {
         collapsedPosition.current = next;
         debugLog('actual window position after drag', next);
         saveCurrentPosition(next);
@@ -145,9 +147,12 @@ export function FloatingApp() {
     debugLog('resize requested', { nextMode, size, position });
     try {
       if (position) {
-        await appWindow.setPosition(new PhysicalPosition(Math.round(position.x), Math.round(position.y)));
+        await appWindow.setPosition(new LogicalPosition(Math.round(position.x), Math.round(position.y)));
       }
       await appWindow.setSize(new LogicalSize(size.width, size.height));
+      await invoke('ensure_floating_interactive').catch((error) => {
+        debugLog('interaction repair after resize failed', error);
+      });
       const outerSize = await appWindow.outerSize().catch(() => null);
       debugLog('resize completed', { nextMode, outerSize });
       return true;
@@ -162,8 +167,7 @@ export function FloatingApp() {
     resizeInFlight.current = true;
     setFloatingMode('resizing');
 
-    const current = await appWindow.outerPosition().catch(() => null);
-    const currentPosition = current ? { x: current.x, y: current.y } : null;
+    const currentPosition = await getCurrentLogicalPosition().catch(() => null);
     const monitors = await getMonitorBounds();
     const bounds = currentPosition ? boundsForPosition(monitors, currentPosition) || getFallbackBounds() : monitors[0] || getFallbackBounds();
     const previousAnchor = collapsedPosition.current || currentPosition || clampPositionToBounds(null, bounds);
@@ -187,8 +191,7 @@ export function FloatingApp() {
     resizeInFlight.current = true;
     setFloatingMode('resizing');
 
-    const current = await appWindow.outerPosition().catch(() => null);
-    const anchor = current ? { x: current.x, y: current.y } : null;
+    const anchor = await getCurrentLogicalPosition().catch(() => null);
     if (anchor) collapsedPosition.current = anchor;
 
     const monitors = await getMonitorBounds();
@@ -220,14 +223,20 @@ export function FloatingApp() {
     void restorePosition();
     void appWindow.show().catch(() => {});
     void appWindow.setAlwaysOnTop(true).catch(() => {});
+    void invoke('ensure_floating_interactive').then((result) => {
+      debugLog('interaction status after startup repair', result);
+    }).catch((error) => {
+      debugLog('interaction startup repair failed', error);
+    });
     void refreshStatus();
     const interval = window.setInterval(refreshStatus, POLL_MS);
     let unlisten: UnlistenFn | undefined;
     appWindow.onMoved((position) => {
       if (modeRef.current !== 'collapsed') return;
-      const next = { x: position.payload.x, y: position.payload.y };
-      collapsedPosition.current = next;
-      saveCurrentPosition(next);
+      void physicalToLogicalPosition({ x: position.payload.x, y: position.payload.y }).then((next) => {
+        collapsedPosition.current = next;
+        saveCurrentPosition(next);
+      });
     }).then((listener) => {
       unlisten = listener;
     }).catch(() => {});
@@ -299,11 +308,13 @@ export function FloatingApp() {
   const onIconPointerMove = (event: React.PointerEvent) => {
     if (!pointerStart.current || dragStarted.current) return;
     if (shouldStartFloatingDrag(pointerStart.current, { x: event.clientX, y: event.clientY }, FLOATING_DRAG_THRESHOLD)) {
+      event.preventDefault();
       void startNativeDrag();
     }
   };
 
   const onIconPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
+    debugLog('pointer up', { x: event.clientX, y: event.clientY });
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
@@ -315,17 +326,17 @@ export function FloatingApp() {
       persistActualPositionSoon();
       return;
     }
-    suppressNextClick.current = true;
-    toggleExpanded();
   };
 
   const onIconClick = (event: React.MouseEvent) => {
+    debugLog('click', { x: event.clientX, y: event.clientY });
     if (suppressNextClick.current) {
       event.preventDefault();
       event.stopPropagation();
       suppressNextClick.current = false;
       return;
     }
+    toggleExpanded();
   };
 
   const onToggleKeyDown = (event: React.KeyboardEvent) => {
@@ -350,16 +361,25 @@ export function FloatingApp() {
 
   const isExpanded = mode === 'expanded';
   const isResizing = mode === 'resizing';
+  const debugVisibilityClass = import.meta.env.DEV ? ' debug-visibility-probe' : '';
 
   return (
-    <main className={`floating-root ${isExpanded ? 'expanded' : 'collapsed'} ${isResizing ? 'resizing' : ''}`}>
+    <main className={`floating-root ${isExpanded ? 'expanded' : 'collapsed'} ${isResizing ? 'resizing' : ''}${debugVisibilityClass}`}>
       {!isExpanded && (
         <button
-          className="floating-orb"
+          className={`floating-orb ${hovered ? 'hovered' : ''}`}
           type="button"
           aria-label="Grandpa Assistant"
           disabled={isResizing}
           title="Grandpa Assistant"
+          onPointerEnter={(event) => {
+            debugLog('pointer enter', { x: event.clientX, y: event.clientY });
+            setHovered(true);
+          }}
+          onPointerLeave={() => {
+            debugLog('pointer leave');
+            setHovered(false);
+          }}
           onPointerDown={onIconPointerDown}
           onPointerMove={onIconPointerMove}
           onPointerUp={onIconPointerUp}
@@ -475,22 +495,50 @@ export function FloatingApp() {
 }
 
 async function restorePosition() {
+  if (import.meta.env.DEV) {
+    await appWindow.setSize(new LogicalSize(DEV_VISIBILITY_PROBE_SIZE.width, DEV_VISIBILITY_PROBE_SIZE.height)).catch(() => {});
+    await appWindow.setPosition(new LogicalPosition(DEV_VISIBILITY_PROBE_POSITION.x, DEV_VISIBILITY_PROBE_POSITION.y)).catch(() => {});
+    return;
+  }
   const monitors = await getMonitorBounds();
   const saved = await invoke<FloatingPosition | null>('get_floating_position').catch(() => null);
   const savedPosition = isValidPosition(saved) ? saved : null;
   const bounds = savedPosition ? boundsForPosition(monitors, savedPosition) || getFallbackBounds() : monitors[0] || getFallbackBounds();
   const safe = clampPositionToBounds(savedPosition, bounds, FLOATING_COLLAPSED_SIZE);
   await appWindow.setSize(new LogicalSize(FLOATING_COLLAPSED_SIZE.width, FLOATING_COLLAPSED_SIZE.height)).catch(() => {});
-  await appWindow.setPosition(new PhysicalPosition(Math.round(safe.x), Math.round(safe.y))).catch(() => {});
+  await appWindow.setPosition(new LogicalPosition(Math.round(safe.x), Math.round(safe.y))).catch(() => {});
+}
+
+async function getCurrentLogicalPosition(): Promise<FloatingPosition> {
+  const position = await appWindow.outerPosition();
+  return physicalToLogicalPosition({ x: position.x, y: position.y });
+}
+
+async function physicalToLogicalPosition(position: FloatingPosition): Promise<FloatingPosition> {
+  const monitors = await availableMonitors().catch(() => []);
+  const monitor = monitors.find((candidate) => {
+    const bounds = candidate.workArea;
+    return (
+      position.x >= bounds.position.x &&
+      position.y >= bounds.position.y &&
+      position.x <= bounds.position.x + bounds.size.width &&
+      position.y <= bounds.position.y + bounds.size.height
+    );
+  }) || monitors[0];
+  const scale = monitor?.scaleFactor || 1;
+  return {
+    x: position.x / scale,
+    y: position.y / scale,
+  };
 }
 
 async function getMonitorBounds(): Promise<FloatingBounds[]> {
   const monitors = await availableMonitors().catch(() => []);
   return monitors.map((monitor) => ({
-    x: monitor.position.x,
-    y: monitor.position.y,
-    width: monitor.size.width,
-    height: monitor.size.height,
+    x: monitor.workArea.position.x / monitor.scaleFactor,
+    y: monitor.workArea.position.y / monitor.scaleFactor,
+    width: monitor.workArea.size.width / monitor.scaleFactor,
+    height: monitor.workArea.size.height / monitor.scaleFactor,
   }));
 }
 

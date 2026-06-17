@@ -23,6 +23,7 @@ button {
   color: #f8fafc;
   background: transparent;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  pointer-events: auto;
 }
 
 .floating-root.collapsed {
@@ -30,6 +31,12 @@ button {
   place-items: center;
   width: 48px;
   height: 48px;
+}
+
+.floating-root.debug-visibility-probe.collapsed {
+  width: 100%;
+  height: 100%;
+  background: #ff0000 !important;
 }
 
 .floating-root.expanded {
@@ -45,9 +52,9 @@ button {
   position: relative;
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
-  margin: 1px;
+  width: 48px;
+  height: 48px;
+  margin: 0;
   border: 1px solid rgba(248, 250, 252, 0.88);
   border-radius: 999px;
   background:
@@ -59,7 +66,29 @@ button {
   color: #06121f;
   cursor: grab;
   -webkit-user-drag: none;
+  pointer-events: auto;
   touch-action: none;
+}
+
+.debug-visibility-probe .floating-orb {
+  width: 220px;
+  height: 220px;
+  border: 4px solid #ffea00;
+  background: #ff00b4 !important;
+  box-shadow:
+    0 0 0 5px #000,
+    0 0 28px rgba(255, 0, 180, 0.95);
+}
+
+.debug-visibility-probe .floating-mark {
+  font-size: 140px;
+}
+
+.floating-orb.hovered {
+  border-color: #facc15;
+  box-shadow:
+    0 10px 22px rgba(2, 6, 23, 0.38),
+    0 0 0 2px rgba(250, 204, 21, 0.68);
 }
 
 .floating-orb:active {
@@ -79,6 +108,7 @@ button {
   line-height: 1;
   letter-spacing: 0;
   text-shadow: 0 1px 2px rgba(2, 6, 23, 0.72);
+  pointer-events: none;
 }
 
 .floating-status-dot {
@@ -91,6 +121,7 @@ button {
   border-radius: 999px;
   background: #f59e0b;
   box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.64);
+  pointer-events: none;
 }
 
 .floating-status-dot.running,
@@ -123,6 +154,7 @@ button {
   background: rgba(15, 23, 42, 0.97);
   box-shadow: 0 18px 44px rgba(2, 6, 23, 0.46);
   overflow: hidden;
+  pointer-events: auto;
 }
 
 .floating-panel-header {
@@ -235,6 +267,7 @@ button {
   cursor: not-allowed;
   opacity: 0.78;
 }
+
 .floating-placeholders button:not(:disabled) {
   color: #f8fafc;
   cursor: pointer;

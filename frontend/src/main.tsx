@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import App from './App';
-import { FloatingApp } from './floating/FloatingApp';
 import { initApiBase } from './lib/api';
 import { initAnalytics } from './lib/analytics';
 import './index.css';
@@ -25,11 +24,38 @@ function applyTheme() {
 
 applyTheme();
 
-if (new URLSearchParams(window.location.search).has('floating')) {
+const searchParams = new URLSearchParams(window.location.search);
+
+if (searchParams.has('floating')) {
+  document.documentElement.style.width = '100%';
+  document.documentElement.style.height = '100%';
+  document.body.style.width = '100%';
+  document.body.style.height = '100%';
+  document.body.style.margin = '0';
+  document.body.style.overflow = 'hidden';
+  document.body.style.background = '#ff0000';
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
       <ErrorBoundary>
-        <FloatingApp />
+        <div
+          style={{
+            alignItems: 'center',
+            background: '#ff0000',
+            color: '#ffea00',
+            display: 'flex',
+            flexDirection: 'column',
+            fontFamily: 'Arial, sans-serif',
+            fontWeight: 900,
+            gap: 8,
+            height: '100vh',
+            justifyContent: 'center',
+            lineHeight: 1,
+            width: '100vw',
+          }}
+        >
+          <div style={{ fontSize: 144 }}>G</div>
+          <div style={{ color: '#ffffff', fontSize: 24 }}>FLOATING ROUTE OK</div>
+        </div>
       </ErrorBoundary>
     </StrictMode>,
   );
