@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, MessageSquare, Mic, Minus, Play, RefreshCw, Square } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import {
@@ -25,35 +25,26 @@ import {
   type FloatingBounds,
   type FloatingPosition,
 } from './floatingUtils';
-import './floating.css';
 
-const appWindow = getCurrentWindow();
 const POLL_MS = 4000;
 const SAVE_DEBOUNCE_MS = 250;
-const DEV_VISIBILITY_PROBE_POSITION = { x: 100, y: 100 };
-const DEV_VISIBILITY_PROBE_SIZE = { width: 300, height: 300 };
-type UnlistenFn = () => void;
 type FloatingMode = 'collapsed' | 'resizing' | 'expanded';
+type UnlistenFn = () => void;
 
-interface FloatingVoiceStatus {
-  available?: boolean;
-  stt_available?: boolean;
-  tts_available?: boolean;
-  mode?: string;
-  setup_message?: string;
-  message?: string;
+function logFloating(message: string) {
+  console.info(message);
+  void invoke('floating_frontend_log', { message }).catch(() => {});
 }
 
-function debugLog(message: string, data?: unknown) {
-  if (!import.meta.env.DEV) return;
-  if (data === undefined) {
-    console.debug(`[Grandpa floating] ${message}`);
-  } else {
-    console.debug(`[Grandpa floating] ${message}`, data);
-  }
+interface FloatingVoiceStatus {
+  stt_available?: boolean;
+  tts_available?: boolean;
+  message?: string;
+  setup_message?: string;
 }
 
 export function FloatingApp() {
+  const appWindow = useMemo(() => getCurrentWindow(), []);
   const [mode, setMode] = useState<FloatingMode>('collapsed');
   const [status, setStatus] = useState<FloatingBackendStatus | null>(null);
   const [message, setMessage] = useState('');
@@ -65,17 +56,19 @@ export function FloatingApp() {
   const resizeInFlight = useRef(false);
   const pollInFlight = useRef(false);
   const pointerStart = useRef<FloatingPosition | null>(null);
-  const dragging = useRef(false);
   const dragStarted = useRef(false);
   const suppressNextClick = useRef(false);
   const collapsedPosition = useRef<FloatingPosition | null>(null);
   const saveTimer = useRef<number | null>(null);
   const dragSaveTimer = useRef<number | null>(null);
 
+  useEffect(() => {
+    logFloating('BUBBLE RENDERED');
+  }, []);
+
   const setFloatingMode = useCallback((next: FloatingMode) => {
     modeRef.current = next;
     setMode(next);
-    debugLog(`state: ${next}`);
   }, []);
 
   const refreshVoiceStatus = useCallback(async (apiBase?: string) => {
@@ -99,11 +92,12 @@ export function FloatingApp() {
     try {
       const next = await invoke<FloatingBackendStatus>('floating_backend_status');
       const apiBase = normalizeApiBase(next.api_base || '');
-      setStatus({
+      const normalized = {
         ...next,
         state: normalizeBackendState(next.state),
         api_base: apiBase,
-      });
+      };
+      setStatus(normalized);
       setMessage('');
       void refreshVoiceStatus(apiBase);
     } catch (error) {
@@ -131,11 +125,8 @@ export function FloatingApp() {
     dragSaveTimer.current = window.setTimeout(() => {
       void getCurrentLogicalPosition().then((next) => {
         collapsedPosition.current = next;
-        debugLog('actual window position after drag', next);
         saveCurrentPosition(next);
-      }).catch((error) => {
-        debugLog('position read after drag failed', error);
-      });
+      }).catch(() => {});
     }, FLOATING_POSITION_SAVE_DELAY_MS);
   }, [saveCurrentPosition]);
 
@@ -144,17 +135,11 @@ export function FloatingApp() {
     position?: FloatingPosition,
   ): Promise<boolean> => {
     const size = nextMode === 'expanded' ? FLOATING_EXPANDED_SIZE : FLOATING_COLLAPSED_SIZE;
-    debugLog('resize requested', { nextMode, size, position });
     try {
       if (position) {
         await appWindow.setPosition(new LogicalPosition(Math.round(position.x), Math.round(position.y)));
       }
       await appWindow.setSize(new LogicalSize(size.width, size.height));
-      await invoke('ensure_floating_interactive').catch((error) => {
-        debugLog('interaction repair after resize failed', error);
-      });
-      const outerSize = await appWindow.outerSize().catch(() => null);
-      debugLog('resize completed', { nextMode, outerSize });
       return true;
     } catch (error) {
       console.warn('[Grandpa floating] resize failed', error);
@@ -169,7 +154,9 @@ export function FloatingApp() {
 
     const currentPosition = await getCurrentLogicalPosition().catch(() => null);
     const monitors = await getMonitorBounds();
-    const bounds = currentPosition ? boundsForPosition(monitors, currentPosition) || getFallbackBounds() : monitors[0] || getFallbackBounds();
+    const bounds = currentPosition
+      ? boundsForPosition(monitors, currentPosition) || getFallbackBounds()
+      : monitors[0] || getFallbackBounds();
     const previousAnchor = collapsedPosition.current || currentPosition || clampPositionToBounds(null, bounds);
     const collapsePosition = currentPosition
       ? getCollapsedAnchorAfterExpand(currentPosition, previousAnchor, bounds)
@@ -193,25 +180,18 @@ export function FloatingApp() {
 
     const anchor = await getCurrentLogicalPosition().catch(() => null);
     if (anchor) collapsedPosition.current = anchor;
-
     const monitors = await getMonitorBounds();
-    const fallbackBounds = getFallbackBounds();
-    const bounds = anchor ? boundsForPosition(monitors, anchor) || fallbackBounds : monitors[0] || fallbackBounds;
+    const bounds = anchor ? boundsForPosition(monitors, anchor) || getFallbackBounds() : monitors[0] || getFallbackBounds();
     const safeAnchor = anchor || clampPositionToBounds(null, bounds);
     const expandedPosition = getExpandedPosition(safeAnchor, bounds);
 
     const resized = await resizeNativeWindow('expanded', expandedPosition);
     resizeInFlight.current = false;
-    if (resized) {
-      setFloatingMode('expanded');
-    } else {
-      setFloatingMode('collapsed');
-    }
+    setFloatingMode(resized ? 'expanded' : 'collapsed');
   }, [resizeNativeWindow, setFloatingMode]);
 
   const toggleExpanded = useCallback(() => {
     if (resizeInFlight.current || modeRef.current === 'resizing') return;
-    debugLog('click toggle', modeRef.current);
     if (modeRef.current === 'expanded') {
       void collapsePanel();
     } else {
@@ -220,14 +200,11 @@ export function FloatingApp() {
   }, [collapsePanel, expandPanel]);
 
   useEffect(() => {
-    void restorePosition();
+    void getCurrentLogicalPosition().then((position) => {
+      collapsedPosition.current = position;
+    }).catch(() => {});
     void appWindow.show().catch(() => {});
     void appWindow.setAlwaysOnTop(true).catch(() => {});
-    void invoke('ensure_floating_interactive').then((result) => {
-      debugLog('interaction status after startup repair', result);
-    }).catch((error) => {
-      debugLog('interaction startup repair failed', error);
-    });
     void refreshStatus();
     const interval = window.setInterval(refreshStatus, POLL_MS);
     let unlisten: UnlistenFn | undefined;
@@ -246,7 +223,7 @@ export function FloatingApp() {
       if (dragSaveTimer.current !== null) window.clearTimeout(dragSaveTimer.current);
       unlisten?.();
     };
-  }, [refreshStatus, saveCurrentPosition]);
+  }, [appWindow, refreshStatus, saveCurrentPosition]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -280,16 +257,10 @@ export function FloatingApp() {
 
   const startNativeDrag = useCallback(async () => {
     if (dragStarted.current) return;
-    dragging.current = true;
     dragStarted.current = true;
     suppressNextClick.current = true;
-    debugLog('drag threshold crossed');
-    debugLog('startDragging called');
     try {
       await appWindow.startDragging();
-      debugLog('native drag completed');
-    } catch (error) {
-      debugLog('native drag failed', error);
     } finally {
       persistActualPositionSoon();
     }
@@ -297,10 +268,8 @@ export function FloatingApp() {
 
   const onIconPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (event.button !== 0 || modeRef.current !== 'collapsed' || resizeInFlight.current) return;
-    debugLog('pointer down', { x: event.clientX, y: event.clientY });
     event.currentTarget.setPointerCapture(event.pointerId);
     pointerStart.current = { x: event.clientX, y: event.clientY };
-    dragging.current = false;
     dragStarted.current = false;
     suppressNextClick.current = false;
   };
@@ -314,22 +283,16 @@ export function FloatingApp() {
   };
 
   const onIconPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
-    debugLog('pointer up', { x: event.clientX, y: event.clientY });
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    const didDrag = dragging.current || suppressNextClick.current;
+    const didDrag = suppressNextClick.current;
     pointerStart.current = null;
-    dragging.current = false;
     dragStarted.current = false;
-    if (didDrag) {
-      persistActualPositionSoon();
-      return;
-    }
+    if (didDrag) persistActualPositionSoon();
   };
 
   const onIconClick = (event: React.MouseEvent) => {
-    debugLog('click', { x: event.clientX, y: event.clientY });
     if (suppressNextClick.current) {
       event.preventDefault();
       event.stopPropagation();
@@ -349,10 +312,7 @@ export function FloatingApp() {
   const onHeaderPointerDown = (event: React.PointerEvent) => {
     if (event.button !== 0) return;
     if (event.target instanceof Element && event.target.closest('button')) return;
-    debugLog('expanded header drag');
-    void appWindow.startDragging().then(() => debugLog('native drag completed')).catch((error) => {
-      debugLog('native drag failed', error);
-    });
+    void appWindow.startDragging().finally(persistActualPositionSoon);
   };
 
   const stopInteractivePropagation = (event: React.PointerEvent | React.MouseEvent) => {
@@ -361,10 +321,9 @@ export function FloatingApp() {
 
   const isExpanded = mode === 'expanded';
   const isResizing = mode === 'resizing';
-  const debugVisibilityClass = import.meta.env.DEV ? ' debug-visibility-probe' : '';
 
   return (
-    <main className={`floating-root ${isExpanded ? 'expanded' : 'collapsed'} ${isResizing ? 'resizing' : ''}${debugVisibilityClass}`}>
+    <main className={`floating-root ${isExpanded ? 'expanded' : 'collapsed'} ${isResizing ? 'resizing' : ''}`}>
       {!isExpanded && (
         <button
           className={`floating-orb ${hovered ? 'hovered' : ''}`}
@@ -372,14 +331,8 @@ export function FloatingApp() {
           aria-label="Grandpa Assistant"
           disabled={isResizing}
           title="Grandpa Assistant"
-          onPointerEnter={(event) => {
-            debugLog('pointer enter', { x: event.clientX, y: event.clientY });
-            setHovered(true);
-          }}
-          onPointerLeave={() => {
-            debugLog('pointer leave');
-            setHovered(false);
-          }}
+          onPointerEnter={() => setHovered(true)}
+          onPointerLeave={() => setHovered(false)}
           onPointerDown={onIconPointerDown}
           onPointerMove={onIconPointerMove}
           onPointerUp={onIconPointerUp}
@@ -427,10 +380,10 @@ export function FloatingApp() {
               type="button"
               onPointerDown={stopInteractivePropagation}
               onClick={() => invoke('floating_open_main_app')}
-              aria-label="Open Full App"
+              aria-label="Open Grandpa App"
             >
               <ExternalLink size={15} />
-              Open Full App
+              Open Grandpa App
             </button>
             {status?.state === 'running' ? (
               <button
@@ -476,13 +429,14 @@ export function FloatingApp() {
               onClick={() => void refreshVoiceStatus()}
             >
               <Mic size={15} />
-              Microphone: {voiceStatus?.stt_available ? 'Ready' : 'Check status'}
+              Voice: {voiceStatus?.stt_available || voiceStatus?.tts_available ? 'Ready' : 'Coming soon'}
             </button>
             <button type="button" disabled aria-label="Chat coming soon">
               <MessageSquare size={15} />
               Chat: Coming soon
             </button>
           </div>
+
           {voiceMessage && (
             <div className="floating-voice-note" role="status">
               {voiceMessage}
@@ -494,23 +448,8 @@ export function FloatingApp() {
   );
 }
 
-async function restorePosition() {
-  if (import.meta.env.DEV) {
-    await appWindow.setSize(new LogicalSize(DEV_VISIBILITY_PROBE_SIZE.width, DEV_VISIBILITY_PROBE_SIZE.height)).catch(() => {});
-    await appWindow.setPosition(new LogicalPosition(DEV_VISIBILITY_PROBE_POSITION.x, DEV_VISIBILITY_PROBE_POSITION.y)).catch(() => {});
-    return;
-  }
-  const monitors = await getMonitorBounds();
-  const saved = await invoke<FloatingPosition | null>('get_floating_position').catch(() => null);
-  const savedPosition = isValidPosition(saved) ? saved : null;
-  const bounds = savedPosition ? boundsForPosition(monitors, savedPosition) || getFallbackBounds() : monitors[0] || getFallbackBounds();
-  const safe = clampPositionToBounds(savedPosition, bounds, FLOATING_COLLAPSED_SIZE);
-  await appWindow.setSize(new LogicalSize(FLOATING_COLLAPSED_SIZE.width, FLOATING_COLLAPSED_SIZE.height)).catch(() => {});
-  await appWindow.setPosition(new LogicalPosition(Math.round(safe.x), Math.round(safe.y))).catch(() => {});
-}
-
 async function getCurrentLogicalPosition(): Promise<FloatingPosition> {
-  const position = await appWindow.outerPosition();
+  const position = await getCurrentWindow().outerPosition();
   return physicalToLogicalPosition({ x: position.x, y: position.y });
 }
 

@@ -1,81 +1,127 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import App from './App';
-import { initApiBase } from './lib/api';
-import { initAnalytics } from './lib/analytics';
-import './index.css';
+import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { FloatingApp } from './floating/FloatingApp';
 
-function applyTheme() {
-  try {
-    const raw = localStorage.getItem('Grandpa-settings');
-    const settings = raw ? JSON.parse(raw) : {};
-    const theme = settings.theme || 'system';
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
-    } else if (theme === 'light') {
-      document.documentElement.classList.add('light');
-      document.documentElement.classList.remove('dark');
-    }
-  } catch { /* use system default */ }
+declare global {
+  interface Window {
+    __GRANDPA_FLOATING_WINDOW__?: boolean;
+  }
 }
 
-applyTheme();
+function currentTauriWindowLabel(): string | null {
+  try {
+    return getCurrentWindow().label;
+  } catch {
+    return null;
+  }
+}
 
-const searchParams = new URLSearchParams(window.location.search);
+function isFloatingRoute(): boolean {
+  const searchParams = new URLSearchParams(window.location.search);
+  return Boolean(window.__GRANDPA_FLOATING_WINDOW__)
+    || searchParams.has('floating')
+    || currentTauriWindowLabel() === 'grandpa-floating';
+}
 
-if (searchParams.has('floating')) {
-  document.documentElement.style.width = '100%';
-  document.documentElement.style.height = '100%';
-  document.body.style.width = '100%';
-  document.body.style.height = '100%';
-  document.body.style.margin = '0';
-  document.body.style.overflow = 'hidden';
-  document.body.style.background = '#ff0000';
+function applyFloatingShellStyles() {
+  const root = document.getElementById('root');
+  for (const element of [document.documentElement, document.body, root].filter(Boolean) as HTMLElement[]) {
+    element.style.width = '100%';
+    element.style.height = '100%';
+    element.style.margin = '0';
+    element.style.padding = '0';
+    element.style.overflow = 'hidden';
+    element.style.background = '#020617';
+  }
+}
+
+function logFloating(message: string) {
+  console.info(message);
+  void invoke('floating_frontend_log', { message }).catch(() => {});
+}
+
+function renderFallbackBubble() {
   createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <ErrorBoundary>
-        <div
-          style={{
-            alignItems: 'center',
-            background: '#ff0000',
-            color: '#ffea00',
-            display: 'flex',
-            flexDirection: 'column',
-            fontFamily: 'Arial, sans-serif',
-            fontWeight: 900,
-            gap: 8,
-            height: '100vh',
-            justifyContent: 'center',
-            lineHeight: 1,
-            width: '100vw',
-          }}
-        >
-          <div style={{ fontSize: 144 }}>G</div>
-          <div style={{ color: '#ffffff', fontSize: 24 }}>FLOATING ROUTE OK</div>
-        </div>
-      </ErrorBoundary>
-    </StrictMode>,
+    <button
+      type="button"
+      aria-label="Grandpa Assistant"
+      title="Grandpa Assistant"
+      style={{
+        width: 48,
+        height: 48,
+        border: 0,
+        borderRadius: 999,
+        background: '#0f172a',
+        color: '#f8fafc',
+        fontSize: 23,
+        fontWeight: 850,
+      }}
+    >
+      G
+    </button>,
   );
+}
+
+if (isFloatingRoute()) {
+  logFloating('FLOATING ROUTE DETECTED');
+  document.title = 'Grandpa Assistant';
+  applyFloatingShellStyles();
+  void import('./floating/floating.css').catch((error) => {
+    console.error('[Grandpa bootstrap] Floating CSS failed to load', error);
+  });
+  try {
+    logFloating('FLOATING APP MOUNTED');
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <FloatingApp />
+      </StrictMode>,
+    );
+  } catch (error) {
+    console.error('[Grandpa bootstrap] Floating UI failed to render', error);
+    renderFallbackBubble();
+  }
 } else {
-// Fetch the API base URL from the Tauri backend before rendering.
-// This ensures GRANDPA_PORT is defined in one place (the Rust backend).
-// In non-Tauri environments this is a no-op.
-initApiBase().finally(() => {
-  // Kick off analytics init in the background — it's never awaited so
-  // a slow/failed identity fetch never delays UI render.
-  void initAnalytics();
+  void import('./index.css').then(async () => {
+    const [{ BrowserRouter }, { ErrorBoundary }, { default: App }, { initApiBase }, { initAnalytics }] =
+      await Promise.all([
+        import('react-router'),
+        import('./components/ErrorBoundary'),
+        import('./App'),
+        import('./lib/api'),
+        import('./lib/analytics'),
+      ]);
 
-  createRoot(document.getElementById('root')!).render(
-    <StrictMode>
-      <ErrorBoundary>
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
-      </ErrorBoundary>
-    </StrictMode>,
-  );
-});
+    function applyTheme() {
+      try {
+        const raw = localStorage.getItem('Grandpa-settings');
+        const settings = raw ? JSON.parse(raw) : {};
+        const theme = settings.theme || 'system';
+        if (theme === 'dark') {
+          document.documentElement.classList.add('dark');
+          document.documentElement.classList.remove('light');
+        } else if (theme === 'light') {
+          document.documentElement.classList.add('light');
+          document.documentElement.classList.remove('dark');
+        }
+      } catch {
+        // Use system default.
+      }
+    }
+
+    applyTheme();
+    initApiBase().finally(() => {
+      void initAnalytics();
+      createRoot(document.getElementById('root')!).render(
+        <StrictMode>
+          <ErrorBoundary>
+            <BrowserRouter>
+              <App />
+            </BrowserRouter>
+          </ErrorBoundary>
+        </StrictMode>,
+      );
+    });
+  });
 }

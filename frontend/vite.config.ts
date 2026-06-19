@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+const isTauriBuild = process.argv.includes('--outDir') && process.argv.includes('dist');
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -13,7 +15,7 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    VitePWA({
+    !isTauriBuild && VitePWA({
       registerType: 'autoUpdate',
       manifest: {
         name: 'Grandpa',
@@ -28,7 +30,7 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/v1\//, /^\/health/, /^\/dashboard/, /^\/api\//],
       },
     }),
-  ],
+  ].filter(Boolean),
   build: {
     outDir: '../src/grandpa/server/static',
     emptyOutDir: true,
