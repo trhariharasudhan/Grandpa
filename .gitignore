@@ -30,6 +30,7 @@ env/
 htmlcov/
 
 # uv
+.uv-cache/
 # Note: uv.lock is intentionally tracked — it pins all transitive deps for reproducibility.
 # Uncomment the line below only if you deliberately choose not to commit the lock file.
 # uv.lock
@@ -89,6 +90,7 @@ mobile/android_companion/android/.gradle/
 mobile/android_companion/android/local.properties
 mobile/android_companion/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
 mobile/android_companion/build/
+mobile/**/build/
 
 # Worktrees
 .worktrees/

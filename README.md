@@ -40,6 +40,11 @@ uv run grandpa chat
 
 More setup, architecture, release, testing, and user guides live in [docs/](docs/).
 
+## Repository Documentation
+
+- [Repository structure](docs/development/repo-structure.md)
+- [Local generated artifacts](docs/development/local-artifacts.md)
+
 ## License
 
 Apache-2.0.
