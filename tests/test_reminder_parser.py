@@ -108,7 +108,7 @@ def test_cli_add_creates_reminder_from_phrase(monkeypatch, tmp_path) -> None:
 
     result = CliRunner().invoke(
         reminders,
-        ["add", "remind me at 2026-06-13T19:00:00+00:00 to call Arjun"],
+        ["add", "remind me at 2027-06-13T19:00:00+00:00 to call Arjun"],
     )
 
     assert result.exit_code == 0, result.output

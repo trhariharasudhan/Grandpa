@@ -324,6 +324,15 @@ export interface VoiceListenResponse {
   transcript?: string;
   assistant_text?: string;
   action_status?: string;
+  action?: {
+    type: 'desktop' | 'reminder' | 'chat' | 'none' | string;
+    status: 'handled' | 'needs_confirmation' | 'blocked' | 'unsupported' | 'error' | string;
+    detail: string;
+    kind?: string | null;
+    target?: string;
+    permission?: string | null;
+    pending_action?: Record<string, unknown> | null;
+  };
   command_text?: string;
   risk_level?: string;
   approval_required?: boolean;
@@ -381,8 +390,10 @@ export async function commandVoice(payload: {
   text?: string;
   transcript?: string;
   audio_base64?: string;
+  speak?: boolean;
   speak_response?: boolean;
   require_wake_word?: boolean;
+  confirmed?: boolean;
 }): Promise<VoiceListenResponse> {
   const res = await fetch(`${getBase()}/v1/voice/command`, {
     method: 'POST',

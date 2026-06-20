@@ -48,15 +48,17 @@ export function VoicePage() {
     return 'var(--color-text-tertiary)';
   }, [sessionState]);
 
-  const runListen = async () => {
+  const runListen = async (confirmed = false) => {
     if (!transcript.trim()) return;
     setBusy(true);
     setError('');
     try {
       const result = await commandVoice({
         transcript,
+        speak: speakResponse,
         speak_response: speakResponse,
         require_wake_word: wakeRequired,
+        confirmed,
       });
       setLastResult(result);
       await load();
@@ -171,7 +173,7 @@ export function VoicePage() {
               <div className="grid gap-2 sm:grid-cols-2">
                 <button type="button" onClick={() => void runListen()} disabled={busy || !transcript.trim()} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
                   <Send size={15} />
-                  Send Voice Command
+                  Run Command
                 </button>
                 <button type="button" onClick={() => void testSpeak()} disabled={busy} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
                   <Volume2 size={15} />
@@ -202,9 +204,16 @@ export function VoicePage() {
                     {lastResult.approval_required && <Badge>Approval required</Badge>}
                   </div>
                   <p style={{ color: 'var(--color-text)' }}>{lastResult.message}</p>
+                  {lastResult.action?.status === 'needs_confirmation' && (
+                    <button type="button" onClick={() => void runListen(true)} disabled={busy || !transcript.trim()} className="inline-flex w-fit items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent-amber)', color: 'var(--color-bg)' }}>
+                      Confirm Action
+                    </button>
+                  )}
                   <div className="rounded-xl p-3 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
                     <div>Transcript: {lastResult.transcript || 'none'}</div>
                     <div>Command: {lastResult.command_text || lastResult.transcript || 'none'}</div>
+                    <div>Action: {lastResult.action?.type || 'none'} / {lastResult.action?.status || lastResult.action_status || 'unknown'}</div>
+                    {lastResult.action?.detail && <div>Detail: {lastResult.action.detail}</div>}
                     <div>Latency: {Math.round(lastResult.latency_ms || 0)} ms</div>
                   </div>
                 </div>

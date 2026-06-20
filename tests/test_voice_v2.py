@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import base64
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+import grandpa.local_actions as local_actions
 import grandpa.voice.speech_output as speech_output
+from grandpa.local_action_approvals import LocalActionApprovalStore
+from grandpa.reminders import ReminderStore
 from grandpa.server.api_routes import voice_router
 from grandpa.voice import (
     SpeechInputEngine,
@@ -19,6 +23,20 @@ from grandpa.voice import (
 )
 
 pytestmark = pytest.mark.core
+
+
+@pytest.fixture
+def voice_client(tmp_path, monkeypatch):
+    monkeypatch.setenv("GRANDPA_KNOWLEDGE_DB", str(tmp_path / "knowledge.db"))
+    monkeypatch.setenv("GRANDPA_PERSONAL_MEMORY_DB", str(tmp_path / "memory.db"))
+    monkeypatch.setenv("GRANDPA_KNOWLEDGE_EMBEDDING_MODE", "fallback")
+    approval_store = LocalActionApprovalStore(tmp_path / "approvals.db")
+    reminder_store = ReminderStore(tmp_path / "reminders.db")
+    monkeypatch.setattr(local_actions, "LocalActionApprovalStore", lambda: approval_store)
+    app = FastAPI()
+    app.state.reminder_store = reminder_store
+    app.include_router(voice_router)
+    return TestClient(app)
 
 
 def test_wake_word_detection_extracts_command():
@@ -251,6 +269,106 @@ def test_voice_api_routes(monkeypatch, tmp_path):
     assert spoken.json()["status"] == "dry_run"
 
     assert client.post("/v1/voice/stop").json()["status"] == "stopped"
+
+
+def test_voice_command_routes_desktop_action_to_confirmation(voice_client):
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "type hello in notepad"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["transcript"] == "type hello in notepad"
+    assert body["action"]["type"] == "desktop"
+    assert body["action"]["status"] == "needs_confirmation"
+    assert body["action"]["kind"] == "automation"
+    assert body["action"]["target"] == "focus|notepad||type|hello"
+    assert body["action"]["pending_action"]["id"]
+
+
+def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
+    monkeypatch,
+    voice_client,
+):
+    calls: list[str] = []
+
+    monkeypatch.setattr(local_actions.sys, "platform", "win32")
+
+    def fake_execute_automation(spec: str):
+        from grandpa.desktop_automation import AutomationResult
+
+        calls.append(spec)
+        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
+
+    monkeypatch.setattr(
+        "grandpa.desktop_automation.execute_automation",
+        fake_execute_automation,
+    )
+
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "type hello in notepad", "confirmed": True},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"]["type"] == "desktop"
+    assert body["action"]["status"] == "handled"
+    assert body["assistant_text"] == "Typed hello."
+    assert calls == ["focus|notepad||type|hello"]
+
+
+def test_voice_command_blocked_command_returns_blocked(voice_client):
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "delete system32"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"]["type"] == "desktop"
+    assert body["action"]["status"] == "blocked"
+    assert body["ok"] is False
+
+
+def test_voice_command_reminder_creates_reminder(monkeypatch, voice_client):
+    monkeypatch.setattr(
+        "grandpa.reminder_parser.default_reminder_timezone",
+        lambda: UTC,
+    )
+
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "remind me tomorrow at 7 PM to call Arjun"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"]["type"] == "reminder"
+    assert body["action"]["status"] == "handled"
+    assert body["reminder"]["message"] == "call Arjun"
+    assert datetime.fromisoformat(body["reminder"]["due_at"]).tzinfo is not None
+
+
+def test_voice_command_unsupported_returns_friendly_response(voice_client):
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "tell me a story about Saturn"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"]["type"] == "chat"
+    assert body["action"]["status"] == "unsupported"
+    assert "safe local command" in body["assistant_text"]
+
+
+def test_voice_command_missing_transcript_returns_validation_error(voice_client):
+    response = voice_client.post("/v1/voice/command", json={})
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "transcript is required"
 
 
 def test_voice_api_returns_clean_expected_error_status(monkeypatch):

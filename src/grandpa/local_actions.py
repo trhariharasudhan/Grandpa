@@ -724,7 +724,11 @@ def _parse_desktop_operator_action(command: str) -> LocalActionResult:
     if not _is_safe_desktop_operator_request(command):
         return LocalActionResult(status="no_match")
     try:
-        from grandpa.desktop.operator import active_app_actions, build_ui_navigation_plan, operator_diagnostics
+        from grandpa.desktop.operator import (
+            active_app_actions,
+            build_ui_navigation_plan,
+            operator_diagnostics,
+        )
 
         if command in {"desktop operator diagnostics", "operator diagnostics"}:
             diagnostics = operator_diagnostics()
@@ -769,7 +773,11 @@ def _parse_desktop_operator_action(command: str) -> LocalActionResult:
 
 def _parse_user_skill_action(command: str) -> LocalActionResult:
     try:
-        from grandpa.skill_builder import create_user_skill, list_user_skills, run_user_skill
+        from grandpa.skill_builder import (
+            create_user_skill,
+            list_user_skills,
+            run_user_skill,
+        )
 
         if re.fullmatch(r"(list|show) (custom|user) skills", command):
             skills = list_user_skills(limit=20)["skills"]
@@ -806,13 +814,7 @@ def _parse_user_skill_action(command: str) -> LocalActionResult:
                 )
     except Exception as exc:
         logger.debug("User skill routing failed: %s", exc, exc_info=True)
-        return LocalActionResult(
-            status="error",
-            kind="pc_control",
-            target="user_skill",
-            message="User skill runtime is unavailable right now.",
-            tts_text="User skill runtime is unavailable right now.",
-        )
+        return LocalActionResult(status="no_match")
     return LocalActionResult(status="no_match")
 
 
