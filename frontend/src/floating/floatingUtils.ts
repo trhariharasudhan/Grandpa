@@ -18,9 +18,9 @@ export interface FloatingBounds {
   height: number;
 }
 
-export const FLOATING_COLLAPSED_SIZE = { width: 48, height: 48 };
+export const FLOATING_COLLAPSED_SIZE = { width: 64, height: 64 };
 export const FLOATING_EXPANDED_SIZE = { width: 300, height: 340 };
-export const FLOATING_EDGE_GAP = 20;
+export const FLOATING_EDGE_GAP = 24;
 export const FLOATING_DRAG_THRESHOLD = 5;
 export const FLOATING_POSITION_SAVE_DELAY_MS = 180;
 
@@ -61,17 +61,21 @@ export function clampPositionToBounds(
     y: bounds.y + Math.max(FLOATING_EDGE_GAP, bounds.height - windowSize.height - 72),
   };
   if (!position || !isValidPosition(position)) return fallback;
-  const maxX = bounds.x + Math.max(0, bounds.width - windowSize.width);
-  const maxY = bounds.y + Math.max(0, bounds.height - windowSize.height);
-  const visible =
+  const minX = bounds.x + FLOATING_EDGE_GAP;
+  const minY = bounds.y + FLOATING_EDGE_GAP;
+  const maxX = bounds.x + Math.max(FLOATING_EDGE_GAP, bounds.width - windowSize.width - FLOATING_EDGE_GAP);
+  const maxY = bounds.y + Math.max(FLOATING_EDGE_GAP, bounds.height - windowSize.height - FLOATING_EDGE_GAP);
+  const screenMaxX = bounds.x + Math.max(0, bounds.width - windowSize.width);
+  const screenMaxY = bounds.y + Math.max(0, bounds.height - windowSize.height);
+  const onScreen =
     position.x >= bounds.x &&
     position.y >= bounds.y &&
-    position.x <= maxX &&
-    position.y <= maxY;
-  if (!visible) return fallback;
+    position.x <= screenMaxX &&
+    position.y <= screenMaxY;
+  if (!onScreen) return fallback;
   return {
-    x: Math.min(Math.max(position.x, bounds.x), maxX),
-    y: Math.min(Math.max(position.y, bounds.y), maxY),
+    x: Math.min(Math.max(position.x, minX), maxX),
+    y: Math.min(Math.max(position.y, minY), maxY),
   };
 }
 

@@ -9,13 +9,13 @@ use tokio::sync::Mutex;
 const OLLAMA_PORT: u16 = 11434;
 const GRANDPA_PORT: u16 = 8000;
 const FLOATING_WINDOW_LABEL: &str = "grandpa-floating";
-const FLOATING_COLLAPSED_WIDTH: f64 = 48.0;
-const FLOATING_COLLAPSED_HEIGHT: f64 = 48.0;
+const FLOATING_COLLAPSED_WIDTH: f64 = 64.0;
+const FLOATING_COLLAPSED_HEIGHT: f64 = 64.0;
 #[cfg_attr(not(test), allow(dead_code))]
 const FLOATING_EXPANDED_WIDTH: f64 = 300.0;
 #[cfg_attr(not(test), allow(dead_code))]
 const FLOATING_EXPANDED_HEIGHT: f64 = 340.0;
-const FLOATING_EDGE_GAP: f64 = 20.0;
+const FLOATING_EDGE_GAP: f64 = 24.0;
 const FLOATING_TASKBAR_GAP: f64 = 72.0;
 
 #[cfg(target_os = "windows")]
@@ -483,14 +483,22 @@ fn clamp_floating_position(
     let Some(position) = position.and_then(valid_floating_position) else {
         return fallback;
     };
-    let max_x = bounds.x + (bounds.width - window_width).max(0.0);
-    let max_y = bounds.y + (bounds.height - window_height).max(0.0);
-    if position.x < bounds.x || position.y < bounds.y || position.x > max_x || position.y > max_y {
+    let min_x = bounds.x + FLOATING_EDGE_GAP;
+    let min_y = bounds.y + FLOATING_EDGE_GAP;
+    let max_x = bounds.x + (bounds.width - window_width - FLOATING_EDGE_GAP).max(FLOATING_EDGE_GAP);
+    let max_y = bounds.y + (bounds.height - window_height - FLOATING_EDGE_GAP).max(FLOATING_EDGE_GAP);
+    let screen_max_x = bounds.x + (bounds.width - window_width).max(0.0);
+    let screen_max_y = bounds.y + (bounds.height - window_height).max(0.0);
+    if position.x < bounds.x
+        || position.y < bounds.y
+        || position.x > screen_max_x
+        || position.y > screen_max_y
+    {
         return fallback;
     }
     FloatingPosition {
-        x: position.x.clamp(bounds.x, max_x),
-        y: position.y.clamp(bounds.y, max_y),
+        x: position.x.clamp(min_x, max_x),
+        y: position.y.clamp(min_y, max_y),
     }
 }
 
@@ -2137,8 +2145,8 @@ mod tests {
     #[test]
     fn floating_window_constants_match_collapsed_and_expanded_sizes() {
         assert_eq!(FLOATING_WINDOW_LABEL, "grandpa-floating");
-        assert_eq!(FLOATING_COLLAPSED_WIDTH, 48.0);
-        assert_eq!(FLOATING_COLLAPSED_HEIGHT, 48.0);
+        assert_eq!(FLOATING_COLLAPSED_WIDTH, 64.0);
+        assert_eq!(FLOATING_COLLAPSED_HEIGHT, 64.0);
         assert_eq!(FLOATING_EXPANDED_WIDTH, 300.0);
         assert_eq!(FLOATING_EXPANDED_HEIGHT, 340.0);
     }
@@ -2152,8 +2160,8 @@ mod tests {
         assert!(config.skip_taskbar);
         assert!(!config.decorations);
         assert!(!config.resizable);
-        assert_eq!(config.collapsed_width, 48.0);
-        assert_eq!(config.collapsed_height, 48.0);
+        assert_eq!(config.collapsed_width, 64.0);
+        assert_eq!(config.collapsed_height, 64.0);
     }
 
     #[test]
@@ -2196,11 +2204,11 @@ mod tests {
             width: 1920.0,
             height: 1040.0,
         };
-        let position = default_floating_position(bounds, 48.0, 48.0);
-        assert!(position.x >= bounds.x);
-        assert!(position.y >= bounds.y);
-        assert!(position.x + 48.0 <= bounds.x + bounds.width);
-        assert!(position.y + 48.0 <= bounds.y + bounds.height);
+        let position = default_floating_position(bounds, 64.0, 64.0);
+        assert!(position.x >= bounds.x + FLOATING_EDGE_GAP);
+        assert!(position.y >= bounds.y + FLOATING_EDGE_GAP);
+        assert!(position.x + 64.0 + FLOATING_EDGE_GAP <= bounds.x + bounds.width);
+        assert!(position.y + 64.0 + FLOATING_EDGE_GAP <= bounds.y + bounds.height);
         assert!(position.x > 1800.0);
         assert!(position.y > 900.0);
     }
@@ -2214,7 +2222,7 @@ mod tests {
             height: 600.0,
         };
         let saved = FloatingPosition { x: 320.0, y: 420.0 };
-        let position = clamp_floating_position(Some(saved), bounds, 48.0, 48.0);
+        let position = clamp_floating_position(Some(saved), bounds, 64.0, 64.0);
         assert_eq!(position.x, saved.x);
         assert_eq!(position.y, saved.y);
     }
@@ -2228,15 +2236,15 @@ mod tests {
             height: 240.0,
         };
         let position = clamp_floating_position(
-            Some(FloatingPosition { x: 272.0, y: 192.0 }),
+            Some(FloatingPosition { x: 256.0, y: 176.0 }),
             bounds,
-            48.0,
-            48.0,
+            64.0,
+            64.0,
         );
-        assert_eq!(position.x, 272.0);
-        assert_eq!(position.y, 192.0);
-        assert!(position.x + 48.0 <= bounds.x + bounds.width);
-        assert!(position.y + 48.0 <= bounds.y + bounds.height);
+        assert_eq!(position.x, 232.0);
+        assert_eq!(position.y, 152.0);
+        assert!(position.x + 64.0 + FLOATING_EDGE_GAP <= bounds.x + bounds.width);
+        assert!(position.y + 64.0 + FLOATING_EDGE_GAP <= bounds.y + bounds.height);
     }
 
     #[test]
@@ -2281,11 +2289,11 @@ mod tests {
                 y: 40.0,
             }),
             bounds,
-            48.0,
-            48.0,
+            64.0,
+            64.0,
         );
-        assert_eq!(position.x, 1212.0);
-        assert_eq!(position.y, 600.0);
+        assert_eq!(position.x, 1192.0);
+        assert_eq!(position.y, 584.0);
     }
 
     #[test]

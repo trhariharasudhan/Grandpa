@@ -6,7 +6,18 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background: #020617 !important;
+  background: transparent !important;
+  pointer-events: auto;
+}
+
+html,
+body,
+#root,
+.floating-shell,
+.floating-root,
+.floating-root.collapsed,
+.floating-orb-button {
+  background: transparent !important;
 }
 
 * {
@@ -19,9 +30,11 @@ button {
 }
 
 .floating-root {
+  position: relative;
+  z-index: 1;
   overflow: hidden;
   color: #f8fafc;
-  background: #020617;
+  background: transparent !important;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   pointer-events: auto;
 }
@@ -29,8 +42,11 @@ button {
 .floating-root.collapsed {
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  box-shadow: none;
+  outline: 0;
 }
 
 .floating-root.expanded {
@@ -39,87 +55,77 @@ button {
 }
 
 .floating-root.resizing {
-  pointer-events: none;
+  cursor: wait;
 }
 
-.floating-orb {
+.floating-orb-button {
   position: relative;
   display: grid;
   place-items: center;
-  width: 48px;
-  height: 48px;
+  width: 64px;
+  height: 64px;
   margin: 0;
-  border: 1px solid rgba(248, 250, 252, 0.88);
+  padding: 0;
+  border: 0;
+  outline: 0;
   border-radius: 999px;
-  background:
-    radial-gradient(circle at 33% 24%, rgba(255, 255, 255, 0.86), transparent 0 7px),
-    linear-gradient(135deg, #16a34a 0%, #0ea5e9 58%, #1e293b 100%);
-  box-shadow:
-    0 9px 20px rgba(2, 6, 23, 0.34),
-    0 0 0 1px rgba(2, 6, 23, 0.4);
-  color: #06121f;
-  cursor: grab;
+  background: transparent !important;
+  box-shadow: none;
+  appearance: none;
+  cursor: pointer;
   -webkit-user-drag: none;
   pointer-events: auto;
+  z-index: 2;
   touch-action: none;
+  transition: transform 160ms ease, filter 160ms ease;
 }
 
-.floating-orb.hovered {
-  border-color: #facc15;
-  box-shadow:
-    0 10px 22px rgba(2, 6, 23, 0.38),
-    0 0 0 2px rgba(250, 204, 21, 0.68);
+.floating-orb-button.hovered {
+  transform: scale(1.055);
+  filter: drop-shadow(0 0 6px rgba(103, 232, 249, 0.56));
 }
 
-.floating-orb:active {
+.floating-orb-button:active {
   cursor: grabbing;
 }
 
-.floating-orb:focus-visible,
+.floating-orb-button:focus-visible,
 .floating-panel button:focus-visible {
   outline: 2px solid #facc15;
   outline-offset: 2px;
 }
 
-.floating-mark {
-  color: #f8fafc;
-  font-size: 23px;
-  font-weight: 850;
-  line-height: 1;
-  letter-spacing: 0;
-  text-shadow: 0 1px 2px rgba(2, 6, 23, 0.72);
-  pointer-events: none;
-}
-
-.floating-status-dot {
+.floating-click-probe {
   position: absolute;
-  right: 4px;
-  bottom: 4px;
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid #0f172a;
+  right: 6px;
+  bottom: 7px;
+  min-width: 10px;
+  padding: 1px 2px;
   border-radius: 999px;
-  background: #f59e0b;
-  box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.64);
-  pointer-events: none;
+  background: rgba(2, 6, 23, 0.72);
+  color: #fef08a;
+  font-size: 8px;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85);
 }
 
-.floating-status-dot.running,
 .floating-state.running {
   background: #22c55e;
 }
 
-.floating-status-dot.stopped,
 .floating-state.stopped {
   background: #94a3b8;
 }
 
-.floating-status-dot.error,
 .floating-state.error {
   background: #ef4444;
 }
 
 .floating-panel {
+  position: relative;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -143,14 +149,14 @@ button {
   justify-content: space-between;
   gap: 10px;
   min-height: 40px;
-  cursor: grab;
 }
 
-.floating-panel-header:active {
-  cursor: grabbing;
+.floating-panel-orb {
+  flex: 0 0 auto;
 }
 
 .floating-title-block {
+  flex: 1 1 auto;
   min-width: 0;
 }
 

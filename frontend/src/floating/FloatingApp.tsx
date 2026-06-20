@@ -11,20 +11,18 @@ import {
   boundsForPosition,
   clampPositionToBounds,
   FLOATING_COLLAPSED_SIZE,
-  FLOATING_DRAG_THRESHOLD,
   FLOATING_EXPANDED_SIZE,
-  FLOATING_POSITION_SAVE_DELAY_MS,
   getCollapsedAnchorAfterExpand,
   getExpandedPosition,
   isValidPosition,
   normalizeApiBase,
   normalizeBackendState,
-  shouldStartFloatingDrag,
   statusLabel,
   type FloatingBackendStatus,
   type FloatingBounds,
   type FloatingPosition,
 } from './floatingUtils';
+import { GrandpaOrb } from './components/GrandpaOrb';
 
 const POLL_MS = 4000;
 const SAVE_DEBOUNCE_MS = 250;
@@ -52,15 +50,12 @@ export function FloatingApp() {
   const [voiceMessage, setVoiceMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [hovered, setHovered] = useState(false);
+  const [clickCount, setClickCount] = useState(0);
   const modeRef = useRef<FloatingMode>('collapsed');
   const resizeInFlight = useRef(false);
   const pollInFlight = useRef(false);
-  const pointerStart = useRef<FloatingPosition | null>(null);
-  const dragStarted = useRef(false);
-  const suppressNextClick = useRef(false);
   const collapsedPosition = useRef<FloatingPosition | null>(null);
   const saveTimer = useRef<number | null>(null);
-  const dragSaveTimer = useRef<number | null>(null);
 
   useEffect(() => {
     logFloating('BUBBLE RENDERED');
@@ -119,16 +114,6 @@ export function FloatingApp() {
       });
     }, SAVE_DEBOUNCE_MS);
   }, []);
-
-  const persistActualPositionSoon = useCallback(() => {
-    if (dragSaveTimer.current !== null) window.clearTimeout(dragSaveTimer.current);
-    dragSaveTimer.current = window.setTimeout(() => {
-      void getCurrentLogicalPosition().then((next) => {
-        collapsedPosition.current = next;
-        saveCurrentPosition(next);
-      }).catch(() => {});
-    }, FLOATING_POSITION_SAVE_DELAY_MS);
-  }, [saveCurrentPosition]);
 
   const resizeNativeWindow = useCallback(async (
     nextMode: 'collapsed' | 'expanded',
@@ -190,18 +175,16 @@ export function FloatingApp() {
     setFloatingMode(resized ? 'expanded' : 'collapsed');
   }, [resizeNativeWindow, setFloatingMode]);
 
-  const toggleExpanded = useCallback(() => {
-    if (resizeInFlight.current || modeRef.current === 'resizing') return;
-    if (modeRef.current === 'expanded') {
-      void collapsePanel();
-    } else {
-      void expandPanel();
-    }
-  }, [collapsePanel, expandPanel]);
-
   useEffect(() => {
-    void getCurrentLogicalPosition().then((position) => {
-      collapsedPosition.current = position;
+    void getCurrentLogicalPosition().then(async (position) => {
+      const monitors = await getMonitorBounds();
+      const bounds = boundsForPosition(monitors, position) || monitors[0] || getFallbackBounds();
+      const safePosition = clampPositionToBounds(position, bounds, FLOATING_COLLAPSED_SIZE);
+      collapsedPosition.current = safePosition;
+      if (Math.abs(safePosition.x - position.x) > 0.5 || Math.abs(safePosition.y - position.y) > 0.5) {
+        await appWindow.setPosition(new LogicalPosition(Math.round(safePosition.x), Math.round(safePosition.y)));
+        saveCurrentPosition(safePosition);
+      }
     }).catch(() => {});
     void appWindow.show().catch(() => {});
     void appWindow.setAlwaysOnTop(true).catch(() => {});
@@ -220,7 +203,6 @@ export function FloatingApp() {
     return () => {
       window.clearInterval(interval);
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-      if (dragSaveTimer.current !== null) window.clearTimeout(dragSaveTimer.current);
       unlisten?.();
     };
   }, [appWindow, refreshStatus, saveCurrentPosition]);
@@ -255,64 +237,23 @@ export function FloatingApp() {
     }
   };
 
-  const startNativeDrag = useCallback(async () => {
-    if (dragStarted.current) return;
-    dragStarted.current = true;
-    suppressNextClick.current = true;
-    try {
-      await appWindow.startDragging();
-    } finally {
-      persistActualPositionSoon();
-    }
-  }, [persistActualPositionSoon]);
-
-  const onIconPointerDown = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0 || modeRef.current !== 'collapsed' || resizeInFlight.current) return;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    pointerStart.current = { x: event.clientX, y: event.clientY };
-    dragStarted.current = false;
-    suppressNextClick.current = false;
+  const onIconClick = () => {
+    console.log('ORB CLICK');
+    setClickCount((count) => count + 1);
+    console.log('EXPANDING PANEL');
+    void expandPanel();
   };
 
-  const onIconPointerMove = (event: React.PointerEvent) => {
-    if (!pointerStart.current || dragStarted.current) return;
-    if (shouldStartFloatingDrag(pointerStart.current, { x: event.clientX, y: event.clientY }, FLOATING_DRAG_THRESHOLD)) {
-      event.preventDefault();
-      void startNativeDrag();
-    }
+  const onIconMouseEnter = () => {
+    setHovered(true);
   };
 
-  const onIconPointerUp = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    const didDrag = suppressNextClick.current;
-    pointerStart.current = null;
-    dragStarted.current = false;
-    if (didDrag) persistActualPositionSoon();
-  };
-
-  const onIconClick = (event: React.MouseEvent) => {
-    if (suppressNextClick.current) {
-      event.preventDefault();
-      event.stopPropagation();
-      suppressNextClick.current = false;
-      return;
-    }
-    toggleExpanded();
-  };
-
-  const onToggleKeyDown = (event: React.KeyboardEvent) => {
+  const onToggleKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      toggleExpanded();
+      setClickCount((count) => count + 1);
+      void expandPanel();
     }
-  };
-
-  const onHeaderPointerDown = (event: React.PointerEvent) => {
-    if (event.button !== 0) return;
-    if (event.target instanceof Element && event.target.closest('button')) return;
-    void appWindow.startDragging().finally(persistActualPositionSoon);
   };
 
   const stopInteractivePropagation = (event: React.PointerEvent | React.MouseEvent) => {
@@ -323,34 +264,31 @@ export function FloatingApp() {
   const isResizing = mode === 'resizing';
 
   return (
-    <main className={`floating-root ${isExpanded ? 'expanded' : 'collapsed'} ${isResizing ? 'resizing' : ''}`}>
+    <main className={`floating-shell floating-root ${isExpanded ? 'expanded' : 'collapsed'} ${isResizing ? 'resizing' : ''}`}>
       {!isExpanded && (
         <button
-          className={`floating-orb ${hovered ? 'hovered' : ''}`}
+          className={`floating-orb-button ${hovered ? 'hovered' : ''}`}
           type="button"
           aria-label="Grandpa Assistant"
-          disabled={isResizing}
           title="Grandpa Assistant"
-          onPointerEnter={() => setHovered(true)}
-          onPointerLeave={() => setHovered(false)}
-          onPointerDown={onIconPointerDown}
-          onPointerMove={onIconPointerMove}
-          onPointerUp={onIconPointerUp}
-          onPointerCancel={() => {
-            if (!dragStarted.current) pointerStart.current = null;
+          disabled={isResizing}
+          onMouseEnter={onIconMouseEnter}
+          onMouseLeave={() => {
+            setHovered(false);
           }}
           onClick={onIconClick}
           onKeyDown={onToggleKeyDown}
         >
-          <span className="floating-mark" aria-hidden="true">G</span>
-          <span className={`floating-status-dot ${status?.state || 'checking'}`} aria-hidden="true" />
+          <GrandpaOrb size={48} interactive />
+          <span className="floating-click-probe" aria-hidden="true">{clickCount}</span>
         </button>
       )}
 
       {isExpanded && (
         <section className="floating-panel" aria-label="Grandpa compact controls">
-          <header className="floating-panel-header" data-tauri-drag-region onPointerDown={onHeaderPointerDown}>
-            <div className="floating-title-block" data-tauri-drag-region>
+          <header className="floating-panel-header">
+            <GrandpaOrb size={34} className="floating-panel-orb" />
+            <div className="floating-title-block">
               <h1>Grandpa</h1>
               <p>{statusLabel(status)}</p>
             </div>
