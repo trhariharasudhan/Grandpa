@@ -21,6 +21,7 @@ from grandpa.voice import (
     WakeWordConfig,
     WakeWordDetector,
 )
+from grandpa.voice.history import VOICE_HISTORY_LIMIT, VoiceCommandHistoryStore
 
 pytestmark = pytest.mark.core
 
@@ -35,6 +36,7 @@ def voice_client(tmp_path, monkeypatch):
     monkeypatch.setattr(local_actions, "LocalActionApprovalStore", lambda: approval_store)
     app = FastAPI()
     app.state.reminder_store = reminder_store
+    app.state.voice_history_store = VoiceCommandHistoryStore(tmp_path / "voice_history.db")
     app.include_router(voice_router)
     return TestClient(app)
 
@@ -282,6 +284,8 @@ def test_voice_command_routes_desktop_action_to_confirmation(voice_client):
     assert body["transcript"] == "type hello in notepad"
     assert body["action"]["type"] == "desktop"
     assert body["action"]["status"] == "needs_confirmation"
+    assert body["action"]["message"] == "This action needs confirmation."
+    assert body["confirmation_token"] == body["action"]["pending_action"]["id"]
     assert body["action"]["kind"] == "automation"
     assert body["action"]["target"] == "focus|notepad||type|hello"
     assert body["action"]["pending_action"]["id"]
@@ -315,8 +319,71 @@ def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
     body = response.json()
     assert body["action"]["type"] == "desktop"
     assert body["action"]["status"] == "handled"
-    assert body["assistant_text"] == "Typed hello."
+    assert body["assistant_text"] == "Done."
     assert calls == ["focus|notepad||type|hello"]
+
+
+def test_voice_confirm_token_executes_with_mocked_automation(monkeypatch, voice_client):
+    calls: list[str] = []
+    monkeypatch.setattr(local_actions.sys, "platform", "win32")
+
+    def fake_execute_automation(spec: str):
+        from grandpa.desktop_automation import AutomationResult
+
+        calls.append(spec)
+        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
+
+    monkeypatch.setattr(
+        "grandpa.desktop_automation.execute_automation",
+        fake_execute_automation,
+    )
+
+    pending = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "type hello in notepad"},
+    ).json()
+
+    response = voice_client.post(
+        "/v1/voice/confirm",
+        json={"confirmation_token": pending["confirmation_token"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["action"]["status"] == "handled"
+    assert body["assistant_text"] == "Done."
+    assert calls == ["focus|notepad||type|hello"]
+
+
+def test_voice_confirm_token_cannot_be_reused(monkeypatch, voice_client):
+    monkeypatch.setattr(local_actions.sys, "platform", "win32")
+
+    def fake_execute_automation(spec: str):
+        from grandpa.desktop_automation import AutomationResult
+
+        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
+
+    monkeypatch.setattr(
+        "grandpa.desktop_automation.execute_automation",
+        fake_execute_automation,
+    )
+    pending = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "type hello in notepad"},
+    ).json()
+
+    first = voice_client.post(
+        "/v1/voice/confirm",
+        json={"confirmation_token": pending["confirmation_token"]},
+    )
+    second = voice_client.post(
+        "/v1/voice/confirm",
+        json={"confirmation_token": pending["confirmation_token"]},
+    )
+
+    assert first.json()["action"]["status"] == "handled"
+    assert second.json()["action"]["status"] == "blocked"
+    assert second.json()["assistant_text"] == "That action is blocked for safety."
 
 
 def test_voice_command_blocked_command_returns_blocked(voice_client):
@@ -329,6 +396,7 @@ def test_voice_command_blocked_command_returns_blocked(voice_client):
     body = response.json()
     assert body["action"]["type"] == "desktop"
     assert body["action"]["status"] == "blocked"
+    assert body["assistant_text"] == "That action is blocked for safety."
     assert body["ok"] is False
 
 
@@ -347,6 +415,7 @@ def test_voice_command_reminder_creates_reminder(monkeypatch, voice_client):
     body = response.json()
     assert body["action"]["type"] == "reminder"
     assert body["action"]["status"] == "handled"
+    assert body["assistant_text"] == "Reminder created successfully."
     assert body["reminder"]["message"] == "call Arjun"
     assert datetime.fromisoformat(body["reminder"]["due_at"]).tzinfo is not None
 
@@ -361,14 +430,52 @@ def test_voice_command_unsupported_returns_friendly_response(voice_client):
     body = response.json()
     assert body["action"]["type"] == "chat"
     assert body["action"]["status"] == "unsupported"
-    assert "safe local command" in body["assistant_text"]
+    assert body["assistant_text"] == "I don't know how to do that yet."
 
 
 def test_voice_command_missing_transcript_returns_validation_error(voice_client):
     response = voice_client.post("/v1/voice/command", json={})
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "transcript is required"
+    assert response.json()["detail"] == "I didn't hear anything."
+
+
+def test_voice_history_records_commands(voice_client):
+    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+
+    response = voice_client.get("/v1/voice/history")
+
+    assert response.status_code == 200
+    history = response.json()["history"]
+    assert len(history) == 1
+    assert history[0]["transcript"] == "what is my voice status"
+    assert history[0]["action_type"] == "none"
+    assert history[0]["action_status"] == "handled"
+
+
+def test_voice_history_limit(voice_client):
+    for index in range(VOICE_HISTORY_LIMIT + 5):
+        voice_client.post(
+            "/v1/voice/command",
+            json={"transcript": f"unsupported command {index}"},
+        )
+
+    history = voice_client.get("/v1/voice/history").json()["history"]
+
+    assert len(history) == VOICE_HISTORY_LIMIT
+    assert history[0]["transcript"] == f"unsupported command {VOICE_HISTORY_LIMIT + 4}"
+    assert history[-1]["transcript"] == "unsupported command 5"
+
+
+def test_voice_history_clear(voice_client):
+    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+
+    cleared = voice_client.post("/v1/voice/history/clear")
+    history = voice_client.get("/v1/voice/history")
+
+    assert cleared.status_code == 200
+    assert cleared.json()["status"] == "cleared"
+    assert history.json()["history"] == []
 
 
 def test_voice_api_returns_clean_expected_error_status(monkeypatch):

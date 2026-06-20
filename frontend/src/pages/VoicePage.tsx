@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ElementType, ReactNode } from 'react';
 import { Activity, Mic2, Play, RefreshCw, Send, Square, Volume2, Waves } from 'lucide-react';
 import {
+  clearVoiceHistory,
   commandVoice,
+  confirmVoiceAction,
+  fetchVoiceHistory,
   fetchVoiceStatus,
   speakVoice,
   startVoiceSession,
   stopVoiceSession,
+  type VoiceHistoryEntry,
   type VoiceListenResponse,
   type VoiceStatus,
 } from '../lib/api';
@@ -17,6 +21,7 @@ export function VoicePage() {
   const [wakeRequired, setWakeRequired] = useState(false);
   const [speakResponse, setSpeakResponse] = useState(false);
   const [lastResult, setLastResult] = useState<VoiceListenResponse | null>(null);
+  const [history, setHistory] = useState<VoiceHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -26,6 +31,7 @@ export function VoicePage() {
     setError('');
     try {
       setStatus(await fetchVoiceStatus());
+      setHistory(await fetchVoiceHistory());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load voice status.');
     } finally {
@@ -64,6 +70,35 @@ export function VoicePage() {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Voice command failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmAction = async () => {
+    const token = lastResult?.confirmation_token || lastResult?.action?.confirmation_token;
+    if (!token) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await confirmVoiceAction(token);
+      setLastResult(result);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice confirmation failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearHistory = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await clearVoiceHistory();
+      setHistory([]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to clear voice history.');
     } finally {
       setBusy(false);
     }
@@ -205,12 +240,13 @@ export function VoicePage() {
                   </div>
                   <p style={{ color: 'var(--color-text)' }}>{lastResult.message}</p>
                   {lastResult.action?.status === 'needs_confirmation' && (
-                    <button type="button" onClick={() => void runListen(true)} disabled={busy || !transcript.trim()} className="inline-flex w-fit items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent-amber)', color: 'var(--color-bg)' }}>
+                    <button type="button" onClick={() => void confirmAction()} disabled={busy || !(lastResult.confirmation_token || lastResult.action?.confirmation_token)} className="inline-flex w-fit items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent-amber)', color: 'var(--color-bg)' }}>
                       Confirm Action
                     </button>
                   )}
                   <div className="rounded-xl p-3 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
                     <div>Transcript: {lastResult.transcript || 'none'}</div>
+                    <div>Assistant: {lastResult.assistant_text || lastResult.message || 'none'}</div>
                     <div>Command: {lastResult.command_text || lastResult.transcript || 'none'}</div>
                     <div>Action: {lastResult.action?.type || 'none'} / {lastResult.action?.status || lastResult.action_status || 'unknown'}</div>
                     {lastResult.action?.detail && <div>Detail: {lastResult.action.detail}</div>}
@@ -233,6 +269,34 @@ export function VoicePage() {
                     <div key={`${message.timestamp}-${message.role}`} className="rounded-xl px-3 py-2 text-sm" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
                       <div className="text-[11px] uppercase tracking-[0.16em]" style={{ color: 'var(--color-text-tertiary)' }}>{message.role}</div>
                       <div style={{ color: 'var(--color-text)' }}>{message.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Panel>
+
+            <Panel title="Command History">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Latest {history.length} voice commands
+                </p>
+                <button type="button" onClick={() => void clearHistory()} disabled={busy || history.length === 0} className="rounded-xl px-3 py-1.5 text-xs disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Clear history
+                </button>
+              </div>
+              <div className="flex max-h-[320px] flex-col gap-2 overflow-y-auto">
+                {history.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>No voice command history yet.</p>
+                ) : (
+                  history.map((entry) => (
+                    <div key={entry.id} className="rounded-xl px-3 py-2 text-sm" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <span>{new Date(entry.timestamp).toLocaleString()}</span>
+                        <span>{entry.action_type}</span>
+                        <span>{entry.action_status}</span>
+                      </div>
+                      <div className="mt-1" style={{ color: 'var(--color-text)' }}>{entry.transcript}</div>
+                      <div className="mt-1 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{entry.assistant_response}</div>
                     </div>
                   ))
                 )}

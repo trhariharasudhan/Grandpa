@@ -327,12 +327,15 @@ export interface VoiceListenResponse {
   action?: {
     type: 'desktop' | 'reminder' | 'chat' | 'none' | string;
     status: 'handled' | 'needs_confirmation' | 'blocked' | 'unsupported' | 'error' | string;
+    message?: string;
     detail: string;
     kind?: string | null;
     target?: string;
     permission?: string | null;
     pending_action?: Record<string, unknown> | null;
+    confirmation_token?: string;
   };
+  confirmation_token?: string;
   command_text?: string;
   risk_level?: string;
   approval_required?: boolean;
@@ -343,6 +346,15 @@ export interface VoiceListenResponse {
   planner?: Record<string, unknown> | null;
   knowledge_context?: Record<string, unknown> | null;
   memory_context?: Record<string, unknown> | null;
+}
+
+export interface VoiceHistoryEntry {
+  id: number;
+  timestamp: string;
+  transcript: string;
+  assistant_response: string;
+  action_type: string;
+  action_status: string;
 }
 
 export async function fetchVoiceStatus(): Promise<VoiceStatus> {
@@ -404,6 +416,32 @@ export async function commandVoice(payload: {
     const detail = await readApiError(res, `Voice command failed: ${res.status}`);
     throw new Error(detail);
   }
+  return res.json();
+}
+
+export async function confirmVoiceAction(confirmationToken: string): Promise<VoiceListenResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmation_token: confirmationToken }),
+  });
+  if (!res.ok) {
+    const detail = await readApiError(res, `Voice confirmation failed: ${res.status}`);
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function fetchVoiceHistory(): Promise<VoiceHistoryEntry[]> {
+  const res = await fetch(`${getBase()}/v1/voice/history`);
+  if (!res.ok) throw new Error(`Voice history failed: ${res.status}`);
+  const data = await res.json();
+  return data.history || [];
+}
+
+export async function clearVoiceHistory(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/voice/history/clear`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Clear voice history failed: ${res.status}`);
   return res.json();
 }
 

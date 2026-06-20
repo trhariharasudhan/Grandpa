@@ -94,6 +94,10 @@ class VoiceCommandRequest(BaseModel):
     confirmed: bool = False
 
 
+class VoiceConfirmRequest(BaseModel):
+    confirmation_token: str
+
+
 class DesktopOperatorPlanRequest(BaseModel):
     request: Optional[str] = None
     goal: Optional[str] = None
@@ -1511,6 +1515,21 @@ async def voice_listen(req: VoiceListenRequest):
     return result
 
 
+@voice_router.get("/history")
+async def voice_history(request: Request):
+    """Return recent voice command history."""
+    store = _get_voice_history_store(request)
+    return {"history": store.list()}
+
+
+@voice_router.post("/history/clear")
+async def voice_history_clear(request: Request):
+    """Clear persisted voice command history."""
+    store = _get_voice_history_store(request)
+    cleared = store.clear()
+    return {"status": "cleared", "cleared": cleared}
+
+
 @voice_router.post("/command")
 async def voice_command(req: VoiceCommandRequest, request: Request):
     """Route a transcript through reminders and safe local action permissions."""
@@ -1518,7 +1537,7 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
 
     text = req.transcript if req.transcript is not None else req.text
     if not (text and text.strip()):
-        raise HTTPException(status_code=400, detail="transcript is required")
+        raise HTTPException(status_code=400, detail="I didn't hear anything.")
 
     runtime = get_voice_runtime()
     transcript = text.strip()
@@ -1537,7 +1556,7 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
 
     command_text = (wake_match.command_text if wake_match.matched else transcript).strip()
     if not command_text:
-        raise HTTPException(status_code=400, detail="transcript is required")
+        raise HTTPException(status_code=400, detail="I didn't hear anything.")
 
     result = _route_voice_command_text(command_text, request, confirmed=req.confirmed)
     spoken = False
@@ -1550,7 +1569,44 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     result["spoken"] = spoken
     result["transcript"] = transcript
     result["command_text"] = command_text
+    _record_voice_history(request, result)
     return result
+
+
+@voice_router.post("/confirm")
+async def voice_confirm(req: VoiceConfirmRequest, request: Request):
+    """Confirm a previously returned voice command confirmation token."""
+    from grandpa.local_actions import approve_pending_action
+
+    token = req.confirmation_token.strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="confirmation_token is required")
+
+    result = approve_pending_action(token)
+    action_status = _voice_action_status(result.status)
+    if action_status == "unsupported":
+        action_status = "blocked"
+    assistant_text = _friendly_voice_message(action_status, result.message)
+    payload = _voice_command_response(
+        transcript=result.pending_action.get("source_text", "") if result.pending_action else "",
+        command_text=result.pending_action.get("source_text", "") if result.pending_action else "",
+        assistant_text=assistant_text,
+        action_type="desktop",
+        action_status=action_status,
+        detail=result.message or assistant_text,
+        spoken=False,
+        extra={
+            "local_action": {
+                "status": result.status,
+                "kind": result.kind,
+                "target": result.target,
+                "permission": result.permission,
+                "pending_action": result.pending_action,
+            }
+        },
+    )
+    _record_voice_history(request, payload)
+    return payload
 
 
 def _route_voice_command_text(
@@ -1622,7 +1678,7 @@ def _handle_voice_reminder(command_text: str, request: Request) -> dict[str, Any
             spoken=False,
         )
 
-    assistant_text = f"Reminder set for {reminder.due_at.isoformat()}: {reminder.message}."
+    assistant_text = "Reminder created successfully."
     return _voice_command_response(
         transcript=command_text,
         command_text=command_text,
@@ -1655,7 +1711,7 @@ def _handle_voice_local_action(command_text: str, *, confirmed: bool) -> dict[st
         )
 
     if result.should_fallback:
-        assistant_text = "I heard you, but I don't have a safe local command for that yet."
+        assistant_text = "I don't know how to do that yet."
         return _voice_command_response(
             transcript=command_text,
             command_text=command_text,
@@ -1667,7 +1723,10 @@ def _handle_voice_local_action(command_text: str, *, confirmed: bool) -> dict[st
         )
 
     action_status = _voice_action_status(result.status)
-    assistant_text = result.tts_text or result.message or "I handled that command."
+    assistant_text = _friendly_voice_message(
+        action_status,
+        result.tts_text or result.message or "",
+    )
     return _voice_command_response(
         transcript=command_text,
         command_text=command_text,
@@ -1698,6 +1757,18 @@ def _voice_action_status(status: str) -> str:
     return "unsupported"
 
 
+def _friendly_voice_message(action_status: str, fallback: str = "") -> str:
+    if action_status == "needs_confirmation":
+        return "This action needs confirmation."
+    if action_status == "blocked":
+        return "That action is blocked for safety."
+    if action_status == "unsupported":
+        return "I don't know how to do that yet."
+    if action_status == "handled":
+        return "Done."
+    return fallback or "I couldn't process that command."
+
+
 def _voice_command_response(
     *,
     transcript: str,
@@ -1717,6 +1788,7 @@ def _voice_command_response(
         "action": {
             "type": action_type,
             "status": action_status,
+            "message": assistant_text,
             "detail": detail,
         },
         "spoken": spoken,
@@ -1729,15 +1801,47 @@ def _voice_command_response(
         payload.update(extra)
         local_action = extra.get("local_action")
         if isinstance(local_action, dict):
+            pending_action = local_action.get("pending_action")
+            confirmation_token = (
+                pending_action.get("id")
+                if action_status == "needs_confirmation" and isinstance(pending_action, dict)
+                else None
+            )
             payload["action"].update(
                 {
                     "kind": local_action.get("kind"),
                     "target": local_action.get("target"),
                     "permission": local_action.get("permission"),
-                    "pending_action": local_action.get("pending_action"),
+                    "pending_action": pending_action,
                 }
             )
+            if confirmation_token:
+                payload["confirmation_token"] = confirmation_token
+                payload["action"]["confirmation_token"] = confirmation_token
     return payload
+
+
+def _get_voice_history_store(request: Request):
+    from grandpa.voice.history import VoiceCommandHistoryStore
+
+    store = getattr(request.app.state, "voice_history_store", None)
+    if store is None:
+        store = VoiceCommandHistoryStore()
+        request.app.state.voice_history_store = store
+    return store
+
+
+def _record_voice_history(request: Request, result: dict[str, Any]) -> None:
+    try:
+        action = result.get("action") or {}
+        _get_voice_history_store(request).add(
+            transcript=result.get("transcript") or result.get("command_text") or "",
+            assistant_response=result.get("assistant_text") or result.get("message") or "",
+            action_type=str(action.get("type") or "none"),
+            action_status=str(action.get("status") or result.get("status") or "unsupported"),
+        )
+    except Exception:
+        logger.debug("Failed to record voice command history", exc_info=True)
 
 
 def _raise_for_expected_voice_error(result: dict[str, Any]) -> None:
