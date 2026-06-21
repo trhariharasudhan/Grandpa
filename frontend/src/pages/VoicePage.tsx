@@ -6,14 +6,22 @@ import {
   commandVoice,
   confirmVoiceAction,
   disableWakeWord,
+  disableVoiceLoop,
+  enableVoiceLoop,
   enableWakeWord,
   fetchVoiceHistory,
+  fetchVoiceLoopStatus,
   fetchVoiceStatus,
   fetchWakeWordStatus,
+  simulateVoiceLoopCommand,
+  simulateVoiceLoopWake,
   speakVoice,
+  startVoiceLoop,
   startVoiceSession,
+  stopVoiceLoop,
   stopVoiceSession,
   testWakeWord,
+  type VoiceLoopStatus,
   type WakeWordStatus,
   type WakeWordTestResponse,
   type VoiceHistoryEntry,
@@ -31,6 +39,9 @@ export function VoicePage() {
   const [wakeWord, setWakeWord] = useState<WakeWordStatus | null>(null);
   const [wakeTestText, setWakeTestText] = useState('hey grandpa');
   const [wakeTestResult, setWakeTestResult] = useState<WakeWordTestResponse | null>(null);
+  const [voiceLoop, setVoiceLoop] = useState<VoiceLoopStatus | null>(null);
+  const [loopWakeText, setLoopWakeText] = useState('hey grandpa');
+  const [loopCommandText, setLoopCommandText] = useState('what is my voice status');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -42,6 +53,7 @@ export function VoicePage() {
       setStatus(await fetchVoiceStatus());
       setHistory(await fetchVoiceHistory());
       setWakeWord(await fetchWakeWordStatus());
+      setVoiceLoop(await fetchVoiceLoopStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load voice status.');
     } finally {
@@ -136,6 +148,59 @@ export function VoicePage() {
       setWakeWord(await fetchWakeWordStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Wake word test failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setLoopEnabled = async (enabled: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = enabled ? await enableVoiceLoop() : await disableVoiceLoop();
+      setVoiceLoop(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice loop update failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setLoopRunning = async (running: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = running ? await startVoiceLoop() : await stopVoiceLoop();
+      setVoiceLoop(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice loop state change failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runLoopWake = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      setVoiceLoop(await simulateVoiceLoopWake(loopWakeText));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice loop wake simulation failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runLoopCommand = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = await simulateVoiceLoopCommand(loopCommandText);
+      setVoiceLoop(next);
+      if (next.command) setLastResult(next.command);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice loop command simulation failed.');
     } finally {
       setBusy(false);
     }
@@ -285,6 +350,58 @@ export function VoicePage() {
                 <div>Last detection: {wakeWord?.last_detection_time ? new Date(wakeWord.last_detection_time).toLocaleString() : 'none'}</div>
                 <div>Test result: {wakeTestResult ? (wakeTestResult.detected ? 'detected' : 'not detected') : 'not tested'}</div>
                 <div>No microphone or always-on listener is started.</div>
+              </div>
+            </Panel>
+
+            <Panel title="Continuous Voice Loop">
+              <div className="grid gap-3 md:grid-cols-3">
+                <StatusBlock label="Enabled" value={voiceLoop?.enabled ? 'enabled' : 'disabled'} />
+                <StatusBlock label="Running" value={voiceLoop?.running ? 'running' : 'stopped'} />
+                <StatusBlock label="Mode" value={voiceLoop?.mode || 'idle'} />
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                <button type="button" onClick={() => void setLoopEnabled(true)} disabled={busy || voiceLoop?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                  Enable
+                </button>
+                <button type="button" onClick={() => void setLoopEnabled(false)} disabled={busy || !voiceLoop?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Disable
+                </button>
+                <button type="button" onClick={() => void setLoopRunning(true)} disabled={busy || voiceLoop?.running} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Start
+                </button>
+                <button type="button" onClick={() => void setLoopRunning(false)} disabled={busy || !voiceLoop?.running} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Stop
+                </button>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={loopWakeText}
+                  onChange={(event) => setLoopWakeText(event.target.value)}
+                  className="min-w-0 flex-1 rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                  placeholder="Simulate wake text..."
+                />
+                <button type="button" onClick={() => void runLoopWake()} disabled={busy || !loopWakeText.trim()} className="rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Simulate Wake
+                </button>
+              </div>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={loopCommandText}
+                  onChange={(event) => setLoopCommandText(event.target.value)}
+                  className="min-w-0 flex-1 rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                  placeholder="Simulate command transcript..."
+                />
+                <button type="button" onClick={() => void runLoopCommand()} disabled={busy || !loopCommandText.trim()} className="rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Simulate Command
+                </button>
+              </div>
+              <div className="mt-3 rounded-xl p-3 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                <div>Last wake: {voiceLoop?.last_wake_detected_at ? new Date(voiceLoop.last_wake_detected_at).toLocaleString() : 'none'}</div>
+                <div>Last command: {voiceLoop?.last_command_transcript || 'none'}</div>
+                <div>Last error: {voiceLoop?.last_error || 'none'}</div>
+                <div>No microphone, background thread, or always-on capture is started.</div>
               </div>
             </Panel>
 

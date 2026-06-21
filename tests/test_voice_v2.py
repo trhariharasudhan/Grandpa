@@ -22,6 +22,7 @@ from grandpa.voice import (
     WakeWordDetector,
 )
 from grandpa.voice.history import VOICE_HISTORY_LIMIT, VoiceCommandHistoryStore
+from grandpa.voice.loop import VoiceLoopSession
 from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASE, WakeWordSession
 
 pytestmark = pytest.mark.core
@@ -576,6 +577,150 @@ def test_wake_word_session_mock_detection_updates_time(tmp_path):
     assert result["detected"] is True
     assert result["last_detection_time"] is not None
     assert session.status()["last_detection_time"] == result["last_detection_time"]
+
+
+def test_voice_loop_defaults_disabled_and_stopped(tmp_path):
+    loop = VoiceLoopSession(WakeWordSession(tmp_path / "wake_word.json"))
+
+    status = loop.status()
+
+    assert status["enabled"] is False
+    assert status["running"] is False
+    assert status["mode"] == "idle"
+    assert status["microphone_required"] is False
+    assert status["background_thread"] is False
+
+
+def test_voice_loop_cannot_start_if_wake_word_disabled(tmp_path):
+    loop = VoiceLoopSession(WakeWordSession(tmp_path / "wake_word.json"))
+    loop.enable()
+
+    status = loop.start()
+
+    assert status["running"] is False
+    assert status["mode"] == "error"
+    assert status["last_error"] == "Wake word must be enabled before starting the voice loop."
+
+
+def test_voice_loop_starts_after_wake_word_enabled(tmp_path):
+    wake = WakeWordSession(tmp_path / "wake_word.json")
+    wake.enable()
+    loop = VoiceLoopSession(wake)
+    loop.enable()
+
+    status = loop.start()
+
+    assert status["running"] is True
+    assert status["mode"] == "waiting_for_wake_word"
+
+
+def test_voice_loop_stop_returns_idle(tmp_path):
+    wake = WakeWordSession(tmp_path / "wake_word.json")
+    wake.enable()
+    loop = VoiceLoopSession(wake)
+    loop.enable()
+    loop.start()
+
+    status = loop.stop()
+
+    assert status["running"] is False
+    assert status["mode"] == "idle"
+
+
+def test_voice_loop_simulate_wake_detected(tmp_path):
+    wake = WakeWordSession(tmp_path / "wake_word.json")
+    wake.enable()
+    loop = VoiceLoopSession(wake)
+    loop.enable()
+    loop.start()
+
+    result = loop.simulate_wake("HEY GRANDPA")
+
+    assert result["detected"] is True
+    assert result["mode"] == "listening_for_command"
+    assert result["last_wake_detected_at"] is not None
+
+
+def test_voice_loop_simulate_wake_invalid_returns_to_waiting(tmp_path):
+    wake = WakeWordSession(tmp_path / "wake_word.json")
+    wake.enable()
+    loop = VoiceLoopSession(wake)
+    loop.enable()
+    loop.start()
+
+    result = loop.simulate_wake("hello assistant")
+
+    assert result["detected"] is False
+    assert result["mode"] == "waiting_for_wake_word"
+
+
+def test_voice_loop_simulate_command_routes_with_mocked_handler(tmp_path):
+    wake = WakeWordSession(tmp_path / "wake_word.json")
+    wake.enable()
+    routed: list[str] = []
+
+    def fake_router(transcript: str):
+        routed.append(transcript)
+        return {
+            "assistant_text": "Done.",
+            "action": {"type": "none", "status": "handled", "detail": "Done."},
+        }
+
+    loop = VoiceLoopSession(wake, command_router=fake_router)
+    loop.enable()
+    loop.start()
+    loop.simulate_wake("hey grandpa")
+
+    result = loop.simulate_command("what is my voice status")
+
+    assert routed == ["what is my voice status"]
+    assert result["mode"] == "waiting_for_wake_word"
+    assert result["last_command_transcript"] == "what is my voice status"
+    assert result["command"]["assistant_text"] == "Done."
+
+
+def test_voice_loop_api_cannot_start_if_wake_word_disabled(voice_client):
+    voice_client.post("/v1/voice/loop/enable")
+
+    response = voice_client.post("/v1/voice/loop/start")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["running"] is False
+    assert body["mode"] == "error"
+    assert body["last_error"] == "Wake word must be enabled before starting the voice loop."
+
+
+def test_voice_loop_api_simulates_wake_and_command(voice_client):
+    voice_client.post("/v1/voice/wake-word/enable")
+    voice_client.post("/v1/voice/loop/enable")
+    started = voice_client.post("/v1/voice/loop/start")
+    wake = voice_client.post("/v1/voice/loop/simulate-wake", json={"text": "hey grandpa"})
+    command = voice_client.post(
+        "/v1/voice/loop/simulate-command",
+        json={"transcript": "what is my voice status"},
+    )
+
+    assert started.json()["mode"] == "waiting_for_wake_word"
+    assert wake.json()["detected"] is True
+    assert wake.json()["mode"] == "listening_for_command"
+    assert command.status_code == 200
+    body = command.json()
+    assert body["mode"] == "waiting_for_wake_word"
+    assert body["last_command_transcript"] == "what is my voice status"
+    assert body["command"]["action"]["status"] == "handled"
+
+
+def test_voice_loop_api_stop(voice_client):
+    voice_client.post("/v1/voice/wake-word/enable")
+    voice_client.post("/v1/voice/loop/enable")
+    voice_client.post("/v1/voice/loop/start")
+
+    response = voice_client.post("/v1/voice/loop/stop")
+
+    assert response.status_code == 200
+    assert response.json()["running"] is False
+    assert response.json()["mode"] == "idle"
 
 
 def test_voice_api_returns_clean_expected_error_status(monkeypatch):
