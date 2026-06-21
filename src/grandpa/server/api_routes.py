@@ -98,6 +98,10 @@ class VoiceConfirmRequest(BaseModel):
     confirmation_token: str
 
 
+class VoiceWakeWordTestRequest(BaseModel):
+    text: str
+
+
 class DesktopOperatorPlanRequest(BaseModel):
     request: Optional[str] = None
     goal: Optional[str] = None
@@ -1530,6 +1534,30 @@ async def voice_history_clear(request: Request):
     return {"status": "cleared", "cleared": cleared}
 
 
+@voice_router.get("/wake-word/status")
+async def voice_wake_word_status(request: Request):
+    """Return wake-word foundation status without starting listeners."""
+    return _get_wake_word_session(request).status()
+
+
+@voice_router.post("/wake-word/enable")
+async def voice_wake_word_enable(request: Request):
+    """Enable mock transcript wake-word detection."""
+    return _get_wake_word_session(request).enable()
+
+
+@voice_router.post("/wake-word/disable")
+async def voice_wake_word_disable(request: Request):
+    """Disable mock transcript wake-word detection."""
+    return _get_wake_word_session(request).disable()
+
+
+@voice_router.post("/wake-word/test")
+async def voice_wake_word_test(req: VoiceWakeWordTestRequest, request: Request):
+    """Test wake-word matching against provided text only."""
+    return _get_wake_word_session(request).detect_mock(req.text)
+
+
 @voice_router.post("/command")
 async def voice_command(req: VoiceCommandRequest, request: Request):
     """Route a transcript through reminders and safe local action permissions."""
@@ -1829,6 +1857,16 @@ def _get_voice_history_store(request: Request):
         store = VoiceCommandHistoryStore()
         request.app.state.voice_history_store = store
     return store
+
+
+def _get_wake_word_session(request: Request):
+    from grandpa.voice.wake_word import WakeWordSession
+
+    session = getattr(request.app.state, "wake_word_session", None)
+    if session is None:
+        session = WakeWordSession()
+        request.app.state.wake_word_session = session
+    return session
 
 
 def _record_voice_history(request: Request, result: dict[str, Any]) -> None:

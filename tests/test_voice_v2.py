@@ -22,6 +22,7 @@ from grandpa.voice import (
     WakeWordDetector,
 )
 from grandpa.voice.history import VOICE_HISTORY_LIMIT, VoiceCommandHistoryStore
+from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASE, WakeWordSession
 
 pytestmark = pytest.mark.core
 
@@ -37,6 +38,7 @@ def voice_client(tmp_path, monkeypatch):
     app = FastAPI()
     app.state.reminder_store = reminder_store
     app.state.voice_history_store = VoiceCommandHistoryStore(tmp_path / "voice_history.db")
+    app.state.wake_word_session = WakeWordSession(tmp_path / "wake_word.json")
     app.include_router(voice_router)
     return TestClient(app)
 
@@ -476,6 +478,104 @@ def test_voice_history_clear(voice_client):
     assert cleared.status_code == 200
     assert cleared.json()["status"] == "cleared"
     assert history.json()["history"] == []
+
+
+def test_wake_word_session_defaults_disabled(tmp_path):
+    session = WakeWordSession(tmp_path / "wake_word.json")
+
+    status = session.status()
+
+    assert status["enabled"] is False
+    assert status["listening"] is False
+    assert status["wake_phrase"] == DEFAULT_WAKE_PHRASE
+    assert status["always_listening"] is False
+    assert status["microphone_required"] is False
+
+
+def test_wake_word_api_status_default_disabled(voice_client):
+    response = voice_client.get("/v1/voice/wake-word/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is False
+    assert body["listening"] is False
+    assert body["wake_phrase"] == DEFAULT_WAKE_PHRASE
+
+
+def test_wake_word_api_enable_and_disable(voice_client):
+    enabled = voice_client.post("/v1/voice/wake-word/enable")
+    disabled = voice_client.post("/v1/voice/wake-word/disable")
+
+    assert enabled.status_code == 200
+    assert enabled.json()["enabled"] is True
+    assert enabled.json()["listening"] is True
+    assert disabled.status_code == 200
+    assert disabled.json()["enabled"] is False
+    assert disabled.json()["listening"] is False
+
+
+def test_wake_word_test_detects_mock_phrase_case_insensitive(voice_client):
+    voice_client.post("/v1/voice/wake-word/enable")
+
+    response = voice_client.post(
+        "/v1/voice/wake-word/test",
+        json={"text": "HEY GRANDPA are you there"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["detected"] is True
+    assert body["phrase"] == DEFAULT_WAKE_PHRASE
+    assert body["last_detection_time"]
+
+
+def test_wake_word_test_rejects_invalid_phrase(voice_client):
+    voice_client.post("/v1/voice/wake-word/enable")
+
+    response = voice_client.post(
+        "/v1/voice/wake-word/test",
+        json={"text": "hello assistant"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["detected"] is False
+    assert body["phrase"] == DEFAULT_WAKE_PHRASE
+    assert body["last_detection_time"] is None
+
+
+def test_wake_word_test_does_not_detect_when_disabled(voice_client):
+    response = voice_client.post(
+        "/v1/voice/wake-word/test",
+        json={"text": "hey grandpa"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["detected"] is False
+
+
+def test_wake_word_session_persists_enabled_and_phrase(tmp_path):
+    settings_path = tmp_path / "wake_word.json"
+    session = WakeWordSession(settings_path)
+    session.wake_phrase = "grandpa computer"
+    session.enable()
+
+    reloaded = WakeWordSession(settings_path)
+
+    assert reloaded.status()["enabled"] is True
+    assert reloaded.status()["listening"] is True
+    assert reloaded.status()["wake_phrase"] == "grandpa computer"
+
+
+def test_wake_word_session_mock_detection_updates_time(tmp_path):
+    session = WakeWordSession(tmp_path / "wake_word.json")
+    session.enable()
+
+    result = session.detect_mock("please listen, hey grandpa")
+
+    assert result["detected"] is True
+    assert result["last_detection_time"] is not None
+    assert session.status()["last_detection_time"] == result["last_detection_time"]
 
 
 def test_voice_api_returns_clean_expected_error_status(monkeypatch):
