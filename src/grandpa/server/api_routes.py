@@ -102,6 +102,11 @@ class VoiceWakeWordTestRequest(BaseModel):
     text: str
 
 
+class VoiceLoopTextRequest(BaseModel):
+    text: Optional[str] = None
+    transcript: Optional[str] = None
+
+
 class DesktopOperatorPlanRequest(BaseModel):
     request: Optional[str] = None
     goal: Optional[str] = None
@@ -1558,6 +1563,65 @@ async def voice_wake_word_test(req: VoiceWakeWordTestRequest, request: Request):
     return _get_wake_word_session(request).detect_mock(req.text)
 
 
+@voice_router.get("/loop/status")
+async def voice_loop_status(request: Request):
+    """Return safe continuous voice loop foundation status."""
+    return _get_voice_loop_session(request).status()
+
+
+@voice_router.post("/loop/enable")
+async def voice_loop_enable(request: Request):
+    """Enable the text-simulated voice loop foundation."""
+    return _get_voice_loop_session(request).enable()
+
+
+@voice_router.post("/loop/disable")
+async def voice_loop_disable(request: Request):
+    """Disable and stop the text-simulated voice loop foundation."""
+    return _get_voice_loop_session(request).disable()
+
+
+@voice_router.post("/loop/start")
+async def voice_loop_start(request: Request):
+    """Start the voice loop only if wake word state is enabled."""
+    return _get_voice_loop_session(request).start()
+
+
+@voice_router.post("/loop/stop")
+async def voice_loop_stop(request: Request):
+    """Stop the text-simulated voice loop foundation."""
+    return _get_voice_loop_session(request).stop()
+
+
+@voice_router.post("/loop/simulate-wake")
+async def voice_loop_simulate_wake(req: VoiceLoopTextRequest, request: Request):
+    """Simulate wake-word input without microphone access."""
+    text = (req.text or req.transcript or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    return _get_voice_loop_session(request).simulate_wake(text)
+
+
+@voice_router.post("/loop/simulate-command")
+async def voice_loop_simulate_command(req: VoiceLoopTextRequest, request: Request):
+    """Simulate a command transcript through the existing safe voice router."""
+    transcript = (req.transcript or req.text or "").strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="I didn't hear anything.")
+
+    loop = _get_voice_loop_session(request)
+
+    def route_command(command_text: str) -> dict[str, Any]:
+        result = _route_voice_command_text(command_text, request, confirmed=False)
+        result["spoken"] = False
+        result["transcript"] = command_text
+        result["command_text"] = command_text
+        _record_voice_history(request, result)
+        return result
+
+    return loop.simulate_command(transcript, command_router=route_command)
+
+
 @voice_router.post("/command")
 async def voice_command(req: VoiceCommandRequest, request: Request):
     """Route a transcript through reminders and safe local action permissions."""
@@ -1866,6 +1930,16 @@ def _get_wake_word_session(request: Request):
     if session is None:
         session = WakeWordSession()
         request.app.state.wake_word_session = session
+    return session
+
+
+def _get_voice_loop_session(request: Request):
+    from grandpa.voice.loop import VoiceLoopSession
+
+    session = getattr(request.app.state, "voice_loop_session", None)
+    if session is None:
+        session = VoiceLoopSession(_get_wake_word_session(request))
+        request.app.state.voice_loop_session = session
     return session
 
 

@@ -373,6 +373,21 @@ export interface WakeWordTestResponse {
   last_detection_time: string | null;
 }
 
+export interface VoiceLoopStatus {
+  enabled: boolean;
+  running: boolean;
+  mode: 'idle' | 'waiting_for_wake_word' | 'listening_for_command' | 'processing' | 'error';
+  last_wake_detected_at: string | null;
+  last_command_transcript: string | null;
+  last_error: string | null;
+  microphone_required: boolean;
+  background_thread: boolean;
+  detected?: boolean;
+  phrase?: string;
+  command?: VoiceListenResponse;
+  error?: string;
+}
+
 export async function fetchVoiceStatus(): Promise<VoiceStatus> {
   const res = await fetch(`${getBase()}/v1/voice/status`);
   if (!res.ok) throw new Error(`Voice status failed: ${res.status}`);
@@ -486,6 +501,56 @@ export async function testWakeWord(text: string): Promise<WakeWordTestResponse> 
     body: JSON.stringify({ text }),
   });
   if (!res.ok) throw new Error(`Wake word test failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchVoiceLoopStatus(): Promise<VoiceLoopStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/loop/status`);
+  if (!res.ok) throw new Error(`Voice loop status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function enableVoiceLoop(): Promise<VoiceLoopStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/loop/enable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Voice loop enable failed: ${res.status}`);
+  return res.json();
+}
+
+export async function disableVoiceLoop(): Promise<VoiceLoopStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/loop/disable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Voice loop disable failed: ${res.status}`);
+  return res.json();
+}
+
+export async function startVoiceLoop(): Promise<VoiceLoopStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/loop/start`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Voice loop start failed: ${res.status}`);
+  return res.json();
+}
+
+export async function stopVoiceLoop(): Promise<VoiceLoopStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/loop/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Voice loop stop failed: ${res.status}`);
+  return res.json();
+}
+
+export async function simulateVoiceLoopWake(text: string): Promise<VoiceLoopStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/loop/simulate-wake`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(await readApiError(res, `Voice loop wake failed: ${res.status}`));
+  return res.json();
+}
+
+export async function simulateVoiceLoopCommand(transcript: string): Promise<VoiceLoopStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/loop/simulate-command`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript }),
+  });
+  if (!res.ok) throw new Error(await readApiError(res, `Voice loop command failed: ${res.status}`));
   return res.json();
 }
 
