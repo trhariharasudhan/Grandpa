@@ -83,6 +83,7 @@ class VoiceSpeakRequest(BaseModel):
 class VoiceListenRequest(BaseModel):
     text: Optional[str] = None
     audio_base64: Optional[str] = None
+    audio_format: Optional[str] = None
 
 
 class VoiceCommandRequest(BaseModel):
@@ -1518,14 +1519,24 @@ async def voice_listen(request: Request):
     payload = await _read_voice_listen_payload(request)
     text = payload.get("text")
     audio_base64 = payload.get("audio_base64")
+    audio_format = payload.get("audio_format") or "wav"
     if not (text and text.strip()) and not audio_base64:
         raise HTTPException(status_code=400, detail=MICROPHONE_UNAVAILABLE_MESSAGE)
     result = get_voice_runtime().capture(
         text=text,
         audio_base64=audio_base64,
+        audio_format=audio_format,
     )
     _raise_for_expected_voice_error(result)
     return result
+
+
+@voice_router.get("/stt/status")
+async def voice_stt_status():
+    """Return local speech-to-text engine/model readiness."""
+    from grandpa.voice import get_voice_runtime
+
+    return get_voice_runtime().speech_input.stt_status()
 
 
 @voice_router.get("/history")
@@ -1961,12 +1972,16 @@ async def _read_voice_listen_payload(request: Request) -> dict[str, str | None]:
         text_value = form.get("text") or form.get("transcript")
         audio_value = form.get("audio") or form.get("file")
         audio_base64 = form.get("audio_base64")
+        audio_format = form.get("audio_format") or form.get("format")
         if hasattr(audio_value, "read"):
             audio_bytes = await audio_value.read()
             audio_base64 = base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None
+            filename = getattr(audio_value, "filename", "")
+            audio_format = audio_format or _audio_format_from_filename(filename)
         return {
             "text": str(text_value).strip() if text_value is not None else None,
             "audio_base64": str(audio_base64) if audio_base64 else None,
+            "audio_format": str(audio_format).strip().lower().lstrip(".") if audio_format else None,
         }
 
     if content_type.startswith("application/octet-stream") or content_type.startswith("audio/"):
@@ -1974,6 +1989,7 @@ async def _read_voice_listen_payload(request: Request) -> dict[str, str | None]:
         return {
             "text": None,
             "audio_base64": base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None,
+            "audio_format": _audio_format_from_content_type(content_type),
         }
 
     try:
@@ -1984,10 +2000,30 @@ async def _read_voice_listen_payload(request: Request) -> dict[str, str | None]:
         data = {}
     text_value = data.get("text") or data.get("transcript")
     audio_base64 = data.get("audio_base64")
+    audio_format = data.get("audio_format") or data.get("format")
     return {
         "text": str(text_value).strip() if text_value is not None else None,
         "audio_base64": str(audio_base64) if audio_base64 else None,
+        "audio_format": str(audio_format).strip().lower().lstrip(".") if audio_format else None,
     }
+
+
+def _audio_format_from_filename(filename: str) -> str | None:
+    if "." not in filename:
+        return None
+    return filename.rsplit(".", 1)[-1].strip().lower()
+
+
+def _audio_format_from_content_type(content_type: str) -> str | None:
+    if "webm" in content_type:
+        return "webm"
+    if "mpeg" in content_type or "mp3" in content_type:
+        return "mp3"
+    if "mp4" in content_type or "m4a" in content_type:
+        return "m4a"
+    if "wav" in content_type or "wave" in content_type:
+        return "wav"
+    return None
 
 
 def _record_voice_history(request: Request, result: dict[str, Any]) -> None:
