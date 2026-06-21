@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ElementType, ReactNode } from 'react';
 import { Activity, Mic2, Play, RefreshCw, Send, Square, Volume2, Waves } from 'lucide-react';
 import {
@@ -13,6 +13,7 @@ import {
   fetchVoiceLoopStatus,
   fetchVoiceStatus,
   fetchWakeWordStatus,
+  listenFromAudio,
   simulateVoiceLoopCommand,
   simulateVoiceLoopWake,
   speakVoice,
@@ -27,6 +28,7 @@ import {
   type VoiceHistoryEntry,
   type VoiceListenResponse,
   type VoiceStatus,
+  voiceCommand,
 } from '../lib/api';
 
 export function VoicePage() {
@@ -42,9 +44,15 @@ export function VoicePage() {
   const [voiceLoop, setVoiceLoop] = useState<VoiceLoopStatus | null>(null);
   const [loopWakeText, setLoopWakeText] = useState('hey grandpa');
   const [loopCommandText, setLoopCommandText] = useState('what is my voice status');
+  const [recording, setRecording] = useState(false);
+  const [pttTranscript, setPttTranscript] = useState('');
+  const [pttMessage, setPttMessage] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<BlobPart[]>([]);
 
   const load = async () => {
     setLoading(true);
@@ -64,7 +72,11 @@ export function VoicePage() {
   useEffect(() => {
     void load();
     const interval = window.setInterval(() => void load(), 15000);
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      recorderRef.current?.state !== 'inactive' && recorderRef.current?.stop();
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
   }, []);
 
   const sessionState = status?.session?.state || 'idle';
@@ -206,6 +218,84 @@ export function VoicePage() {
     }
   };
 
+  const startRecording = async () => {
+    setError('');
+    setPttMessage('');
+    if (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder === 'undefined') {
+      setPttMessage('Browser recording is not available on this device.');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) chunksRef.current.push(event.data);
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        chunksRef.current = [];
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        recorderRef.current = null;
+        setRecording(false);
+        void transcribeRecording(blob);
+      };
+      recorder.start();
+      setRecording(true);
+      setPttMessage('Recording...');
+    } catch (err) {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+      recorderRef.current = null;
+      setRecording(false);
+      setPttMessage(err instanceof Error ? err.message : 'Could not start browser recording.');
+    }
+  };
+
+  const stopRecording = () => {
+    const recorder = recorderRef.current;
+    if (!recorder || recorder.state === 'inactive') return;
+    setPttMessage('Transcribing...');
+    recorder.stop();
+  };
+
+  const transcribeRecording = async (blob: Blob) => {
+    if (blob.size === 0) {
+      setPttMessage('No audio was captured.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const result = await listenFromAudio(blob);
+      setPttTranscript(result.transcript || '');
+      setTranscript(result.transcript || transcript);
+      setPttMessage(result.message || 'Transcript captured.');
+    } catch (err) {
+      setPttMessage(err instanceof Error ? err.message : 'Could not transcribe recording.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sendPushToTalkCommand = async () => {
+    if (!pttTranscript.trim()) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await voiceCommand(pttTranscript);
+      setLastResult(result);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice command failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const start = async () => {
     setBusy(true);
     setError('');
@@ -316,6 +406,31 @@ export function VoicePage() {
                   <Volume2 size={15} />
                   Test Speak
                 </button>
+              </div>
+              <div className="rounded-xl p-3 text-sm" style={{ border: '1px solid var(--color-border)' }}>
+                <div className="mb-2 font-medium" style={{ color: 'var(--color-text)' }}>Push to Talk</div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={() => void startRecording()} disabled={busy || recording} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                    Start Recording
+                  </button>
+                  <button type="button" onClick={stopRecording} disabled={!recording} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                    Stop Recording
+                  </button>
+                </div>
+                <textarea
+                  value={pttTranscript}
+                  onChange={(event) => setPttTranscript(event.target.value)}
+                  rows={3}
+                  className="mt-2 w-full rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                  placeholder="Transcript preview..."
+                />
+                <button type="button" onClick={() => void sendPushToTalkCommand()} disabled={busy || !pttTranscript.trim()} className="mt-2 inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent-amber)', color: 'var(--color-bg)' }}>
+                  Send as Command
+                </button>
+                {pttMessage && (
+                  <p className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{pttMessage}</p>
+                )}
               </div>
             </div>
           </Panel>
