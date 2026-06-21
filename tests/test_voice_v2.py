@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 import grandpa.local_actions as local_actions
 import grandpa.voice.speech_output as speech_output
 from grandpa.local_action_approvals import LocalActionApprovalStore
+from grandpa.memory.context import ConversationContextBuilder
 from grandpa.memory.conversation import MAX_CONVERSATION_MESSAGES, ConversationSession
 from grandpa.reminders import ReminderStore
 from grandpa.server.api_routes import conversation_router, voice_router
@@ -638,6 +639,102 @@ def test_conversation_api_endpoints(voice_client):
     assert history.json()["messages"] == []
     assert summary.json()["summary"] == "No recent conversation yet."
     assert cleared.json()["status"] == "cleared"
+
+
+def test_conversation_context_builder_uses_latest_n_messages():
+    session = ConversationSession()
+    for index in range(5):
+        session.add_user_message(f"user {index}")
+
+    context = ConversationContextBuilder(session, max_messages=3).build()
+
+    assert context["message_count"] == 3
+    assert [message["content"] for message in context["messages"]] == [
+        "user 2",
+        "user 3",
+        "user 4",
+    ]
+    assert context["context_text"] == "user: user 2\nuser: user 3\nuser: user 4"
+
+
+def test_conversation_context_builder_trims_by_max_chars():
+    session = ConversationSession()
+    session.add_user_message("alpha beta gamma")
+    session.add_assistant_message("delta epsilon")
+
+    context = ConversationContextBuilder(session, max_messages=6, max_chars=24).build()
+
+    assert len(context["context_text"]) <= 24
+    assert context["message_count"] >= 1
+
+
+def test_conversation_context_builder_ignores_empty_messages_and_preserves_order():
+    session = ConversationSession()
+    session.add_user_message("first")
+    session.add_user_message("   ")
+    session.add_assistant_message("second")
+
+    context = ConversationContextBuilder(session).build()
+
+    assert [message["role"] for message in context["messages"]] == ["user", "assistant"]
+    assert [message["content"] for message in context["messages"]] == ["first", "second"]
+
+
+def test_conversation_context_endpoint(voice_client):
+    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+
+    response = voice_client.get("/v1/conversation/context?max_messages=1&max_chars=200")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["message_count"] == 1
+    assert len(body["messages"]) == 1
+    assert body["context_text"]
+
+
+def test_voice_command_returns_context_metadata(voice_client):
+    first = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "what is my voice status"},
+    ).json()
+    second = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "tell me more about that"},
+    ).json()
+
+    assert first["context_used"] is False
+    assert first["context_message_count"] == 0
+    assert second["context_used"] is True
+    assert second["context_message_count"] == 2
+    assert second["assistant_text"] == "I can use recent context, but I don't know how to answer that yet."
+
+
+def test_clear_conversation_resets_context(voice_client):
+    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+    voice_client.post("/v1/conversation/clear")
+
+    context = voice_client.get("/v1/conversation/context").json()
+    result = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "tell me more"},
+    ).json()
+
+    assert context["message_count"] == 0
+    assert context["context_text"] == ""
+    assert result["context_used"] is False
+    assert result["context_message_count"] == 0
+
+
+def test_voice_context_has_no_ollama_dependency(voice_client, monkeypatch):
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "tell me a story about Saturn"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["assistant_text"] == "I don't know how to do that yet."
 
 
 def test_voice_command_records_conversation_exchange(voice_client):

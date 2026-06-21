@@ -1499,6 +1499,16 @@ async def conversation_summary(request: Request):
     return _get_conversation_session(request).summary()
 
 
+@conversation_router.get("/context")
+async def conversation_context(request: Request, max_messages: int = 6, max_chars: int = 2000):
+    """Return bounded recent conversation context for deterministic voice follow-up support."""
+    return _build_conversation_context(
+        request,
+        max_messages=max_messages,
+        max_chars=max_chars,
+    )
+
+
 @voice_router.get("/status")
 async def voice_status():
     """Return Grandpa voice runtime status and local engine readiness."""
@@ -1678,14 +1688,17 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     wake_match = runtime.wake_detector.detect(transcript)
     if req.require_wake_word and runtime.wake_detector.config.enabled and not wake_match.matched:
         assistant_text = "Wake word was not detected. Use push-to-talk or say Hey Grandpa."
-        return _voice_command_response(
-            transcript=transcript,
-            command_text=transcript,
-            assistant_text=assistant_text,
-            action_type="none",
-            action_status="unsupported",
-            detail=assistant_text,
-            spoken=False,
+        return _attach_conversation_context_metadata(
+            request,
+            _voice_command_response(
+                transcript=transcript,
+                command_text=transcript,
+                assistant_text=assistant_text,
+                action_type="none",
+                action_status="unsupported",
+                detail=assistant_text,
+                spoken=False,
+            ),
         )
 
     command_text = (wake_match.command_text if wake_match.matched else transcript).strip()
@@ -1752,27 +1765,39 @@ def _route_voice_command_text(
     confirmed: bool,
 ) -> dict[str, Any]:
     lowered = command_text.strip().lower()
+    context = _build_conversation_context(request)
+    context_message_count = context["message_count"]
     if lowered in {"what is my voice status", "voice status", "what's my voice status"}:
         from grandpa.voice import get_voice_runtime
 
         status = get_voice_runtime().status()
         assistant_text = status.get("message") or "Voice status is available."
-        return _voice_command_response(
-            transcript=command_text,
-            command_text=command_text,
-            assistant_text=assistant_text,
-            action_type="none",
-            action_status="handled",
-            detail=assistant_text,
-            spoken=False,
-            extra={"voice": status},
+        return _with_conversation_context_metadata(
+            _voice_command_response(
+                transcript=command_text,
+                command_text=command_text,
+                assistant_text=assistant_text,
+                action_type="none",
+                action_status="handled",
+                detail=assistant_text,
+                spoken=False,
+                extra={"voice": status},
+            ),
+            context_message_count,
         )
 
     if _looks_like_reminder_command(command_text):
         reminder = _handle_voice_reminder(command_text, request)
-        return reminder
+        return _with_conversation_context_metadata(reminder, context_message_count)
 
-    return _handle_voice_local_action(command_text, confirmed=confirmed)
+    return _with_conversation_context_metadata(
+        _handle_voice_local_action(
+            command_text,
+            confirmed=confirmed,
+            context_message_count=context_message_count,
+        ),
+        context_message_count,
+    )
 
 
 def _looks_like_reminder_command(command_text: str) -> bool:
@@ -1827,7 +1852,12 @@ def _handle_voice_reminder(command_text: str, request: Request) -> dict[str, Any
     )
 
 
-def _handle_voice_local_action(command_text: str, *, confirmed: bool) -> dict[str, Any]:
+def _handle_voice_local_action(
+    command_text: str,
+    *,
+    confirmed: bool,
+    context_message_count: int = 0,
+) -> dict[str, Any]:
     from grandpa.local_actions import approve_pending_action, handle_local_action
 
     try:
@@ -1847,7 +1877,11 @@ def _handle_voice_local_action(command_text: str, *, confirmed: bool) -> dict[st
         )
 
     if result.should_fallback:
-        assistant_text = "I don't know how to do that yet."
+        assistant_text = (
+            "I can use recent context, but I don't know how to answer that yet."
+            if context_message_count
+            else "I don't know how to do that yet."
+        )
         return _voice_command_response(
             transcript=command_text,
             command_text=command_text,
@@ -1957,6 +1991,23 @@ def _voice_command_response(
     return payload
 
 
+def _with_conversation_context_metadata(
+    payload: dict[str, Any],
+    context_message_count: int,
+) -> dict[str, Any]:
+    payload["context_used"] = context_message_count > 0
+    payload["context_message_count"] = context_message_count
+    return payload
+
+
+def _attach_conversation_context_metadata(
+    request: Request,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    context = _build_conversation_context(request)
+    return _with_conversation_context_metadata(payload, context["message_count"])
+
+
 def _get_voice_history_store(request: Request):
     from grandpa.voice.history import VoiceCommandHistoryStore
 
@@ -1995,6 +2046,23 @@ def _get_conversation_session(request: Request):
         session = ConversationSession()
         request.app.state.conversation_session = session
     return session
+
+
+def _build_conversation_context(
+    request: Request,
+    *,
+    max_messages: int = 6,
+    max_chars: int = 2000,
+) -> dict[str, Any]:
+    from grandpa.memory.context import ConversationContextBuilder
+
+    safe_max_messages = min(max(0, int(max_messages)), 20)
+    safe_max_chars = min(max(0, int(max_chars)), 8000)
+    return ConversationContextBuilder(
+        _get_conversation_session(request),
+        max_messages=safe_max_messages,
+        max_chars=safe_max_chars,
+    ).build()
 
 
 def _record_conversation_exchange(request: Request, transcript: str, assistant_text: str) -> None:
