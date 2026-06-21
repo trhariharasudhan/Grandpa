@@ -1472,6 +1472,31 @@ async def speech_health(request: Request):
 # ---- Voice runtime routes ----
 
 voice_router = APIRouter(prefix="/v1/voice", tags=["voice"])
+conversation_router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
+
+
+@conversation_router.get("/status")
+async def conversation_status(request: Request):
+    """Return short-term conversation session status."""
+    return _get_conversation_session(request).status()
+
+
+@conversation_router.get("/history")
+async def conversation_history(request: Request):
+    """Return recent short-term conversation messages."""
+    return _get_conversation_session(request).history()
+
+
+@conversation_router.post("/clear")
+async def conversation_clear(request: Request):
+    """Clear short-term conversation session messages."""
+    return _get_conversation_session(request).clear()
+
+
+@conversation_router.post("/summary")
+async def conversation_summary(request: Request):
+    """Summarize recent short-term conversation context without an LLM."""
+    return _get_conversation_session(request).summary()
 
 
 @voice_router.get("/status")
@@ -1632,6 +1657,8 @@ async def voice_loop_simulate_command(req: VoiceLoopTextRequest, request: Reques
         result["transcript"] = command_text
         result["command_text"] = command_text
         _record_voice_history(request, result)
+        if result.get("ok", True):
+            _record_conversation_exchange(request, command_text, result.get("assistant_text", ""))
         return result
 
     return loop.simulate_command(transcript, command_router=route_command)
@@ -1677,6 +1704,8 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     result["transcript"] = transcript
     result["command_text"] = command_text
     _record_voice_history(request, result)
+    if result.get("ok", True):
+        _record_conversation_exchange(request, command_text, result.get("assistant_text", ""))
     return result
 
 
@@ -1958,6 +1987,25 @@ def _get_voice_loop_session(request: Request):
     return session
 
 
+def _get_conversation_session(request: Request):
+    from grandpa.memory.conversation import ConversationSession
+
+    session = getattr(request.app.state, "conversation_session", None)
+    if session is None:
+        session = ConversationSession()
+        request.app.state.conversation_session = session
+    return session
+
+
+def _record_conversation_exchange(request: Request, transcript: str, assistant_text: str) -> None:
+    try:
+        session = _get_conversation_session(request)
+        session.add_user_message(transcript)
+        session.add_assistant_message(assistant_text)
+    except Exception:
+        logger.debug("Failed to record conversation exchange", exc_info=True)
+
+
 async def _read_voice_listen_payload(request: Request) -> dict[str, str | None]:
     content_type = request.headers.get("content-type", "").lower()
     if content_type.startswith("multipart/form-data"):
@@ -2182,6 +2230,7 @@ def include_all_routes(app) -> None:
     app.include_router(learning_router)
     app.include_router(speech_router)
     app.include_router(voice_router)
+    app.include_router(conversation_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
 
@@ -2246,6 +2295,7 @@ __all__ = [
     "learning_router",
     "speech_router",
     "voice_router",
+    "conversation_router",
     "feedback_router",
     "optimize_router",
 ]

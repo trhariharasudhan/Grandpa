@@ -368,6 +368,27 @@ export interface VoiceHistoryEntry {
   action_status: string;
 }
 
+export interface ConversationMessage {
+  role: string;
+  content: string;
+  timestamp: string;
+}
+
+export interface ConversationStatus {
+  session_id: string;
+  message_count: number;
+  created_at: string;
+  last_updated_at: string;
+}
+
+export interface ConversationHistory extends ConversationStatus {
+  messages: ConversationMessage[];
+}
+
+export interface ConversationSummary extends ConversationStatus {
+  summary: string;
+}
+
 export interface WakeWordStatus {
   enabled: boolean;
   listening: boolean;
@@ -505,6 +526,24 @@ export async function fetchVoiceHistory(): Promise<VoiceHistoryEntry[]> {
 export async function clearVoiceHistory(): Promise<Record<string, unknown>> {
   const res = await fetch(`${getBase()}/v1/voice/history/clear`, { method: 'POST' });
   if (!res.ok) throw new Error(`Clear voice history failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchConversationHistory(): Promise<ConversationHistory> {
+  const res = await fetch(`${getBase()}/v1/conversation/history`);
+  if (!res.ok) throw new Error(`Conversation history failed: ${res.status}`);
+  return res.json();
+}
+
+export async function clearConversation(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getBase()}/v1/conversation/clear`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Clear conversation failed: ${res.status}`);
+  return res.json();
+}
+
+export async function summarizeConversation(): Promise<ConversationSummary> {
+  const res = await fetch(`${getBase()}/v1/conversation/summary`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Conversation summary failed: ${res.status}`);
   return res.json();
 }
 

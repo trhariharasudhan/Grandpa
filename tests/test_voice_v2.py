@@ -10,8 +10,9 @@ from fastapi.testclient import TestClient
 import grandpa.local_actions as local_actions
 import grandpa.voice.speech_output as speech_output
 from grandpa.local_action_approvals import LocalActionApprovalStore
+from grandpa.memory.conversation import MAX_CONVERSATION_MESSAGES, ConversationSession
 from grandpa.reminders import ReminderStore
-from grandpa.server.api_routes import voice_router
+from grandpa.server.api_routes import conversation_router, voice_router
 from grandpa.speech._stubs import TranscriptionResult
 from grandpa.voice import (
     SpeechInputEngine,
@@ -43,6 +44,7 @@ def voice_client(tmp_path, monkeypatch):
     app.state.voice_history_store = VoiceCommandHistoryStore(tmp_path / "voice_history.db")
     app.state.wake_word_session = WakeWordSession(tmp_path / "wake_word.json")
     app.include_router(voice_router)
+    app.include_router(conversation_router)
     return TestClient(app)
 
 
@@ -583,6 +585,75 @@ def test_voice_history_clear(voice_client):
     assert cleared.status_code == 200
     assert cleared.json()["status"] == "cleared"
     assert history.json()["history"] == []
+
+
+def test_conversation_session_creation_and_message_add():
+    session = ConversationSession()
+
+    user = session.add_user_message("hello")
+    assistant = session.add_assistant_message("hi there")
+    history = session.history()
+
+    assert history["session_id"] == session.session_id
+    assert history["message_count"] == 2
+    assert user["role"] == "user"
+    assert assistant["role"] == "assistant"
+    assert history["messages"][0]["content"] == "hello"
+
+
+def test_conversation_session_keeps_latest_20_messages():
+    session = ConversationSession()
+
+    for index in range(MAX_CONVERSATION_MESSAGES + 5):
+        session.add_user_message(f"message {index}")
+
+    history = session.history()
+
+    assert history["message_count"] == MAX_CONVERSATION_MESSAGES
+    assert history["messages"][0]["content"] == "message 5"
+    assert history["messages"][-1]["content"] == f"message {MAX_CONVERSATION_MESSAGES + 4}"
+
+
+def test_conversation_session_clear_and_summary():
+    session = ConversationSession()
+    session.add_user_message("what is my voice status")
+    session.add_assistant_message("Voice push-to-talk is ready.")
+
+    summary = session.summary()
+    cleared = session.clear()
+
+    assert "what is my voice status" in summary["summary"]
+    assert cleared["cleared"] == 2
+    assert session.history()["messages"] == []
+
+
+def test_conversation_api_endpoints(voice_client):
+    status = voice_client.get("/v1/conversation/status")
+    history = voice_client.get("/v1/conversation/history")
+    summary = voice_client.post("/v1/conversation/summary")
+    cleared = voice_client.post("/v1/conversation/clear")
+
+    assert status.status_code == 200
+    assert status.json()["message_count"] == 0
+    assert history.json()["messages"] == []
+    assert summary.json()["summary"] == "No recent conversation yet."
+    assert cleared.json()["status"] == "cleared"
+
+
+def test_voice_command_records_conversation_exchange(voice_client):
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "what is my voice status"},
+    )
+    history = voice_client.get("/v1/conversation/history")
+
+    assert response.status_code == 200
+    messages = history.json()["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "what is my voice status"
+    assert messages[1]["role"] == "assistant"
+    assert messages[1]["content"]
 
 
 def test_wake_word_session_defaults_disabled(tmp_path):
