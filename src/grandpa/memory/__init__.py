@@ -1,5 +1,6 @@
 """Memory domain helpers for Grandpa."""
 
+from grandpa.memory.context import ConversationContextBuilder
 from grandpa.memory.intelligence import (
     build_relationship_graph,
     calculate_memory_relevance,
@@ -13,6 +14,7 @@ from grandpa.memory.intelligence import (
 )
 
 __all__ = [
+    "ConversationContextBuilder",
     "build_relationship_graph",
     "calculate_memory_relevance",
     "cluster_memory_topics",

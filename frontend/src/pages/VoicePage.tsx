@@ -10,6 +10,7 @@ import {
   disableVoiceLoop,
   enableVoiceLoop,
   enableWakeWord,
+  fetchConversationContext,
   fetchConversationHistory,
   fetchVoiceHistory,
   fetchVoiceLoopStatus,
@@ -46,6 +47,8 @@ export function VoicePage() {
   const [history, setHistory] = useState<VoiceHistoryEntry[]>([]);
   const [conversation, setConversation] = useState<ConversationMessage[]>([]);
   const [conversationSummary, setConversationSummary] = useState('');
+  const [conversationContext, setConversationContext] = useState('');
+  const [contextMessageCount, setContextMessageCount] = useState(0);
   const [wakeWord, setWakeWord] = useState<WakeWordStatus | null>(null);
   const [wakeTestText, setWakeTestText] = useState('hey grandpa');
   const [wakeTestResult, setWakeTestResult] = useState<WakeWordTestResponse | null>(null);
@@ -158,6 +161,8 @@ export function VoicePage() {
       await clearConversation();
       setConversation([]);
       setConversationSummary('');
+      setConversationContext('');
+      setContextMessageCount(0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to clear conversation.');
     } finally {
@@ -173,6 +178,20 @@ export function VoicePage() {
       setConversationSummary(result.summary);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to summarize conversation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadConversationContext = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await fetchConversationContext();
+      setConversationContext(result.context_text || 'No recent conversation context yet.');
+      setContextMessageCount(result.message_count);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to load conversation context.');
     } finally {
       setBusy(false);
     }
@@ -601,6 +620,7 @@ export function VoicePage() {
                     <div>Assistant: {lastResult.assistant_text || lastResult.message || 'none'}</div>
                     <div>Command: {lastResult.command_text || lastResult.transcript || 'none'}</div>
                     <div>Action: {lastResult.action?.type || 'none'} / {lastResult.action?.status || lastResult.action_status || 'unknown'}</div>
+                    <div>Context used: {lastResult.context_used ? 'yes' : 'no'} ({lastResult.context_message_count || 0} messages)</div>
                     {lastResult.action?.detail && <div>Detail: {lastResult.action.detail}</div>}
                     <div>Latency: {Math.round(lastResult.latency_ms || 0)} ms</div>
                   </div>
@@ -621,6 +641,9 @@ export function VoicePage() {
                   <button type="button" onClick={() => void loadConversationSummary()} disabled={busy} className="rounded-xl px-3 py-1.5 text-xs disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
                     Summary
                   </button>
+                  <button type="button" onClick={() => void loadConversationContext()} disabled={busy} className="rounded-xl px-3 py-1.5 text-xs disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                    View Context
+                  </button>
                   <button type="button" onClick={() => void clearConversationHistory()} disabled={busy || conversation.length === 0} className="rounded-xl px-3 py-1.5 text-xs disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
                     Clear conversation
                   </button>
@@ -629,6 +652,12 @@ export function VoicePage() {
               {conversationSummary && (
                 <div className="mb-3 rounded-xl px-3 py-2 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
                   {conversationSummary}
+                </div>
+              )}
+              {conversationContext && (
+                <div className="mb-3 whitespace-pre-wrap rounded-xl px-3 py-2 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                  <div className="mb-1 font-medium" style={{ color: 'var(--color-text)' }}>Context messages: {contextMessageCount}</div>
+                  {conversationContext}
                 </div>
               )}
               <div className="flex max-h-[260px] flex-col gap-2 overflow-y-auto">

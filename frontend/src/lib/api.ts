@@ -357,6 +357,8 @@ export interface VoiceListenResponse {
   planner?: Record<string, unknown> | null;
   knowledge_context?: Record<string, unknown> | null;
   memory_context?: Record<string, unknown> | null;
+  context_used?: boolean;
+  context_message_count?: number;
 }
 
 export interface VoiceHistoryEntry {
@@ -387,6 +389,12 @@ export interface ConversationHistory extends ConversationStatus {
 
 export interface ConversationSummary extends ConversationStatus {
   summary: string;
+}
+
+export interface ConversationContext {
+  context_text: string;
+  messages: ConversationMessage[];
+  message_count: number;
 }
 
 export interface WakeWordStatus {
@@ -544,6 +552,16 @@ export async function clearConversation(): Promise<Record<string, unknown>> {
 export async function summarizeConversation(): Promise<ConversationSummary> {
   const res = await fetch(`${getBase()}/v1/conversation/summary`, { method: 'POST' });
   if (!res.ok) throw new Error(`Conversation summary failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchConversationContext(maxMessages = 6, maxChars = 2000): Promise<ConversationContext> {
+  const params = new URLSearchParams({
+    max_messages: String(maxMessages),
+    max_chars: String(maxChars),
+  });
+  const res = await fetch(`${getBase()}/v1/conversation/context?${params.toString()}`);
+  if (!res.ok) throw new Error(`Conversation context failed: ${res.status}`);
   return res.json();
 }
 
