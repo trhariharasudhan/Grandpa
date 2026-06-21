@@ -6,12 +6,15 @@ import {
   commandVoice,
   confirmVoiceAction,
   clearConversation,
+  disableConversationMode,
   disableWakeWord,
   disableVoiceLoop,
+  enableConversationMode,
   enableVoiceLoop,
   enableWakeWord,
   fetchConversationContext,
   fetchConversationHistory,
+  fetchConversationModeStatus,
   fetchVoiceHistory,
   fetchVoiceLoopStatus,
   fetchVoiceSttStatus,
@@ -21,13 +24,16 @@ import {
   simulateVoiceLoopCommand,
   simulateVoiceLoopWake,
   speakVoice,
+  startConversationMode,
   startVoiceLoop,
   startVoiceSession,
+  stopConversationMode,
   stopVoiceLoop,
   stopVoiceSession,
   summarizeConversation,
   testWakeWord,
   type ConversationMessage,
+  type ConversationModeStatus,
   type VoiceLoopStatus,
   type WakeWordStatus,
   type WakeWordTestResponse,
@@ -53,6 +59,7 @@ export function VoicePage() {
   const [wakeTestText, setWakeTestText] = useState('hey grandpa');
   const [wakeTestResult, setWakeTestResult] = useState<WakeWordTestResponse | null>(null);
   const [voiceLoop, setVoiceLoop] = useState<VoiceLoopStatus | null>(null);
+  const [conversationMode, setConversationMode] = useState<ConversationModeStatus | null>(null);
   const [loopWakeText, setLoopWakeText] = useState('hey grandpa');
   const [loopCommandText, setLoopCommandText] = useState('what is my voice status');
   const [recording, setRecording] = useState(false);
@@ -77,6 +84,7 @@ export function VoicePage() {
       setConversation((await fetchConversationHistory()).messages);
       setWakeWord(await fetchWakeWordStatus());
       setVoiceLoop(await fetchVoiceLoopStatus());
+      setConversationMode(await fetchConversationModeStatus());
       setSttStatus(await fetchVoiceSttStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load voice status.');
@@ -245,6 +253,32 @@ export function VoicePage() {
       setVoiceLoop(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Voice loop state change failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setConversationModeEnabled = async (enabled: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = enabled ? await enableConversationMode() : await disableConversationMode();
+      setConversationMode(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Conversation mode update failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setConversationModeActive = async (active: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = active ? await startConversationMode() : await stopConversationMode();
+      setConversationMode(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Conversation mode state change failed.');
     } finally {
       setBusy(false);
     }
@@ -587,6 +621,34 @@ export function VoicePage() {
                 <div>Last command: {voiceLoop?.last_command_transcript || 'none'}</div>
                 <div>Last error: {voiceLoop?.last_error || 'none'}</div>
                 <div>No microphone, background thread, or always-on capture is started.</div>
+              </div>
+            </Panel>
+
+            <Panel title="Conversation Mode">
+              <div className="grid gap-3 md:grid-cols-4">
+                <StatusBlock label="Enabled" value={conversationMode?.enabled ? 'enabled' : 'disabled'} />
+                <StatusBlock label="Active" value={conversationMode?.active ? 'active' : 'stopped'} />
+                <StatusBlock label="Turns" value={String(conversationMode?.turn_count ?? 0)} />
+                <StatusBlock label="Timeout" value={`${conversationMode?.timeout_seconds ?? 60}s`} />
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-4">
+                <button type="button" onClick={() => void setConversationModeEnabled(true)} disabled={busy || conversationMode?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                  Enable
+                </button>
+                <button type="button" onClick={() => void setConversationModeEnabled(false)} disabled={busy || !conversationMode?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Disable
+                </button>
+                <button type="button" onClick={() => void setConversationModeActive(true)} disabled={busy || conversationMode?.active} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Start
+                </button>
+                <button type="button" onClick={() => void setConversationModeActive(false)} disabled={busy || !conversationMode?.active} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Stop
+                </button>
+              </div>
+              <div className="mt-3 rounded-xl p-3 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                <div>Last activity: {conversationMode?.last_activity_at ? new Date(conversationMode.last_activity_at).toLocaleString() : 'none'}</div>
+                <div>Last transcript: {conversationMode?.last_transcript || 'none'}</div>
+                <div>No microphone, background thread, or auto-start is used.</div>
               </div>
             </Panel>
 

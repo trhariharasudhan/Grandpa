@@ -428,6 +428,18 @@ export interface VoiceLoopStatus {
   error?: string;
 }
 
+export interface ConversationModeStatus {
+  enabled: boolean;
+  active: boolean;
+  started_at: string | null;
+  last_activity_at: string | null;
+  timeout_seconds: number;
+  last_transcript: string | null;
+  turn_count: number;
+  microphone_required: boolean;
+  background_thread: boolean;
+}
+
 export async function fetchVoiceStatus(): Promise<VoiceStatus> {
   const res = await fetch(`${getBase()}/v1/voice/status`);
   if (!res.ok) throw new Error(`Voice status failed: ${res.status}`);
@@ -640,6 +652,36 @@ export async function simulateVoiceLoopCommand(transcript: string): Promise<Voic
     body: JSON.stringify({ transcript }),
   });
   if (!res.ok) throw new Error(await readApiError(res, `Voice loop command failed: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchConversationModeStatus(): Promise<ConversationModeStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/conversation-mode/status`);
+  if (!res.ok) throw new Error(`Conversation mode status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function enableConversationMode(): Promise<ConversationModeStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/conversation-mode/enable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Conversation mode enable failed: ${res.status}`);
+  return res.json();
+}
+
+export async function disableConversationMode(): Promise<ConversationModeStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/conversation-mode/disable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Conversation mode disable failed: ${res.status}`);
+  return res.json();
+}
+
+export async function startConversationMode(): Promise<ConversationModeStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/conversation-mode/start`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Conversation mode start failed: ${res.status}`);
+  return res.json();
+}
+
+export async function stopConversationMode(): Promise<ConversationModeStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/conversation-mode/stop`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Conversation mode stop failed: ${res.status}`);
   return res.json();
 }
 
