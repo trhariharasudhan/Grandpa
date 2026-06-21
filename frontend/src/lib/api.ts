@@ -317,11 +317,22 @@ export interface VoiceStatus {
   high_risk_voice_block: boolean;
 }
 
+export interface VoiceSttStatus {
+  engine: string;
+  model: string;
+  ready: boolean;
+  device: string;
+  compute_type: string;
+  supported_audio_formats?: string[];
+}
+
 export interface VoiceListenResponse {
   ok: boolean;
   status: string;
   message: string;
   transcript?: string;
+  language?: string | null;
+  duration_seconds?: number;
   assistant_text?: string;
   action_status?: string;
   action?: {
@@ -437,6 +448,12 @@ export async function listenFromAudio(audio: Blob | File): Promise<VoiceListenRe
     body: form,
   });
   if (!res.ok) throw new Error(await readApiError(res, `Voice audio listen failed: ${res.status}`));
+  return res.json();
+}
+
+export async function fetchVoiceSttStatus(): Promise<VoiceSttStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/stt/status`);
+  if (!res.ok) throw new Error(`Voice STT status failed: ${res.status}`);
   return res.json();
 }
 

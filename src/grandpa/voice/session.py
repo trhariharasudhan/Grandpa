@@ -106,12 +106,14 @@ class VoiceRuntime:
         *,
         text: str | None = None,
         audio_base64: str | None = None,
+        audio_format: str = "wav",
         speak_response: bool = False,
         require_wake_word: bool = False,
     ) -> dict[str, Any]:
         return self.command(
             text=text,
             audio_base64=audio_base64,
+            audio_format=audio_format,
             speak_response=speak_response,
             require_wake_word=require_wake_word,
         )
@@ -121,11 +123,16 @@ class VoiceRuntime:
         *,
         text: str | None = None,
         audio_base64: str | None = None,
+        audio_format: str = "wav",
     ) -> dict[str, Any]:
         started = time.perf_counter()
         audio_bytes = _decode_audio(audio_base64)
         try:
-            input_result = self.speech_input.listen(text=text, audio_bytes=audio_bytes)
+            input_result = self.speech_input.listen(
+                text=text,
+                audio_bytes=audio_bytes,
+                audio_format=audio_format,
+            )
         except VoiceError as exc:
             self._last_latency_ms = _elapsed_ms(started)
             return _voice_error_response(exc, self.conversation, latency_ms=self._last_latency_ms)
@@ -147,6 +154,8 @@ class VoiceRuntime:
             "status": input_result.status,
             "message": "Voice transcript captured.",
             "transcript": transcript,
+            "language": input_result.language,
+            "duration_seconds": input_result.duration_seconds,
             "confidence": input_result.confidence,
             "speech_input": input_result.to_dict(),
             "session": self.conversation.to_dict(),
@@ -158,6 +167,7 @@ class VoiceRuntime:
         *,
         text: str | None = None,
         audio_base64: str | None = None,
+        audio_format: str = "wav",
         speak_response: bool = False,
         require_wake_word: bool = False,
     ) -> dict[str, Any]:
@@ -166,7 +176,11 @@ class VoiceRuntime:
         self.conversation.set_state("listening")
         audio_bytes = _decode_audio(audio_base64)
         try:
-            input_result = self.speech_input.listen(text=text, audio_bytes=audio_bytes)
+            input_result = self.speech_input.listen(
+                text=text,
+                audio_bytes=audio_bytes,
+                audio_format=audio_format,
+            )
         except VoiceError as exc:
             self.conversation.set_state("idle")
             self._last_latency_ms = _elapsed_ms(started)
@@ -242,6 +256,8 @@ class VoiceRuntime:
             "action_status": response.get("status", "handled"),
             "transcript": transcript,
             "command_text": command_text,
+            "language": input_result.language,
+            "duration_seconds": input_result.duration_seconds,
             "speech_input": input_result.to_dict(),
             "wake_word": wake_match.to_dict(),
             "planner": response.get("planner"),

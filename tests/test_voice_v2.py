@@ -12,10 +12,12 @@ import grandpa.voice.speech_output as speech_output
 from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.reminders import ReminderStore
 from grandpa.server.api_routes import voice_router
+from grandpa.speech._stubs import TranscriptionResult
 from grandpa.voice import (
     SpeechInputEngine,
     SpeechInputResult,
     SpeechOutputEngine,
+    VoiceDependencyError,
     VoiceRecognitionError,
     VoiceRuntime,
     WakeWordConfig,
@@ -123,8 +125,13 @@ def test_voice_listen_api_audio_missing_dependency_is_friendly(monkeypatch, voic
 
 
 def test_voice_listen_api_invalid_audio_is_friendly(monkeypatch, voice_client):
+    class InvalidAudioBackend:
+        def transcribe(self, *_args, **_kwargs):
+            raise RuntimeError("invalid audio data")
+
     monkeypatch.setattr("grandpa.voice.session._RUNTIME", None)
     monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
+    monkeypatch.setattr(SpeechInputEngine, "_create_backend", lambda _self: InvalidAudioBackend())
 
     response = voice_client.post(
         "/v1/voice/listen",
@@ -133,6 +140,66 @@ def test_voice_listen_api_invalid_audio_is_friendly(monkeypatch, voice_client):
 
     assert response.status_code == 422
     assert "I could not understand the audio." in response.json()["detail"]
+
+
+def test_voice_stt_status_endpoint_reports_model(monkeypatch, voice_client):
+    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
+
+    response = voice_client.get("/v1/voice/stt/status")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["engine"] == "faster_whisper"
+    assert body["model"]
+    assert body["ready"] is True
+    assert body["device"]
+    assert body["compute_type"]
+
+
+def test_speech_input_successful_local_whisper_transcription(monkeypatch):
+    class FakeBackend:
+        def transcribe(self, audio: bytes, *, format: str = "wav", language: str | None = None):
+            assert audio == b"audio"
+            assert format == "webm"
+            assert language is None
+            return TranscriptionResult(
+                text="hello grandpa",
+                language="en",
+                confidence=0.91,
+                duration_seconds=1.25,
+            )
+
+    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
+    monkeypatch.setattr(SpeechInputEngine, "_create_backend", lambda _self: FakeBackend())
+
+    result = SpeechInputEngine().listen(audio_bytes=b"audio", audio_format="webm")
+
+    assert result.status == "completed"
+    assert result.transcript == "hello grandpa"
+    assert result.language == "en"
+    assert result.duration_seconds == 1.25
+    assert result.engine == "faster_whisper"
+
+
+def test_speech_input_empty_audio_is_friendly():
+    with pytest.raises(VoiceRecognitionError) as excinfo:
+        SpeechInputEngine().listen(audio_bytes=b"", audio_format="wav")
+
+    assert "Empty audio was received." in str(excinfo.value.detail)
+
+
+def test_speech_input_missing_model_is_friendly(monkeypatch):
+    class MissingModelBackend:
+        def transcribe(self, *_args, **_kwargs):
+            raise RuntimeError("model not found")
+
+    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
+    monkeypatch.setattr(SpeechInputEngine, "_create_backend", lambda _self: MissingModelBackend())
+
+    with pytest.raises(VoiceDependencyError) as excinfo:
+        SpeechInputEngine().listen(audio_bytes=b"audio", audio_format="wav")
+
+    assert "Local Whisper model is missing" in str(excinfo.value)
 
 
 def test_voice_runtime_reports_missing_microphone():

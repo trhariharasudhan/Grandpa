@@ -11,6 +11,7 @@ import {
   enableWakeWord,
   fetchVoiceHistory,
   fetchVoiceLoopStatus,
+  fetchVoiceSttStatus,
   fetchVoiceStatus,
   fetchWakeWordStatus,
   listenFromAudio,
@@ -27,6 +28,7 @@ import {
   type WakeWordTestResponse,
   type VoiceHistoryEntry,
   type VoiceListenResponse,
+  type VoiceSttStatus,
   type VoiceStatus,
   voiceCommand,
 } from '../lib/api';
@@ -47,6 +49,9 @@ export function VoicePage() {
   const [recording, setRecording] = useState(false);
   const [pttTranscript, setPttTranscript] = useState('');
   const [pttMessage, setPttMessage] = useState('');
+  const [pttLanguage, setPttLanguage] = useState<string | null>(null);
+  const [pttDuration, setPttDuration] = useState<number | null>(null);
+  const [sttStatus, setSttStatus] = useState<VoiceSttStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -62,6 +67,7 @@ export function VoicePage() {
       setHistory(await fetchVoiceHistory());
       setWakeWord(await fetchWakeWordStatus());
       setVoiceLoop(await fetchVoiceLoopStatus());
+      setSttStatus(await fetchVoiceSttStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load voice status.');
     } finally {
@@ -273,6 +279,8 @@ export function VoicePage() {
       const result = await listenFromAudio(blob);
       setPttTranscript(result.transcript || '');
       setTranscript(result.transcript || transcript);
+      setPttLanguage(result.language || null);
+      setPttDuration(typeof result.duration_seconds === 'number' ? result.duration_seconds : null);
       setPttMessage(result.message || 'Transcript captured.');
     } catch (err) {
       setPttMessage(err instanceof Error ? err.message : 'Could not transcribe recording.');
@@ -409,6 +417,11 @@ export function VoicePage() {
               </div>
               <div className="rounded-xl p-3 text-sm" style={{ border: '1px solid var(--color-border)' }}>
                 <div className="mb-2 font-medium" style={{ color: 'var(--color-text)' }}>Push to Talk</div>
+                <div className="mb-2 grid gap-2 text-xs sm:grid-cols-3">
+                  <StatusBlock label="STT Engine" value={sttStatus?.engine || String(status?.speech_input?.engine || 'checking')} />
+                  <StatusBlock label="Model" value={sttStatus?.model || String(status?.speech_input?.model || 'base')} />
+                  <StatusBlock label="Ready" value={sttStatus?.ready ? 'ready' : 'not ready'} />
+                </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   <button type="button" onClick={() => void startRecording()} disabled={busy || recording} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
                     Start Recording
@@ -428,6 +441,10 @@ export function VoicePage() {
                 <button type="button" onClick={() => void sendPushToTalkCommand()} disabled={busy || !pttTranscript.trim()} className="mt-2 inline-flex w-full items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent-amber)', color: 'var(--color-bg)' }}>
                   Send as Command
                 </button>
+                <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                  <div style={{ color: 'var(--color-text-secondary)' }}>Language: {pttLanguage || 'unknown'}</div>
+                  <div style={{ color: 'var(--color-text-secondary)' }}>Duration: {pttDuration !== null ? `${pttDuration.toFixed(1)}s` : 'unknown'}</div>
+                </div>
                 {pttMessage && (
                   <p className="mt-2 text-xs" style={{ color: 'var(--color-text-secondary)' }}>{pttMessage}</p>
                 )}
