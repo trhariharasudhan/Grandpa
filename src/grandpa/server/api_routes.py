@@ -1574,6 +1574,28 @@ async def voice_stt_status():
     return get_voice_runtime().speech_input.stt_status()
 
 
+@voice_router.get("/doctor")
+async def voice_doctor(request: Request):
+    """Run safe voice-stack health checks without microphone or desktop automation."""
+    from grandpa.voice import get_voice_runtime
+    from grandpa.voice.doctor import run_voice_doctor
+
+    runtime = get_voice_runtime()
+    return run_voice_doctor(
+        voice_status_provider=runtime.status,
+        stt_status_provider=runtime.speech_input.stt_status,
+        wake_word_status_provider=lambda: _get_wake_word_session(request).status(),
+        loop_status_provider=lambda: _get_voice_loop_session(request).status(),
+        conversation_status_provider=lambda: _get_conversation_session(request).status(),
+        voice_history_provider=lambda: _get_voice_history_store(request).list(),
+        command_provider=lambda: _route_voice_command_text(
+            "what is my voice status",
+            request,
+            confirmed=False,
+        ),
+    )
+
+
 @voice_router.get("/history")
 async def voice_history(request: Request):
     """Return recent voice command history."""

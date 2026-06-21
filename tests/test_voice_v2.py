@@ -159,6 +159,48 @@ def test_voice_stt_status_endpoint_reports_model(monkeypatch, voice_client):
     assert body["compute_type"]
 
 
+def test_voice_doctor_endpoint_returns_checks(voice_client):
+    response = voice_client.get("/v1/voice/doctor")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    assert body["checks"]
+    assert {check["status"] for check in body["checks"]}.issubset({"pass", "warn", "fail"})
+    assert "server import" in {check["name"] for check in body["checks"]}
+    assert "voice command logic" in {check["name"] for check in body["checks"]}
+
+
+def test_voice_doctor_missing_speech_dependency_warns(monkeypatch):
+    from grandpa.voice.doctor import run_voice_doctor
+
+    monkeypatch.setattr(
+        "grandpa.voice.doctor.importlib.util.find_spec",
+        lambda _name: None,
+    )
+
+    body = run_voice_doctor(
+        voice_status_provider=lambda: {"mode": "browser_transcript"},
+        stt_status_provider=lambda: {
+            "engine": "push_to_talk_transcript",
+            "model": "base",
+            "ready": False,
+        },
+        wake_word_status_provider=lambda: {"wake_phrase": "hey grandpa"},
+        loop_status_provider=lambda: {"mode": "idle"},
+        conversation_status_provider=lambda: {"message_count": 0},
+        voice_history_provider=lambda: [],
+        command_provider=lambda: {"ok": True, "status": "handled"},
+    )
+
+    dependency_check = next(check for check in body["checks"] if check["name"] == "speech dependencies")
+    model_check = next(check for check in body["checks"] if check["name"] == "local model readiness")
+
+    assert dependency_check["status"] == "warn"
+    assert model_check["status"] == "warn"
+    assert body["ok"] is True
+
+
 def test_speech_input_successful_local_whisper_transcription(monkeypatch):
     class FakeBackend:
         def transcribe(self, audio: bytes, *, format: str = "wav", language: str | None = None):

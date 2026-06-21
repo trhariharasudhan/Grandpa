@@ -428,6 +428,17 @@ export interface VoiceLoopStatus {
   error?: string;
 }
 
+export interface VoiceDoctorCheck {
+  name: string;
+  status: 'pass' | 'warn' | 'fail';
+  message: string;
+}
+
+export interface VoiceDoctorResponse {
+  ok: boolean;
+  checks: VoiceDoctorCheck[];
+}
+
 export async function fetchVoiceStatus(): Promise<VoiceStatus> {
   const res = await fetch(`${getBase()}/v1/voice/status`);
   if (!res.ok) throw new Error(`Voice status failed: ${res.status}`);
@@ -483,6 +494,12 @@ export async function listenFromAudio(audio: Blob | File): Promise<VoiceListenRe
 export async function fetchVoiceSttStatus(): Promise<VoiceSttStatus> {
   const res = await fetch(`${getBase()}/v1/voice/stt/status`);
   if (!res.ok) throw new Error(`Voice STT status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchVoiceDoctor(): Promise<VoiceDoctorResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/doctor`);
+  if (!res.ok) throw new Error(`Voice doctor failed: ${res.status}`);
   return res.json();
 }
 

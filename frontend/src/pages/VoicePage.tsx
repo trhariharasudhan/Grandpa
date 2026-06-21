@@ -12,6 +12,7 @@ import {
   enableWakeWord,
   fetchConversationContext,
   fetchConversationHistory,
+  fetchVoiceDoctor,
   fetchVoiceHistory,
   fetchVoiceLoopStatus,
   fetchVoiceSttStatus,
@@ -32,6 +33,7 @@ import {
   type WakeWordStatus,
   type WakeWordTestResponse,
   type VoiceHistoryEntry,
+  type VoiceDoctorCheck,
   type VoiceListenResponse,
   type VoiceSttStatus,
   type VoiceStatus,
@@ -61,6 +63,7 @@ export function VoicePage() {
   const [pttLanguage, setPttLanguage] = useState<string | null>(null);
   const [pttDuration, setPttDuration] = useState<number | null>(null);
   const [sttStatus, setSttStatus] = useState<VoiceSttStatus | null>(null);
+  const [doctorChecks, setDoctorChecks] = useState<VoiceDoctorCheck[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -396,6 +399,19 @@ export function VoicePage() {
     }
   };
 
+  const runVoiceDoctor = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await fetchVoiceDoctor();
+      setDoctorChecks(result.checks);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Voice doctor failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="h-full overflow-y-auto p-6" style={{ background: 'var(--color-bg)' }}>
       <div className="mx-auto flex max-w-7xl flex-col gap-5">
@@ -591,11 +607,30 @@ export function VoicePage() {
             </Panel>
 
             <Panel title="Runtime State">
+              <div className="mb-4 flex justify-end">
+                <button type="button" onClick={() => void runVoiceDoctor()} disabled={busy} className="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  <RefreshCw size={15} />
+                  Run Voice Doctor
+                </button>
+              </div>
               <div className="grid gap-3 md:grid-cols-3">
                 <StatusBlock label="Wake Mode" value={String(status?.wake_word?.mode || 'checking')} />
                 <StatusBlock label="Local Whisper" value={String(status?.speech_input?.local_whisper_available ? 'available' : 'not installed')} />
                 <StatusBlock label="High-Risk Voice Block" value={status?.high_risk_voice_block ? 'enabled' : 'unknown'} />
               </div>
+              {doctorChecks.length > 0 && (
+                <div className="mt-4 flex flex-col gap-2">
+                  {doctorChecks.map((check) => (
+                    <div key={check.name} className="rounded-xl px-3 py-2 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium" style={{ color: 'var(--color-text)' }}>{check.name}</span>
+                        <Badge>{check.status.toUpperCase()}</Badge>
+                      </div>
+                      <div className="mt-1" style={{ color: 'var(--color-text-secondary)' }}>{check.message}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
               <p className="mt-4 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                 {String(status?.wake_word?.truthful_note || 'Wake readiness is detected locally.')}
               </p>

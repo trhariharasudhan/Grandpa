@@ -868,6 +868,11 @@ _STATUS_ICONS = {
     "warn": "[yellow]![/yellow]",
     "fail": "[red]\u2717[/red]",
 }
+_VOICE_STATUS_LABELS = {
+    "pass": "[green]PASS[/green]",
+    "warn": "[yellow]WARN[/yellow]",
+    "fail": "[red]FAIL[/red]",
+}
 
 
 def _run_all_checks() -> List[CheckResult]:
@@ -979,8 +984,45 @@ def _results_to_dicts(checks: List[CheckResult]) -> List[Dict[str, Any]]:
 
 @click.command()
 @click.option("--json", "as_json", is_flag=True, help="Output results as JSON.")
-def doctor(as_json: bool) -> None:
+@click.option("--voice", is_flag=True, help="Run the voice-stack healthcheck only.")
+def doctor(as_json: bool, voice: bool) -> None:
     """Run diagnostic checks on your Grandpa installation."""
+    if voice:
+        from grandpa.voice.doctor import run_voice_doctor
+
+        payload = run_voice_doctor()
+        if as_json:
+            click.echo(json.dumps(payload, indent=2))
+            return
+
+        console = Console()
+        console.print()
+        console.print("[bold]Grandpa Voice Doctor[/bold]")
+        console.print("[dim]Legend: PASS / WARN / FAIL[/dim]")
+        console.print()
+
+        table = Table(show_header=True, header_style="bold", expand=True)
+        table.add_column("Status", width=6, no_wrap=True)
+        table.add_column("Check")
+        table.add_column("Result")
+        for check in payload["checks"]:
+            table.add_row(
+                _VOICE_STATUS_LABELS.get(check["status"], check["status"].upper()),
+                check["name"],
+                check["message"],
+            )
+        console.print(table)
+        fail_count = sum(1 for check in payload["checks"] if check["status"] == "fail")
+        warn_count = sum(1 for check in payload["checks"] if check["status"] == "warn")
+        pass_count = sum(1 for check in payload["checks"] if check["status"] == "pass")
+        console.print()
+        console.print(
+            f"[bold]Voice Summary[/bold]: {pass_count} PASS, {warn_count} WARN, {fail_count} FAIL"
+        )
+        if fail_count:
+            raise click.exceptions.Exit(code=1)
+        return
+
     sections = _build_doctor_dashboard()
     checks = _flatten_sections(sections)
 

@@ -129,6 +129,29 @@ class TestCLI:
 
         assert {"doctor", "chat", "reminders"}.issubset(commands)
 
+    def test_voice_doctor_command_outputs_status_labels(self, monkeypatch) -> None:
+        from grandpa.voice import doctor as voice_doctor_module
+
+        monkeypatch.setattr(
+            voice_doctor_module,
+            "run_voice_doctor",
+            lambda: {
+                "ok": True,
+                "checks": [
+                    {"name": "server import", "status": "pass", "message": "ok"},
+                    {"name": "speech dependencies", "status": "warn", "message": "optional"},
+                ],
+            },
+        )
+
+        result = CliRunner().invoke(cli, ["doctor", "--voice"])
+
+        assert result.exit_code == 0
+        assert "Grandpa Voice Doctor" in result.output
+        assert "PASS" in result.output
+        assert "WARN" in result.output
+        assert "FAIL" in result.output
+
     def test_reminders_help_does_not_import_deep_research_modules(self) -> None:
         with mock.patch("importlib.import_module", wraps=importlib.import_module) as spy:
             result = CliRunner().invoke(cli, ["reminders", "--help"])
