@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import inspect
 import json
 import logging
@@ -1509,16 +1510,19 @@ async def voice_speak(req: VoiceSpeakRequest):
 
 
 @voice_router.post("/listen")
-async def voice_listen(req: VoiceListenRequest):
+async def voice_listen(request: Request):
     """Capture a voice transcript/audio payload without running an action."""
     from grandpa.voice import get_voice_runtime
     from grandpa.voice.errors import MICROPHONE_UNAVAILABLE_MESSAGE
 
-    if not (req.text and req.text.strip()) and not req.audio_base64:
+    payload = await _read_voice_listen_payload(request)
+    text = payload.get("text")
+    audio_base64 = payload.get("audio_base64")
+    if not (text and text.strip()) and not audio_base64:
         raise HTTPException(status_code=400, detail=MICROPHONE_UNAVAILABLE_MESSAGE)
     result = get_voice_runtime().capture(
-        text=req.text,
-        audio_base64=req.audio_base64,
+        text=text,
+        audio_base64=audio_base64,
     )
     _raise_for_expected_voice_error(result)
     return result
@@ -1941,6 +1945,49 @@ def _get_voice_loop_session(request: Request):
         session = VoiceLoopSession(_get_wake_word_session(request))
         request.app.state.voice_loop_session = session
     return session
+
+
+async def _read_voice_listen_payload(request: Request) -> dict[str, str | None]:
+    content_type = request.headers.get("content-type", "").lower()
+    if content_type.startswith("multipart/form-data"):
+        try:
+            form = await request.form()
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Audio upload support requires multipart form parsing. Install the server dependencies and retry.",
+            ) from exc
+
+        text_value = form.get("text") or form.get("transcript")
+        audio_value = form.get("audio") or form.get("file")
+        audio_base64 = form.get("audio_base64")
+        if hasattr(audio_value, "read"):
+            audio_bytes = await audio_value.read()
+            audio_base64 = base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None
+        return {
+            "text": str(text_value).strip() if text_value is not None else None,
+            "audio_base64": str(audio_base64) if audio_base64 else None,
+        }
+
+    if content_type.startswith("application/octet-stream") or content_type.startswith("audio/"):
+        audio_bytes = await request.body()
+        return {
+            "text": None,
+            "audio_base64": base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None,
+        }
+
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    text_value = data.get("text") or data.get("transcript")
+    audio_base64 = data.get("audio_base64")
+    return {
+        "text": str(text_value).strip() if text_value is not None else None,
+        "audio_base64": str(audio_base64) if audio_base64 else None,
+    }
 
 
 def _record_voice_history(request: Request, result: dict[str, Any]) -> None:

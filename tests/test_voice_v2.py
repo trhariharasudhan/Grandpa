@@ -98,6 +98,43 @@ def test_voice_runtime_capture_browser_transcript():
     assert result["confidence"] == 0.99
 
 
+def test_voice_listen_api_accepts_browser_transcript(voice_client):
+    response = voice_client.post("/v1/voice/listen", json={"text": "open notepad"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "completed"
+    assert body["transcript"] == "open notepad"
+    assert body["speech_input"]["engine"] == "browser_or_mobile_transcript"
+
+
+def test_voice_listen_api_audio_missing_dependency_is_friendly(monkeypatch, voice_client):
+    monkeypatch.setattr("grandpa.voice.session._RUNTIME", None)
+    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: None)
+
+    response = voice_client.post(
+        "/v1/voice/listen",
+        json={"audio_base64": base64.b64encode(b"audio").decode("ascii")},
+    )
+
+    assert response.status_code == 503
+    assert "Voice mode is not fully installed." in response.json()["detail"]
+    assert "uv sync --extra speech" in response.json()["detail"]
+
+
+def test_voice_listen_api_invalid_audio_is_friendly(monkeypatch, voice_client):
+    monkeypatch.setattr("grandpa.voice.session._RUNTIME", None)
+    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
+
+    response = voice_client.post(
+        "/v1/voice/listen",
+        json={"audio_base64": base64.b64encode(b"not real audio").decode("ascii")},
+    )
+
+    assert response.status_code == 422
+    assert "I could not understand the audio." in response.json()["detail"]
+
+
 def test_voice_runtime_reports_missing_microphone():
     runtime = VoiceRuntime()
 

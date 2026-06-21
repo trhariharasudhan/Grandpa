@@ -429,6 +429,17 @@ export async function listenVoice(payload: {
   return res.json();
 }
 
+export async function listenFromAudio(audio: Blob | File): Promise<VoiceListenResponse> {
+  const form = new FormData();
+  form.append('audio', audio, audio instanceof File ? audio.name : 'push-to-talk.webm');
+  const res = await fetch(`${getBase()}/v1/voice/listen`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) throw new Error(await readApiError(res, `Voice audio listen failed: ${res.status}`));
+  return res.json();
+}
+
 export async function commandVoice(payload: {
   text?: string;
   transcript?: string;
@@ -448,6 +459,10 @@ export async function commandVoice(payload: {
     throw new Error(detail);
   }
   return res.json();
+}
+
+export async function voiceCommand(transcript: string): Promise<VoiceListenResponse> {
+  return commandVoice({ transcript });
 }
 
 export async function confirmVoiceAction(confirmationToken: string): Promise<VoiceListenResponse> {
