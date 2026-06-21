@@ -5,11 +5,17 @@ import {
   clearVoiceHistory,
   commandVoice,
   confirmVoiceAction,
+  disableWakeWord,
+  enableWakeWord,
   fetchVoiceHistory,
   fetchVoiceStatus,
+  fetchWakeWordStatus,
   speakVoice,
   startVoiceSession,
   stopVoiceSession,
+  testWakeWord,
+  type WakeWordStatus,
+  type WakeWordTestResponse,
   type VoiceHistoryEntry,
   type VoiceListenResponse,
   type VoiceStatus,
@@ -22,6 +28,9 @@ export function VoicePage() {
   const [speakResponse, setSpeakResponse] = useState(false);
   const [lastResult, setLastResult] = useState<VoiceListenResponse | null>(null);
   const [history, setHistory] = useState<VoiceHistoryEntry[]>([]);
+  const [wakeWord, setWakeWord] = useState<WakeWordStatus | null>(null);
+  const [wakeTestText, setWakeTestText] = useState('hey grandpa');
+  const [wakeTestResult, setWakeTestResult] = useState<WakeWordTestResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -32,6 +41,7 @@ export function VoicePage() {
     try {
       setStatus(await fetchVoiceStatus());
       setHistory(await fetchVoiceHistory());
+      setWakeWord(await fetchWakeWordStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load voice status.');
     } finally {
@@ -99,6 +109,33 @@ export function VoicePage() {
       setHistory([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to clear voice history.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setWakeEnabled = async (enabled: boolean) => {
+    setBusy(true);
+    setError('');
+    try {
+      const next = enabled ? await enableWakeWord() : await disableWakeWord();
+      setWakeWord(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Wake word update failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runWakeTest = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await testWakeWord(wakeTestText);
+      setWakeTestResult(result);
+      setWakeWord(await fetchWakeWordStatus());
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Wake word test failed.');
     } finally {
       setBusy(false);
     }
@@ -219,6 +256,38 @@ export function VoicePage() {
           </Panel>
 
           <div className="flex flex-col gap-5">
+            <Panel title="Wake Word">
+              <div className="grid gap-3 md:grid-cols-2">
+                <StatusBlock label="Current Phrase" value={wakeWord?.wake_phrase || 'hey grandpa'} />
+                <StatusBlock label="Enabled" value={wakeWord?.enabled ? 'enabled' : 'disabled'} />
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button type="button" onClick={() => void setWakeEnabled(true)} disabled={busy || wakeWord?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                  Enable
+                </button>
+                <button type="button" onClick={() => void setWakeEnabled(false)} disabled={busy || !wakeWord?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Disable
+                </button>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={wakeTestText}
+                  onChange={(event) => setWakeTestText(event.target.value)}
+                  className="min-w-0 flex-1 rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                  placeholder="Test phrase..."
+                />
+                <button type="button" onClick={() => void runWakeTest()} disabled={busy || !wakeTestText.trim()} className="rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Test
+                </button>
+              </div>
+              <div className="mt-3 rounded-xl p-3 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                <div>Last detection: {wakeWord?.last_detection_time ? new Date(wakeWord.last_detection_time).toLocaleString() : 'none'}</div>
+                <div>Test result: {wakeTestResult ? (wakeTestResult.detected ? 'detected' : 'not detected') : 'not tested'}</div>
+                <div>No microphone or always-on listener is started.</div>
+              </div>
+            </Panel>
+
             <Panel title="Runtime State">
               <div className="grid gap-3 md:grid-cols-3">
                 <StatusBlock label="Wake Mode" value={String(status?.wake_word?.mode || 'checking')} />

@@ -357,6 +357,22 @@ export interface VoiceHistoryEntry {
   action_status: string;
 }
 
+export interface WakeWordStatus {
+  enabled: boolean;
+  listening: boolean;
+  last_detection_time: string | null;
+  wake_phrase: string;
+  always_listening: boolean;
+  microphone_required: boolean;
+  mode: string;
+}
+
+export interface WakeWordTestResponse {
+  detected: boolean;
+  phrase: string;
+  last_detection_time: string | null;
+}
+
 export async function fetchVoiceStatus(): Promise<VoiceStatus> {
   const res = await fetch(`${getBase()}/v1/voice/status`);
   if (!res.ok) throw new Error(`Voice status failed: ${res.status}`);
@@ -442,6 +458,34 @@ export async function fetchVoiceHistory(): Promise<VoiceHistoryEntry[]> {
 export async function clearVoiceHistory(): Promise<Record<string, unknown>> {
   const res = await fetch(`${getBase()}/v1/voice/history/clear`, { method: 'POST' });
   if (!res.ok) throw new Error(`Clear voice history failed: ${res.status}`);
+  return res.json();
+}
+
+export async function fetchWakeWordStatus(): Promise<WakeWordStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/wake-word/status`);
+  if (!res.ok) throw new Error(`Wake word status failed: ${res.status}`);
+  return res.json();
+}
+
+export async function enableWakeWord(): Promise<WakeWordStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/wake-word/enable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Wake word enable failed: ${res.status}`);
+  return res.json();
+}
+
+export async function disableWakeWord(): Promise<WakeWordStatus> {
+  const res = await fetch(`${getBase()}/v1/voice/wake-word/disable`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Wake word disable failed: ${res.status}`);
+  return res.json();
+}
+
+export async function testWakeWord(text: string): Promise<WakeWordTestResponse> {
+  const res = await fetch(`${getBase()}/v1/voice/wake-word/test`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(`Wake word test failed: ${res.status}`);
   return res.json();
 }
 
