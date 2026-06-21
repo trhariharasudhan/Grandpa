@@ -5,10 +5,12 @@ import {
   clearVoiceHistory,
   commandVoice,
   confirmVoiceAction,
+  clearConversation,
   disableWakeWord,
   disableVoiceLoop,
   enableVoiceLoop,
   enableWakeWord,
+  fetchConversationHistory,
   fetchVoiceHistory,
   fetchVoiceLoopStatus,
   fetchVoiceSttStatus,
@@ -22,7 +24,9 @@ import {
   startVoiceSession,
   stopVoiceLoop,
   stopVoiceSession,
+  summarizeConversation,
   testWakeWord,
+  type ConversationMessage,
   type VoiceLoopStatus,
   type WakeWordStatus,
   type WakeWordTestResponse,
@@ -40,6 +44,8 @@ export function VoicePage() {
   const [speakResponse, setSpeakResponse] = useState(false);
   const [lastResult, setLastResult] = useState<VoiceListenResponse | null>(null);
   const [history, setHistory] = useState<VoiceHistoryEntry[]>([]);
+  const [conversation, setConversation] = useState<ConversationMessage[]>([]);
+  const [conversationSummary, setConversationSummary] = useState('');
   const [wakeWord, setWakeWord] = useState<WakeWordStatus | null>(null);
   const [wakeTestText, setWakeTestText] = useState('hey grandpa');
   const [wakeTestResult, setWakeTestResult] = useState<WakeWordTestResponse | null>(null);
@@ -65,6 +71,7 @@ export function VoicePage() {
     try {
       setStatus(await fetchVoiceStatus());
       setHistory(await fetchVoiceHistory());
+      setConversation((await fetchConversationHistory()).messages);
       setWakeWord(await fetchWakeWordStatus());
       setVoiceLoop(await fetchVoiceLoopStatus());
       setSttStatus(await fetchVoiceSttStatus());
@@ -139,6 +146,33 @@ export function VoicePage() {
       setHistory([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to clear voice history.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const clearConversationHistory = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      await clearConversation();
+      setConversation([]);
+      setConversationSummary('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to clear conversation.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadConversationSummary = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await summarizeConversation();
+      setConversationSummary(result.summary);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to summarize conversation.');
     } finally {
       setBusy(false);
     }
@@ -576,6 +610,41 @@ export function VoicePage() {
                   Send a transcript like "Hey Grandpa desktop summary" or "Hey Grandpa summarize this webpage" to test the voice route without microphone hardware.
                 </p>
               )}
+            </Panel>
+
+            <Panel title="Recent Conversation">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                  Latest {conversation.length} short-term messages
+                </p>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => void loadConversationSummary()} disabled={busy} className="rounded-xl px-3 py-1.5 text-xs disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                    Summary
+                  </button>
+                  <button type="button" onClick={() => void clearConversationHistory()} disabled={busy || conversation.length === 0} className="rounded-xl px-3 py-1.5 text-xs disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                    Clear conversation
+                  </button>
+                </div>
+              </div>
+              {conversationSummary && (
+                <div className="mb-3 rounded-xl px-3 py-2 text-xs" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                  {conversationSummary}
+                </div>
+              )}
+              <div className="flex max-h-[260px] flex-col gap-2 overflow-y-auto">
+                {conversation.length === 0 ? (
+                  <p className="text-sm" style={{ color: 'var(--color-text-tertiary)' }}>No recent conversation yet.</p>
+                ) : (
+                  conversation.map((message) => (
+                    <div key={`${message.timestamp}-${message.role}-${message.content.slice(0, 12)}`} className="rounded-xl px-3 py-2 text-sm" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                      <div className="text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--color-text-tertiary)' }}>
+                        {message.role} · {new Date(message.timestamp).toLocaleString()}
+                      </div>
+                      <div className="mt-1" style={{ color: 'var(--color-text)' }}>{message.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
             </Panel>
 
             <Panel title="Speech History">
