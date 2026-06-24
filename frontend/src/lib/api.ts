@@ -1536,6 +1536,12 @@ export interface VisionStatus {
     engine: string;
     error?: string | null;
   };
+  local_model: {
+    available: boolean;
+    configured_model?: string | null;
+    fallback_models: string[];
+    engine: string;
+  };
   live_capture: boolean;
   screen_capture_enabled: boolean;
   webcam_enabled: boolean;
@@ -1549,6 +1555,12 @@ export interface VisionAnalyzeResponse {
   height?: number | null;
   analysis?: string | null;
   error?: string | null;
+  model_analysis?: {
+    available: boolean;
+    model?: string | null;
+    analysis: string;
+    error?: string | null;
+  };
 }
 
 export interface VisionOcrResponse {
@@ -1583,9 +1595,10 @@ export async function disableVision(): Promise<VisionStatus> {
   return res.json();
 }
 
-export async function analyzeVisionImage(file: File): Promise<VisionAnalyzeResponse> {
+export async function analyzeVisionImage(file: File, prompt?: string): Promise<VisionAnalyzeResponse> {
   const form = new FormData();
   form.append('image', file, file.name);
+  if (prompt?.trim()) form.append('prompt', prompt.trim());
   const res = await fetch(`${getBase()}/v1/vision/analyze`, {
     method: 'POST',
     body: form,

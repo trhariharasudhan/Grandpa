@@ -14,8 +14,34 @@ from grandpa.vision.session import VisionSession
 pytestmark = pytest.mark.core
 
 
+def _mock_local_model_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    import grandpa.vision.session as vision_session
+
+    monkeypatch.setattr(
+        vision_session,
+        "analyze_image_with_local_model",
+        lambda *_args, **_kwargs: {
+            "available": False,
+            "model": None,
+            "analysis": "",
+            "error": "Ollama is not available. Start it with: ollama serve",
+        },
+    )
+    monkeypatch.setattr(
+        vision_session,
+        "local_model_status",
+        lambda: {
+            "available": False,
+            "configured_model": None,
+            "fallback_models": ["grandpa-eyes", "llava:latest"],
+            "engine": "ollama",
+        },
+    )
+
+
 @pytest.fixture
-def vision_client() -> TestClient:
+def vision_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    _mock_local_model_unavailable(monkeypatch)
     app = FastAPI()
     app.include_router(vision_router)
     return TestClient(app)
@@ -27,7 +53,8 @@ def _image_bytes(image_format: str = "PNG") -> bytes:
     return buffer.getvalue()
 
 
-def test_vision_session_default_disabled() -> None:
+def test_vision_session_default_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_local_model_unavailable(monkeypatch)
     session = VisionSession()
 
     status = session.status()
@@ -65,6 +92,12 @@ def test_analyze_png_reads_dimensions(vision_client: TestClient) -> None:
         "format": "png",
         "analysis": PLACEHOLDER_ANALYSIS,
         "error": None,
+        "model_analysis": {
+            "available": False,
+            "model": None,
+            "analysis": "",
+            "error": "Ollama is not available. Start it with: ollama serve",
+        },
     }
 
 
@@ -119,12 +152,19 @@ def test_status_shows_last_image_metadata(vision_client: TestClient) -> None:
     assert status["last_error"] is None
     assert "ocr" in status
     assert isinstance(status["ocr"]["available"], bool)
+    assert status["local_model"] == {
+        "available": False,
+        "configured_model": None,
+        "fallback_models": ["grandpa-eyes", "llava:latest"],
+        "engine": "ollama",
+    }
     assert status["live_capture"] is False
     assert status["screen_capture_enabled"] is False
     assert status["webcam_enabled"] is False
 
 
-def test_no_real_vision_model_or_live_capture_is_used() -> None:
+def test_no_real_vision_model_or_live_capture_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    _mock_local_model_unavailable(monkeypatch)
     session = VisionSession()
 
     result = session.analyze_image_bytes(_image_bytes("WEBP"), "sample.webp", "image/webp")
@@ -133,6 +173,7 @@ def test_no_real_vision_model_or_live_capture_is_used() -> None:
     assert result["analysis"] == PLACEHOLDER_ANALYSIS
     assert result["success"] is True
     assert result["format"] == "webp"
+    assert "model_analysis" in result
     assert status["live_capture"] is False
     assert status["screen_capture_enabled"] is False
     assert status["webcam_enabled"] is False
@@ -212,3 +253,140 @@ def test_ocr_rejects_empty_upload(vision_client: TestClient) -> None:
     assert payload["ok"] is False
     assert payload["ocr"]["available"] is False
     assert payload["ocr"]["error"] == "Empty image file."
+
+
+def test_model_analysis_success_with_mocked_ollama(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    import grandpa.vision.session as vision_session
+
+    captured = {}
+
+    def fake_model(data: bytes, filename: str, mime_type: str, prompt: str):
+        captured["prompt"] = prompt
+        captured["filename"] = filename
+        captured["mime_type"] = mime_type
+        assert data
+        return {
+            "available": True,
+            "model": "grandpa-eyes",
+            "analysis": "A small test image.",
+            "error": None,
+        }
+
+    monkeypatch.setattr(vision_session, "analyze_image_with_local_model", fake_model)
+
+    response = vision_client.post(
+        "/v1/vision/analyze",
+        data={"prompt": "What is visible?"},
+        files={"image": ("sample.png", _image_bytes(), "image/png")},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["model_analysis"] == {
+        "available": True,
+        "model": "grandpa-eyes",
+        "analysis": "A small test image.",
+        "error": None,
+    }
+    assert captured == {
+        "prompt": "What is visible?",
+        "filename": "sample.png",
+        "mime_type": "image/png",
+    }
+
+
+def test_model_analysis_uses_default_prompt(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    import grandpa.vision.session as vision_session
+    from grandpa.vision.local_model import DEFAULT_VISION_PROMPT
+
+    captured = {}
+
+    def fake_model(_data: bytes, _filename: str, _mime_type: str, prompt: str | None):
+        captured["prompt"] = prompt
+        return {"available": False, "model": None, "analysis": "", "error": None}
+
+    monkeypatch.setattr(vision_session, "analyze_image_with_local_model", fake_model)
+
+    response = vision_client.post(
+        "/v1/vision/analyze",
+        files={"image": ("sample.png", _image_bytes(), "image/png")},
+    )
+
+    assert response.status_code == 200
+    assert captured["prompt"] == DEFAULT_VISION_PROMPT
+    assert response.json()["model_analysis"]["error"] is None
+    assert DEFAULT_VISION_PROMPT == "Describe this image clearly and mention any visible text."
+
+
+def test_local_model_ollama_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    import httpx
+
+    import grandpa.vision.local_model as local_model
+
+    class UnavailableClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            raise httpx.ConnectError("offline")
+
+    monkeypatch.setattr(local_model.httpx, "Client", UnavailableClient)
+
+    result = local_model.analyze_image_with_local_model(_image_bytes(), "sample.png", "image/png", None)
+
+    assert result == {
+        "available": False,
+        "model": None,
+        "analysis": "",
+        "error": "Ollama is not available. Start it with: ollama serve",
+    }
+
+
+def test_local_model_missing_model_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
+    import grandpa.vision.local_model as local_model
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+        def __init__(self, payload: dict):
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+        def raise_for_status(self):
+            return None
+
+    class MissingModelClient:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def get(self, *_args, **_kwargs):
+            return FakeResponse({"models": [{"name": "qwen3:8b"}]})
+
+    monkeypatch.setattr(local_model.httpx, "Client", MissingModelClient)
+    monkeypatch.delenv("GRANDPA_VISION_MODEL", raising=False)
+    monkeypatch.delenv("GRANDPA_EYES_MODEL", raising=False)
+    monkeypatch.delenv("OLLAMA_VISION_MODEL", raising=False)
+
+    result = local_model.analyze_image_with_local_model(_image_bytes(), "sample.png", "image/png", None)
+
+    assert result == {
+        "available": False,
+        "model": "grandpa-eyes",
+        "analysis": "",
+        "error": "Vision model is not installed. Run: ollama pull grandpa-eyes",
+    }

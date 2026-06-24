@@ -72,6 +72,7 @@ export function VoicePage() {
   const [visionFile, setVisionFile] = useState<File | null>(null);
   const [visionResult, setVisionResult] = useState<VisionAnalyzeResponse | null>(null);
   const [visionOcrResult, setVisionOcrResult] = useState<VisionOcrResponse | null>(null);
+  const [visionPrompt, setVisionPrompt] = useState('Describe this image clearly and mention any visible text.');
   const [visionMessage, setVisionMessage] = useState('');
   const [loopWakeText, setLoopWakeText] = useState('hey grandpa');
   const [loopCommandText, setLoopCommandText] = useState('what is my voice status');
@@ -329,11 +330,13 @@ export function VoicePage() {
     setVisionMessage('');
     setVisionResult(null);
     try {
-      const result = await analyzeVisionImage(visionFile);
+      const result = await analyzeVisionImage(visionFile, visionPrompt);
       setVisionResult(result);
       setVisionStatus(await fetchVisionStatus());
       if (!result.success) {
         setVisionMessage(result.error || 'Image analysis failed.');
+      } else if (result.model_analysis?.error) {
+        setVisionMessage(result.model_analysis.error);
       }
     } catch (err) {
       setVisionMessage(err instanceof Error ? err.message : 'Image analysis failed.');
@@ -622,7 +625,7 @@ export function VoicePage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <StatusBlock label="Enabled" value={visionStatus?.enabled ? 'enabled' : 'disabled'} />
                 <StatusBlock label="Last Format" value={visionStatus?.last_format || 'none'} />
-                <StatusBlock label="OCR" value={visionStatus?.ocr?.available ? visionStatus.ocr.engine : 'unavailable'} />
+                <StatusBlock label="Local Model" value={visionStatus?.local_model?.available ? 'available' : 'unavailable'} />
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <button type="button" onClick={() => void setVisionEnabled(true)} disabled={busy || visionStatus?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
@@ -654,10 +657,18 @@ export function VoicePage() {
                     <img src={visionPreviewUrl} alt="Vision upload preview" className="max-h-48 w-full object-contain" />
                   </div>
                 )}
+                <textarea
+                  value={visionPrompt}
+                  onChange={(event) => setVisionPrompt(event.target.value)}
+                  rows={3}
+                  className="mt-3 w-full rounded-xl px-3 py-2 text-sm outline-none"
+                  style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text)' }}
+                  placeholder="Optional local model prompt..."
+                />
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <button type="button" onClick={() => void runVisionAnalyze()} disabled={busy || !visionFile} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
                     <ImageIcon size={15} />
-                    Analyze Image
+                    Analyze with Local Model
                   </button>
                   <button type="button" onClick={() => void runVisionOcr()} disabled={busy || !visionFile} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
                     Extract Text
@@ -674,6 +685,14 @@ export function VoicePage() {
                   <div style={{ color: 'var(--color-text)' }}>{visionResult.filename}</div>
                   <div className="mt-1">{visionResult.width} x {visionResult.height} · {visionResult.format}</div>
                   <div className="mt-2">{visionResult.analysis}</div>
+                  {visionResult.model_analysis && (
+                    <div className="mt-3 rounded-xl p-3" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)' }}>
+                      <div style={{ color: 'var(--color-text)' }}>Local model · {visionResult.model_analysis.model || 'none'}</div>
+                      <div className="mt-2 whitespace-pre-wrap">
+                        {visionResult.model_analysis.analysis || visionResult.model_analysis.error || 'Local model analysis unavailable.'}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
               {visionOcrResult && (
@@ -686,7 +705,7 @@ export function VoicePage() {
                 </div>
               )}
               <p className="mt-3 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                User-initiated upload only. No Ollama, LLaVA, webcam, desktop capture, or background watching is used.
+                User-initiated upload only. Local model analysis uses Ollama when available. No webcam, desktop capture, or background watching is used.
               </p>
             </Panel>
 
