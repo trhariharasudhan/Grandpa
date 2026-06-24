@@ -1674,6 +1674,42 @@ async def voice_loop_simulate_command(req: VoiceLoopTextRequest, request: Reques
     return loop.simulate_command(transcript, command_router=route_command)
 
 
+@voice_router.get("/conversation-mode/status")
+async def voice_conversation_mode_status(request: Request):
+    """Return session-based conversation mode state."""
+    return _get_conversation_mode_session(request).status()
+
+
+@voice_router.post("/conversation-mode/enable")
+async def voice_conversation_mode_enable(request: Request):
+    """Enable conversation mode without starting background capture."""
+    return _get_conversation_mode_session(request).enable()
+
+
+@voice_router.post("/conversation-mode/disable")
+async def voice_conversation_mode_disable(request: Request):
+    """Disable conversation mode and stop any active session."""
+    return _get_conversation_mode_session(request).disable()
+
+
+@voice_router.post("/conversation-mode/start")
+async def voice_conversation_mode_start(request: Request):
+    """Start user-controlled conversation mode without microphone auto-start."""
+    return _get_conversation_mode_session(request).start()
+
+
+@voice_router.post("/conversation-mode/stop")
+async def voice_conversation_mode_stop(request: Request):
+    """Stop the active conversation mode session."""
+    return _get_conversation_mode_session(request).stop()
+
+
+@voice_router.post("/conversation-mode/touch")
+async def voice_conversation_mode_touch(request: Request):
+    """Refresh conversation mode activity if currently active."""
+    return _get_conversation_mode_session(request).touch()
+
+
 @voice_router.post("/command")
 async def voice_command(req: VoiceCommandRequest, request: Request):
     """Route a transcript through reminders and safe local action permissions."""
@@ -1719,6 +1755,7 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     _record_voice_history(request, result)
     if result.get("ok", True):
         _record_conversation_exchange(request, command_text, result.get("assistant_text", ""))
+        _touch_conversation_mode(request, command_text)
     return result
 
 
@@ -2038,6 +2075,16 @@ def _get_voice_loop_session(request: Request):
     return session
 
 
+def _get_conversation_mode_session(request: Request):
+    from grandpa.voice.conversation_mode import ConversationModeSession
+
+    session = getattr(request.app.state, "conversation_mode_session", None)
+    if session is None:
+        session = ConversationModeSession()
+        request.app.state.conversation_mode_session = session
+    return session
+
+
 def _get_conversation_session(request: Request):
     from grandpa.memory.conversation import ConversationSession
 
@@ -2046,6 +2093,13 @@ def _get_conversation_session(request: Request):
         session = ConversationSession()
         request.app.state.conversation_session = session
     return session
+
+
+def _touch_conversation_mode(request: Request, transcript: str) -> None:
+    try:
+        _get_conversation_mode_session(request).touch(transcript)
+    except Exception:
+        logger.debug("Failed to update conversation mode session", exc_info=True)
 
 
 def _build_conversation_context(

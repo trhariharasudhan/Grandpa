@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi import FastAPI
@@ -25,6 +25,7 @@ from grandpa.voice import (
     WakeWordConfig,
     WakeWordDetector,
 )
+from grandpa.voice.conversation_mode import ConversationModeSession
 from grandpa.voice.history import VOICE_HISTORY_LIMIT, VoiceCommandHistoryStore
 from grandpa.voice.loop import VoiceLoopSession
 from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASE, WakeWordSession
@@ -993,6 +994,124 @@ def test_voice_loop_api_stop(voice_client):
     assert response.status_code == 200
     assert response.json()["running"] is False
     assert response.json()["mode"] == "idle"
+
+
+def test_conversation_mode_defaults_disabled():
+    session = ConversationModeSession()
+
+    status = session.status()
+
+    assert status["enabled"] is False
+    assert status["active"] is False
+    assert status["timeout_seconds"] == 60
+    assert status["turn_count"] == 0
+    assert status["microphone_required"] is False
+    assert status["background_thread"] is False
+
+
+def test_conversation_mode_enable_disable_start_stop():
+    session = ConversationModeSession()
+
+    enabled = session.enable()
+    started = session.start()
+    stopped = session.stop()
+    disabled = session.disable()
+
+    assert enabled["enabled"] is True
+    assert enabled["active"] is False
+    assert started["enabled"] is True
+    assert started["active"] is True
+    assert started["last_activity_at"]
+    assert stopped["active"] is False
+    assert disabled["enabled"] is False
+    assert disabled["active"] is False
+
+
+def test_conversation_mode_touch_updates_turn_count_and_transcript():
+    session = ConversationModeSession()
+    session.start()
+
+    touched = session.touch("what is my voice status")
+
+    assert touched["active"] is True
+    assert touched["turn_count"] == 1
+    assert touched["last_transcript"] == "what is my voice status"
+    assert touched["last_activity_at"]
+
+
+def test_conversation_mode_timeout_expiration():
+    session = ConversationModeSession(timeout_seconds=1)
+    session.start()
+    assert session.active is True
+    session.last_activity_at = datetime.now(UTC) - timedelta(seconds=2)
+
+    status = session.status()
+
+    assert status["active"] is False
+
+
+def test_conversation_mode_api_endpoints(voice_client):
+    initial = voice_client.get("/v1/voice/conversation-mode/status")
+    enabled = voice_client.post("/v1/voice/conversation-mode/enable")
+    started = voice_client.post("/v1/voice/conversation-mode/start")
+    touched = voice_client.post("/v1/voice/conversation-mode/touch")
+    stopped = voice_client.post("/v1/voice/conversation-mode/stop")
+    disabled = voice_client.post("/v1/voice/conversation-mode/disable")
+
+    assert initial.status_code == 200
+    assert initial.json()["enabled"] is False
+    assert enabled.json()["enabled"] is True
+    assert enabled.json()["active"] is False
+    assert started.json()["active"] is True
+    assert touched.json()["active"] is True
+    assert stopped.json()["active"] is False
+    assert disabled.json()["enabled"] is False
+
+
+def test_voice_command_updates_active_conversation_mode(voice_client):
+    voice_client.post("/v1/voice/conversation-mode/start")
+
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "what is my voice status"},
+    )
+    status = voice_client.get("/v1/voice/conversation-mode/status").json()
+
+    assert response.status_code == 200
+    assert status["active"] is True
+    assert status["turn_count"] == 1
+    assert status["last_transcript"] == "what is my voice status"
+
+
+def test_voice_command_does_not_update_expired_conversation_mode(voice_client):
+    from grandpa.voice.conversation_mode import ConversationModeSession
+
+    expired = ConversationModeSession(timeout_seconds=1)
+    expired.start()
+    expired.last_activity_at = datetime.now(UTC) - timedelta(seconds=2)
+    voice_client.app.state.conversation_mode_session = expired
+
+    response = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "what is my voice status"},
+    )
+    status = voice_client.get("/v1/voice/conversation-mode/status").json()
+
+    assert response.status_code == 200
+    assert status["active"] is False
+    assert status["turn_count"] == 0
+    assert status["last_transcript"] is None
+
+
+def test_conversation_mode_has_no_ollama_microphone_or_thread_dependency(voice_client, monkeypatch):
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    status = voice_client.post("/v1/voice/conversation-mode/start").json()
+
+    assert status["enabled"] is True
+    assert status["active"] is True
+    assert status["microphone_required"] is False
+    assert status["background_thread"] is False
 
 
 def test_voice_api_returns_clean_expected_error_status(monkeypatch):
