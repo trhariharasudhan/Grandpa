@@ -1520,6 +1520,63 @@ export async function searchFileAssistant(query: string): Promise<FileAssistantS
   return res.json();
 }
 
+export interface VisionStatus {
+  enabled: boolean;
+  last_image_name?: string | null;
+  last_image_size?: {
+    bytes: number;
+    width: number;
+    height: number;
+  } | null;
+  last_format?: string | null;
+  last_analysis?: string | null;
+  last_error?: string | null;
+  live_capture: boolean;
+  screen_capture_enabled: boolean;
+  webcam_enabled: boolean;
+}
+
+export interface VisionAnalyzeResponse {
+  success: boolean;
+  filename?: string | null;
+  format?: string | null;
+  width?: number | null;
+  height?: number | null;
+  analysis?: string | null;
+  error?: string | null;
+}
+
+export async function fetchVisionStatus(): Promise<VisionStatus> {
+  const res = await fetch(`${getBase()}/v1/vision/status`);
+  if (!res.ok) throw new Error('Failed to fetch vision status');
+  return res.json();
+}
+
+export async function enableVision(): Promise<VisionStatus> {
+  const res = await fetch(`${getBase()}/v1/vision/enable`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to enable vision');
+  return res.json();
+}
+
+export async function disableVision(): Promise<VisionStatus> {
+  const res = await fetch(`${getBase()}/v1/vision/disable`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to disable vision');
+  return res.json();
+}
+
+export async function analyzeVisionImage(file: File): Promise<VisionAnalyzeResponse> {
+  const form = new FormData();
+  form.append('image', file, file.name);
+  const res = await fetch(`${getBase()}/v1/vision/analyze`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, 'Failed to analyze image'));
+  }
+  return res.json();
+}
+
 export interface RoutineItem {
   id: number;
   created_at: number;
