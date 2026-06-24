@@ -6,6 +6,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from grandpa.vision.analyzer import VisionAnalyzer
+from grandpa.vision.local_model import (
+    DEFAULT_VISION_PROMPT,
+    analyze_image_with_local_model,
+    local_model_status,
+)
 from grandpa.vision.ocr import extract_text_from_image_bytes, ocr_status
 
 
@@ -39,12 +44,19 @@ class VisionSession:
             "last_analysis": self.last_analysis,
             "last_error": self.last_error,
             "ocr": ocr_status(),
+            "local_model": local_model_status(),
             "live_capture": False,
             "screen_capture_enabled": False,
             "webcam_enabled": False,
         }
 
-    def analyze_image_bytes(self, data: bytes, filename: str | None, mime_type: str | None) -> dict[str, Any]:
+    def analyze_image_bytes(
+        self,
+        data: bytes,
+        filename: str | None,
+        mime_type: str | None,
+        prompt: str | None = None,
+    ) -> dict[str, Any]:
         result = self._analyzer.analyze(data, filename, mime_type)
         if result.success:
             self.last_image_name = result.filename
@@ -58,7 +70,19 @@ class VisionSession:
             self.last_error = None
         else:
             self.last_error = result.error
-        return result.to_dict()
+        payload = result.to_dict()
+        model_prompt = (prompt or DEFAULT_VISION_PROMPT).strip() or DEFAULT_VISION_PROMPT
+        payload["model_analysis"] = (
+            analyze_image_with_local_model(data, filename, mime_type, model_prompt)
+            if result.success
+            else {
+                "available": False,
+                "model": None,
+                "analysis": "",
+                "error": result.error,
+            }
+        )
+        return payload
 
     def extract_ocr_from_image_bytes(self, data: bytes, filename: str | None, mime_type: str | None) -> dict[str, Any]:
         analysis = self._analyzer.analyze(data, filename, mime_type)

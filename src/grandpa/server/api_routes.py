@@ -1537,13 +1537,14 @@ async def vision_disable(request: Request):
 
 
 @vision_router.post("/analyze")
-async def vision_analyze(request: Request, image: UploadFile = File(...)):
+async def vision_analyze(request: Request, image: UploadFile = File(...), prompt: str | None = File(default=None)):
     """Validate and inspect an uploaded image without calling a vision model."""
     data = await image.read()
     return _get_vision_session(request).analyze_image_bytes(
         data,
         image.filename,
         image.content_type,
+        prompt,
     )
 
 
