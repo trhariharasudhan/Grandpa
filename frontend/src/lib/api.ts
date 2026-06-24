@@ -1531,6 +1531,11 @@ export interface VisionStatus {
   last_format?: string | null;
   last_analysis?: string | null;
   last_error?: string | null;
+  ocr: {
+    available: boolean;
+    engine: string;
+    error?: string | null;
+  };
   live_capture: boolean;
   screen_capture_enabled: boolean;
   webcam_enabled: boolean;
@@ -1544,6 +1549,20 @@ export interface VisionAnalyzeResponse {
   height?: number | null;
   analysis?: string | null;
   error?: string | null;
+}
+
+export interface VisionOcrResponse {
+  ok: boolean;
+  filename?: string | null;
+  mime_type?: string | null;
+  width?: number | null;
+  height?: number | null;
+  ocr: {
+    available: boolean;
+    text: string;
+    engine: string;
+    error?: string | null;
+  };
 }
 
 export async function fetchVisionStatus(): Promise<VisionStatus> {
@@ -1573,6 +1592,19 @@ export async function analyzeVisionImage(file: File): Promise<VisionAnalyzeRespo
   });
   if (!res.ok) {
     throw new Error(await readApiError(res, 'Failed to analyze image'));
+  }
+  return res.json();
+}
+
+export async function extractVisionText(file: File): Promise<VisionOcrResponse> {
+  const form = new FormData();
+  form.append('image', file, file.name);
+  const res = await fetch(`${getBase()}/v1/vision/ocr`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, 'Failed to extract text'));
   }
   return res.json();
 }

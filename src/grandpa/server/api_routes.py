@@ -1547,6 +1547,17 @@ async def vision_analyze(request: Request, image: UploadFile = File(...)):
     )
 
 
+@vision_router.post("/ocr")
+async def vision_ocr(request: Request, image: UploadFile = File(...)):
+    """Extract text from an uploaded image when optional OCR dependencies are available."""
+    data = await image.read()
+    return _get_vision_session(request).extract_ocr_from_image_bytes(
+        data,
+        image.filename,
+        image.content_type,
+    )
+
+
 @voice_router.get("/status")
 async def voice_status():
     """Return Grandpa voice runtime status and local engine readiness."""
