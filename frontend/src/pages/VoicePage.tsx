@@ -8,10 +8,12 @@ import {
   confirmVoiceAction,
   clearConversation,
   disableVision,
+  disableVisionScreenshot,
   disableConversationMode,
   disableWakeWord,
   disableVoiceLoop,
   enableVision,
+  enableVisionScreenshot,
   enableConversationMode,
   enableVoiceLoop,
   enableWakeWord,
@@ -24,8 +26,10 @@ import {
   fetchVoiceSttStatus,
   fetchVoiceStatus,
   fetchVisionStatus,
+  fetchVisionScreenshotStatus,
   fetchWakeWordStatus,
   listenFromAudio,
+  ingestVisionScreenshot,
   simulateVoiceLoopCommand,
   simulateVoiceLoopWake,
   speakVoice,
@@ -41,6 +45,8 @@ import {
   type ConversationModeStatus,
   type VisionAnalyzeResponse,
   type VisionOcrResponse,
+  type VisionScreenshotIngestResponse,
+  type VisionScreenshotStatus,
   type VisionStatus,
   type VoiceLoopStatus,
   type WakeWordStatus,
@@ -74,6 +80,10 @@ export function VoicePage() {
   const [visionOcrResult, setVisionOcrResult] = useState<VisionOcrResponse | null>(null);
   const [visionPrompt, setVisionPrompt] = useState('Describe this image clearly and mention any visible text.');
   const [visionMessage, setVisionMessage] = useState('');
+  const [screenshotStatus, setScreenshotStatus] = useState<VisionScreenshotStatus | null>(null);
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [screenshotResult, setScreenshotResult] = useState<VisionScreenshotIngestResponse | null>(null);
+  const [screenshotMessage, setScreenshotMessage] = useState('');
   const [loopWakeText, setLoopWakeText] = useState('hey grandpa');
   const [loopCommandText, setLoopCommandText] = useState('what is my voice status');
   const [recording, setRecording] = useState(false);
@@ -101,6 +111,7 @@ export function VoicePage() {
       setConversationMode(await fetchConversationModeStatus());
       setSttStatus(await fetchVoiceSttStatus());
       setVisionStatus(await fetchVisionStatus());
+      setScreenshotStatus(await fetchVisionScreenshotStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load voice status.');
     } finally {
@@ -123,11 +134,22 @@ export function VoicePage() {
     return URL.createObjectURL(visionFile);
   }, [visionFile]);
 
+  const screenshotPreviewUrl = useMemo(() => {
+    if (!screenshotFile) return '';
+    return URL.createObjectURL(screenshotFile);
+  }, [screenshotFile]);
+
   useEffect(() => {
     return () => {
       if (visionPreviewUrl) URL.revokeObjectURL(visionPreviewUrl);
     };
   }, [visionPreviewUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (screenshotPreviewUrl) URL.revokeObjectURL(screenshotPreviewUrl);
+    };
+  }, [screenshotPreviewUrl]);
 
   const sessionState = status?.session?.state || 'idle';
   const stateColor = useMemo(() => {
@@ -360,6 +382,43 @@ export function VoicePage() {
       }
     } catch (err) {
       setVisionMessage(err instanceof Error ? err.message : 'OCR failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setScreenshotEnabled = async (enabled: boolean) => {
+    setBusy(true);
+    setError('');
+    setScreenshotMessage('');
+    try {
+      setScreenshotStatus(enabled ? await enableVisionScreenshot() : await disableVisionScreenshot());
+    } catch (err) {
+      setScreenshotMessage(err instanceof Error ? err.message : 'Screenshot ingestion update failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runScreenshotIngest = async () => {
+    if (!screenshotFile) return;
+    setBusy(true);
+    setError('');
+    setScreenshotMessage('');
+    setScreenshotResult(null);
+    try {
+      const result = await ingestVisionScreenshot(screenshotFile, visionPrompt);
+      setScreenshotResult(result);
+      setScreenshotStatus(await fetchVisionScreenshotStatus());
+      if (!result.ok) {
+        setScreenshotMessage(result.error || 'Screenshot ingestion failed.');
+      } else if (result.ocr.error) {
+        setScreenshotMessage(result.ocr.error);
+      } else if (result.model_analysis.error) {
+        setScreenshotMessage(result.model_analysis.error);
+      }
+    } catch (err) {
+      setScreenshotMessage(err instanceof Error ? err.message : 'Screenshot ingestion failed.');
     } finally {
       setBusy(false);
     }
@@ -704,6 +763,75 @@ export function VoicePage() {
                   </pre>
                 </div>
               )}
+              <div className="mt-4 rounded-xl p-3" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium" style={{ color: 'var(--color-text)' }}>Screenshot / Screen Image</div>
+                    <div className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                      Manual upload only. No live desktop capture.
+                    </div>
+                  </div>
+                  <span className="rounded-full px-2 py-1 text-xs" style={{ background: 'var(--color-bg-secondary)', color: 'var(--color-text-secondary)' }}>
+                    {screenshotStatus?.enabled ? 'enabled' : 'disabled'}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={() => void setScreenshotEnabled(true)} disabled={busy || screenshotStatus?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                    Enable Screenshot Ingest
+                  </button>
+                  <button type="button" onClick={() => void setScreenshotEnabled(false)} disabled={busy || !screenshotStatus?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                    Disable Screenshot Ingest
+                  </button>
+                </div>
+                <label className="mt-3 mb-2 flex items-center gap-2 text-sm" style={{ color: 'var(--color-text)' }}>
+                  <Upload size={15} />
+                  Upload screenshot image
+                </label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    setScreenshotFile(event.target.files?.[0] || null);
+                    setScreenshotResult(null);
+                    setScreenshotMessage('');
+                  }}
+                  className="text-sm"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                />
+                {screenshotPreviewUrl && (
+                  <div className="mt-3 overflow-hidden rounded-xl" style={{ border: '1px solid var(--color-border)' }}>
+                    <img src={screenshotPreviewUrl} alt="Screenshot upload preview" className="max-h-48 w-full object-contain" />
+                  </div>
+                )}
+                <button type="button" onClick={() => void runScreenshotIngest()} disabled={busy || !screenshotFile} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent-amber)', color: 'var(--color-bg)' }}>
+                  <ImageIcon size={15} />
+                  Ingest Screenshot
+                </button>
+                {screenshotMessage && (
+                  <div className="mt-3 rounded-xl p-3 text-sm" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-danger)' }}>
+                    {screenshotMessage}
+                  </div>
+                )}
+                {screenshotResult && (
+                  <div className="mt-3 rounded-xl p-3 text-sm" style={{ background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                    <div style={{ color: 'var(--color-text)' }}>{screenshotResult.filename || 'screenshot'}</div>
+                    <div className="mt-1">{screenshotResult.width || 'unknown'} x {screenshotResult.height || 'unknown'} · {screenshotResult.mime_type || 'unknown'}</div>
+                    <div className="mt-2">{screenshotResult.analysis || screenshotResult.error || 'No analysis available.'}</div>
+                    <div className="mt-3 rounded-xl p-3" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                      <div style={{ color: 'var(--color-text)' }}>OCR · {screenshotResult.ocr.engine}</div>
+                      <pre className="mt-2 whitespace-pre-wrap text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                        {screenshotResult.ocr.text || screenshotResult.ocr.error || 'No text detected.'}
+                      </pre>
+                    </div>
+                    <div className="mt-3 rounded-xl p-3" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                      <div style={{ color: 'var(--color-text)' }}>Local model · {screenshotResult.model_analysis.model || 'none'}</div>
+                      <div className="mt-2 whitespace-pre-wrap">
+                        {screenshotResult.model_analysis.analysis || screenshotResult.model_analysis.error || 'Local model analysis unavailable.'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
               <p className="mt-3 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                 User-initiated upload only. Local model analysis uses Ollama when available. No webcam, desktop capture, or background watching is used.
               </p>

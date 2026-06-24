@@ -1559,6 +1559,40 @@ async def vision_ocr(request: Request, image: UploadFile = File(...)):
     )
 
 
+@vision_router.get("/screenshot/status")
+async def vision_screenshot_status(request: Request):
+    """Return safe manual screenshot upload status without desktop capture."""
+    return _get_screenshot_session(request).status()
+
+
+@vision_router.post("/screenshot/enable")
+async def vision_screenshot_enable(request: Request):
+    """Enable manual screenshot image ingestion."""
+    return _get_screenshot_session(request).enable()
+
+
+@vision_router.post("/screenshot/disable")
+async def vision_screenshot_disable(request: Request):
+    """Disable manual screenshot image ingestion."""
+    return _get_screenshot_session(request).disable()
+
+
+@vision_router.post("/screenshot/ingest")
+async def vision_screenshot_ingest(
+    request: Request,
+    image: UploadFile = File(...),
+    prompt: str | None = File(default=None),
+):
+    """Ingest a user-uploaded screenshot image without capturing the desktop."""
+    data = await image.read()
+    return _get_screenshot_session(request).ingest_screenshot_bytes(
+        data,
+        image.filename,
+        image.content_type,
+        prompt,
+    )
+
+
 @voice_router.get("/status")
 async def voice_status():
     """Return Grandpa voice runtime status and local engine readiness."""
@@ -2152,6 +2186,16 @@ def _get_vision_session(request: Request):
     if session is None:
         session = VisionSession()
         request.app.state.vision_session = session
+    return session
+
+
+def _get_screenshot_session(request: Request):
+    from grandpa.vision.screenshot import ScreenshotSession
+
+    session = getattr(request.app.state, "screenshot_session", None)
+    if session is None:
+        session = ScreenshotSession()
+        request.app.state.screenshot_session = session
     return session
 
 

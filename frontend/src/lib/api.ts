@@ -1577,6 +1577,53 @@ export interface VisionOcrResponse {
   };
 }
 
+export interface VisionScreenshotStatus {
+  enabled: boolean;
+  last_capture_name?: string | null;
+  last_capture_size?: {
+    bytes: number;
+    width: number;
+    height: number;
+  } | null;
+  last_capture_at?: string | null;
+  last_error?: string | null;
+  ocr: {
+    available: boolean;
+    engine: string;
+    error?: string | null;
+  };
+  local_model: {
+    available: boolean;
+    configured_model?: string | null;
+    fallback_models: string[];
+    engine: string;
+  };
+  desktop_capture: boolean;
+  live_capture: boolean;
+}
+
+export interface VisionScreenshotIngestResponse {
+  ok: boolean;
+  filename?: string | null;
+  mime_type?: string | null;
+  width?: number | null;
+  height?: number | null;
+  analysis?: string | null;
+  error?: string | null;
+  ocr: {
+    available: boolean;
+    text: string;
+    engine: string;
+    error?: string | null;
+  };
+  model_analysis: {
+    available: boolean;
+    model?: string | null;
+    analysis: string;
+    error?: string | null;
+  };
+}
+
 export async function fetchVisionStatus(): Promise<VisionStatus> {
   const res = await fetch(`${getBase()}/v1/vision/status`);
   if (!res.ok) throw new Error('Failed to fetch vision status');
@@ -1618,6 +1665,38 @@ export async function extractVisionText(file: File): Promise<VisionOcrResponse> 
   });
   if (!res.ok) {
     throw new Error(await readApiError(res, 'Failed to extract text'));
+  }
+  return res.json();
+}
+
+export async function fetchVisionScreenshotStatus(): Promise<VisionScreenshotStatus> {
+  const res = await fetch(`${getBase()}/v1/vision/screenshot/status`);
+  if (!res.ok) throw new Error('Failed to fetch screenshot status');
+  return res.json();
+}
+
+export async function enableVisionScreenshot(): Promise<VisionScreenshotStatus> {
+  const res = await fetch(`${getBase()}/v1/vision/screenshot/enable`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to enable screenshot ingestion');
+  return res.json();
+}
+
+export async function disableVisionScreenshot(): Promise<VisionScreenshotStatus> {
+  const res = await fetch(`${getBase()}/v1/vision/screenshot/disable`, { method: 'POST' });
+  if (!res.ok) throw new Error('Failed to disable screenshot ingestion');
+  return res.json();
+}
+
+export async function ingestVisionScreenshot(file: File, prompt?: string): Promise<VisionScreenshotIngestResponse> {
+  const form = new FormData();
+  form.append('image', file, file.name);
+  if (prompt?.trim()) form.append('prompt', prompt.trim());
+  const res = await fetch(`${getBase()}/v1/vision/screenshot/ingest`, {
+    method: 'POST',
+    body: form,
+  });
+  if (!res.ok) {
+    throw new Error(await readApiError(res, 'Failed to ingest screenshot'));
   }
   return res.json();
 }
