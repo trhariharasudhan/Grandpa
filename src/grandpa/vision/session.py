@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from grandpa.vision.analyzer import VisionAnalyzer
+from grandpa.vision.ocr import extract_text_from_image_bytes, ocr_status
 
 
 @dataclass
@@ -37,6 +38,7 @@ class VisionSession:
             "last_format": self._last_format,
             "last_analysis": self.last_analysis,
             "last_error": self.last_error,
+            "ocr": ocr_status(),
             "live_capture": False,
             "screen_capture_enabled": False,
             "webcam_enabled": False,
@@ -57,3 +59,39 @@ class VisionSession:
         else:
             self.last_error = result.error
         return result.to_dict()
+
+    def extract_ocr_from_image_bytes(self, data: bytes, filename: str | None, mime_type: str | None) -> dict[str, Any]:
+        analysis = self._analyzer.analyze(data, filename, mime_type)
+        normalized_mime = (mime_type or "").split(";")[0].strip().lower()
+        if not analysis.success:
+            self.last_error = analysis.error
+            return {
+                "ok": False,
+                "filename": analysis.filename,
+                "mime_type": normalized_mime or None,
+                "width": analysis.width,
+                "height": analysis.height,
+                "ocr": {
+                    "available": False,
+                    "text": "",
+                    "engine": "none",
+                    "error": analysis.error,
+                },
+            }
+
+        self.last_image_name = analysis.filename
+        self.last_image_size = {
+            "bytes": len(data),
+            "width": int(analysis.width or 0),
+            "height": int(analysis.height or 0),
+        }
+        self._last_format = analysis.format
+        self.last_error = None
+        return {
+            "ok": True,
+            "filename": analysis.filename,
+            "mime_type": normalized_mime or None,
+            "width": analysis.width,
+            "height": analysis.height,
+            "ocr": extract_text_from_image_bytes(data, normalized_mime),
+        }

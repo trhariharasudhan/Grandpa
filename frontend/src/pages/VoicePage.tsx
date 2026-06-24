@@ -15,6 +15,7 @@ import {
   enableConversationMode,
   enableVoiceLoop,
   enableWakeWord,
+  extractVisionText,
   fetchConversationContext,
   fetchConversationHistory,
   fetchConversationModeStatus,
@@ -39,6 +40,7 @@ import {
   type ConversationMessage,
   type ConversationModeStatus,
   type VisionAnalyzeResponse,
+  type VisionOcrResponse,
   type VisionStatus,
   type VoiceLoopStatus,
   type WakeWordStatus,
@@ -69,6 +71,7 @@ export function VoicePage() {
   const [visionStatus, setVisionStatus] = useState<VisionStatus | null>(null);
   const [visionFile, setVisionFile] = useState<File | null>(null);
   const [visionResult, setVisionResult] = useState<VisionAnalyzeResponse | null>(null);
+  const [visionOcrResult, setVisionOcrResult] = useState<VisionOcrResponse | null>(null);
   const [visionMessage, setVisionMessage] = useState('');
   const [loopWakeText, setLoopWakeText] = useState('hey grandpa');
   const [loopCommandText, setLoopCommandText] = useState('what is my voice status');
@@ -339,6 +342,26 @@ export function VoicePage() {
     }
   };
 
+  const runVisionOcr = async () => {
+    if (!visionFile) return;
+    setBusy(true);
+    setError('');
+    setVisionMessage('');
+    setVisionOcrResult(null);
+    try {
+      const result = await extractVisionText(visionFile);
+      setVisionOcrResult(result);
+      setVisionStatus(await fetchVisionStatus());
+      if (!result.ok || result.ocr.error) {
+        setVisionMessage(result.ocr.error || 'OCR failed.');
+      }
+    } catch (err) {
+      setVisionMessage(err instanceof Error ? err.message : 'OCR failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runLoopWake = async () => {
     setBusy(true);
     setError('');
@@ -599,7 +622,7 @@ export function VoicePage() {
               <div className="grid gap-3 md:grid-cols-3">
                 <StatusBlock label="Enabled" value={visionStatus?.enabled ? 'enabled' : 'disabled'} />
                 <StatusBlock label="Last Format" value={visionStatus?.last_format || 'none'} />
-                <StatusBlock label="Live Capture" value="off" />
+                <StatusBlock label="OCR" value={visionStatus?.ocr?.available ? visionStatus.ocr.engine : 'unavailable'} />
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <button type="button" onClick={() => void setVisionEnabled(true)} disabled={busy || visionStatus?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
@@ -620,6 +643,7 @@ export function VoicePage() {
                   onChange={(event) => {
                     setVisionFile(event.target.files?.[0] || null);
                     setVisionResult(null);
+                    setVisionOcrResult(null);
                     setVisionMessage('');
                   }}
                   className="text-sm"
@@ -630,10 +654,15 @@ export function VoicePage() {
                     <img src={visionPreviewUrl} alt="Vision upload preview" className="max-h-48 w-full object-contain" />
                   </div>
                 )}
-                <button type="button" onClick={() => void runVisionAnalyze()} disabled={busy || !visionFile} className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
-                  <ImageIcon size={15} />
-                  Analyze Image
-                </button>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={() => void runVisionAnalyze()} disabled={busy || !visionFile} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                    <ImageIcon size={15} />
+                    Analyze Image
+                  </button>
+                  <button type="button" onClick={() => void runVisionOcr()} disabled={busy || !visionFile} className="inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                    Extract Text
+                  </button>
+                </div>
               </div>
               {visionMessage && (
                 <div className="mt-3 rounded-xl p-3 text-sm" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-danger)' }}>
@@ -647,8 +676,17 @@ export function VoicePage() {
                   <div className="mt-2">{visionResult.analysis}</div>
                 </div>
               )}
+              {visionOcrResult && (
+                <div className="mt-3 rounded-xl p-3 text-sm" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                  <div style={{ color: 'var(--color-text)' }}>OCR · {visionOcrResult.ocr.engine}</div>
+                  <div className="mt-1">{visionOcrResult.width || 'unknown'} x {visionOcrResult.height || 'unknown'} · {visionOcrResult.mime_type || 'unknown'}</div>
+                  <pre className="mt-2 whitespace-pre-wrap text-xs" style={{ color: 'var(--color-text-secondary)' }}>
+                    {visionOcrResult.ocr.text || visionOcrResult.ocr.error || 'No text detected.'}
+                  </pre>
+                </div>
+              )}
               <p className="mt-3 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
-                User-initiated upload only. No OCR, Ollama, LLaVA, webcam, desktop capture, or background watching is used.
+                User-initiated upload only. No Ollama, LLaVA, webcam, desktop capture, or background watching is used.
               </p>
             </Panel>
 

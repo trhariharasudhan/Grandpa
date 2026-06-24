@@ -117,6 +117,8 @@ def test_status_shows_last_image_metadata(vision_client: TestClient) -> None:
     assert status["last_format"] == "png"
     assert status["last_analysis"] == PLACEHOLDER_ANALYSIS
     assert status["last_error"] is None
+    assert "ocr" in status
+    assert isinstance(status["ocr"]["available"], bool)
     assert status["live_capture"] is False
     assert status["screen_capture_enabled"] is False
     assert status["webcam_enabled"] is False
@@ -134,3 +136,79 @@ def test_no_real_vision_model_or_live_capture_is_used() -> None:
     assert status["live_capture"] is False
     assert status["screen_capture_enabled"] is False
     assert status["webcam_enabled"] is False
+
+
+def test_ocr_endpoint_with_valid_image_and_mocked_ocr(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    import grandpa.vision.ocr as ocr
+
+    monkeypatch.setattr(ocr.util, "find_spec", lambda name: object() if name == "pytesseract" else None)
+
+    class FakeTesseract:
+        @staticmethod
+        def image_to_string(_image: object) -> str:
+            return "Hello from image"
+
+    monkeypatch.setattr(ocr, "_load_pytesseract", lambda: FakeTesseract)
+
+    response = vision_client.post(
+        "/v1/vision/ocr",
+        files={"image": ("text.png", _image_bytes(), "image/png")},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["filename"] == "text.png"
+    assert payload["mime_type"] == "image/png"
+    assert payload["width"] == 2
+    assert payload["height"] == 3
+    assert payload["ocr"] == {
+        "available": True,
+        "text": "Hello from image",
+        "engine": "pytesseract",
+        "error": None,
+    }
+
+
+def test_ocr_unavailable_path(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    import grandpa.vision.ocr as ocr
+
+    monkeypatch.setattr(ocr.util, "find_spec", lambda _name: None)
+
+    response = vision_client.post(
+        "/v1/vision/ocr",
+        files={"image": ("text.png", _image_bytes(), "image/png")},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["ocr"]["available"] is False
+    assert payload["ocr"]["engine"] == "none"
+    assert payload["ocr"]["text"] == "OCR is not available. Install OCR dependencies to extract text."
+
+
+def test_ocr_rejects_invalid_image(vision_client: TestClient) -> None:
+    response = vision_client.post(
+        "/v1/vision/ocr",
+        files={"image": ("broken.png", b"not an image", "image/png")},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is False
+    assert payload["ocr"]["available"] is False
+    assert payload["ocr"]["error"] == "Invalid image file."
+
+
+def test_ocr_rejects_empty_upload(vision_client: TestClient) -> None:
+    response = vision_client.post(
+        "/v1/vision/ocr",
+        files={"image": ("empty.png", b"", "image/png")},
+    )
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ok"] is False
+    assert payload["ocr"]["available"] is False
+    assert payload["ocr"]["error"] == "Empty image file."
