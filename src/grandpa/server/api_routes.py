@@ -8,7 +8,15 @@ import json
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    APIRouter,
+    File,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -1473,6 +1481,7 @@ async def speech_health(request: Request):
 
 voice_router = APIRouter(prefix="/v1/voice", tags=["voice"])
 conversation_router = APIRouter(prefix="/v1/conversation", tags=["conversation"])
+vision_router = APIRouter(prefix="/v1/vision", tags=["vision"])
 
 
 @conversation_router.get("/status")
@@ -1506,6 +1515,35 @@ async def conversation_context(request: Request, max_messages: int = 6, max_char
         request,
         max_messages=max_messages,
         max_chars=max_chars,
+    )
+
+
+@vision_router.get("/status")
+async def vision_status(request: Request):
+    """Return safe Vision Mode status without live capture."""
+    return _get_vision_session(request).status()
+
+
+@vision_router.post("/enable")
+async def vision_enable(request: Request):
+    """Enable user-initiated image upload analysis."""
+    return _get_vision_session(request).enable()
+
+
+@vision_router.post("/disable")
+async def vision_disable(request: Request):
+    """Disable user-initiated image upload analysis."""
+    return _get_vision_session(request).disable()
+
+
+@vision_router.post("/analyze")
+async def vision_analyze(request: Request, image: UploadFile = File(...)):
+    """Validate and inspect an uploaded image without calling a vision model."""
+    data = await image.read()
+    return _get_vision_session(request).analyze_image_bytes(
+        data,
+        image.filename,
+        image.content_type,
     )
 
 
@@ -2095,6 +2133,16 @@ def _get_conversation_session(request: Request):
     return session
 
 
+def _get_vision_session(request: Request):
+    from grandpa.vision.session import VisionSession
+
+    session = getattr(request.app.state, "vision_session", None)
+    if session is None:
+        session = VisionSession()
+        request.app.state.vision_session = session
+    return session
+
+
 def _touch_conversation_mode(request: Request, transcript: str) -> None:
     try:
         _get_conversation_mode_session(request).touch(transcript)
@@ -2353,6 +2401,7 @@ def include_all_routes(app) -> None:
     app.include_router(speech_router)
     app.include_router(voice_router)
     app.include_router(conversation_router)
+    app.include_router(vision_router)
     app.include_router(feedback_router)
     app.include_router(optimize_router)
 
@@ -2418,6 +2467,7 @@ __all__ = [
     "speech_router",
     "voice_router",
     "conversation_router",
+    "vision_router",
     "feedback_router",
     "optimize_router",
 ]

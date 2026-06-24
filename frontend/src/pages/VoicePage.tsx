@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ElementType, ReactNode } from 'react';
-import { Activity, Mic2, Play, RefreshCw, Send, Square, Volume2, Waves } from 'lucide-react';
+import { Activity, Image as ImageIcon, Mic2, Play, RefreshCw, Send, Square, Upload, Volume2, Waves } from 'lucide-react';
 import {
+  analyzeVisionImage,
   clearVoiceHistory,
   commandVoice,
   confirmVoiceAction,
   clearConversation,
+  disableVision,
   disableConversationMode,
   disableWakeWord,
   disableVoiceLoop,
+  enableVision,
   enableConversationMode,
   enableVoiceLoop,
   enableWakeWord,
@@ -19,6 +22,7 @@ import {
   fetchVoiceLoopStatus,
   fetchVoiceSttStatus,
   fetchVoiceStatus,
+  fetchVisionStatus,
   fetchWakeWordStatus,
   listenFromAudio,
   simulateVoiceLoopCommand,
@@ -34,6 +38,8 @@ import {
   testWakeWord,
   type ConversationMessage,
   type ConversationModeStatus,
+  type VisionAnalyzeResponse,
+  type VisionStatus,
   type VoiceLoopStatus,
   type WakeWordStatus,
   type WakeWordTestResponse,
@@ -60,6 +66,10 @@ export function VoicePage() {
   const [wakeTestResult, setWakeTestResult] = useState<WakeWordTestResponse | null>(null);
   const [voiceLoop, setVoiceLoop] = useState<VoiceLoopStatus | null>(null);
   const [conversationMode, setConversationMode] = useState<ConversationModeStatus | null>(null);
+  const [visionStatus, setVisionStatus] = useState<VisionStatus | null>(null);
+  const [visionFile, setVisionFile] = useState<File | null>(null);
+  const [visionResult, setVisionResult] = useState<VisionAnalyzeResponse | null>(null);
+  const [visionMessage, setVisionMessage] = useState('');
   const [loopWakeText, setLoopWakeText] = useState('hey grandpa');
   const [loopCommandText, setLoopCommandText] = useState('what is my voice status');
   const [recording, setRecording] = useState(false);
@@ -86,6 +96,7 @@ export function VoicePage() {
       setVoiceLoop(await fetchVoiceLoopStatus());
       setConversationMode(await fetchConversationModeStatus());
       setSttStatus(await fetchVoiceSttStatus());
+      setVisionStatus(await fetchVisionStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load voice status.');
     } finally {
@@ -102,6 +113,17 @@ export function VoicePage() {
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
+
+  const visionPreviewUrl = useMemo(() => {
+    if (!visionFile) return '';
+    return URL.createObjectURL(visionFile);
+  }, [visionFile]);
+
+  useEffect(() => {
+    return () => {
+      if (visionPreviewUrl) URL.revokeObjectURL(visionPreviewUrl);
+    };
+  }, [visionPreviewUrl]);
 
   const sessionState = status?.session?.state || 'idle';
   const stateColor = useMemo(() => {
@@ -279,6 +301,39 @@ export function VoicePage() {
       setConversationMode(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Conversation mode state change failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const setVisionEnabled = async (enabled: boolean) => {
+    setBusy(true);
+    setError('');
+    setVisionMessage('');
+    try {
+      setVisionStatus(enabled ? await enableVision() : await disableVision());
+    } catch (err) {
+      setVisionMessage(err instanceof Error ? err.message : 'Vision mode update failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runVisionAnalyze = async () => {
+    if (!visionFile) return;
+    setBusy(true);
+    setError('');
+    setVisionMessage('');
+    setVisionResult(null);
+    try {
+      const result = await analyzeVisionImage(visionFile);
+      setVisionResult(result);
+      setVisionStatus(await fetchVisionStatus());
+      if (!result.success) {
+        setVisionMessage(result.error || 'Image analysis failed.');
+      }
+    } catch (err) {
+      setVisionMessage(err instanceof Error ? err.message : 'Image analysis failed.');
     } finally {
       setBusy(false);
     }
@@ -540,6 +595,63 @@ export function VoicePage() {
           </Panel>
 
           <div className="flex flex-col gap-5">
+            <Panel title="Vision Mode">
+              <div className="grid gap-3 md:grid-cols-3">
+                <StatusBlock label="Enabled" value={visionStatus?.enabled ? 'enabled' : 'disabled'} />
+                <StatusBlock label="Last Format" value={visionStatus?.last_format || 'none'} />
+                <StatusBlock label="Live Capture" value="off" />
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button type="button" onClick={() => void setVisionEnabled(true)} disabled={busy || visionStatus?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                  Enable
+                </button>
+                <button type="button" onClick={() => void setVisionEnabled(false)} disabled={busy || !visionStatus?.enabled} className="inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm disabled:opacity-60" style={{ border: '1px solid var(--color-border)', color: 'var(--color-text)' }}>
+                  Disable
+                </button>
+              </div>
+              <div className="mt-3 rounded-xl p-3" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)' }}>
+                <label className="mb-2 flex items-center gap-2 text-sm" style={{ color: 'var(--color-text)' }}>
+                  <Upload size={15} />
+                  Upload image
+                </label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={(event) => {
+                    setVisionFile(event.target.files?.[0] || null);
+                    setVisionResult(null);
+                    setVisionMessage('');
+                  }}
+                  className="text-sm"
+                  style={{ color: 'var(--color-text-secondary)' }}
+                />
+                {visionPreviewUrl && (
+                  <div className="mt-3 overflow-hidden rounded-xl" style={{ border: '1px solid var(--color-border)' }}>
+                    <img src={visionPreviewUrl} alt="Vision upload preview" className="max-h-48 w-full object-contain" />
+                  </div>
+                )}
+                <button type="button" onClick={() => void runVisionAnalyze()} disabled={busy || !visionFile} className="mt-3 inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium disabled:opacity-60" style={{ background: 'var(--color-accent)', color: 'var(--color-on-accent)' }}>
+                  <ImageIcon size={15} />
+                  Analyze Image
+                </button>
+              </div>
+              {visionMessage && (
+                <div className="mt-3 rounded-xl p-3 text-sm" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-danger)' }}>
+                  {visionMessage}
+                </div>
+              )}
+              {visionResult?.success && (
+                <div className="mt-3 rounded-xl p-3 text-sm" style={{ background: 'var(--color-bg)', border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
+                  <div style={{ color: 'var(--color-text)' }}>{visionResult.filename}</div>
+                  <div className="mt-1">{visionResult.width} x {visionResult.height} · {visionResult.format}</div>
+                  <div className="mt-2">{visionResult.analysis}</div>
+                </div>
+              )}
+              <p className="mt-3 text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                User-initiated upload only. No OCR, Ollama, LLaVA, webcam, desktop capture, or background watching is used.
+              </p>
+            </Panel>
+
             <Panel title="Wake Word">
               <div className="grid gap-3 md:grid-cols-2">
                 <StatusBlock label="Current Phrase" value={wakeWord?.wake_phrase || 'hey grandpa'} />
