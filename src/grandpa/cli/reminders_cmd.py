@@ -11,6 +11,7 @@ from rich.table import Table
 from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
 from grandpa.reminders import (
     ReminderSchedulerService,
+    ReminderStatus,
     ReminderStore,
     WindowsToastNotifier,
 )
@@ -95,6 +96,40 @@ def reminders_list(show_all: bool, status: str | None) -> None:
     console.print(table)
 
 
+@reminders.command("clear")
+@click.option(
+    "--status",
+    default=None,
+    type=click.Choice(["triggered", "cancelled", "failed"]),
+    help="Delete reminders matching this non-pending status.",
+)
+@click.option(
+    "--all",
+    "clear_all",
+    is_flag=True,
+    help="Delete all reminders, including pending reminders.",
+)
+@click.option("--yes", is_flag=True, help="Skip confirmation for --all.")
+def reminders_clear(status: ReminderStatus | None, clear_all: bool, yes: bool) -> None:
+    """Clear old reminder history from local storage."""
+    console = Console()
+    if status is not None and clear_all:
+        raise click.ClickException("Use either --status or --all, not both.")
+    store = ReminderStore()
+    if clear_all:
+        if not yes:
+            click.confirm(
+                "This will delete all reminders, including pending reminders. Continue?",
+                abort=True,
+            )
+        deleted = store.delete()
+        _print_deleted(console, deleted, None)
+        return
+    statuses: list[ReminderStatus] = [status] if status is not None else ["triggered", "cancelled", "failed"]
+    deleted = store.delete(statuses=statuses)
+    _print_deleted(console, deleted, status)
+
+
 @reminders.command("cancel")
 @click.argument("reminder_id")
 def reminders_cancel(reminder_id: str) -> None:
@@ -114,6 +149,17 @@ def reminders_run_due() -> None:
     service = ReminderSchedulerService(ReminderStore(), notifier=WindowsToastNotifier())
     result = service.tick()
     console.print(f"[green]Checked reminders.[/green] Triggered: {len(result['triggered'])}; failed: {len(result['failed'])}")
+
+
+def _print_deleted(console: Console, deleted: int, status: str | None) -> None:
+    if deleted == 0:
+        console.print("[dim]No reminders matched.[/dim]")
+        return
+    noun = "reminder" if deleted == 1 else "reminders"
+    if status:
+        console.print(f"[green]Deleted {deleted} {status} {noun}.[/green]")
+    else:
+        console.print(f"[green]Deleted {deleted} {noun}.[/green]")
 
 
 __all__ = ["reminders"]

@@ -189,6 +189,20 @@ class ReminderStore:
                 rows = conn.execute("SELECT * FROM reminders ORDER BY due_at ASC").fetchall()
         return [_row_to_reminder(row) for row in rows]
 
+    def delete(self, *, statuses: list[ReminderStatus] | None = None) -> int:
+        with self._connect() as conn:
+            if statuses is None:
+                cursor = conn.execute("DELETE FROM reminders")
+            elif not statuses:
+                return 0
+            else:
+                placeholders = ", ".join("?" for _status in statuses)
+                cursor = conn.execute(
+                    f"DELETE FROM reminders WHERE status IN ({placeholders})",
+                    tuple(statuses),
+                )
+        return int(cursor.rowcount)
+
     def cancel(self, reminder_id: str, *, now: datetime | None = None) -> Reminder | None:
         reminder = self.get(reminder_id)
         if reminder is None:
