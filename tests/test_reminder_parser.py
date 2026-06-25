@@ -127,3 +127,83 @@ def test_cli_add_reports_parse_errors(monkeypatch, tmp_path) -> None:
     assert result.exit_code == 1
     assert "Unsupported reminder time" in result.output
     assert store.list() == []
+
+
+def test_cli_list_defaults_to_pending_reminders(monkeypatch, tmp_path) -> None:
+    store = ReminderStore(tmp_path / "reminders.db")
+    pending = store.create("pending reminder", NOW + timedelta(hours=1))
+    cancelled = store.create("cancelled reminder", NOW + timedelta(hours=2))
+    failed = store.create("failed reminder", NOW + timedelta(hours=3))
+    store.cancel(cancelled.id, now=NOW)
+    store.mark_failed(failed.id, "test failure", now=NOW)
+    monkeypatch.setattr("grandpa.cli.reminders_cmd.ReminderStore", lambda: store)
+
+    result = CliRunner().invoke(reminders, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert pending.message in result.output
+    assert "pending" in result.output
+    assert cancelled.message not in result.output
+    assert failed.message not in result.output
+
+
+def test_cli_list_all_includes_cancelled_and_failed(monkeypatch, tmp_path) -> None:
+    store = ReminderStore(tmp_path / "reminders.db")
+    pending = store.create("pending reminder", NOW + timedelta(hours=1))
+    cancelled = store.create("cancelled reminder", NOW + timedelta(hours=2))
+    failed = store.create("failed reminder", NOW + timedelta(hours=3))
+    store.cancel(cancelled.id, now=NOW)
+    store.mark_failed(failed.id, "test failure", now=NOW)
+    monkeypatch.setattr("grandpa.cli.reminders_cmd.ReminderStore", lambda: store)
+
+    result = CliRunner().invoke(reminders, ["list", "--all"])
+
+    assert result.exit_code == 0, result.output
+    assert pending.message in result.output
+    assert cancelled.message in result.output
+    assert failed.message in result.output
+    assert "cancelled" in result.output
+    assert "failed" in result.output
+
+
+def test_cli_list_status_cancelled_only(monkeypatch, tmp_path) -> None:
+    store = ReminderStore(tmp_path / "reminders.db")
+    pending = store.create("pending reminder", NOW + timedelta(hours=1))
+    cancelled = store.create("cancelled reminder", NOW + timedelta(hours=2))
+    failed = store.create("failed reminder", NOW + timedelta(hours=3))
+    store.cancel(cancelled.id, now=NOW)
+    store.mark_failed(failed.id, "test failure", now=NOW)
+    monkeypatch.setattr("grandpa.cli.reminders_cmd.ReminderStore", lambda: store)
+
+    result = CliRunner().invoke(reminders, ["list", "--status", "cancelled"])
+
+    assert result.exit_code == 0, result.output
+    assert cancelled.message in result.output
+    assert "cancelled" in result.output
+    assert pending.message not in result.output
+    assert failed.message not in result.output
+
+
+def test_cli_list_no_pending_message(monkeypatch, tmp_path) -> None:
+    store = ReminderStore(tmp_path / "reminders.db")
+    cancelled = store.create("cancelled reminder", NOW + timedelta(hours=1))
+    store.cancel(cancelled.id, now=NOW)
+    monkeypatch.setattr("grandpa.cli.reminders_cmd.ReminderStore", lambda: store)
+
+    result = CliRunner().invoke(reminders, ["list"])
+
+    assert result.exit_code == 0, result.output
+    assert "No pending reminders found." in result.output
+    assert store.list(status="cancelled")[0].message == "cancelled reminder"
+
+
+def test_cli_cancel_pending_reminder_marks_cancelled(monkeypatch, tmp_path) -> None:
+    store = ReminderStore(tmp_path / "reminders.db")
+    reminder = store.create("cancel from cli", NOW + timedelta(hours=1))
+    monkeypatch.setattr("grandpa.cli.reminders_cmd.ReminderStore", lambda: store)
+
+    result = CliRunner().invoke(reminders, ["cancel", reminder.id])
+
+    assert result.exit_code == 0, result.output
+    assert "cancelled" in result.output
+    assert store.get(reminder.id).status == "cancelled"  # type: ignore[union-attr]

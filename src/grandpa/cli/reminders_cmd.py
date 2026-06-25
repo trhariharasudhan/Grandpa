@@ -63,17 +63,27 @@ def reminders_add(phrase: str) -> None:
 
 @reminders.command("list")
 @click.option(
+    "--all",
+    "show_all",
+    is_flag=True,
+    help="Show all reminders, including cancelled, failed, and triggered.",
+)
+@click.option(
     "--status",
     default=None,
     type=click.Choice(["pending", "triggered", "cancelled", "failed"]),
     help="Filter reminders by status.",
 )
-def reminders_list(status: str | None) -> None:
+def reminders_list(show_all: bool, status: str | None) -> None:
     """List local reminders."""
     console = Console()
-    items = ReminderStore().list(status=status)  # type: ignore[arg-type]
+    effective_status = status if status is not None else None if show_all else "pending"
+    items = ReminderStore().list(status=effective_status)  # type: ignore[arg-type]
     if not items:
-        console.print("[dim]No reminders found.[/dim]")
+        if effective_status == "pending" and status is None and not show_all:
+            console.print("[dim]No pending reminders found.[/dim]")
+        else:
+            console.print("[dim]No reminders found.[/dim]")
         return
     table = Table(title="Grandpa Reminders")
     table.add_column("ID", style="cyan")
