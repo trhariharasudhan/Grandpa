@@ -113,6 +113,7 @@ class TestChatSlashCommands:
 
         assert message is not None
         assert "/memory list" in message
+        assert "/memory all" in message
         assert "/memory search <query>" in message
         assert "/memory forget <query or id>" in message
 
@@ -125,6 +126,61 @@ class TestChatSlashCommands:
         assert message is not None
         assert "Saved memories:" in message
         assert "Hari" in message
+        assert "Use /memory all" in message
+
+    def test_memory_list_hides_internal_entries_by_default(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("preferences", "name", "Hari")
+        store.remember("work_context", "agent_goal_setup", "internal goal")
+        store.remember("note", "multi_agent_mag_task", "internal orchestration")
+        store.remember("note", "burn_in_validation_marker", "local-only")
+        store.remember("note", "marker", "burn in validation marker")
+
+        message = _handle_memory_slash_command("/memory list", store=store)
+
+        assert message is not None
+        assert "Hari" in message
+        assert "agent_goal_setup" not in message
+        assert "multi_agent_mag_task" not in message
+        assert "burn_in_validation_marker" not in message
+        assert "burn in validation marker" not in message
+        assert "Use /memory all" in message
+
+    def test_memory_all_shows_internal_entries(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("work_context", "agent_goal_setup", "internal goal")
+        store.remember("note", "burn_in_validation_marker", "local-only")
+
+        message = _handle_memory_slash_command("/memory all", store=store)
+
+        assert message is not None
+        assert "Saved memories:" in message
+        assert "agent_goal_setup" in message
+        assert "internal goal" in message
+        assert "burn_in_validation_marker" in message
+
+    def test_memory_list_empty_after_filter_has_guidance(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("work_context", "agent_goal_setup", "internal goal")
+
+        message = _handle_memory_slash_command("/memory list", store=store)
+
+        assert message == (
+            "No user-facing memories found.\n"
+            "Use /memory all to show internal memories.\n"
+            "You can save one with: remember my name is Hari"
+        )
+
+    def test_memory_list_deduplicates_repeated_tool_values(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("apps_tools", "uses_vs_code", "VS Code")
+        store.remember("note", "uses", "VS Code")
+
+        message = _handle_memory_slash_command("/memory list", store=store)
+
+        assert message is not None
+        assert message.count("VS Code") == 1
+        assert "Tools & Preferences\n- uses: VS Code" in message
 
     def test_memory_search(self, tmp_path) -> None:
         store = MemoryStore(tmp_path / "memory.db")
@@ -135,6 +191,63 @@ class TestChatSlashCommands:
         assert message is not None
         assert "Matching memories:" in message
         assert "AI automation" in message
+
+    def test_memory_search_vs_code_excludes_unrelated_project(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("apps_tools", "uses_vs_code", "VS Code")
+        store.remember("project", "project", "Grandpa")
+
+        message = _handle_memory_slash_command("/memory search VS Code", store=store)
+
+        assert message is not None
+        assert "Matching memories:" in message
+        assert "uses_vs_code" in message
+        assert "VS Code" in message
+        assert "project/project" not in message
+        assert "Grandpa" not in message
+
+    def test_memory_search_grandpa_returns_project(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("apps_tools", "uses_vs_code", "VS Code")
+        store.remember("project", "project", "Grandpa")
+
+        message = _handle_memory_slash_command("/memory search Grandpa", store=store)
+
+        assert message is not None
+        assert "Matching memories:" in message
+        assert "project/project" in message
+        assert "Grandpa" in message
+        assert "uses_vs_code" not in message
+
+    def test_memory_search_filters_internal_entries_by_default(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("work_context", "agent_goal_browser", "browser automation diagnostics")
+
+        message = _handle_memory_slash_command("/memory search browser", store=store)
+
+        assert message == "No memories found."
+
+    def test_memory_search_all_includes_internal_entries(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("work_context", "agent_goal_browser", "browser automation diagnostics")
+
+        message = _handle_memory_slash_command("/memory search browser --all", store=store)
+
+        assert message is not None
+        assert "Matching memories:" in message
+        assert "agent_goal_browser" in message
+
+    def test_memory_search_all_keeps_query_relevance(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("work_context", "agent_goal_grandpa", "Grandpa internal task")
+        store.remember("work_context", "agent_goal_browser", "browser automation diagnostics")
+
+        message = _handle_memory_slash_command("/memory search Grandpa --all", store=store)
+
+        assert message is not None
+        assert "Matching memories:" in message
+        assert "agent_goal_grandpa" in message
+        assert "agent_goal_browser" not in message
 
     def test_memory_forget_by_id(self, tmp_path) -> None:
         store = MemoryStore(tmp_path / "memory.db")
@@ -218,6 +331,16 @@ class TestChatSlashCommands:
         assert message is not None
         assert "Saved memories:" in message
         assert "Hari" in message
+
+    def test_show_all_memories_routes_to_raw_memory_list(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("work_context", "agent_goal_setup", "internal goal")
+
+        message = _handle_natural_assistant_intent("show all memories", memory_store=store)
+
+        assert message is not None
+        assert "Saved memories:" in message
+        assert "agent_goal_setup" in message
 
     def test_list_my_reminders_routes_to_one_shot_reminders(self, tmp_path) -> None:
         from datetime import UTC, datetime, timedelta

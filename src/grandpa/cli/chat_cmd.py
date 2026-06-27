@@ -30,6 +30,11 @@ NATURAL_MEMORY_LIST_INTENTS = {
     "list memories",
 }
 
+NATURAL_MEMORY_ALL_INTENTS = {
+    "show all memories",
+    "list all memories",
+}
+
 NATURAL_MEMORY_RECALL_INTENTS = {
     "what do you remember",
     "what do you remember about me",
@@ -133,18 +138,27 @@ def _handle_memory_slash_command(command: str, *, store=None) -> str | None:
         return (
             "Memory commands:\n"
             "- /memory list\n"
+            "- /memory all\n"
             "- /memory search <query>\n"
+            "- /memory search <query> --all\n"
             "- /memory forget <query or id>\n"
             "You can also say: remember my name is Hari"
         )
     action = parts[1].lower()
     argument = parts[2].strip() if len(parts) > 2 else ""
     if action == "list":
+        return _format_user_memories(memory_store.list_memories())
+    if action == "all":
         return _format_memories(memory_store.list_memories())
     if action == "search":
         if not argument:
             return "Usage: /memory search <query>"
-        return _format_memories(memory_store.search_memories(argument), heading="Matching memories:")
+        include_internal = _strip_all_flag(argument)
+        results = memory_store.search_memories(include_internal[0])
+        results = _filter_memory_search_results(include_internal[0], results)
+        if not include_internal[1]:
+            results = _user_facing_memories(results)
+        return _format_memories(results, heading="Matching memories:")
     if action == "forget":
         if not argument:
             return "Usage: /memory forget <query or id>"
@@ -198,11 +212,16 @@ def _handle_natural_assistant_intent(text: str, *, memory_store=None, reminder_s
 
 def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
     normalized = _normalize_local_intent(text)
-    if normalized in NATURAL_MEMORY_LIST_INTENTS:
+    if normalized in NATURAL_MEMORY_ALL_INTENTS:
         from grandpa.memory_context import MemoryStore
 
         memory_store = store or MemoryStore()
         return _format_memories(memory_store.list_memories())
+    if normalized in NATURAL_MEMORY_LIST_INTENTS:
+        from grandpa.memory_context import MemoryStore
+
+        memory_store = store or MemoryStore()
+        return _format_user_memories(memory_store.list_memories())
     if normalized in NATURAL_MEMORY_RECALL_INTENTS:
         from grandpa.memory_context import MemoryStore, handle_memory_command
 
@@ -258,6 +277,143 @@ def _format_memories(items: list[dict], *, heading: str = "Saved memories:") -> 
     for item in items[:20]:
         lines.append(f"- #{item['id']} {item['category']}/{item['key']}: {item['value']}")
     return "\n".join(lines)
+
+
+def _format_user_memories(items: list[dict]) -> str:
+    visible = _user_facing_memories(items)
+    if not visible:
+        return (
+            "No user-facing memories found.\n"
+            "Use /memory all to show internal memories.\n"
+            "You can save one with: remember my name is Hari"
+        )
+    grouped: dict[str, list[dict]] = {
+        "Personal": [],
+        "Projects": [],
+        "Tools & Preferences": [],
+        "Other": [],
+    }
+    for item in visible[:15]:
+        grouped[_memory_group(item)].append(item)
+    lines = ["Saved memories:"]
+    for heading, group_items in grouped.items():
+        if not group_items:
+            continue
+        lines.append("")
+        lines.append(heading)
+        for item in group_items:
+            lines.append(f"- {_friendly_memory_line(item)}")
+    lines.append("")
+    lines.append("Use /memory all to show internal memories.")
+    return "\n".join(lines)
+
+
+def _user_facing_memories(items: list[dict]) -> list[dict]:
+    visible = [item for item in items if _is_user_facing_memory(item)]
+    deduped: list[dict] = []
+    seen: set[str] = set()
+    for item in visible:
+        fingerprint = _memory_fingerprint(item)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        deduped.append(item)
+    return deduped
+
+
+def _filter_memory_search_results(query: str, items: list[dict]) -> list[dict]:
+    query_terms = _memory_search_terms(query)
+    if not query_terms:
+        return []
+    return [item for item in items if _memory_matches_query_terms(item, query_terms)]
+
+
+def _memory_matches_query_terms(item: dict, query_terms: list[str]) -> bool:
+    candidate = _normalize_memory_text(
+        " ".join(
+            str(item.get(field) or "")
+            for field in ("category", "key", "value", "source")
+        )
+    )
+    if not candidate:
+        return False
+    phrase = " ".join(query_terms)
+    if len(query_terms) > 1 and phrase in candidate:
+        return True
+    candidate_terms = set(candidate.split())
+    return all(term in candidate_terms for term in query_terms)
+
+
+def _memory_search_terms(query: str) -> list[str]:
+    return _normalize_memory_text(query).split()
+
+
+def _is_user_facing_memory(item: dict) -> bool:
+    category = str(item.get("category") or "").lower()
+    key = str(item.get("key") or "").lower()
+    source = str(item.get("source") or "").lower()
+    value = str(item.get("value") or "").lower()
+    internal_haystack = f"{category} {key} {value} {source}"
+    if category in {"work_context", "diagnostics"}:
+        return False
+    internal_markers = (
+        "agent_goal",
+        "burn_in",
+        "burn in",
+        "diagnostics",
+        "multi_agent",
+        "diagnostic",
+        "readiness",
+        "browser",
+        "planner",
+        "generated",
+        "test marker",
+        "validation marker",
+        "work_context",
+    )
+    return not any(marker in internal_haystack for marker in internal_markers)
+
+
+def _memory_fingerprint(item: dict) -> str:
+    value = _normalize_memory_text(str(item.get("value") or ""))
+    if value:
+        return f"{_memory_group(item)}:{value}"
+    return f"{_memory_group(item)}:{_normalize_memory_text(str(item.get('key') or ''))}"
+
+
+def _normalize_memory_text(text: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+def _memory_group(item: dict) -> str:
+    category = str(item.get("category") or "")
+    key = str(item.get("key") or "")
+    key_lower = key.lower()
+    if category == "project" or "project" in key:
+        return "Projects"
+    if (
+        category in {"preferences", "apps_tools"}
+        or key_lower.startswith("uses")
+        or key_lower.startswith("preferred")
+    ):
+        return "Tools & Preferences"
+    if category == "people" or key in {"name", "my_name"}:
+        return "Personal"
+    return "Other"
+
+
+def _friendly_memory_line(item: dict) -> str:
+    key = str(item.get("key") or "").replace("_", " ")
+    value = str(item.get("value") or "")
+    if key:
+        return f"{key}: {value}"
+    return value
+
+
+def _strip_all_flag(argument: str) -> tuple[str, bool]:
+    parts = argument.split()
+    filtered = [part for part in parts if part != "--all"]
+    return " ".join(filtered).strip(), len(filtered) != len(parts)
 
 
 def _format_reminders(items: list, *, empty: str) -> str:
