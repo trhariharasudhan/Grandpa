@@ -11,6 +11,7 @@ from rich.table import Table
 from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
 from grandpa.reminders import (
     ReminderSchedulerService,
+    ReminderStatus,
     ReminderStore,
     WindowsToastNotifier,
 )
@@ -63,17 +64,27 @@ def reminders_add(phrase: str) -> None:
 
 @reminders.command("list")
 @click.option(
+    "--all",
+    "show_all",
+    is_flag=True,
+    help="Show all reminders, including cancelled, failed, and triggered.",
+)
+@click.option(
     "--status",
     default=None,
     type=click.Choice(["pending", "triggered", "cancelled", "failed"]),
     help="Filter reminders by status.",
 )
-def reminders_list(status: str | None) -> None:
+def reminders_list(show_all: bool, status: str | None) -> None:
     """List local reminders."""
     console = Console()
-    items = ReminderStore().list(status=status)  # type: ignore[arg-type]
+    effective_status = status if status is not None else None if show_all else "pending"
+    items = ReminderStore().list(status=effective_status)  # type: ignore[arg-type]
     if not items:
-        console.print("[dim]No reminders found.[/dim]")
+        if effective_status == "pending" and status is None and not show_all:
+            console.print("[dim]No pending reminders found.[/dim]")
+        else:
+            console.print("[dim]No reminders found.[/dim]")
         return
     table = Table(title="Grandpa Reminders")
     table.add_column("ID", style="cyan")
@@ -83,6 +94,40 @@ def reminders_list(status: str | None) -> None:
     for reminder in items:
         table.add_row(reminder.id, reminder.status, reminder.due_at.isoformat(), reminder.message)
     console.print(table)
+
+
+@reminders.command("clear")
+@click.option(
+    "--status",
+    default=None,
+    type=click.Choice(["triggered", "cancelled", "failed"]),
+    help="Delete reminders matching this non-pending status.",
+)
+@click.option(
+    "--all",
+    "clear_all",
+    is_flag=True,
+    help="Delete all reminders, including pending reminders.",
+)
+@click.option("--yes", is_flag=True, help="Skip confirmation for --all.")
+def reminders_clear(status: ReminderStatus | None, clear_all: bool, yes: bool) -> None:
+    """Clear old reminder history from local storage."""
+    console = Console()
+    if status is not None and clear_all:
+        raise click.ClickException("Use either --status or --all, not both.")
+    store = ReminderStore()
+    if clear_all:
+        if not yes:
+            click.confirm(
+                "This will delete all reminders, including pending reminders. Continue?",
+                abort=True,
+            )
+        deleted = store.delete()
+        _print_deleted(console, deleted, None)
+        return
+    statuses: list[ReminderStatus] = [status] if status is not None else ["triggered", "cancelled", "failed"]
+    deleted = store.delete(statuses=statuses)
+    _print_deleted(console, deleted, status)
 
 
 @reminders.command("cancel")
@@ -104,6 +149,17 @@ def reminders_run_due() -> None:
     service = ReminderSchedulerService(ReminderStore(), notifier=WindowsToastNotifier())
     result = service.tick()
     console.print(f"[green]Checked reminders.[/green] Triggered: {len(result['triggered'])}; failed: {len(result['failed'])}")
+
+
+def _print_deleted(console: Console, deleted: int, status: str | None) -> None:
+    if deleted == 0:
+        console.print("[dim]No reminders matched.[/dim]")
+        return
+    noun = "reminder" if deleted == 1 else "reminders"
+    if status:
+        console.print(f"[green]Deleted {deleted} {status} {noun}.[/green]")
+    else:
+        console.print(f"[green]Deleted {deleted} {noun}.[/green]")
 
 
 __all__ = ["reminders"]
