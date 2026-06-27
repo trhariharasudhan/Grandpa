@@ -13,11 +13,19 @@ from grandpa.agents._stubs import (
     BaseAgent,
     ToolUsingAgent,
 )
-from grandpa.cli.chat_cmd import _read_input, chat
+from grandpa.cli.chat_cmd import (
+    _create_one_shot_reminder,
+    _handle_memory_slash_command,
+    _handle_reminders_slash_command,
+    _read_input,
+    chat,
+)
 from grandpa.core.config import GrandpaConfig
 from grandpa.core.registry import AgentRegistry, ToolRegistry
 from grandpa.core.types import ToolCall, ToolResult
 from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
+from grandpa.memory_context import MemoryStore
+from grandpa.reminders import ReminderStore
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 
@@ -94,6 +102,111 @@ class TestReadInput:
     def test_read_input_normal(self) -> None:
         with mock.patch("builtins.input", return_value="hello"):
             assert _read_input() == "hello"
+
+
+class TestChatSlashCommands:
+    def test_memory_help(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+
+        message = _handle_memory_slash_command("/memory", store=store)
+
+        assert message is not None
+        assert "/memory list" in message
+        assert "/memory search <query>" in message
+        assert "/memory forget <query or id>" in message
+
+    def test_memory_list(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("preferences", "name", "Hari")
+
+        message = _handle_memory_slash_command("/memory list", store=store)
+
+        assert message is not None
+        assert "Saved memories:" in message
+        assert "Hari" in message
+
+    def test_memory_search(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("note", "ai_automation", "I am learning AI automation")
+
+        message = _handle_memory_slash_command("/memory search automation", store=store)
+
+        assert message is not None
+        assert "Matching memories:" in message
+        assert "AI automation" in message
+
+    def test_memory_forget_by_id(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("preferences", "name", "Hari")
+        memory_id = store.list_memories()[0]["id"]
+
+        message = _handle_memory_slash_command(f"/memory forget {memory_id}", store=store)
+
+        assert message == "Forgot 1 memory."
+        assert store.list_memories() == []
+
+    def test_reminders_help(self, tmp_path) -> None:
+        store = ReminderStore(tmp_path / "reminders.db")
+
+        message = _handle_reminders_slash_command("/reminders", store=store)
+
+        assert message is not None
+        assert "/reminders list" in message
+        assert "/reminders all" in message
+        assert "/reminders cancel <id>" in message
+
+    def test_reminders_list_pending_only(self, tmp_path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        store = ReminderStore(tmp_path / "reminders.db")
+        now = datetime(2026, 6, 13, 12, 0, tzinfo=UTC)
+        pending = store.create("drink water", now + timedelta(minutes=30))
+        cancelled = store.create("cancelled reminder", now + timedelta(hours=1))
+        store.cancel(cancelled.id, now=now)
+
+        message = _handle_reminders_slash_command("/reminders list", store=store)
+
+        assert message is not None
+        assert pending.message in message
+        assert cancelled.message not in message
+
+    def test_reminders_all(self, tmp_path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        store = ReminderStore(tmp_path / "reminders.db")
+        now = datetime(2026, 6, 13, 12, 0, tzinfo=UTC)
+        pending = store.create("drink water", now + timedelta(minutes=30))
+        cancelled = store.create("cancelled reminder", now + timedelta(hours=1))
+        store.cancel(cancelled.id, now=now)
+
+        message = _handle_reminders_slash_command("/reminders all", store=store)
+
+        assert message is not None
+        assert pending.message in message
+        assert cancelled.message in message
+
+    def test_reminders_cancel(self, tmp_path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        store = ReminderStore(tmp_path / "reminders.db")
+        reminder = store.create("drink water", datetime(2026, 6, 13, 12, 30, tzinfo=UTC) + timedelta(minutes=30))
+
+        message = _handle_reminders_slash_command(f"/reminders cancel {reminder.id}", store=store)
+
+        assert message == "Reminder cancelled."
+        assert store.get(reminder.id).status == "cancelled"  # type: ignore[union-attr]
+
+    def test_chat_reminder_creation_still_works(self, tmp_path, monkeypatch) -> None:
+        from datetime import UTC
+
+        store = ReminderStore(tmp_path / "reminders.db")
+        monkeypatch.setattr("grandpa.reminder_parser.default_reminder_timezone", lambda: UTC)
+
+        message = _create_one_shot_reminder("remind me in 30 minutes to drink water", store=store)
+
+        assert message is not None
+        assert "Reminder created" in message
+        assert store.list(status="pending")[0].message == "drink water"
 
 
 class TestChatAgents:

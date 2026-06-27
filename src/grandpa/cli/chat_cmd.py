@@ -96,6 +96,91 @@ def _create_one_shot_reminder(text: str, *, store=None) -> str | None:
     return f"Reminder created: {reminder.message} at {reminder.due_at.isoformat()}."
 
 
+def _handle_memory_slash_command(command: str, *, store=None) -> str | None:
+    if not command.startswith("/memory"):
+        return None
+    from grandpa.memory_context import MemoryStore
+
+    memory_store = store or MemoryStore()
+    parts = command.split(maxsplit=2)
+    if len(parts) == 1:
+        return (
+            "Memory commands:\n"
+            "- /memory list\n"
+            "- /memory search <query>\n"
+            "- /memory forget <query or id>\n"
+            "You can also say: remember my name is Hari"
+        )
+    action = parts[1].lower()
+    argument = parts[2].strip() if len(parts) > 2 else ""
+    if action == "list":
+        return _format_memories(memory_store.list_memories())
+    if action == "search":
+        if not argument:
+            return "Usage: /memory search <query>"
+        return _format_memories(memory_store.search_memories(argument), heading="Matching memories:")
+    if action == "forget":
+        if not argument:
+            return "Usage: /memory forget <query or id>"
+        removed = memory_store.forget(argument)
+        if removed:
+            noun = "memory" if removed == 1 else "memories"
+            return f"Forgot {removed} {noun}."
+        return "No matching memory found."
+    return "Unknown memory command. Try /memory for help."
+
+
+def _handle_reminders_slash_command(command: str, *, store=None) -> str | None:
+    if not command.startswith("/reminders"):
+        return None
+    from grandpa.reminders import ReminderStore
+
+    reminder_store = store or ReminderStore()
+    parts = command.split(maxsplit=2)
+    if len(parts) == 1:
+        return (
+            "Reminder commands:\n"
+            "- /reminders list\n"
+            "- /reminders all\n"
+            "- /reminders cancel <id>\n"
+            "You can also say: remind me in 30 minutes to drink water"
+        )
+    action = parts[1].lower()
+    argument = parts[2].strip() if len(parts) > 2 else ""
+    if action == "list":
+        return _format_reminders(reminder_store.list(status="pending"), empty="No pending reminders found.")
+    if action == "all":
+        return _format_reminders(reminder_store.list(), empty="No reminders found.")
+    if action == "cancel":
+        if not argument:
+            return "Usage: /reminders cancel <id>"
+        reminder = reminder_store.cancel(argument)
+        if reminder is None:
+            return "Reminder not found."
+        if reminder.status == "cancelled":
+            return "Reminder cancelled."
+        return f"Reminder is already {reminder.status}."
+    return "Unknown reminder command. Try /reminders for help."
+
+
+def _format_memories(items: list[dict], *, heading: str = "Saved memories:") -> str:
+    if not items:
+        return "No memories found."
+    lines = [heading]
+    for item in items[:20]:
+        lines.append(f"- #{item['id']} {item['category']}/{item['key']}: {item['value']}")
+    return "\n".join(lines)
+
+
+def _format_reminders(items: list, *, empty: str) -> str:
+    if not items:
+        return empty
+    lines = ["Reminders:"]
+    for reminder in items[:20]:
+        lines.append(f"- {reminder.id} [{reminder.status}] {reminder.message} at {reminder.due_at.isoformat()}")
+    return "\n".join(lines)
+
+
 @click.command()
 @click.option("-e", "--engine", "engine_key", default=None, help="Engine backend.")
 @click.option("-m", "--model", "model_name", default=None, help="Model to use.")
@@ -226,7 +311,12 @@ def chat(
         for note in _notifications.diff(get_status()):
             console.print(f"[dim cyan]{note}[/dim cyan]")
 
-        user_input = read_chat_input()
+        try:
+            user_input = read_chat_input()
+        except Exception as exc:
+            if "console" not in exc.__class__.__name__.lower() and "console" not in str(exc).lower():
+                raise
+            user_input = _read_input()
 
         if user_input is not None:
             console.print(f"> {user_input}")
@@ -275,6 +365,12 @@ def chat(
                     role_str = msg.role if isinstance(msg.role, str) else msg.role.value
                     role = role_str.upper()
                     console.print(f"[bold]{role}:[/bold] {msg.content[:200]}")
+            continue
+        elif cmd.startswith("/memory"):
+            console.print(_handle_memory_slash_command(user_input) or "Unknown memory command.")
+            continue
+        elif cmd.startswith("/reminders"):
+            console.print(_handle_reminders_slash_command(user_input) or "Unknown reminder command.")
             continue
 
         from grandpa.core_ai_brain import (

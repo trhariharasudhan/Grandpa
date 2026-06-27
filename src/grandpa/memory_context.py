@@ -7,10 +7,10 @@ does not call external services.
 
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import time
-import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import sqrt
@@ -176,13 +176,18 @@ class MemoryStore:
                 self._store_embedding(conn, item)
 
     def forget(self, query: str) -> int:
-        needle = f"%{query.strip().lower()}%"
-        if not query.strip() or query.strip().lower() in {"all", "everything"}:
+        clean_query = query.strip()
+        needle = f"%{clean_query.lower()}%"
+        if not clean_query or clean_query.lower() in {"all", "everything"}:
             with self._connect() as conn:
                 conn.execute("DELETE FROM memory_embeddings")
                 cur = conn.execute("DELETE FROM memories")
                 return cur.rowcount
         with self._connect() as conn:
+            if clean_query.isdigit():
+                conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (int(clean_query),))
+                cur = conn.execute("DELETE FROM memories WHERE id = ?", (int(clean_query),))
+                return cur.rowcount
             rows = conn.execute(
                 """
                 SELECT id FROM memories
@@ -417,6 +422,10 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
     if forget_match:
         target = forget_match.group(2).strip()
         removed = store.forget(target)
+        if not removed:
+            normalized_target = re.sub(r"^(my|the|a|an)\s+", "", target, flags=re.I).strip()
+            if normalized_target != target:
+                removed = store.forget(normalized_target)
         message = (
             f"I forgot {removed} matching memory item{'s' if removed != 1 else ''}."
             if removed
@@ -431,6 +440,8 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
 
     if lower.startswith("what do you remember"):
         query = re.sub(r"^what do you remember\s*(about|for)?\s*", "", lower).strip()
+        if query in {"me", "myself", "about me"}:
+            return _profile_recall(store)
         return _recall(store, query or original)
 
     if lower in {

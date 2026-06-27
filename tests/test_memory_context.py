@@ -38,6 +38,37 @@ def test_forget_matching_memory(tmp_path):
     assert store.list_memories() == []
 
 
+def test_remember_that_learning_ai_automation(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+
+    result = handle_memory_command("remember that I am learning AI automation", store=store)
+
+    assert result.status == "handled"
+    assert "I am learning AI automation" in result.message
+    assert store.list_memories()[0]["value"] == "I am learning AI automation"
+
+
+def test_what_do_you_remember_about_me(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember my name is Hari", store=store)
+
+    result = handle_memory_command("what do you remember about me", store=store)
+
+    assert result.status == "handled"
+    assert "Hari" in result.message
+
+
+def test_forget_my_name(tmp_path):
+    store = MemoryStore(tmp_path / "memory.db")
+    handle_memory_command("remember my name is Hari", store=store)
+
+    result = handle_memory_command("forget my name", store=store)
+
+    assert result.status == "handled"
+    assert "forgot 1" in result.message
+    assert store.list_memories() == []
+
+
 def test_activity_query_for_opened_apps_today(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     store.record_activity("app", "open", "notepad.exe", "open notepad", "handled")

@@ -1,4 +1,5 @@
 from datetime import datetime
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -62,6 +63,8 @@ def _build_right_panel() -> str:
         f"[{TEXT_ACCENT}]/model[/{TEXT_ACCENT}]    Model info\n"
         f"[{TEXT_ACCENT}]/history[/{TEXT_ACCENT}]  Chat history\n"
         f"[{TEXT_ACCENT}]/clear[/{TEXT_ACCENT}]    Clear chat\n"
+        f"[{TEXT_ACCENT}]/memory[/{TEXT_ACCENT}]   Memory commands\n"
+        f"[{TEXT_ACCENT}]/reminders[/{TEXT_ACCENT}] Reminder commands\n"
         f"[{TEXT_ACCENT}]/quit[/{TEXT_ACCENT}]     Exit"
     )
 
@@ -99,6 +102,8 @@ def render_help(console: Console) -> None:
         f"[{TEXT_ACCENT}]/model[/{TEXT_ACCENT}]    Show current model\n"
         f"[{TEXT_ACCENT}]/history[/{TEXT_ACCENT}]  Show chat history\n"
         f"[{TEXT_ACCENT}]/clear[/{TEXT_ACCENT}]    Clear conversation\n"
+        f"[{TEXT_ACCENT}]/memory[/{TEXT_ACCENT}]   Memory commands\n"
+        f"[{TEXT_ACCENT}]/reminders[/{TEXT_ACCENT}] Reminder commands\n"
         f"[{TEXT_ACCENT}]/quit[/{TEXT_ACCENT}]     Exit chat\n"
         f"[{TEXT_ACCENT}]/exit[/{TEXT_ACCENT}]     Exit chat"
     )
