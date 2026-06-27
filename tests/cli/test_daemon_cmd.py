@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from grandpa.cli import cli
-from grandpa.cli.daemon_cmd import _read_pid, _write_pid
+from grandpa.cli.daemon_cmd import _pid_alive, _read_pid, _write_pid
 
 
 class TestDaemonCommands:
@@ -49,11 +49,32 @@ class TestDaemonCommands:
         with (
             patch("grandpa.cli.daemon_cmd._PID_FILE", pid_file),
             patch("grandpa.cli.daemon_cmd.DEFAULT_CONFIG_DIR", tmp_path),
-            patch("os.kill", return_value=None),
+            patch("grandpa.cli.daemon_cmd._pid_alive", return_value=True),
         ):
             _write_pid(12345)
             assert pid_file.exists()
             assert _read_pid() == 12345
+
+    def test_read_pid_removes_stale_windows_pid(self, tmp_path: Path) -> None:
+        """Stale or invalid Windows PIDs are treated as not running."""
+        pid_file = tmp_path / "server.pid"
+        pid_file.write_text("999999")
+        with (
+            patch("grandpa.cli.daemon_cmd._PID_FILE", pid_file),
+            patch("grandpa.cli.daemon_cmd._pid_alive", return_value=False),
+        ):
+            assert _read_pid() is None
+        assert not pid_file.exists()
+
+    def test_pid_alive_handles_winerror_87_without_crashing(self) -> None:
+        """Windows invalid-PID errors should produce False, not tracebacks."""
+        error = OSError(87, "The parameter is incorrect")
+        with (
+            patch("grandpa.cli.daemon_cmd.platform.system", return_value="Windows"),
+            patch("grandpa.cli.daemon_cmd.sys.modules", {"psutil": None}),
+            patch("grandpa.cli.daemon_cmd.os.kill", side_effect=error),
+        ):
+            assert _pid_alive(999999) is False
 
     def test_status_shows_running(self) -> None:
         """``Grandpa status`` shows running info when PID exists."""

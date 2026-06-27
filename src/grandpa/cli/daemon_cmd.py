@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 import signal
 import subprocess
 import sys
@@ -23,18 +24,79 @@ def _read_pid() -> int | None:
         return None
     try:
         pid = int(_PID_FILE.read_text().strip())
-        # Check if process is still running
-        os.kill(pid, 0)
-        return pid
-    except (ValueError, OSError):
+    except ValueError:
         _PID_FILE.unlink(missing_ok=True)
         return None
+    if not _pid_alive(pid):
+        _PID_FILE.unlink(missing_ok=True)
+        return None
+    return pid
 
 
 def _write_pid(pid: int) -> None:
     """Write PID to pid file."""
     DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     _PID_FILE.write_text(str(pid))
+
+
+def _pid_alive(pid: int | None) -> bool:
+    """Return whether *pid* appears alive without surfacing stale PID errors."""
+    if pid is None or pid <= 0:
+        return False
+    try:
+        import psutil
+
+        if not psutil.pid_exists(pid):
+            return False
+        proc = psutil.Process(pid)
+        return proc.is_running() and proc.status() != psutil.STATUS_ZOMBIE
+    except ImportError:
+        return _pid_alive_without_psutil(pid)
+    except Exception:
+        return False
+
+
+def _pid_alive_without_psutil(pid: int) -> bool:
+    try:
+        if platform.system().lower() == "windows":
+            # Windows can raise WinError 87 for invalid or stale PIDs. Treat that
+            # as "not running" instead of letting status/stop crash.
+            os.kill(pid, 0)
+        else:
+            os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _terminate_pid(pid: int, *, grace_seconds: float = 10.0) -> None:
+    """Best-effort terminate that is safe for stale PIDs on Windows."""
+    try:
+        import psutil
+
+        proc = psutil.Process(pid)
+        proc.terminate()
+        try:
+            proc.wait(timeout=grace_seconds)
+        except psutil.TimeoutExpired:
+            proc.kill()
+        return
+    except ImportError:
+        pass
+    except Exception:
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        deadline = time.time() + grace_seconds
+        while time.time() < deadline:
+            time.sleep(0.5)
+            if not _pid_alive(pid):
+                return
+        if _pid_alive(pid):
+            os.kill(pid, signal.SIGKILL)
+    except OSError:
+        return
 
 
 @click.group()
@@ -108,24 +170,7 @@ def stop() -> None:
         console.print("[yellow]No running server found.[/yellow]")
         sys.exit(1)
 
-    try:
-        os.kill(pid, signal.SIGTERM)
-        # Wait up to 10 seconds for graceful shutdown
-        for _ in range(20):
-            time.sleep(0.5)
-            try:
-                os.kill(pid, 0)
-            except OSError:
-                break
-        else:
-            # Force kill if still running
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except OSError:
-                pass
-    except OSError:
-        pass
-
+    _terminate_pid(pid)
     _PID_FILE.unlink(missing_ok=True)
     console.print(f"[green]Server stopped[/green] (PID {pid}).")
 
@@ -151,7 +196,6 @@ def status() -> None:
         console.print("[yellow]Server is not running.[/yellow]")
         return
 
-    # Get process info
     uptime_info = ""
     try:
         import psutil
@@ -161,7 +205,7 @@ def status() -> None:
         hours, remainder = divmod(int(uptime), 3600)
         minutes, seconds = divmod(remainder, 60)
         uptime_info = f"\n  Uptime: {hours}h {minutes}m {seconds}s"
-    except (ImportError, Exception):
+    except Exception:
         pass
 
     config = load_config()

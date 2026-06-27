@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from click.testing import CliRunner
 
+from grandpa.cli.chat_cmd import _create_one_shot_reminder
 from grandpa.cli.reminders_cmd import reminders
 from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
 from grandpa.reminders import ReminderStore
@@ -116,6 +117,23 @@ def test_cli_add_creates_reminder_from_phrase(monkeypatch, tmp_path) -> None:
     saved = store.list()
     assert len(saved) == 1
     assert saved[0].message == "call Arjun"
+
+
+def test_chat_creates_one_shot_reminder_from_natural_text(monkeypatch, tmp_path) -> None:
+    store = ReminderStore(tmp_path / "reminders.db")
+    monkeypatch.setattr(
+        "grandpa.reminder_parser.default_reminder_timezone",
+        lambda: UTC,
+    )
+
+    message = _create_one_shot_reminder("remind me in 30 minutes to drink water", store=store)
+
+    reminders = store.list()
+    assert message is not None
+    assert "Reminder created" in message
+    assert len(reminders) == 1
+    assert reminders[0].message == "drink water"
+    assert reminders[0].status == "pending"
 
 
 def test_cli_add_reports_parse_errors(monkeypatch, tmp_path) -> None:

@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
-import sys
 import subprocess
+import sys
 from typing import List, Optional
 
 import click
 from rich.console import Console
 from rich.markdown import Markdown
 
+from grandpa.cli._tool_names import resolve_tool_names
+from grandpa.cli.input_ui import read_chat_input, select_from_list
 from grandpa.cli.theme import (
+    render_assistant_response,
     render_chat_home,
     render_help,
-    render_assistant_response,
 )
-from grandpa.cli.input_ui import read_chat_input, select_from_list
-from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.core.config import load_config
 from grandpa.core.types import Message, Role
 from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
@@ -57,6 +57,7 @@ def _model_pull_guidance(model: str) -> str:
         "Then retry the command."
     )
 
+
 def _get_ollama_models() -> list[str]:
     result = subprocess.run(
         ["ollama", "list"],
@@ -72,6 +73,28 @@ def _get_ollama_models() -> list[str]:
             models.append(parts[0])
 
     return models
+
+
+def _create_one_shot_reminder(text: str, *, store=None) -> str | None:
+    from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
+    from grandpa.reminders import ReminderStore
+
+    try:
+        parsed = parse_reminder_phrase(text)
+    except ReminderParseError:
+        return None
+    reminder_store = store or ReminderStore()
+    reminder = reminder_store.create(
+        parsed.message,
+        parsed.due_at,
+        source={
+            "cli": "grandpa chat",
+            "input": text,
+            "matched_expression": parsed.matched_expression,
+        },
+    )
+    return f"Reminder created: {reminder.message} at {reminder.due_at.isoformat()}."
+
 
 @click.command()
 @click.option("-e", "--engine", "engine_key", default=None, help="Engine backend.")
@@ -186,13 +209,7 @@ def chat(
         agent=agent_key or "direct",
     )
 
-    # Background-work status banner (disappears after first user message)
     from grandpa.cli._bg_state import get_status
-    from grandpa.cli._chat_banner import render_startup_banner
-
-    # _banner = render_startup_banner(get_status())
-    # if _banner:
-    #     console.print(f"[dim cyan]{_banner}[/dim cyan]")
 
     # Completion-notification dispatcher (fires once per task per session)
     from grandpa.cli._chat_notifications import NotificationDispatcher
@@ -327,6 +344,23 @@ def chat(
             continue
 
         from grandpa.task_scheduler import handle_scheduler_command
+
+        reminder_message = _create_one_shot_reminder(effective_user_input)
+        if reminder_message is not None:
+            history.append(Message(role=Role.USER, content=user_input))
+            history.append(Message(role=Role.ASSISTANT, content=reminder_message))
+            remember_conversation("assistant", reminder_message)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=reminder_message,
+                kind="reminder",
+                target=None,
+                status="handled",
+            )
+            console.print()
+            console.print(Markdown(reminder_message))
+            console.print()
+            continue
 
         scheduler_action = handle_scheduler_command(effective_user_input)
         if not scheduler_action.should_fallback:
