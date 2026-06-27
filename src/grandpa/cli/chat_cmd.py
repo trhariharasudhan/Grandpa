@@ -3,12 +3,19 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 from typing import List, Optional
 
 import click
 from rich.console import Console
 from rich.markdown import Markdown
 
+from grandpa.cli.theme import (
+    render_chat_home,
+    render_help,
+    render_assistant_response,
+)
+from grandpa.cli.input_ui import read_chat_input, select_from_list
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.core.config import load_config
 from grandpa.core.types import Message, Role
@@ -50,6 +57,21 @@ def _model_pull_guidance(model: str) -> str:
         "Then retry the command."
     )
 
+def _get_ollama_models() -> list[str]:
+    result = subprocess.run(
+        ["ollama", "list"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    models = []
+    for line in result.stdout.splitlines()[1:]:
+        parts = line.split()
+        if parts:
+            models.append(parts[0])
+
+    return models
 
 @click.command()
 @click.option("-e", "--engine", "engine_key", default=None, help="Engine backend.")
@@ -155,20 +177,22 @@ def chat(
             console.print(f"[yellow]Agent '{agent_key}' failed: {exc}[/yellow]")
 
     # Print banner
-    console.print(
-        f"[green bold]Grandpa Chat[/green bold]\n"
-        f"  Engine: [cyan]{engine_name}[/cyan]  Model: [cyan]{model}[/cyan]"
-        f"  Agent: [cyan]{agent_key or 'direct'}[/cyan]\n"
-        f"  Type /help for commands, /quit to exit.\n"
+    console.print()
+
+    render_chat_home(
+        console=console,
+        engine=engine_name,
+        model=model,
+        agent=agent_key or "direct",
     )
 
     # Background-work status banner (disappears after first user message)
     from grandpa.cli._bg_state import get_status
     from grandpa.cli._chat_banner import render_startup_banner
 
-    _banner = render_startup_banner(get_status())
-    if _banner:
-        console.print(f"[dim cyan]{_banner}[/dim cyan]")
+    # _banner = render_startup_banner(get_status())
+    # if _banner:
+    #     console.print(f"[dim cyan]{_banner}[/dim cyan]")
 
     # Completion-notification dispatcher (fires once per task per session)
     from grandpa.cli._chat_notifications import NotificationDispatcher
@@ -185,7 +209,11 @@ def chat(
         for note in _notifications.diff(get_status()):
             console.print(f"[dim cyan]{note}[/dim cyan]")
 
-        user_input = _read_input()
+        user_input = read_chat_input()
+
+        if user_input is not None:
+            console.print(f"> {user_input}")
+
         if user_input is None:
             console.print("\n[dim]Goodbye![/dim]")
             break
@@ -206,19 +234,21 @@ def chat(
             console.print("[dim]History cleared.[/dim]")
             continue
         elif cmd == "/model":
-            console.print(
-                f"Model: [cyan]{model}[/cyan]  Engine: [cyan]{engine_name}[/cyan]"
-            )
+            models = _get_ollama_models()
+
+            if not models:
+                console.print("[red]No Ollama models found.[/red]")
+                continue
+
+            selected = select_from_list("Select Model", models)
+
+            if selected:
+                model = selected
+                console.print(f"[green]✓[/green] Model changed to [cyan]{model}[/cyan]")
+
             continue
         elif cmd == "/help":
-            console.print(
-                "[bold]Commands:[/bold]\n"
-                "  /quit, /exit  — end session\n"
-                "  /clear        — clear conversation\n"
-                "  /model        — show model info\n"
-                "  /history      — show conversation\n"
-                "  /help         — this message"
-            )
+            render_help(console)
             continue
         elif cmd == "/history":
             if not history:
@@ -348,7 +378,7 @@ def chat(
 
             history.append(Message(role=Role.ASSISTANT, content=content))
             console.print()
-            console.print(Markdown(content))
+            render_assistant_response(console, Markdown(content))
             console.print()
         except EngineModelNotFoundError as exc:
             console.print(
