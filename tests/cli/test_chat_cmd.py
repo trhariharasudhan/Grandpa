@@ -16,6 +16,7 @@ from grandpa.agents._stubs import (
 from grandpa.cli.chat_cmd import (
     _create_one_shot_reminder,
     _handle_memory_slash_command,
+    _handle_natural_assistant_intent,
     _handle_reminders_slash_command,
     _read_input,
     chat,
@@ -207,6 +208,76 @@ class TestChatSlashCommands:
         assert message is not None
         assert "Reminder created" in message
         assert store.list(status="pending")[0].message == "drink water"
+
+    def test_show_my_memories_routes_locally(self, tmp_path) -> None:
+        store = MemoryStore(tmp_path / "memory.db")
+        store.remember("preferences", "name", "Hari")
+
+        message = _handle_natural_assistant_intent("show my memories", memory_store=store)
+
+        assert message is not None
+        assert "Saved memories:" in message
+        assert "Hari" in message
+
+    def test_list_my_reminders_routes_to_one_shot_reminders(self, tmp_path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        store = ReminderStore(tmp_path / "reminders.db")
+        store.create("drink water", datetime(2026, 6, 13, 12, 0, tzinfo=UTC) + timedelta(minutes=30))
+
+        message = _handle_natural_assistant_intent("list my reminders", reminder_store=store)
+
+        assert message is not None
+        assert "Reminders:" in message
+        assert "drink water" in message
+
+    def test_what_reminders_do_i_have_routes_to_one_shot_reminders(self, tmp_path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        store = ReminderStore(tmp_path / "reminders.db")
+        store.create("call Arjun", datetime(2026, 6, 13, 19, 0, tzinfo=UTC) + timedelta(days=1))
+
+        for text in (
+            "what reminders do I have?",
+            "what reminder do I have",
+            "what are my reminders",
+            "do I have any reminders",
+            "show me my reminders",
+            "list my reminders",
+        ):
+            message = _handle_natural_assistant_intent(text, reminder_store=store)
+
+            assert message is not None
+            assert "Reminders:" in message
+            assert "call Arjun" in message
+
+    def test_empty_natural_reminder_list_has_creation_hint(self, tmp_path) -> None:
+        store = ReminderStore(tmp_path / "reminders.db")
+
+        message = _handle_natural_assistant_intent("what reminders do I have", reminder_store=store)
+
+        assert message == (
+            "No pending reminders found. You can create one with: "
+            "remind me in 30 minutes to drink water"
+        )
+
+    def test_delete_reminder_not_found_stays_local(self, tmp_path) -> None:
+        store = ReminderStore(tmp_path / "reminders.db")
+
+        message = _handle_natural_assistant_intent("delete reminder 4", reminder_store=store)
+
+        assert message == "Reminder not found. Use /reminders list to see reminder IDs."
+
+    def test_delete_reminder_cancels_pending_one_shot_reminder(self, tmp_path) -> None:
+        from datetime import UTC, datetime, timedelta
+
+        store = ReminderStore(tmp_path / "reminders.db")
+        reminder = store.create("drink water", datetime(2026, 6, 13, 12, 0, tzinfo=UTC) + timedelta(minutes=30))
+
+        message = _handle_natural_assistant_intent(f"delete reminder {reminder.id}", reminder_store=store)
+
+        assert message == "Reminder cancelled."
+        assert store.get(reminder.id).status == "cancelled"  # type: ignore[union-attr]
 
 
 class TestChatAgents:

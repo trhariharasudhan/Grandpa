@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from typing import List, Optional
@@ -21,6 +22,31 @@ from grandpa.core.config import load_config
 from grandpa.core.types import Message, Role
 from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
 from grandpa.response_cleanup import GENERATION_ERROR_MESSAGE, clean_assistant_response
+
+NATURAL_MEMORY_LIST_INTENTS = {
+    "show my memories",
+    "list my memories",
+    "show memories",
+    "list memories",
+}
+
+NATURAL_MEMORY_RECALL_INTENTS = {
+    "what do you remember",
+    "what do you remember about me",
+    "what do you know about me",
+}
+
+NATURAL_REMINDER_LIST_INTENTS = {
+    "do i have any reminders",
+    "list my reminders",
+    "show me my reminders",
+    "show my reminders",
+    "what are my reminders",
+    "what reminder do i have",
+    "show reminders",
+    "list reminders",
+    "what reminders do i have",
+}
 
 
 def _read_input(prompt: str = "You> ") -> Optional[str]:
@@ -163,6 +189,68 @@ def _handle_reminders_slash_command(command: str, *, store=None) -> str | None:
     return "Unknown reminder command. Try /reminders for help."
 
 
+def _handle_natural_assistant_intent(text: str, *, memory_store=None, reminder_store=None) -> str | None:
+    memory_message = _handle_natural_memory_intent(text, store=memory_store)
+    if memory_message is not None:
+        return memory_message
+    return _handle_natural_reminder_intent(text, store=reminder_store)
+
+
+def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
+    normalized = _normalize_local_intent(text)
+    if normalized in NATURAL_MEMORY_LIST_INTENTS:
+        from grandpa.memory_context import MemoryStore
+
+        memory_store = store or MemoryStore()
+        return _format_memories(memory_store.list_memories())
+    if normalized in NATURAL_MEMORY_RECALL_INTENTS:
+        from grandpa.memory_context import MemoryStore, handle_memory_command
+
+        memory_store = store or MemoryStore()
+        result = handle_memory_command(text, store=memory_store)
+        return result.message if not result.should_fallback else _format_memories(memory_store.list_memories())
+    return None
+
+
+def _handle_natural_reminder_intent(text: str, *, store=None) -> str | None:
+    normalized = _normalize_local_intent(text)
+    if _is_natural_reminder_list_intent(normalized):
+        from grandpa.reminders import ReminderStore
+
+        reminder_store = store or ReminderStore()
+        return _format_reminders(
+            reminder_store.list(status="pending"),
+            empty=(
+                "No pending reminders found. You can create one with: "
+                "remind me in 30 minutes to drink water"
+            ),
+        )
+    cancel_match = re.match(r"^(cancel|delete|remove)\s+reminder\s+(.+)$", normalized)
+    if cancel_match:
+        from grandpa.reminders import ReminderStore
+
+        reminder_store = store or ReminderStore()
+        reminder_id = cancel_match.group(2).strip()
+        reminder = reminder_store.cancel(reminder_id)
+        if reminder is None:
+            return "Reminder not found. Use /reminders list to see reminder IDs."
+        if reminder.status == "cancelled":
+            return "Reminder cancelled."
+        return f"Reminder is already {reminder.status}."
+    return None
+
+
+def _is_natural_reminder_list_intent(normalized: str) -> bool:
+    if normalized in NATURAL_REMINDER_LIST_INTENTS:
+        return True
+    return bool(
+        re.fullmatch(r"(show|list)\s+(me\s+)?(my\s+)?reminders", normalized)
+        or re.fullmatch(r"what\s+reminders?\s+do\s+i\s+have", normalized)
+        or re.fullmatch(r"what\s+are\s+my\s+reminders", normalized)
+        or re.fullmatch(r"do\s+i\s+have\s+any\s+reminders", normalized)
+    )
+
+
 def _format_memories(items: list[dict], *, heading: str = "Saved memories:") -> str:
     if not items:
         return "No memories found."
@@ -179,6 +267,10 @@ def _format_reminders(items: list, *, empty: str) -> str:
     for reminder in items[:20]:
         lines.append(f"- {reminder.id} [{reminder.status}] {reminder.message} at {reminder.due_at.isoformat()}")
     return "\n".join(lines)
+
+
+def _normalize_local_intent(text: str) -> str:
+    return " ".join(text.lower().strip(" ?!.").split())
 
 
 @click.command()
@@ -384,6 +476,40 @@ def chat(
         brain_analysis = process_user_message(user_input)
         effective_user_input = brain_analysis.effective_text
 
+        natural_intent_message = _handle_natural_assistant_intent(effective_user_input)
+        if natural_intent_message is not None:
+            history.append(Message(role=Role.USER, content=user_input))
+            history.append(Message(role=Role.ASSISTANT, content=natural_intent_message))
+            remember_conversation("assistant", natural_intent_message)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=natural_intent_message,
+                kind="local",
+                target=None,
+                status="handled",
+            )
+            console.print()
+            console.print(Markdown(natural_intent_message))
+            console.print()
+            continue
+
+        reminder_message = _create_one_shot_reminder(effective_user_input)
+        if reminder_message is not None:
+            history.append(Message(role=Role.USER, content=user_input))
+            history.append(Message(role=Role.ASSISTANT, content=reminder_message))
+            remember_conversation("assistant", reminder_message)
+            record_assistant_outcome(
+                brain_analysis,
+                assistant_text=reminder_message,
+                kind="reminder",
+                target=None,
+                status="handled",
+            )
+            console.print()
+            console.print(Markdown(reminder_message))
+            console.print()
+            continue
+
         memory_result = handle_memory_command(effective_user_input)
         if not memory_result.should_fallback:
             history.append(Message(role=Role.USER, content=user_input))
@@ -440,23 +566,6 @@ def chat(
             continue
 
         from grandpa.task_scheduler import handle_scheduler_command
-
-        reminder_message = _create_one_shot_reminder(effective_user_input)
-        if reminder_message is not None:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=reminder_message))
-            remember_conversation("assistant", reminder_message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=reminder_message,
-                kind="reminder",
-                target=None,
-                status="handled",
-            )
-            console.print()
-            console.print(Markdown(reminder_message))
-            console.print()
-            continue
 
         scheduler_action = handle_scheduler_command(effective_user_input)
         if not scheduler_action.should_fallback:
