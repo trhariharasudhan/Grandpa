@@ -53,6 +53,221 @@ NATURAL_REMINDER_LIST_INTENTS = {
     "what reminders do i have",
 }
 
+MODULE_HELP: dict[str, str] = {
+    "/status": (
+        "Grandpa Status\n"
+        "Status: Available\n\n"
+        "Commands:\n"
+        "- /status\n"
+        "- uv run grandpa status\n"
+        "- uv run grandpa doctor\n\n"
+        "Natural examples:\n"
+        "- what is your status\n"
+        "- is Grandpa running\n\n"
+        "Note:\n"
+        "Status checks are read-only."
+    ),
+    "/settings": (
+        "Settings Module\n"
+        "Status: Planned / Not configured\n\n"
+        "Commands:\n"
+        "- /settings\n"
+        "- /settings show\n"
+        "- /settings profile\n\n"
+        "Natural examples:\n"
+        "- show my settings\n"
+        "- what is my default model\n\n"
+        "Note:\n"
+        "Settings changes are not wired into chat yet."
+    ),
+    "/tasks": (
+        "Tasks Module\n"
+        "Status: Planned / Partially available\n\n"
+        "Commands:\n"
+        "- /tasks status\n"
+        "- /tasks list\n"
+        "- /tasks help\n\n"
+        "Natural examples:\n"
+        "- show my tasks\n"
+        "- plan my day\n"
+        "- what should I do next\n\n"
+        "Note:\n"
+        "Task planning is a safe placeholder here and does not execute actions."
+    ),
+    "/desktop": (
+        "Desktop Module\n"
+        "Status: Available with safety confirmations\n\n"
+        "Commands:\n"
+        "- /desktop status\n"
+        "- /desktop help\n"
+        "- /desktop permissions\n\n"
+        "Natural examples:\n"
+        "- open Chrome\n"
+        "- type hello in Notepad\n"
+        "- press enter\n\n"
+        "Note:\n"
+        "Desktop actions use Grandpa's local permission and confirmation layer."
+    ),
+    "/browser": (
+        "Browser Module\n"
+        "Status: Planned / Partially available\n\n"
+        "Commands:\n"
+        "- /browser status\n"
+        "- /browser help\n"
+        "- /browser diagnostics\n\n"
+        "Natural examples:\n"
+        "- search YouTube for Python\n"
+        "- open the browser\n"
+        "- summarize this page\n\n"
+        "Note:\n"
+        "Browser actions must stay local and permission-aware."
+    ),
+    "/files": (
+        "Files Module\n"
+        "Status: Available with safe local handling\n\n"
+        "Commands:\n"
+        "- /files status\n"
+        "- /files help\n"
+        "- /files recent\n\n"
+        "Natural examples:\n"
+        "- summarize this file\n"
+        "- find my notes about Grandpa\n\n"
+        "Note:\n"
+        "File actions should avoid destructive changes unless explicitly confirmed."
+    ),
+    "/phone": (
+        "Phone Module\n"
+        "Status: Planned / Not configured\n\n"
+        "Commands:\n"
+        "- /call <contact>\n"
+        "- /sms <contact> <message>\n"
+        "- /contacts search <name>\n"
+        "- /phone status\n\n"
+        "Natural examples:\n"
+        "- call Amma\n"
+        "- send SMS to Arjun\n"
+        "- show phone notifications\n\n"
+        "Note:\n"
+        "Phone actions require a future Android companion app or Bluetooth/mobile bridge."
+    ),
+    "/voice": (
+        "Voice Module\n"
+        "Status: Available for safe foundations\n\n"
+        "Commands:\n"
+        "- /voice status\n"
+        "- /voice wake-word\n"
+        "- /voice loop\n\n"
+        "Natural examples:\n"
+        "- what is my voice status\n"
+        "- start push to talk\n\n"
+        "Note:\n"
+        "No always-on microphone starts from this chat command."
+    ),
+    "/automation": (
+        "Automation Module\n"
+        "Status: Planned / Permission-gated\n\n"
+        "Commands:\n"
+        "- /automation status\n"
+        "- /automation help\n"
+        "- /automation workflows\n\n"
+        "Natural examples:\n"
+        "- create a workflow for my morning setup\n"
+        "- show automation diagnostics\n\n"
+        "Note:\n"
+        "Automation must remain explicit, local, and confirmation-gated."
+    ),
+    "/coding": (
+        "Coding Module\n"
+        "Status: Available\n\n"
+        "Commands:\n"
+        "- /coding status\n"
+        "- /coding help\n"
+        "- /coding diagnostics\n\n"
+        "Natural examples:\n"
+        "- review this code\n"
+        "- explain this error\n"
+        "- run the tests\n\n"
+        "Note:\n"
+        "Coding actions should keep repository changes reviewable."
+    ),
+    "/git": (
+        "Git Module\n"
+        "Status: Planned / Partially available\n\n"
+        "Commands:\n"
+        "- /git status\n"
+        "- /git diff\n"
+        "- /git log\n\n"
+        "Natural examples:\n"
+        "- show git status\n"
+        "- summarize my changes\n\n"
+        "Note:\n"
+        "Git commit and push actions require explicit user approval."
+    ),
+    "/github": (
+        "GitHub Module\n"
+        "Status: Planned / Not configured\n\n"
+        "Commands:\n"
+        "- /github status\n"
+        "- /github prs\n"
+        "- /github issues\n\n"
+        "Natural examples:\n"
+        "- show my open pull requests\n"
+        "- summarize issue 12\n\n"
+        "Note:\n"
+        "GitHub actions require authenticated local tooling or a configured connector."
+    ),
+    "/system": (
+        "System Module\n"
+        "Status: Planned / Restricted\n\n"
+        "Commands:\n"
+        "- /system status\n"
+        "- /system diagnostics\n"
+        "- /system health\n\n"
+        "Natural examples:\n"
+        "- show system status\n"
+        "- check disk space\n\n"
+        "Note:\n"
+        "No shutdown, restart, or destructive system action is enabled here."
+    ),
+    "/order": (
+        "Order Module\n"
+        "Status: Planned / Not configured\n\n"
+        "Commands:\n"
+        "- /order status\n"
+        "- /order food <item>\n"
+        "- /order groceries <items>\n\n"
+        "Natural examples:\n"
+        "- order biryani\n"
+        "- reorder groceries\n\n"
+        "Note:\n"
+        "Ordering is a future feature. Grandpa will not place real orders from this command."
+    ),
+}
+
+MODE_HELP = (
+    "Assistant Modes\n"
+    "Status: Help only / Not persisted yet\n\n"
+    "Commands:\n"
+    "- /mode list\n"
+    "- /mode show\n"
+    "- /mode coding\n"
+    "- /mode personal\n"
+    "- /mode system\n"
+    "- /mode automation\n"
+    "- /mode learning\n\n"
+    "Note:\n"
+    "Mode switching is a safe placeholder for now."
+)
+
+UNKNOWN_SLASH_SUGGESTIONS = (
+    "Try:\n"
+    "/help\n"
+    "/memory\n"
+    "/reminders\n"
+    "/desktop\n"
+    "/phone"
+)
+
 
 def _read_input(prompt: str = "You> ") -> Optional[str]:
     """Read user input with graceful EOF handling."""
@@ -201,6 +416,18 @@ def _handle_reminders_slash_command(command: str, *, store=None) -> str | None:
             return "Reminder cancelled."
         return f"Reminder is already {reminder.status}."
     return "Unknown reminder command. Try /reminders for help."
+
+
+def _handle_module_slash_command(command: str) -> str | None:
+    command_name = command.split(maxsplit=1)[0].lower()
+    if command_name == "/mode":
+        return MODE_HELP
+    return MODULE_HELP.get(command_name)
+
+
+def _unknown_slash_command_message(command: str) -> str:
+    command_name = command.split(maxsplit=1)[0]
+    return f"Unknown command: {command_name}\n\n{UNKNOWN_SLASH_SUGGESTIONS}"
 
 
 def _handle_natural_assistant_intent(text: str, *, memory_store=None, reminder_store=None) -> str | None:
@@ -619,6 +846,13 @@ def chat(
             continue
         elif cmd.startswith("/reminders"):
             console.print(_handle_reminders_slash_command(user_input) or "Unknown reminder command.")
+            continue
+        elif cmd.startswith("/"):
+            module_help = _handle_module_slash_command(user_input)
+            if module_help is not None:
+                console.print(module_help)
+            else:
+                console.print(_unknown_slash_command_message(user_input))
             continue
 
         from grandpa.core_ai_brain import (

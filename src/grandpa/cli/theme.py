@@ -97,19 +97,59 @@ def render_chat_home(
 
 
 def render_help(console: Console) -> None:
-    help_text = (
-        f"[{TEXT_ACCENT}]/help[/{TEXT_ACCENT}]     Show commands\n"
-        f"[{TEXT_ACCENT}]/model[/{TEXT_ACCENT}]    Show current model\n"
-        f"[{TEXT_ACCENT}]/history[/{TEXT_ACCENT}]  Show chat history\n"
-        f"[{TEXT_ACCENT}]/clear[/{TEXT_ACCENT}]    Clear conversation\n"
-        f"[{TEXT_ACCENT}]/memory[/{TEXT_ACCENT}]   Memory commands\n"
-        f"[{TEXT_ACCENT}]/reminders[/{TEXT_ACCENT}] Reminder commands\n"
-        f"[{TEXT_ACCENT}]/quit[/{TEXT_ACCENT}]     Exit chat\n"
-        f"[{TEXT_ACCENT}]/exit[/{TEXT_ACCENT}]     Exit chat"
+    top_grid = Table.grid(expand=True)
+    top_grid.add_column(ratio=1)
+    top_grid.add_column(ratio=1)
+    top_grid.add_column(ratio=1)
+    top_grid.add_row(
+        _command_group("Core", ["/status", "/mode", "/settings", "/help", "/model", "/history", "/clear", "/quit"]),
+        _command_group("Memory & Productivity", ["/memory", "/reminders", "/tasks"]),
+        _command_group("Computer", ["/desktop", "/browser", "/files", "/system"]),
     )
 
-    console.print(f"[bold {ACCENT}]Grandpa Help[/bold {ACCENT}]")
-    console.print(help_text)
+    bottom_grid = Table.grid(expand=True)
+    bottom_grid.add_column(ratio=1)
+    bottom_grid.add_column(ratio=1)
+    bottom_grid.add_column(ratio=1)
+    bottom_grid.add_row(
+        _command_group("Developer", ["/coding", "/git", "/github"]),
+        _command_group("Personal", ["/phone", "/voice", "/order"]),
+        _command_group("Automation", ["/automation"]),
+    )
+
+    examples = (
+        f"[bold {TEXT_ACCENT}]Natural examples[/bold {TEXT_ACCENT}]\n"
+        "- show my memories\n"
+        "- what reminders do I have\n"
+        "- open Chrome\n"
+        "- search YouTube for Python\n"
+        "- call Amma\n"
+        "- order biryani"
+    )
+
+    layout = Table.grid(expand=True)
+    layout.add_column()
+    layout.add_row(top_grid)
+    layout.add_row("")
+    layout.add_row(bottom_grid)
+    layout.add_row("")
+    layout.add_row(examples)
+
+    console.print(
+        Panel(
+            layout,
+            title=f"[bold {ACCENT}]Grandpa Command Center[/bold {ACCENT}]",
+            title_align="left",
+            border_style=ACCENT,
+            padding=(1, 2),
+        )
+    )
+
+
+def _command_group(title: str, commands: list[str]) -> str:
+    lines = [f"[bold {TEXT_ACCENT}]{title}[/bold {TEXT_ACCENT}]"]
+    lines.extend(f"[{TEXT_ACCENT}]{command}[/{TEXT_ACCENT}]" for command in commands)
+    return "\n".join(lines)
 
 def render_assistant_response(console: Console, content) -> None:
     """Render AI response without title."""

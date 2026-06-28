@@ -6,6 +6,7 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
+from rich.console import Console
 
 from grandpa.agents._stubs import (
     AgentContext,
@@ -16,11 +17,14 @@ from grandpa.agents._stubs import (
 from grandpa.cli.chat_cmd import (
     _create_one_shot_reminder,
     _handle_memory_slash_command,
+    _handle_module_slash_command,
     _handle_natural_assistant_intent,
     _handle_reminders_slash_command,
     _read_input,
+    _unknown_slash_command_message,
     chat,
 )
+from grandpa.cli.theme import render_help
 from grandpa.core.config import GrandpaConfig
 from grandpa.core.registry import AgentRegistry, ToolRegistry
 from grandpa.core.types import ToolCall, ToolResult
@@ -88,6 +92,52 @@ class TestChatCommand:
         assert result.exit_code == 0
         assert "/quit" in result.output
 
+    def test_render_help_shows_command_center_categories(self) -> None:
+        console = Console(record=True, width=120)
+
+        render_help(console)
+        output = console.export_text()
+
+        assert "Grandpa Command Center" in output
+        assert "Core" in output
+        assert "Memory & Productivity" in output
+        assert "Computer" in output
+        assert "Developer" in output
+        assert "Personal" in output
+        assert "Automation" in output
+        assert "/phone" in output
+        assert "/desktop" in output
+        assert "/order" in output
+        assert "/github" in output
+        assert "order biryani" in output
+        assert "╭" in output or "Grandpa Command Center" in output
+
+    def test_interactive_help_uses_command_center(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/help\n/quit\n")
+
+        assert result.exit_code == 0
+        assert "Grandpa Command Center" in result.output
+        assert "Core" in result.output
+        assert "Computer" in result.output
+        assert "Developer" in result.output
+        assert "Personal" in result.output
+        assert "Automation" in result.output
+        assert "/phone" in result.output
+        assert "/desktop" in result.output
+        assert "/order" in result.output
+        assert "/github" in result.output
+        engine.generate.assert_not_called()
+
 
 class TestReadInput:
     """Test the _read_input helper function."""
@@ -106,6 +156,49 @@ class TestReadInput:
 
 
 class TestChatSlashCommands:
+    def test_module_help_phone(self) -> None:
+        message = _handle_module_slash_command("/phone")
+
+        assert message is not None
+        assert "Phone Module" in message
+        assert "Planned / Not configured" in message
+        assert "/call <contact>" in message
+        assert "Android companion app" in message
+
+    def test_module_help_desktop(self) -> None:
+        message = _handle_module_slash_command("/desktop")
+
+        assert message is not None
+        assert "Desktop Module" in message
+        assert "Available" in message
+        assert "permission" in message.lower()
+
+    def test_module_help_order(self) -> None:
+        message = _handle_module_slash_command("/order")
+
+        assert message is not None
+        assert "Order Module" in message
+        assert "Planned / Not configured" in message
+        assert "will not place real orders" in message
+
+    def test_mode_help(self) -> None:
+        message = _handle_module_slash_command("/mode")
+
+        assert message is not None
+        assert "Assistant Modes" in message
+        assert "/mode list" in message
+        assert "/mode learning" in message
+
+    def test_unknown_slash_command_message(self) -> None:
+        message = _unknown_slash_command_message("/abc")
+
+        assert "Unknown command: /abc" in message
+        assert "/help" in message
+        assert "/memory" in message
+        assert "/reminders" in message
+        assert "/desktop" in message
+        assert "/phone" in message
+
     def test_memory_help(self, tmp_path) -> None:
         store = MemoryStore(tmp_path / "memory.db")
 
@@ -309,6 +402,23 @@ class TestChatSlashCommands:
 
         assert message == "Reminder cancelled."
         assert store.get(reminder.id).status == "cancelled"  # type: ignore[union-attr]
+
+    def test_unknown_slash_command_does_not_call_llm(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/abc\n/quit\n")
+
+        assert result.exit_code == 0
+        assert "Unknown command: /abc" in result.output
+        engine.generate.assert_not_called()
 
     def test_chat_reminder_creation_still_works(self, tmp_path, monkeypatch) -> None:
         from datetime import UTC
