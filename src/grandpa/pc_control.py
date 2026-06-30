@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
@@ -138,13 +138,22 @@ SAFE_APP_ALIASES = {
     "windows terminal": "terminal",
     "task manager": "task_manager",
 }
-PROTECTED_PATH_PARTS = {
+PROTECTED_WINDOWS_ROOT_NAMES = {
     "windows",
     "program files",
     "program files (x86)",
+}
+PROTECTED_PATH_PARTS = {
     "$recycle.bin",
     "system volume information",
 }
+PROTECTED_PATH_SEQUENCES = (
+    (".ssh",),
+    ("appdata", "local", "google", "chrome", "user data"),
+    ("appdata", "local", "microsoft", "edge", "user data"),
+    ("appdata", "local", "bravesoftware", "brave-browser", "user data"),
+    ("appdata", "roaming", "mozilla", "firefox", "profiles"),
+)
 SECRET_KEYS = {"content", "text", "value", "clipboard", "password", "secret", "token"}
 
 
@@ -1214,16 +1223,34 @@ def _resolve_path(path: str) -> Path:
 
 
 def _is_protected_path(path: Path) -> bool:
-    resolved = path.resolve(strict=False)
-    raw_lower = str(resolved).lower().replace("/", "\\")
-    if any(token in raw_lower for token in ("\\windows", "\\program files", "c:\\windows", "c:\\program files")):
+    parts = _normalised_path_parts(path)
+    if _is_windows_root_protected(parts):
         return True
-    parts = {part.lower() for part in resolved.parts}
-    if parts & PROTECTED_PATH_PARTS:
+    if set(parts) & PROTECTED_PATH_PARTS:
         return True
-    home = Path.home().resolve(strict=False)
-    repo = Path(__file__).resolve().parents[2]
-    return resolved in {home, repo}
+    return any(_contains_path_sequence(parts, sequence) for sequence in PROTECTED_PATH_SEQUENCES)
+
+
+def _normalised_path_parts(path: Path) -> tuple[str, ...]:
+    resolved = path.expanduser().resolve(strict=False)
+    raw = str(resolved).replace("/", "\\")
+    if len(raw) >= 2 and raw[1] == ":":
+        return tuple(part.rstrip("\\/").lower() for part in PureWindowsPath(raw).parts if part.rstrip("\\/"))
+    return tuple(part.lower() for part in resolved.parts if part)
+
+
+def _is_windows_root_protected(parts: tuple[str, ...]) -> bool:
+    if len(parts) < 2:
+        return False
+    drive = parts[0]
+    first_directory = parts[1]
+    return drive.endswith(":") and first_directory in PROTECTED_WINDOWS_ROOT_NAMES
+
+
+def _contains_path_sequence(parts: tuple[str, ...], sequence: tuple[str, ...]) -> bool:
+    if len(sequence) > len(parts):
+        return False
+    return any(parts[index : index + len(sequence)] == sequence for index in range(len(parts) - len(sequence) + 1))
 
 
 def _redact_target(action_type: str, target: str) -> str:

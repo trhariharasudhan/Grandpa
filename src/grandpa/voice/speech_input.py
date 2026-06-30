@@ -114,14 +114,17 @@ class SpeechInputEngine:
         }
 
     def stt_status(self) -> dict[str, Any]:
+        from grandpa.speech.faster_whisper import select_compute_type
+
         config = self._speech_config()
         engine = "faster_whisper" if importlib.util.find_spec("faster_whisper") is not None else "push_to_talk_transcript"
+        device = getattr(config, "device", "auto")
         return {
             "engine": engine,
             "model": getattr(config, "model", "base"),
             "ready": engine == "faster_whisper",
-            "device": getattr(config, "device", "auto"),
-            "compute_type": getattr(config, "compute_type", "float16"),
+            "device": device,
+            "compute_type": select_compute_type(device, getattr(config, "compute_type", "auto")),
             "supported_audio_formats": sorted(SUPPORTED_LOCAL_AUDIO_FORMATS),
         }
 
@@ -202,7 +205,7 @@ class SpeechInputEngine:
         return FasterWhisperBackend(
             model_size=getattr(config, "model", "base"),
             device=getattr(config, "device", "auto"),
-            compute_type=getattr(config, "compute_type", "float16"),
+            compute_type=getattr(config, "compute_type", "auto"),
         )
 
     def _speech_config(self) -> Any:

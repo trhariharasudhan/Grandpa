@@ -9,7 +9,7 @@ def test_speech_config_defaults():
     assert cfg.model == "base"
     assert cfg.language == ""
     assert cfg.device == "auto"
-    assert cfg.compute_type == "float16"
+    assert cfg.compute_type == "auto"
 
 
 def test_Grandpa_config_has_speech():

@@ -47,6 +47,107 @@ def test_installed_app_detection(monkeypatch):
     assert result.evidence["app_id"] == "chrome"
 
 
+def test_vscode_opens_with_project_path_argument(monkeypatch, tmp_path: Path):
+    project = tmp_path / "Grandpa"
+    project.mkdir()
+    launch_calls = []
+    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+
+    def fake_launch_app(name, *, args=None):
+        launch_calls.append((name, args))
+        return _found_app("vscode")
+
+    monkeypatch.setattr("grandpa.windows_app_resolver.launch_app", fake_launch_app)
+
+    result = run_local_action(
+        {
+            "action_type": "open_app",
+            "target": "vscode",
+            "args": {"project_path": str(project)},
+        }
+    )
+
+    assert result.ok is True
+    assert launch_calls == [("vscode", [str(project.resolve(strict=False))])]
+
+
+def test_vscode_invalid_project_path_is_rejected(monkeypatch, tmp_path: Path):
+    missing = tmp_path / "missing"
+    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+    monkeypatch.setattr(
+        "grandpa.windows_app_resolver.launch_app",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not launch")),
+    )
+
+    result = run_local_action(
+        {
+            "action_type": "open_app",
+            "target": "vscode",
+            "args": {"project_path": str(missing)},
+        }
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.error == "invalid_project_path"
+
+
+def test_vscode_protected_project_path_is_blocked(monkeypatch, tmp_path: Path):
+    project = tmp_path / "Grandpa"
+    project.mkdir()
+    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+    monkeypatch.setattr("grandpa.pc_control._is_protected_path", lambda _path: True)
+
+    result = run_local_action(
+        {
+            "action_type": "open_app",
+            "target": "vscode",
+            "args": {"project_path": str(project)},
+        }
+    )
+
+    assert result.ok is False
+    assert result.status == "blocked"
+    assert result.error == "protected_project_path"
+
+
+def test_grandpa_project_path_is_not_protected():
+    assert pc_control._is_protected_path(Path(r"D:\Grandpa")) is False
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        Path(r"C:\Windows"),
+        Path(r"C:\Windows\System32"),
+        Path(r"C:\Program Files"),
+        Path(r"C:\Program Files (x86)\Common Files"),
+        Path.home() / ".ssh",
+        Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data",
+        Path(r"C:\$Recycle.Bin"),
+        Path(r"C:\System Volume Information"),
+    ],
+)
+def test_true_windows_protected_paths_are_blocked(path: Path):
+    assert pc_control._is_protected_path(path) is True
+
+
+def test_normal_vscode_open_still_uses_no_project_argument(monkeypatch):
+    launch_calls = []
+    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+
+    def fake_launch_app(name, *, args=None):
+        launch_calls.append((name, args))
+        return _found_app("vscode")
+
+    monkeypatch.setattr("grandpa.windows_app_resolver.launch_app", fake_launch_app)
+
+    result = run_local_action({"action_type": "open_app", "target": "vscode"})
+
+    assert result.ok is True
+    assert launch_calls == [("vscode", [])]
+
+
 def test_blocked_unknown_app():
     result = run_local_action({"action_type": "open_app", "target": "unknown browser"})
 

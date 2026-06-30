@@ -102,6 +102,30 @@ def test_launch_missing_app_returns_clear_error(monkeypatch) -> None:
     assert "could not find Chrome" in result.message
 
 
+def test_launch_vscode_with_project_argument_uses_popen_without_shell(monkeypatch, tmp_path: Path) -> None:
+    code = tmp_path / "Code.exe"
+    code.write_text("fake", encoding="utf-8")
+    project = tmp_path / "Grandpa"
+    project.mkdir()
+    calls = []
+    monkeypatch.setattr(windows_app_resolver.sys, "platform", "win32")
+    monkeypatch.setattr(
+        windows_app_resolver,
+        "resolve_app",
+        lambda name: AppResolution("vscode", "VS Code", "found", "path", str(code), "test", "found"),
+    )
+    monkeypatch.setattr(
+        windows_app_resolver.subprocess,
+        "Popen",
+        lambda args, shell=False: calls.append((args, shell)),
+    )
+
+    result = windows_app_resolver.launch_app("vscode", args=[str(project)])
+
+    assert result.status == "found"
+    assert calls == [([str(code), str(project)], False)]
+
+
 def test_local_action_open_app_uses_resolver(monkeypatch) -> None:
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
     monkeypatch.setattr(

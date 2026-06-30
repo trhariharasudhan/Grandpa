@@ -131,6 +131,7 @@ cli.add_command(_lazy("reminders", "grandpa.cli.reminders_cmd:reminders", short_
 cli.add_command(_lazy("startup", "grandpa.cli.startup_cmd:startup", short_help="Windows startup integration."))
 cli.add_command(_lazy("tray", "grandpa.cli.tray_cmd:tray", short_help="Windows system tray controller."))
 cli.add_command(_lazy("doctor", "grandpa.cli.doctor_cmd:doctor", short_help="Check readiness."))
+cli.add_command(_lazy("jarvis", "grandpa.cli.jarvis_cmd:jarvis", short_help="Route Jarvis-style safe local commands."))
 cli.add_command(_lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manage agents."))
 cli.add_command(_lazy("workflow", "grandpa.cli.workflow_cmd:workflow", short_help="Run workflows."))
 cli.add_command(_lazy("skill", "grandpa.cli.skill_cmd:skill", short_help="Manage skills."))

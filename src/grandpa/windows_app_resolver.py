@@ -285,7 +285,7 @@ def describe_app(name: str) -> str:
     return resolution.message
 
 
-def launch_app(name: str) -> AppResolution:
+def launch_app(name: str, *, args: list[str] | None = None) -> AppResolution:
     resolution = resolve_app(name)
     if resolution.status != "found":
         return resolution
@@ -299,10 +299,21 @@ def launch_app(name: str) -> AppResolution:
             "platform",
             "Windows app launching is only supported on Windows desktop.",
         )
+    launch_args = list(args or [])
     try:
         if resolution.launch_kind in {"path", "command"}:
-            subprocess.Popen([resolution.launch_target], shell=False)  # noqa: S603
+            subprocess.Popen([resolution.launch_target, *launch_args], shell=False)  # noqa: S603
         elif resolution.launch_kind in {"shortcut", "uri"}:
+            if launch_args:
+                return AppResolution(
+                    resolution.app_id,
+                    resolution.display_name,
+                    "unsupported",
+                    "unsupported",
+                    resolution.launch_target,
+                    resolution.source,
+                    f"{resolution.display_name} was found, but this launch type does not support project folders.",
+                )
             os.startfile(resolution.launch_target)  # type: ignore[attr-defined]  # noqa: S606
         else:
             return resolution
