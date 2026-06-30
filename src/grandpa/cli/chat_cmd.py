@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 import subprocess
 import sys
+import threading
+import time
 from typing import List, Optional
 
 import click
@@ -13,7 +16,13 @@ from rich.markdown import Markdown
 
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.cli.input_ui import read_chat_input, select_from_list
+from grandpa.cli.slash_commands import command_help_text, unknown_command_message
 from grandpa.cli.theme import (
+    TEXT_ACCENT,
+    help_commands_text,
+    help_examples_text,
+    help_modules_text,
+    help_shortcuts_text,
     render_assistant_response,
     render_chat_home,
     render_help,
@@ -53,222 +62,6 @@ NATURAL_REMINDER_LIST_INTENTS = {
     "what reminders do i have",
 }
 
-MODULE_HELP: dict[str, str] = {
-    "/status": (
-        "Grandpa Status\n"
-        "Status: Available\n\n"
-        "Commands:\n"
-        "- /status\n"
-        "- uv run grandpa status\n"
-        "- uv run grandpa doctor\n\n"
-        "Natural examples:\n"
-        "- what is your status\n"
-        "- is Grandpa running\n\n"
-        "Note:\n"
-        "Status checks are read-only."
-    ),
-    "/settings": (
-        "Settings Module\n"
-        "Status: Planned / Not configured\n\n"
-        "Commands:\n"
-        "- /settings\n"
-        "- /settings show\n"
-        "- /settings profile\n\n"
-        "Natural examples:\n"
-        "- show my settings\n"
-        "- what is my default model\n\n"
-        "Note:\n"
-        "Settings changes are not wired into chat yet."
-    ),
-    "/tasks": (
-        "Tasks Module\n"
-        "Status: Planned / Partially available\n\n"
-        "Commands:\n"
-        "- /tasks status\n"
-        "- /tasks list\n"
-        "- /tasks help\n\n"
-        "Natural examples:\n"
-        "- show my tasks\n"
-        "- plan my day\n"
-        "- what should I do next\n\n"
-        "Note:\n"
-        "Task planning is a safe placeholder here and does not execute actions."
-    ),
-    "/desktop": (
-        "Desktop Module\n"
-        "Status: Available with safety confirmations\n\n"
-        "Commands:\n"
-        "- /desktop status\n"
-        "- /desktop help\n"
-        "- /desktop permissions\n\n"
-        "Natural examples:\n"
-        "- open Chrome\n"
-        "- type hello in Notepad\n"
-        "- press enter\n\n"
-        "Note:\n"
-        "Desktop actions use Grandpa's local permission and confirmation layer."
-    ),
-    "/browser": (
-        "Browser Module\n"
-        "Status: Planned / Partially available\n\n"
-        "Commands:\n"
-        "- /browser status\n"
-        "- /browser help\n"
-        "- /browser diagnostics\n\n"
-        "Natural examples:\n"
-        "- search YouTube for Python\n"
-        "- open the browser\n"
-        "- summarize this page\n\n"
-        "Note:\n"
-        "Browser actions must stay local and permission-aware."
-    ),
-    "/files": (
-        "Files Module\n"
-        "Status: Available with safe local handling\n\n"
-        "Commands:\n"
-        "- /files status\n"
-        "- /files help\n"
-        "- /files recent\n\n"
-        "Natural examples:\n"
-        "- summarize this file\n"
-        "- find my notes about Grandpa\n\n"
-        "Note:\n"
-        "File actions should avoid destructive changes unless explicitly confirmed."
-    ),
-    "/phone": (
-        "Phone Module\n"
-        "Status: Planned / Not configured\n\n"
-        "Commands:\n"
-        "- /call <contact>\n"
-        "- /sms <contact> <message>\n"
-        "- /contacts search <name>\n"
-        "- /phone status\n\n"
-        "Natural examples:\n"
-        "- call Amma\n"
-        "- send SMS to Arjun\n"
-        "- show phone notifications\n\n"
-        "Note:\n"
-        "Phone actions require a future Android companion app or Bluetooth/mobile bridge."
-    ),
-    "/voice": (
-        "Voice Module\n"
-        "Status: Available for safe foundations\n\n"
-        "Commands:\n"
-        "- /voice status\n"
-        "- /voice wake-word\n"
-        "- /voice loop\n\n"
-        "Natural examples:\n"
-        "- what is my voice status\n"
-        "- start push to talk\n\n"
-        "Note:\n"
-        "No always-on microphone starts from this chat command."
-    ),
-    "/automation": (
-        "Automation Module\n"
-        "Status: Planned / Permission-gated\n\n"
-        "Commands:\n"
-        "- /automation status\n"
-        "- /automation help\n"
-        "- /automation workflows\n\n"
-        "Natural examples:\n"
-        "- create a workflow for my morning setup\n"
-        "- show automation diagnostics\n\n"
-        "Note:\n"
-        "Automation must remain explicit, local, and confirmation-gated."
-    ),
-    "/coding": (
-        "Coding Module\n"
-        "Status: Available\n\n"
-        "Commands:\n"
-        "- /coding status\n"
-        "- /coding help\n"
-        "- /coding diagnostics\n\n"
-        "Natural examples:\n"
-        "- review this code\n"
-        "- explain this error\n"
-        "- run the tests\n\n"
-        "Note:\n"
-        "Coding actions should keep repository changes reviewable."
-    ),
-    "/git": (
-        "Git Module\n"
-        "Status: Planned / Partially available\n\n"
-        "Commands:\n"
-        "- /git status\n"
-        "- /git diff\n"
-        "- /git log\n\n"
-        "Natural examples:\n"
-        "- show git status\n"
-        "- summarize my changes\n\n"
-        "Note:\n"
-        "Git commit and push actions require explicit user approval."
-    ),
-    "/github": (
-        "GitHub Module\n"
-        "Status: Planned / Not configured\n\n"
-        "Commands:\n"
-        "- /github status\n"
-        "- /github prs\n"
-        "- /github issues\n\n"
-        "Natural examples:\n"
-        "- show my open pull requests\n"
-        "- summarize issue 12\n\n"
-        "Note:\n"
-        "GitHub actions require authenticated local tooling or a configured connector."
-    ),
-    "/system": (
-        "System Module\n"
-        "Status: Planned / Restricted\n\n"
-        "Commands:\n"
-        "- /system status\n"
-        "- /system diagnostics\n"
-        "- /system health\n\n"
-        "Natural examples:\n"
-        "- show system status\n"
-        "- check disk space\n\n"
-        "Note:\n"
-        "No shutdown, restart, or destructive system action is enabled here."
-    ),
-    "/order": (
-        "Order Module\n"
-        "Status: Planned / Not configured\n\n"
-        "Commands:\n"
-        "- /order status\n"
-        "- /order food <item>\n"
-        "- /order groceries <items>\n\n"
-        "Natural examples:\n"
-        "- order biryani\n"
-        "- reorder groceries\n\n"
-        "Note:\n"
-        "Ordering is a future feature. Grandpa will not place real orders from this command."
-    ),
-}
-
-MODE_HELP = (
-    "Assistant Modes\n"
-    "Status: Help only / Not persisted yet\n\n"
-    "Commands:\n"
-    "- /mode list\n"
-    "- /mode show\n"
-    "- /mode coding\n"
-    "- /mode personal\n"
-    "- /mode system\n"
-    "- /mode automation\n"
-    "- /mode learning\n\n"
-    "Note:\n"
-    "Mode switching is a safe placeholder for now."
-)
-
-UNKNOWN_SLASH_SUGGESTIONS = (
-    "Try:\n"
-    "/help\n"
-    "/memory\n"
-    "/reminders\n"
-    "/desktop\n"
-    "/phone"
-)
-
-
 def _read_input(prompt: str = "You> ") -> Optional[str]:
     """Read user input with graceful EOF handling."""
     try:
@@ -276,6 +69,30 @@ def _read_input(prompt: str = "You> ") -> Optional[str]:
     except (EOFError, KeyboardInterrupt):
         return None
 
+class ThinkingAnimation:
+    def __init__(self, console: Console):
+        self.console = console
+        self.stop = threading.Event()
+        self.thread = threading.Thread(target=self._run, daemon=True)
+
+    def _run(self) -> None:
+        frames = ["●○○", "●●○", "●●●"]
+        for frame in itertools.cycle(frames):
+            if self.stop.is_set():
+                break
+            self.console.print(
+                f"\r[bold #ffc448]<[/bold #ffc448] [bold #ffc448]{frame}[/bold #ffc448]",
+                end="",
+            )
+            time.sleep(0.2)
+        self.console.print("\r" + " " * 30 + "\r", end="")
+
+    def start(self) -> None:
+        self.thread.start()
+
+    def finish(self) -> None:
+        self.stop.set()
+        self.thread.join(timeout=1)
 
 def _engine_unavailable_message(engine_name: str, exc: EngineConnectionError) -> str:
     text = str(exc)
@@ -420,14 +237,29 @@ def _handle_reminders_slash_command(command: str, *, store=None) -> str | None:
 
 def _handle_module_slash_command(command: str) -> str | None:
     command_name = command.split(maxsplit=1)[0].lower()
-    if command_name == "/mode":
-        return MODE_HELP
-    return MODULE_HELP.get(command_name)
+    return command_help_text(command_name)
+
+
+def _handle_help_slash_command(command: str) -> str | None:
+    parts = command.lower().split(maxsplit=1)
+    if parts[0] != "/help":
+        return None
+    if len(parts) == 1:
+        return None
+    topic = parts[1].strip()
+    if topic == "commands":
+        return help_commands_text()
+    if topic == "examples":
+        return help_examples_text()
+    if topic == "modules":
+        return help_modules_text()
+    if topic == "shortcuts":
+        return help_shortcuts_text()
+    return "Unknown help topic. Try /help commands, /help examples, /help modules, or /help shortcuts."
 
 
 def _unknown_slash_command_message(command: str) -> str:
-    command_name = command.split(maxsplit=1)[0]
-    return f"Unknown command: {command_name}\n\n{UNKNOWN_SLASH_SUGGESTIONS}"
+    return unknown_command_message(command)
 
 
 def _handle_natural_assistant_intent(text: str, *, memory_store=None, reminder_store=None) -> str | None:
@@ -794,7 +626,12 @@ def chat(
             user_input = _read_input()
 
         if user_input is not None:
-            console.print(f"> {user_input}")
+            if user_input.strip().startswith("/"):
+                console.print("> ", style=TEXT_ACCENT, end="")
+                console.print(user_input)
+            else:
+                console.print("> ", style=TEXT_ACCENT, end="")
+                console.print(user_input)
 
         if user_input is None:
             console.print("\n[dim]Goodbye![/dim]")
@@ -815,7 +652,13 @@ def chat(
                 history.append(Message(role=Role.SYSTEM, content=system_prompt))
             console.print("[dim]History cleared.[/dim]")
             continue
-        elif cmd == "/model":
+        elif cmd == "/model" or cmd.startswith("/model "):
+            requested_model = user_input.split(maxsplit=1)[1].strip() if len(user_input.split(maxsplit=1)) > 1 else ""
+            if requested_model:
+                model = requested_model
+                console.print(f"[green]✓[/green] Model changed to [cyan]{model}[/cyan]")
+                continue
+
             models = _get_ollama_models()
 
             if not models:
@@ -831,6 +674,9 @@ def chat(
             continue
         elif cmd == "/help":
             render_help(console)
+            continue
+        elif cmd.startswith("/help "):
+            console.print(_handle_help_slash_command(user_input) or "Unknown help topic.")
             continue
         elif cmd == "/history":
             if not history:
@@ -978,6 +824,9 @@ def chat(
         history.append(Message(role=Role.USER, content=effective_user_input))
 
         # Generate response
+        thinking = ThinkingAnimation(console)
+        thinking.start()
+
         try:
             model_history = [
                 Message(role=Role.SYSTEM, content=build_brain_context(brain_analysis)),
@@ -1006,7 +855,6 @@ def chat(
             )
 
             history.append(Message(role=Role.ASSISTANT, content=content))
-            console.print()
             render_assistant_response(console, Markdown(content))
             console.print()
         except EngineModelNotFoundError as exc:
@@ -1045,6 +893,7 @@ def chat(
             console.print("\n[dim]Generation interrupted.[/dim]")
         except Exception:
             console.print(f"\n[red]{GENERATION_ERROR_MESSAGE}[/red]\n")
-
+        finally:
+            thinking.finish()
 
 __all__ = ["chat"]

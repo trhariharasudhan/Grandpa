@@ -14,8 +14,10 @@ from grandpa.agents._stubs import (
     BaseAgent,
     ToolUsingAgent,
 )
+from grandpa.cli import input_ui
 from grandpa.cli.chat_cmd import (
     _create_one_shot_reminder,
+    _handle_help_slash_command,
     _handle_memory_slash_command,
     _handle_module_slash_command,
     _handle_natural_assistant_intent,
@@ -23,6 +25,13 @@ from grandpa.cli.chat_cmd import (
     _read_input,
     _unknown_slash_command_message,
     chat,
+)
+from grandpa.cli.slash_commands import (
+    command_names,
+    command_preview_items,
+    command_preview_options,
+    get_command,
+    unknown_command_message,
 )
 from grandpa.cli.theme import render_help
 from grandpa.core.config import GrandpaConfig
@@ -110,7 +119,8 @@ class TestChatCommand:
         assert "/order" in output
         assert "/github" in output
         assert "order biryani" in output
-        assert "╭" in output or "Grandpa Command Center" in output
+        assert "╭" not in output
+        assert "╰" not in output
 
     def test_interactive_help_uses_command_center(self) -> None:
         engine = MagicMock()
@@ -138,6 +148,58 @@ class TestChatCommand:
         assert "/github" in result.output
         engine.generate.assert_not_called()
 
+    def test_help_subcommands_return_specific_sections(self) -> None:
+        commands = _handle_help_slash_command("/help commands")
+        examples = _handle_help_slash_command("/help examples")
+        modules = _handle_help_slash_command("/help modules")
+        shortcuts = _handle_help_slash_command("/help shortcuts")
+
+        assert commands is not None
+        assert "/help commands" in commands
+        assert "Core" in commands
+        assert "Open command center" in commands
+        assert "/memory" in commands
+        assert "Help Module\nStatus: Available" not in commands
+        assert examples is not None
+        assert "/help examples" in examples
+        assert "Memory:" in examples
+        assert "show my memories" in examples
+        assert "remind me in 30 minutes" in examples
+        assert "order biryani" in examples
+        assert "Help Module\nStatus: Available" not in examples
+        assert modules is not None
+        assert "/help modules" in modules
+        assert "Memory" in modules
+        assert "Saved facts" in modules
+        assert "Phone" in modules
+        assert "Future mobile bridge" in modules
+        assert "Help Module\nStatus: Available" not in modules
+        assert shortcuts is not None
+        assert "/help shortcuts" in shortcuts
+        assert "Left/Right" in shortcuts
+        assert "Up/Down" in shortcuts
+        assert "Enter" in shortcuts
+        assert "Help Module\nStatus: Available" not in shortcuts
+
+    def test_interactive_help_subcommand_does_not_use_generic_module_help(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/help examples\n/quit\n")
+
+        assert result.exit_code == 0
+        assert "/help examples" in result.output
+        assert "show my memories" in result.output
+        assert "Help Module" not in result.output
+        engine.generate.assert_not_called()
+
 
 class TestReadInput:
     """Test the _read_input helper function."""
@@ -153,6 +215,128 @@ class TestReadInput:
     def test_read_input_normal(self) -> None:
         with mock.patch("builtins.input", return_value="hello"):
             assert _read_input() == "hello"
+
+    def test_chat_input_fallback_when_prompt_toolkit_unavailable(self, monkeypatch) -> None:
+        monkeypatch.setattr(input_ui, "PROMPT_TOOLKIT_AVAILABLE", False)
+        monkeypatch.setattr("builtins.input", lambda _prompt="": "/help")
+
+        assert input_ui.read_chat_input() == "/help"
+
+
+class TestSlashCommandRegistry:
+    def test_registry_contains_expected_commands(self) -> None:
+        names = set(command_names())
+
+        assert {"/help", "/mode", "/memory", "/reminders", "/desktop", "/phone", "/order", "/github"} <= names
+
+    def test_registry_has_friendly_labels(self) -> None:
+        assert get_command("/help").display_label == "Help"  # type: ignore[union-attr]
+        assert get_command("/status").display_label == "Status"  # type: ignore[union-attr]
+        assert get_command("/github").display_label == "GitHub"  # type: ignore[union-attr]
+
+    def test_mode_subcommands_exist(self) -> None:
+        command = get_command("/mode")
+
+        assert command is not None
+        assert "/mode list" in command.subcommands
+        assert "/mode learning" in command.subcommands
+
+    def test_help_preview_items_exist(self) -> None:
+        assert command_preview_items("/help") == [
+            "/help",
+            "/help commands",
+            "/help examples",
+            "/help modules",
+        ]
+        assert [item.label for item in command_preview_options("/help")] == [
+            "Help",
+            "Commands",
+            "Examples",
+            "Modules",
+        ]
+
+    def test_memory_and_reminder_subcommands_exist(self) -> None:
+        memory = get_command("/memory")
+        reminders = get_command("/reminders")
+
+        assert memory is not None
+        assert reminders is not None
+        assert "/memory search <query>" in memory.subcommands
+        assert "/memory forget <query or id>" in memory.subcommands
+        assert "/reminders list" in reminders.subcommands
+        assert "/reminders cancel <id>" in reminders.subcommands
+
+    def test_unknown_suggestions_use_registry_commands(self) -> None:
+        message = unknown_command_message("/abc")
+
+        assert "Unknown command: /abc" in message
+        for command in ("/help", "/memory", "/reminders", "/desktop", "/phone"):
+            assert command in command_names()
+            assert command in message
+
+    def test_picker_top_level_suggestions_are_horizontal_candidates(self) -> None:
+        suggestions = input_ui._top_level_suggestions("/")
+        names = [name for name, _description in suggestions]
+        labels = [label for _name, label in suggestions]
+
+        assert names[:3] == ["/help", "/status", "/mode"]
+        assert labels[:3] == ["Help", "Status", "Mode"]
+        assert "/phone" in names
+        assert "/order" in names
+        assert "/help" not in labels
+
+    def test_picker_subcommand_suggestions_are_available(self) -> None:
+        suggestions = input_ui._subcommand_suggestions("/mode")
+        names = [name for name, _description in suggestions]
+
+        assert "/mode list" in names
+        assert "/mode learning" in names
+
+    def test_picker_preview_lines_include_selected_command_details(self) -> None:
+        assert input_ui._picker_preview_lines("/help") == [
+            "Selected: Help (/help)",
+            "Help",
+            "Commands",
+            "Examples",
+            "Modules",
+        ]
+        mode_lines = input_ui._picker_preview_lines("/mode")
+        memory_lines = input_ui._picker_preview_lines("/memory")
+        reminder_lines = input_ui._picker_preview_lines("/reminders")
+
+        assert "List" in mode_lines
+        assert "Show" in mode_lines
+        assert "Coding" in mode_lines
+        assert not any(line.startswith("/") for line in mode_lines[1:])
+        assert "List" in memory_lines
+        assert "All" in memory_lines
+        assert "Search Query" in memory_lines
+        assert "Forget Query Or Id" in memory_lines
+        assert "Cancel Id" in reminder_lines
+
+    def test_picker_preview_options_preserve_submit_commands(self) -> None:
+        assert input_ui._command_preview_options("/mode")[0] == ("/mode list", "List")
+        assert input_ui._command_preview_options("/mode")[2] == ("/mode coding", "Coding")
+        assert input_ui._command_preview_options("/memory")[2] == ("/memory search <query>", "Search Query")
+
+    def test_model_preview_uses_installed_models(self, monkeypatch) -> None:
+        monkeypatch.setattr(input_ui, "_installed_ollama_models", lambda: ["gemma3:4b", "grandpa-fast:latest"])
+
+        assert input_ui._picker_preview_lines("/model") == [
+            "Selected: Model (/model)",
+            "Model",
+            "gemma3:4b",
+            "grandpa-fast:latest",
+        ]
+        assert input_ui._command_preview_options("/model")[1] == ("/model gemma3:4b", "gemma3:4b")
+
+    def test_model_preview_handles_ollama_failure(self, monkeypatch) -> None:
+        monkeypatch.setattr(input_ui, "_installed_ollama_models", lambda: [])
+
+        lines = input_ui._picker_preview_lines("/model")
+
+        assert "No local models found" in lines
+        assert "Install with: ollama pull qwen2.5:3b" in lines
 
 
 class TestChatSlashCommands:
@@ -418,6 +602,24 @@ class TestChatSlashCommands:
 
         assert result.exit_code == 0
         assert "Unknown command: /abc" in result.output
+        engine.generate.assert_not_called()
+
+    def test_model_argument_changes_model_without_picker(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/model grandpa-fast:latest\n/quit\n")
+
+        assert result.exit_code == 0
+        assert "Model changed to" in result.output
+        assert "grandpa-fast:latest" in result.output
         engine.generate.assert_not_called()
 
     def test_chat_reminder_creation_still_works(self, tmp_path, monkeypatch) -> None:
