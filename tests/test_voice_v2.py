@@ -275,16 +275,32 @@ def test_speech_output_dry_run_and_stop():
     assert output.diagnostics()["state"] == "idle"
 
 
-def test_voice_speak_reports_missing_tts_dependency(monkeypatch):
+def test_speech_output_invokes_pyttsx3_backend(monkeypatch):
+    calls = []
+
+    monkeypatch.setattr(speech_output.importlib.util, "find_spec", lambda name: object() if name == "pyttsx3" else None)
+    monkeypatch.setattr(
+        speech_output,
+        "_speak_with_pyttsx3",
+        lambda text, *, voice, rate: calls.append((text, voice, rate)),
+    )
+
+    output = SpeechOutputEngine(rate=170)
+    result = output.speak("Opening Notepad.")
+
+    assert result.status == "completed"
+    assert calls == [("Opening Notepad.", "", 170)]
+
+
+def test_voice_speak_falls_back_to_print_only_when_tts_missing(monkeypatch):
     monkeypatch.setattr(speech_output.importlib.util, "find_spec", lambda _name: None)
-    monkeypatch.setattr(speech_output.platform, "system", lambda: "Linux")
     runtime = VoiceRuntime()
 
     result = runtime.speak("Hello Grandpa")
 
-    assert result["status"] == "tts_unavailable"
-    assert "Voice output is not available." in result["message"]
-    assert "text-to-speech backend" in result["message"]
+    assert result["status"] == "fallback"
+    assert result["engine"] == "print_only"
+    assert "printed response only" in result["message"]
 
 
 def test_voice_runtime_speak_mocked_success():
@@ -1119,12 +1135,14 @@ def test_voice_api_returns_clean_expected_error_status(monkeypatch):
     app.include_router(voice_router)
     client = TestClient(app)
     monkeypatch.setattr(speech_output.importlib.util, "find_spec", lambda _name: None)
-    monkeypatch.setattr(speech_output.platform, "system", lambda: "Linux")
 
     response = client.post("/v1/voice/speak", json={"text": "Hello"})
 
-    assert response.status_code == 503
-    assert "Voice output is not available." in response.json()["detail"]
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "fallback"
+    assert body["engine"] == "print_only"
+    assert "printed response only" in body["message"]
 
 
 def test_voice_api_unrelated_runtime_error_is_not_mislabeled(monkeypatch):

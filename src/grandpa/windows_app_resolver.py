@@ -8,7 +8,7 @@ import sqlite3
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -327,7 +327,7 @@ def launch_app(name: str, *, args: list[str] | None = None) -> AppResolution:
             resolution.source,
             f"I found {resolution.display_name}, but Windows could not launch it: {exc}",
         )
-    return resolution
+    return replace(resolution, message=f"Opening {resolution.display_name}.")
 
 
 def definition_for(name: str) -> AppDefinition | None:

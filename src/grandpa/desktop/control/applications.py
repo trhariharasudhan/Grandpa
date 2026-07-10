@@ -37,15 +37,7 @@ class ApplicationControlService:
 
         app_id = self.app_id(request.target)
         if not app_id:
-            return LocalActionResponse(
-                False,
-                None,
-                "blocked",
-                "Unknown app is not in Grandpa's safe app allowlist.",
-                False,
-                "BLOCKED",
-                error="blocked_by_policy",
-            )
+            return self._execute_inventory_app(request, action)
         from grandpa.windows_app_resolver import launch_app, resolve_app
 
         resolution = resolve_app(app_id)
@@ -116,6 +108,82 @@ class ApplicationControlService:
             risk_level="LOW",
             evidence=evidence,
             error=None if ok else launch.status,
+        )
+
+    def _execute_inventory_app(self, request: Any, action: str):
+        from grandpa.apps.inventory import find_app, launch_inventory_app
+        from grandpa.pc_control import LocalActionResponse
+
+        if action == "detect_app":
+            result = find_app(request.target)
+            ok = result.status == "found"
+            return LocalActionResponse(
+                ok=ok,
+                action_id=None,
+                status="completed" if ok else ("unsupported" if result.status == "missing" else "blocked"),
+                message=result.message,
+                approval_required=False,
+                risk_level="LOW" if ok else "BLOCKED",
+                evidence={"matches": [match.to_dict() for match in result.matches]},
+                error=None if ok else result.status,
+            )
+
+        result = find_app(request.target)
+        if result.status == "missing":
+            return LocalActionResponse(
+                False,
+                None,
+                "unsupported",
+                result.message,
+                False,
+                "LOW",
+                evidence={},
+                error="missing_app",
+            )
+        if result.status == "ambiguous":
+            return LocalActionResponse(
+                False,
+                None,
+                "approval_required",
+                result.message,
+                True,
+                "MEDIUM",
+                evidence={"matches": [match.to_dict() for match in result.matches]},
+                error="ambiguous_app",
+            )
+        record = result.matches[0]
+        try:
+            message = launch_inventory_app(record)
+        except ValueError:
+            return LocalActionResponse(
+                False,
+                None,
+                "blocked",
+                "I blocked that app launch because the target is not a safe executable or shortcut.",
+                False,
+                "BLOCKED",
+                evidence={"app": record.to_dict()},
+                error="dangerous_launch_target",
+            )
+        except OSError as exc:
+            return LocalActionResponse(
+                False,
+                None,
+                "failed",
+                f"I found {record.display_name}, but Windows could not launch it: {exc}",
+                False,
+                "LOW",
+                evidence={"app": record.to_dict()},
+                error="launch_failed",
+            )
+        return LocalActionResponse(
+            True,
+            None,
+            "completed",
+            message,
+            False,
+            "LOW",
+            evidence={"app": record.to_dict()},
         )
 
     def diagnostics(self) -> dict[str, Any]:

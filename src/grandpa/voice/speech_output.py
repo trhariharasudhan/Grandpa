@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import platform
 import threading
 import time
 from collections import deque
@@ -76,18 +75,40 @@ class SpeechOutputEngine:
             self._last_result = result
             return result
 
-        if engine == "unavailable":
+        if engine == "print_only":
             with self._lock:
                 self._queue.clear()
                 self._state = "idle"
-            raise VoiceOutputUnavailableError(detail="Install a local TTS backend such as pyttsx3 or Windows SAPI support.")
+            result = SpeechOutputResult("fallback", engine, "No TTS backend available; printed response only.", clean_text, _elapsed_ms(started))
+            self._last_result = result
+            return result
 
-        # Keep runtime non-blocking and test-safe. Actual browser TTS remains
-        # the daily-use path; native TTS can be wired into this adapter later.
+        try:
+            if engine == "pyttsx3":
+                _speak_with_pyttsx3(clean_text, voice=self.voice, rate=self.rate)
+            elif engine == "edge_tts":
+                _speak_with_edge_tts(clean_text)
+            else:
+                raise VoiceOutputUnavailableError(detail="No supported local TTS backend is available.")
+        except Exception as exc:
+            with self._lock:
+                self._queue.clear()
+                self._state = "idle"
+            result = SpeechOutputResult(
+                "fallback",
+                "print_only",
+                "Speech output failed; printed response only.",
+                clean_text,
+                _elapsed_ms(started),
+                error=str(exc),
+            )
+            self._last_result = result
+            return result
+
         with self._lock:
             self._queue.clear()
             self._state = "idle" if not self._stop_requested else "interrupted"
-        result = SpeechOutputResult("completed", engine, "Speech output handled.", clean_text, _elapsed_ms(started))
+        result = SpeechOutputResult("completed", engine, "Speech output spoken.", clean_text, _elapsed_ms(started))
         self._last_result = result
         return result
 
@@ -101,9 +122,9 @@ class SpeechOutputEngine:
     def best_available_engine(self) -> str:
         if importlib.util.find_spec("pyttsx3") is not None:
             return "pyttsx3"
-        if platform.system().lower() == "windows" and importlib.util.find_spec("win32com") is not None:
-            return "windows_sapi"
-        return "unavailable"
+        if importlib.util.find_spec("edge_tts") is not None:
+            return "edge_tts"
+        return "print_only"
 
     def diagnostics(self) -> dict[str, Any]:
         with self._lock:
@@ -112,16 +133,51 @@ class SpeechOutputEngine:
             last = self._last_result.to_dict() if self._last_result else None
         engine = self.best_available_engine()
         return {
-            "status": "ready" if engine != "unavailable" else "text_only",
+            "status": "ready" if engine in {"pyttsx3", "edge_tts"} else "text_only",
             "engine": engine,
             "enabled": self.enabled,
             "state": state,
             "queue_size": queue_size,
-            "voice": self.voice,
+            "voice": self.voice or _selected_voice_name(engine),
             "rate": self.rate,
             "last_result": last,
             "interrupt_supported": True,
         }
+
+
+def _speak_with_pyttsx3(text: str, *, voice: str, rate: int) -> None:
+    pyttsx3 = __import__("pyttsx3")
+    engine = pyttsx3.init()
+    if rate:
+        engine.setProperty("rate", rate)
+    if voice:
+        for candidate in engine.getProperty("voices") or []:
+            candidate_id = str(getattr(candidate, "id", ""))
+            candidate_name = str(getattr(candidate, "name", ""))
+            if voice.casefold() in candidate_id.casefold() or voice.casefold() in candidate_name.casefold():
+                engine.setProperty("voice", candidate_id)
+                break
+    engine.say(text)
+    engine.runAndWait()
+
+
+def _speak_with_edge_tts(_text: str) -> None:
+    raise VoiceOutputUnavailableError(detail="Edge TTS is installed but direct speaker playback is not configured yet.")
+
+
+def _selected_voice_name(engine: str) -> str:
+    if engine != "pyttsx3":
+        return ""
+    try:
+        pyttsx3 = __import__("pyttsx3")
+        tts = pyttsx3.init()
+        voice_id = str(tts.getProperty("voice") or "")
+        for candidate in tts.getProperty("voices") or []:
+            if str(getattr(candidate, "id", "")) == voice_id:
+                return str(getattr(candidate, "name", "") or voice_id)
+        return voice_id
+    except Exception:
+        return ""
 
 
 def _short_voice_text(text: str, max_chars: int = 360) -> str:

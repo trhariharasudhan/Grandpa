@@ -30,6 +30,7 @@ dependencies = [
     "openai>=1.30",
     "pillow>=12.1.1",
     "pyautogui>=0.9.54",
+    "pyttsx3>=2.90; sys_platform == 'win32'",
     "pynvml>=13.0.1",
     "pytesseract>=0.3.13",
     "rich>=13",
