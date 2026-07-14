@@ -54,52 +54,16 @@ def _section(title: str, body: str) -> Text:
 
 
 def _build_left_panel(engine: str, model: str, agent: str) -> RenderableType:
-    greeting = (
-        f"[bold {ACCENT}]{_greeting()}, Hari[/bold {ACCENT}]\n"
-        "[dim]Ready to assist.[/dim]"
-    )
-    session = (
-        f"[{TEXT_ACCENT}]Mode      [/{TEXT_ACCENT}]: Odin\n"
-        f"[{TEXT_ACCENT}]Engine    [/{TEXT_ACCENT}]: {engine}\n"
-        f"[{TEXT_ACCENT}]Model     [/{TEXT_ACCENT}]: {model}\n"
-        f"[{TEXT_ACCENT}]Memory    [/{TEXT_ACCENT}]: Active"
-    )
-    examples = (
-        "• Open Chrome\n"
-        "• Show my memories\n"
-        "• Remind me at 8 PM\n"
-        "• Search Python tutorials"
-    )
     return Group(
-        Text.from_markup(_indent(f"[bold {ACCENT}]{_logo()}[/bold {ACCENT}]")),
-        "",
-        Text.from_markup(_indent(greeting)),
-        "",
-        _section("Session", _indent(session)),
-        "",
-        _section("Examples", _indent(examples)),
+        Align.center(
+            Text.from_markup(
+                f"[bold {ACCENT}]{_logo()}[/bold {ACCENT}]"
+            )
+        )
     )
-
 
 def _build_right_panel() -> RenderableType:
-    status = (
-        "[green]✓[/green] Brain Online\n"
-        "[green]✓[/green] Memory Loaded\n"
-        "[green]✓[/green] Tools Ready\n"
-        "[green]✓[/green] Safety Enabled"
-    )
-    quick_start = (
-        f"[{TEXT_ACCENT}]Press / [/{TEXT_ACCENT}]  Command Center\n"
-        f"[{TEXT_ACCENT}]↑       [/{TEXT_ACCENT}]  Previous command\n"
-        f"[{TEXT_ACCENT}]Tab     [/{TEXT_ACCENT}]  Autocomplete\n"
-        f"[{TEXT_ACCENT}]Esc     [/{TEXT_ACCENT}]  Cancel"
-    )
-    return Group(
-        _section("System Status", status),
-        "",
-        _section("Quick Start", quick_start),
-    )
-
+    return Text("")
 
 def render_chat_home(
     console: Console,
@@ -125,8 +89,8 @@ def render_chat_home(
         Panel(
             table,
             border_style=ACCENT,
-            padding=(1, 2),
-            subtitle=f"[bold {ACCENT}]Think • Plan • Execute[/bold {ACCENT}]",
+            padding=(3, 2),
+            subtitle="",
             subtitle_align="center",
         )
     )

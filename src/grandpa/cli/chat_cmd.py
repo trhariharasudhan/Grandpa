@@ -62,37 +62,12 @@ NATURAL_REMINDER_LIST_INTENTS = {
     "what reminders do i have",
 }
 
-def _read_input(prompt: str = "You> ") -> Optional[str]:
+def _read_input(prompt: str = "> ") -> Optional[str]:
     """Read user input with graceful EOF handling."""
     try:
         return input(prompt)
     except (EOFError, KeyboardInterrupt):
         return None
-
-class ThinkingAnimation:
-    def __init__(self, console: Console):
-        self.console = console
-        self.stop = threading.Event()
-        self.thread = threading.Thread(target=self._run, daemon=True)
-
-    def _run(self) -> None:
-        frames = ["●○○", "●●○", "●●●"]
-        for frame in itertools.cycle(frames):
-            if self.stop.is_set():
-                break
-            self.console.print(
-                f"\r[bold #ffc448]<[/bold #ffc448] [bold #ffc448]{frame}[/bold #ffc448]",
-                end="",
-            )
-            time.sleep(0.2)
-        self.console.print("\r" + " " * 30 + "\r", end="")
-
-    def start(self) -> None:
-        self.thread.start()
-
-    def finish(self) -> None:
-        self.stop.set()
-        self.thread.join(timeout=1)
 
 def _engine_unavailable_message(engine_name: str, exc: EngineConnectionError) -> str:
     text = str(exc)
@@ -601,6 +576,8 @@ def chat(
         agent=agent_key or "direct",
     )
 
+    console.print()
+
     from grandpa.cli._bg_state import get_status
 
     # Completion-notification dispatcher (fires once per task per session)
@@ -618,20 +595,17 @@ def chat(
         for note in _notifications.diff(get_status()):
             console.print(f"[dim cyan]{note}[/dim cyan]")
 
-        try:
-            user_input = read_chat_input()
-        except Exception as exc:
-            if "console" not in exc.__class__.__name__.lower() and "console" not in str(exc).lower():
-                raise
-            user_input = _read_input()
+        console.print(f"[bold {TEXT_ACCENT}]>[/bold {TEXT_ACCENT}] ", end="")
+        user_input = _read_input("")
+
+        if user_input and user_input.startswith("/"):
+            slash_input = read_chat_input()
+
+            if slash_input:
+                user_input = slash_input
 
         if user_input is not None:
-            if user_input.strip().startswith("/"):
-                console.print("> ", style=TEXT_ACCENT, end="")
-                console.print(user_input)
-            else:
-                console.print("> ", style=TEXT_ACCENT, end="")
-                console.print(user_input)
+            pass
 
         if user_input is None:
             console.print("\n[dim]Goodbye![/dim]")
@@ -824,8 +798,8 @@ def chat(
         history.append(Message(role=Role.USER, content=effective_user_input))
 
         # Generate response
-        thinking = ThinkingAnimation(console)
-        thinking.start()
+        # thinking = ThinkingAnimation(console)
+        # thinking.start()
 
         try:
             model_history = [
@@ -894,6 +868,6 @@ def chat(
         except Exception:
             console.print(f"\n[red]{GENERATION_ERROR_MESSAGE}[/red]\n")
         finally:
-            thinking.finish()
+            pass
 
 __all__ = ["chat"]

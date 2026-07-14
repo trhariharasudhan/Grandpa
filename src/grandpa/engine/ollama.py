@@ -307,6 +307,7 @@ class OllamaEngine(InferenceEngine):
                         stream_state,
                     )
                     if content:
+                        print("DEBUG:", repr(content))
                         yield content
                     if chunk.get("done", False):
                         reported_prompt = chunk.get("prompt_eval_count", 0)
