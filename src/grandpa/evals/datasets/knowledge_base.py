@@ -93,11 +93,6 @@ _RECORDS = [
         "answer": "Sessions are managed via SessionStore using SQLite with SessionIdentity for canonical user identification across channels. Storage is reduced through the consolidate() method which summarizes old messages.",
     },
     {
-        "documents": "Desktop Application Guide:\nThe Grandpa desktop app uses Tauri 2.0. It includes 5 dashboard panels: EnergyDashboard (real-time power monitoring with recharts), TraceDebugger (timeline inspection with step-type color coding), LearningCurve (policy visualization for GRPO/bandit stats), MemoryBrowser (search and stats), and AdminPanel (health, agents, server control). Tauri commands proxy to the Grandpa REST API.",
-        "question": "What framework does the desktop app use and what are the 5 dashboard panels?",
-        "answer": "The desktop app uses Tauri 2.0. The 5 panels are EnergyDashboard, TraceDebugger, LearningCurve, MemoryBrowser, and AdminPanel.",
-    },
-    {
         "documents": "API Server Reference:\nThe OpenAI-compatible server is started via 'Grandpa serve'. Core endpoints: POST /v1/chat/completions, GET /v1/models, GET /health. Extended endpoints cover agents, memory, traces, telemetry, learning, skills, sessions, budget, and metrics. SSE streaming is supported on /v1/chat/completions with stream=true. WebSocket streaming is available at WS /v1/chat/stream.",
         "question": "How is the API server started and what streaming options are available?",
         "answer": "The API server is started via 'Grandpa serve'. SSE streaming is available on /v1/chat/completions with stream=true, and WebSocket streaming is available at WS /v1/chat/stream.",
@@ -156,11 +151,6 @@ _RECORDS = [
         "documents": "Scheduler System Guide:\nTaskScheduler supports three scheduling types: cron (cron expressions), interval (fixed time intervals), and once (one-time execution). Tasks are persisted to SQLite. Five MCP tools are available for task management. The scheduler integrates with the EventBus for notifications. CLI commands: create, list, pause, resume, cancel, logs, and start.",
         "question": "What scheduling types does TaskScheduler support?",
         "answer": "TaskScheduler supports three scheduling types: cron (cron expressions), interval (fixed time intervals), and once (one-time execution).",
-    },
-    {
-        "documents": "TUI Dashboard Reference:\nThe terminal-based dashboard uses the textual library and is available with the [dashboard] optional dependency. It provides panels for system status, event stream, telemetry visualization, agent activity monitoring, and session management. The dashboard runs in the terminal and provides a real-time view of system operations.",
-        "question": "What library powers the TUI dashboard and what panels does it include?",
-        "answer": "The TUI dashboard is powered by the textual library. It includes panels for system status, event stream, telemetry, agent activity, and sessions.",
     },
     {
         "documents": "MCP Quick-Add Feature:\nThe 'Grandpa add' command provides quick MCP server setup with 8 built-in templates: github, filesystem, slack, postgres, brave-search, memory, puppeteer, and google-maps. Configuration is saved as JSON to ~/.grandpa/mcp/. Each template includes the server command, arguments, and required environment variables.",

@@ -69,29 +69,6 @@ TREE_STRUCTURE.md
 # MkDocs build output
 site/
 
-# Frontend
-frontend/node_modules/
-frontend/dist/
-frontend/tsconfig.tsbuildinfo
-
-# Desktop
-desktop/node_modules/
-desktop/dist/
-src/grandpa/server/static/
-
-# Desktop (Tauri)
-frontend/src-tauri/target/
-
-# Mobile (Flutter/Android companion)
-mobile/android_companion/.dart_tool/
-mobile/android_companion/.flutter-plugins
-mobile/android_companion/.flutter-plugins-dependencies
-mobile/android_companion/android/.gradle/
-mobile/android_companion/android/local.properties
-mobile/android_companion/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java
-mobile/android_companion/build/
-mobile/**/build/
-
 # Worktrees
 .worktrees/
 
@@ -106,9 +83,6 @@ docs/superpowers/
 # Claude Code project instructions (per-developer)
 CLAUDE.md
 .claude/
-
-# Tauri auto-generated schemas
-**/src-tauri/gen/schemas/
 
 # NFS lock artifacts
 .nfs*

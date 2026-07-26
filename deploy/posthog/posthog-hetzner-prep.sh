@@ -16,7 +16,7 @@
 #   4. Update src/grandpa/core/config.py AnalyticsConfig defaults:
 #        host = "https://<DOMAIN>"
 #        key  = "phc_<new>"
-#   5. Ship a release. Frontend + backend + install.sh all read those
+#   5. Ship a release. CLI + backend + install.sh all read those
 #      same defaults via load_config().
 #
 # Cost: ~$35/mo on Hetzner CCX23 (4 dedicated vCPU / 16 GB / 240 GB

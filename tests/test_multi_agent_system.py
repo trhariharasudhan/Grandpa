@@ -13,7 +13,11 @@ from grandpa.agents.orchestrator import (
     multi_agent_diagnostics,
     orchestrate_goal,
 )
-from grandpa.agents.registry import agent_registry_diagnostics, list_agents, select_agents_for_goal
+from grandpa.agents.registry import (
+    agent_registry_diagnostics,
+    list_agents,
+    select_agents_for_goal,
+)
 from grandpa.server.api_routes import agents_router
 
 

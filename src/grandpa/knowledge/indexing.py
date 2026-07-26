@@ -51,7 +51,7 @@ def infer_tags(source: str, content: str, tags: list[str] | tuple[str, ...] | No
     keyword_tags = {
         "project": ("project", "roadmap", "architecture", "repo"),
         "grandpa": ("grandpa", "assistant"),
-        "development": ("python", "fastapi", "typescript", "tauri", "flutter", "api"),
+        "development": ("python", "fastapi", "api", "automation", "powershell"),
         "docs": ("installation", "setup", "troubleshooting", "guide"),
         "knowledge": ("knowledge", "index", "retrieval", "summary"),
     }

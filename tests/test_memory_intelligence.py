@@ -17,7 +17,11 @@ from grandpa.memory.intelligence import (
 from grandpa.memory_context import MemoryStore, handle_memory_command
 from grandpa.planner.engine import analyze_request
 from grandpa.server.routes import router
-from grandpa.skills.registry import clear_skills, ensure_default_skills_registered, execute_skill
+from grandpa.skills.registry import (
+    clear_skills,
+    ensure_default_skills_registered,
+    execute_skill,
+)
 
 
 def _store(tmp_path: Path) -> MemoryStore:
@@ -86,7 +90,7 @@ def test_memory_commands_use_intelligence(tmp_path: Path) -> None:
 
 
 def test_planner_uses_memory_intelligence(tmp_path: Path, monkeypatch) -> None:
-    store = _store(tmp_path)
+    _store(tmp_path)
 
     def fake_ranked(query: str, limit: int = 3, store: MemoryStore | None = None):
         return ranked_memory_context(query, limit=limit, store=store or _store(tmp_path))

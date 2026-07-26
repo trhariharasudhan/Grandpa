@@ -78,7 +78,7 @@ def project_diagnostics(repo: Path | str = REPO_ROOT) -> DeveloperResult:
     checks = {
         "pyproject": (repo / "pyproject.toml").exists(),
         "uv_lock": (repo / "uv.lock").exists(),
-        "frontend_package": (repo / "frontend" / "package.json").exists(),
+        "python_package": (repo / "src" / "grandpa").is_dir(),
         "dockerfile": (repo / "deploy" / "docker" / "Dockerfile").exists(),
         "tests": (repo / "tests").exists(),
         "env_example": any(repo.glob("*.env.example")),
@@ -146,8 +146,8 @@ def _commit_suggestions(lines: list[str]) -> list[str]:
     joined = "\n".join(lines).lower()
     if "test" in joined:
         labels.append("test: update validation coverage")
-    if "frontend" in joined:
-        labels.append("ui: refine Grandpa interface")
+    if "src/grandpa/cli" in joined:
+        labels.append("cli: refine Grandpa interface")
     if "src/grandpa" in joined:
         labels.append("feat: update Grandpa assistant capabilities")
     return labels or ["chore: update project files"]

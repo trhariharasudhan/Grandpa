@@ -119,7 +119,6 @@ class TestChatCommand:
         assert "Developer" in output
         assert "Personal" in output
         assert "Automation" in output
-        assert "/phone" in output
         assert "/desktop" in output
         assert "/order" in output
         assert "/github" in output
@@ -147,7 +146,6 @@ class TestChatCommand:
         assert "Developer" in result.output
         assert "Personal" in result.output
         assert "Automation" in result.output
-        assert "/phone" in result.output
         assert "/desktop" in result.output
         assert "/order" in result.output
         assert "/github" in result.output
@@ -176,8 +174,7 @@ class TestChatCommand:
         assert "/help modules" in modules
         assert "Memory" in modules
         assert "Saved facts" in modules
-        assert "Phone" in modules
-        assert "Future mobile bridge" in modules
+        assert "Voice" in modules
         assert "Help Module\nStatus: Available" not in modules
         assert shortcuts is not None
         assert "/help shortcuts" in shortcuts
@@ -332,7 +329,7 @@ class TestSlashCommandRegistry:
     def test_registry_contains_expected_commands(self) -> None:
         names = set(command_names())
 
-        assert {"/help", "/mode", "/memory", "/reminders", "/desktop", "/phone", "/order", "/github"} <= names
+        assert {"/help", "/mode", "/memory", "/reminders", "/desktop", "/voice", "/order", "/github"} <= names
 
     def test_registry_has_friendly_labels(self) -> None:
         assert get_command("/help").display_label == "Help"  # type: ignore[union-attr]
@@ -375,7 +372,7 @@ class TestSlashCommandRegistry:
         message = unknown_command_message("/abc")
 
         assert "Unknown command: /abc" in message
-        for command in ("/help", "/memory", "/reminders", "/desktop", "/phone"):
+        for command in ("/help", "/memory", "/reminders", "/desktop", "/voice"):
             assert command in command_names()
             assert command in message
 
@@ -386,7 +383,7 @@ class TestSlashCommandRegistry:
 
         assert names[:3] == ["/help", "/status", "/mode"]
         assert labels[:3] == ["Help", "Status", "Mode"]
-        assert "/phone" in names
+        assert "/voice" in names
         assert "/order" in names
         assert "/help" not in labels
 
@@ -555,15 +552,6 @@ class TestChatSlashCommands:
         assert "/apps scan" in message
         assert "/apps search <name>" in message
 
-    def test_module_help_phone(self) -> None:
-        message = _handle_module_slash_command("/phone")
-
-        assert message is not None
-        assert "Phone Module" in message
-        assert "Planned / Not configured" in message
-        assert "/call <contact>" in message
-        assert "Android companion app" in message
-
     def test_module_help_desktop(self) -> None:
         message = _handle_module_slash_command("/desktop")
 
@@ -596,7 +584,7 @@ class TestChatSlashCommands:
         assert "/memory" in message
         assert "/reminders" in message
         assert "/desktop" in message
-        assert "/phone" in message
+        assert "/voice" in message
 
     def test_memory_help(self, tmp_path) -> None:
         store = MemoryStore(tmp_path / "memory.db")

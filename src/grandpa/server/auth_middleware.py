@@ -61,7 +61,7 @@ class AuthMiddleware:
 
     @staticmethod
     def _requires_auth(path: str) -> bool:
-        """Only protect API routes, not the frontend UI or static assets."""
+        """Protect API routes while leaving non-API health paths available."""
         return path.startswith("/v1/") or path.startswith("/api/")
 
 

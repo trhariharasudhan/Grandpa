@@ -295,7 +295,10 @@ def agent_goal_diagnostics(*, store: AgentGoalStore | None = None) -> dict[str, 
     info = store.diagnostics()
     try:
         from grandpa.planner import planner_diagnostics
-        from grandpa.skills.registry import registry_diagnostics, ensure_default_skills_registered
+        from grandpa.skills.registry import (
+            ensure_default_skills_registered,
+            registry_diagnostics,
+        )
 
         ensure_default_skills_registered()
         info["planner"] = planner_diagnostics()

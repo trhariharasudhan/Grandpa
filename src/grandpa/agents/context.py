@@ -62,7 +62,10 @@ def _planner_context(user_request: str) -> dict[str, Any]:
 
 
 def _memory_context(user_request: str) -> dict[str, Any]:
-    from grandpa.memory.intelligence import ranked_memory_context, summarize_memory_profile
+    from grandpa.memory.intelligence import (
+        ranked_memory_context,
+        summarize_memory_profile,
+    )
 
     return {
         "available": True,

@@ -119,75 +119,9 @@ def test_browser_context_store_records_recent_activity(tmp_path):
     assert recent[0]["query"] == "python"
 
 
-def test_snapshot_ingestion_and_latest_retrieval():
-    store = BrowserContextStore()
-
-    snapshot = store.store_snapshot(
-        {
-            "title": "Docs",
-            "url": "https://example.test/docs",
-            "headings": ["Overview"],
-            "links": [{"text": "Install", "href": "https://example.test/install"}],
-            "buttons": ["Start"],
-            "visible_text": "Overview. Install Grandpa locally.",
-        }
-    )
-    latest = store.latest_snapshot()
-
-    assert snapshot["title"] == "Docs"
-    assert latest is not None
-    assert latest["headings"] == ["Overview"]
-    assert latest["links"][0]["text"] == "Install"
-    assert latest["media"] == []
-
-
-def test_snapshot_ingestion_tracks_media_forms_and_session():
-    store = BrowserContextStore()
-
-    latest = store.store_snapshot(
-        {
-            "title": "YouTube",
-            "url": "https://www.youtube.com/watch?v=1",
-            "media": [{"kind": "video", "paused": True, "muted": False, "duration": 120, "current_time": 5, "label": "Python"}],
-            "forms": [{"label": "Search", "fields": [{"label": "Search", "type": "text"}], "submit_count": 1}],
-            "elements": [{"id": "button-1", "role": "button", "text": "Play", "visible": True}],
-            "session": {"focused": True, "visibility": "visible"},
-            "visible_text": "Python tutorial video.",
-        }
-    )
-
-    assert latest["media"][0]["kind"] == "video"
-    assert latest["forms"][0]["fields"][0]["label"] == "Search"
-    assert latest["session"]["is_youtube"] is True
-
-
-def test_youtube_media_control_uses_visible_snapshot():
-    BrowserContextStore().store_snapshot(
-        {
-            "title": "YouTube",
-            "url": "https://www.youtube.com/watch?v=1",
-            "media": [{"kind": "video", "paused": True, "muted": False, "duration": 120, "current_time": 0}],
-            "visible_text": "A video is visible.",
-        }
-    )
-
-    result = execute_browser_action("media", "pause video")
-    command = BrowserContextStore().next_command(page_url="https://www.youtube.com/watch?v=1")
-
-    assert result.status == "handled"
-    assert result.risk_level == "LOW"
-    assert command is not None
-    assert command["action"] == "media"
-
-
-def test_safe_form_fill_requires_confirmation():
-    BrowserContextStore().store_snapshot(
-        {
-            "title": "Search",
-            "url": "https://example.test",
-            "forms": [{"label": "Search", "fields": [{"label": "Search", "type": "text"}]}],
-        }
-    )
+def test_safe_form_fill_requires_confirmation(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Search - Google Chrome")
 
     result = execute_browser_action("form_fill", "search=python")
 
@@ -216,30 +150,37 @@ def test_whatsapp_message_requires_confirmation():
     assert result.risk_level == "MEDIUM"
 
 
-def test_browser_diagnostics_reports_counts():
-    BrowserContextStore().store_snapshot(
-        {
-            "title": "Docs",
-            "url": "https://example.test",
-            "headings": ["Overview"],
-            "buttons": ["Continue"],
-            "links": [{"text": "Setup", "href": "https://example.test/setup"}],
-            "media": [{"kind": "video"}],
-        }
+def test_browser_diagnostics_reports_visible_context(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Docs - Google Chrome")
+    monkeypatch.setenv(
+        "GRANDPA_BROWSER_CONTEXT_JSON",
+        json.dumps(
+            {
+                "title": "Docs",
+                "url": "https://example.test",
+                "headings": ["Overview"],
+                "buttons": ["Continue"],
+                "links": [{"text": "Setup", "href": "https://example.test/setup"}],
+            }
+        ),
     )
 
     result = execute_browser_action("diagnostics", "browser")
     details = json.loads(result.target)
 
     assert result.status == "handled"
-    assert details["extension_connected"] is True
+    assert details["context_available"] is True
+    assert details["capture_source"] == "visible_context"
     assert details["counts"]["headings"] == 1
 
 
-def test_snapshot_backend_redacts_sensitive_values():
-    store = BrowserContextStore()
-
-    latest = store.store_snapshot(
+def test_visible_context_redacts_sensitive_values(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Checkout - Google Chrome")
+    monkeypatch.setenv(
+        "GRANDPA_BROWSER_CONTEXT_JSON",
+        json.dumps(
         {
             "title": "Checkout",
             "url": "https://example.test",
@@ -250,21 +191,28 @@ def test_snapshot_backend_redacts_sensitive_values():
             ],
             "visible_text": "api_key=abcd1234abcd1234 credit card 4111 1111 1111 1111 safe text",
         }
+        ),
     )
+    context = get_visible_browser_context()
 
-    assert latest["inputs"] == [{"label": "Search", "type": "text"}]
-    assert "abcd1234" not in latest["visible_text"]
-    assert "4111" not in latest["visible_text"]
-    assert "[redacted]" in latest["visible_text"]
+    assert context.inputs == ({"label": "Search", "type": "text"},)
+    assert "abcd1234" not in context.visible_text
+    assert "4111" not in context.visible_text
+    assert "[redacted]" in context.visible_text
 
 
-def test_summary_uses_persisted_extension_snapshot():
-    BrowserContextStore().store_snapshot(
-        {
-            "title": "Grandpa Docs",
-            "url": "https://example.test",
-            "visible_text": "Grandpa is a local assistant. It reads visible page context. It stays private.",
-        }
+def test_summary_uses_explicit_visible_context(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Grandpa Docs - Google Chrome")
+    monkeypatch.setenv(
+        "GRANDPA_BROWSER_CONTEXT_JSON",
+        json.dumps(
+            {
+                "title": "Grandpa Docs",
+                "url": "https://example.test",
+                "visible_text": "Grandpa is a local assistant. It reads visible page context. It stays private.",
+            }
+        ),
     )
 
     result = execute_browser_action("summary", "visible")
@@ -273,14 +221,19 @@ def test_summary_uses_persisted_extension_snapshot():
     assert "Grandpa is a local assistant" in result.message
 
 
-def test_links_and_buttons_use_persisted_snapshot():
-    BrowserContextStore().store_snapshot(
-        {
-            "title": "Grandpa Docs",
-            "url": "https://example.test",
-            "links": [{"text": "Setup", "href": "https://example.test/setup"}],
-            "buttons": ["Continue"],
-        }
+def test_links_and_buttons_use_visible_context(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Grandpa Docs - Google Chrome")
+    monkeypatch.setenv(
+        "GRANDPA_BROWSER_CONTEXT_JSON",
+        json.dumps(
+            {
+                "title": "Grandpa Docs",
+                "url": "https://example.test",
+                "links": [{"text": "Setup", "href": "https://example.test/setup"}],
+                "buttons": ["Continue"],
+            }
+        ),
     )
 
     links = execute_browser_action("links", "visible")
@@ -292,49 +245,34 @@ def test_links_and_buttons_use_persisted_snapshot():
     assert "Continue" in buttons.message
 
 
-def test_missing_extension_fallback(monkeypatch):
+def test_missing_visible_context_fallback(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "linux")
 
     result = execute_browser_action("summary", "visible")
 
     assert result.status == "unsupported"
-    assert "extension is not connected" in result.message.lower()
+    assert "available only on windows" in result.message.lower()
 
 
-def test_browser_snapshot_routes():
-    app = FastAPI()
-    app.include_router(router)
-    client = TestClient(app)
-
-    created = client.post(
-        "/v1/browser/snapshot",
-        json={
-            "title": "Route Page",
-            "url": "https://example.test",
-            "headings": ["Route Heading"],
-            "visible_text": "Route page text.",
-        },
+def test_browser_context_route_uses_local_visible_context(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Route Page - Microsoft Edge")
+    monkeypatch.setenv(
+        "GRANDPA_BROWSER_CONTEXT_JSON",
+        json.dumps(
+            {
+                "title": "Route Page",
+                "url": "https://example.test",
+                "headings": ["Route Heading"],
+                "visible_text": "Route page text.",
+            }
+        ),
     )
-    latest = client.get("/v1/browser/snapshot/latest")
-
-    assert created.status_code == 200
-    assert latest.status_code == 200
-    assert latest.json()["connected"] is True
-    assert latest.json()["snapshot"]["title"] == "Route Page"
-
-    cleared = client.delete("/v1/browser/snapshot")
-    assert cleared.status_code == 200
-
-
-def test_browser_command_queue_routes():
     app = FastAPI()
     app.include_router(router)
     client = TestClient(app)
-    BrowserContextStore().enqueue_command("media", "pause video", page_url="https://example.test")
 
-    next_command = client.get("/v1/browser/command/next?url=https%3A%2F%2Fexample.test")
-    command = next_command.json()["command"]
-    completed = client.post(f"/v1/browser/command/{command['id']}/complete", json={"status": "completed", "result": {"ok": True}})
+    response = client.get("/v1/browser/context")
 
-    assert command["action"] == "media"
-    assert completed.json()["status"] == "completed"
+    assert response.status_code == 200
+    assert response.json()["context"]["title"] == "Route Page"

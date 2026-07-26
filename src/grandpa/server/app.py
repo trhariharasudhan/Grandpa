@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 import logging
-import pathlib
 import time
 
 from fastapi import APIRouter, FastAPI
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
-from grandpa.server.analytics_routes import router as analytics_router
 from grandpa.server.api_routes import include_all_routes
-from grandpa.server.comparison import comparison_router
 from grandpa.server.connectors_router import create_connectors_router
-from grandpa.server.dashboard import dashboard_router
 from grandpa.server.digest_routes import create_digest_router
 from grandpa.server.routes import router
 from grandpa.server.upload_router import router as upload_router
@@ -112,33 +107,6 @@ def _restore_sendblue_bindings(app: FastAPI) -> None:
         logger.debug("SendBlue binding restore skipped: %s", exc)
 
 
-# No-cache headers applied to static file responses
-_NO_CACHE_HEADERS = {
-    "Cache-Control": "no-cache, no-store, must-revalidate",
-    "Pragma": "no-cache",
-    "Expires": "0",
-}
-
-
-class _NoCacheStaticFiles(StaticFiles):
-    """StaticFiles subclass that adds no-cache headers to every response."""
-
-    async def __call__(self, scope, receive, send):
-        async def _send_with_headers(message):
-            if message["type"] == "http.response.start":
-                extra = [(k.encode(), v.encode()) for k, v in _NO_CACHE_HEADERS.items()]
-                # Remove etag and last-modified
-                existing = [
-                    (k, v)
-                    for k, v in message.get("headers", [])
-                    if k.lower() not in (b"etag", b"last-modified")
-                ]
-                message = {**message, "headers": existing + extra}
-            await send(message)
-
-        await super().__call__(scope, receive, _send_with_headers)
-
-
 def _missing_research_router(module_name: str) -> APIRouter:
     fallback = APIRouter(prefix="/api", tags=["research"])
 
@@ -217,22 +185,7 @@ def create_app(
 
     from fastapi.middleware.cors import CORSMiddleware
 
-    _origins = (
-        cors_origins
-        if cors_origins is not None
-        else [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            # Tauri 2 production webview origins:
-            #   macOS / Linux / iOS  -> tauri://localhost
-            #   Windows / Android    -> http://tauri.localhost (default),
-            #                           https://tauri.localhost when
-            #                           windows.useHttpsScheme is enabled
-            "tauri://localhost",
-            "http://tauri.localhost",
-            "https://tauri.localhost",
-        ]
-    )
+    _origins = cors_origins if cors_origins is not None else []
     app.add_middleware(
         CORSMiddleware,
         allow_origins=_origins,
@@ -276,10 +229,6 @@ def create_app(
         pass  # traces are optional; don't block server startup
 
     # Wire up external analytics if enabled (PostHog) — never block startup.
-    # Note: we do NOT fire app_opened here. The frontend owns that event
-    # because "server started" (this code path) is not the same as "user
-    # opened the app" — the server can run headless via cron, daemons,
-    # or test suites.
     app.state.analytics_client = None
     app.state.analytics_bridge = None
     try:
@@ -343,13 +292,10 @@ def create_app(
         logger.debug("Routine scheduler daemon init skipped: %s", exc)
 
     app.include_router(router)
-    app.include_router(dashboard_router)
-    app.include_router(comparison_router)
     app.include_router(create_connectors_router())
     app.include_router(create_digest_router())
     app.include_router(upload_router)
     app.include_router(_load_research_router())
-    app.include_router(analytics_router)
     include_all_routes(app)
 
     # Restore SendBlue channel bindings from database on startup
@@ -391,31 +337,6 @@ def create_app(
             app.include_router(webhook_router)
         except Exception as exc:
             logger.debug("Webhook routes init skipped: %s", exc)
-
-    # Serve static frontend assets if the static/ directory exists
-    static_dir = pathlib.Path(__file__).parent / "static"
-    if static_dir.is_dir():
-        assets_dir = static_dir / "assets"
-        if assets_dir.is_dir():
-            app.mount(
-                "/assets",
-                _NoCacheStaticFiles(directory=assets_dir),
-                name="static-assets",
-            )
-
-        @app.get("/{full_path:path}")
-        async def spa_catch_all(full_path: str):
-            """Serve static files directly, fall back to index.html for SPA routes."""
-            if full_path:
-                candidate = (static_dir / full_path).resolve()
-                # Path traversal prevention
-                resolved_root = static_dir.resolve()
-                if candidate.is_relative_to(resolved_root) and candidate.is_file():
-                    return FileResponse(candidate, headers=_NO_CACHE_HEADERS)
-            return FileResponse(
-                static_dir / "index.html",
-                headers=_NO_CACHE_HEADERS,
-            )
 
     return app
 

@@ -713,27 +713,6 @@ def _check_desktop_automation_backend() -> CheckResult:
         )
 
 
-def _check_voice_frontend_note() -> CheckResult:
-    config = _get_config()
-    browser_voice_enabled = bool(
-        getattr(getattr(config, "voice_frontend", None), "enabled", False)
-        or getattr(getattr(config, "browser_voice", None), "enabled", False)
-    )
-    if not browser_voice_enabled:
-        return CheckResult(
-            "Voice frontend support",
-            "info",
-            "Optional / not configured",
-            details="Local push-to-talk and speech output are checked separately. Browser microphone support is optional.",
-        )
-    return CheckResult(
-        "Voice frontend support",
-        "warn",
-        "Missing/optional",
-        details="Browser-based speech requires browser support and microphone permission.",
-    )
-
-
 def _check_voice_runtime_ready() -> CheckResult:
     try:
         from grandpa.voice import get_voice_runtime
@@ -969,30 +948,6 @@ def _check_background_scheduler_ready() -> CheckResult:
         return CheckResult("Background scheduler", "fail", "Failed", details=str(exc))
 
 
-def _check_frontend_readiness() -> CheckResult:
-    static_index = Path(__file__).resolve().parents[1] / "server" / "static" / "index.html"
-    source_index = Path.cwd() / "frontend" / "index.html"
-    package_json = Path.cwd() / "frontend" / "package.json"
-    if static_index.exists():
-        return CheckResult("Frontend readiness", "ok", "Ready", str(static_index))
-    if source_index.exists() and package_json.exists():
-        return CheckResult(
-            "Frontend readiness",
-            "warn",
-            "Missing/optional",
-            details=(
-                "Frontend source exists; run `cd frontend && npm run build` "
-                "to refresh packaged assets."
-            ),
-        )
-    return CheckResult(
-        "Frontend readiness",
-        "warn",
-        "Missing/optional",
-        details="Frontend assets were not detected.",
-        )
-
-
 def _check_release_gate_status() -> CheckResult:
     """Report the latest final release gate status without rerunning it."""
     import os
@@ -1130,7 +1085,6 @@ def _check_daily_use_readiness() -> List[CheckResult]:
         [
             _check_desktop_automation_backend(),
             _check_voice_runtime_ready(),
-            _check_voice_frontend_note(),
         ]
     )
     checks.extend(_check_docker_readiness())
@@ -1209,11 +1163,6 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
             _check_voice_runtime_ready(),
         ]
     )
-    voice_frontend = _check_voice_frontend_note()
-    if voice_frontend.status == "info":
-        optional_integrations.append(voice_frontend)
-    else:
-        daily_features.append(voice_frontend)
     gmail_readiness = _check_gmail_readiness()
     if gmail_readiness.status == "info":
         optional_integrations.append(gmail_readiness)
@@ -1240,7 +1189,6 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         [
             _check_notifications_ready(),
             _check_background_scheduler_ready(),
-            _check_frontend_readiness(),
             _check_release_gate_status(),
         ]
     )

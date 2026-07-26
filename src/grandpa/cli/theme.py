@@ -163,7 +163,6 @@ def help_commands_text() -> str:
         "/coding": "Developer assistant",
         "/git": "Git workflow help",
         "/github": "GitHub workflow help",
-        "/phone": "Phone bridge controls",
         "/voice": "Voice controls",
         "/order": "Daily-life ordering placeholder",
         "/automation": "Workflow automation help",
@@ -189,8 +188,6 @@ def help_examples_text() -> str:
         "  open Chrome\n\n"
         "Browser:\n"
         "  search YouTube for Python\n\n"
-        "Phone:\n"
-        "  call Amma\n\n"
         "Daily Life:\n"
         "  order biryani"
     )
@@ -204,7 +201,7 @@ def help_modules_text() -> str:
         "Desktop     Computer/app/window control\n"
         "Browser     Web navigation/search\n"
         "Files       Local file search/actions\n"
-        "Phone       Future mobile bridge for calls/SMS\n"
+        "Voice       Local speech input, wake word, and spoken responses\n"
         "Coding      Developer assistant\n"
         "Automation  Workflows/routines\n"
         "Order       Future daily-life ordering"

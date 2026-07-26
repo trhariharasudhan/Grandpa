@@ -5,15 +5,14 @@ Vision OCR is a safe, user-initiated upload feature. It does not capture the des
 ## Setup
 
 1. Start the Grandpa server.
-2. Open the main web UI.
-3. Go to Voice Assistant.
-4. Find the Vision Mode section.
+2. Use the local vision API at `http://127.0.0.1:8000/v1/vision`.
+3. Keep test images in a temporary user-owned directory.
 
 ## Upload Image With Text
 
-1. Enable Vision Mode.
+1. Enable Vision Mode with `POST /v1/vision/enable`.
 2. Upload a PNG, JPG, JPEG, or WEBP image containing readable text.
-3. Click Extract Text.
+3. Send it to `POST /v1/vision/ocr`.
 4. Expected if OCR dependencies are installed: text appears in the OCR result.
 5. Expected if OCR dependencies are missing: a friendly unavailable message appears.
 

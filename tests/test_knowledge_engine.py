@@ -4,8 +4,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from grandpa.knowledge.engine import KnowledgeEngine, knowledge_diagnostics, planner_knowledge_context
 from grandpa.knowledge.embeddings import KnowledgeEmbedder, deterministic_embedding
+from grandpa.knowledge.engine import (
+    KnowledgeEngine,
+    knowledge_diagnostics,
+    planner_knowledge_context,
+)
 from grandpa.knowledge.indexing import chunk_text, infer_tags, tokenize
 from grandpa.knowledge.storage import KnowledgeStore
 from grandpa.server.api_routes import knowledge_router

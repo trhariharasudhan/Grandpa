@@ -5,22 +5,21 @@ Vision Mode is a safe foundation only. It accepts user-selected image uploads an
 ## Setup
 
 1. Start the Grandpa server.
-2. Open the main web UI.
-3. Navigate to File Assistant.
-4. Find the Vision Mode section.
+2. Use the local vision API at `http://127.0.0.1:8000/v1/vision`.
+3. Keep test images in a temporary user-owned directory.
 
 ## Test Cases
 
 ### Enable
 
-1. Click Enable.
+1. Send `POST /v1/vision/enable`.
 2. Expected: status changes to enabled.
 3. Expected: live capture and webcam remain off.
 
 ### Upload PNG
 
 1. Choose a valid `.png` image.
-2. Click Analyze Image.
+2. Upload it to `POST /v1/vision/analyze`.
 3. Expected: filename, format, width, and height appear.
 4. Expected analysis: `placeholder analysis`
 

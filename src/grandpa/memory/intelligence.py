@@ -11,26 +11,26 @@ import json
 import re
 import sqlite3
 import time
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from grandpa.memory_context import MemoryStore, SENSITIVE_PATTERN
+from grandpa.memory_context import SENSITIVE_PATTERN, MemoryStore
 
 TOPIC_KEYWORDS: dict[str, set[str]] = {
     "Development": {"python", "fastapi", "code", "coding", "vscode", "vs code", "git", "api", "project"},
     "AI": {"ai", "assistant", "ollama", "model", "llm", "local ai", "grandpa"},
     "Personal": {"my", "prefer", "like", "name", "family", "friend"},
-    "Devices": {"windows", "android", "phone", "desktop", "pc", "chrome", "edge", "device"},
+    "Devices": {"windows", "desktop", "pc", "chrome", "edge", "device"},
     "Projects": {"project", "building", "working", "grandpa", "app"},
     "Learning": {"learn", "tutorial", "course", "study", "practice"},
 }
 
 ENTITY_KEYWORDS: dict[str, set[str]] = {
     "Projects": {"grandpa", "assistant", "project", "app"},
-    "Technologies": {"python", "fastapi", "ollama", "local ai", "docker", "sqlite", "flutter"},
-    "Devices": {"windows", "android", "phone", "desktop", "pc", "chrome", "edge", "vs code", "vscode"},
+    "Technologies": {"python", "fastapi", "ollama", "local ai", "docker", "sqlite"},
+    "Devices": {"windows", "desktop", "pc", "chrome", "edge", "vs code", "vscode"},
     "People": {"hari", "user"},
 }
 

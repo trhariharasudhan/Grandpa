@@ -48,7 +48,6 @@ def detect_project(path: str | Path | None = None) -> dict[str, Any]:
         "python": project / "pyproject.toml",
         "requirements": project / "requirements.txt",
         "node": project / "package.json",
-        "flutter": project / "pubspec.yaml",
         "rust": project / "Cargo.toml",
     }
     types: list[str] = []
@@ -58,8 +57,6 @@ def detect_project(path: str | Path | None = None) -> dict[str, Any]:
         types.append("python")
     if markers["node"].exists():
         types.append("node")
-    if markers["flutter"].exists():
-        types.append("flutter")
     if markers["rust"].exists():
         types.append("rust")
     return {

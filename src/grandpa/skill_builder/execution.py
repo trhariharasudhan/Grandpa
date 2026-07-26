@@ -5,7 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from grandpa.skill_builder.storage import UserSkillStore
-from grandpa.skills.runtime import RuntimeSkill, SkillExecutionContext, SkillParameter, SkillResult
+from grandpa.skills.runtime import (
+    RuntimeSkill,
+    SkillExecutionContext,
+    SkillParameter,
+    SkillResult,
+)
 
 
 def run_user_skill(skill_id_or_name: str, *, params: dict[str, Any] | None = None, source: str = "user_skill") -> dict[str, Any]:
@@ -16,7 +21,10 @@ def run_user_skill(skill_id_or_name: str, *, params: dict[str, Any] | None = Non
     status = "completed"
     message = f"Ran user skill: {skill['name']}."
     try:
-        from grandpa.skills.registry import ensure_default_skills_registered, execute_skill
+        from grandpa.skills.registry import (
+            ensure_default_skills_registered,
+            execute_skill,
+        )
 
         ensure_default_skills_registered()
         for index, step in enumerate(skill["workflow_steps"], start=1):

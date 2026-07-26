@@ -21,7 +21,6 @@ _CHANNEL_MODULES = [
     "signal_channel",
     "google_chat",
     "irc_channel",
-    "webchat",
     "teams",
     "matrix_channel",
     "mattermost",

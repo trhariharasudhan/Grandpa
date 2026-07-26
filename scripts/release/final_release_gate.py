@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
@@ -27,9 +26,7 @@ GateStatus = Literal["pass", "fail", "warn", "skipped"]
 
 NON_BLOCKING_WARNING_HINTS = {
     "docker": "Docker daemon off is optional unless you are publishing container images.",
-    "voice": "Browser mic permission cannot be tested from the CLI.",
-    "vite": "Vite chunk warnings are size/performance guidance, not release blockers.",
-    "flutter": "Flutter/Android build gaps are optional unless shipping the Android APK.",
+    "voice": "Real microphone hardware cannot be fully validated from an unattended CLI check.",
     "engine": "Optional cloud/local engines may be unavailable while the default engine works.",
 }
 
@@ -59,11 +56,7 @@ class GateResult:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Grandpa's final release gate.")
-    parser.add_argument("--skip-android", action="store_true", help="Skip optional Android APK build/check.")
-    parser.add_argument("--skip-tauri", action="store_true", help="Skip Tauri build.")
-    parser.add_argument("--skip-frontend", action="store_true", help="Skip frontend build.")
-    parser.add_argument("--quick", action="store_true", help="Run a shorter gate without Android.")
-    args = parser.parse_args()
+    parser.parse_args()
 
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
     started = _now()
@@ -99,34 +92,11 @@ def main() -> int:
             timeout=420,
         ),
     ]
-    if not args.skip_frontend:
-        npm = _npm_command()
-        checks.append(GateCheck("frontend build", [*npm, "run", "build"], cwd=ROOT / "frontend", timeout=300))
-    if not args.skip_tauri:
-        npm = _npm_command()
-        checks.append(GateCheck("tauri frontend build", [*npm, "run", "build:tauri"], cwd=ROOT / "frontend", timeout=360))
-
     for check in checks:
         results.append(_run_check(check))
 
     results.append(_release_manifest_check())
     results.append(_full_suite_report_check())
-
-    if args.skip_android or args.quick:
-        results.append(
-            GateResult(
-                name="android apk build",
-                status="skipped",
-                required=False,
-                command="flutter build apk",
-                cwd=str(ROOT / "mobile" / "android_companion"),
-                duration_seconds=0,
-                summary="Skipped by gate option.",
-                warning_classification=NON_BLOCKING_WARNING_HINTS["flutter"],
-            )
-        )
-    else:
-        results.append(_android_check())
 
     report = _build_report(started, results)
     JSON_REPORT.write_text(json.dumps(report, indent=2, ensure_ascii=True), encoding="utf-8")
@@ -169,11 +139,8 @@ def _tracked_artifact_check() -> GateResult:
     bad_prefixes = (
         "runtime/logs/",
         "runtime/reports/",
-        "frontend/dist/",
-        "frontend/src-tauri/target/",
-        "mobile/android_companion/build/",
     )
-    bad_suffixes = (".pyc", "tsconfig.tsbuildinfo")
+    bad_suffixes = (".pyc",)
     offenders = [item for item in tracked if item.startswith(bad_prefixes) or item.endswith(bad_suffixes)]
     if offenders:
         return GateResult(
@@ -266,34 +233,6 @@ def _full_suite_report_check() -> GateResult:
         0,
         summary,
     )
-
-
-def _android_check() -> GateResult:
-    mobile_dir = ROOT / "mobile" / "android_companion"
-    if not mobile_dir.exists():
-        return GateResult(
-            "android apk build",
-            "skipped",
-            False,
-            "flutter build apk",
-            str(mobile_dir),
-            0,
-            "Android companion folder not present.",
-            NON_BLOCKING_WARNING_HINTS["flutter"],
-        )
-    flutter = shutil.which("flutter")
-    if not flutter:
-        return GateResult(
-            "android apk build",
-            "skipped",
-            False,
-            "flutter build apk",
-            str(mobile_dir),
-            0,
-            "Flutter is not installed or not on PATH.",
-            NON_BLOCKING_WARNING_HINTS["flutter"],
-        )
-    return _run_check(GateCheck("android apk build", [flutter, "build", "apk"], cwd=mobile_dir, timeout=900, required=False))
 
 
 def _build_report(started: str, results: list[GateResult]) -> dict[str, object]:
@@ -397,21 +336,9 @@ def _classify_warning(output: str) -> str:
         return NON_BLOCKING_WARNING_HINTS["docker"]
     if "microphone" in lower or "browser-based speech" in lower:
         return NON_BLOCKING_WARNING_HINTS["voice"]
-    if "some chunks are larger" in lower or "vite:reporter" in lower:
-        return NON_BLOCKING_WARNING_HINTS["vite"]
-    if "flutter" in lower or "gradle" in lower or "android" in lower:
-        return NON_BLOCKING_WARNING_HINTS["flutter"]
     if "unreachable" in lower and "engine" in lower:
         return NON_BLOCKING_WARNING_HINTS["engine"]
     return ""
-
-
-def _npm_command() -> list[str]:
-    if os.name == "nt":
-        npm = shutil.which("npm.cmd") or shutil.which("npm.exe")
-    else:
-        npm = shutil.which("npm")
-    return [npm or "npm"]
 
 
 def _command_text(command: list[str]) -> str:

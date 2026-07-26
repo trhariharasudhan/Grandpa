@@ -8,7 +8,10 @@ from typing import Any
 from grandpa.skill_builder.execution import register_user_skills, run_user_skill
 from grandpa.skill_builder.storage import UserSkillStore
 from grandpa.skill_builder.templates import default_triggers, template_steps_for_name
-from grandpa.skill_builder.validator import SkillValidationError, validate_skill_definition
+from grandpa.skill_builder.validator import (
+    SkillValidationError,
+    validate_skill_definition,
+)
 
 
 def create_user_skill(payload: dict[str, Any]) -> dict[str, Any]:

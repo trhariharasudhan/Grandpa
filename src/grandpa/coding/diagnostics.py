@@ -31,7 +31,6 @@ def coding_diagnostics(path: str | Path | None = None) -> dict[str, Any]:
             "detect_git_repositories": True,
             "detect_python_projects": True,
             "detect_node_projects": True,
-            "detect_flutter_projects": True,
             "detect_rust_projects": True,
             "dependency_analysis": True,
             "architecture_analysis": True,

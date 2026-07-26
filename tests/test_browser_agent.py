@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -14,14 +16,17 @@ from grandpa.browser.agent import (
     search_web_plan,
     summarize_current_page,
 )
-from grandpa.browser_control import BrowserContextStore
 from grandpa.server.routes import router
 from grandpa.skills.registry import ensure_default_skills_registered, execute_skill
 from grandpa.skills.runtime import SkillExecutionContext
 
 
-def _snapshot() -> None:
-    BrowserContextStore().store_snapshot(
+def _visible_context(monkeypatch) -> None:
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Grandpa Docs - Google Chrome")
+    monkeypatch.setenv(
+        "GRANDPA_BROWSER_CONTEXT_JSON",
+        json.dumps(
         {
             "title": "Grandpa Docs",
             "url": "https://example.test/docs",
@@ -31,13 +36,14 @@ def _snapshot() -> None:
             "inputs": [{"type": "text", "label": "Search"}],
             "visible_text": "Grandpa is a local assistant. It reads visible page context. It keeps browser work private.",
         }
+        ),
     )
 
 
-def test_page_summary_from_snapshot(tmp_path, monkeypatch):
+def test_page_summary_from_visible_context(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_BROWSER_DB", str(tmp_path / "browser.db"))
     monkeypatch.setenv("GRANDPA_BROWSER_AGENT_DB", str(tmp_path / "agent.db"))
-    _snapshot()
+    _visible_context(monkeypatch)
 
     result = summarize_current_page()
 
@@ -49,7 +55,7 @@ def test_page_summary_from_snapshot(tmp_path, monkeypatch):
 def test_link_and_button_extraction(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_BROWSER_DB", str(tmp_path / "browser.db"))
     monkeypatch.setenv("GRANDPA_BROWSER_AGENT_DB", str(tmp_path / "agent.db"))
-    _snapshot()
+    _visible_context(monkeypatch)
 
     links = extract_visible_links()
     buttons = extract_visible_buttons()
@@ -94,7 +100,7 @@ def test_sensitive_browser_tasks_blocked(tmp_path, monkeypatch):
 def test_browser_agent_skills_registered_and_execute(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_BROWSER_DB", str(tmp_path / "browser.db"))
     monkeypatch.setenv("GRANDPA_BROWSER_AGENT_DB", str(tmp_path / "agent.db"))
-    _snapshot()
+    _visible_context(monkeypatch)
     ensure_default_skills_registered()
 
     summary = execute_skill("browser.page_summary", {}, SkillExecutionContext(source="test"))
@@ -109,7 +115,7 @@ def test_browser_agent_skills_registered_and_execute(tmp_path, monkeypatch):
 def test_browser_agent_api_routes(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_BROWSER_DB", str(tmp_path / "browser.db"))
     monkeypatch.setenv("GRANDPA_BROWSER_AGENT_DB", str(tmp_path / "agent.db"))
-    _snapshot()
+    _visible_context(monkeypatch)
     app = FastAPI()
     app.include_router(router)
     client = TestClient(app)

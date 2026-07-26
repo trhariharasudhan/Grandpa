@@ -1,6 +1,6 @@
 # Agent QA Runbook
 
-Manual testing scenarios for persistent agents in the CLI and desktop app.
+Manual testing scenarios for persistent agents through the CLI and local API.
 
 ## Environment Setup
 
@@ -9,7 +9,7 @@ Manual testing scenarios for persistent agents in the CLI and desktop app.
 | Ollama running with model | `ollama list` shows `qwen3:8b` |
 | grandpa initialized | `uv run Grandpa doctor` all green |
 | Rust extension built | `uv run maturin develop -m rust/crates/grandpa-python/Cargo.toml` |
-| Desktop app running | `uv run Grandpa serve` + `cd frontend && npm run dev` |
+| Local API running | `uv run grandpa serve --host 127.0.0.1 --port 8000` |
 | Slack credentials | `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` set, bot invited to test channel |
 | Gmail credentials | OAuth credentials.json downloaded, token generated |
 | Twitter credentials | All 5 env vars set (bearer + OAuth 1.0a) |
@@ -33,21 +33,6 @@ Manual testing scenarios for persistent agents in the CLI and desktop app.
 | 10 | Channel binding | `Grandpa agents bind <id> --slack #test`, run tick | Agent sends to Slack | [ ] |
 | 11 | Multi-agent | Launch 3 agents, different intervals, run daemon | All fire independently | [ ] |
 | 12 | Template tools | Create from each template, `Grandpa agents info <id>` | All curated default tools listed | [ ] |
-
-## Desktop App Scenarios
-
-| # | Scenario | Steps | Expected Result | Pass |
-|---|----------|-------|-----------------|------|
-| 1 | Template wizard | New Agent -> pick each template -> complete wizard | Agent appears in grid with correct config | [ ] |
-| 2 | Custom agent | New Agent -> Custom -> manual schedule, pick tools, set credentials | Tools + creds saved, agent created | [ ] |
-| 3 | Run Now | Click Run Now on agent card | Status dot: green -> blue -> green, stats increment | [ ] |
-| 4 | Immediate chat | Interact tab -> type message -> send (immediate mode) | Response appears in chat UI | [ ] |
-| 5 | Queued chat | Interact tab -> send (queued mode) -> click Run Now | Message delivered on tick, response appears | [ ] |
-| 6 | Task management | Tasks tab -> create task -> run agent | Task status updates, findings populated | [ ] |
-| 7 | Memory inspection | Run 3+ ticks -> Memory tab | Summary memory reflects agent's accumulated knowledge | [ ] |
-| 8 | Trace inspection | Run tick -> Logs tab | Trace steps visible with tool calls and results | [ ] |
-| 9 | Learning | Enable trace-driven learning -> Learning tab -> trigger | Learning log entries appear | [ ] |
-| 10 | Error + recovery | Stop Ollama -> run agent -> verify error badge -> click Recover | Error state shown, recovery resets to idle | [ ] |
 
 ## Channel-Specific QA Matrix
 

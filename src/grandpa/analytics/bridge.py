@@ -129,7 +129,7 @@ class EventBridge:
             # One-shot first_chat_sent per process lifetime.
             # Note: we don't set "platform" here — the backend can't reliably
             # tell whether the call came from CLI, desktop, or web. The
-            # frontend owns platform-aware events; this one is just the
+            # callers own platform-aware events; this one is just the
             # activation marker.
             with self._lock:
                 if not self._first_chat_emitted:

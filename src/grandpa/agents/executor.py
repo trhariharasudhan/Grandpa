@@ -617,7 +617,7 @@ class AgentExecutor:
             )
             self._manager.end_tick(agent_id)
             self._manager.update_agent(agent_id, status="error")
-            # Write error detail to summary_memory so frontend can display it
+            # Write error detail to summary_memory so clients can display it
             error_msg = str(error)[:2000]
             self._manager.update_summary_memory(agent_id, f"ERROR: {error_msg}")
             self._bus.publish(

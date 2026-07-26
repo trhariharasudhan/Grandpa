@@ -12,8 +12,6 @@ from fastapi import (
     HTTPException,
     Query,
     Request,
-    WebSocket,
-    WebSocketDisconnect,
 )
 from fastapi.responses import StreamingResponse
 
@@ -597,7 +595,7 @@ async def _handle_stream(
                 )
                 yield f"data: {chunk.model_dump_json()}\n\n"
         except Exception as exc:
-            # Surface errors as a content chunk so the frontend can
+            # Surface errors as a content chunk so streaming clients can
             # display them instead of silently failing.
             import logging
 
@@ -936,10 +934,9 @@ async def savings(request: Request):
 async def reset_telemetry():
     """Clear all stored telemetry records.
 
-    Useful after updating token-counting methodology — clears
-    historical records that were computed under the old rules so
-    that the savings dashboard and leaderboard submissions start
-    fresh with corrected values.
+    Useful after updating token-counting methodology. It clears
+    historical records computed under the old rules so API summaries
+    and leaderboard submissions start fresh with corrected values.
     """
     from grandpa.core.config import DEFAULT_CONFIG_DIR
     from grandpa.telemetry.aggregator import TelemetryAggregator
@@ -1015,44 +1012,17 @@ async def personal_memory():
 
 @router.get("/v1/browser/context")
 async def browser_context():
-    """Return safe visible-browser context for the HUD."""
+    """Return safe visible-browser context."""
     from grandpa.browser_control import (
         BrowserContextStore,
         get_visible_browser_context,
-        latest_browser_snapshot,
     )
 
     context = get_visible_browser_context()
-    latest = latest_browser_snapshot()
     return {
         "context": context.to_dict(),
         "recent_activity": BrowserContextStore().recent(limit=8),
-        "extension": {
-            "connected": bool(latest.get("connected")),
-            "snapshot_age_seconds": (
-                latest.get("snapshot", {}).get("age_seconds")
-                if latest.get("snapshot")
-                else None
-            ),
-        },
     }
-
-
-@router.post("/v1/browser/snapshot")
-async def browser_snapshot_ingest(request: Request):
-    """Ingest a safe visible-page snapshot from the local browser extension."""
-    from grandpa.browser_control import store_browser_snapshot
-
-    body = await request.json()
-    return {"status": "ok", "snapshot": store_browser_snapshot(body)}
-
-
-@router.get("/v1/browser/snapshot/latest")
-async def browser_snapshot_latest():
-    """Return the latest safe browser extension snapshot."""
-    from grandpa.browser_control import latest_browser_snapshot
-
-    return latest_browser_snapshot()
 
 
 @router.get("/v1/browser/diagnostics")
@@ -1068,14 +1038,6 @@ async def browser_diagnostics():
         "details": json.loads(result.target) if result.target.startswith("{") else {},
         "context": result.context.to_dict() if result.context else {},
     }
-
-
-@router.delete("/v1/browser/snapshot")
-async def browser_snapshot_clear():
-    """Clear stored browser extension snapshots."""
-    from grandpa.browser_control import clear_browser_snapshot
-
-    return clear_browser_snapshot()
 
 
 @router.get("/v1/browser/agent/diagnostics")
@@ -1115,23 +1077,6 @@ async def browser_agent_task(task_id: str):
     if task is None:
         raise HTTPException(status_code=404, detail="Browser agent task not found")
     return task
-
-
-@router.get("/v1/browser/command/next")
-async def browser_command_next(url: str = ""):
-    """Return the next localhost-only browser command for the visible page adapter."""
-    from grandpa.browser_control import next_browser_command
-
-    return next_browser_command(url)
-
-
-@router.post("/v1/browser/command/{command_id}/complete")
-async def browser_command_complete(command_id: int, request: Request):
-    """Mark a browser extension command as completed or failed."""
-    from grandpa.browser_control import complete_browser_command
-
-    body = await request.json()
-    return complete_browser_command(command_id, body)
 
 
 @router.get("/v1/screen/diagnostics")
@@ -1339,244 +1284,6 @@ async def security_suspicious_action(request: Request):
 
     body = await request.json()
     return suspicious_action_score(str(body.get("text", "")))
-
-
-@router.get("/v1/mobile/diagnostics")
-async def mobile_diagnostics():
-    from grandpa.mobile_integration import diagnostics
-
-    return diagnostics()
-
-
-@router.post("/v1/mobile/pairing")
-async def mobile_pairing(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore
-
-    body = await request.json()
-    result = MobileBridgeStore().create_pairing(str(body.get("name", "Android device")))
-    host = str(body.get("host", "")).strip()
-    if host:
-        result["qr_payload"]["host"] = host
-    return result
-
-
-@router.get("/v1/mobile/pairing/{device_id}/qr")
-async def mobile_pairing_qr(device_id: str, code: str = Query(default="")):
-    from grandpa.mobile_integration import pairing_qr_payload
-
-    if not code:
-        raise HTTPException(status_code=400, detail="'code' query parameter is required")
-    return pairing_qr_payload(device_id, code)
-
-
-@router.post("/v1/mobile/pairing/confirm")
-async def mobile_pairing_confirm(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore
-
-    body = await request.json()
-    result = MobileBridgeStore().confirm_pairing(
-        str(body.get("device_id", "")),
-        str(body.get("pairing_code", "")),
-        status=body.get("status") if isinstance(body.get("status"), dict) else None,
-    )
-    if not result.get("ok"):
-        raise HTTPException(status_code=400, detail=result.get("message", "Pairing failed"))
-    return result
-
-
-@router.get("/v1/mobile/devices")
-async def mobile_devices():
-    from grandpa.mobile_integration import MobileBridgeStore
-
-    store = MobileBridgeStore()
-    return {"devices": store.devices(), "events": store.events(limit=20)}
-
-
-@router.post("/v1/mobile/heartbeat")
-async def mobile_heartbeat(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore
-
-    body = await request.json()
-    store = MobileBridgeStore()
-    device_id = str(body.get("device_id", ""))
-    token = str(body.get("trusted_token", body.get("token", "")))
-    if not store.authenticate(device_id, token):
-        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
-    status = body.get("status") if isinstance(body.get("status"), dict) else {}
-    return store.update_status(device_id, status)
-
-
-@router.post("/v1/mobile/notifications")
-async def mobile_notification_sync(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore
-
-    body = await request.json()
-    store = MobileBridgeStore()
-    device_id = str(body.get("device_id", ""))
-    token = str(body.get("trusted_token", body.get("token", "")))
-    if not store.authenticate(device_id, token):
-        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
-    return store.record_notification(
-        device_id,
-        str(body.get("kind", "app")),
-        str(body.get("app", "Android")),
-        str(body.get("title", "")),
-        str(body.get("summary", "")),
-    )
-
-
-@router.post("/v1/mobile/remote-command")
-async def mobile_remote_command(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore, plan_remote_command
-
-    body = await request.json()
-    store = MobileBridgeStore()
-    device_id = str(body.get("device_id", ""))
-    token = str(body.get("trusted_token", body.get("token", "")))
-    if token and not store.authenticate(device_id, token):
-        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
-    result = plan_remote_command(str(body.get("command", "")), device_id=device_id)
-    return store.record_remote_command(device_id, str(body.get("command", "")), result)
-
-
-@router.post("/v1/mobile/voice-relay")
-async def mobile_voice_relay(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore, voice_relay_plan
-
-    body = await request.json()
-    store = MobileBridgeStore()
-    device_id = str(body.get("device_id", ""))
-    token = str(body.get("trusted_token", body.get("token", "")))
-    if not store.authenticate(device_id, token):
-        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
-    result = voice_relay_plan(str(body.get("transcript", "")), device_id=device_id)
-    return store.record_remote_command(device_id, str(body.get("transcript", "")), result)
-
-
-@router.post("/v1/mobile/clipboard-sync-plan")
-async def mobile_clipboard_sync_plan(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore, clipboard_sync_plan
-
-    body = await request.json()
-    store = MobileBridgeStore()
-    device_id = str(body.get("device_id", ""))
-    token = str(body.get("trusted_token", body.get("token", "")))
-    if not store.authenticate(device_id, token):
-        raise HTTPException(status_code=401, detail="Mobile device is not paired or token is invalid")
-    result = clipboard_sync_plan(device_id, str(body.get("direction", "phone_to_desktop")))
-    return store.record_remote_command(device_id, "clipboard sync", result)
-
-
-@router.post("/v1/mobile/push")
-async def mobile_push_notification(request: Request):
-    from grandpa.mobile_integration import MobileBridgeStore
-
-    body = await request.json()
-    store = MobileBridgeStore()
-    device_id = str(body.get("device_id", ""))
-    return store.queue_push_notification(
-        device_id,
-        str(body.get("title", "Grandpa")),
-        str(body.get("body", "")),
-    )
-
-
-@router.get("/v1/mobile/outbox/{device_id}")
-async def mobile_outbox(device_id: str):
-    from grandpa.mobile_integration import MobileBridgeStore
-
-    store = MobileBridgeStore()
-    return {"items": store.pending_outbox(device_id)}
-
-
-@router.websocket("/v1/mobile/ws")
-async def mobile_companion_websocket(websocket: WebSocket):
-    """Local LAN WebSocket for the Android companion app."""
-    from grandpa.mobile_integration import (
-        MobileBridgeStore,
-        plan_remote_command,
-        voice_relay_plan,
-    )
-
-    await websocket.accept()
-    store = MobileBridgeStore()
-    device_id = ""
-    authenticated = False
-    try:
-        await websocket.send_json(
-            {
-                "type": "hello",
-                "message": "Grandpa mobile companion bridge ready.",
-                "local_only": True,
-            }
-        )
-        while True:
-            message = await websocket.receive_json()
-            event_type = str(message.get("type", ""))
-            if event_type == "pair_request":
-                pairing = store.create_pairing(str(message.get("device_name", "Android device")))
-                device_id = pairing["device_id"]
-                await websocket.send_json({"type": "pairing_code", **pairing})
-                continue
-
-            if event_type == "pair_confirm":
-                result = store.confirm_pairing(
-                    str(message.get("device_id", "")),
-                    str(message.get("pairing_code", "")),
-                    status=message.get("status") if isinstance(message.get("status"), dict) else None,
-                )
-                authenticated = bool(result.get("ok"))
-                device_id = str(result.get("device_id", message.get("device_id", "")))
-                await websocket.send_json({"type": "paired" if authenticated else "error", **result})
-                continue
-
-            if event_type == "authenticate":
-                device_id = str(message.get("device_id", ""))
-                token = str(message.get("trusted_token", message.get("token", "")))
-                authenticated = store.authenticate(device_id, token)
-                await websocket.send_json({"type": "authenticated", "ok": authenticated})
-                if authenticated:
-                    pending = store.pending_outbox(device_id)
-                    if pending:
-                        await websocket.send_json({"type": "outbox", "items": pending})
-                        store.mark_outbox_delivered([int(item["id"]) for item in pending])
-                continue
-
-            if not authenticated:
-                await websocket.send_json({"type": "error", "message": "Pair or authenticate before sending events."})
-                continue
-
-            if event_type == "heartbeat":
-                status = message.get("status") if isinstance(message.get("status"), dict) else {}
-                await websocket.send_json({"type": "heartbeat_ack", **store.update_status(device_id, status)})
-                pending = store.pending_outbox(device_id)
-                if pending:
-                    await websocket.send_json({"type": "outbox", "items": pending})
-                    store.mark_outbox_delivered([int(item["id"]) for item in pending])
-            elif event_type == "notification":
-                notification = message.get("notification") if isinstance(message.get("notification"), dict) else message
-                recorded = store.record_notification(
-                    device_id,
-                    str(notification.get("kind", "app")),
-                    str(notification.get("app", "Android")),
-                    str(notification.get("title", "")),
-                    str(notification.get("summary", "")),
-                )
-                await websocket.send_json({"type": "notification_ack", "notification": recorded})
-            elif event_type == "remote_command":
-                command = str(message.get("command", ""))
-                result = plan_remote_command(command, device_id=device_id)
-                recorded = store.record_remote_command(device_id, command, result)
-                await websocket.send_json({"type": "remote_command_result", **recorded})
-            elif event_type == "voice_relay":
-                transcript = str(message.get("transcript", ""))
-                result = voice_relay_plan(transcript, device_id=device_id)
-                recorded = store.record_remote_command(device_id, transcript, result)
-                await websocket.send_json({"type": "voice_relay_result", **recorded})
-            else:
-                await websocket.send_json({"type": "error", "message": f"Unsupported mobile event: {event_type}"})
-    except WebSocketDisconnect:
-        return
 
 
 @router.get("/v1/communication/diagnostics")

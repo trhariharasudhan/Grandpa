@@ -36,7 +36,6 @@ graph LR
 | `SignalChannel` | `signal` | Signal Messenger | — | Signal CLI |
 | `GoogleChatChannel` | `google_chat` | Google Chat | — | Service account |
 | `IRCChannel` | `irc` | IRC | — | Server credentials |
-| `WebChatChannel` | `webchat` | Browser-based chat | — | None |
 | `TeamsChannel` | `teams` | Microsoft Teams | — | Bot credentials |
 | `MatrixChannel` | `matrix` | Matrix protocol | — | Homeserver + token |
 | `MattermostChannel` | `mattermost` | Mattermost | — | Bot token |

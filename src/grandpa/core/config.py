@@ -971,22 +971,7 @@ class ServerConfig:
     agent: str = "orchestrator"
     model: str = ""
     workers: int = 1
-    cors_origins: list = field(
-        default_factory=lambda: [
-            "http://localhost:3000",
-            "http://localhost:5173",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:5173",
-            # Tauri 2 production webview origins.
-            # macOS / Linux / iOS use the custom scheme; Windows /
-            # Android use http(s)://tauri.localhost. All three must
-            # be allowed so the desktop app's chat-completions stream
-            # is not blocked by CORS in production builds.
-            "tauri://localhost",
-            "http://tauri.localhost",
-            "https://tauri.localhost",
-        ]
-    )
+    cors_origins: list = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -1126,13 +1111,6 @@ class IRCChannelConfig:
 
 
 @dataclass(slots=True)
-class WebChatChannelConfig:
-    """Per-channel config for in-memory webchat."""
-
-    pass
-
-
-@dataclass(slots=True)
 class TeamsChannelConfig:
     """Per-channel config for Microsoft Teams (Bot Framework)."""
 
@@ -1200,7 +1178,6 @@ class ChannelConfig:
         default_factory=GoogleChatChannelConfig,
     )
     irc: IRCChannelConfig = field(default_factory=IRCChannelConfig)
-    webchat: WebChatChannelConfig = field(default_factory=WebChatChannelConfig)
     teams: TeamsChannelConfig = field(default_factory=TeamsChannelConfig)
     matrix: MatrixChannelConfig = field(default_factory=MatrixChannelConfig)
     mattermost: MattermostChannelConfig = field(default_factory=MattermostChannelConfig)
@@ -2147,7 +2124,6 @@ __all__ = [
     "ToolsConfig",
     "TracesConfig",
     "VLLMEngineConfig",
-    "WebChatChannelConfig",
     "WebhookChannelConfig",
     "WhatsAppBaileysChannelConfig",
     "WhatsAppChannelConfig",

@@ -80,10 +80,6 @@ _PLATFORM_VALUES = (
     "macos",
     "linux",
     "windows",
-    "tauri-macos",
-    "tauri-linux",
-    "tauri-windows",
-    "web",
 )
 _INSTALL_STAGES = (
     "deps",
@@ -132,7 +128,6 @@ _FEATURE_NAMES = (
     "research",
     "evals",
     "feedback",
-    "telemetry_dashboard",
     "settings",
 )
 _TOOL_NAMES = (

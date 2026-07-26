@@ -5,8 +5,17 @@ from fastapi.testclient import TestClient
 
 from grandpa.local_actions import handle_local_action
 from grandpa.server.api_routes import user_skills_router
-from grandpa.skill_builder import create_user_skill, delete_user_skill, diagnostics, list_user_skills, run_user_skill
-from grandpa.skill_builder.validator import SkillValidationError, validate_skill_definition
+from grandpa.skill_builder import (
+    create_user_skill,
+    delete_user_skill,
+    diagnostics,
+    list_user_skills,
+    run_user_skill,
+)
+from grandpa.skill_builder.validator import (
+    SkillValidationError,
+    validate_skill_definition,
+)
 from grandpa.skills.registry import ensure_default_skills_registered, get_skill
 
 

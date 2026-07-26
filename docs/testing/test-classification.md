@@ -10,7 +10,7 @@ platform-specific runtimes.
 - `release`: curated release-blocking tests used by the final release gate.
 - `integration`: cross-module tests.
 - `optional`: tests that require opt-in dependencies, credentials, or live services.
-- `environment`: tests tied to Docker, Android, browser, microphone, Rust extension, Linux RAPL, or another platform backend.
+- `environment`: tests tied to Docker, browser, microphone, Rust extension, Linux RAPL, or another platform backend.
 - `slow`: intentionally long-running tests.
 
 ## Commands

@@ -92,30 +92,6 @@ To pull a new model:
 ollama pull qwen3.5:35b
 ```
 
-## Using the Browser App
-
-Start the backend server and the React frontend with one command:
-
-```bash
-./scripts/quickstart.sh
-```
-
-This opens [http://localhost:5173](http://localhost:5173) in your browser with a full chat interface, streaming responses, and an energy monitoring dashboard.
-
-To run just the API server (for use with the desktop app or external clients):
-
-```bash
-Grandpa serve
-```
-
-The server is OpenAI-compatible, so any client that works with the OpenAI API can point to `http://localhost:8000/v1`.
-
-## Using the Desktop App
-
-1. Start the backend: `Grandpa serve` (or `./scripts/quickstart.sh`)
-2. Download and open the desktop app from the [releases page](https://github.com/grandpa/grandpa/releases)
-3. The app connects to `http://localhost:8000` automatically
-
 ## Switching Models
 
 You can change the default model at any time:
@@ -150,5 +126,3 @@ grandpa_MODEL=qwen3.5:9b Grandpa ask "Hello"
 **Slow responses** -- Use a smaller model (`qwen3.5:4b`). Check available memory; models need RAM roughly equal to their parameter count in GB (e.g., 9B model needs ~9 GB).
 
 **Want to add tools later?** -- Switch to the [Code Assistant](code-assistant.md) or [Deep Research](deep-research.md) config. Simple chat is intentionally minimal.
-
-**Browser app not loading** -- Make sure both the backend (`Grandpa serve`) and frontend are running. The `./scripts/quickstart.sh` script starts both automatically.

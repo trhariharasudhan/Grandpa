@@ -15,20 +15,7 @@ class BrowserPageCapture:
     """Read visible browser context from existing local-only adapters."""
 
     def capture(self) -> BrowserPageSnapshot:
-        try:
-            return _snapshot_from_extension()
-        except Exception:
-            return _snapshot_from_visible_context()
-
-
-def _snapshot_from_extension() -> BrowserPageSnapshot:
-    from grandpa.browser_control import latest_browser_snapshot
-
-    latest = latest_browser_snapshot()
-    snapshot = latest.get("snapshot") or {}
-    if not latest.get("connected") or not snapshot:
         return _snapshot_from_visible_context()
-    return _from_mapping(snapshot, source="extension")
 
 
 def _snapshot_from_visible_context() -> BrowserPageSnapshot:
@@ -49,20 +36,6 @@ def _snapshot_from_visible_context() -> BrowserPageSnapshot:
         tabs=tuple(item for item in tabs if item),
         source="visible_context",
         message=context.message,
-    )
-
-
-def _from_mapping(snapshot: dict[str, Any], *, source: str) -> BrowserPageSnapshot:
-    return BrowserPageSnapshot(
-        supported=True,
-        title=sanitize_visible_text(str(snapshot.get("title") or ""), limit=500),
-        url=str(snapshot.get("url") or ""),
-        visible_text=sanitize_visible_text(str(snapshot.get("visible_text") or "")),
-        selected_text=_selected_text_from_mapping(snapshot),
-        links=_sanitize_links(tuple(snapshot.get("links") or ())),
-        tabs=tuple(str(item) for item in snapshot.get("tabs") or ()),
-        source=source,
-        message="Browser page snapshot is available.",
     )
 
 

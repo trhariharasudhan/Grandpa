@@ -48,7 +48,6 @@ _HIGH_RISK_WORDS = (
     "buy",
     "pay",
 )
-_SNAPSHOT_MAX_AGE_SECONDS = 180
 _SECRET_VALUE_RE = (
     r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}",
     r"\b(?:sk|pk|xoxp|xoxb|ghp|gho|github_pat)_[A-Za-z0-9_\-]{10,}",
@@ -143,51 +142,8 @@ class BrowserContextStore:
                 """
             )
             conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS browser_snapshots (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created_at REAL NOT NULL,
-                    title TEXT,
-                    url TEXT,
-                    headings_json TEXT NOT NULL,
-                    links_json TEXT NOT NULL,
-                    buttons_json TEXT NOT NULL,
-                    inputs_json TEXT NOT NULL,
-                    visible_text TEXT NOT NULL,
-                    source TEXT NOT NULL DEFAULT 'extension',
-                    media_json TEXT NOT NULL DEFAULT '[]',
-                    forms_json TEXT NOT NULL DEFAULT '[]',
-                    elements_json TEXT NOT NULL DEFAULT '[]',
-                    session_json TEXT NOT NULL DEFAULT '{}'
-                )
-                """
-            )
-            _ensure_snapshot_columns(conn)
-            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_browser_activity_created "
                 "ON browser_activity(created_at)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_browser_snapshots_created "
-                "ON browser_snapshots(created_at)"
-            )
-            conn.execute(
-                """
-                CREATE TABLE IF NOT EXISTS browser_commands (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    created_at REAL NOT NULL,
-                    completed_at REAL,
-                    action TEXT NOT NULL,
-                    target TEXT NOT NULL,
-                    page_url TEXT,
-                    status TEXT NOT NULL,
-                    result_json TEXT NOT NULL DEFAULT '{}'
-                )
-                """
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_browser_commands_status "
-                "ON browser_commands(status, created_at)"
             )
 
     def record(
@@ -221,157 +177,13 @@ class BrowserContextStore:
             ).fetchall()
         return [{key: row[key] for key in row.keys()} for row in rows]
 
-    def store_snapshot(self, payload: dict[str, Any]) -> dict[str, Any]:
-        snapshot = _sanitize_dom_context(payload)
-        created_at = time.time()
-        title = snapshot.get("title") or ""
-        url = snapshot.get("url") or ""
-        with self._connect() as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO browser_snapshots(
-                    created_at, title, url, headings_json, links_json,
-                    buttons_json, inputs_json, visible_text, source,
-                    media_json, forms_json, elements_json, session_json
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    created_at,
-                    title,
-                    url,
-                    json.dumps(snapshot.get("headings") or []),
-                    json.dumps(snapshot.get("links") or []),
-                    json.dumps(snapshot.get("buttons") or []),
-                    json.dumps(snapshot.get("inputs") or []),
-                    snapshot.get("visible_text") or "",
-                    str(payload.get("source") or "extension")[:80],
-                    json.dumps(snapshot.get("media") or []),
-                    json.dumps(snapshot.get("forms") or []),
-                    json.dumps(snapshot.get("elements") or []),
-                    json.dumps(snapshot.get("session") or {}),
-                ),
-            )
-            conn.execute(
-                """
-                INSERT INTO browser_activity(created_at, action, title, url, query, status)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (created_at, "snapshot", title, url, None, "handled"),
-            )
-            snapshot_id = int(cur.lastrowid)
-        latest = self.latest_snapshot(max_age_seconds=None) or {}
-        latest["id"] = snapshot_id
-        return latest
-
-    def latest_snapshot(self, *, max_age_seconds: int | None = _SNAPSHOT_MAX_AGE_SECONDS) -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT id, created_at, title, url, headings_json, links_json,
-                       buttons_json, inputs_json, visible_text, source,
-                       media_json, forms_json, elements_json, session_json
-                FROM browser_snapshots
-                ORDER BY created_at DESC
-                LIMIT 1
-                """
-            ).fetchone()
-        if not row:
-            return None
-        age_seconds = time.time() - float(row["created_at"])
-        if max_age_seconds is not None and age_seconds > max_age_seconds:
-            return None
-        return {
-            "id": row["id"],
-            "created_at": row["created_at"],
-            "age_seconds": age_seconds,
-            "title": row["title"],
-            "url": row["url"],
-            "headings": _json_list(row["headings_json"]),
-            "links": _json_list(row["links_json"]),
-            "buttons": _json_list(row["buttons_json"]),
-            "inputs": _json_list(row["inputs_json"]),
-            "visible_text": row["visible_text"],
-            "source": row["source"],
-            "media": _json_list(row["media_json"]),
-            "forms": _json_list(row["forms_json"]),
-            "elements": _json_list(row["elements_json"]),
-            "session": _json_dict(row["session_json"]),
-            "connected": True,
-        }
-
-    def clear_snapshots(self) -> int:
-        with self._connect() as conn:
-            cur = conn.execute("DELETE FROM browser_snapshots")
-            return int(cur.rowcount or 0)
-
-    def enqueue_command(self, action: str, target: str, *, page_url: str | None = None) -> dict[str, Any]:
-        now = time.time()
-        with self._connect() as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO browser_commands(created_at, action, target, page_url, status, result_json)
-                VALUES (?, ?, ?, ?, 'pending', '{}')
-                """,
-                (now, action, target, page_url),
-            )
-            command_id = int(cur.lastrowid)
-        return {"id": command_id, "action": action, "target": target, "page_url": page_url, "status": "pending"}
-
-    def next_command(self, *, page_url: str = "") -> dict[str, Any] | None:
-        with self._connect() as conn:
-            row = conn.execute(
-                """
-                SELECT id, created_at, action, target, page_url, status
-                FROM browser_commands
-                WHERE status = 'pending'
-                  AND (? = '' OR page_url IS NULL OR page_url = '' OR page_url = ?)
-                ORDER BY created_at ASC
-                LIMIT 1
-                """,
-                (page_url, page_url),
-            ).fetchone()
-            if not row:
-                return None
-            conn.execute(
-                "UPDATE browser_commands SET status = 'claimed' WHERE id = ? AND status = 'pending'",
-                (row["id"],),
-            )
-        return {key: row[key] for key in row.keys()}
-
-    def complete_command(self, command_id: int, *, status: str, result: dict[str, Any] | None = None) -> dict[str, Any]:
-        clean_status = "completed" if status == "completed" else "failed"
-        with self._connect() as conn:
-            conn.execute(
-                """
-                UPDATE browser_commands
-                SET status = ?, completed_at = ?, result_json = ?
-                WHERE id = ?
-                """,
-                (clean_status, time.time(), json.dumps(result or {}, ensure_ascii=True), command_id),
-            )
-        return {"id": command_id, "status": clean_status}
-
-
 def get_visible_browser_context() -> BrowserContext:
     """Return context for the active visible Chrome/Edge window."""
-
-    snapshot = BrowserContextStore().latest_snapshot()
-    if snapshot:
-        context = _context_from_snapshot(snapshot)
-        try:
-            BrowserContextStore().record("context", title=context.title, url=context.url)
-        except Exception:
-            pass
-        return context
 
     if sys.platform != "win32":
         return BrowserContext(
             supported=False,
-            message=(
-                "Browser extension is not connected yet. Load the Grandpa browser "
-                "extension in Chrome or Edge, then refresh the page."
-            ),
+            message="Visible browser context is currently available only on Windows.",
         )
 
     title = _active_window_title()
@@ -437,14 +249,10 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
 
     if action == "diagnostics":
         context = get_visible_browser_context()
-        latest = latest_browser_snapshot()
         recent = BrowserContextStore().recent(limit=10)
-        message = "Browser diagnostics are ready."
-        if not latest.get("connected"):
-            message = "Browser diagnostics are ready, but the extension is not connected."
         details = {
-            "extension_connected": bool(latest.get("connected")),
-            "snapshot_age_seconds": latest.get("snapshot", {}).get("age_seconds") if latest.get("snapshot") else None,
+            "context_available": context.supported,
+            "capture_source": "visible_context" if context.supported else None,
             "current_title": context.title,
             "current_url": context.url,
             "counts": {
@@ -459,7 +267,13 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
             "recent_activity": recent,
             "local_only": True,
         }
-        return BrowserActionResult("handled", action, json.dumps(details), message, context=context)
+        return BrowserActionResult(
+            "handled",
+            action,
+            json.dumps(details),
+            "Browser diagnostics are ready.",
+            context=context,
+        )
 
     if action == "headings":
         context = get_visible_browser_context()
@@ -485,7 +299,7 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
                 "unsupported",
                 action,
                 target,
-                "I do not see any visible links in the latest browser snapshot.",
+                "I do not see any links in the current visible browser context.",
                 context=context,
             )
         lines = []
@@ -504,7 +318,7 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
                 "unsupported",
                 action,
                 target,
-                "I do not see any visible buttons in the latest browser snapshot.",
+                "I do not see any buttons in the current visible browser context.",
                 context=context,
             )
         buttons = "\n".join(f"- {button}" for button in context.buttons[:12])
@@ -643,58 +457,6 @@ def extract_dom_snapshot(html: str, *, title: str = "", url: str = "") -> Browse
     )
 
 
-def store_browser_snapshot(payload: dict[str, Any]) -> dict[str, Any]:
-    """Persist a local-only visible page snapshot from the browser extension."""
-
-    return BrowserContextStore().store_snapshot(payload)
-
-
-def latest_browser_snapshot() -> dict[str, Any]:
-    snapshot = BrowserContextStore().latest_snapshot(max_age_seconds=None)
-    return {
-        "connected": snapshot is not None,
-        "snapshot": snapshot,
-        "max_age_seconds": _SNAPSHOT_MAX_AGE_SECONDS,
-        "local_only": True,
-    }
-
-
-def clear_browser_snapshot() -> dict[str, Any]:
-    removed = BrowserContextStore().clear_snapshots()
-    return {"status": "ok", "removed": removed}
-
-
-def next_browser_command(page_url: str = "") -> dict[str, Any]:
-    command = BrowserContextStore().next_command(page_url=page_url)
-    return {"command": command, "local_only": True}
-
-
-def complete_browser_command(command_id: int, payload: dict[str, Any]) -> dict[str, Any]:
-    status = str(payload.get("status") or "failed")
-    result = payload.get("result") if isinstance(payload.get("result"), dict) else {}
-    return BrowserContextStore().complete_command(command_id, status=status, result=result)
-
-
-def _context_from_snapshot(snapshot: dict[str, Any]) -> BrowserContext:
-    return BrowserContext(
-        supported=True,
-        browser="Chrome/Edge extension",
-        title=str(snapshot.get("title") or ""),
-        url=str(snapshot.get("url") or ""),
-        active_window_title=str(snapshot.get("title") or ""),
-        headings=tuple(str(item) for item in snapshot.get("headings") or ()),
-        buttons=tuple(str(item) for item in snapshot.get("buttons") or ()),
-        links=tuple(snapshot.get("links") or ()),
-        inputs=tuple(snapshot.get("inputs") or ()),
-        visible_text=str(snapshot.get("visible_text") or ""),
-        media=tuple(snapshot.get("media") or ()),
-        forms=tuple(snapshot.get("forms") or ()),
-        elements=tuple(snapshot.get("elements") or ()),
-        session=dict(snapshot.get("session") or {}),
-        message="Browser extension snapshot is available.",
-    )
-
-
 def _active_window_title() -> str:
     try:
         from grandpa.windows_window_control import (
@@ -760,19 +522,6 @@ def _sanitize_dom_context(data: dict[str, Any]) -> dict[str, Any]:
         "session": _safe_session(data.get("session"), str(data.get("url") or "")),
         "visible_text": _redact_sensitive_visible_text(visible_text)[:4000],
     }
-
-
-def _ensure_snapshot_columns(conn: sqlite3.Connection) -> None:
-    rows = conn.execute("PRAGMA table_info(browser_snapshots)").fetchall()
-    existing = {str(row[1]) for row in rows}
-    for name, default in {
-        "media_json": "'[]'",
-        "forms_json": "'[]'",
-        "elements_json": "'[]'",
-        "session_json": "'{}'",
-    }.items():
-        if name not in existing:
-            conn.execute(f"ALTER TABLE browser_snapshots ADD COLUMN {name} TEXT NOT NULL DEFAULT {default}")
 
 
 def _safe_strings(value: Any) -> list[str]:
@@ -894,33 +643,12 @@ def _safe_session(value: Any, url: str) -> dict[str, Any]:
     return session
 
 
-def _json_dict(raw: str) -> dict[str, Any]:
-    try:
-        value = json.loads(raw or "{}")
-    except Exception:
-        return {}
-    return value if isinstance(value, dict) else {}
-
-
 def _browser_media_action(target: str, context: BrowserContext) -> BrowserActionResult:
-    command = target.lower().strip()
     if not context.media:
-        return BrowserActionResult("unsupported", "media", target, "I do not see visible media controls in the latest browser snapshot.", context=context)
-    if any(word in command for word in ("play", "pause", "mute", "unmute", "volume", "seek", "next", "previous")):
-        risk = "LOW" if any(word in command for word in ("play", "pause", "mute", "unmute")) else "MEDIUM"
-        status: BrowserActionStatus = "handled" if risk == "LOW" else "requires_confirmation"
-        store = BrowserContextStore()
-        store.record("media", title=context.title, url=context.url, query=target, status=status)
-        queued = store.enqueue_command("media", target, page_url=context.url) if status == "handled" else None
-        return BrowserActionResult(
-            status,
-            "media",
-            target,
-            f"Queued visible media action: {target}." if queued else f"Prepared visible media action: {target}.",
-            risk_level=risk,
-            context=context,
-        )
-    return BrowserActionResult("unsupported", "media", target, "That media action is not supported yet.", context=context)
+        message = "I do not see visible media controls in the current browser context."
+    else:
+        message = "Visible-page media controls require a browser adapter and are unavailable."
+    return BrowserActionResult("unsupported", "media", target, message, context=context)
 
 
 def _redact_sensitive_visible_text(text: str) -> str:
@@ -938,14 +666,6 @@ def _redact_sensitive_visible_text(text: str) -> str:
 def _looks_high_risk(text: str) -> bool:
     lower = text.lower()
     return any(word in lower for word in _HIGH_RISK_WORDS)
-
-
-def _json_list(raw: str) -> list[Any]:
-    try:
-        value = json.loads(raw or "[]")
-    except Exception:
-        return []
-    return value if isinstance(value, list) else []
 
 
 def _search_url(query: str) -> str:
@@ -1024,9 +744,4 @@ __all__ = [
     "execute_browser_action",
     "extract_dom_snapshot",
     "get_visible_browser_context",
-    "store_browser_snapshot",
-    "latest_browser_snapshot",
-    "clear_browser_snapshot",
-    "next_browser_command",
-    "complete_browser_command",
 ]

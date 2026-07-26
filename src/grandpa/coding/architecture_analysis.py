@@ -10,11 +10,10 @@ from grandpa.coding.project_scanner import ROOT
 ARCHITECTURE_LAYERS = {
     "service_layer": ("src/grandpa/services", "src/grandpa/server", "services"),
     "agent_layer": ("src/grandpa/agents", "src/grandpa/planner", "src/grandpa/mcp"),
-    "api_layer": ("src/grandpa/server", "frontend/src/lib/api.ts"),
-    "plugin_layer": ("src/grandpa/plugins", "plugins"),
+    "api_layer": ("src/grandpa/server",),
     "skill_layer": ("src/grandpa/skills", "src/grandpa/skill_builder"),
     "desktop_layer": ("src/grandpa/desktop",),
-    "browser_layer": ("src/grandpa/browser", "browser-extension"),
+    "browser_layer": ("src/grandpa/browser", "src/grandpa/browser_awareness"),
     "memory_layer": ("src/grandpa/memory", "src/grandpa/memory_context.py"),
 }
 

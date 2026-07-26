@@ -520,7 +520,7 @@ def test_renumber_citations_first_appearance_order() -> None:
 def test_renumber_citations_drops_uncited_sources() -> None:
     """Sources the synthesis never cited are excluded from the final list.
 
-    The frontend would otherwise show citation chips for hits the model
+    A client would otherwise show citation links for hits the model
     silently ignored, which clutters the panel and misleads about what
     the answer actually relied on.
     """
@@ -560,7 +560,7 @@ def test_final_answer_event_carries_renumbered_sources(
     """The ``final_answer`` event includes the deduped, renumbered sources.
 
     Drives the same renumbering pipeline that's wired into the SSE router's
-    ``done`` frame — when this test passes the frontend will receive a
+    ``done`` frame — when this test passes the client will receive a
     clean ``[1]..[K]`` numbering aligned with a single sources list.
     """
     # Two hits returned by the search. The synthesis cites the second one

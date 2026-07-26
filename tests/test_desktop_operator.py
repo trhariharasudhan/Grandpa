@@ -11,7 +11,11 @@ from grandpa.desktop.operator import (
     recover_failed_action,
 )
 from grandpa.server.api_routes import desktop_operator_router
-from grandpa.skills.registry import ensure_default_skills_registered, execute_skill, get_skill
+from grandpa.skills.registry import (
+    ensure_default_skills_registered,
+    execute_skill,
+    get_skill,
+)
 
 
 def test_app_profile_detection_for_vscode_terminal() -> None:

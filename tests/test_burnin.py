@@ -11,11 +11,11 @@ def test_burnin_report_preserves_pending_without_blocking() -> None:
         [
             BurnInResult("desktop summary", "desktop", "pass", 0.1, "ok"),
             BurnInResult(
-                "mobile device",
-                "mobile",
+                "microphone hardware",
+                "voice",
                 "pending",
                 0.0,
-                "No phone connected.",
+                "No microphone validation was requested.",
                 required=True,
                 measured=False,
             ),

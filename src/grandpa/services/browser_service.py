@@ -35,7 +35,9 @@ def health() -> dict[str, Any]:
         "ready": bool(payload.get("ready")),
         "status": payload.get("status", "unknown"),
         "dependencies": {
-            "extension_connected": bool(payload.get("details", {}).get("extension_connected")) if isinstance(payload.get("details"), dict) else False,
+            "visible_context": bool(payload.get("details", {}).get("context_available"))
+            if isinstance(payload.get("details"), dict)
+            else False,
             "visible_page": bool(payload.get("context", {}).get("supported")) if isinstance(payload.get("context"), dict) else False,
         },
     }

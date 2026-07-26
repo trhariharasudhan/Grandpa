@@ -313,7 +313,7 @@ class OllamaEngine(InferenceEngine):
         # Mirror generate()'s default: disable extended thinking unless the
         # caller opted in. Qwen3/etc. with thinking on can stall the visible
         # stream for 60+ seconds before any tokens reach the client, which
-        # frontends interpret as a "Load failed" timeout.
+        # clients interpret as a "Load failed" timeout.
         if "think" not in kwargs:
             payload["think"] = False
         elif kwargs["think"] is not None:

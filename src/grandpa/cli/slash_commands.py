@@ -193,7 +193,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/apps running",
             "/apps open <name>",
         ),
-        examples=("open Android Studio", "list installed applications", "search applications for Blender"),
+        examples=("open Visual Studio Code", "list installed applications", "search applications for Blender"),
         note="Apps are launched only from Grandpa's local application index or existing safe app resolver.",
     ),
     SlashCommand(
@@ -287,15 +287,6 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/github status", "/github prs", "/github issues"),
         examples=("show my open pull requests", "summarize issue 12"),
         note="GitHub actions require authenticated local tooling or a configured connector.",
-    ),
-    SlashCommand(
-        "/phone",
-        "Phone",
-        "Personal",
-        status="Planned / Not configured",
-        subcommands=("/phone status", "/phone connect", "/call <contact>", "/sms <contact> <message>"),
-        examples=("call Amma", "send SMS to Arjun", "show phone notifications"),
-        note="Phone actions require a future Android companion app or Bluetooth/mobile bridge.",
     ),
     SlashCommand(
         "/voice",
@@ -408,5 +399,5 @@ def mode_help_text() -> str:
 
 def unknown_command_message(command: str) -> str:
     command_name = command.split(maxsplit=1)[0]
-    suggestions = "\n".join(["/help", "/memory", "/reminders", "/desktop", "/phone"])
+    suggestions = "\n".join(["/help", "/memory", "/reminders", "/desktop", "/voice"])
     return f"Unknown command: {command_name}\n\nTry:\n{suggestions}"

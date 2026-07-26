@@ -77,7 +77,7 @@ def test_speech_input_accepts_existing_transcript():
 
     assert result.status == "completed"
     assert result.transcript == "open notepad"
-    assert result.engine == "browser_or_mobile_transcript"
+    assert result.engine == "provided_transcript"
     assert result.confidence == 0.99
 
 
@@ -88,8 +88,8 @@ def test_voice_runtime_reports_missing_speech_dependency(monkeypatch):
     result = runtime.listen(audio_base64=base64.b64encode(b"audio").decode("ascii"))
 
     assert result["status"] == "dependency_missing"
-    assert "Voice mode is not fully installed." in result["message"]
-    assert "uv sync --extra speech" in result["message"]
+    assert "faster-whisper" in result["message"]
+    assert "uv sync --extra voice" in result["message"]
     assert "Traceback" not in result["message"]
 
 
@@ -111,7 +111,7 @@ def test_voice_listen_api_accepts_browser_transcript(voice_client):
     body = response.json()
     assert body["status"] == "completed"
     assert body["transcript"] == "open notepad"
-    assert body["speech_input"]["engine"] == "browser_or_mobile_transcript"
+    assert body["speech_input"]["engine"] == "provided_transcript"
 
 
 def test_voice_listen_api_audio_missing_dependency_is_friendly(monkeypatch, voice_client):
@@ -124,8 +124,8 @@ def test_voice_listen_api_audio_missing_dependency_is_friendly(monkeypatch, voic
     )
 
     assert response.status_code == 503
-    assert "Voice mode is not fully installed." in response.json()["detail"]
-    assert "uv sync --extra speech" in response.json()["detail"]
+    assert "faster-whisper" in response.json()["detail"]
+    assert "uv sync --extra voice" in response.json()["detail"]
 
 
 def test_voice_listen_api_invalid_audio_is_friendly(monkeypatch, voice_client):

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # ── Grandpa Quickstart ─────────────────────────────────────────────
-# One-command setup: installs deps, starts Ollama + model, launches
-# the backend API server and frontend, then opens the browser.
+# One-command setup: installs dependencies, starts Ollama and a local model,
+# then launches the optional backend API server.
 #
 # Usage:
 #   git clone https://github.com/grandpa/Grandpa.git
@@ -72,21 +72,7 @@ else
   ok "uv installed"
 fi
 
-# ── 3. Check Node.js ────────────────────────────────────────────────
-info "Checking Node.js..."
-if command -v node &>/dev/null; then
-  NODE_VERSION=$(node --version)
-  NODE_MAJOR=$(echo "$NODE_VERSION" | sed 's/v//' | cut -d. -f1)
-  if [ "$NODE_MAJOR" -ge 18 ]; then
-    ok "Node.js $NODE_VERSION"
-  else
-    fail "Node.js 18+ required (found $NODE_VERSION). Install from https://nodejs.org"
-  fi
-else
-  fail "Node.js not found. Install from https://nodejs.org"
-fi
-
-# ── 4. Check / install Ollama ────────────────────────────────────────
+# ── 3. Check / install Ollama ────────────────────────────────────────
 info "Checking Ollama..."
 if command -v ollama &>/dev/null; then
   ok "Ollama found"
@@ -114,7 +100,7 @@ else
   ok "Ollama installed"
 fi
 
-# ── 5. Start Ollama if not running ───────────────────────────────────
+# ── 4. Start Ollama if not running ───────────────────────────────────
 info "Checking if Ollama is running..."
 if curl -sf http://localhost:11434/api/tags &>/dev/null; then
   ok "Ollama is running"
@@ -130,7 +116,7 @@ else
   fi
 fi
 
-# ── 6. Pull a starter model ─────────────────────────────────────────
+# ── 5. Pull a starter model ─────────────────────────────────────────
 MODEL="${GRANDPA_MODEL:-qwen3:0.6b}"
 info "Ensuring model '$MODEL' is available..."
 if ollama list 2>/dev/null | grep -q "$MODEL"; then
@@ -141,23 +127,18 @@ else
   ok "Model '$MODEL' ready"
 fi
 
-# ── 7. Install Python dependencies ──────────────────────────────────
+# ── 6. Install Python dependencies ──────────────────────────────────
 info "Installing Python dependencies..."
 uv sync --extra server --quiet 2>/dev/null || uv sync --extra server
 ok "Python dependencies installed"
 
-# ── 7b. Build Rust extension ──────────────────────────────────────
+# ── 7. Build Rust extension ──────────────────────────────────────
 info "Building Rust extension..."
 uv run maturin develop -m rust/crates/grandpa-python/Cargo.toml --quiet 2>/dev/null \
   || uv run maturin develop -m rust/crates/grandpa-python/Cargo.toml
 ok "Rust extension built"
 
-# ── 8. Install frontend dependencies ────────────────────────────────
-info "Installing frontend dependencies..."
-(cd frontend && npm install --silent 2>/dev/null || npm install)
-ok "Frontend dependencies installed"
-
-# ── 9. Start backend ────────────────────────────────────────────────
+# ── 8. Start backend ────────────────────────────────────────────────
 info "Starting backend API server on port 8000..."
 uv run grandpa serve --port 8000 &>/dev/null &
 CLEANUP_PIDS+=($!)
@@ -169,26 +150,10 @@ else
   warn "Backend may still be starting..."
 fi
 
-# ── 10. Start frontend ──────────────────────────────────────────────
-info "Starting frontend dev server on port 5173..."
-(cd frontend && npm run dev) &>/dev/null &
-CLEANUP_PIDS+=($!)
-sleep 3
-ok "Frontend running at http://localhost:5173"
-
-# ── 11. Open browser ────────────────────────────────────────────────
-URL="http://localhost:5173"
-info "Opening $URL ..."
-case "$(uname -s)" in
-  Darwin) open "$URL" ;;
-  Linux)  xdg-open "$URL" 2>/dev/null || true ;;
-  *)      true ;;
-esac
-
 echo ""
 echo -e "${GREEN}${BOLD}  Grandpa is running!${NC}"
 echo ""
-echo "  Chat UI:  http://localhost:5173"
+echo "  CLI chat: uv run grandpa chat"
 echo "  API:      http://localhost:8000"
 echo "  Model:    $MODEL"
 echo ""

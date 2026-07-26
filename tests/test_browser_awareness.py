@@ -127,12 +127,12 @@ def test_text_truncation_and_secret_redaction() -> None:
 
 
 def test_unsupported_browser_returns_friendly_result() -> None:
-    result = BrowserAwareness(capture=lambda: BrowserPageSnapshot(False, message="Browser extension is not connected yet.")).handle(
+    result = BrowserAwareness(capture=lambda: BrowserPageSnapshot(False, message="No visible supported browser page.")).handle(
         "summarize this page"
     )
 
     assert result.status == "unsupported"
-    assert "Browser extension is not connected" in result.message
+    assert "No visible supported browser page" in result.message
 
 
 def test_browser_slash_awareness_routes(monkeypatch) -> None:

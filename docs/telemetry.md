@@ -24,8 +24,7 @@ collected, where the data goes, and how to opt out.
 | `install_stage_completed` | `install.sh` | Per-stage timing — where do people drop off? |
 | `install_completed` | `install.sh` | Did the install succeed? |
 | `install_failed` | `install.sh` | Which stage failed, and on what OS |
-| `app_opened` | Backend + frontend | DAU / WAU / MAU |
-| `setup_completed` | Frontend | First-run wizard finished |
+| `app_opened` | CLI or backend | DAU / WAU / MAU |
 | `first_chat_sent` | Backend | First-ever message — activation |
 | `uninstall_started` | `uninstall.sh` (if user runs it) | Churn signal |
 
@@ -120,8 +119,8 @@ Env-var opt-out takes precedence over the config file, so setting
 ## How identity works
 
 A single UUID v4 is generated on first install and stored at
-`~/.grandpa/anon_id`. The install script, backend, and frontend all
-read the same file so events across the full lifecycle tie to one
+`~/.grandpa/anon_id`. The install script, CLI, and backend all read the same
+file so events across the full lifecycle tie to one
 person — without us ever knowing who that person is.
 
 Delete the file (`rm ~/.grandpa/anon_id`) and a fresh UUID will be

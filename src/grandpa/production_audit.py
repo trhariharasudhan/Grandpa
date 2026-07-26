@@ -2,21 +2,19 @@
 
 The production audit is intentionally conservative. It records evidence from
 local stores, diagnostics APIs, and safe dry-run/planning paths, but it does not
-claim that browser extensions, microphones, Android phones, or visible desktop
-automation were validated unless Grandpa can observe real local evidence.
+claim that microphones or visible desktop automation were validated unless
+Grandpa can observe real local evidence.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import shutil
-import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 REPORT_DIR = ROOT / "runtime" / "reports"
@@ -94,7 +92,6 @@ def run_production_audit(*, write: bool = True) -> dict[str, Any]:
     checks.extend(_browser_checks())
     checks.extend(_voice_checks())
     checks.extend(_desktop_operator_checks())
-    checks.extend(_mobile_checks())
     checks.extend(_agent_checks())
     checks.extend(_knowledge_memory_checks())
 
@@ -105,93 +102,30 @@ def run_production_audit(*, write: bool = True) -> dict[str, Any]:
 
 
 def _browser_checks() -> list[AuditCheck]:
-    checks: list[AuditCheck] = []
-    extension_dir = ROOT / "browser-extension"
-    manifest = extension_dir / "manifest.json"
-    checks.append(
-        AuditCheck(
-            "Browser Extension",
-            "Extension files present",
-            "validated" if manifest.exists() else "blocked",
-            "Browser extension manifest is present." if manifest.exists() else "Browser extension manifest is missing.",
-            {"manifest": str(manifest), "exists": manifest.exists()},
-            [] if manifest.exists() else ["Cannot install the browser extension without manifest.json."],
-            recommendation="" if manifest.exists() else "Restore browser-extension/manifest.json.",
-        )
-    )
     try:
-        from grandpa.browser_control import latest_browser_snapshot
+        from grandpa.browser_control import get_visible_browser_context
 
-        latest = latest_browser_snapshot()
-        connected = bool(latest.get("connected") and latest.get("snapshot"))
-        snapshot = latest.get("snapshot") or {}
-        counts = {
-            "headings": len(snapshot.get("headings") or []),
-            "links": len(snapshot.get("links") or []),
-            "buttons": len(snapshot.get("buttons") or []),
-        }
-        checks.append(
+        context = get_visible_browser_context()
+        return [
             AuditCheck(
-                "Browser Extension",
-                "Visible page snapshot flow",
-                "validated" if connected else "unvalidated",
-                "Latest visible-page browser snapshot is available." if connected else "No live browser-extension snapshot is available.",
-                {"connected": connected, "title": snapshot.get("title"), "url": snapshot.get("url"), **counts},
-                [] if connected else ["Load the Chrome/Edge extension and open a visible page to validate DOM snapshots."],
+                "Browser Awareness",
+                "Visible browser context",
+                "partially_validated" if context.supported else "unvalidated",
+                context.message or "Visible browser context check completed.",
+                {
+                    "supported": context.supported,
+                    "title": context.title,
+                    "url": context.url,
+                    "headings": len(context.headings),
+                    "links": len(context.links),
+                    "buttons": len(context.buttons),
+                },
+                [] if context.supported else ["Open a supported browser window to validate visible context."],
                 hardware_dependent=True,
-                recommendation="" if connected else "Load browser-extension as unpacked in Chrome/Edge and refresh the page.",
             )
-        )
-        if connected:
-            visible_text = str(snapshot.get("visible_text") or "")
-            links = list(snapshot.get("links") or [])
-            buttons = list(snapshot.get("buttons") or [])
-            summary_text = _summarize_visible_text(visible_text)
-            checks.extend(
-                [
-                    AuditCheck(
-                        "Browser Extension",
-                        "Browser Agent page summary",
-                        "validated" if summary_text else "partially_validated",
-                        summary_text or "Snapshot was present, but visible body text was too small to summarize.",
-                        {"title": snapshot.get("title"), "url": snapshot.get("url"), "visible_text_chars": len(visible_text)},
-                        [] if summary_text else ["Visible body text was unavailable in the latest snapshot."],
-                    ),
-                    AuditCheck(
-                        "Browser Extension",
-                        "Visible links extraction",
-                        "validated" if links else "partially_validated",
-                        f"Extracted {len(links)} visible link(s) from the latest extension snapshot.",
-                        {"count": len(links), "sample": links[:5]},
-                        [] if links else ["No visible links were present in the latest snapshot."],
-                    ),
-                    AuditCheck(
-                        "Browser Extension",
-                        "Visible buttons extraction",
-                        "validated" if buttons else "partially_validated",
-                        f"Extracted {len(buttons)} visible button(s) from the latest extension snapshot.",
-                        {"count": len(buttons), "sample": buttons[:10]},
-                        [] if buttons else ["No visible buttons were present in the latest snapshot."],
-                    ),
-                ]
-            )
-        else:
-            for name in ("Browser Agent page summary", "Visible links extraction", "Visible buttons extraction"):
-                checks.append(
-                    AuditCheck(
-                        "Browser Extension",
-                        name,
-                        "unvalidated",
-                        "Requires a live visible-page snapshot from the installed browser extension.",
-                        {"snapshot_connected": False},
-                        ["No live Chrome/Edge extension snapshot was observed."],
-                        hardware_dependent=True,
-                    )
-                )
+        ]
     except Exception as exc:
-        checks.append(_blocked("Browser Extension", "Browser diagnostics report", exc))
-    return checks
-
+        return [_blocked("Browser Awareness", "Visible browser context", exc)]
 
 def _voice_checks() -> list[AuditCheck]:
     try:
@@ -209,9 +143,9 @@ def _voice_checks() -> list[AuditCheck]:
                 "Voice Runtime",
                 "Microphone detection",
                 "unvalidated" if not input_ready else "partially_validated",
-                "CLI cannot verify browser microphone permission or real audio capture.",
+                "The unattended audit cannot verify real microphone capture.",
                 {"speech_input": speech_input},
-                ["Real microphone capture must be validated in Chrome/Edge or the Tauri app."],
+                ["Validate capture with the local voice CLI and selected Windows input device."],
                 hardware_dependent=True,
             ),
             AuditCheck(
@@ -239,15 +173,6 @@ def _voice_checks() -> list[AuditCheck]:
                 "Wake phrase detector is configured." if wake_enabled else "Wake phrase mode is disabled or unavailable.",
                 {"wake_word": wake_word, "phrases": wake_word.get("phrases")},
                 ["Continuous real-time wake detection must be validated with microphone permissions."],
-                hardware_dependent=True,
-            ),
-            AuditCheck(
-                "Voice Runtime",
-                "Browser microphone permissions",
-                "unvalidated",
-                "Browser microphone permissions cannot be inspected from the backend.",
-                {"requires_browser": True},
-                ["Open /voice in Chrome/Edge or Tauri and grant microphone permission."],
                 hardware_dependent=True,
             ),
         ]
@@ -318,72 +243,6 @@ def _desktop_operator_checks() -> list[AuditCheck]:
         ]
     except Exception as exc:
         return [_blocked("Desktop Operator", "Desktop operator diagnostics", exc)]
-
-
-def _mobile_checks() -> list[AuditCheck]:
-    checks: list[AuditCheck] = []
-    adb_path = shutil.which("adb")
-    adb = _run_command(["adb", "devices"], timeout=10) if adb_path else {"ok": False, "stdout": "", "error": "adb not found"}
-    devices = _parse_adb_devices(adb.get("stdout", ""))
-    try:
-        from grandpa.mobile_integration import diagnostics as mobile_diagnostics
-
-        data = mobile_diagnostics()
-        paired = int(data.get("paired_devices", 0) or 0)
-        online = int(data.get("online_devices", 0) or 0)
-        heartbeat = data.get("websocket", {}).get("last_heartbeat_age_seconds")
-        checks.extend(
-            [
-                AuditCheck(
-                    "Mobile Companion",
-                    "Android device visibility",
-                    "validated" if devices else "unvalidated",
-                    f"adb detected {len(devices)} device(s)." if devices else "No Android device was visible over adb.",
-                    {"adb_path": adb_path, "devices": devices, "adb_ok": adb.get("ok")},
-                    [] if devices else ["Connect phone with USB debugging enabled or validate over LAN manually."],
-                    hardware_dependent=True,
-                ),
-                AuditCheck(
-                    "Mobile Companion",
-                    "Pairing persistence",
-                    "validated" if paired > 0 else "unvalidated",
-                    f"{paired} paired device(s) in the local mobile bridge store.",
-                    {"paired_devices": paired, "devices": data.get("devices", [])},
-                    [] if paired else ["Pair the Android companion using QR/code/manual LAN URL."],
-                    hardware_dependent=True,
-                ),
-                AuditCheck(
-                    "Mobile Companion",
-                    "WebSocket connection and heartbeat",
-                    "validated" if online > 0 else "unvalidated",
-                    f"{online} online mobile device(s)." if online else "No active mobile WebSocket heartbeat observed.",
-                    {"online_devices": online, "heartbeat_age_seconds": heartbeat, "websocket": data.get("websocket")},
-                    [] if online else ["Open the Android companion and keep it connected to ws://<desktop-ip>:8000/v1/mobile/ws."],
-                    hardware_dependent=True,
-                ),
-                AuditCheck(
-                    "Mobile Companion",
-                    "Notification readiness",
-                    "partially_validated" if paired else "unvalidated",
-                    "Notification relay architecture is available; real permission state requires device validation.",
-                    {"permissions": data.get("permissions"), "recent_events": data.get("recent_events", [])[:5]},
-                    ["Android notification listener permission must be enabled and tested on the phone."],
-                    hardware_dependent=True,
-                ),
-                AuditCheck(
-                    "Mobile Companion",
-                    "Background service and reconnect",
-                    "unvalidated",
-                    "Background/minimized/restart behavior cannot be proven without a real Android runtime session.",
-                    {"paired_devices": paired, "online_devices": online},
-                    ["Restart the mobile app and verify heartbeat recovery from /mobile."],
-                    hardware_dependent=True,
-                ),
-            ]
-        )
-    except Exception as exc:
-        checks.append(_blocked("Mobile Companion", "Mobile diagnostics", exc))
-    return checks
 
 
 def _agent_checks() -> list[AuditCheck]:
@@ -532,7 +391,7 @@ def _build_report(checks: list[AuditCheck], started: str, finished: str, duratio
     elif core_score >= 80 and summary["unvalidated"] > 0:
         overall = "READY_WITH_HARDWARE_PENDING"
         passed = True
-        verdict = "Core software is ready; hardware/browser/mobile validations remain pending."
+        verdict = "Core software is ready; hardware-dependent validations remain pending."
     elif core_score >= 80:
         overall = "READY"
         passed = True
@@ -623,36 +482,14 @@ def _recommendation(overall: str, summary: dict[str, int]) -> str:
     if overall == "BLOCKED":
         return "Fix blocked audit checks before production release."
     if overall == "READY_WITH_HARDWARE_PENDING":
-        return "Core stack is ready. Complete real browser, microphone, Android, and desktop-device validation before calling the hardware experience production-ready."
+        return (
+            "Core stack is ready. Complete real browser, microphone, and "
+            "desktop-device validation before calling the hardware experience "
+            "production-ready."
+        )
     if overall == "READY":
         return "Grandpa is ready for daily use based on the measured production audit."
     return f"Improve partially validated or unvalidated checks before release. Current summary: {summary}."
-
-
-def _run_command(command: list[str], *, timeout: int) -> dict[str, Any]:
-    try:
-        result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True, timeout=timeout, check=False)
-        return {"ok": result.returncode == 0, "returncode": result.returncode, "stdout": result.stdout.strip(), "stderr": result.stderr.strip()}
-    except Exception as exc:
-        return {"ok": False, "error": exc.__class__.__name__, "stdout": "", "stderr": str(exc)}
-
-
-def _parse_adb_devices(output: str) -> list[dict[str, str]]:
-    devices: list[dict[str, str]] = []
-    for line in output.splitlines()[1:]:
-        parts = line.split()
-        if len(parts) >= 2 and parts[1] == "device":
-            devices.append({"serial": parts[0], "state": parts[1]})
-    return devices
-
-
-def _summarize_visible_text(text: str) -> str:
-    words = " ".join(text.split()).split()
-    if not words:
-        return ""
-    preview = " ".join(words[:80])
-    suffix = "..." if len(words) > 80 else ""
-    return f"Visible page summary: {preview}{suffix}"
 
 
 def _now_iso() -> str:

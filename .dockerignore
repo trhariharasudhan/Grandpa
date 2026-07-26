@@ -9,7 +9,3 @@ build
 **/build
 cache
 **/cache
-
-frontend/dist
-src/grandpa/server/static
-frontend/src-tauri/target

@@ -7,7 +7,7 @@ from typing import Any
 
 from grandpa.coding.architecture_analysis import analyze_architecture
 from grandpa.coding.dependency_analysis import analyze_dependencies
-from grandpa.coding.project_scanner import ROOT, detect_project
+from grandpa.coding.project_scanner import ROOT
 from grandpa.coding.repository_analysis import analyze_repository
 
 

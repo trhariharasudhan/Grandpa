@@ -50,4 +50,4 @@ Vision local model analysis is user-initiated and upload-only. It does not captu
 - No desktop screenshot capture starts.
 - No webcam prompt appears.
 - No live screen watching starts.
-- No Tauri or floating-window behavior is involved.
+- No graphical-client behavior is involved.

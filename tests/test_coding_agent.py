@@ -11,7 +11,11 @@ from grandpa.coding.diagnostics import coding_diagnostics
 from grandpa.coding.project_scanner import detect_project, scan_projects
 from grandpa.coding.repository_analysis import analyze_repository
 from grandpa.server.api_routes import coding_router
-from grandpa.skills.registry import ensure_default_skills_registered, execute_skill, get_skill
+from grandpa.skills.registry import (
+    ensure_default_skills_registered,
+    execute_skill,
+    get_skill,
+)
 
 
 def test_project_scanner_detects_common_project_types(tmp_path) -> None:
@@ -21,12 +25,10 @@ def test_project_scanner_detects_common_project_types(tmp_path) -> None:
     (project / "pyproject.toml").write_text('[project]\nname = "demo"\ndependencies = ["fastapi"]\n', encoding="utf-8")
     (project / "package.json").write_text(json.dumps({"dependencies": {"react": "^19.0.0"}}), encoding="utf-8")
     (project / "Cargo.toml").write_text("[package]\nname='demo'\nversion='0.1.0'\n[dependencies]\nserde='1'\n", encoding="utf-8")
-    (project / "pubspec.yaml").write_text("dependencies:\n  http: ^1.0.0\n", encoding="utf-8")
-
     detected = detect_project(project)
 
     assert detected["is_project"] is True
-    assert {"git", "python", "node", "rust", "flutter"}.issubset(set(detected["types"]))
+    assert {"git", "python", "node", "rust"}.issubset(set(detected["types"]))
 
 
 def test_scan_projects_is_read_only(tmp_path) -> None:
@@ -40,7 +42,7 @@ def test_scan_projects_is_read_only(tmp_path) -> None:
 
 def test_dependency_analysis_reads_manifests(tmp_path) -> None:
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\ndependencies = ["fastapi", "pydantic"]\n', encoding="utf-8")
-    (tmp_path / "package.json").write_text(json.dumps({"devDependencies": {"vite": "^6.0.0"}}), encoding="utf-8")
+    (tmp_path / "package.json").write_text(json.dumps({"devDependencies": {"eslint": "^9.0.0"}}), encoding="utf-8")
 
     result = analyze_dependencies(tmp_path)
 

@@ -11,7 +11,6 @@ from grandpa.cli.doctor_cmd import (
     _check_engines,
     _check_existing_sqlite_db,
     _check_known_app,
-    _check_voice_frontend_note,
     _fetch_ollama_models,
     _readiness_label,
 )
@@ -98,26 +97,6 @@ def test_docker_required_feature_warns_when_missing(monkeypatch) -> None:
     assert results[0].name == "Docker"
     assert results[0].status == "warn"
     assert results[0].message == "Required but unavailable"
-
-
-def test_optional_browser_voice_absence_is_informational(monkeypatch) -> None:
-    config = SimpleNamespace()
-    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
-
-    result = _check_voice_frontend_note()
-
-    assert result.status == "info"
-    assert result.message == "Optional / not configured"
-
-
-def test_enabled_browser_voice_absence_warns(monkeypatch) -> None:
-    config = SimpleNamespace(voice_frontend=SimpleNamespace(enabled=True))
-    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
-
-    result = _check_voice_frontend_note()
-
-    assert result.status == "warn"
-    assert result.message == "Missing/optional"
 
 
 def test_optional_rust_extension_absence_is_informational(monkeypatch) -> None:
@@ -211,7 +190,6 @@ def test_daily_readiness_contains_expected_checks(monkeypatch) -> None:
     assert "Ollama reachable" in names
     assert "Default model available" in names
     assert "Scheduler daemon import/startup ready" in names
-    assert "Voice frontend support" in names
 
 
 def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
@@ -293,10 +271,6 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
         CheckResult("Desktop automation backend", "ok", "Ready"),
     )
     patch_check(
-        "_check_voice_frontend_note",
-        CheckResult("Voice frontend support", "warn", "Missing/optional"),
-    )
-    patch_check(
         "_check_gmail_readiness",
         CheckResult("Gmail integration", "ok", "Ready"),
     )
@@ -316,10 +290,6 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
     patch_check(
         "_check_background_scheduler_ready",
         CheckResult("Background scheduler", "ok", "Ready"),
-    )
-    patch_check(
-        "_check_frontend_readiness",
-        CheckResult("Frontend readiness", "ok", "Ready"),
     )
     monkeypatch.setattr("grandpa.cli.doctor_cmd._check_background_tasks", lambda: [])
 

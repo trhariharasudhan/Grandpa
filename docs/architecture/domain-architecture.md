@@ -7,22 +7,21 @@ place for old imports until a release explicitly removes them.
 ## Domain Boundaries
 
 - `ai/`: response cleanup, model routing, planning, and AI diagnostics.
-- `browser/`: visible browser control and extension-backed page context.
+- `browser/`: safe browser navigation and explicitly provided visible-page context.
 - `vision/`: screen awareness, OCR, visual targeting, and UI detection.
-- `voice/`: realtime browser voice state and diagnostics.
+- `voice/`: local microphone, speech recognition, speech output, wake word, and diagnostics.
 - `desktop/`: app launching, window control, monitor/process awareness, and desktop automation.
 - `automation/`: routines, schedulers, workflow execution, and orchestration.
 - `memory/`: personal memory, recall, persistence, and semantic context.
 - `safety/`: approvals, permission policy, audit, and security checks.
-- `integrations/`: mobile, communication, IoT, and external service bridges.
-- `skills/`: runtime skill registry plus legacy manifest/overlay skill tooling.
+- `integrations/`: optional communication, calendar, mail, and local service bridges.
+- `skills/`: internal runtime skill registry and user-authored local skill tooling.
 
 ## Runtime Skill Registry
 
-The runtime registry lives in `src/grandpa/skills/registry/` and is separate
-from the older manifest/overlay skill system. It is the incremental bridge from
-large action routers toward modular tools usable by CLI, API, workflows, mobile,
-and future MCP/plugin runtimes.
+The runtime registry lives in `src/grandpa/skills/registry/`. It is the
+incremental bridge from large action routers toward modular tools reusable by
+the CLI, local API, and automation workflows.
 
 The registry exposes:
 
@@ -71,7 +70,7 @@ Runtime skill diagnostics are available at:
 - `POST /v1/skills/execute`
 
 `GET /v1/skills` preserves the existing `skills` response key for older
-frontend/API consumers and adds a `runtime` diagnostics object.
+API consumers and adds a `runtime` diagnostics object.
 
 ## Allowed Import Direction
 

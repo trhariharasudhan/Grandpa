@@ -37,17 +37,6 @@ confirmation prompt). The post-command "new version available" hint
 now points users at this command instead of guessing at the right
 flow.
 
-**Desktop auto-update endpoint wired to the rolling
-`desktop-latest` GitHub release.** The Tauri updater plugin was
-configured on the build side (`createUpdaterArtifacts: true`,
-`includeUpdaterJson: true`, signing key in `TAURI_SIGNING_PRIVATE_KEY`)
-but inert on the runtime side (`active: false`, `endpoints: []`). The
-installed desktop app would never check. Both are now fixed; the app
-polls `releases/download/desktop-latest/latest.json` every 30 minutes
-and signature-verifies downloads against the minisign pubkey baked
-into the app. Full flow, key-rotation runbook, and dev escape hatch
-(`grandpa_NO_UPDATER=1`) documented in `docs/desktop-auto-update.md`.
-
 **Analytics env-var opt-out** (`DO_NOT_TRACK`, `grandpa_NO_ANALYTICS`).
 Tanvir's analytics module (#351) only respected the
 `[analytics] enabled` config-file setting. Both env vars are now
@@ -67,12 +56,6 @@ command (`doctor`, `init`, `quickstart`, `model`, `agents`, `skill`,
 the original three) and uses install-detection to print the right
 upgrade command. Honors `Grandpa_NO_UPDATE_CHECK=1` and `CI=true` to
 stay silent in automation.
-
-**Desktop app version bumped 0.1.0 → 1.0.1** across
-`tauri.conf.json`, `frontend/package.json`, and
-`frontend/src-tauri/Cargo.toml` so the Python and desktop release
-streams are aligned and the auto-updater has a real version to
-compare against.
 
 ### Migration from 1.0.0
 

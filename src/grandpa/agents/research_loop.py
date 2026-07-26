@@ -369,7 +369,7 @@ def build_sources_for_client(
     total_cap: int = 20,
     ref_offset: int = 0,
 ) -> List[Dict[str, Any]]:
-    """Produce the citation-friendly sources list streamed to the frontend.
+    """Produce the citation-friendly sources list streamed to API clients.
 
     One entry per hit, in the same order the planner sees them — so a
     ``[N]`` citation in the synthesis maps to ``sources[N - 1]`` on the

@@ -48,7 +48,7 @@ class SpeechInputEngine:
 
     Audio transcription is intentionally best-effort. If local Whisper is not
     available, callers can still pass already-transcribed text from the browser
-    speech runtime or mobile companion.
+    speech runtime or another trusted local transcript source.
     """
 
     def __init__(
@@ -79,7 +79,7 @@ class SpeechInputEngine:
             result = SpeechInputResult(
                 status="completed",
                 transcript=text.strip(),
-                engine="browser_or_mobile_transcript",
+                engine="provided_transcript",
                 latency_ms=_elapsed_ms(started),
                 confidence=0.99 if text.strip() else 0.0,
                 language=language,

@@ -7,20 +7,9 @@ from grandpa import (
     communication_integration,
     future_features,
     iot_smart_home,
-    mobile_integration,
     real_world_tasks,
 )
 from grandpa.server.routes import router
-
-
-def test_mobile_pairing_and_notification_redaction(tmp_path):
-    store = mobile_integration.MobileBridgeStore(tmp_path / "mobile.db")
-    pairing = store.create_pairing("Pixel")
-    assert pairing["local_only"] is True
-    assert store.confirm_pairing(pairing["device_id"], pairing["pairing_code"])
-    note = store.record_notification(pairing["device_id"], "message", "SMS", "OTP code", "password token")
-    assert "redacted" in note["summary"]
-    assert mobile_integration.plan_remote_command("send message").status == "requires_confirmation"
 
 
 def test_communication_reply_and_aggregation(tmp_path):
@@ -64,7 +53,6 @@ def test_new_integration_routes():
     client = TestClient(app)
 
     for path in [
-        "/v1/mobile/diagnostics",
         "/v1/communication/diagnostics",
         "/v1/real-world/diagnostics",
         "/v1/iot/diagnostics",
@@ -74,6 +62,5 @@ def test_new_integration_routes():
         assert response.status_code == 200
         assert response.json()["status"] == "ready"
 
-    assert client.post("/v1/mobile/pairing", json={"name": "Pixel"}).status_code == 200
     assert client.post("/v1/real-world/shopping-plan", json={"query": "checkout payment"}).json()["status"] == "blocked"
     assert client.post("/v1/future/overlay-simulation").json()["simulated"] is True

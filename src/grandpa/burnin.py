@@ -18,7 +18,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
@@ -111,7 +111,6 @@ def run_burnin(
     *,
     workflow_iterations: int = 25,
     skip_workflow_stress: bool = False,
-    skip_frontend: bool = False,
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
 ) -> dict[str, Any]:
     started = _now_iso()
@@ -126,9 +125,8 @@ def run_burnin(
         results.extend(_run_workflow_stress(workflow_iterations, timeout_seconds=timeout_seconds))
 
     results.extend(_run_memory_validation())
-    results.extend(_run_mobile_validation())
     results.extend(_run_voice_validation())
-    results.extend(_run_performance_metrics(skip_frontend=skip_frontend, timeout_seconds=timeout_seconds))
+    results.extend(_run_performance_metrics(timeout_seconds=timeout_seconds))
 
     finished = _now_iso()
     report = _build_report(results, started, finished, time.perf_counter() - wall_start)
@@ -283,46 +281,11 @@ def _run_memory_validation() -> list[BurnInResult]:
         return [BurnInResult("memory persistence and recall", "memory", "warn", _elapsed(start), f"{exc.__class__.__name__}: {exc}")]
 
 
-def _run_mobile_validation() -> list[BurnInResult]:
-    start = time.perf_counter()
-    try:
-        from grandpa.mobile_integration import diagnostics as mobile_diagnostics
-
-        data = mobile_diagnostics()
-        online = int(data.get("online_devices", 0) or 0)
-        connected = int(data.get("connected_devices", 0) or 0)
-        status = "pass" if online else "pending"
-        summary = (
-            f"{online} online / {connected} paired mobile devices."
-            if online
-            else "No phone is currently connected; real-device validation remains pending."
-        )
-        return [
-            BurnInResult(
-                "mobile companion live validation",
-                "mobile",
-                status,
-                _elapsed(start),
-                summary,
-                measured=bool(online),
-                metrics={
-                    "online_devices": online,
-                    "connected_devices": connected,
-                    "permission_state": data.get("permission_state", {}),
-                    "websocket": data.get("websocket", {}),
-                },
-            )
-        ]
-    except Exception as exc:
-        return [BurnInResult("mobile companion live validation", "mobile", "warn", _elapsed(start), f"{exc.__class__.__name__}: {exc}")]
-
-
 def _run_voice_validation() -> list[BurnInResult]:
     start = time.perf_counter()
-    browser_note = "Browser microphone, SpeechRecognition, and TTS require a real browser permission session."
+    voice_note = "Microphone capture and TTS require a real local audio-device session."
     metrics = {
         "platform": platform.system(),
-        "browser_permission_required": True,
         "cli_microphone_tested": False,
     }
     return [
@@ -331,7 +294,7 @@ def _run_voice_validation() -> list[BurnInResult]:
             "voice",
             "pending",
             _elapsed(start),
-            browser_note,
+            voice_note,
             required=False,
             measured=False,
             metrics=metrics,
@@ -339,7 +302,7 @@ def _run_voice_validation() -> list[BurnInResult]:
     ]
 
 
-def _run_performance_metrics(*, skip_frontend: bool, timeout_seconds: int) -> list[BurnInResult]:
+def _run_performance_metrics(*, timeout_seconds: int) -> list[BurnInResult]:
     results: list[BurnInResult] = []
     results.append(_measure_command("doctor startup latency", "performance", ["uv", "run", "grandpa", "--help"], timeout_seconds=timeout_seconds))
     results.append(
@@ -360,12 +323,6 @@ def _run_performance_metrics(*, skip_frontend: bool, timeout_seconds: int) -> li
             metrics=_memory_snapshot(),
         )
     )
-    if not skip_frontend:
-        npm = _npm_command()
-        if npm:
-            results.append(_measure_command("frontend build latency", "performance", [*npm, "run", "build"], cwd=ROOT / "frontend", timeout_seconds=240, required=False))
-        else:
-            results.append(BurnInResult("frontend build latency", "performance", "pending", 0.0, "npm was not found on PATH.", required=False, measured=False))
     return results
 
 
@@ -409,8 +366,6 @@ def _build_report(results: list[BurnInResult], started: str, finished: str, dura
     }
     measured = [r for r in results if r.measured and r.status != "pending"]
     success_rate = _rate(sum(1 for r in measured if r.status == "pass"), len(measured))
-    required = [r for r in results if r.required]
-    required_failures = [r for r in required if r.status == "fail"]
     score = _stability_score(results)
     blockers = [asdict(r) for r in results if r.status == "fail" and r.required]
     warnings = [asdict(r) for r in results if r.status in {"warn", "pending", "skipped_optional"}]
@@ -558,24 +513,15 @@ def _tail(text: str, max_chars: int = 500) -> str:
     return text if len(text) <= max_chars else "..." + text[-max_chars:]
 
 
-def _npm_command() -> list[str] | None:
-    import shutil
-
-    npm = shutil.which("npm.cmd" if os.name == "nt" else "npm") or shutil.which("npm")
-    return [npm] if npm else None
-
-
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run Grandpa daily-use burn-in validation.")
     parser.add_argument("--workflow-iterations", type=int, default=25)
     parser.add_argument("--skip-workflow-stress", action="store_true")
-    parser.add_argument("--skip-frontend", action="store_true")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     args = parser.parse_args(argv)
     report = run_burnin(
         workflow_iterations=args.workflow_iterations,
         skip_workflow_stress=args.skip_workflow_stress,
-        skip_frontend=args.skip_frontend,
         timeout_seconds=args.timeout,
     )
     print(f"Burn-in status: {report['overall_status']}")

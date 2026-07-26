@@ -42,8 +42,6 @@ _ROUTE_TABLE: dict[str, tuple[str, str, str]] = {
     "analyze dependencies": ("coding.dependencies", "coding_dependencies", "coding"),
     "analyze architecture": ("coding.architecture", "coding_architecture", "coding"),
     "skill diagnostics": ("skills.diagnostics", "skills_diagnostics", "skills"),
-    "plugin diagnostics": ("plugins.diagnostics", "plugin_diagnostics", "plugins"),
-    "plugins diagnostics": ("plugins.diagnostics", "plugin_diagnostics", "plugins"),
 }
 
 

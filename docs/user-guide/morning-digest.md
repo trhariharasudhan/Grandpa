@@ -201,9 +201,11 @@ Grandpa serve  # Start the server
 # POST /api/digest/schedule  — Update schedule {"enabled": true, "cron": "0 6 * * *"}
 ```
 
-## Frontend
+## Local OAuth
 
-The desktop and browser apps show an inline audio player when a digest is generated. The "Connect" buttons in the setup wizard handle OAuth flows automatically — click to connect, authorize in the browser popup, done.
+Use Grandpa's connector setup commands to start OAuth. Authorization opens the
+provider's browser page, then credentials are stored in Grandpa's local
+credentials directory.
 
 ## Troubleshooting
 

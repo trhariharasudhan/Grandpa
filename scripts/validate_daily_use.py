@@ -1,7 +1,7 @@
 """Daily-use validation runner for Grandpa.
 
-This script exercises the real CLI and frontend build paths without deleting,
-overwriting, or editing user files. It may open a safe allowlisted app unless
+This script exercises real CLI paths without deleting, overwriting, or editing
+user files. It may open a safe allowlisted app unless
 ``--skip-app-launch`` is passed.
 """
 
@@ -136,17 +136,6 @@ def _docker_daemon_ready() -> bool:
     return completed.returncode == 0
 
 
-def _npm_command() -> list[str] | None:
-    """Return a subprocess-safe npm command for the current platform."""
-    if os.name == "nt":
-        npm = shutil.which("npm.cmd") or shutil.which("npm.exe")
-    else:
-        npm = shutil.which("npm")
-    if not npm:
-        return None
-    return [npm]
-
-
 def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
     steps = [
         ValidationStep("doctor dashboard", ["uv", "run", "grandpa", "doctor"], timeout=240),
@@ -220,24 +209,6 @@ def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
             ),
         )
 
-    if not args.skip_frontend:
-        npm = _npm_command()
-        frontend_dir = ROOT / "frontend"
-        frontend_command = (
-            [*npm, "run", "build"]
-            if npm
-            else ["npm", "run", "build"]
-        )
-        steps.append(
-            ValidationStep(
-                "frontend build",
-                frontend_command,
-                cwd=frontend_dir,
-                timeout=240,
-                required=(frontend_dir / "package.json").exists(),
-            )
-        )
-
     if not args.skip_docker:
         if _docker_daemon_ready():
             steps.append(
@@ -277,9 +248,8 @@ _LOCAL_ACTION_DRY_RUN = (
 
 _CAPABILITY_DIAGNOSTICS = (
     "from grandpa import communication_integration, future_features, iot_smart_home, "
-    "mobile_integration, real_world_tasks; "
-    "checks=[mobile_integration.diagnostics()['status'], "
-    "communication_integration.diagnostics()['status'], "
+    "real_world_tasks; "
+    "checks=[communication_integration.diagnostics()['status'], "
     "real_world_tasks.diagnostics()['status'], "
     "iot_smart_home.diagnostics()['status'], "
     "future_features.diagnostics()['status']]; "
@@ -318,11 +288,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--skip-app-launch",
         action="store_true",
         help="Dry-run the safe app command parser instead of opening Notepad.",
-    )
-    parser.add_argument(
-        "--skip-frontend",
-        action="store_true",
-        help="Skip `npm run build` in frontend/.",
     )
     parser.add_argument(
         "--skip-docker",

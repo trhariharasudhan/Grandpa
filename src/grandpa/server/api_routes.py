@@ -405,7 +405,7 @@ traces_router = APIRouter(prefix="/v1/traces", tags=["traces"])
 
 
 def _serialise_trace(trace) -> dict:
-    """Convert a Trace dataclass to a frontend-friendly dict."""
+    """Convert a Trace dataclass to an API-friendly dict."""
     import datetime
     from dataclasses import asdict
 
@@ -535,7 +535,6 @@ async def telemetry_energy(request: Request):
 
 skills_router = APIRouter(prefix="/v1/skills", tags=["skills"])
 user_skills_router = APIRouter(prefix="/v1/user-skills", tags=["user-skills"])
-plugins_router = APIRouter(prefix="/v1/plugins", tags=["plugins"])
 release_gate_router = APIRouter(prefix="/v1/release-gate", tags=["release-gate"])
 burnin_router = APIRouter(prefix="/v1/burnin", tags=["burnin"])
 audit_router = APIRouter(prefix="/v1/audit", tags=["audit"])
@@ -834,58 +833,6 @@ async def knowledge_diagnostics_route():
     from grandpa.knowledge.engine import knowledge_diagnostics
 
     return knowledge_diagnostics()
-
-
-# ---- Plugin runtime routes ----
-
-
-@plugins_router.get("")
-async def list_plugins_route():
-    """List local manifest-driven plugins."""
-    from grandpa.services import plugin_service
-
-    return plugin_service.diagnostics()
-
-
-@plugins_router.get("/{plugin_name}")
-async def get_plugin_route(plugin_name: str):
-    """Return one plugin manifest and status."""
-    from grandpa.services import plugin_service
-
-    plugin = plugin_service.get(plugin_name)
-    if plugin is None:
-        raise HTTPException(status_code=404, detail="Plugin not found")
-    return plugin
-
-
-@plugins_router.post("/reload")
-async def reload_plugins_route():
-    """Reload enabled plugin manifests and re-register plugin skills."""
-    from grandpa.services import plugin_service
-
-    return plugin_service.reload()
-
-
-@plugins_router.post("/{plugin_name}/enable")
-async def enable_plugin_route(plugin_name: str):
-    """Enable a plugin and reload plugin-provided skills."""
-    from grandpa.services import plugin_service
-
-    try:
-        return plugin_service.enable(plugin_name)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Plugin not found") from exc
-
-
-@plugins_router.post("/{plugin_name}/disable")
-async def disable_plugin_route(plugin_name: str):
-    """Disable a plugin and unregister its provided skills."""
-    from grandpa.services import plugin_service
-
-    try:
-        return plugin_service.disable(plugin_name)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Plugin not found") from exc
 
 
 # ---- Final release gate routes ----
@@ -2396,7 +2343,6 @@ def include_all_routes(app) -> None:
     app.include_router(user_skills_router)
     app.include_router(coding_router)
     app.include_router(knowledge_router)
-    app.include_router(plugins_router)
     app.include_router(release_gate_router)
     app.include_router(burnin_router)
     app.include_router(audit_router)
@@ -2462,7 +2408,6 @@ __all__ = [
     "user_skills_router",
     "coding_router",
     "knowledge_router",
-    "plugins_router",
     "release_gate_router",
     "burnin_router",
     "audit_router",

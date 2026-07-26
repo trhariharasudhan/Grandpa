@@ -84,7 +84,7 @@ def _summarize(text: str) -> str:
 
 
 def _unsupported_message() -> str:
-    return "Browser awareness is unavailable. Connect the Grandpa browser extension or open a visible supported browser page."
+    return "Browser awareness is unavailable. Open a visible supported browser page."
 
 
 __all__ = ["BrowserPageAnalyzer"]

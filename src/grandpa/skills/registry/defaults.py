@@ -1015,13 +1015,6 @@ def ensure_default_skills_registered() -> None:
     for skill in skills:
         register_skill(skill)
     try:
-        from grandpa.plugins import load_enabled_plugins
-
-        load_enabled_plugins(force=True)
-    except Exception:
-        # Plugin loading is optional and must never block built-in skills.
-        pass
-    try:
         from grandpa.skill_builder.execution import register_user_skills
 
         register_user_skills()

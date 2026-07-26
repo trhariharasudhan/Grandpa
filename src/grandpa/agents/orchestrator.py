@@ -18,13 +18,12 @@ import os
 import re
 import sqlite3
 import time
-import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, List, Optional
 
-from grandpa.core.config import DEFAULT_CONFIG_DIR
 from grandpa.agents._stubs import AgentContext, AgentResult, ToolUsingAgent
+from grandpa.core.config import DEFAULT_CONFIG_DIR
 from grandpa.core.events import EventBus
 from grandpa.core.registry import AgentRegistry
 from grandpa.core.types import Message, Role, ToolCall, ToolResult

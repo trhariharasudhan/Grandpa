@@ -341,7 +341,7 @@ async def _stream_research(query: str, model: str) -> AsyncGenerator[str, None]:
     def _emit_live_sample(power_w: float, energy_j: float, duration_s: float) -> None:
         # Called from the sampler's worker thread — bounce onto the asyncio
         # loop so the SSE consumer sees the same queue ordering as agent
-        # events. The frontend mirrors these into the System panel so Power
+        # events. API clients may mirror these into diagnostics so Power
         # (W) and Energy (kJ) update live during the run.
         loop.call_soon_threadsafe(
             queue.put_nowait,
@@ -418,7 +418,7 @@ async def _stream_research(query: str, model: str) -> AsyncGenerator[str, None]:
             # `synthesis` chunks so the client sees the answer materialize
             # incrementally rather than as a single blob. The accompanying
             # ``sources`` array is the renumbered, deduped citation list the
-            # frontend should render under the final answer.
+            # client should render under the final answer.
             if etype == "final_answer":
                 final_answer = event.get("text", "")
                 final_sources = list(event.get("sources") or [])

@@ -147,7 +147,6 @@ scheduler = ["croniter>=2.0"]
 security-signing = ["cryptography>=43"]
 sandbox-wasm = ["wasmtime>=25"]
 sandbox-docker = ["docker>=7.0"]
-dashboard = ["textual>=0.80"]
 tray = ["pystray>=0.19.5", "pillow>=12.1.1"]
 windows-notifications = ["winotify>=1.1; sys_platform == 'win32'"]
 speech = ["faster-whisper>=1.0"]
@@ -206,7 +205,6 @@ testpaths = ["tests"]
 markers = [
     "amd: requires AMD GPU",
     "apple: requires Apple Silicon",
-    "android: requires Android SDK/device tooling",
     "browser: requires a real browser runtime",
     "cloud: requires cloud API keys",
     "core: core deterministic unit/smoke test",
@@ -216,7 +214,7 @@ markers = [
     "live: requires running inference engine",
     "macos15: requires macOS 15+ (Sequoia) for Apple FM",
     "live_channel: requires real channel credentials (env vars)",
-    "microphone: requires microphone/browser speech permission",
+    "microphone: requires microphone hardware and local speech dependencies",
     "nvidia: requires NVIDIA GPU",
     "optional: optional feature/dependency test",
     "release: release-gate deterministic test",

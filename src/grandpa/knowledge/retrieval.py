@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import time
+from dataclasses import dataclass
 from typing import Any
 
-from grandpa.knowledge.embeddings import KnowledgeEmbedder, cosine_similarity, decode_vector
+from grandpa.knowledge.embeddings import (
+    KnowledgeEmbedder,
+    cosine_similarity,
+    decode_vector,
+)
 from grandpa.knowledge.indexing import tokenize
 from grandpa.knowledge.storage import KnowledgeDocument, KnowledgeStore
 

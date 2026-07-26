@@ -1,74 +1,55 @@
 # Repository Structure
 
-Grandpa is a multi-surface assistant repository. The Python package is the
-runtime center, with desktop, browser, mobile, Rust, documentation, and
-deployment assets arranged around it.
+Grandpa is a Python-centered local Windows assistant. The CLI, voice runtime,
+automation, screen understanding, safety policies, and optional local API all
+share the `src/grandpa` package.
 
-## High-Level Folder Map
+## High-Level Map
 
 ```text
 Grandpa/
-  .github/              GitHub workflows, templates, and repository automation
-  browser-extension/    Browser companion extension
-  configs/              Example and default Grandpa configuration
-  deploy/               Deployment assets for services and infrastructure
-  docs/                 MkDocs documentation source
-  examples/             Example integrations and workflows
-  frontend/             React frontend and Tauri desktop shell
-  mobile/               Android companion application
-  models/               Ollama Modelfile recipes
-  plugins/              Built-in and user plugin manifests
-  rust/                 Rust workspace for Grandpa core crates
-  scripts/              Developer, install, test, and release utilities
-  src/                  Python source package
-  tests/                Python test suite
-  tools/                Supporting external or reference tools
+  .github/      CI, release, documentation, and issue automation
+  configs/      Example local runtime configurations
+  deploy/       Docker and service deployment assets
+  docs/         Project documentation
+  examples/     Safe usage and integration examples
+  models/       Ollama Modelfile recipes; no model weights
+  rust/         Native acceleration workspace
+  scripts/      Install, validation, release, and maintenance utilities
+  src/grandpa/  Python runtime
+  tests/        Python regression suite
+  tools/        Supporting development tools
 ```
 
-## Top-Level Folder Purposes
-
-| Path | Purpose |
-| --- | --- |
-| `.github/` | CI, release, desktop, docs, clone-stat, and issue-template automation. |
-| `browser-extension/` | Manifest V3 extension that connects browser context to the local Grandpa backend. |
-| `configs/` | Example configuration and persona files for local Grandpa runtime behavior. |
-| `deploy/` | Docker, service manager, and hosted-service deployment support. |
-| `docs/` | MkDocs documentation, architecture notes, user guides, generated API reference source, and development docs. |
-| `examples/` | Standalone examples for bots, research, routing, scheduled operations, and other integrations. |
-| `frontend/` | React/Vite frontend plus the Tauri desktop application under `frontend/src-tauri/`. |
-| `mobile/` | Flutter Android companion app and Android project files. |
-| `models/` | Ollama Modelfile recipes only; model weights are not stored in the repository. |
-| `plugins/` | Built-in and user plugin manifest locations used by the plugin system. |
-| `rust/` | Rust workspace containing Grandpa core crates separate from the Tauri desktop shell. |
-| `scripts/` | Utility scripts for development, installation, testing, release, and local operations. |
-| `src/` | Python package root. The importable package is `src/grandpa/`. |
-| `tests/` | Central pytest suite for Python runtime, server, automation, voice, agents, tools, and related systems. |
-| `tools/` | Supporting reference tools that are not part of the main Python package. |
-
-## Architecture Diagram
+## Runtime Architecture
 
 ```mermaid
-flowchart TD
-  CLI["CLI / Python entrypoint"] --> Backend["Backend package: src/grandpa"]
-  Server["FastAPI server"] --> Backend
-  Frontend["React frontend: frontend/src"] --> Server
-  Desktop["Tauri desktop: frontend/src-tauri"] --> Frontend
-  Desktop --> Server
-  Browser["Browser extension"] --> Server
-  Mobile["Android companion"] --> Server
-  Rust["Rust workspace: rust/"] --> Backend
-  Tests["Tests: tests/"] --> Backend
-  Tests --> Frontend
-  Models["Ollama Modelfiles: models/"] --> Backend
-  Plugins["Plugin manifests: plugins/"] --> Backend
-  Tools["Tools and scripts"] --> Backend
+flowchart LR
+  Voice["Microphone / Voice"] --> Router["Intent and command routing"]
+  CLI["CLI / Chat"] --> Router
+  Router --> Policy["Safety and permission policy"]
+  Policy --> Automation["Windows automation"]
+  Policy --> Files["Files and processes"]
+  Policy --> Screen["Screen capture, OCR, locator"]
+  Router --> Ollama["Local Ollama inference"]
+  Automation --> Audit["Audit log"]
+  Files --> Audit
+  Screen --> Audit
+  API["Optional loopback FastAPI server"] --> Router
+  Rust["Rust acceleration workspace"] --> Router
+  Tests["Tests"] --> Router
 ```
 
-## Notes for Future Reorganization
+## Important Boundaries
 
-- Keep `src/grandpa/` stable unless a dedicated package migration updates
-  imports, build metadata, tests, and documentation together.
-- Keep `frontend/` and `frontend/src-tauri/` stable because Tauri, Vite, and
-  GitHub Actions reference those paths directly.
-- Keep `rust/` stable because CI and Rust workspace metadata rely on it.
-- Treat browser extension and mobile project moves as separate migrations.
+- `src/grandpa/cli/` owns terminal entrypoints and interactive sessions.
+- `src/grandpa/voice/` and `src/grandpa/speech/` own local audio behavior.
+- `src/grandpa/automation/`, `src/grandpa/desktop/`, and Windows control modules
+  own typed, permission-aware actions.
+- Screen modules may observe the visible desktop but must not bypass Windows
+  protected surfaces.
+- `src/grandpa/security/` and policy modules remain authoritative for risky
+  actions.
+- `src/grandpa/server/` is an optional local API, not a bundled user interface.
+- `rust/` remains because native acceleration is independent of user-interface
+  packaging.

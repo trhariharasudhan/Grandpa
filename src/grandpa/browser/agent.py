@@ -1,7 +1,7 @@
 """Safe visible-page browser agent for Grandpa.
 
-The browser agent plans and summarizes using only the latest local visible-page
-snapshot. It never opens hidden browser sessions, reads hidden tabs, or submits
+The browser agent plans and summarizes using only local visible-page context.
+It never opens hidden browser sessions, reads hidden tabs, or submits
 forms. Medium-risk workflows are represented as approval-required plans.
 """
 
@@ -17,11 +17,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from grandpa.browser_control import (
-    BrowserContextStore,
-    execute_browser_action,
-    get_visible_browser_context,
-)
+from grandpa.browser_control import execute_browser_action, get_visible_browser_context
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_BROWSER_AGENT_DB = ROOT / "runtime" / "browser" / "browser_agent.db"
@@ -204,7 +200,7 @@ def analyze_browser_task(goal: str) -> dict[str, Any]:
         "approval_required": approval,
         "page_title": context.title or "",
         "page_url": context.url or "",
-        "snapshot_available": bool(context.supported),
+        "context_available": bool(context.supported),
         "local_only": True,
     }
 
@@ -304,15 +300,14 @@ def get_browser_task(task_id: str, *, store: BrowserAgentStore | None = None) ->
 
 def browser_agent_diagnostics(*, store: BrowserAgentStore | None = None) -> dict[str, Any]:
     context = get_visible_browser_context()
-    latest = BrowserContextStore().latest_snapshot(max_age_seconds=None)
     agent_store = store or BrowserAgentStore()
     return {
         "status": "ready",
         "ready": True,
         "db_path": str(agent_store.db_path),
         "task_count": agent_store.count(),
-        "snapshot_connected": latest is not None,
-        "snapshot_age_seconds": latest.get("age_seconds") if latest else None,
+        "context_available": context.supported,
+        "capture_source": "visible_context" if context.supported else None,
         "current_title": context.title,
         "current_url": context.url,
         "counts": {
@@ -363,11 +358,11 @@ def _record_result(
 
 def _steps_for_intent(intent: str, goal: str) -> list[dict[str, Any]]:
     if intent == "summary":
-        return [_step("browser.page_summary", "Read and summarize the latest visible page snapshot.")]
+        return [_step("browser.page_summary", "Read and summarize the current visible page context.")]
     if intent == "links":
-        return [_step("browser.visible_links", "Extract visible links from the latest page snapshot.")]
+        return [_step("browser.visible_links", "Extract links from the current visible page context.")]
     if intent == "buttons":
-        return [_step("browser.visible_buttons", "Extract visible buttons from the latest page snapshot.")]
+        return [_step("browser.visible_buttons", "Extract buttons from the current visible page context.")]
     if intent == "search":
         skill = "browser.search_plan"
         if "youtube" in _clean(goal):

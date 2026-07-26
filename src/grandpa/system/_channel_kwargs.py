@@ -88,10 +88,6 @@ def _irc(c: Any) -> Dict[str, Any]:
     return kw
 
 
-def _webchat(c: Any) -> Dict[str, Any]:
-    return {}
-
-
 def _teams(c: Any) -> Dict[str, Any]:
     kw: Dict[str, Any] = {}
     if c.app_id:
@@ -173,7 +169,6 @@ _CHANNEL_MAPPERS: Dict[str, tuple] = {
     "signal": ("signal", _signal),
     "google_chat": ("google_chat", _google_chat),
     "irc": ("irc", _irc),
-    "webchat": ("webchat", _webchat),
     "teams": ("teams", _teams),
     "matrix": ("matrix", _matrix),
     "mattermost": ("mattermost", _mattermost),

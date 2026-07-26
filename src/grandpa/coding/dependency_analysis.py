@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
-import tomllib
 from pathlib import Path
 from typing import Any
+
+import tomllib
 
 from grandpa.coding.project_scanner import ROOT
 
@@ -19,7 +19,6 @@ def analyze_dependencies(path: str | Path | None = None) -> dict[str, Any]:
         ("requirements.txt", _parse_requirements),
         ("package.json", _parse_package_json),
         ("Cargo.toml", _parse_cargo),
-        ("pubspec.yaml", _parse_pubspec),
     ):
         manifest = root / filename
         if manifest.exists():
@@ -67,22 +66,6 @@ def _parse_cargo(path: Path) -> dict[str, Any]:
     for section in ("dependencies", "dev-dependencies", "build-dependencies"):
         deps.extend((data.get(section) or {}).keys())
     return _manifest(path, "rust", deps)
-
-
-def _parse_pubspec(path: Path) -> dict[str, Any]:
-    deps = []
-    in_deps = False
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        if re.match(r"^(dependencies|dev_dependencies):\s*$", line):
-            in_deps = True
-            continue
-        if in_deps and line and not line.startswith(" "):
-            in_deps = False
-        if in_deps:
-            match = re.match(r"^\s{2}([A-Za-z0-9_]+):", line)
-            if match and match.group(1) != "flutter":
-                deps.append(match.group(1))
-    return _manifest(path, "flutter", deps)
 
 
 def _manifest(path: Path, ecosystem: str, dependencies: list[str]) -> dict[str, Any]:

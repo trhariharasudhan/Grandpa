@@ -104,7 +104,7 @@ def main() -> int:
             "release": "Curated release blockers used by the final release gate.",
             "integration": "Cross-module tests; may be core or optional depending on resources.",
             "optional": "Requires opt-in dependency, credential, external service, or live device.",
-            "environment": "Requires a platform/backend such as Docker, Android, browser, microphone, Rust extension, or Linux RAPL.",
+            "environment": "Requires a platform/backend such as Docker, browser, microphone, Rust extension, or Linux RAPL.",
             "slow": "Long-running tests excluded from quick loops unless explicitly selected.",
         },
     }

@@ -10,7 +10,7 @@ from rich.table import Table
 
 _CHANNEL_TYPE_HELP = (
     "Channel type (sendblue, telegram, discord, slack, webhook, email, "
-    "whatsapp, whatsapp_baileys, signal, google_chat, irc, webchat, teams, "
+    "whatsapp, whatsapp_baileys, signal, google_chat, irc, teams, "
     "matrix, mattermost, feishu, bluebubbles)."
 )
 
@@ -93,8 +93,6 @@ def _get_channel(
         if ic.password:
             kwargs["password"] = ic.password
         kwargs["use_tls"] = ic.use_tls
-    elif key == "webchat":
-        pass  # no config needed
     elif key == "teams":
         tmc = config.channel.teams
         if tmc.app_id:

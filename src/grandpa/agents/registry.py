@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
 from grandpa.agents.context import SharedAgentContext
@@ -70,8 +70,6 @@ def select_agents_for_goal(user_request: str) -> list[AgentSpec]:
         selected.extend(["research_agent", "browser_agent"])
     if any(word in clean for word in ("desktop", "pc", "workspace", "coding", "vscode", "health", "diagnostic", "readiness")):
         selected.extend(["desktop_agent", "coding_agent"])
-    if any(word in clean for word in ("mobile", "phone", "android", "notification")):
-        selected.append("mobile_agent")
     if len(selected) == 1:
         selected.extend(["research_agent", "desktop_agent"])
     ordered: list[AgentSpec] = []
@@ -117,7 +115,7 @@ def _ensure_builtin_agents() -> None:
             ("visible_page_summary", "visible_links", "visible_buttons", "search_plans"),
             ("summarize current webpage", "research Python tutorials"),
             _execute_browser_agent,
-            "Uses the visible-page browser snapshot and safe browser plans.",
+            "Uses read-only visible browser context and safe browser plans.",
         )
     )
     register_agent(
@@ -150,18 +148,6 @@ def _ensure_builtin_agents() -> None:
             "Plans deterministic coding workspace and diagnostic workflows.",
         )
     )
-    register_agent(
-        AgentSpec(
-            "mobile_agent",
-            "Mobile Agent",
-            ("mobile_diagnostics", "device_status", "pairing_readiness"),
-            ("mobile companion diagnostics", "notification sync"),
-            _execute_mobile_agent,
-            "Reports mobile companion readiness when available.",
-        )
-    )
-
-
 def _execute_research_agent(context: SharedAgentContext) -> dict[str, Any]:
     from grandpa.browser.agent import search_web_plan
     from grandpa.planner.engine import analyze_request
@@ -174,7 +160,11 @@ def _execute_research_agent(context: SharedAgentContext) -> dict[str, Any]:
 
 
 def _execute_browser_agent(context: SharedAgentContext) -> dict[str, Any]:
-    from grandpa.browser.agent import extract_visible_buttons, extract_visible_links, summarize_current_page
+    from grandpa.browser.agent import (
+        extract_visible_buttons,
+        extract_visible_links,
+        summarize_current_page,
+    )
 
     clean = context.user_request.lower()
     data: dict[str, Any] = {"diagnostics": context.browser_observations}
@@ -216,16 +206,6 @@ def _execute_coding_agent(context: SharedAgentContext) -> dict[str, Any]:
             "knowledge": context.knowledge_context,
         },
     )
-
-
-def _execute_mobile_agent(context: SharedAgentContext) -> dict[str, Any]:
-    try:
-        from grandpa.mobile_integration import mobile_diagnostics
-
-        diagnostics = mobile_diagnostics()
-    except Exception as exc:
-        diagnostics = {"available": False, "status": "pending_validation", "error": exc.__class__.__name__}
-    return _ok("Checked mobile companion readiness.", {"mobile": diagnostics})
 
 
 def _ok(message: str, data: dict[str, Any]) -> dict[str, Any]:

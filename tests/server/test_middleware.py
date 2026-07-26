@@ -109,7 +109,7 @@ class TestSecurityHeaders:
         resp = client.options(
             "/test",
             headers={
-                "Origin": "https://tauri.localhost",
+                "Origin": "https://local-client.example",
                 "Access-Control-Request-Method": "POST",
                 "Access-Control-Request-Headers": "content-type",
             },

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from grandpa.knowledge.embeddings import KnowledgeEmbedder, encode_vector
 from grandpa.knowledge.indexing import (
     FUTURE_EXTENSIONS,
     SUPPORTED_EXTENSIONS,
@@ -14,7 +15,6 @@ from grandpa.knowledge.indexing import (
     normalize_text,
     read_supported_file,
 )
-from grandpa.knowledge.embeddings import KnowledgeEmbedder, encode_vector
 from grandpa.knowledge.retrieval import (
     hybrid_search_documents,
     project_documents,
@@ -23,8 +23,16 @@ from grandpa.knowledge.retrieval import (
     search_documents,
     semantic_search_documents,
 )
-from grandpa.knowledge.storage import DEFAULT_KNOWLEDGE_DB, KnowledgeDocument, KnowledgeStore
-from grandpa.knowledge.summaries import summarize_document, summarize_project, summarize_topic
+from grandpa.knowledge.storage import (
+    DEFAULT_KNOWLEDGE_DB,
+    KnowledgeDocument,
+    KnowledgeStore,
+)
+from grandpa.knowledge.summaries import (
+    summarize_document,
+    summarize_project,
+    summarize_topic,
+)
 
 
 class KnowledgeEngine:
@@ -238,7 +246,7 @@ class KnowledgeEngine:
 
     def _memory_writeback(self, document: KnowledgeDocument) -> None:
         try:
-            from grandpa.memory_context import MemoryStore, SENSITIVE_PATTERN
+            from grandpa.memory_context import SENSITIVE_PATTERN, MemoryStore
 
             if SENSITIVE_PATTERN.search(document.content):
                 return

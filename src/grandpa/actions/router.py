@@ -12,7 +12,6 @@ from grandpa.actions import (
     fallback_actions,
     memory_actions,
     planner_actions,
-    plugin_actions,
     vision_actions,
     workflow_actions,
 )
@@ -28,7 +27,6 @@ _HANDLERS: tuple[tuple[str, Handler, int], ...] = (
     ("vision", vision_actions.try_handle, len(vision_actions.HANDLERS)),
     ("workflow", workflow_actions.try_handle, len(workflow_actions.HANDLERS)),
     ("planner", planner_actions.try_handle, len(planner_actions.HANDLERS)),
-    ("plugins", plugin_actions.try_handle, len(plugin_actions.HANDLERS)),
     ("memory", memory_actions.try_handle, len(memory_actions.HANDLERS)),
     ("fallback", fallback_actions.try_handle, 0),
 )
@@ -71,7 +69,7 @@ def action_diagnostics() -> dict[str, Any]:
             "workflow": "routine/reminder creation and workflow execution",
             "planner": "multi-step agent plan execution",
             "memory": "conversation memory commands",
-            "communication": "communication/mobile/IoT foundations",
+            "communication": "communication and IoT foundations",
             "fallback": "LLM fallback and unsupported commands",
         },
         "legacy_count": legacy_count,
@@ -92,7 +90,6 @@ def action_audit_summary() -> dict[str, Any]:
         "workflow": "partially migrated: status/diagnostics",
         "planner": "partially migrated: diagnostics",
         "memory": "legacy",
-        "plugins": "partially migrated: skills/plugins diagnostics",
         "communication": "legacy",
         "fallback": "legacy fallback preserved",
         "coverage": diagnostics["routing_coverage"],

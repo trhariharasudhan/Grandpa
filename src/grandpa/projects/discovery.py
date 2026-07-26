@@ -15,7 +15,6 @@ PROJECT_MARKERS = {
     "go.mod": "go",
     "pom.xml": "java",
     "build.gradle": "java",
-    "pubspec.yaml": "flutter",
     "docker-compose.yml": "docker",
     "compose.yaml": "docker",
 }

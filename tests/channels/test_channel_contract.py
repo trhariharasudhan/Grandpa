@@ -68,9 +68,7 @@ def test_list_channels_returns_list(channel_entry):
 
 
 def test_send_no_credentials_returns_false(channel_entry):
-    key, channel_cls = channel_entry
-    if key == "webchat":
-        pytest.skip("WebChatChannel is in-memory and always succeeds")
+    _, channel_cls = channel_entry
     ch = channel_cls()
     result = ch.send("test", "hello")
     assert result is False
