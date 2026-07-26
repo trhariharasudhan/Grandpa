@@ -11,15 +11,23 @@ SAFE_APP_ALIASES = {
     "calculator": "calculator",
     "calc": "calculator",
     "chrome": "chrome",
+    "firefox": "firefox",
+    "mozilla firefox": "firefox",
     "edge": "edge",
     "vscode": "vscode",
     "vs code": "vscode",
     "visual studio code": "vscode",
+    "code": "vscode",
+    "paint": "paint",
+    "mspaint": "paint",
     "file explorer": "explorer",
     "explorer": "explorer",
     "terminal": "terminal",
     "windows terminal": "terminal",
     "task manager": "task_manager",
+    "control panel": "control_panel",
+    "settings": "settings",
+    "windows settings": "settings",
 }
 
 
@@ -133,10 +141,10 @@ class ApplicationControlService:
             return LocalActionResponse(
                 False,
                 None,
-                "unsupported",
+                "blocked",
                 result.message,
                 False,
-                "LOW",
+                "BLOCKED",
                 evidence={},
                 error="missing_app",
             )

@@ -204,8 +204,10 @@ def connect(
 ) -> None:
     """Manage data source connections (Gmail, Obsidian, etc.)."""
     # Lazy imports to avoid top-level side effects
-    import grandpa.connectors  # noqa: F401 — registers all connectors
+    from grandpa.connectors import load_builtin_connectors
     from grandpa.core.registry import ConnectorRegistry
+
+    load_builtin_connectors()
 
     if list_sources:
         _list_sources(ConnectorRegistry)

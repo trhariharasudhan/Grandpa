@@ -66,8 +66,8 @@ def setup_logging(
     # File handler (verbose or explicit path)
     if verbose or log_file is not None:
         if log_file is None:
-            from grandpa.security.file_utils import secure_mkdir
             from grandpa.core.config import DEFAULT_CONFIG_DIR
+            from grandpa.security.file_utils import secure_mkdir
 
             log_dir = DEFAULT_CONFIG_DIR
             secure_mkdir(log_dir)

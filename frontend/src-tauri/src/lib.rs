@@ -1853,6 +1853,23 @@ fn cloud_keys_path() -> std::path::PathBuf {
         .join("cloud-keys.env")
 }
 
+const ALLOWED_CLOUD_KEY_NAMES: &[&str] = &[
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+];
+
+fn validate_cloud_key(key_name: &str, key_value: &str) -> Result<(), String> {
+    if !ALLOWED_CLOUD_KEY_NAMES.contains(&key_name) {
+        return Err("Unsupported cloud key name".into());
+    }
+    if key_value.contains(['\r', '\n', '\0']) {
+        return Err("Cloud key contains invalid control characters".into());
+    }
+    Ok(())
+}
+
 /// Read cloud keys from disk and return as key=value pairs.
 fn read_cloud_keys() -> Vec<(String, String)> {
     let path = cloud_keys_path();
@@ -1864,7 +1881,11 @@ fn read_cloud_keys() -> Vec<(String, String)> {
                 continue;
             }
             if let Some((k, v)) = line.split_once('=') {
-                keys.push((k.trim().to_string(), v.trim().to_string()));
+                let key = k.trim();
+                let value = v.trim();
+                if validate_cloud_key(key, value).is_ok() {
+                    keys.push((key.to_string(), value.to_string()));
+                }
             }
         }
     }
@@ -1874,6 +1895,7 @@ fn read_cloud_keys() -> Vec<(String, String)> {
 /// Save a single cloud API key to the keys file.
 #[tauri::command]
 async fn save_cloud_key(key_name: String, key_value: String) -> Result<(), String> {
+    validate_cloud_key(&key_name, &key_value)?;
     let path = cloud_keys_path();
     // Ensure directory exists
     if let Some(parent) = path.parent() {
@@ -2375,7 +2397,6 @@ pub fn run() {
         .manage(backend.clone())
         .manage(status.clone())
         .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -2560,6 +2581,22 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cloud_key_validation_accepts_supported_provider_keys() {
+        for name in ALLOWED_CLOUD_KEY_NAMES {
+            assert!(validate_cloud_key(name, "secret-value").is_ok());
+        }
+    }
+
+    #[test]
+    fn cloud_key_validation_rejects_environment_injection() {
+        assert!(validate_cloud_key("PATH", "C:\\malicious").is_err());
+        assert!(validate_cloud_key("OPENAI_API_KEY\nPATH", "secret").is_err());
+        assert!(validate_cloud_key("OPENAI_API_KEY", "secret\nPATH=C:\\malicious").is_err());
+        assert!(validate_cloud_key("OPENAI_API_KEY", "secret\rOTHER=value").is_err());
+        assert!(validate_cloud_key("OPENAI_API_KEY", "secret\0suffix").is_err());
+    }
 
     #[test]
     fn floating_window_constants_match_collapsed_and_expanded_sizes() {

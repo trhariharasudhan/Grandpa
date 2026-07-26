@@ -1,8 +1,8 @@
 """Local wake-word detection helpers for Grandpa voice mode.
 
-This module intentionally does not pretend to provide always-on audio wake
-word detection. It detects configured phrases from already-local transcripts
-and reports push-to-talk mode when no native wake engine is installed.
+This module intentionally does not provide always-on audio wake-word capture.
+It detects configured phrases from local transcripts and stores safe foundation
+state used by the API and simulated voice loop.
 """
 
 from __future__ import annotations
@@ -10,30 +10,33 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-DEFAULT_WAKE_WORD_SETTINGS = DEFAULT_CONFIG_DIR / "wake_word.json"
 DEFAULT_WAKE_PHRASE = "hey grandpa"
+DEFAULT_WAKE_PHRASES = ("grandpa", "hey grandpa")
+DEFAULT_WAKE_WORD_SETTINGS = DEFAULT_CONFIG_DIR / "wake_word.json"
 
 
 @dataclass(frozen=True)
 class WakeWordConfig:
     """Wake phrase configuration."""
 
-    enabled: bool = True
-    phrases: tuple[str, ...] = ("hey grandpa", "grandpa")
-    timeout_seconds: float = 8.0
+    enabled: bool = False
+    phrases: tuple[str, ...] = DEFAULT_WAKE_PHRASES
+    response_enabled: bool = True
+    response_text: str = "Yes?"
+    command_timeout_seconds: float = 10.0
 
     @classmethod
     def from_env(cls) -> "WakeWordConfig":
         raw_enabled = os.getenv("GRANDPA_WAKE_WORD_ENABLED", "true").strip().lower()
         raw_phrases = os.getenv("GRANDPA_WAKE_WORDS", "")
-        phrases = tuple(p.strip().lower() for p in raw_phrases.split(",") if p.strip())
+        phrases = tuple(phrase.strip().lower() for phrase in raw_phrases.split(",") if phrase.strip())
         return cls(
             enabled=raw_enabled not in {"0", "false", "no", "off"},
             phrases=phrases or ("hey grandpa", "grandpa"),
@@ -56,29 +59,44 @@ class WakeWordMatch:
         }
 
 
-@dataclass
 class WakeWordDetector:
     """Transcript-based wake phrase detector."""
 
-    config: WakeWordConfig = field(default_factory=WakeWordConfig.from_env)
+    def __init__(self, config: WakeWordConfig | tuple[str, ...] | None = None) -> None:
+        if isinstance(config, WakeWordConfig):
+            self.config = config
+        elif config is None:
+            self.config = WakeWordConfig(enabled=True)
+        else:
+            self.config = WakeWordConfig(enabled=True, phrases=tuple(config))
+
+    @property
+    def phrases(self) -> tuple[str, ...]:
+        return self.config.phrases
+
+    def matches(self, transcript: str) -> bool:
+        """Return True when transcript contains a configured wake phrase."""
+
+        return self.detect(transcript).matched
 
     def detect(self, transcript: str) -> WakeWordMatch:
-        text = _normalise(transcript)
+        text = normalize_wake_text(transcript)
         if not text or not self.config.enabled:
             return WakeWordMatch(matched=False, command_text=transcript.strip())
 
+        words = text.split()
         for phrase in sorted(self.config.phrases, key=len, reverse=True):
-            normalized_phrase = _normalise(phrase)
-            pattern = rf"(^|\b){re.escape(normalized_phrase)}(\b|$)"
-            match = re.search(pattern, text)
-            if not match:
+            normalized_phrase = normalize_wake_text(phrase)
+            phrase_words = normalized_phrase.split()
+            match_index = _word_sequence_index(words, phrase_words)
+            if match_index is None:
                 continue
-            command = text[match.end() :].strip(" ,.!?")
+            command = " ".join(words[match_index + len(phrase_words) :]).strip()
             return WakeWordMatch(
                 matched=True,
                 phrase=phrase,
-                command_text=command or text,
-                confidence=0.95 if text.startswith(normalized_phrase) else 0.82,
+                command_text=command,
+                confidence=0.95 if match_index == 0 else 0.82,
             )
         return WakeWordMatch(matched=False, command_text=transcript.strip(), confidence=0.0)
 
@@ -88,12 +106,28 @@ class WakeWordDetector:
             "phrases": list(self.config.phrases),
             "mode": "transcript_gate" if self.config.enabled else "disabled",
             "always_listening_available": False,
-            "truthful_note": "Wake phrases are detected from local transcripts. Push-to-talk remains the reliable mode unless a native wake engine is added.",
+            "truthful_note": (
+                "Wake phrases are detected from local transcripts. Push-to-talk remains "
+                "the reliable mode unless a native wake engine is added."
+            ),
         }
 
 
-def _normalise(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip().lower())
+def normalize_wake_text(value: str) -> str:
+    """Normalize a voice transcript for wake-word matching."""
+
+    text = re.sub(r"[^\w\s]", " ", str(value).casefold())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _word_sequence_index(words: list[str], phrase_words: list[str]) -> int | None:
+    phrase_len = len(phrase_words)
+    if not phrase_words or phrase_len > len(words):
+        return None
+    for index in range(len(words) - phrase_len + 1):
+        if words[index : index + phrase_len] == phrase_words:
+            return index
+    return None
 
 
 @dataclass
@@ -140,8 +174,8 @@ class WakeWordSession:
         }
 
     def detect_mock(self, text: str) -> dict[str, Any]:
-        phrase = _normalise(self.wake_phrase)
-        detected = bool(self.enabled and self.listening and phrase and phrase in _normalise(text))
+        detector = WakeWordDetector(WakeWordConfig(enabled=self.enabled and self.listening, phrases=(self.wake_phrase,)))
+        detected = detector.matches(text)
         if detected:
             self.last_detection_time = datetime.now(UTC).isoformat()
         return {
@@ -180,9 +214,11 @@ class WakeWordSession:
 
 __all__ = [
     "DEFAULT_WAKE_PHRASE",
+    "DEFAULT_WAKE_PHRASES",
     "DEFAULT_WAKE_WORD_SETTINGS",
     "WakeWordConfig",
     "WakeWordDetector",
     "WakeWordMatch",
     "WakeWordSession",
+    "normalize_wake_text",
 ]

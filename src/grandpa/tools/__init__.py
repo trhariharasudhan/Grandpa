@@ -1,145 +1,35 @@
-"""Tools primitive — tool system with ABC interface and built-in tools."""
+"""Tool primitives with on-demand built-in registration."""
 
 from __future__ import annotations
 
+import importlib
+import logging
+
 from grandpa.tools._stubs import BaseTool, ToolExecutor, ToolSpec
 
-# Import built-in tools to trigger @ToolRegistry.register() decorators.
-# Each is wrapped in try/except so the package loads even before the
-# individual tool modules are created.
-try:
-    import grandpa.tools.calculator  # noqa: F401
-except ImportError:
-    pass
+logger = logging.getLogger(__name__)
+_BUILTINS = (
+    "calculator", "think", "retrieval", "llm_tool", "file_read", "web_search",
+    "code_interpreter", "code_interpreter_docker", "repl", "storage_tools",
+    "mcp_adapter", "channel_tools", "http_request", "docker_shell_exec", "shell_exec",
+    "memory_manage", "user_profile_manage", "skill_manage", "file_write", "apply_patch",
+    "git_tool", "db_query", "pdf_tool", "image_tool", "audio_tool", "knowledge_tools",
+    "text_to_speech", "digest_collect",
+)
+_builtins_loaded = False
 
-try:
-    import grandpa.tools.think  # noqa: F401
-except ImportError:
-    pass
 
-try:
-    import grandpa.tools.retrieval  # noqa: F401
-except ImportError:
-    pass
+def load_builtin_tools() -> None:
+    """Import tool implementations once to populate the tool registry."""
+    global _builtins_loaded
+    if _builtins_loaded:
+        return
+    for module in _BUILTINS:
+        try:
+            importlib.import_module(f"grandpa.tools.{module}")
+        except ImportError as exc:
+            logger.debug("Optional tool %s unavailable: %s", module, exc)
+    _builtins_loaded = True
 
-try:
-    import grandpa.tools.llm_tool  # noqa: F401
-except ImportError:
-    pass
 
-try:
-    import grandpa.tools.file_read  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.web_search  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.code_interpreter  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.code_interpreter_docker  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.repl  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.storage_tools  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.mcp_adapter  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.channel_tools  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.http_request  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.docker_shell_exec  # noqa: F401
-    import grandpa.tools.shell_exec  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.memory_manage  # noqa: F401
-except ImportError:
-    pass
-try:
-    import grandpa.tools.user_profile_manage  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.skill_manage  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.file_write  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.apply_patch  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.git_tool  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.db_query  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.pdf_tool  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.image_tool  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.audio_tool  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.knowledge_tools  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.text_to_speech  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.tools.digest_collect  # noqa: F401
-except ImportError:
-    pass
-
-__all__ = ["BaseTool", "ToolExecutor", "ToolSpec"]
+__all__ = ["BaseTool", "ToolExecutor", "ToolSpec", "load_builtin_tools"]

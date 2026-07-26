@@ -222,7 +222,9 @@ def _get_memory_backend(config):
     tool is the hallucination vector.
     """
     try:
-        import grandpa.tools.storage  # noqa: F401
+        from grandpa.tools.storage import load_storage_backends
+
+        load_storage_backends()
         from grandpa.core.registry import MemoryRegistry
 
         key = config.memory.default_backend
@@ -379,7 +381,9 @@ def _run_agent(
 ):
     """Instantiate and run an agent, returning the AgentResult."""
     # Import agents to trigger registration
-    import grandpa.agents  # noqa: F401
+    from grandpa.agents import load_builtin_agents
+
+    load_builtin_agents()
     from grandpa.agents._stubs import AgentContext
     from grandpa.core.registry import AgentRegistry
 
@@ -394,7 +398,9 @@ def _run_agent(
     tools = []
     if tool_names:
         # Trigger tool registration
-        import grandpa.tools  # noqa: F401
+        from grandpa.tools import load_builtin_tools
+
+        load_builtin_tools()
 
         tools = _build_tools(tool_names, config, engine, model_name)
 

@@ -21,6 +21,15 @@ class EngineModelNotFoundError(Exception):
         super().__init__(message or f"Model not found: {model}")
 
 
+class EngineModelLoadError(Exception):
+    """Raised when an engine cannot load an installed model."""
+
+    def __init__(self, model: str, message: str, *, low_memory: bool = False) -> None:
+        self.model = model
+        self.low_memory = low_memory
+        super().__init__(message)
+
+
 def messages_to_dicts(messages: Sequence[Message]) -> List[Dict[str, Any]]:
     """Convert ``Message`` objects to OpenAI-format dicts."""
     out: List[Dict[str, Any]] = []
@@ -67,6 +76,7 @@ def estimate_prompt_tokens(messages: Sequence[Message]) -> int:
 
 __all__ = [
     "EngineConnectionError",
+    "EngineModelLoadError",
     "EngineModelNotFoundError",
     "InferenceEngine",
     "estimate_prompt_tokens",

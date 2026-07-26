@@ -147,7 +147,9 @@ async def list_agents(request: Request):
     """List available agent types and running agents."""
     registered = []
     try:
-        import grandpa.agents  # noqa: F401 — side-effect registration
+        from grandpa.agents import load_builtin_agents
+
+        load_builtin_agents()
         from grandpa.core.registry import AgentRegistry
 
         for key in sorted(AgentRegistry.keys()):

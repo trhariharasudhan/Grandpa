@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -184,6 +185,18 @@ def test_volume_action_mocked(monkeypatch):
 
     assert result.ok is True
     assert calls == ["volumeup"]
+
+
+def test_volume_set_missing_backend_is_graceful(monkeypatch):
+    monkeypatch.setattr(pc_control.sys, "platform", "win32")
+    monkeypatch.setitem(sys.modules, "comtypes", None)
+    monkeypatch.setitem(sys.modules, "pycaw", None)
+
+    result = run_local_action({"action_type": "volume_set", "target": "50", "args": {"level": 50}})
+
+    assert result.ok is False
+    assert result.status == "unsupported"
+    assert result.error == "missing_volume_backend"
 
 
 def test_brightness_unsupported_path():
@@ -376,6 +389,20 @@ def test_pc_control_diagnostics_contains_richer_sections(monkeypatch):
 
 def test_high_risk_power_command_requires_approval():
     result = run_local_action({"action_type": "system_shutdown"})
+
+    assert result.status == "approval_required"
+    assert result.risk_level == "HIGH"
+
+
+def test_lock_pc_is_low_risk_dry_run():
+    result = run_local_action({"action_type": "system_lock", "dry_run": True})
+
+    assert result.ok is True
+    assert result.risk_level == "LOW"
+
+
+def test_empty_recycle_bin_requires_approval():
+    result = run_local_action({"action_type": "empty_recycle_bin"})
 
     assert result.status == "approval_required"
     assert result.risk_level == "HIGH"

@@ -11,6 +11,9 @@ from typing import Any
 
 from grandpa.voice.errors import VoiceOutputUnavailableError
 
+_ACTIVE_PYTTSX3_ENGINES: set[Any] = set()
+_ACTIVE_PYTTSX3_LOCK = threading.RLock()
+
 
 @dataclass(frozen=True)
 class SpeechOutputResult:
@@ -45,7 +48,9 @@ class SpeechOutputEngine:
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
     _stop_requested: bool = field(default=False, init=False)
 
-    def speak(self, text: str, *, interrupt: bool = False, dry_run: bool = False) -> SpeechOutputResult:
+    def speak(
+        self, text: str, *, interrupt: bool = False, dry_run: bool = False
+    ) -> SpeechOutputResult:
         started = time.perf_counter()
         clean_text = _short_voice_text(text)
         engine = self.best_available_engine()
@@ -54,7 +59,12 @@ class SpeechOutputEngine:
                 self._queue.clear()
                 self._stop_requested = True
             if not clean_text:
-                result = SpeechOutputResult("skipped", engine, "No speech text provided.", latency_ms=_elapsed_ms(started))
+                result = SpeechOutputResult(
+                    "skipped",
+                    engine,
+                    "No speech text provided.",
+                    latency_ms=_elapsed_ms(started),
+                )
                 self._last_result = result
                 return result
             self._queue.append(clean_text)
@@ -79,7 +89,13 @@ class SpeechOutputEngine:
             with self._lock:
                 self._queue.clear()
                 self._state = "idle"
-            result = SpeechOutputResult("fallback", engine, "No TTS backend available; printed response only.", clean_text, _elapsed_ms(started))
+            result = SpeechOutputResult(
+                "fallback",
+                engine,
+                "No TTS backend available; printed response only.",
+                clean_text,
+                _elapsed_ms(started),
+            )
             self._last_result = result
             return result
 
@@ -89,7 +105,9 @@ class SpeechOutputEngine:
             elif engine == "edge_tts":
                 _speak_with_edge_tts(clean_text)
             else:
-                raise VoiceOutputUnavailableError(detail="No supported local TTS backend is available.")
+                raise VoiceOutputUnavailableError(
+                    detail="No supported local TTS backend is available."
+                )
         except Exception as exc:
             with self._lock:
                 self._queue.clear()
@@ -108,7 +126,13 @@ class SpeechOutputEngine:
         with self._lock:
             self._queue.clear()
             self._state = "idle" if not self._stop_requested else "interrupted"
-        result = SpeechOutputResult("completed", engine, "Speech output spoken.", clean_text, _elapsed_ms(started))
+        result = SpeechOutputResult(
+            "completed",
+            engine,
+            "Speech output spoken.",
+            clean_text,
+            _elapsed_ms(started),
+        )
         self._last_result = result
         return result
 
@@ -117,6 +141,7 @@ class SpeechOutputEngine:
             self._stop_requested = True
             self._queue.clear()
             self._state = "idle"
+        _stop_active_pyttsx3()
         return {"status": "stopped", "message": "Speech output stopped."}
 
     def best_available_engine(self) -> str:
@@ -148,21 +173,42 @@ class SpeechOutputEngine:
 def _speak_with_pyttsx3(text: str, *, voice: str, rate: int) -> None:
     pyttsx3 = __import__("pyttsx3")
     engine = pyttsx3.init()
-    if rate:
-        engine.setProperty("rate", rate)
-    if voice:
-        for candidate in engine.getProperty("voices") or []:
-            candidate_id = str(getattr(candidate, "id", ""))
-            candidate_name = str(getattr(candidate, "name", ""))
-            if voice.casefold() in candidate_id.casefold() or voice.casefold() in candidate_name.casefold():
-                engine.setProperty("voice", candidate_id)
-                break
-    engine.say(text)
-    engine.runAndWait()
+    with _ACTIVE_PYTTSX3_LOCK:
+        _ACTIVE_PYTTSX3_ENGINES.add(engine)
+    try:
+        if rate:
+            engine.setProperty("rate", rate)
+        if voice:
+            for candidate in engine.getProperty("voices") or []:
+                candidate_id = str(getattr(candidate, "id", ""))
+                candidate_name = str(getattr(candidate, "name", ""))
+                if (
+                    voice.casefold() in candidate_id.casefold()
+                    or voice.casefold() in candidate_name.casefold()
+                ):
+                    engine.setProperty("voice", candidate_id)
+                    break
+        engine.say(text)
+        engine.runAndWait()
+    finally:
+        with _ACTIVE_PYTTSX3_LOCK:
+            _ACTIVE_PYTTSX3_ENGINES.discard(engine)
+
+
+def _stop_active_pyttsx3() -> None:
+    with _ACTIVE_PYTTSX3_LOCK:
+        engines = tuple(_ACTIVE_PYTTSX3_ENGINES)
+    for engine in engines:
+        try:
+            engine.stop()
+        except Exception:
+            pass
 
 
 def _speak_with_edge_tts(_text: str) -> None:
-    raise VoiceOutputUnavailableError(detail="Edge TTS is installed but direct speaker playback is not configured yet.")
+    raise VoiceOutputUnavailableError(
+        detail="Edge TTS is installed but direct speaker playback is not configured yet."
+    )
 
 
 def _selected_voice_name(engine: str) -> str:

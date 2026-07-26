@@ -175,7 +175,9 @@ def _ensure_registries_populated() -> None:
         pass
 
     try:
-        import grandpa.tools  # noqa: F401
+        from grandpa.tools import load_builtin_tools
+
+        load_builtin_tools()
     except Exception:
         pass
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -123,12 +123,15 @@ class DigestStore:
 
     def get_today(self, timezone_name: str = "UTC") -> Optional[DigestArtifact]:
         """Return today's digest if it exists, or None."""
-        try:
-            from zoneinfo import ZoneInfo
+        if timezone_name == "UTC":
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        else:
+            try:
+                from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-            today = datetime.now(ZoneInfo(timezone_name)).strftime("%Y-%m-%d")
-        except ImportError:
-            today = datetime.now().strftime("%Y-%m-%d")
+                today = datetime.now(ZoneInfo(timezone_name)).strftime("%Y-%m-%d")
+            except (ImportError, ZoneInfoNotFoundError):
+                today = datetime.now().strftime("%Y-%m-%d")
 
         row = self._conn.execute(
             "SELECT text, audio_path, sections, sources_used,"

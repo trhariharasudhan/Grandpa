@@ -104,6 +104,22 @@ def handle_file_command(text: str, *, store: FileAssistantStore | None = None) -
         return _fallback()
     store = store or FileAssistantStore()
 
+    from grandpa.files import handle_file_automation
+
+    automation = handle_file_automation(text, roots=tuple(_safe_roots()))
+    if not automation.should_fallback:
+        if automation.status == "handled" and automation.path is not None:
+            store.record(automation.action.action if automation.action else "file", automation.path, automation.status)
+        return FileAssistantResult(
+            automation.status,
+            "file",
+            str(automation.path or automation.destination or ""),
+            automation.message,
+            automation.message,
+            "requires_confirmation" if automation.requires_confirmation else "allowed",
+            should_fallback=False,
+        )
+
     if command in {"show recent files", "recent files", "show my recent files"}:
         return _show_recent_files(store)
 

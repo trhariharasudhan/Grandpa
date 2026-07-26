@@ -6,6 +6,7 @@ use grandpa_security::ssrf::check_ssrf;
 use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::io::Read;
 
 static SPEC: Lazy<ToolSpec> = Lazy::new(|| ToolSpec {
     name: "http_request".into(),
@@ -48,10 +49,15 @@ impl BaseTool for HttpRequestTool {
 
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= 5 || check_ssrf(attempt.url().as_str()).is_some() {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            }))
             .build()
-            .map_err(|e| {
-                GrandpaError::Io(std::io::Error::other(e.to_string()))
-            })?;
+            .map_err(|e| GrandpaError::Io(std::io::Error::other(e.to_string())))?;
 
         let mut request = match method.as_str() {
             "POST" => client.post(url),
@@ -77,11 +83,16 @@ impl BaseTool for HttpRequestTool {
         match request.send() {
             Ok(resp) => {
                 let status = resp.status().as_u16();
-                let body = resp.text().unwrap_or_default();
-                let truncated = if body.len() > 10000 {
-                    format!("{}...(truncated)", &body[..10000])
+                let mut bytes = Vec::new();
+                let _ = resp.take(10_001).read_to_end(&mut bytes);
+                let body = String::from_utf8_lossy(&bytes);
+                let truncated = if bytes.len() > 10_000 {
+                    format!(
+                        "{}...(truncated)",
+                        String::from_utf8_lossy(&bytes[..10_000])
+                    )
                 } else {
-                    body
+                    body.into_owned()
                 };
                 let content = format!("Status: {}\n{}", status, truncated);
                 if status < 400 {

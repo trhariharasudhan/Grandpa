@@ -30,7 +30,9 @@ class MemoryHandle:
         if self._backend is not None:
             return self._backend
 
-        import grandpa.tools.storage  # noqa: F401
+        from grandpa.tools.storage import load_storage_backends
+
+        load_storage_backends()
         from grandpa.core.registry import MemoryRegistry
 
         key = self._config.memory.default_backend
@@ -453,7 +455,9 @@ class Grandpa:
         channel: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """Run an agent and return the result dict."""
-        import grandpa.agents  # noqa: F401
+        from grandpa.agents import load_builtin_agents
+
+        load_builtin_agents()
         from grandpa.agents._stubs import AgentContext
         from grandpa.core.registry import AgentRegistry
 
@@ -468,7 +472,9 @@ class Grandpa:
         # Build tools
         tool_objects: List[Any] = []
         if tools:
-            import grandpa.tools  # noqa: F401
+            from grandpa.tools import load_builtin_tools
+
+            load_builtin_tools()
             from grandpa.cli.ask import _build_tools
 
             tool_objects = _build_tools(

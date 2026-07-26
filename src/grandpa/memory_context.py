@@ -248,26 +248,24 @@ class MemoryStore:
             candidates = [item for item in candidates if item["category"] == category]
         self._ensure_embeddings(candidates)
         query_embedding = _embed_text(query)
+        embeddings = self._load_embeddings(candidates)
+        habit_scores = self._habit_scores(candidates)
+        inferred_categories = _infer_query_categories(query)
         scored: list[tuple[float, float, dict[str, Any]]] = []
         for item in candidates:
             haystack = f"{item['category']} {item['key']} {item['value']}"
             tokens = _expanded_tokens(haystack)
             overlap = len(query_tokens & tokens)
             direct = 1 if query.lower() in haystack.lower() else 0
-            inferred_categories = _infer_query_categories(query)
             category_hint = 1 if item["category"] in inferred_categories else 0
-            semantic = self._embedding_similarity(int(item["id"]), query_embedding)
+            embedding = embeddings.get(int(item["id"]))
+            semantic = _cosine_similarity(query_embedding, embedding) if embedding else 0.0
             lexical = min(1.0, overlap / max(1, len(query_tokens)))
             confidence = max(semantic, lexical * 0.72, direct * 0.95)
             confidence = min(1.0, confidence + category_hint * 0.12)
             if inferred_categories and not category_hint and not direct:
                 confidence *= 0.45
-            try:
-                from grandpa.core_ai_brain import BrainStore
-
-                confidence = min(1.0, confidence + BrainStore().habit_score(haystack))
-            except Exception:
-                pass
+            confidence = min(1.0, confidence + habit_scores.get(int(item["id"]), 0.0))
             if confidence >= min_confidence or direct or overlap >= 2:
                 enriched = dict(item)
                 enriched["score"] = round(confidence, 4)
@@ -402,6 +400,50 @@ class MemoryStore:
         except ValueError:
             return 0.0
         return _cosine_similarity(query_embedding, embedding)
+
+    def _load_embeddings(self, items: list[dict[str, Any]]) -> dict[int, list[float]]:
+        """Load all candidate vectors in one query instead of one query per result."""
+        if not items:
+            return {}
+        ids = [int(item["id"]) for item in items]
+        placeholders = ",".join("?" for _ in ids)
+        with self._connect() as conn:
+            rows = conn.execute(
+                f"SELECT memory_id, embedding FROM memory_embeddings "
+                f"WHERE memory_id IN ({placeholders})",
+                ids,
+            ).fetchall()
+        vectors: dict[int, list[float]] = {}
+        for row in rows:
+            try:
+                vectors[int(row["memory_id"])] = _deserialize_vector(row["embedding"])
+            except ValueError:
+                continue
+        return vectors
+
+    @staticmethod
+    def _habit_scores(items: list[dict[str, Any]]) -> dict[int, float]:
+        """Score candidates from one cached habit snapshot."""
+        try:
+            from grandpa.core_ai_brain import BrainStore
+
+            habits = BrainStore().habits(limit=50)
+        except Exception:
+            return {}
+        scores: dict[int, float] = {}
+        habit_tokens = [
+            (
+                set(re.findall(r"[a-z0-9]+", f"{habit['key']} {habit['label']}".lower())),
+                min(0.12, 0.03 * int(habit["count"])),
+            )
+            for habit in habits
+        ]
+        for item in items:
+            text = f"{item['category']} {item['key']} {item['value']}"
+            tokens = {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
+            score = sum(weight for candidate_tokens, weight in habit_tokens if tokens & candidate_tokens)
+            scores[int(item["id"])] = min(score, 0.3)
+        return scores
 
 
 def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> MemoryCommandResult:

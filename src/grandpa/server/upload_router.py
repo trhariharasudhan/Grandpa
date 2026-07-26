@@ -8,7 +8,7 @@ import uuid
 from typing import List, Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from grandpa.connectors.store import KnowledgeStore
 from grandpa.core.config import DEFAULT_CONFIG_DIR
@@ -22,6 +22,10 @@ router = APIRouter(prefix="/v1/connectors/upload", tags=["upload"])
 # ---------------------------------------------------------------------------
 
 _ALLOWED_EXTENSIONS = {".txt", ".md", ".csv", ".pdf", ".docx"}
+_MAX_PASTE_CHARS = 1_000_000
+_MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+_MAX_UPLOAD_FILES = 20
+_READ_CHUNK_BYTES = 64 * 1024
 
 
 def _chunk_text(text: str, max_chars: int = 1000) -> List[str]:
@@ -114,7 +118,7 @@ def _get_store() -> KnowledgeStore:
 
 class PasteRequest(BaseModel):
     title: str = ""
-    content: str
+    content: str = Field(max_length=_MAX_PASTE_CHARS)
 
 
 class IngestResponse(BaseModel):
@@ -158,6 +162,11 @@ async def ingest_files(
     title: Optional[str] = Form(None),
 ) -> IngestResponse:
     """Ingest uploaded files into the knowledge store."""
+    if len(files) > _MAX_UPLOAD_FILES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"At most {_MAX_UPLOAD_FILES} files may be uploaded at once",
+        )
     store = _get_store()
     total_chunks = 0
 
@@ -174,7 +183,17 @@ async def ingest_files(
                 detail=(f"Unsupported file type: {ext}. Allowed: {allowed}"),
             )
 
-        data = await upload.read()
+        chunks_data: list[bytes] = []
+        total_bytes = 0
+        while chunk := await upload.read(_READ_CHUNK_BYTES):
+            total_bytes += len(chunk)
+            if total_bytes > _MAX_UPLOAD_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"File exceeds the {_MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit",
+                )
+            chunks_data.append(chunk)
+        data = b"".join(chunks_data)
 
         # Parse content based on extension
         if ext in (".txt", ".md", ".csv"):

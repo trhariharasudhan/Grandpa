@@ -12,10 +12,13 @@ from grandpa.cli import cli
 from grandpa.cli.doctor_cmd import (
     CheckResult,
     DoctorSection,
+    _check_background_scheduler_ready,
     _check_config_exists,
     _check_default_model,
     _check_nodejs,
     _check_python_version,
+    _check_runtime_environment,
+    _grandpa_executable_candidates,
 )
 
 
@@ -95,6 +98,54 @@ class TestCheckPythonVersion:
         result = _check_python_version()
         assert result.status == "ok"
         assert result.name == "Python version"
+
+
+class TestRuntimeEnvironmentChecks:
+    def test_runtime_checks_report_python_and_grandpa_environment(self) -> None:
+        results = _check_runtime_environment()
+        names = {result.name for result in results}
+
+        assert "Python executable" in names
+        assert "Grandpa executable" in names
+        assert "Active virtual environment" in names
+        assert "Project root" in names
+
+    def test_duplicate_executable_detection_on_windows(self) -> None:
+        with (
+            patch("grandpa.cli.doctor_cmd.sys.platform", "win32"),
+            patch(
+                "grandpa.cli.doctor_cmd.subprocess.run",
+                return_value=MagicMock(
+                    returncode=0,
+                    stdout=(
+                        "D:\\Grandpa\\.venv\\Scripts\\grandpa.exe\n"
+                        "C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python311\\Scripts\\grandpa.exe\n"
+                    ),
+                ),
+            ),
+        ):
+            candidates = _grandpa_executable_candidates()
+
+        assert candidates == [
+            "D:\\Grandpa\\.venv\\Scripts\\grandpa.exe",
+            "C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python311\\Scripts\\grandpa.exe",
+        ]
+
+    def test_runtime_checks_warn_when_duplicate_executables_exist(self) -> None:
+        candidates = [
+            "D:\\Grandpa\\.venv\\Scripts\\grandpa.exe",
+            "C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python311\\Scripts\\grandpa.exe",
+        ]
+        with (
+            patch("grandpa.cli.doctor_cmd._grandpa_executable_candidates", return_value=candidates),
+            patch("grandpa.cli.doctor_cmd._project_root", return_value=Path("D:/Grandpa")),
+        ):
+            results = _check_runtime_environment()
+
+        duplicate = next(result for result in results if result.name == "Grandpa executable duplicates")
+        assert duplicate.status == "warn"
+        assert "2 executables" in duplicate.message
+        assert "uv run grandpa" in str(duplicate.details)
 
 
 class TestCheckConfigMissing:
@@ -181,3 +232,22 @@ class TestCheckNodejs:
         assert "Not found" in result.message
         assert result.details is not None
         assert "OpenClaw" not in result.details
+
+
+class TestBackgroundSchedulerReadiness:
+    def test_fastapi_absence_is_optional_warning(self) -> None:
+        missing = ModuleNotFoundError("No module named 'fastapi'")
+        missing.name = "fastapi"
+
+        with (
+            patch(
+                "builtins.__import__",
+                side_effect=missing,
+            ),
+        ):
+            result = _check_background_scheduler_ready()
+
+        assert result.status == "warn"
+        assert result.message == "Missing/optional"
+        assert result.details is not None
+        assert "server extra" in result.details

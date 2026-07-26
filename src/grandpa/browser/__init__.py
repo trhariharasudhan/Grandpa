@@ -14,8 +14,17 @@ from grandpa.browser.agent import (
     search_web_plan,
     summarize_current_page,
 )
+from grandpa.browser.automation import BrowserAutomation, handle_browser_command
+from grandpa.browser.executor import BrowserExecutor
+from grandpa.browser.models import BrowserAction, BrowserOperationResult
+from grandpa.browser.parser import BrowserParser
 
 __all__ = [
+    "BrowserAction",
+    "BrowserAutomation",
+    "BrowserExecutor",
+    "BrowserOperationResult",
+    "BrowserParser",
     "BrowserAgentStore",
     "analyze_browser_task",
     "browser_agent_diagnostics",
@@ -28,4 +37,5 @@ __all__ = [
     "plan_browser_workflow",
     "search_web_plan",
     "summarize_current_page",
+    "handle_browser_command",
 ]

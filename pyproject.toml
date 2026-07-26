@@ -30,12 +30,14 @@ dependencies = [
     "openai>=1.30",
     "pillow>=12.1.1",
     "pyautogui>=0.9.54",
+    "prompt-toolkit>=3.0",
     "pyttsx3>=2.90; sys_platform == 'win32'",
-    "pynvml>=13.0.1",
+    "nvidia-ml-py>=12.0",
     "pytesseract>=0.3.13",
     "rich>=13",
     "tomli>=2.0; python_version < '3.11'",
     "tomlkit>=0.12",
+    "psutil>=7.2.2",
 ]
 
 [project.optional-dependencies]
@@ -81,10 +83,10 @@ server = [
     "python-multipart>=0.0.9",
 ]
 openhands = ["openhands-sdk>=1.0; python_version >= '3.12'"]
-gpu-metrics = ["pynvml>=12.0"]
+gpu-metrics = ["nvidia-ml-py>=12.0"]
 energy-amd = ["amdsmi>=6.1"]
 energy-apple = ["zeus-ml[apple]"]
-energy-all = ["pynvml>=12.0", "amdsmi>=6.1", "zeus-ml[apple]"]
+energy-all = ["nvidia-ml-py>=12.0", "amdsmi>=6.1", "zeus-ml[apple]"]
 orchestrator-training = [
     "torch>=2.0",
     "transformers>=4.40",
@@ -115,6 +117,25 @@ channel-nostr = ["pynostr>=0.6"]
 channel-twilio = ["twilio>=9.0"]
 channel-gmail = [
     "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+    "google-auth-oauthlib>=1.0",
+    "google-auth-httplib2>=0.2",
+]
+channel-calendar = [
+    "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+    "google-auth-oauthlib>=1.0",
+    "google-auth-httplib2>=0.2",
+]
+gmail = [
+    "google-api-python-client>=2.0",
+    "google-auth>=2.0",
+    "google-auth-oauthlib>=1.0",
+    "google-auth-httplib2>=0.2",
+]
+calendar = [
+    "google-api-python-client>=2.0",
+    "google-auth>=2.0",
     "google-auth-oauthlib>=1.0",
     "google-auth-httplib2>=0.2",
 ]
@@ -130,6 +151,16 @@ dashboard = ["textual>=0.80"]
 tray = ["pystray>=0.19.5", "pillow>=12.1.1"]
 windows-notifications = ["winotify>=1.1; sys_platform == 'win32'"]
 speech = ["faster-whisper>=1.0"]
+screen = [
+    "mss>=9.0",
+    "pywin32>=306; sys_platform == 'win32'",
+]
+voice = [
+    "faster-whisper>=1.0",
+    "numpy>=1.24",
+    "pyttsx3>=2.90; sys_platform == 'win32'",
+    "sounddevice>=0.4.6",
+]
 speech-deepgram = ["deepgram-sdk>=3.0"]
 eval-wandb = ["wandb>=0.17"]
 eval-sheets = ["gspread>=6.0", "google-auth>=2.0"]

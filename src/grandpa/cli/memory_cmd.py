@@ -22,7 +22,9 @@ def _get_backend(backend_key: str | None = None):
     key = backend_key or config.memory.default_backend
 
     # Ensure backends are registered
-    import grandpa.tools.storage  # noqa: F401
+    from grandpa.tools.storage import load_storage_backends
+
+    load_storage_backends()
 
     if not MemoryRegistry.contains(key):
         raise click.ClickException(

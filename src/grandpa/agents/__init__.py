@@ -1,104 +1,36 @@
-"""Agents primitive — multi-turn reasoning and tool use."""
+"""Agent primitives with on-demand implementation registration."""
 
 from __future__ import annotations
 
+import importlib
 import logging
 
-from grandpa.agents._stubs import (
-    AgentContext,
-    AgentResult,
-    BaseAgent,
-    ToolUsingAgent,
-)
+from grandpa.agents._stubs import AgentContext, AgentResult, BaseAgent, ToolUsingAgent
+from grandpa.core.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
+_BUILTINS = (
+    "simple", "orchestrator", "native_react", "native_openhands", "react", "openhands",
+    "rlm", "claude_code", "operative", "monitor", "monitor_operative", "deep_research",
+    "morning_digest", "proactive_agent", "hybrid",
+)
+_builtins_loaded = False
 
-# Import agent modules to trigger @AgentRegistry.register() decorators
-try:
-    import grandpa.agents.simple  # noqa: F401
-except ImportError:
-    pass
 
-try:
-    import grandpa.agents.orchestrator  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.native_react  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.native_openhands  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.react  # noqa: F401 -- backward-compat shim
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.openhands  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.rlm  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.claude_code  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.operative  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.monitor  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.monitor_operative  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.deep_research  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.morning_digest  # noqa: F401
-except ImportError:
-    pass
-
-try:
-    import grandpa.agents.proactive_agent  # noqa: F401
-except ImportError:
-    pass
-
-# Hybrid local+cloud paradigm agents (Minions, Conductor, Archon, Advisors,
-# SkillOrchestra, ToolOrchestra). Each module registers under its own name
-# via @AgentRegistry.register(). Optional deps may make some unavailable.
-try:
-    import grandpa.agents.hybrid  # noqa: F401
-except ImportError:
-    pass
-
-# Registry alias: "react" -> NativeReActAgent (for backward compat)
-try:
+def load_builtin_agents() -> None:
+    """Import agent implementations once to populate their registry."""
+    global _builtins_loaded
+    if _builtins_loaded:
+        return
+    for module in _BUILTINS:
+        try:
+            importlib.import_module(f"grandpa.agents.{module}")
+        except ImportError as exc:
+            logger.debug("Optional agent %s unavailable: %s", module, exc)
     from grandpa.core.registry import AgentRegistry
-
     if AgentRegistry.contains("native_react") and not AgentRegistry.contains("react"):
         AgentRegistry.register_value("react", AgentRegistry.get("native_react"))
-except Exception as exc:
-    logger.debug("Registry alias 'react' creation skipped: %s", exc)
+    _builtins_loaded = True
 
-__all__ = ["AgentContext", "AgentResult", "BaseAgent", "ToolUsingAgent"]
+
+__all__ = ["AgentContext", "AgentResult", "AgentRegistry", "BaseAgent", "ToolUsingAgent", "load_builtin_agents"]

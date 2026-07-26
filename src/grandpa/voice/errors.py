@@ -7,6 +7,9 @@ from typing import Any
 VOICE_DEPENDENCY_MESSAGE = (
     "Voice mode is not fully installed.\n"
     "Install it with:\n"
+    "uv sync --extra voice\n"
+    "or: pip install -e \".[voice]\"\n"
+    "For STT-only installs, use: "
     "uv sync --extra speech\n"
     "Then retry the command."
 )
@@ -69,6 +72,13 @@ class VoiceOutputUnavailableError(VoiceError):
     user_message = VOICE_OUTPUT_UNAVAILABLE_MESSAGE
 
 
+class VoiceConfigurationError(VoiceError):
+    """Raised when voice mode configuration is invalid."""
+
+    status = "configuration_error"
+    user_message = "Voice mode configuration is invalid."
+
+
 __all__ = [
     "MICROPHONE_UNAVAILABLE_MESSAGE",
     "VOICE_DEPENDENCY_MESSAGE",
@@ -77,6 +87,7 @@ __all__ = [
     "MicrophoneUnavailableError",
     "VoiceDependencyError",
     "VoiceError",
+    "VoiceConfigurationError",
     "VoiceOutputUnavailableError",
     "VoiceRecognitionError",
 ]

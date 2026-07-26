@@ -48,12 +48,14 @@ _LAST_MAINTENANCE_SUMMARY: dict[str, Any] | None = None
 
 LOW_RISK_ACTIONS = {
     "open_app",
+    "open_folder",
     "detect_app",
     "list_windows",
     "volume_up",
     "volume_down",
     "volume_mute",
     "volume_unmute",
+    "volume_set",
     "brightness_get",
     "brightness_set",
     "clipboard_read",
@@ -80,6 +82,7 @@ LOW_RISK_ACTIONS = {
     "browser_diagnostics",
     "browser_media",
     "browser_task",
+    "system_lock",
 }
 MEDIUM_RISK_ACTIONS = {
     "close_app",
@@ -112,7 +115,7 @@ HIGH_RISK_ACTIONS = {
     "system_sleep",
     "system_restart",
     "system_shutdown",
-    "system_lock",
+    "empty_recycle_bin",
 }
 BLOCKED_ACTIONS = {
     "file_permanent_delete",
@@ -128,15 +131,23 @@ SAFE_APP_ALIASES = {
     "calculator": "calculator",
     "calc": "calculator",
     "chrome": "chrome",
+    "firefox": "firefox",
+    "mozilla firefox": "firefox",
     "edge": "edge",
     "vscode": "vscode",
     "vs code": "vscode",
     "visual studio code": "vscode",
+    "code": "vscode",
+    "paint": "paint",
+    "mspaint": "paint",
     "file explorer": "explorer",
     "explorer": "explorer",
     "terminal": "terminal",
     "windows terminal": "terminal",
     "task manager": "task_manager",
+    "control panel": "control_panel",
+    "settings": "settings",
+    "windows settings": "settings",
 }
 PROTECTED_WINDOWS_ROOT_NAMES = {
     "windows",
@@ -618,12 +629,16 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
         action = _normalise_action_type(request.action_type)
         if action in {"open_app", "detect_app"}:
             return _execute_app(request, action)
+        if action == "open_folder":
+            return _execute_open_folder(request)
         if action == "close_app":
             return _execute_window_alias(request, "close")
         if action in {"list_windows", "focus_window", "minimize_window", "maximize_window", "restore_window", "close_window"}:
             return _execute_window(request, action)
         if action.startswith("volume_"):
-            return _execute_volume(action)
+            return _execute_volume(request, action)
+        if action == "empty_recycle_bin":
+            return _execute_empty_recycle_bin()
         if action.startswith("brightness_"):
             return _execute_brightness(request, action)
         if action.startswith("clipboard_"):
@@ -667,6 +682,34 @@ def _execute_app(request: LocalActionRequest, action: str) -> LocalActionRespons
     return get_application_service().execute(request, action)
 
 
+def _execute_open_folder(request: LocalActionRequest) -> LocalActionResponse:
+    path = _resolve_path(request.target)
+    if not path.exists() or not path.is_dir():
+        return LocalActionResponse(
+            False,
+            None,
+            "failed",
+            f"I could not find the folder: {request.target}",
+            False,
+            "LOW",
+            {"path": str(path)},
+            error="missing_folder",
+        )
+    if _is_protected_path(path):
+        return LocalActionResponse(
+            False,
+            None,
+            "blocked",
+            "I blocked this folder action because the path is protected.",
+            False,
+            "HIGH",
+            {"path": str(path)},
+            error="protected_path",
+        )
+    os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606
+    return LocalActionResponse(True, None, "completed", f"Opened folder: {path}", False, "LOW", {"path": str(path)})
+
+
 def _execute_window_alias(request: LocalActionRequest, action: str) -> LocalActionResponse:
     from grandpa.desktop.control import get_window_service
 
@@ -679,10 +722,16 @@ def _execute_window(request: LocalActionRequest, action: str) -> LocalActionResp
     return get_window_service().execute(request, action)
 
 
-def _execute_volume(action: str) -> LocalActionResponse:
+def _execute_volume(request: LocalActionRequest, action: str) -> LocalActionResponse:
     from grandpa.desktop.control import get_power_service
 
-    return get_power_service().execute_volume(action, platform=sys.platform)
+    return get_power_service().execute_volume(request, action, platform=sys.platform)
+
+
+def _execute_empty_recycle_bin() -> LocalActionResponse:
+    from grandpa.desktop.control import get_power_service
+
+    return get_power_service().execute_empty_recycle_bin(platform=sys.platform)
 
 
 def _execute_brightness(request: LocalActionRequest, action: str) -> LocalActionResponse:

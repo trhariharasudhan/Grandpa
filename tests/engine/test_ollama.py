@@ -10,8 +10,12 @@ import respx
 
 from grandpa.core.registry import EngineRegistry
 from grandpa.core.types import Message, Role
-from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
-from grandpa.engine.ollama import OllamaEngine
+from grandpa.engine._base import (
+    EngineConnectionError,
+    EngineModelLoadError,
+    EngineModelNotFoundError,
+)
+from grandpa.engine.ollama import OllamaEngine, normalize_ollama_host
 
 
 @pytest.fixture()
@@ -92,6 +96,16 @@ class TestOllamaGenerate:
                     [Message(role=Role.USER, content="Hi")], model="qwen3:8b"
                 )
 
+    def test_generate_timeout_error(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(
+                side_effect=httpx.ReadTimeout("slow")
+            )
+            with pytest.raises(EngineConnectionError):
+                engine.generate(
+                    [Message(role=Role.USER, content="Hi")], model="qwen3:8b"
+                )
+
     def test_generate_model_not_found_error(self, engine: OllamaEngine) -> None:
         with respx.mock:
             respx.post("http://testhost:11434/api/chat").mock(
@@ -107,6 +121,30 @@ class TestOllamaGenerate:
                 )
 
         assert exc_info.value.model == "missing:latest"
+
+    def test_generate_low_memory_model_load_error(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(
+                    500,
+                    json={
+                        "error": (
+                            "model requires more system memory than is available: "
+                            "8.4 GiB required, 1.1 GiB available"
+                        )
+                    },
+                )
+            )
+            with pytest.raises(EngineModelLoadError) as exc_info:
+                engine.generate(
+                    [Message(role=Role.USER, content="Hi")],
+                    model="grandpa-fast:latest",
+                )
+
+        assert exc_info.value.model == "grandpa-fast:latest"
+        assert exc_info.value.low_memory is True
+        assert "available memory is too low" in str(exc_info.value)
+        assert "grandpa-light:latest" in str(exc_info.value)
 
 
 class TestOllamaListModels:
@@ -155,6 +193,11 @@ class TestOllamaPullModel:
 
 
 class TestOllamaHealth:
+    def test_host_normalization(self) -> None:
+        assert normalize_ollama_host("") == "http://127.0.0.1:11434"
+        assert normalize_ollama_host("127.0.0.1:11434/") == "http://127.0.0.1:11434"
+        assert normalize_ollama_host("http://localhost:11434/") == "http://localhost:11434"
+
     def test_health_true(self, engine: OllamaEngine) -> None:
         with respx.mock:
             respx.get("http://testhost:11434/api/tags").mock(

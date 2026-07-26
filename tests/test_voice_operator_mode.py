@@ -95,6 +95,21 @@ def test_parse_what_apps_do_i_have() -> None:
     assert intent.action == "list"
 
 
+def test_parse_list_installed_applications_uses_desktop_router() -> None:
+    intent = parse_voice_operator_command("list installed applications")
+
+    assert intent.kind == "local_action"
+    assert intent.action == "apps_list"
+
+
+def test_parse_search_applications_for_blender() -> None:
+    intent = parse_voice_operator_command("search applications for Blender")
+
+    assert intent.kind == "local_action"
+    assert intent.action == "apps_search"
+    assert intent.target == "blender"
+
+
 def test_open_unknown_app_maps_to_launch_action() -> None:
     intent = parse_voice_operator_command("open spotify")
 

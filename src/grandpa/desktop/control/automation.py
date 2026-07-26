@@ -39,10 +39,27 @@ class AutomationControlService:
             pyautogui.hotkey(*keys)
             return LocalActionResponse(True, None, "completed", "Pressed hotkey.", False, "MEDIUM", {"keys": keys})
         if action == "mouse_move":
-            pyautogui.moveTo(int(request.args.get("x", 0)), int(request.args.get("y", 0)))
+            if "relative_x" in request.args or "relative_y" in request.args:
+                pyautogui.moveRel(
+                    int(request.args.get("relative_x", 0)),
+                    int(request.args.get("relative_y", 0)),
+                    duration=max(0.0, min(1.0, float(request.args.get("duration", 0.15)))),
+                )
+            else:
+                pyautogui.moveTo(
+                    int(request.args.get("x", 0)),
+                    int(request.args.get("y", 0)),
+                    duration=max(0.0, min(1.0, float(request.args.get("duration", 0.15)))),
+                )
             return LocalActionResponse(True, None, "completed", "Moved mouse.", False, "MEDIUM", {"x": request.args.get("x"), "y": request.args.get("y")})
         if action == "mouse_click":
-            pyautogui.click(int(request.args.get("x", 0)), int(request.args.get("y", 0)))
+            pyautogui.click(
+                int(request.args.get("x", 0)),
+                int(request.args.get("y", 0)),
+                clicks=max(1, min(2, int(request.args.get("clicks", 1)))),
+                interval=max(0.0, min(0.5, float(request.args.get("interval", 0.12)))),
+                button=str(request.args.get("button", "left")),
+            )
             return LocalActionResponse(True, None, "completed", "Clicked mouse.", False, "MEDIUM", {"x": request.args.get("x"), "y": request.args.get("y")})
         if action == "mouse_scroll":
             pyautogui.scroll(int(request.args.get("amount", request.target or 0)))

@@ -225,12 +225,14 @@ def test_sounddevice_recorder_rejects_invalid_explicit_device(monkeypatch) -> No
 
 def test_sounddevice_dependency_missing_is_friendly(monkeypatch) -> None:
     def fake_import_module(name: str):
-        raise ImportError(name)
+        raise ModuleNotFoundError(f"No module named '{name}'", name=name)
 
     monkeypatch.setattr(voice_input.importlib, "import_module", fake_import_module)
 
     with pytest.raises(VoiceDependencyError) as exc_info:
         voice_input.SoundDeviceMicrophoneRecorder().record_wav()
 
-    assert "Jarvis voice input is not fully installed." in str(exc_info.value)
+    assert "optional package `sounddevice` is not installed" in str(exc_info.value)
+    assert "uv sync --extra voice" in str(exc_info.value)
+    assert "uv sync --extra voice" in str(exc_info.value)
     assert "sounddevice" in str(exc_info.value)

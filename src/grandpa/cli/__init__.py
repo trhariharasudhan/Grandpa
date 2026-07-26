@@ -118,6 +118,16 @@ cli.add_command(_lazy("init", "grandpa.cli.init_cmd:init", short_help="Initializ
 cli.add_command(_lazy("ask", "grandpa.cli.ask:ask", short_help="Ask Grandpa once."))
 cli.add_command(_lazy("chat", "grandpa.cli.chat_cmd:chat", short_help="Start chat mode."))
 cli.add_command(_lazy("apps", "grandpa.cli.apps_cmd:apps", short_help="Scan and query installed apps."))
+cli.add_command(_lazy("projects", "grandpa.cli.projects_cmd:projects", short_help="Manage developer projects."))
+cli.add_command(_lazy("project", "grandpa.cli.projects_cmd:project", short_help="Alias for projects."))
+cli.add_command(_lazy("screen", "grandpa.cli.screen_cmd:screen", short_help="Inspect the screen read-only."))
+cli.add_command(
+    _lazy(
+        "automation",
+        "grandpa.cli.automation_cmd:automation",
+        short_help="Safely automate visible Windows controls.",
+    )
+)
 cli.add_command(_lazy("serve", "grandpa.cli.serve:serve", short_help="Run the API server."))
 cli.add_command(_lazy("model", "grandpa.cli.model:model", short_help="Manage models."))
 cli.add_command(_lazy("memory", "grandpa.cli.memory_cmd:memory", short_help="Manage memory."))
@@ -135,7 +145,12 @@ cli.add_command(_lazy("doctor", "grandpa.cli.doctor_cmd:doctor", short_help="Che
 cli.add_command(_lazy("speak", "grandpa.cli.speak_cmd:speak", short_help="Speak text aloud."))
 cli.add_command(_lazy("jarvis", "grandpa.cli.jarvis_cmd:jarvis", short_help="Route Jarvis-style safe local commands."))
 cli.add_command(_lazy("voice-operator", "grandpa.cli.voice_operator_cmd:voice_operator", short_help="Start voice operator mode."))
-cli.add_command(_lazy("voice", "grandpa.cli.voice_cmd:voice", short_help="Voice diagnostics."))
+cli.add_command(_lazy("voice", "grandpa.cli.voice_cmd:voice", short_help="Start voice assistant or run voice diagnostics."))
+cli.add_command(_lazy("gmail", "grandpa.cli.gmail_cmd:gmail", short_help="Manage Gmail integration."))
+cli.add_command(_lazy("calendar", "grandpa.cli.calendar_cmd:calendar", short_help="Manage Google Calendar integration."))
+cli.add_command(_lazy("notes", "grandpa.cli.notes_cmd:notes", short_help="Manage local notes."))
+cli.add_command(_lazy("downloads", "grandpa.cli.downloads_cmd:downloads", short_help="Inspect and organize Downloads."))
+cli.add_command(_lazy("search", "grandpa.cli.search_cmd:search", short_help="Search the web."))
 cli.add_command(_lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manage agents."))
 cli.add_command(_lazy("workflow", "grandpa.cli.workflow_cmd:workflow", short_help="Run workflows."))
 cli.add_command(_lazy("skill", "grandpa.cli.skill_cmd:skill", short_help="Manage skills."))

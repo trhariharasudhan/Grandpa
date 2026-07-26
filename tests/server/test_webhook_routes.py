@@ -71,6 +71,21 @@ class TestTwilioWebhook:
         assert resp.status_code == 403
 
 
+def test_all_inbound_webhooks_fail_closed_without_secrets(mock_bridge):
+    app = FastAPI()
+    app.include_router(create_webhook_router(bridge=mock_bridge))
+    client = TestClient(app)
+
+    assert client.post("/webhooks/twilio", data={"From": "+1", "Body": "x"}).status_code == 403
+    assert client.post("/webhooks/bluebubbles", json={}).status_code == 403
+    assert client.get(
+        "/webhooks/whatsapp",
+        params={"hub.mode": "subscribe", "hub.challenge": "secret"},
+    ).status_code == 403
+    assert client.post("/webhooks/whatsapp", json={}).status_code == 403
+    assert client.post("/webhooks/sendblue", json={}).status_code == 403
+
+
 class TestBlueBubblesWebhook:
     @pytest.fixture
     def bb_app(self, mock_bridge):

@@ -18,7 +18,9 @@ def list_tools() -> None:
     console = Console(stderr=True)
     try:
         # Trigger tool registration by importing the tools module
-        import grandpa.tools  # noqa: F401
+        from grandpa.tools import load_builtin_tools
+
+        load_builtin_tools()
         from grandpa.core.registry import ToolRegistry
 
         keys = sorted(ToolRegistry.keys())
@@ -63,7 +65,9 @@ def inspect(tool_name: str) -> None:
     console = Console(stderr=True)
     try:
         # Trigger tool registration by importing the tools module
-        import grandpa.tools  # noqa: F401
+        from grandpa.tools import load_builtin_tools
+
+        load_builtin_tools()
         from grandpa.core.registry import ToolRegistry
 
         if not ToolRegistry.contains(tool_name):

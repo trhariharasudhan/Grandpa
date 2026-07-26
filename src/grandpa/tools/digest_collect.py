@@ -472,7 +472,9 @@ class DigestCollectTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         # Ensure connectors are registered
-        import grandpa.connectors  # noqa: F401
+        from grandpa.connectors import load_builtin_connectors
+
+        load_builtin_connectors()
 
         sources: List[str] = params.get("sources", [])
         hours_back: float = params.get("hours_back", 24)

@@ -1,13 +1,17 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 from grandpa.cli.doctor_cmd import (
     CheckResult,
     _build_doctor_dashboard,
+    _check_background_tasks,
     _check_daily_use_readiness,
     _check_docker_readiness,
+    _check_engines,
     _check_existing_sqlite_db,
     _check_known_app,
+    _check_voice_frontend_note,
     _fetch_ollama_models,
     _readiness_label,
 )
@@ -15,23 +19,31 @@ from grandpa.windows_app_resolver import AppResolution
 
 
 def test_fetch_ollama_models_parses_tags(monkeypatch) -> None:
-    class FakeResponse:
-        def __enter__(self):
-            return self
+    captured = {}
 
-        def __exit__(self, *args):
-            return False
+    class FakeOllamaEngine:
+        def __init__(self, host, timeout):
+            captured["host"] = host
+            captured["timeout"] = timeout
 
-        def read(self):
-            return b'{"models":[{"name":"qwen2.5:3b"}]}'
+        def list_models(self):
+            return ["qwen2.5:3b"]
 
-    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: FakeResponse())
+        def health(self):
+            return True
 
-    ok, models, message = _fetch_ollama_models("http://localhost:11434")
+        def close(self):
+            captured["closed"] = True
+
+    monkeypatch.setattr("grandpa.engine.ollama.OllamaEngine", FakeOllamaEngine)
+
+    ok, models, message = _fetch_ollama_models("127.0.0.1:11434")
 
     assert ok is True
     assert models == ["qwen2.5:3b"]
     assert message == "Reachable"
+    assert captured["host"] == "http://127.0.0.1:11434"
+    assert captured["closed"] is True
 
 
 def test_existing_sqlite_db_missing_is_optional(tmp_path: Path) -> None:
@@ -66,8 +78,106 @@ def test_docker_missing_is_optional(monkeypatch) -> None:
 
     results = _check_docker_readiness()
 
-    assert all(result.status == "warn" for result in results)
-    assert all(result.message == "Missing/optional" for result in results)
+    assert len(results) == 1
+    assert results[0].name == "Docker"
+    assert results[0].status == "info"
+    assert results[0].message == "Optional / not configured"
+
+
+def test_docker_required_feature_warns_when_missing(monkeypatch) -> None:
+    config = SimpleNamespace(
+        sandbox=SimpleNamespace(enabled=True, runtime="docker"),
+        mining=SimpleNamespace(enabled=False),
+    )
+    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
+    monkeypatch.setattr("shutil.which", lambda name: None)
+
+    results = _check_docker_readiness()
+
+    assert len(results) == 1
+    assert results[0].name == "Docker"
+    assert results[0].status == "warn"
+    assert results[0].message == "Required but unavailable"
+
+
+def test_optional_browser_voice_absence_is_informational(monkeypatch) -> None:
+    config = SimpleNamespace()
+    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
+
+    result = _check_voice_frontend_note()
+
+    assert result.status == "info"
+    assert result.message == "Optional / not configured"
+
+
+def test_enabled_browser_voice_absence_warns(monkeypatch) -> None:
+    config = SimpleNamespace(voice_frontend=SimpleNamespace(enabled=True))
+    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
+
+    result = _check_voice_frontend_note()
+
+    assert result.status == "warn"
+    assert result.message == "Missing/optional"
+
+
+def test_optional_rust_extension_absence_is_informational(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "grandpa.cli._bg_state.get_status",
+        lambda: SimpleNamespace(rust_extension="pending", rust_error="", models={}),
+    )
+
+    results = _check_background_tasks()
+    rust = next(result for result in results if result.name == "Rust extension background task")
+
+    assert rust.status == "info"
+    assert rust.message == "Optional / not configured"
+
+
+def test_inactive_engines_do_not_increase_warning_count(monkeypatch) -> None:
+    config = SimpleNamespace(
+        engine=SimpleNamespace(default="ollama"),
+        intelligence=SimpleNamespace(preferred_engine=""),
+    )
+    healthy_engine = MagicMock()
+    healthy_engine.health.return_value = True
+
+    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
+    monkeypatch.setattr(
+        "grandpa.core.registry.EngineRegistry.keys",
+        lambda: ["ollama", "vllm"],
+    )
+    monkeypatch.setattr(
+        "grandpa.engine._discovery._make_engine",
+        lambda key, cfg: healthy_engine,
+    )
+
+    results = _check_engines()
+
+    assert next(result for result in results if result.name == "Engine: ollama").status == "ok"
+    inactive = next(result for result in results if result.name == "Engine: vllm")
+    assert inactive.status == "info"
+    assert _readiness_label(results) == "READY"
+
+
+def test_configured_unreachable_engine_warns(monkeypatch) -> None:
+    config = SimpleNamespace(
+        engine=SimpleNamespace(default="vllm"),
+        intelligence=SimpleNamespace(preferred_engine=""),
+    )
+    unhealthy_engine = MagicMock()
+    unhealthy_engine.health.return_value = False
+
+    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
+    monkeypatch.setattr("grandpa.core.registry.EngineRegistry.keys", lambda: ["vllm"])
+    monkeypatch.setattr(
+        "grandpa.engine._discovery._make_engine",
+        lambda key, cfg: unhealthy_engine,
+    )
+
+    results = _check_engines()
+
+    assert results[0].name == "Engine: vllm"
+    assert results[0].status == "warn"
 
 
 def test_daily_readiness_contains_expected_checks(monkeypatch) -> None:
@@ -151,6 +261,14 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
         CheckResult("File assistant database ready", "ok", "Ready"),
     )
     patch_check(
+        "_check_notes_readiness",
+        CheckResult("Notes storage", "ok", "Ready"),
+    )
+    patch_check(
+        "_check_downloads_readiness",
+        CheckResult("Downloads directory", "ok", "Ready"),
+    )
+    patch_check(
         "_check_scheduler_db_ready",
         CheckResult("Scheduler database ready", "ok", "Ready"),
     )
@@ -177,6 +295,18 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
     patch_check(
         "_check_voice_frontend_note",
         CheckResult("Voice frontend support", "warn", "Missing/optional"),
+    )
+    patch_check(
+        "_check_gmail_readiness",
+        CheckResult("Gmail integration", "ok", "Ready"),
+    )
+    patch_check(
+        "_check_calendar_readiness",
+        CheckResult("Google Calendar integration", "ok", "Ready"),
+    )
+    patch_check(
+        "_check_web_search_readiness",
+        CheckResult("Web search", "ok", "Ready"),
     )
     monkeypatch.setattr(
         "grandpa.cli.doctor_cmd._check_docker_readiness",
@@ -208,6 +338,7 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
 
 
 def test_readiness_label() -> None:
-    assert _readiness_label([CheckResult("a", "ok", "Ready")]) == "DAILY USE READY"
+    assert _readiness_label([CheckResult("a", "ok", "Ready")]) == "READY"
+    assert _readiness_label([CheckResult("a", "info", "Not configured")]) == "READY"
     assert _readiness_label([CheckResult("a", "warn", "Missing/optional")]) == "PARTIALLY READY"
     assert _readiness_label([CheckResult("a", "fail", "Failed")]) == "NEEDS SETUP"

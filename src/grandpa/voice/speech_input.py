@@ -51,8 +51,18 @@ class SpeechInputEngine:
     speech runtime or mobile companion.
     """
 
-    def __init__(self, preferred_engine: str = "auto") -> None:
+    def __init__(
+        self,
+        preferred_engine: str = "auto",
+        *,
+        model: str | None = None,
+        device: str | None = None,
+        compute_type: str | None = None,
+    ) -> None:
         self.preferred_engine = preferred_engine
+        self.model = model
+        self.device = device
+        self.compute_type = compute_type
         self._last_result: SpeechInputResult | None = None
         self._backend: Any | None = None
 
@@ -146,15 +156,32 @@ class SpeechInputEngine:
             )
 
         if importlib.util.find_spec("faster_whisper") is None:
-            raise VoiceDependencyError(detail="Local Whisper/faster-whisper is required to transcribe audio bytes.")
+            raise VoiceDependencyError(
+                "The optional package `faster-whisper` is not installed.\n"
+                "Install voice support with:\n"
+                "uv sync --extra voice",
+                detail="Module faster_whisper was not found in the active Python environment.",
+            )
 
         try:
             backend = self._get_backend()
             result = backend.transcribe(audio_bytes, format=normalized_format, language=language)
+        except ModuleNotFoundError as exc:
+            if exc.name == "faster_whisper":
+                raise VoiceDependencyError(
+                    "The optional package `faster-whisper` is not installed.\n"
+                    "Install voice support with:\n"
+                    "uv sync --extra voice",
+                    detail=str(exc),
+                ) from exc
+            raise VoiceRecognitionError(
+                "Local speech recognition could not initialize.",
+                detail=f"{type(exc).__name__}: {exc}",
+            ) from exc
         except ImportError as exc:
-            raise VoiceDependencyError(
-                "Voice mode is not fully installed.\nInstall it with:\nuv sync --extra speech\nThen retry the command.",
-                detail=str(exc),
+            raise VoiceRecognitionError(
+                "Local speech recognition could not initialize.",
+                detail=f"{type(exc).__name__}: {exc}",
             ) from exc
         except FileNotFoundError as exc:
             raise VoiceDependencyError(
@@ -211,7 +238,18 @@ class SpeechInputEngine:
     def _speech_config(self) -> Any:
         from grandpa.core.config import load_config
 
-        return load_config().speech
+        config = load_config().speech
+        if self.model is None and self.device is None and self.compute_type is None:
+            return config
+
+        class _SpeechConfigOverride:
+            pass
+
+        override = _SpeechConfigOverride()
+        override.model = self.model or getattr(config, "model", "base")
+        override.device = self.device or getattr(config, "device", "auto")
+        override.compute_type = self.compute_type or getattr(config, "compute_type", "auto")
+        return override
 
 
 def _elapsed_ms(started: float) -> float:

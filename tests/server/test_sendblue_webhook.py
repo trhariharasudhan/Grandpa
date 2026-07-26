@@ -41,6 +41,7 @@ def sendblue_channel():
         api_key_id="test_key",
         api_secret_key="test_secret",
         from_number="+15551234567",
+        webhook_secret="test_webhook_secret",
     )
     ch.connect()
     return ch
@@ -61,7 +62,10 @@ def webhook_app(mock_bridge, sendblue_channel):
 
 @pytest.fixture
 def client(webhook_app):
-    return TestClient(webhook_app)
+    return TestClient(
+        webhook_app,
+        headers={"x-sendblue-secret": "test_webhook_secret"},
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +173,7 @@ class TestSendBlueWebhook:
         app = FastAPI()
         router = create_webhook_router(bridge=None, sendblue_channel=sendblue_channel)
         app.include_router(router)
-        c = TestClient(app)
+        c = TestClient(app, headers={"x-sendblue-secret": "test_webhook_secret"})
 
         resp = c.post(
             "/webhooks/sendblue",

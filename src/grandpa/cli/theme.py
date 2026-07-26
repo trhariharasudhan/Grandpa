@@ -226,6 +226,13 @@ def _command_group(title: str, commands: list[str]) -> str:
     lines.extend(f"[{TEXT_ACCENT}]{command}[/{TEXT_ACCENT}]" for command in commands)
     return "\n".join(lines)
 
+
+def render_user_message(console: Console, content: str) -> None:
+    """Render submitted user input into the permanent chat transcript."""
+
+    console.print(f"[bold {TEXT_ACCENT}]>[/bold {TEXT_ACCENT}] {content}")
+
+
 def render_assistant_response(console: Console, content) -> None:
     """Render AI response without title."""
 

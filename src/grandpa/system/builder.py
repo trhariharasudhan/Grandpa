@@ -342,7 +342,9 @@ class SystemBuilder:
 
     def _resolve_memory(self, config):
         try:
-            import grandpa.tools.storage  # noqa: F401 -- trigger registration
+            from grandpa.tools.storage import load_storage_backends
+
+            load_storage_backends()
             from grandpa.core.registry import MemoryRegistry
 
             key = config.memory.default_backend

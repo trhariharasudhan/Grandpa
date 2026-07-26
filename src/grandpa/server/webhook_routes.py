@@ -113,7 +113,7 @@ def create_webhook_router(
         signature = request.headers.get("X-Twilio-Signature", "")
         url = str(request.url)
 
-        if twilio_auth_token and not _validate_twilio_signature(
+        if not twilio_auth_token or not _validate_twilio_signature(
             twilio_auth_token, url, params, signature
         ):
             return Response("Invalid signature", status_code=403)
@@ -257,7 +257,9 @@ def create_webhook_router(
         request: Request,
     ) -> Response:
         auth = request.headers.get("Authorization", "")
-        if bluebubbles_password and auth != bluebubbles_password:
+        if not bluebubbles_password or not hmac.compare_digest(
+            auth, bluebubbles_password
+        ):
             return Response("Invalid password", status_code=403)
 
         payload = await request.json()
@@ -292,7 +294,11 @@ def create_webhook_router(
         token = request.query_params.get("hub.verify_token", "")
         challenge = request.query_params.get("hub.challenge", "")
 
-        if mode == "subscribe" and token == whatsapp_verify_token:
+        if (
+            whatsapp_verify_token
+            and mode == "subscribe"
+            and hmac.compare_digest(token, whatsapp_verify_token)
+        ):
             return PlainTextResponse(challenge)
         return Response("Forbidden", status_code=403)
 
@@ -303,18 +309,19 @@ def create_webhook_router(
         body_bytes = await request.body()
 
         # Verify signature
-        if whatsapp_app_secret:
-            signature = request.headers.get("X-Hub-Signature-256", "")
-            expected = (
-                "sha256="
-                + hmac.new(
-                    whatsapp_app_secret.encode(),
-                    body_bytes,
-                    hashlib.sha256,
-                ).hexdigest()
-            )
-            if not hmac.compare_digest(signature, expected):
-                return Response("Invalid signature", status_code=403)
+        if not whatsapp_app_secret:
+            return Response("Webhook secret not configured", status_code=403)
+        signature = request.headers.get("X-Hub-Signature-256", "")
+        expected = (
+            "sha256="
+            + hmac.new(
+                whatsapp_app_secret.encode(),
+                body_bytes,
+                hashlib.sha256,
+            ).hexdigest()
+        )
+        if not hmac.compare_digest(signature, expected):
+            return Response("Invalid signature", status_code=403)
 
         payload = json.loads(body_bytes)
         for entry in payload.get("entry", []):
@@ -350,15 +357,11 @@ def create_webhook_router(
         sb = sendblue_channel or getattr(request.app.state, "sendblue_channel", None)
 
         # Verify webhook secret if configured
-        if sb and sb.webhook_secret:
-            header_secret = request.headers.get("x-sendblue-secret", "")
-            if header_secret != sb.webhook_secret:
-                return Response("Invalid secret", status_code=403)
-        elif sb:
-            logger.warning(
-                "SendBlue webhook received without secret verification. "
-                "Set webhook_secret for HMAC validation."
-            )
+        if not sb or not sb.webhook_secret:
+            return Response("Webhook secret not configured", status_code=403)
+        header_secret = request.headers.get("x-sendblue-secret", "")
+        if not hmac.compare_digest(header_secret, sb.webhook_secret):
+            return Response("Invalid secret", status_code=403)
 
         # Ignore outbound status callbacks
         if payload.get("is_outbound", False):

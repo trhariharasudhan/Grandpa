@@ -9,6 +9,7 @@ import grandpa.engine.ollama  # noqa: F401
 import grandpa.engine.openai_compat_engines  # noqa: F401
 from grandpa.engine._base import (
     EngineConnectionError,
+    EngineModelLoadError,
     EngineModelNotFoundError,
     InferenceEngine,
     messages_to_dicts,
@@ -24,6 +25,7 @@ for _optional in ("cloud", "litellm", "gemma_cpp"):
 
 __all__ = [
     "EngineConnectionError",
+    "EngineModelLoadError",
     "EngineModelNotFoundError",
     "InferenceEngine",
     "discover_engines",

@@ -14,6 +14,7 @@ from grandpa.core.registry import EngineRegistry
 from grandpa.core.types import Message
 from grandpa.engine._base import (
     EngineConnectionError,
+    EngineModelLoadError,
     EngineModelNotFoundError,
     InferenceEngine,
     estimate_prompt_tokens,
@@ -27,6 +28,26 @@ logger = logging.getLogger(__name__)
 
 _MAX_NUM_PREDICT = 2048
 _DEFAULT_STOP_SEQUENCES = ["<|im_end|>", "<|endoftext|>"]
+_DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
+_LOW_MEMORY_MARKERS = (
+    "not enough memory",
+    "out of memory",
+    "insufficient memory",
+    "memory required",
+    "system memory",
+    "available memory",
+    "failed to allocate",
+    "cuda out of memory",
+)
+
+
+def normalize_ollama_host(host: str | None) -> str:
+    """Return a usable Ollama HTTP base URL."""
+
+    value = (host or "").strip() or _DEFAULT_OLLAMA_HOST
+    if "://" not in value:
+        value = f"http://{value}"
+    return value.rstrip("/")
 
 
 def _generation_options(
@@ -120,7 +141,7 @@ class OllamaEngine(InferenceEngine):
 
     engine_id = "ollama"
 
-    _DEFAULT_HOST = "http://localhost:11434"
+    _DEFAULT_HOST = _DEFAULT_OLLAMA_HOST
 
     def __init__(
         self,
@@ -132,7 +153,7 @@ class OllamaEngine(InferenceEngine):
         if host is None:
             env_host = os.environ.get("OLLAMA_HOST")
             host = env_host or self._DEFAULT_HOST
-        self._host = host.rstrip("/")
+        self._host = normalize_ollama_host(host)
         self._client = httpx.Client(base_url=self._host, timeout=timeout)
         # Last stream usage — captured from Ollama's final chunk
         self._last_stream_usage: Dict[str, int] = {}
@@ -202,8 +223,14 @@ class OllamaEngine(InferenceEngine):
                     model,
                     f"Ollama model {model!r} is not installed.",
                 ) from exc
+            if _is_model_load_error(body):
+                raise EngineModelLoadError(
+                    model,
+                    _format_model_load_error(model, body),
+                    low_memory=_is_low_memory_error(body),
+                ) from exc
             raise RuntimeError(
-                f"Ollama returned {exc.response.status_code}: {body}"
+                f"Ollama returned {exc.response.status_code}: {_extract_ollama_error(body)}"
             ) from exc
         data = resp.json()
         # prompt_eval_count = tokens actually evaluated (KV-cache-aware).
@@ -536,4 +563,53 @@ def _is_model_not_found_error(status_code: int, body: str) -> bool:
     )
 
 
-__all__ = ["OllamaEngine"]
+def _extract_ollama_error(body: str) -> str:
+    try:
+        parsed = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        return body[:500]
+    if isinstance(parsed, dict):
+        error = parsed.get("error") or parsed.get("message")
+        if error:
+            return str(error)[:500]
+    return body[:500]
+
+
+def _is_model_load_error(body: str) -> bool:
+    lowered = _extract_ollama_error(body).lower()
+    return (
+        "load" in lowered
+        or "memory" in lowered
+        or "allocate" in lowered
+        or "runner" in lowered
+    ) and any(
+        marker in lowered
+        for marker in (
+            "memory",
+            "allocate",
+            "runner",
+            "load model",
+            "loading model",
+        )
+    )
+
+
+def _is_low_memory_error(body: str) -> bool:
+    lowered = _extract_ollama_error(body).lower()
+    return any(marker in lowered for marker in _LOW_MEMORY_MARKERS)
+
+
+def _format_model_load_error(model: str, body: str) -> str:
+    detail = _extract_ollama_error(body)
+    if _is_low_memory_error(body):
+        return (
+            f"Ollama could not load {model} because available memory is too low. "
+            "Close memory-heavy apps or use grandpa-light:latest."
+        )
+    return f"Ollama could not load {model}: {detail}"
+
+
+__all__ = [
+    "OllamaEngine",
+    "normalize_ollama_host",
+]

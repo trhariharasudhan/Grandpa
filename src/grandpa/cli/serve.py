@@ -181,7 +181,9 @@ def serve(
     agent_key = agent_name or config.server.agent
     if agent_key:
         try:
-            import grandpa.agents  # noqa: F401
+            from grandpa.agents import load_builtin_agents
+
+            load_builtin_agents()
             from grandpa.core.registry import AgentRegistry
 
             if AgentRegistry.contains(agent_key):
@@ -192,7 +194,9 @@ def serve(
 
                 # Load tools for agents that support them
                 if getattr(agent_cls, "accepts_tools", False):
-                    import grandpa.tools  # noqa: F401  # trigger registration
+                    from grandpa.tools import load_builtin_tools
+
+                    load_builtin_tools()
                     from grandpa.core.registry import ToolRegistry
                     from grandpa.tools._stubs import BaseTool
 
@@ -264,13 +268,17 @@ def serve(
         _channel_tools: list = []
         if channel_agent:
             try:
-                import grandpa.agents
+                from grandpa.agents import load_builtin_agents
+
+                load_builtin_agents()
                 from grandpa.core.registry import AgentRegistry
 
                 if AgentRegistry.contains(channel_agent):
                     _ch_cls = AgentRegistry.get(channel_agent)
                     if getattr(_ch_cls, "accepts_tools", False):
-                        import grandpa.tools
+                        from grandpa.tools import load_builtin_tools
+
+                        load_builtin_tools()
                         from grandpa.core.registry import ToolRegistry
                         from grandpa.tools._stubs import BaseTool
 
@@ -390,7 +398,9 @@ def serve(
     memory_backend = None
     if config.agent.context_from_memory:
         try:
-            import grandpa.tools.storage  # noqa: F401
+            from grandpa.tools.storage import load_storage_backends
+
+            load_storage_backends()
             from grandpa.core.registry import MemoryRegistry
 
             mem_key = config.memory.default_backend

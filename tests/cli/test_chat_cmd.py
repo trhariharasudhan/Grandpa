@@ -14,9 +14,10 @@ from grandpa.agents._stubs import (
     BaseAgent,
     ToolUsingAgent,
 )
-from grandpa.cli import input_ui
+from grandpa.cli import input_ui, theme
 from grandpa.cli.chat_cmd import (
     _create_one_shot_reminder,
+    _handle_apps_slash_command,
     _handle_help_slash_command,
     _handle_memory_slash_command,
     _handle_module_slash_command,
@@ -33,11 +34,15 @@ from grandpa.cli.slash_commands import (
     get_command,
     unknown_command_message,
 )
-from grandpa.cli.theme import render_help
+from grandpa.cli.theme import render_help, render_user_message
 from grandpa.core.config import GrandpaConfig
 from grandpa.core.registry import AgentRegistry, ToolRegistry
 from grandpa.core.types import ToolCall, ToolResult
-from grandpa.engine._base import EngineConnectionError, EngineModelNotFoundError
+from grandpa.engine._base import (
+    EngineConnectionError,
+    EngineModelLoadError,
+    EngineModelNotFoundError,
+)
 from grandpa.memory_context import MemoryStore
 from grandpa.reminders import ReminderStore
 from grandpa.tools._stubs import BaseTool, ToolSpec
@@ -200,6 +205,76 @@ class TestChatCommand:
         assert "Help Module" not in result.output
         engine.generate.assert_not_called()
 
+    def test_bare_slash_is_not_routed_as_unknown_command(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/\n/quit\n")
+
+        assert result.exit_code == 0
+        assert "Unknown command: /" not in result.output
+        engine.generate.assert_not_called()
+
+    def test_submitted_normal_input_is_printed_once(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        engine.generate.return_value = {"content": "Hello! How can I assist you today?"}
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="hi\n/quit\n")
+
+        assert result.exit_code == 0
+        assert result.output.count("> hi") == 1
+        assert "< Hello! How can I assist you today?" in result.output
+
+    def test_submitted_slash_command_is_printed_once(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/help\n/quit\n")
+
+        assert result.exit_code == 0
+        assert result.output.count("> /help") == 1
+        assert "Grandpa Command Center" in result.output
+        engine.generate.assert_not_called()
+
+    def test_empty_input_is_not_printed_as_user_message(self) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"], input="\n/quit\n")
+
+        assert result.exit_code == 0
+        assert "> \n" not in result.output
+        assert engine.generate.call_count == 0
+
 
 class TestReadInput:
     """Test the _read_input helper function."""
@@ -218,9 +293,39 @@ class TestReadInput:
 
     def test_chat_input_fallback_when_prompt_toolkit_unavailable(self, monkeypatch) -> None:
         monkeypatch.setattr(input_ui, "PROMPT_TOOLKIT_AVAILABLE", False)
-        monkeypatch.setattr("builtins.input", lambda _prompt="": "/help")
+        prompts = []
+
+        def fake_input(prompt=""):
+            prompts.append(prompt)
+            return "/help"
+
+        monkeypatch.setattr("builtins.input", fake_input)
 
         assert input_ui.read_chat_input() == "/help"
+        assert prompts == ["> "]
+        assert "You>" not in prompts
+
+    def test_prompt_colors_are_theme_correct(self) -> None:
+        assert input_ui.USER_PROMPT == "> "
+        assert input_ui.USER_PROMPT_COLOR == "#6244c5"
+        assert input_ui.ASSISTANT_PROMPT_COLOR == "#ffc448"
+        assert theme.TEXT_ACCENT == "#6244c5"
+
+    def test_render_user_message_uses_purple_prompt(self) -> None:
+        console = MagicMock()
+
+        render_user_message(console, "hi")
+
+        assert console.print.call_args.args[0] == "[bold #6244c5]>[/bold #6244c5] hi"
+
+    def test_assistant_prompt_uses_purple_marker(self) -> None:
+        console = MagicMock()
+
+        theme.render_assistant_response(console, "hello")
+
+        first_call = console.print.call_args_list[0]
+        assert "<" in first_call.args[0]
+        assert "#ffc448" in first_call.args[0]
 
 
 class TestSlashCommandRegistry:
@@ -285,6 +390,97 @@ class TestSlashCommandRegistry:
         assert "/order" in names
         assert "/help" not in labels
 
+    def test_live_slash_completion_returns_top_level_commands(self) -> None:
+        completions = input_ui._completion_candidates("/", input_ui.SlashPickerState())
+
+        assert completions
+        assert completions[0][0] == "/help"
+
+    def test_picker_toolbar_shows_horizontal_and_vertical_commands(self) -> None:
+        state = input_ui.SlashPickerState()
+        state.preview_index = 3
+
+        lines = input_ui._picker_toolbar_lines("/", state)
+
+        assert lines[0] == "Slash Commands"
+        assert "Help  Status  Mode" in lines[2]
+        assert "/help  /status  /mode" not in lines[2]
+        assert not any(line.startswith("Selected:") for line in lines)
+        assert "  Help" in lines
+        assert "  Help commands" in lines
+        assert "  Help examples" in lines
+        assert "> Help modules" in lines
+        assert not any(line.strip().startswith("/") for line in lines[4:])
+
+    def test_picker_display_labels_keep_command_values_for_selection(self) -> None:
+        state = input_ui.SlashPickerState()
+        state.top_index = 2
+        state.preview_index = 0
+
+        lines = input_ui._picker_toolbar_lines("/", state)
+
+        assert "Mode" in lines[2]
+        assert not any(line.startswith("Selected:") for line in lines)
+        assert any(line.endswith("Mode list") for line in lines)
+
+        class FakeBuffer:
+            text = "/"
+            cursor_position = 0
+
+        buffer = FakeBuffer()
+        assert input_ui._apply_picker_selection(buffer, state) is True
+        assert buffer.text == "/mode list"
+        assert buffer.cursor_position == len("/mode list")
+
+    def test_picker_toolbar_uses_dark_theme_fragments(self) -> None:
+        fragments = input_ui._picker_toolbar_fragments("/", input_ui.SlashPickerState())
+        styles = [style for style, _text in fragments]
+
+        assert fragments
+        assert "class:picker.title" in styles
+        assert "class:picker.command" in styles
+        assert "class:picker.current" in styles
+        assert input_ui.PICKER_BACKGROUND_COLOR == "#181818"
+        assert input_ui.PICKER_COMMAND_COLOR == "#6244c5"
+
+    def test_runtime_input_uses_custom_dark_slash_layout(self, monkeypatch) -> None:
+        captured = {}
+
+        class FakeBuffer:
+            def __init__(self, **kwargs):
+                captured["buffer_kwargs"] = kwargs
+
+        class FakeBufferControl:
+            def __init__(self, buffer):
+                captured["input_control_buffer"] = buffer
+
+        class FakeApp:
+            def run(self):
+                return "/help"
+
+        def fake_app(buffer, input_control, picker_state, bindings):
+            captured["buffer"] = buffer
+            captured["input_control"] = input_control
+            captured["picker_state"] = picker_state
+            captured["bindings"] = bindings
+            return FakeApp()
+
+        monkeypatch.setattr(input_ui, "PROMPT_TOOLKIT_AVAILABLE", True)
+        monkeypatch.setattr(input_ui.sys.stdin, "isatty", lambda: True)
+        monkeypatch.setattr(input_ui, "Buffer", FakeBuffer)
+        monkeypatch.setattr(input_ui, "BufferControl", FakeBufferControl)
+        monkeypatch.setattr(input_ui, "_slash_input_application", fake_app)
+
+        assert input_ui.read_chat_input() == "/help"
+        assert captured["buffer_kwargs"] == {"multiline": False}
+        assert captured["input_control_buffer"] is captured["buffer"]
+        assert isinstance(captured["picker_state"], input_ui.SlashPickerState)
+        assert captured["bindings"] is not None
+        styles = input_ui._picker_style_dict()
+        assert "bottom-toolbar" not in styles
+        assert styles["picker.background"] == "bg:#181818 #ffffff"
+        assert styles["picker.command"] == "bg:#181818 #6244c5"
+
     def test_picker_subcommand_suggestions_are_available(self) -> None:
         suggestions = input_ui._subcommand_suggestions("/mode")
         names = [name for name, _description in suggestions]
@@ -294,25 +490,24 @@ class TestSlashCommandRegistry:
 
     def test_picker_preview_lines_include_selected_command_details(self) -> None:
         assert input_ui._picker_preview_lines("/help") == [
-            "Selected: Help (/help)",
             "Help",
-            "Commands",
-            "Examples",
-            "Modules",
+            "Help commands",
+            "Help examples",
+            "Help modules",
         ]
         mode_lines = input_ui._picker_preview_lines("/mode")
         memory_lines = input_ui._picker_preview_lines("/memory")
         reminder_lines = input_ui._picker_preview_lines("/reminders")
 
-        assert "List" in mode_lines
-        assert "Show" in mode_lines
-        assert "Coding" in mode_lines
-        assert not any(line.startswith("/") for line in mode_lines[1:])
-        assert "List" in memory_lines
-        assert "All" in memory_lines
-        assert "Search Query" in memory_lines
-        assert "Forget Query Or Id" in memory_lines
-        assert "Cancel Id" in reminder_lines
+        assert "Mode list" in mode_lines
+        assert "Mode show" in mode_lines
+        assert "Mode coding" in mode_lines
+        assert not any(line.startswith("/") for line in mode_lines)
+        assert "Memory list" in memory_lines
+        assert "Memory all" in memory_lines
+        assert "Memory search <query>" in memory_lines
+        assert "Memory forget <query or id>" in memory_lines
+        assert "Reminders cancel <id>" in reminder_lines
 
     def test_picker_preview_options_preserve_submit_commands(self) -> None:
         assert input_ui._command_preview_options("/mode")[0] == ("/mode list", "List")
@@ -323,7 +518,6 @@ class TestSlashCommandRegistry:
         monkeypatch.setattr(input_ui, "_installed_ollama_models", lambda: ["gemma3:4b", "grandpa-fast:latest"])
 
         assert input_ui._picker_preview_lines("/model") == [
-            "Selected: Model (/model)",
             "Model",
             "gemma3:4b",
             "grandpa-fast:latest",
@@ -340,6 +534,27 @@ class TestSlashCommandRegistry:
 
 
 class TestChatSlashCommands:
+    def test_apps_slash_routes_to_application_manager(self, monkeypatch) -> None:
+        calls: list[str] = []
+
+        def fake_handle(command: str):
+            calls.append(command)
+            return type("Result", (), {"message": "Installed applications: Chrome."})()
+
+        monkeypatch.setattr("grandpa.desktop.automation.handle_desktop_command", fake_handle)
+
+        message = _handle_apps_slash_command("/apps list")
+
+        assert message == "Installed applications: Chrome."
+        assert calls == ["list installed applications"]
+
+    def test_apps_slash_help(self) -> None:
+        message = _handle_apps_slash_command("/apps")
+
+        assert message is not None
+        assert "/apps scan" in message
+        assert "/apps search <name>" in message
+
     def test_module_help_phone(self) -> None:
         message = _handle_module_slash_command("/phone")
 
@@ -931,6 +1146,44 @@ class TestChatOllamaUnavailable:
         assert "Traceback" not in result.output
         assert "httpx" not in result.output.lower()
 
+    def test_ollama_low_memory_load_failure_has_actionable_message(
+        self,
+        tmp_path,
+    ) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = EngineModelLoadError(
+            "grandpa-fast:latest",
+            (
+                "Ollama could not load grandpa-fast:latest because available "
+                "memory is too low. Close memory-heavy apps or use "
+                "grandpa-light:latest."
+            ),
+            low_memory=True,
+        )
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "grandpa-fast:latest"
+        log_path = tmp_path / "server.log"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+            patch("grandpa.cli.chat_cmd._generation_log_path", return_value=log_path),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "grandpa-fast:latest"],
+                input="hello\n",
+            )
+
+        assert result.exit_code == 1
+        assert "available memory is too low" in result.output
+        assert "grandpa-light:latest" in result.output
+        assert "Traceback" not in result.output
+        assert "Chat generation failed" in log_path.read_text(encoding="utf-8")
+
     def test_non_connection_error_is_not_reported_as_ollama_unavailable(self) -> None:
         engine = MagicMock()
         engine.engine_id = "ollama"
@@ -956,3 +1209,31 @@ class TestChatOllamaUnavailable:
         assert "ollama pull" not in result.output
         assert "ollama serve" not in result.output
         assert "Traceback" not in result.output
+
+    def test_generic_generation_error_logs_traceback(self, tmp_path) -> None:
+        engine = MagicMock()
+        engine.engine_id = "ollama"
+        engine.generate.side_effect = RuntimeError("programming bug")
+        config = GrandpaConfig()
+        config.agent.default_agent = "none"
+        config.intelligence.default_model = "test-model"
+        log_path = tmp_path / "server.log"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+            patch("grandpa.cli.chat_cmd._generation_log_path", return_value=log_path),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input="hello\n",
+            )
+
+        assert result.exit_code == 0
+        assert "programming bug" in result.output
+        assert "Traceback" not in result.output
+        log_text = log_path.read_text(encoding="utf-8")
+        assert "Chat generation failed" in log_text
+        assert "RuntimeError: programming bug" in log_text

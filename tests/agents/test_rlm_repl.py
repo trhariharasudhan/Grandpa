@@ -99,6 +99,22 @@ class TestRLMReplSecurity:
         assert result is not None
         assert "Blocked" in result
 
+    def test_blocks_indirect_import_bypass(self):
+        repl = RLMRepl()
+        output = repl.execute("getattr(__builtins__, '__import__')('os').system('id')")
+        assert "Blocked" in output
+
+    def test_blocks_object_graph_dunder_escape(self):
+        repl = RLMRepl()
+        output = repl.execute("result = ().__class__.__base__.__subclasses__()")
+        assert "Blocked" in output
+
+    def test_full_builtins_are_not_injected(self):
+        repl = RLMRepl()
+        builtins = repl.get_variable("__builtins__")
+        assert "open" not in builtins
+        assert "__import__" not in builtins
+
 
 class TestRLMReplTermination:
     """FINAL, FINAL_VAR, and answer dict termination."""

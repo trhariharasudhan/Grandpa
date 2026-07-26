@@ -25,7 +25,9 @@ def _ensure_connectors_registered() -> None:
 
     # First, try a normal import (works if modules haven't been imported yet).
     try:
-        import grandpa.connectors  # noqa: F401
+        from grandpa.connectors import load_builtin_connectors
+
+        load_builtin_connectors()
     except Exception:
         pass
 

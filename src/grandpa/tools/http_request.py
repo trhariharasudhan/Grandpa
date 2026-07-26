@@ -6,6 +6,7 @@ import logging
 import os
 import time
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 
@@ -18,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Maximum response body size: 1 MB
 _MAX_RESPONSE_BYTES = 1_048_576
+_MAX_REDIRECTS = 5
 
 _ALLOWED_METHODS = frozenset({"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD"})
 
@@ -136,14 +138,45 @@ class HttpRequestTool(BaseTool):
 
         try:
             t0 = time.time()
-            response = httpx.request(
-                method,
-                url,
-                headers=headers,
-                content=body,
-                timeout=float(timeout),
-                follow_redirects=True,
-            )
+            current_url = url
+            current_method = method
+            current_body = body
+            for redirect_count in range(_MAX_REDIRECTS + 1):
+                response = httpx.request(
+                    current_method,
+                    current_url,
+                    headers=headers,
+                    content=current_body,
+                    timeout=float(timeout),
+                    follow_redirects=False,
+                )
+                if not response.is_redirect:
+                    break
+                if redirect_count == _MAX_REDIRECTS:
+                    return ToolResult(
+                        tool_name="http_request",
+                        content=f"Too many redirects (maximum {_MAX_REDIRECTS}).",
+                        success=False,
+                    )
+                location = response.headers.get("location", "")
+                next_url = urljoin(str(response.url or current_url), location)
+                redirect_error = check_ssrf(next_url)
+                if redirect_error:
+                    return ToolResult(
+                        tool_name="http_request",
+                        content=(
+                            "SSRF protection blocked redirect: "
+                            f"{redirect_error}"
+                        ),
+                        success=False,
+                    )
+                if response.status_code == 303 or (
+                    response.status_code in {301, 302}
+                    and current_method == "POST"
+                ):
+                    current_method = "GET"
+                    current_body = None
+                current_url = next_url
             elapsed_ms = (time.time() - t0) * 1000
 
             content_type = response.headers.get("content-type", "")

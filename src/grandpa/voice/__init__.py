@@ -3,6 +3,7 @@
 from grandpa.voice.conversation import VoiceConversation, VoiceMessage
 from grandpa.voice.errors import (
     MicrophoneUnavailableError,
+    VoiceConfigurationError,
     VoiceDependencyError,
     VoiceError,
     VoiceOutputUnavailableError,
@@ -19,6 +20,7 @@ __all__ = [
     "SpeechOutputEngine",
     "SpeechOutputResult",
     "VoiceConversation",
+    "VoiceConfigurationError",
     "VoiceDependencyError",
     "VoiceError",
     "VoiceOutputUnavailableError",

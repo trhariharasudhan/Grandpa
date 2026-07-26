@@ -232,7 +232,9 @@ def _cell_lock(out_dir: Path, cell_name: str):
 
 def _build_agent(cell: Dict[str, Any]):
     """Construct the registered agent for this cell."""
-    import grandpa.agents  # noqa: F401 — populate registry
+    from grandpa.agents import load_builtin_agents
+
+    load_builtin_agents()
     from grandpa.core.registry import AgentRegistry
 
     method = cell["method"]

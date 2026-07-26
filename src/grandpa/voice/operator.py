@@ -27,6 +27,7 @@ class VoiceOperatorIntent:
     action: str = ""
     target: str = ""
     args: dict[str, Any] | None = None
+    requires_confirmation: bool = False
     status: OperatorStatus = "handled"
     message: str = ""
 
@@ -91,6 +92,142 @@ def parse_voice_operator_command(text: str) -> VoiceOperatorIntent:
     if any(re.search(pattern, command) for pattern in DANGEROUS_PATTERNS):
         return VoiceOperatorIntent("blocked", status="blocked", message="I blocked that command for safety.")
 
+    from grandpa.automation import AutomationPlanner, get_automation_service
+
+    if command in {"yes", "confirm", "continue", "no", "cancel"} and (
+        get_automation_service().has_pending_confirmation
+    ):
+        return VoiceOperatorIntent(
+            "screen_automation",
+            "confirmation",
+            args={"command": command},
+            message="Handling automation confirmation.",
+        )
+
+    automation_action = AutomationPlanner().parse(command)
+    if automation_action is not None and automation_action.kind in {
+        "move",
+        "click",
+        "double_click",
+        "right_click",
+        "middle_click",
+        "scroll",
+        "drag",
+        "locate",
+        "highlight",
+        "focus",
+        "type",
+        "paste",
+        "press",
+    }:
+        intent_args = {"command": command}
+        if automation_action.kind == "type":
+            intent_args = {"text": str(automation_action.args.get("text", ""))}
+        elif automation_action.kind == "press":
+            intent_args = {"keys": list(automation_action.args.get("keys", []))}
+        return VoiceOperatorIntent(
+            "screen_automation",
+            {
+                "type": "keyboard_type",
+                "press": "keyboard_hotkey",
+                "focus": "focus_window",
+            }.get(automation_action.kind, automation_action.kind),
+            automation_action.target,
+            intent_args,
+            automation_action.requires_confirmation,
+            message="Handling visible-screen automation.",
+        )
+
+    from grandpa.web_search import WebSearchParser
+
+    web_search_action = WebSearchParser().parse(command)
+    if web_search_action is not None:
+        target = web_search_action.query.text if web_search_action.query else web_search_action.action
+        return VoiceOperatorIntent(
+            "web_search",
+            web_search_action.action,
+            target,
+            {"command": command},
+            False,
+            message="Handling web search command.",
+        )
+
+    from grandpa.downloads import DownloadsParser
+
+    downloads_action = DownloadsParser().parse(command)
+    if downloads_action is not None:
+        return VoiceOperatorIntent(
+            "downloads",
+            downloads_action.action,
+            downloads_action.query or downloads_action.selector,
+            {"command": command},
+            downloads_action.action in {"delete", "archive", "organize"},
+            message="Handling Downloads command.",
+        )
+
+    from grandpa.notes import NotesParser
+
+    notes_action = NotesParser().parse(command)
+    if notes_action is not None:
+        return VoiceOperatorIntent(
+            "notes",
+            notes_action.action,
+            notes_action.query or notes_action.title,
+            {"command": command},
+            notes_action.action == "delete",
+            message="Handling notes command.",
+        )
+
+    from grandpa.calendar import CalendarParser
+
+    calendar_action = CalendarParser().parse(command)
+    if calendar_action is not None:
+        return VoiceOperatorIntent(
+            "calendar",
+            calendar_action.action,
+            calendar_action.query or calendar_action.date_range or calendar_action.title,
+            {"command": command},
+            calendar_action.action in {"create", "update", "delete"},
+            message="Handling Calendar command.",
+        )
+
+    from grandpa.gmail import GmailParser
+
+    gmail_action = GmailParser().parse(command)
+    if gmail_action is not None:
+        return VoiceOperatorIntent(
+            "gmail",
+            gmail_action.action,
+            gmail_action.query or gmail_action.selector or gmail_action.recipient,
+            {"command": command},
+            gmail_action.action in {"send", "reply", "forward", "archive", "label", "trash"},
+            message="Handling Gmail command.",
+        )
+
+    from grandpa.browser_awareness import BrowserAwarenessParser
+
+    awareness_action = BrowserAwarenessParser().parse(command)
+    if awareness_action is not None:
+        return VoiceOperatorIntent(
+            "browser_awareness",
+            awareness_action.action,
+            awareness_action.query,
+            {"command": command},
+            message="Reading browser page context.",
+        )
+
+    from grandpa.browser import BrowserParser
+
+    browser_action = BrowserParser().parse(command)
+    if browser_action is not None:
+        return VoiceOperatorIntent(
+            "browser_automation",
+            browser_action.action,
+            browser_action.target or browser_action.provider or browser_action.url,
+            {"command": command},
+            message="Handling browser command.",
+        )
+
     if command in {"scan my apps", "scan apps", "scan installed apps"}:
         return VoiceOperatorIntent("app_inventory", "scan", message="Scanning installed apps.")
     if command in {"what apps do i have", "list apps", "show apps", "list my apps"}:
@@ -98,6 +235,19 @@ def parse_voice_operator_command(text: str) -> VoiceOperatorIntent:
     if command.startswith("find app "):
         name = command[len("find app ") :].strip()
         return VoiceOperatorIntent("app_inventory", "find", name, message=f"Finding {name}.")
+
+    from grandpa.desktop.automation import DesktopParser
+
+    desktop_action = DesktopParser().parse(command)
+    if desktop_action is not None:
+        return VoiceOperatorIntent(
+            "local_action",
+            desktop_action.pc_action_type,
+            desktop_action.target,
+            desktop_action.args,
+            desktop_action.requires_confirmation,
+            message=desktop_action.label or desktop_action.target,
+        )
 
     app = _match_app(command, prefixes=("open ",))
     if app:
@@ -115,6 +265,25 @@ def parse_voice_operator_command(text: str) -> VoiceOperatorIntent:
         return VoiceOperatorIntent("screen", "screenshot", message="Capturing the screen.")
     if command in {"what is on my screen", "what's on my screen", "read my screen", "describe my screen"}:
         return VoiceOperatorIntent("screen", "read", message="Reading the screen.")
+
+    if _looks_like_file_operator_command(command):
+        from grandpa.files import FileParser
+
+        file_action = FileParser().parse(command)
+        if file_action is not None:
+            return VoiceOperatorIntent(
+                "file_automation",
+                file_action.action,
+                file_action.source or file_action.query,
+                {"command": command},
+                file_action.action == "delete",
+                message="Handling file command.",
+            )
+
+    if command.startswith("open "):
+        target = command[len("open ") :].strip()
+        if target:
+            return VoiceOperatorIntent("local_action", "open_app", target, message=f"Opening {target}.")
 
     if command.startswith("type "):
         value = text.strip()[len("type ") :].strip()
@@ -146,17 +315,188 @@ def parse_voice_operator_command(text: str) -> VoiceOperatorIntent:
     )
 
 
+def _looks_like_file_operator_command(command: str) -> bool:
+    file_prefixes = (
+        "create folder ",
+        "create a folder ",
+        "make folder ",
+        "make a folder ",
+        "create file ",
+        "create a file ",
+        "make file ",
+        "make an empty file ",
+        "rename ",
+        "copy ",
+        "duplicate ",
+        "move ",
+        "delete file ",
+        "delete folder ",
+        "delete the file ",
+        "delete the folder ",
+        "remove file ",
+        "remove folder ",
+        "find ",
+        "search for ",
+        "find files containing ",
+        "search files containing ",
+        "show recent pdfs",
+        "find recent pdfs",
+        "find latest screenshot",
+        "open latest ",
+        "open the folder containing ",
+        "zip ",
+        "compress ",
+        "extract ",
+        "show properties of ",
+        "what is the size of ",
+        "when was ",
+        "show file type and location ",
+    )
+    if command.startswith(file_prefixes):
+        return True
+    if command.startswith("open "):
+        target = command[len("open ") :].strip()
+        return any(separator in target for separator in ("\\", "/")) or "." in target
+    return False
+
+
 def execute_voice_operator_intent(
     intent: VoiceOperatorIntent,
     *,
     dry_run: bool = False,
     action_runner: Callable[[dict[str, Any]], Any] = run_local_action,
     screen_reader: Callable[..., Any] | None = None,
+    automation_service=None,
 ) -> VoiceOperatorResult:
     if intent.status in {"blocked", "unsupported", "exit"}:
         return VoiceOperatorResult(intent.status, intent.message, intent.message)
+    if intent.kind == "screen_automation":
+        from grandpa.automation.executor import AutomationExecutor
+        from grandpa.automation.service import (
+            ScreenAutomationService,
+            get_automation_service,
+        )
+
+        service = automation_service or (
+            get_automation_service()
+            if action_runner is run_local_action
+            else ScreenAutomationService(
+                executor=AutomationExecutor(runner=action_runner)
+            )
+        )
+        result = service.handle(_automation_command_from_intent(intent), dry_run=dry_run)
+        status: OperatorStatus = (
+            "handled"
+            if result.status in {"handled", "needs_confirmation"}
+            else _coerce_status(result.status)
+        )
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {
+                "action_type": intent.action,
+                "target": intent.target,
+                "args": intent.args or {},
+                "confirmation_token": result.confirmation_token,
+            },
+            requires_confirmation=result.status == "needs_confirmation",
+        )
     if intent.kind == "app_inventory":
         return _execute_app_inventory_intent(intent)
+    if intent.kind == "web_search":
+        from grandpa.web_search import handle_web_search_command
+
+        result = handle_web_search_command(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status in {"handled", "not_configured"} else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "web_search", "target": intent.target, "args": intent.args or {}},
+        )
+    if intent.kind == "downloads":
+        from grandpa.downloads import handle_downloads_command
+
+        result = handle_downloads_command(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "downloads", "target": intent.target, "args": intent.args or {}},
+            requires_confirmation=result.requires_confirmation,
+        )
+    if intent.kind == "notes":
+        from grandpa.notes import handle_notes_command
+
+        result = handle_notes_command(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "notes", "target": intent.target, "args": intent.args or {}},
+            requires_confirmation=result.requires_confirmation,
+        )
+    if intent.kind == "calendar":
+        from grandpa.calendar import handle_calendar_command
+
+        result = handle_calendar_command(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "calendar", "target": intent.target, "args": intent.args or {}},
+            requires_confirmation=result.requires_confirmation,
+        )
+    if intent.kind == "gmail":
+        from grandpa.gmail import handle_gmail_command
+
+        result = handle_gmail_command(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "gmail", "target": intent.target, "args": intent.args or {}},
+            requires_confirmation=result.requires_confirmation,
+        )
+    if intent.kind == "browser_awareness":
+        from grandpa.browser_awareness import handle_browser_awareness_command
+
+        result = handle_browser_awareness_command(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status == "handled" else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "browser_awareness", "target": intent.target, "args": intent.args or {}},
+        )
+    if intent.kind == "browser_automation":
+        from grandpa.browser import handle_browser_command
+
+        result = handle_browser_command(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status == "handled" else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "browser_automation", "target": intent.target, "args": intent.args or {}},
+        )
+    if intent.kind == "file_automation":
+        from grandpa.files import handle_file_automation
+
+        result = handle_file_automation(str((intent.args or {}).get("command") or intent.target))
+        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation", "ambiguous"} else _coerce_status(result.status)
+        return VoiceOperatorResult(
+            status,
+            result.message,
+            result.message,
+            {"action_type": "file_automation", "target": intent.target, "args": intent.args or {}},
+            requires_confirmation=result.requires_confirmation,
+        )
     if intent.kind == "screen":
         return _execute_screen_intent(intent, screen_reader=screen_reader)
     if intent.kind != "local_action":
@@ -167,6 +507,7 @@ def execute_voice_operator_intent(
         "target": intent.target,
         "args": intent.args or {},
         "dry_run": dry_run,
+        "require_approval": intent.requires_confirmation,
     }
     response = action_runner(payload)
     status: OperatorStatus = "handled" if getattr(response, "ok", False) else _coerce_status(getattr(response, "status", "error"))
@@ -208,6 +549,12 @@ def run_voice_operator_loop(
     )
     runner = action_runner or run_local_action
     speaker = speech_output or SpeechOutputEngine()
+    from grandpa.automation.executor import AutomationExecutor
+    from grandpa.automation.service import ScreenAutomationService
+
+    automation_service = ScreenAutomationService(
+        executor=AutomationExecutor(runner=runner)
+    )
 
     while True:
         try:
@@ -254,7 +601,24 @@ def run_voice_operator_loop(
             output_func(f"Normalized transcript: {normalized_text}")
         output_func(f"Understood: {normalized_text}")
         intent = parse_voice_operator_command(normalized_text)
-        result = execute_voice_operator_intent(intent, dry_run=dry_run, action_runner=runner)
+        if automation_service.has_pending_confirmation and normalized_text.casefold() in {
+            "yes",
+            "confirm",
+            "continue",
+            "no",
+            "cancel",
+        }:
+            intent = VoiceOperatorIntent(
+                "screen_automation",
+                "confirmation",
+                args={"command": normalized_text},
+            )
+        result = execute_voice_operator_intent(
+            intent,
+            dry_run=dry_run,
+            action_runner=runner,
+            automation_service=automation_service,
+        )
         output_func(result.message)
         _speak_best_effort(speaker, result.spoken_text, dry_run=dry_run)
         if result.status == "exit":
@@ -273,6 +637,20 @@ def _execute_screen_intent(
     context = screen_reader(include_ocr=intent.action == "read")
     message = str(getattr(context, "message", "") or "I could not inspect the screen.")
     return VoiceOperatorResult("handled", message, message)
+
+
+def _automation_command_from_intent(intent: VoiceOperatorIntent) -> str:
+    args = intent.args or {}
+    if args.get("command"):
+        return str(args["command"])
+    if intent.action == "keyboard_type":
+        return f"type {args.get('text', '')}".strip()
+    if intent.action == "keyboard_hotkey":
+        keys = args.get("keys", [])
+        return f"press {'+'.join(str(key) for key in keys)}"
+    if intent.action == "focus_window":
+        return f"focus {intent.target}"
+    return intent.target
 
 
 def _execute_app_inventory_intent(intent: VoiceOperatorIntent) -> VoiceOperatorResult:

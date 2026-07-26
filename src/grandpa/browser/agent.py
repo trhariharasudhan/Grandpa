@@ -13,11 +13,15 @@ import re
 import sqlite3
 import time
 import uuid
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from grandpa.browser_control import BrowserContextStore, execute_browser_action, get_visible_browser_context
+from grandpa.browser_control import (
+    BrowserContextStore,
+    execute_browser_action,
+    get_visible_browser_context,
+)
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_BROWSER_AGENT_DB = ROOT / "runtime" / "browser" / "browser_agent.db"

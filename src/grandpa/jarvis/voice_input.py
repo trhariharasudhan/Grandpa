@@ -23,10 +23,10 @@ from grandpa.voice.errors import (
 from grandpa.voice.speech_input import SpeechInputEngine
 
 VOICE_INPUT_INSTALL_MESSAGE = (
-    "Jarvis voice input is not fully installed.\n"
-    "Install local microphone/STT support, then retry:\n"
-    "uv pip install sounddevice\n"
-    "uv sync --extra speech"
+    "The optional package `sounddevice` is not installed.\n"
+    "Install voice support in Grandpa's uv environment with:\n"
+    "uv sync --extra voice\n"
+    "Then run: uv run grandpa voice"
 )
 
 
@@ -136,8 +136,18 @@ def listen_for_jarvis_command(
 def _import_sounddevice():
     try:
         return importlib.import_module("sounddevice")
+    except ModuleNotFoundError as exc:
+        if exc.name == "sounddevice":
+            raise VoiceDependencyError(VOICE_INPUT_INSTALL_MESSAGE, detail=str(exc)) from exc
+        raise VoiceDependencyError(
+            "The `sounddevice` package could not initialize because one of its dependencies is unavailable.",
+            detail=f"{type(exc).__name__}: {exc}",
+        ) from exc
     except ImportError as exc:
-        raise VoiceDependencyError(VOICE_INPUT_INSTALL_MESSAGE, detail=str(exc)) from exc
+        raise VoiceDependencyError(
+            "The `sounddevice` package is installed but could not initialize.",
+            detail=f"{type(exc).__name__}: {exc}",
+        ) from exc
 
 
 def _select_input_device(sounddevice: Any, requested_device: int | None, requested_name: str | None = None) -> tuple[int | None, dict[str, Any], str | None]:

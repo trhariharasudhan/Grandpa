@@ -8,6 +8,7 @@ sub-LM calls.
 
 from __future__ import annotations
 
+import ast
 import io
 from contextlib import redirect_stderr, redirect_stdout
 from typing import Any, Callable, Dict, List, Optional
@@ -40,6 +41,49 @@ _BLOCKED_PATTERNS = [
     "urllib",
 ]
 
+_SAFE_BUILTINS = {
+    "abs": abs,
+    "all": all,
+    "any": any,
+    "bool": bool,
+    "dict": dict,
+    "enumerate": enumerate,
+    "Exception": Exception,
+    "float": float,
+    "int": int,
+    "isinstance": isinstance,
+    "len": len,
+    "list": list,
+    "max": max,
+    "min": min,
+    "print": print,
+    "range": range,
+    "reversed": reversed,
+    "round": round,
+    "set": set,
+    "sorted": sorted,
+    "str": str,
+    "sum": sum,
+    "tuple": tuple,
+    "zip": zip,
+}
+
+_BLOCKED_CALLS = {
+    "breakpoint",
+    "compile",
+    "delattr",
+    "eval",
+    "exec",
+    "getattr",
+    "globals",
+    "help",
+    "input",
+    "locals",
+    "memoryview",
+    "setattr",
+    "vars",
+}
+
 
 class RLMRepl:
     """Sandboxed Python REPL with persistent namespace for the RLM agent.
@@ -66,7 +110,7 @@ class RLMRepl:
         self._final_value: Any = None
 
         # Build namespace
-        self._namespace: Dict[str, Any] = {}
+        self._namespace: Dict[str, Any] = {"__builtins__": _SAFE_BUILTINS}
 
         # Inject safe stdlib modules
         for mod_name in _SAFE_MODULES:
@@ -134,6 +178,24 @@ class RLMRepl:
         for pattern in _BLOCKED_PATTERNS:
             if pattern in code:
                 return f"Blocked: code contains prohibited pattern '{pattern}'"
+        try:
+            tree = ast.parse(code, mode="exec")
+        except SyntaxError:
+            return None  # Let execute() return the normal syntax error.
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Import, ast.ImportFrom)):
+                return "Blocked: import statements are prohibited"
+            if isinstance(node, ast.Attribute) and node.attr.startswith("_"):
+                return "Blocked: private and dunder attributes are prohibited"
+            if isinstance(node, ast.Name) and node.id.startswith("_"):
+                return "Blocked: private and dunder names are prohibited"
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in _BLOCKED_CALLS
+            ):
+                return f"Blocked: call to prohibited builtin '{node.func.id}'"
         return None
 
     def execute(self, code: str) -> str:

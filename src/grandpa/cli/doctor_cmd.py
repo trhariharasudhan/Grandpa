@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
-import urllib.error
-import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -24,7 +23,7 @@ class CheckResult:
     """Result of a single diagnostic check."""
 
     name: str
-    status: str  # "ok", "warn", "fail"
+    status: str  # "ok", "info", "warn", "fail"
     message: str
     details: Optional[str] = None
 
@@ -47,6 +46,106 @@ def _check_python_version() -> CheckResult:
     if (ver.major, ver.minor) >= (3, 10):
         return CheckResult("Python version", "ok", version_str)
     return CheckResult("Python version", "fail", f"{version_str} (requires >= 3.10)")
+
+
+def _project_root() -> Path | None:
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").exists() and (parent / "src" / "grandpa").exists():
+            return parent
+    return None
+
+
+def _path_text(path: str | Path | None) -> str:
+    return str(path) if path else "Not detected"
+
+
+def _grandpa_executable_candidates() -> list[str]:
+    try:
+        if sys.platform == "win32":
+            proc = subprocess.run(
+                ["where", "grandpa"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            if proc.returncode == 0:
+                candidates = [line.strip() for line in proc.stdout.splitlines()]
+            else:
+                candidates = []
+        else:
+            found = shutil.which("grandpa")
+            candidates = [found] if found else []
+    except Exception:
+        candidates = []
+
+    seen = set()
+    unique = []
+    for item in candidates:
+        if not item:
+            continue
+        key = item.casefold() if sys.platform == "win32" else item
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(item)
+    if not unique:
+        found = shutil.which("grandpa")
+        if found:
+            unique.append(found)
+    return unique
+
+
+def _check_runtime_environment() -> list[CheckResult]:
+    project_root = _project_root()
+    package_root = Path(__file__).resolve().parents[1]
+    virtual_env = os.environ.get("VIRTUAL_ENV")
+    if not virtual_env and sys.prefix != getattr(sys, "base_prefix", sys.prefix):
+        virtual_env = sys.prefix
+
+    checks = [
+        CheckResult("Python executable", "ok", sys.executable),
+        CheckResult("Grandpa package path", "ok", str(package_root)),
+        CheckResult("Active virtual environment", "ok", _path_text(virtual_env)),
+        CheckResult("Project root", "ok", _path_text(project_root)),
+    ]
+
+    candidates = _grandpa_executable_candidates()
+    active = candidates[0] if candidates else "Not found on PATH"
+    checks.append(CheckResult("Grandpa executable", "ok", active))
+
+    if len(candidates) > 1:
+        preferred = None
+        if project_root:
+            expected = project_root / ".venv" / "Scripts" / "grandpa.exe"
+            for candidate in candidates:
+                if Path(candidate).resolve() == expected.resolve():
+                    preferred = str(expected)
+                    break
+        preferred = preferred or active
+        checks.append(
+            CheckResult(
+                "Grandpa executable duplicates",
+                "warn",
+                f"{len(candidates)} executables found on PATH",
+                details=(
+                    "\n".join(candidates)
+                    + "\nPrefer: "
+                    + preferred
+                    + "\nUse `uv run grandpa ...` to force the project environment."
+                ),
+            )
+        )
+    else:
+        checks.append(
+            CheckResult(
+                "Grandpa executable duplicates",
+                "ok",
+                "No duplicate Grandpa executables detected",
+            )
+        )
+
+    return checks
 
 
 def _check_config_exists() -> CheckResult:
@@ -109,8 +208,23 @@ def _get_config() -> Any:
         return GrandpaConfig()
 
 
+def _active_engine_keys(config: Any | None = None) -> set[str]:
+    config = config or _get_config()
+    active = {
+        str(getattr(getattr(config, "engine", None), "default", "") or "").strip(),
+        str(
+            getattr(getattr(config, "intelligence", None), "preferred_engine", "") or ""
+        ).strip(),
+    }
+    return {key for key in active if key}
+
+
+def _engine_is_configured(key: str, config: Any | None = None) -> bool:
+    return key in _active_engine_keys(config)
+
+
 def _check_engines() -> List[CheckResult]:
-    """Probe each registered engine for health."""
+    """Probe active engines and list inactive integrations as informational."""
     results: List[CheckResult] = []
 
     _ensure_engines_imported()
@@ -119,8 +233,19 @@ def _check_engines() -> List[CheckResult]:
     from grandpa.engine import _discovery
 
     config = _get_config()
+    active_engines = _active_engine_keys(config)
 
     for key in sorted(EngineRegistry.keys()):
+        if key not in active_engines:
+            results.append(
+                CheckResult(
+                    f"Engine: {key}",
+                    "info",
+                    "Not configured",
+                    details="Optional engine skipped. Set it as engine.default or intelligence.preferred_engine to check readiness.",
+                )
+            )
+            continue
         try:
             engine = _discovery._make_engine(key, config)
             if engine.health():
@@ -139,7 +264,7 @@ def _check_engines() -> List[CheckResult]:
 
 
 def _check_models() -> List[CheckResult]:
-    """List models from healthy engines."""
+    """List models from healthy active engines."""
     results: List[CheckResult] = []
 
     _ensure_engines_imported()
@@ -148,8 +273,11 @@ def _check_models() -> List[CheckResult]:
     from grandpa.engine import _discovery
 
     config = _get_config()
+    active_engines = _active_engine_keys(config)
 
     for key in sorted(EngineRegistry.keys()):
+        if key not in active_engines:
+            continue
         try:
             engine = _discovery._make_engine(key, config)
             if engine.health():
@@ -313,23 +441,27 @@ def _check_nodejs() -> CheckResult:
 
 
 def _ollama_host(config: Any | None = None) -> str:
+    from grandpa.engine.ollama import normalize_ollama_host
+
     config = config or _get_config()
     host = getattr(getattr(getattr(config, "engine", None), "ollama", None), "host", "")
-    return (host or "http://localhost:11434").rstrip("/")
+    return normalize_ollama_host(host)
 
 
 def _fetch_ollama_models(host: str, timeout: float = 1.5) -> tuple[bool, list[str], str]:
+    from grandpa.engine.ollama import OllamaEngine, normalize_ollama_host
+
+    normalized_host = normalize_ollama_host(host)
+    engine = OllamaEngine(host=normalized_host, timeout=timeout)
     try:
-        with urllib.request.urlopen(f"{host}/api/tags", timeout=timeout) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-        models = []
-        for item in payload.get("models", []):
-            name = item.get("name") if isinstance(item, dict) else None
-            if name:
-                models.append(name)
-        return True, models, "Reachable"
-    except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+        models = engine.list_models()
+        if engine.health():
+            return True, models, "Reachable"
+        return False, [], f"Unreachable at {normalized_host}"
+    except Exception as exc:
         return False, [], str(exc)
+    finally:
+        engine.close()
 
 
 def _check_ollama_reachable() -> CheckResult:
@@ -582,6 +714,18 @@ def _check_desktop_automation_backend() -> CheckResult:
 
 
 def _check_voice_frontend_note() -> CheckResult:
+    config = _get_config()
+    browser_voice_enabled = bool(
+        getattr(getattr(config, "voice_frontend", None), "enabled", False)
+        or getattr(getattr(config, "browser_voice", None), "enabled", False)
+    )
+    if not browser_voice_enabled:
+        return CheckResult(
+            "Voice frontend support",
+            "info",
+            "Optional / not configured",
+            details="Local push-to-talk and speech output are checked separately. Browser microphone support is optional.",
+        )
     return CheckResult(
         "Voice frontend support",
         "warn",
@@ -612,24 +756,138 @@ def _check_voice_runtime_ready() -> CheckResult:
         )
 
 
+def _check_gmail_readiness() -> CheckResult:
+    try:
+        from grandpa.gmail import GmailAuthManager
+        from grandpa.gmail.auth import GmailDependencyError
+
+        status = GmailAuthManager().status()
+        if not status.configured:
+            return CheckResult(
+                "Gmail integration",
+                "info",
+                "Optional / not configured",
+                details=f"OAuth client secret not found. Setup expects: {status.client_secret_path}",
+            )
+        try:
+            GmailAuthManager._ensure_dependencies()  # noqa: SLF001 - doctor validates optional runtime dependencies.
+        except GmailDependencyError as exc:
+            return CheckResult("Gmail integration", "warn", "Dependencies missing", details=str(exc))
+        if status.ready:
+            account = f" ({status.account})" if status.account else ""
+            return CheckResult("Gmail integration", "ok", f"Connected{account}", details=f"Token: {status.token_path}")
+        return CheckResult("Gmail integration", "warn", "OAuth setup incomplete", details=status.message)
+    except Exception as exc:
+        return CheckResult("Gmail integration", "warn", "Could not check Gmail", details=str(exc))
+
+
+def _check_calendar_readiness() -> CheckResult:
+    try:
+        from grandpa.calendar import CalendarAuthManager
+        from grandpa.calendar.auth import CalendarDependencyError
+
+        status = CalendarAuthManager().status()
+        if not status.configured:
+            return CheckResult(
+                "Google Calendar integration",
+                "info",
+                "Optional / not configured",
+                details=f"OAuth client secret not found. Setup expects: {status.client_secret_path}",
+            )
+        try:
+            CalendarAuthManager._ensure_dependencies()  # noqa: SLF001 - doctor validates optional runtime dependencies.
+        except CalendarDependencyError as exc:
+            return CheckResult("Google Calendar integration", "warn", "Dependencies missing", details=str(exc))
+        if status.ready:
+            account = f" ({status.account})" if status.account else ""
+            return CheckResult("Google Calendar integration", "ok", f"Connected{account}", details=f"Token: {status.token_path}")
+        return CheckResult("Google Calendar integration", "warn", "OAuth setup incomplete", details=status.message)
+    except Exception as exc:
+        return CheckResult("Google Calendar integration", "warn", "Could not check Calendar", details=str(exc))
+
+
+def _check_notes_readiness() -> CheckResult:
+    try:
+        from grandpa.notes import NotesStore
+
+        status, message = NotesStore().status()
+        if status == "ready":
+            return CheckResult("Notes storage", "ok", "Ready", details=message)
+        if status == "permission_denied":
+            return CheckResult("Notes storage", "warn", "Permission denied", details=message)
+        return CheckResult("Notes storage", "warn", "Storage unavailable", details=message)
+    except Exception as exc:
+        return CheckResult("Notes storage", "warn", "Could not check notes storage", details=str(exc))
+
+
+def _check_downloads_readiness() -> CheckResult:
+    try:
+        from grandpa.downloads import DownloadsScanner
+
+        status, message = DownloadsScanner().status()
+        if status == "ready":
+            return CheckResult("Downloads directory", "ok", "Ready", details=message)
+        if status == "permission_denied":
+            return CheckResult("Downloads directory", "warn", "Permission denied", details=message)
+        if status == "missing":
+            return CheckResult("Downloads directory", "warn", "Configured folder missing", details=message)
+        return CheckResult("Downloads directory", "warn", "Unavailable", details=message)
+    except Exception as exc:
+        return CheckResult("Downloads directory", "warn", "Could not check Downloads", details=str(exc))
+
+
+def _check_web_search_readiness() -> CheckResult:
+    try:
+        from grandpa.web_search import WebSearchClient
+
+        status, message = WebSearchClient().status()
+        if status == "ready":
+            return CheckResult("Web search", "ok", "Ready", details=message)
+        return CheckResult("Web search", "info", "Optional / not configured", details=message)
+    except Exception as exc:
+        return CheckResult("Web search", "warn", "Could not check web search", details=str(exc))
+
+
+def _docker_required(config: Any | None = None) -> bool:
+    config = config or _get_config()
+    sandbox = getattr(config, "sandbox", None)
+    if bool(getattr(sandbox, "enabled", False)) and str(
+        getattr(sandbox, "runtime", "")
+    ).lower() == "docker":
+        return True
+    mining = getattr(config, "mining", None)
+    return bool(getattr(mining, "enabled", False))
+
+
 def _check_docker_readiness() -> List[CheckResult]:
+    required = _docker_required()
     docker = shutil.which("docker")
     if not docker:
+        if not required:
+            return [
+                CheckResult(
+                    "Docker",
+                    "info",
+                    "Optional / not configured",
+                    details="No enabled feature currently requires Docker.",
+                )
+            ]
         return [
             CheckResult(
-                "Docker command available",
+                "Docker",
                 "warn",
-                "Missing/optional",
-                details=_windows_setup_hint("docker"),
-            ),
-            CheckResult(
-                "Docker daemon reachable",
-                "warn",
-                "Missing/optional",
+                "Required but unavailable",
                 details=_windows_setup_hint("docker"),
             ),
         ]
-    results = [CheckResult("Docker command available", "ok", "Ready", docker)]
+    results = [
+        CheckResult(
+            "Docker",
+            "ok" if required else "info",
+            "Ready" if required else "Available / not configured",
+            docker,
+        )
+    ]
     try:
         proc = subprocess.run(
             ["docker", "version", "--format", "{{.Server.Version}}"],
@@ -638,31 +896,34 @@ def _check_docker_readiness() -> List[CheckResult]:
             timeout=5,
         )
         if proc.returncode == 0:
-            results.append(
-                CheckResult(
-                    "Docker daemon reachable",
-                    "ok",
-                    f"Ready ({proc.stdout.strip()})",
+            if required:
+                results.append(
+                    CheckResult(
+                        "Docker daemon reachable",
+                        "ok",
+                        f"Ready ({proc.stdout.strip()})",
+                    )
                 )
-            )
         else:
+            if required:
+                results.append(
+                    CheckResult(
+                        "Docker daemon reachable",
+                        "warn",
+                        "Required but unavailable",
+                        details=_windows_setup_hint("docker"),
+                    )
+                )
+    except Exception as exc:
+        if required:
             results.append(
                 CheckResult(
                     "Docker daemon reachable",
                     "warn",
-                    "Missing/optional",
-                    details=_windows_setup_hint("docker"),
+                    "Required but unavailable",
+                    details=f"{_windows_setup_hint('docker')} Last error: {exc}",
                 )
             )
-    except Exception as exc:
-        results.append(
-            CheckResult(
-                "Docker daemon reachable",
-                "warn",
-                "Missing/optional",
-                details=f"{_windows_setup_hint('docker')} Last error: {exc}",
-            )
-        )
     return results
 
 
@@ -691,6 +952,19 @@ def _check_background_scheduler_ready() -> CheckResult:
             "Ready",
             "Backend startup can register the routine scheduler daemon.",
         )
+    except ModuleNotFoundError as exc:
+        if exc.name == "fastapi":
+            return CheckResult(
+                "Background scheduler",
+                "warn",
+                "Missing/optional",
+                details=(
+                    "Server startup requires the optional server extra. "
+                    "Run `uv sync --extra server --link-mode=copy` to enable "
+                    "backend scheduler startup checks."
+                ),
+            )
+        return CheckResult("Background scheduler", "fail", "Failed", details=str(exc))
     except Exception as exc:
         return CheckResult("Background scheduler", "fail", "Failed", details=str(exc))
 
@@ -788,9 +1062,9 @@ def _check_background_tasks() -> List[CheckResult]:
         results.append(
             CheckResult(
                 "Rust extension background task",
-                "warn",
-                "Missing/optional",
-                details="Rust extension is building in the background.",
+                "info",
+                "Optional / not configured",
+                details="Rust extension is not required by the active runtime.",
             )
         )
 
@@ -843,6 +1117,8 @@ def _check_daily_use_readiness() -> List[CheckResult]:
             _check_approval_db_ready(),
             _check_memory_db_ready(),
             _check_file_db_ready(),
+            _check_notes_readiness(),
+            _check_downloads_readiness(),
             _check_scheduler_db_ready(),
             _check_scheduler_daemon_ready(),
             _check_screen_awareness_available(),
@@ -865,6 +1141,7 @@ def _check_daily_use_readiness() -> List[CheckResult]:
 
 _STATUS_ICONS = {
     "ok": "[green]\u2713[/green]",
+    "info": "[dim]i[/dim]",
     "warn": "[yellow]![/yellow]",
     "fail": "[red]\u2717[/red]",
 }
@@ -887,8 +1164,11 @@ def _run_all_checks() -> List[CheckResult]:
 
 def _build_doctor_dashboard() -> List[DoctorSection]:
     """Build the grouped doctor dashboard without duplicate visible checks."""
+    optional_integrations: List[CheckResult] = []
+
     core_runtime = [
         _check_python_version(),
+        *_check_runtime_environment(),
         _check_config_exists(),
         _check_config_parses(),
         _check_rest_api_installed(),
@@ -897,7 +1177,11 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
     ]
 
     ai_engines = []
-    ai_engines.extend(_check_engines())
+    for check in _check_engines():
+        if check.status == "info":
+            optional_integrations.append(check)
+        else:
+            ai_engines.append(check)
     ai_engines.append(_check_default_model())
     ai_engines.extend(_check_models())
 
@@ -923,12 +1207,35 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         [
             _check_desktop_automation_backend(),
             _check_voice_runtime_ready(),
-            _check_voice_frontend_note(),
         ]
     )
+    voice_frontend = _check_voice_frontend_note()
+    if voice_frontend.status == "info":
+        optional_integrations.append(voice_frontend)
+    else:
+        daily_features.append(voice_frontend)
+    gmail_readiness = _check_gmail_readiness()
+    if gmail_readiness.status == "info":
+        optional_integrations.append(gmail_readiness)
+    else:
+        daily_features.append(gmail_readiness)
+    calendar_readiness = _check_calendar_readiness()
+    if calendar_readiness.status == "info":
+        optional_integrations.append(calendar_readiness)
+    else:
+        daily_features.append(calendar_readiness)
+    web_search_readiness = _check_web_search_readiness()
+    if web_search_readiness.status == "info":
+        optional_integrations.append(web_search_readiness)
+    else:
+        daily_features.append(web_search_readiness)
 
     system_integration: List[CheckResult] = []
-    system_integration.extend(_check_docker_readiness())
+    for check in _check_docker_readiness():
+        if check.status == "info":
+            optional_integrations.append(check)
+        else:
+            system_integration.append(check)
     system_integration.extend(
         [
             _check_notifications_ready(),
@@ -937,14 +1244,21 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
             _check_release_gate_status(),
         ]
     )
-    system_integration.extend(_check_background_tasks())
+    for check in _check_background_tasks():
+        if check.status == "info":
+            optional_integrations.append(check)
+        else:
+            system_integration.append(check)
 
-    return [
+    sections = [
         DoctorSection("Core Runtime", core_runtime),
         DoctorSection("AI Engines", ai_engines),
         DoctorSection("Daily Use Features", daily_features),
         DoctorSection("System Integration", system_integration),
     ]
+    if optional_integrations:
+        sections.append(DoctorSection("Optional Integrations", optional_integrations))
+    return sections
 
 
 def _flatten_sections(sections: List[DoctorSection]) -> List[CheckResult]:
@@ -961,11 +1275,11 @@ def _readiness_label(checks: List[CheckResult]) -> str:
         return "NEEDS SETUP"
     if warnings:
         return "PARTIALLY READY"
-    return "DAILY USE READY"
+    return "READY"
 
 
 def _readiness_style(label: str) -> str:
-    if label == "DAILY USE READY":
+    if label == "READY":
         return "bold green"
     if label == "PARTIALLY READY":
         return "bold yellow"
@@ -1017,13 +1331,14 @@ def doctor(as_json: bool) -> None:
     console.print(table)
 
     ok_count = sum(1 for c in checks if c.status == "ok")
+    info_count = sum(1 for c in checks if c.status == "info")
     warn_count = sum(1 for c in checks if c.status == "warn")
     fail_count = sum(1 for c in checks if c.status == "fail")
     readiness = _readiness_label(checks)
     console.print()
     console.print("[bold]Final Summary[/bold]")
     console.print(
-        f"  {ok_count} passed, {warn_count} warnings, {fail_count} failures"
+        f"  {ok_count} passed, {info_count} optional/skipped, {warn_count} warnings, {fail_count} failures"
     )
     console.print(f"  Overall readiness: [{_readiness_style(readiness)}]{readiness}[/]")
 

@@ -6,8 +6,9 @@ import pytest
 
 pytest.importorskip("fastapi", reason="grandpa[server] not installed")
 
-from fastapi import FastAPI
+from fastapi import FastAPI, WebSocket
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from grandpa.server.auth_middleware import AuthMiddleware
 
@@ -27,6 +28,12 @@ def _make_app(api_key: str) -> FastAPI:
     @app.post("/webhooks/twilio")
     async def twilio_webhook():
         return {"status": "received"}
+
+    @app.websocket("/v1/events")
+    async def events(websocket: WebSocket):
+        await websocket.accept()
+        await websocket.send_text("connected")
+        await websocket.close()
 
     return app
 
@@ -69,3 +76,17 @@ class TestAuthMiddleware:
         client = TestClient(_make_app(""))
         resp = client.get("/v1/models")
         assert resp.status_code == 200
+
+    @pytest.mark.parametrize("headers", [None, {"Authorization": "Bearer wrong"}])
+    def test_rejects_unauthenticated_websocket(self, client, headers):
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect("/v1/events", headers=headers or {}):
+                pass
+        assert exc_info.value.code == 1008
+
+    def test_accepts_authenticated_websocket(self, client):
+        with client.websocket_connect(
+            "/v1/events",
+            headers={"Authorization": "Bearer oj_sk_test123"},
+        ) as websocket:
+            assert websocket.receive_text() == "connected"

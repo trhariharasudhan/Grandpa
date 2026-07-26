@@ -91,6 +91,23 @@ class TestHttpRequestTool:
         assert "metadata" in result.content.lower() or "Blocked host" in result.content
 
     @respx.mock
+    def test_ssrf_redirect_to_private_host_is_blocked(self):
+        respx.get("https://api.example.com/start").mock(
+            return_value=httpx.Response(
+                302,
+                headers={"location": "http://127.0.0.1/admin"},
+            )
+        )
+        tool = HttpRequestTool()
+        with patch(
+            "grandpa.tools.http_request.check_ssrf",
+            side_effect=[None, "URL resolves to private IP: 127.0.0.1"],
+        ):
+            result = tool.execute(url="https://api.example.com/start")
+        assert result.success is False
+        assert "blocked redirect" in result.content
+
+    @respx.mock
     def test_successful_get(self):
         """Successful GET request returns response content and metadata."""
         respx.get("https://api.example.com/data").mock(
