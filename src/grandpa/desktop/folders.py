@@ -23,7 +23,8 @@ FOLDER_ALIASES: dict[str, tuple[str, str]] = {
 def resolve_folder(value: str) -> tuple[str, str] | None:
     """Resolve a natural folder name to a safe folder id and label."""
 
-    return FOLDER_ALIASES.get(value.strip().casefold())
+    normalized = value.strip().casefold().removeprefix("my ").strip()
+    return FOLDER_ALIASES.get(normalized)
 
 
 def folder_path(folder_id: str) -> Path:

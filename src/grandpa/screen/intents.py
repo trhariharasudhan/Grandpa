@@ -57,11 +57,14 @@ def _match_action(normalized: str) -> str | None:
         "describe": {
             "what is on my screen",
             "what s on my screen",
+            "describe this screen",
             "describe my screen",
             "summarize my screen",
             "summarise my screen",
         },
         "read": {
+            "read the active window",
+            "read active window",
             "read the visible text",
             "read visible text",
             "read my screen",
@@ -74,6 +77,8 @@ def _match_action(normalized: str) -> str | None:
             "explain the visible error",
         },
         "active": {
+            "what application is active",
+            "which application is active",
             "what window is active",
             "what is the active window",
             "what window is open",

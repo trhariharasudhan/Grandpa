@@ -121,6 +121,15 @@ class AutomationPlanner:
             return AutomationAction("type", args={"text": text})
         if command in {"paste", "paste here"}:
             return AutomationAction("paste", args={"keys": ["ctrl", "v"]})
+        shortcut = {
+            "select all": ("ctrl a", ["ctrl", "a"]),
+            "copy": ("ctrl c", ["ctrl", "c"]),
+            "copy this": ("ctrl c", ["ctrl", "c"]),
+            "paste this": ("ctrl v", ["ctrl", "v"]),
+        }.get(command)
+        if shortcut is not None:
+            label, keys = shortcut
+            return AutomationAction("press", label, {"keys": keys})
         key = command.removeprefix("press ").strip() if command.startswith("press ") else ""
         if key in _KEYS:
             return AutomationAction("press", key, {"keys": _KEYS[key]})

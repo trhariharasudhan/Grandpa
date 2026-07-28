@@ -57,15 +57,18 @@ class ScreenAutomationService:
         if action is None:
             return AutomationResult("no_match", "")
         verification = None
+        used_pinned_target = False
         if target_window:
             action = replace(action, args={**action.args, "window": target_window})
         if action.kind == "focus":
             return self._focus_target(action, dry_run=dry_run)
         if _needs_verified_target(action):
-            target = str(action.args.get("window") or "").strip()
-            if not target and self._target_window is not None:
-                target = self._target_window.target or self._target_window.title
-            if not target:
+            explicit_target = str(action.args.get("window") or "").strip()
+            target: str | WindowIdentity | None = explicit_target or None
+            if target is None and self._target_window is not None:
+                target = self._target_window
+                used_pinned_target = True
+            if target is None:
                 if dry_run:
                     return self._execute(action, dry_run=True)
                 return AutomationResult(
@@ -74,10 +77,14 @@ class ScreenAutomationService:
                     "No input was sent.",
                     action,
                 )
-            action = replace(action, args={**action.args, "window": target})
+            target_label = target.label if isinstance(target, WindowIdentity) else target
+            action = replace(action, args={**action.args, "window": target_label})
             verification = self.window_targets.focus_and_verify(target, dry_run=dry_run)
             if not verification.ok:
-                return AutomationResult("blocked", verification.message, action)
+                status = "target_lost" if used_pinned_target else "blocked"
+                if used_pinned_target:
+                    self.clear_target()
+                return AutomationResult(status, verification.message, action)
             self._target_window = verification.expected
         if action.requires_confirmation and not dry_run:
             preview = self._preview(action)
@@ -99,6 +106,7 @@ class ScreenAutomationService:
                 confirmation_token=pending.token,
             )
         result = self._execute(action, dry_run=dry_run)
+        result = self._verify_after_input(action, result, dry_run=dry_run)
         if verification_message := _verification_message(verification):
             return replace(result, message=f"{verification_message}\n{result.message}")
         return result
@@ -199,6 +207,45 @@ class ScreenAutomationService:
             result.data.get("duration_ms", 0),
         )
         return result
+
+    def _verify_after_input(
+        self,
+        action: AutomationAction,
+        result: AutomationResult,
+        *,
+        dry_run: bool,
+    ) -> AutomationResult:
+        if (
+            dry_run
+            or result.status != "handled"
+            or not _needs_verified_target(action)
+            or self._target_window is None
+        ):
+            return result
+        verify = getattr(self.window_targets, "verify_foreground", None)
+        if not callable(verify):
+            return result
+        verification = verify(self._target_window)
+        if verification.ok:
+            return replace(
+                result,
+                data={
+                    **result.data,
+                    "verified": True,
+                    "window_handle": self._target_window.handle,
+                    "process_id": self._target_window.process_id,
+                },
+            )
+        self.clear_target()
+        return replace(
+            result,
+            status="target_lost",
+            message=(
+                f"{verification.message} The action may have partially completed, "
+                "so I stopped the automation session before sending more input."
+            ),
+            data={**result.data, "verified": False},
+        )
 
 
 _SERVICE: ScreenAutomationService | None = None

@@ -788,24 +788,14 @@ def _handle_natural_assistant_intent(
     spoken: bool = False,
     automation_service=None,
 ) -> str | None:
-    from grandpa.automation import handle_automation_command
+    from grandpa.automation import WindowsCommandPipeline
 
-    automation_result = (
-        handle_automation_command(text, service=automation_service)
-        if automation_service is not None
-        else handle_automation_command(text)
-    )
-    if not automation_result.should_fallback:
-        return automation_result.message
-    from grandpa.screen import handle_screen_command
-
-    screen_result = handle_screen_command(text)
-    if not screen_result.should_fallback:
-        return (
-            screen_result.spoken_text
-            if spoken and screen_result.spoken_text
-            else screen_result.message
-        )
+    pipeline_result = WindowsCommandPipeline(
+        automation_service=automation_service,
+        source="chat",
+    ).handle(text, spoken=spoken)
+    if not pipeline_result.should_fallback:
+        return pipeline_result.message
     from grandpa.projects import handle_project_command
 
     project_result = handle_project_command(text)

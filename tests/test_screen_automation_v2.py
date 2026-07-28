@@ -66,6 +66,35 @@ class FakeWindowTargets:
         )
 
 
+class TrackingWindowTargets(FakeWindowTargets):
+    def __init__(self, *, drift_after_action: bool = False) -> None:
+        super().__init__()
+        self.raw_targets: list[object] = []
+        self.drift_after_action = drift_after_action
+
+    def focus_and_verify(self, target, *, dry_run: bool = False):
+        self.raw_targets.append(target)
+        return super().focus_and_verify(target, dry_run=dry_run)
+
+    def verify_foreground(self, expected: WindowIdentity):
+        actual = (
+            WindowIdentity(20, "Windows Terminal", 200, "WindowsTerminal.exe")
+            if self.drift_after_action
+            else expected
+        )
+        return WindowVerification(
+            not self.drift_after_action,
+            (
+                f"Verified active window: {actual.title}."
+                if not self.drift_after_action
+                else "The target window changed during the action. "
+                "Expected Notepad, but Windows Terminal is active."
+            ),
+            expected,
+            actual,
+        )
+
+
 def element(text: str = "Save", confidence: float = 0.93) -> LocatedElement:
     return LocatedElement(
         text,
@@ -89,6 +118,9 @@ def element(text: str = "Save", confidence: float = 0.93) -> LocatedElement:
         ("type Hello World", "type"),
         ("press Enter", "press"),
         ("press Ctrl+S", "press"),
+        ("select all", "press"),
+        ("copy this", "press"),
+        ("paste this", "press"),
         ("switch to Chrome", "focus"),
         ("maximize this window", "maximize"),
         ("find the Install button", "locate"),
@@ -269,12 +301,16 @@ def test_ambiguous_match_does_not_click() -> None:
 
 
 def test_chat_natural_router_handles_automation_without_llm(monkeypatch) -> None:
-    from grandpa.automation.models import AutomationResult
+    from types import SimpleNamespace
+
     from grandpa.cli.chat_cmd import _handle_natural_assistant_intent
 
     monkeypatch.setattr(
-        "grandpa.automation.handle_automation_command",
-        lambda _text: AutomationResult("handled", "Scrolled down."),
+        "grandpa.automation.WindowsCommandPipeline.handle",
+        lambda _self, _text, **_kwargs: SimpleNamespace(
+            should_fallback=False,
+            message="Scrolled down.",
+        ),
     )
 
     assert _handle_natural_assistant_intent("scroll down") == "Scrolled down."
@@ -286,6 +322,20 @@ def test_voice_operator_routes_screen_automation() -> None:
     intent = parse_voice_operator_command("click Save")
     assert intent.kind == "screen_automation"
     assert intent.requires_confirmation is True
+
+
+def test_voice_operator_confirmation_state_is_explicit_and_session_local() -> None:
+    from grandpa.voice.operator import parse_voice_operator_command
+
+    without_pending = parse_voice_operator_command("yes")
+    with_pending = parse_voice_operator_command(
+        "yes",
+        has_pending_confirmation=True,
+    )
+
+    assert without_pending.kind != "screen_automation"
+    assert with_pending.kind == "screen_automation"
+    assert with_pending.action == "confirmation"
 
 
 def test_unrelated_chat_does_not_match() -> None:
@@ -382,6 +432,102 @@ def test_pinned_target_is_session_local() -> None:
         window_targets=targets,
     )
     assert fresh.handle("type leaked").status == "blocked"
+
+
+def test_pinned_target_reuses_window_handle_instead_of_title_lookup() -> None:
+    targets = TrackingWindowTargets()
+    service = ScreenAutomationService(
+        executor=AutomationExecutor(runner=lambda _payload: FakeResponse()),
+        window_targets=targets,
+    )
+
+    assert service.handle("focus Notepad").status == "handled"
+    result = service.handle("type Hello")
+
+    assert result.status == "handled"
+    assert isinstance(targets.raw_targets[1], WindowIdentity)
+    assert result.data["verified"] is True
+    assert result.data["window_handle"] == 10
+    assert result.data["process_id"] == 100
+
+
+def test_foreground_change_after_typing_returns_target_lost_and_clears_target() -> None:
+    targets = TrackingWindowTargets(drift_after_action=True)
+    calls: list[dict] = []
+    service = ScreenAutomationService(
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
+        window_targets=targets,
+    )
+
+    assert service.handle("focus Notepad").status == "handled"
+    result = service.handle("type Hello")
+
+    assert result.status == "target_lost"
+    assert "stopped" in result.message
+    assert service.target_window is None
+    assert len(calls) == 1
+
+
+def test_closed_pinned_window_stops_before_sending_more_input() -> None:
+    expected = WindowIdentity(10, "Untitled - Notepad", 100, "notepad.exe", "notepad")
+    available = True
+    calls: list[dict] = []
+
+    def focus(handle: int) -> None:
+        if not available:
+            raise OSError("window handle is gone")
+
+    controller = WindowTargetController(
+        resolve_func=lambda _target: expected,
+        foreground_func=lambda: expected,
+        focus_func=focus,
+        sleep_func=lambda _seconds: None,
+        timeout=0,
+    )
+    service = ScreenAutomationService(
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
+        window_targets=controller,
+    )
+
+    assert service.handle("focus Notepad").status == "handled"
+    available = False
+    result = service.handle("press enter")
+
+    assert result.status == "target_lost"
+    assert "no longer available" in result.message
+    assert calls == []
+
+
+def test_multiple_similar_windows_return_friendly_ambiguity(monkeypatch) -> None:
+    from grandpa.automation.windows import resolve_window
+    from grandpa.windows_window_control import WindowControlResult, WindowInfo
+
+    monkeypatch.setattr("grandpa.automation.windows.sys.platform", "win32")
+    monkeypatch.setattr(
+        "grandpa.windows_window_control._resolve_window",
+        lambda _target: WindowControlResult(
+            "multiple_matches",
+            "focus",
+            "notepad",
+            "I found multiple Notepad windows. Please clarify:\n- First.txt - Notepad\n- Second.txt - Notepad",
+            (
+                WindowInfo(10, "First.txt - Notepad"),
+                WindowInfo(20, "Second.txt - Notepad"),
+            ),
+        ),
+    )
+    service = ScreenAutomationService(
+        window_targets=WindowTargetController(resolve_func=resolve_window)
+    )
+
+    result = service.handle("focus Notepad")
+
+    assert result.status == "blocked"
+    assert "multiple Notepad windows" in result.message
 
 
 def test_chat_retains_target_within_one_session() -> None:

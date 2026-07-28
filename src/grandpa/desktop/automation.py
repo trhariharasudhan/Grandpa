@@ -86,7 +86,10 @@ class DesktopParser:
         )
 
     def _parse_open(self, command: str) -> DesktopAction | None:
-        target = _strip_prefix(command, ("open ", "launch ", "start ", "go to "))
+        target = _strip_prefix(
+            command,
+            ("open ", "launch ", "start ", "go to ", "show "),
+        )
         if target is None:
             return None
         if _looks_like_path_target(target):
@@ -96,6 +99,8 @@ class DesktopParser:
             folder_id, label = folder
             path = str(folder_path(folder_id))
             return DesktopAction("open_folder", "open_folder", path, label)
+        if command.startswith("show "):
+            return None
         app = resolve_application(target)
         app_id, label = app if app is not None else (target, _label_from_target(target))
         return DesktopAction("open_app", "open_app", app_id, label)

@@ -7,8 +7,13 @@ from typing import Any, Literal
 
 AutomationStatus = Literal[
     "handled",
+    "success",
+    "partial_success",
+    "failed",
     "needs_confirmation",
+    "confirmation_required",
     "blocked",
+    "target_lost",
     "unsupported",
     "not_found",
     "ambiguous",
@@ -70,6 +75,19 @@ class AutomationResult:
     @property
     def should_fallback(self) -> bool:
         return self.status == "no_match"
+
+    @property
+    def execution_status(self) -> str:
+        """Return the canonical cross-entrypoint execution status."""
+
+        return {
+            "handled": "success",
+            "needs_confirmation": "confirmation_required",
+            "not_found": "failed",
+            "ambiguous": "failed",
+            "error": "failed",
+            "no_match": "unsupported",
+        }.get(self.status, self.status)
 
 
 __all__ = [

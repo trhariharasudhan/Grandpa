@@ -10,6 +10,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from grandpa.automation import ScreenAutomationService
 from grandpa.voice.conversation import VoiceConversation
 from grandpa.voice.errors import (
     MICROPHONE_UNAVAILABLE_MESSAGE,
@@ -49,6 +50,10 @@ class VoiceRuntime:
     speech_input: SpeechInputEngine = field(default_factory=SpeechInputEngine)
     speech_output: SpeechOutputEngine = field(default_factory=SpeechOutputEngine)
     conversation: VoiceConversation = field(default_factory=VoiceConversation)
+    automation_service: ScreenAutomationService = field(
+        default_factory=ScreenAutomationService,
+        repr=False,
+    )
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
     _last_latency_ms: float = 0.0
 
@@ -237,7 +242,11 @@ class VoiceRuntime:
             }
 
         self.conversation.set_state("thinking")
-        response = _route_voice_request(command_text)
+        response = _route_voice_request(
+            command_text,
+            automation_service=self.automation_service,
+            session_id=self.conversation.session_id,
+        )
         message = response.get("message") or "I handled that voice request."
         self.conversation.add_message("assistant", message, response)
         if speak_response:
@@ -254,6 +263,10 @@ class VoiceRuntime:
             "message": message,
             "assistant_text": message,
             "action_status": response.get("status", "handled"),
+            "execution_status": response.get(
+                "execution_status",
+                "success" if response.get("status", "handled") == "handled" else response.get("status"),
+            ),
             "transcript": transcript,
             "command_text": command_text,
             "language": input_result.language,
@@ -284,10 +297,39 @@ def get_voice_runtime() -> VoiceRuntime:
         return _RUNTIME
 
 
-def _route_voice_request(command_text: str) -> dict[str, Any]:
+def _route_voice_request(
+    command_text: str,
+    *,
+    automation_service: ScreenAutomationService | None = None,
+    session_id: str = "",
+) -> dict[str, Any]:
     planner = _safe_planner(command_text)
     knowledge = _safe_knowledge_context(command_text)
     memory = _safe_memory_context(command_text)
+
+    from grandpa.automation import WindowsCommandPipeline
+
+    pipeline_result = WindowsCommandPipeline(
+        automation_service=automation_service,
+        source="voice_api",
+        session_id=session_id,
+    ).handle(command_text, spoken=True)
+    if not pipeline_result.should_fallback:
+        return {
+            "status": pipeline_result.legacy_status,
+            "execution_status": pipeline_result.status,
+            "message": pipeline_result.message,
+            "kind": pipeline_result.kind,
+            "target": pipeline_result.target,
+            "approval_required": pipeline_result.status == "confirmation_required",
+            "confirmation_token": pipeline_result.confirmation_token,
+            "risk_level": "MEDIUM"
+            if pipeline_result.status == "confirmation_required"
+            else "LOW",
+            "planner": planner,
+            "knowledge_context": knowledge,
+            "memory_context": memory,
+        }
 
     try:
         from grandpa.local_actions import handle_local_action

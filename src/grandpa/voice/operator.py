@@ -18,7 +18,14 @@ from grandpa.voice.errors import (
 )
 from grandpa.voice.speech_output import SpeechOutputEngine
 
-OperatorStatus = Literal["handled", "blocked", "unsupported", "exit", "error"]
+OperatorStatus = Literal[
+    "handled",
+    "blocked",
+    "target_lost",
+    "unsupported",
+    "exit",
+    "error",
+]
 
 
 @dataclass(frozen=True)
@@ -83,7 +90,11 @@ APP_PHRASE_ALIASES = {
 }
 
 
-def parse_voice_operator_command(text: str) -> VoiceOperatorIntent:
+def parse_voice_operator_command(
+    text: str,
+    *,
+    has_pending_confirmation: bool = False,
+) -> VoiceOperatorIntent:
     command = normalize_voice_operator_transcript(text)
     if not command:
         return VoiceOperatorIntent("none", status="unsupported", message="I did not hear a command.")
@@ -92,10 +103,10 @@ def parse_voice_operator_command(text: str) -> VoiceOperatorIntent:
     if any(re.search(pattern, command) for pattern in DANGEROUS_PATTERNS):
         return VoiceOperatorIntent("blocked", status="blocked", message="I blocked that command for safety.")
 
-    from grandpa.automation import AutomationPlanner, get_automation_service
+    from grandpa.automation import AutomationPlanner
 
     if command in {"yes", "confirm", "continue", "no", "cancel"} and (
-        get_automation_service().has_pending_confirmation
+        has_pending_confirmation
     ):
         return VoiceOperatorIntent(
             "screen_automation",
@@ -372,16 +383,13 @@ def execute_voice_operator_intent(
         return VoiceOperatorResult(intent.status, intent.message, intent.message)
     if intent.kind == "screen_automation":
         from grandpa.automation.executor import AutomationExecutor
-        from grandpa.automation.service import (
-            ScreenAutomationService,
-            get_automation_service,
-        )
+        from grandpa.automation.service import ScreenAutomationService
 
-        service = automation_service or (
-            get_automation_service()
-            if action_runner is run_local_action
-            else ScreenAutomationService(
-                executor=AutomationExecutor(runner=action_runner)
+        service = automation_service or ScreenAutomationService(
+            executor=(
+                AutomationExecutor()
+                if action_runner is run_local_action
+                else AutomationExecutor(runner=action_runner)
             )
         )
         result = service.handle(_automation_command_from_intent(intent), dry_run=dry_run)
@@ -600,19 +608,10 @@ def run_voice_operator_loop(
             output_func(f"Raw transcript: {text}")
             output_func(f"Normalized transcript: {normalized_text}")
         output_func(f"Understood: {normalized_text}")
-        intent = parse_voice_operator_command(normalized_text)
-        if automation_service.has_pending_confirmation and normalized_text.casefold() in {
-            "yes",
-            "confirm",
-            "continue",
-            "no",
-            "cancel",
-        }:
-            intent = VoiceOperatorIntent(
-                "screen_automation",
-                "confirmation",
-                args={"command": normalized_text},
-            )
+        intent = parse_voice_operator_command(
+            normalized_text,
+            has_pending_confirmation=automation_service.has_pending_confirmation,
+        )
         result = execute_voice_operator_intent(
             intent,
             dry_run=dry_run,
@@ -747,7 +746,7 @@ def _window_message(action: str) -> str:
 
 
 def _coerce_status(status: str) -> OperatorStatus:
-    if status in {"blocked", "unsupported"}:
+    if status in {"blocked", "target_lost", "unsupported"}:
         return status
     if status == "approval_required":
         return "handled"

@@ -38,6 +38,14 @@ def test_parse_open_known_user_folder() -> None:
     assert action.target.endswith("Downloads")
 
 
+def test_parse_show_known_user_folder() -> None:
+    action = DesktopParser().parse("Show my Downloads folder")
+
+    assert action is not None
+    assert action.pc_action_type == "open_folder"
+    assert action.label == "Downloads"
+
+
 def test_parse_close_app() -> None:
     action = DesktopParser().parse("Close VS Code")
 

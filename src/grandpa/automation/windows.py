@@ -41,6 +41,10 @@ class WindowVerification:
     actual: WindowIdentity | None = None
 
 
+class WindowTargetResolutionError(RuntimeError):
+    """A friendly window-resolution failure safe for user-facing output."""
+
+
 class WindowTargetController:
     """Resolve, focus, and prove foreground identity before desktop input."""
 
@@ -67,7 +71,10 @@ class WindowTargetController:
     def focus_and_verify(
         self, target: str | WindowIdentity, *, dry_run: bool = False
     ) -> WindowVerification:
-        expected = self._resolve(target) if isinstance(target, str) else target
+        try:
+            expected = self._resolve(target) if isinstance(target, str) else target
+        except WindowTargetResolutionError as exc:
+            return WindowVerification(False, str(exc))
         label = target if isinstance(target, str) else target.label
         if expected is None:
             return WindowVerification(
@@ -83,7 +90,14 @@ class WindowTargetController:
         if dry_run:
             return WindowVerification(True, f"Target window resolved: {expected.title}.", expected)
 
-        self._focus(expected.handle)
+        try:
+            self._focus(expected.handle)
+        except Exception:
+            return WindowVerification(
+                False,
+                f"{_display_target(expected.label)} is no longer available. No input was sent.",
+                expected,
+            )
         deadline = time.monotonic() + self.timeout
         actual = self._foreground()
         while not same_window(expected, actual) and time.monotonic() < deadline:
@@ -114,6 +128,26 @@ class WindowTargetController:
             actual,
         )
 
+    def verify_foreground(self, expected: WindowIdentity) -> WindowVerification:
+        """Prove that a previously pinned window still owns the foreground."""
+
+        actual = self._foreground()
+        if same_window(expected, actual):
+            return WindowVerification(
+                True,
+                f"Verified active window: {actual.title}.",
+                expected,
+                actual,
+            )
+        actual_label = actual.title if actual is not None else "no active window"
+        return WindowVerification(
+            False,
+            "The target window changed during the action. "
+            f"Expected {_display_target(expected.label)}, but {actual_label} is active.",
+            expected,
+            actual,
+        )
+
 
 def window_payload(action: AutomationAction) -> dict[str, object]:
     action_type = {
@@ -134,6 +168,9 @@ def resolve_window(target: str) -> WindowIdentity | None:
 
     result = _resolve_window(target)
     if not hasattr(result, "handle"):
+        message = str(getattr(result, "message", "")).strip()
+        if message:
+            raise WindowTargetResolutionError(message)
         return None
     return _identity(int(result.handle), str(result.title), target)
 
@@ -227,6 +264,7 @@ def _normalize_title(value: str) -> str:
 __all__ = [
     "WindowIdentity",
     "WindowTargetController",
+    "WindowTargetResolutionError",
     "WindowVerification",
     "foreground_window",
     "is_terminal_window",

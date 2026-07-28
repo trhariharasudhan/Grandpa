@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from grandpa.automation import ScreenAutomationService
 from grandpa.cli.chat_cmd import (
     _create_one_shot_reminder,
     _engine_unavailable_message,
@@ -46,6 +47,10 @@ class VoiceCommandProcessor:
     engine_key: str | None = None
     model_name: str | None = None
     history: list[Message] = field(default_factory=list)
+    automation_service: ScreenAutomationService = field(
+        default_factory=ScreenAutomationService,
+        repr=False,
+    )
     _engine_name: str = field(default="", init=False)
     _engine: object | None = field(default=None, init=False)
     _model: str = field(default="", init=False)
@@ -134,7 +139,9 @@ class VoiceCommandProcessor:
         self, effective_text: str
     ) -> VoiceAssistantResponse | None:
         natural_intent_message = _handle_natural_assistant_intent(
-            effective_text, spoken=True
+            effective_text,
+            spoken=True,
+            automation_service=self.automation_service,
         )
         if natural_intent_message is not None:
             return VoiceAssistantResponse(natural_intent_message, kind="local")
@@ -203,16 +210,6 @@ class VoiceCommandProcessor:
         if not browser_action.should_fallback:
             return VoiceAssistantResponse(
                 browser_action.message, status=browser_action.status, kind="browser"
-            )
-
-        from grandpa.desktop.automation import handle_desktop_command
-
-        desktop_action = handle_desktop_command(effective_text)
-        if not desktop_action.should_fallback:
-            return VoiceAssistantResponse(
-                desktop_action.message,
-                status=desktop_action.status,
-                kind="desktop",
             )
 
         from grandpa.local_actions import handle_local_action
