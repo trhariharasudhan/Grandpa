@@ -374,21 +374,6 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
             context=context,
         )
 
-    if action == "whatsapp":
-        context = get_visible_browser_context()
-        if "send" in target.lower() or "message" in target.lower():
-            return BrowserActionResult(
-                "requires_confirmation",
-                action,
-                target,
-                "Confirmation required before interacting with WhatsApp Web.",
-                risk_level="MEDIUM",
-                context=context,
-            )
-        webbrowser.open("https://web.whatsapp.com")
-        BrowserContextStore().record("whatsapp_open", url="https://web.whatsapp.com", status="handled")
-        return BrowserActionResult("handled", action, target, "Opening WhatsApp Web.", context=context)
-
     if action == "task":
         store = BrowserContextStore()
         store.record("task", query=target, status="handled")
@@ -635,7 +620,6 @@ def _safe_session(value: Any, url: str) -> dict[str, Any]:
         "origin": parsed.netloc,
         "path": parsed.path[:240],
         "is_youtube": "youtube.com" in parsed.netloc or "youtu.be" in parsed.netloc,
-        "is_whatsapp": "web.whatsapp.com" in parsed.netloc,
     }
     if isinstance(value, dict):
         session["visibility"] = str(value.get("visibility") or "")[:40]

@@ -67,7 +67,7 @@ def test_choose_model_falls_back_to_local_chat_model():
     assert decision.engine_hint == "local"
 
 
-def test_complex_reasoning_can_use_cloud_when_allowed():
+def test_complex_reasoning_remains_local_when_cloud_flag_is_passed():
     decision = choose_model(
         "Analyze this strategy, compare trade-offs, and produce a detailed plan.",
         requested_model="missing-model",
@@ -75,7 +75,8 @@ def test_complex_reasoning_can_use_cloud_when_allowed():
         cloud_allowed=True,
     )
 
-    assert decision.selected_model in {"gpt-5-mini", "qwen2.5:3b"}
+    assert decision.selected_model == "qwen2.5:3b"
+    assert decision.cloud_allowed is False
     assert decision.task_type == "reasoning"
 
 

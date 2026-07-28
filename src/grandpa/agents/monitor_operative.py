@@ -1,7 +1,7 @@
 """MonitorOperativeAgent -- long-horizon agent with configurable strategies.
 
 Extends ToolUsingAgent (not OperativeAgent) with four configurable strategy
-axes for long-horizon benchmark evaluation:
+axes for long-running local workflow supervision:
 
 1. **memory_extraction** -- how findings are persisted to memory
 2. **observation_compression** -- how tool outputs are compressed

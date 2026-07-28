@@ -6,15 +6,15 @@ and dependency issues using an AI-powered ReAct agent.
 ## Requirements
 
 - grandpa installed (`git clone https://github.com/grandpa/grandpa.git && cd grandpa && uv sync` or `uv sync --extra dev`)
-- An inference engine running (Ollama, cloud API, vLLM, etc.)
+- Ollama running with a local chat model
 
 ## Usage
 
 ```bash
 python examples/security_scanner/security_scanner.py --help
 python examples/security_scanner/security_scanner.py --path ./my_project
-python examples/security_scanner/security_scanner.py --path /home/user/app \
-    --model gpt-4o --engine cloud --max-turns 30
+python examples/security_scanner/security_scanner.py --path C:\Projects\my-app \
+    --model qwen3.5:4b --engine ollama --max-turns 30
 ```
 
 ## How It Works

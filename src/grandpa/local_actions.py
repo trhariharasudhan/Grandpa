@@ -468,8 +468,6 @@ def _confirmation_summary(command: str, result: LocalActionResult) -> str:
             return "Confirmation required before filling a browser field."
         if result.target.startswith("download|"):
             return "Confirmation required before starting a browser download."
-        if result.target.startswith("whatsapp|message"):
-            return "Confirmation required before sending a WhatsApp Web message."
         return "Confirmation required before controlling the visible browser."
     return CONFIRMATION_PREFIX
 
@@ -504,7 +502,7 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
     ):
         return "requires_confirmation"
     if result.kind == "browser" and result.target.startswith(
-        ("form_fill|", "download|", "whatsapp|message")
+        ("form_fill|", "download|")
     ):
         return "requires_confirmation"
     if result.kind in {
@@ -1205,25 +1203,6 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             target="download|visible selection",
             message="Prepare browser download.",
             tts_text="Prepare browser download.",
-        )
-
-    if command in {"open whatsapp", "open whatsapp web"}:
-        return LocalActionResult(
-            status="handled",
-            kind="browser",
-            target="whatsapp|open",
-            message="Opening WhatsApp Web.",
-            tts_text="Opening WhatsApp Web.",
-        )
-
-    whatsapp_match = re.fullmatch(r"(?:send|message) (.+?) on whatsapp(?: web)?", command)
-    if whatsapp_match:
-        return LocalActionResult(
-            status="handled",
-            kind="browser",
-            target=f"whatsapp|message {whatsapp_match.group(1).strip()}",
-            message="Prepare WhatsApp Web message.",
-            tts_text="Prepare WhatsApp Web message.",
         )
 
     task_match = re.fullmatch(r"(?:remember|continue|track) browser task (.+)", command)

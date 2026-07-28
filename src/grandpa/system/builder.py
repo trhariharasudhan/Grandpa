@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any, List, Optional
 
 from grandpa.core.config import GrandpaConfig, load_config
@@ -40,7 +39,6 @@ class SystemBuilder:
         self._telemetry: Optional[bool] = None
         self._traces: Optional[bool] = None
         self._bus: Optional[EventBus] = None
-        self._sandbox: Optional[bool] = None
         self._scheduler: Optional[bool] = None
         self._workflow: Optional[bool] = None
         self._sessions: Optional[bool] = None
@@ -69,10 +67,6 @@ class SystemBuilder:
 
     def traces(self, enabled: bool) -> SystemBuilder:
         self._traces = enabled
-        return self
-
-    def sandbox(self, enabled: bool) -> SystemBuilder:
-        self._sandbox = enabled
         return self
 
     def scheduler(self, enabled: bool) -> SystemBuilder:
@@ -110,32 +104,6 @@ class SystemBuilder:
             self._traces if self._traces is not None else config.traces.enabled
         )
         config.traces.enabled = traces_enabled
-        gpu_monitor = None
-        energy_monitor = None
-        if telemetry_enabled and config.telemetry.gpu_metrics:
-            try:
-                from grandpa.telemetry.energy_monitor import (
-                    create_energy_monitor,
-                )
-
-                energy_monitor = create_energy_monitor(
-                    poll_interval_ms=config.telemetry.gpu_poll_interval_ms,
-                    prefer_vendor=config.telemetry.energy_vendor or None,
-                )
-            except ImportError:
-                pass
-
-            if energy_monitor is None:
-                try:
-                    from grandpa.telemetry.gpu_monitor import GpuMonitor
-
-                    if GpuMonitor.available():
-                        gpu_monitor = GpuMonitor(
-                            poll_interval_ms=config.telemetry.gpu_poll_interval_ms,
-                        )
-                except ImportError:
-                    pass
-
         from grandpa.security import setup_security
 
         sec = setup_security(config, engine, bus)
@@ -146,25 +114,18 @@ class SystemBuilder:
                 InstrumentedEngine,
             )
 
-            engine = InstrumentedEngine(
-                engine,
-                bus,
-                gpu_monitor=gpu_monitor,
-                energy_monitor=energy_monitor,
-            )
+            engine = InstrumentedEngine(engine, bus)
 
         telemetry_store = None
         if telemetry_enabled:
             telemetry_store = self._setup_telemetry(config, bus)
 
         memory_backend = self._resolve_memory(config)
-        channel_backend = self._resolve_channel(config, bus)
         tool_list = self._resolve_tools(
             config,
             engine,
             model,
             memory_backend,
-            channel_backend,
         )
         tool_executor = ToolExecutor(tool_list, bus) if tool_list else None
 
@@ -197,7 +158,6 @@ class SystemBuilder:
                 logger.warning("Failed to initialize skills: %s", exc)
 
         agent_name = self._agent_name or config.agent.default_agent
-        container_runner = self._setup_sandbox(config)
         scheduler_store, task_scheduler = self._setup_scheduler(config, bus)
         workflow_engine = self._setup_workflow(config, bus)
         session_store = self._setup_sessions(config)
@@ -212,7 +172,6 @@ class SystemBuilder:
                 logger.warning("Failed to initialize TraceStore", exc_info=True)
 
         capability_policy = sec.capability_policy
-        learning_orchestrator = self._setup_learning_orchestrator(config)
 
         agent_manager = None
         if config.agent_manager.enabled:
@@ -279,13 +238,10 @@ class SystemBuilder:
             tools=tool_list,
             tool_executor=tool_executor,
             memory_backend=memory_backend,
-            channel_backend=channel_backend,
             telemetry_store=telemetry_store,
             trace_store=trace_store,
-            gpu_monitor=gpu_monitor,
             scheduler_store=scheduler_store,
             scheduler=task_scheduler,
-            container_runner=container_runner,
             workflow_engine=workflow_engine,
             session_store=session_store,
             capability_policy=capability_policy,
@@ -296,7 +252,6 @@ class SystemBuilder:
             speech_backend=speech_backend,
             skill_manager=skill_manager,
         )
-        system._learning_orchestrator = learning_orchestrator
         system._skill_few_shot_examples = skill_few_shot_examples
         system._mcp_clients = list(getattr(self, "_mcp_clients", []))
         if system.agent_executor is not None:
@@ -354,32 +309,13 @@ class SystemBuilder:
             logger.warning("Failed to resolve memory backend: %s", exc)
         return None
 
-    def _resolve_channel(self, config, bus):
-        if not config.channel.enabled:
-            return None
-        key = config.channel.default_channel
-        try:
-            import grandpa.channels  # noqa: F401 -- trigger registration
-            from grandpa.core.registry import ChannelRegistry
-            from grandpa.system._channel_kwargs import build_channel_kwargs
-
-            if not key or not ChannelRegistry.contains(key):
-                return None
-            kwargs = {"bus": bus, **build_channel_kwargs(config.channel, key)}
-            return ChannelRegistry.create(key, **kwargs)
-        except Exception as exc:
-            logger.warning("Failed to resolve channel backend %r: %s", key, exc)
-            return None
-
-    def _resolve_tools(
-        self, config, engine, model, memory_backend, channel_backend=None
-    ):
+    def _resolve_tools(self, config, engine, model, memory_backend):
         """Resolve tool instances via MCPServer (primary) + external MCP servers."""
         from grandpa.mcp.server import MCPServer
 
         internal_server = MCPServer()
         for tool in internal_server.get_tools():
-            self._inject_tool_deps(tool, engine, model, memory_backend, channel_backend)
+            self._inject_tool_deps(tool, engine, model, memory_backend)
 
         tool_names = self._tool_names
         if tool_names is None:
@@ -427,7 +363,7 @@ class SystemBuilder:
         return tools
 
     @staticmethod
-    def _inject_tool_deps(tool, engine, model, memory_backend, channel_backend):
+    def _inject_tool_deps(tool, engine, model, memory_backend):
         name = tool.spec.name
         if name == "llm":
             if hasattr(tool, "_engine"):
@@ -440,9 +376,6 @@ class SystemBuilder:
         elif name.startswith("memory_"):
             if hasattr(tool, "_backend"):
                 tool._backend = memory_backend
-        elif name.startswith("channel_"):
-            if hasattr(tool, "_channel"):
-                tool._channel = channel_backend
         elif name in (
             "schedule_task",
             "list_scheduled_tasks",
@@ -451,26 +384,6 @@ class SystemBuilder:
             "cancel_scheduled_task",
         ):
             pass  # scheduler injection handled post-build
-
-    def _setup_sandbox(self, config):
-        sandbox_enabled = (
-            self._sandbox if self._sandbox is not None else config.sandbox.enabled
-        )
-        if not sandbox_enabled:
-            return None
-        try:
-            from grandpa.sandbox.runner import ContainerRunner
-
-            return ContainerRunner(
-                image=config.sandbox.image,
-                timeout=config.sandbox.timeout,
-                mount_allowlist_path=config.sandbox.mount_allowlist_path,
-                max_concurrent=config.sandbox.max_concurrent,
-                runtime=config.sandbox.runtime,
-            )
-        except Exception as exc:
-            logger.warning("Failed to set up container sandbox: %s", exc)
-            return None
 
     def _setup_scheduler(self, config, bus):
         scheduler_enabled = (
@@ -537,42 +450,6 @@ class SystemBuilder:
             )
         except Exception as exc:
             logger.warning("Failed to set up session store: %s", exc)
-            return None
-
-    @staticmethod
-    def _setup_learning_orchestrator(config: GrandpaConfig):
-        if not config.learning.training_enabled:
-            return None
-        try:
-            from grandpa.core.config import DEFAULT_CONFIG_DIR
-            from grandpa.learning.learning_orchestrator import (
-                LearningOrchestrator,
-            )
-            from grandpa.learning.training.lora import LoRATrainingConfig
-            from grandpa.traces.store import TraceStore
-
-            trace_db_path = Path(config.traces.db_path)
-            default_trace_path = Path.home() / ".grandpa" / "traces.db"
-            if not config.traces.db_path or trace_db_path == default_trace_path:
-                trace_db_path = DEFAULT_CONFIG_DIR / "traces.db"
-            trace_store = TraceStore(db_path=trace_db_path)
-            config_dir = DEFAULT_CONFIG_DIR / "agent_configs"
-
-            sft_cfg = config.learning.intelligence.sft
-            lora_config = LoRATrainingConfig(
-                lora_rank=sft_cfg.lora_rank,
-                lora_alpha=sft_cfg.lora_alpha,
-            )
-
-            return LearningOrchestrator(
-                trace_store=trace_store,
-                config_dir=config_dir,
-                min_improvement=config.learning.min_improvement,
-                min_sft_pairs=sft_cfg.min_pairs,
-                lora_config=lora_config,
-            )
-        except Exception as exc:
-            logger.warning("Failed to set up learning orchestrator: %s", exc)
             return None
 
     def _discover_external_mcp(self, server_cfg) -> List[BaseTool]:

@@ -31,9 +31,6 @@ _TOOL_ANNOTATIONS: Dict[str, Dict[str, Any]] = {
     "web_search": {"readOnlyHint": True, "destructiveHint": False},
     "code_interpreter": {"destructiveHint": True, "readOnlyHint": False},
     "repl": {"destructiveHint": True, "readOnlyHint": False},
-    "channel_send": {"destructiveHint": True, "readOnlyHint": False},
-    "channel_list": {"readOnlyHint": True, "destructiveHint": False},
-    "channel_status": {"readOnlyHint": True, "destructiveHint": False},
 }
 
 
@@ -120,24 +117,6 @@ class MCPServer:
                     MemoryRetrieveTool,
                     MemorySearchTool,
                     MemoryIndexTool,
-                ]
-            )
-        except ImportError:
-            pass
-
-        # Channel MCP tools
-        try:
-            from grandpa.tools.channel_tools import (
-                ChannelListTool,
-                ChannelSendTool,
-                ChannelStatusTool,
-            )
-
-            _tool_classes.extend(
-                [
-                    ChannelSendTool,
-                    ChannelListTool,
-                    ChannelStatusTool,
                 ]
             )
         except ImportError:

@@ -42,12 +42,6 @@ class TestResearchMonitorE2E:
         manager.create_task(agent_id, "Summarize findings")
         assert len(manager.list_tasks(agent_id)) == 2
 
-        # Bind channel
-        binding = manager.bind_channel(
-            agent_id, "slack", {"channel": "#research", "typing_indicators": True}
-        )
-        assert binding["channel_type"] == "slack"
-
         # Update summary memory
         summary = "Found 3 papers on chain-of-thought reasoning."
         manager.update_summary_memory(agent_id, summary)

@@ -46,7 +46,7 @@ def _resolve_agent_id(manager, agent_id_or_name: str) -> str:
 
 @click.group("agents")
 def agent() -> None:
-    """Manage persistent agents — create, inspect, chat, bind channels."""
+    """Manage persistent local agents."""
 
 
 @agent.command("list")
@@ -67,10 +67,8 @@ def list_agents() -> None:
         table.add_column("Type", style="yellow")
         table.add_column("Status", style="bold")
         table.add_column("Tasks", justify="right")
-        table.add_column("Channels", justify="right")
         for a in agents:
             tasks = mgr.list_tasks(a["id"])
-            bindings = mgr.list_channel_bindings(a["id"])
             status_style = {
                 "idle": "dim",
                 "running": "green",
@@ -84,7 +82,6 @@ def list_agents() -> None:
                 a["agent_type"],
                 f"[{status_style}]{a['status']}[/{status_style}]",
                 str(len(tasks)),
-                str(len(bindings)),
             )
         console.print(table)
     except Exception as exc:
@@ -132,11 +129,6 @@ def info(agent_id: str) -> None:
             console.print(f"  Tasks:  {len(tasks)}")
             for t in tasks[:5]:
                 console.print(f"    [{t['status']}] {t['description'][:60]}")
-        bindings = mgr.list_channel_bindings(agent_id)
-        if bindings:
-            console.print(f"  Channels: {len(bindings)}")
-            for b in bindings:
-                console.print(f"    {b['channel_type']}: {b['config']}")
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
 
@@ -198,62 +190,6 @@ def delete(agent_id: str) -> None:
         mgr = _get_manager()
         mgr.delete_agent(agent_id)
         console.print(f"[dim]Archived agent {agent_id}[/dim]")
-    except Exception as exc:
-        console.print(f"[red]Error: {exc}[/red]")
-
-
-@agent.command("bind")
-@click.argument("agent_id")
-@click.option("--slack", default=None, help="Slack channel (e.g. #research)")
-@click.option("--telegram", default=None, help="Telegram chat ID")
-@click.option("--whatsapp", default=None, help="WhatsApp phone number")
-def bind(
-    agent_id: str,
-    slack: Optional[str],
-    telegram: Optional[str],
-    whatsapp: Optional[str],
-) -> None:
-    """Bind a channel to an agent."""
-    console = Console(stderr=True)
-    try:
-        mgr = _get_manager()
-        if slack:
-            b = mgr.bind_channel(agent_id, "slack", {"channel": slack})
-        elif telegram:
-            b = mgr.bind_channel(agent_id, "telegram", {"chat_id": telegram})
-        elif whatsapp:
-            b = mgr.bind_channel(agent_id, "whatsapp", {"phone": whatsapp})
-        else:
-            console.print(
-                "[red]Specify a channel: --slack, --telegram, or --whatsapp[/red]"
-            )
-            return
-        console.print(f"[green]Bound channel:[/green] {b['id']} ({b['channel_type']})")
-    except Exception as exc:
-        console.print(f"[red]Error: {exc}[/red]")
-
-
-@agent.command("channels")
-@click.argument("agent_id")
-def channels(agent_id: str) -> None:
-    """List channel bindings for an agent."""
-    console = Console(stderr=True)
-    try:
-        mgr = _get_manager()
-        bindings = mgr.list_channel_bindings(agent_id)
-        if not bindings:
-            console.print("[dim]No channel bindings.[/dim]")
-            return
-        table = Table(title="Channel Bindings")
-        table.add_column("ID", style="cyan")
-        table.add_column("Type", style="green")
-        table.add_column("Config", style="white")
-        table.add_column("Mode", style="yellow")
-        for b in bindings:
-            table.add_row(
-                b["id"], b["channel_type"], str(b["config"]), b["routing_mode"]
-            )
-        console.print(table)
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
 
@@ -727,8 +663,8 @@ def ask(agent_id, message, auto_approve):
     if auto_approve:
         executor._confirm_callback = lambda _prompt: True
     else:
-        executor._confirm_callback = (
-            lambda prompt: click.confirm(f"\n{prompt}", default=False)
+        executor._confirm_callback = lambda prompt: click.confirm(
+            f"\n{prompt}", default=False
         )
     executor.execute_tick(agent_id)
     msgs = manager.list_messages(agent_id)

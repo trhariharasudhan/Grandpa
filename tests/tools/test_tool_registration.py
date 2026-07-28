@@ -25,8 +25,6 @@ EXPECTED_TOOLS = {
     "web_search",
     # code_interpreter.py
     "code_interpreter",
-    # code_interpreter_docker.py
-    "code_interpreter_docker",
     # repl.py
     "repl",
     # storage_tools.py
@@ -34,14 +32,8 @@ EXPECTED_TOOLS = {
     "memory_retrieve",
     "memory_search",
     "memory_index",
-    # channel_tools.py
-    "channel_send",
-    "channel_list",
-    "channel_status",
     # http_request.py
     "http_request",
-    # shell_exec.py
-    "shell_exec",
     # memory_manage.py
     "memory_manage",
     # user_profile_manage.py
@@ -59,10 +51,6 @@ EXPECTED_TOOLS = {
     "db_query",
     # pdf_tool.py
     "pdf_extract",
-    # image_tool.py
-    "image_generate",
-    # audio_tool.py
-    "audio_transcribe",
     # knowledge_tools.py
     "kg_add_entity",
     "kg_add_relation",
@@ -93,6 +81,10 @@ def _reload_tool_modules() -> None:
 
 
 def test_all_builtin_tools_registered():
+    import grandpa.tools as tools_package
+
+    importlib.reload(tools_package)
+    tools_package.load_builtin_tools()
     _reload_tool_modules()
 
     registered = set(ToolRegistry.keys())

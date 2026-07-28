@@ -10,9 +10,14 @@ from grandpa.core.registry import AgentRegistry
 
 logger = logging.getLogger(__name__)
 _BUILTINS = (
-    "simple", "orchestrator", "native_react", "native_openhands", "react", "openhands",
-    "rlm", "claude_code", "operative", "monitor", "monitor_operative", "deep_research",
-    "morning_digest", "proactive_agent", "hybrid",
+    "simple",
+    "orchestrator",
+    "native_react",
+    "react",
+    "rlm",
+    "operative",
+    "monitor",
+    "monitor_operative",
 )
 _builtins_loaded = False
 

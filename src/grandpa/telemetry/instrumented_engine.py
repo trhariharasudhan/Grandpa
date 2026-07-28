@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional, Sequence
 from grandpa.core.events import EventBus, EventType
 from grandpa.core.types import Message, TelemetryRecord
 from grandpa.engine._stubs import InferenceEngine, StreamChunk
-from grandpa.telemetry.gpu_monitor import GpuSample
 
 # ---------------------------------------------------------------------------
 # ITL helpers
@@ -56,9 +55,8 @@ class InstrumentedEngine(InferenceEngine):
     about telemetry.  The wrapper publishes ``INFERENCE_START``,
     ``INFERENCE_END``, and ``TELEMETRY_RECORD`` events on the bus.
 
-    If an ``energy_monitor`` is provided (new multi-vendor
-    :class:`~grandpa.telemetry.energy_monitor.EnergyMonitor`), it is
-    preferred over the legacy ``gpu_monitor`` for energy measurement.
+    Optional sampler objects are accepted for API compatibility, but the
+    focused runtime does not install hardware-specific collectors.
     """
 
     engine_id = "instrumented"
@@ -94,7 +92,7 @@ class InstrumentedEngine(InferenceEngine):
             },
         )
 
-        gpu_sample: Optional[GpuSample] = None
+        gpu_sample: Optional[Any] = None
         energy_sample: Optional[Any] = None
         t0 = time.time()
 
@@ -321,7 +319,7 @@ class InstrumentedEngine(InferenceEngine):
         token_count = 0
 
         energy_sample: Optional[Any] = None
-        gpu_sample: Optional[GpuSample] = None
+        gpu_sample: Optional[Any] = None
 
         if self._energy_monitor is not None:
             with self._energy_monitor.sample() as energy_sample:

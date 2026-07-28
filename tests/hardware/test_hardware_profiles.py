@@ -112,20 +112,20 @@ class TestTotalRamGb:
 class TestRecommendEngine:
     """Tests for recommend_engine() logic across hardware profiles."""
 
-    def test_nvidia_datacenter_vllm(self, hardware_nvidia):
-        assert recommend_engine(hardware_nvidia) == "vllm"
+    def test_nvidia_datacenter_ollama(self, hardware_nvidia):
+        assert recommend_engine(hardware_nvidia) == "ollama"
 
     def test_nvidia_consumer_ollama(self, hardware_nvidia_consumer):
         assert recommend_engine(hardware_nvidia_consumer) == "ollama"
 
-    def test_amd_vllm(self, hardware_amd):
-        assert recommend_engine(hardware_amd) == "vllm"
+    def test_amd_ollama(self, hardware_amd):
+        assert recommend_engine(hardware_amd) == "ollama"
 
-    def test_apple_mlx(self, hardware_apple):
-        assert recommend_engine(hardware_apple) == "mlx"
+    def test_apple_ollama(self, hardware_apple):
+        assert recommend_engine(hardware_apple) == "ollama"
 
-    def test_cpu_only_llamacpp(self, hardware_cpu_only):
-        assert recommend_engine(hardware_cpu_only) == "llamacpp"
+    def test_cpu_only_ollama(self, hardware_cpu_only):
+        assert recommend_engine(hardware_cpu_only) == "ollama"
 
 
 # ---------------------------------------------------------------------------

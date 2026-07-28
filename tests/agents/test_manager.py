@@ -101,39 +101,6 @@ class TestTaskCRUD:
         assert len(tasks) == 0
 
 
-class TestChannelBindings:
-    def test_bind_channel(self, manager):
-        agent = manager.create_agent(name="slacker", agent_type="simple")
-        binding = manager.bind_channel(
-            agent["id"],
-            channel_type="slack",
-            config={
-                "channel": "#research",
-                "mention_only": False,
-                "typing_indicators": True,
-            },
-        )
-        assert binding["id"]
-        assert binding["channel_type"] == "slack"
-
-    def test_list_bindings(self, manager):
-        agent = manager.create_agent(name="slacker", agent_type="simple")
-        manager.bind_channel(
-            agent["id"], channel_type="slack", config={"channel": "#a"}
-        )
-        manager.bind_channel(
-            agent["id"], channel_type="telegram", config={"chat_id": "123"}
-        )
-        bindings = manager.list_channel_bindings(agent["id"])
-        assert len(bindings) == 2
-
-    def test_unbind_channel(self, manager):
-        agent = manager.create_agent(name="slacker", agent_type="simple")
-        binding = manager.bind_channel(agent["id"], channel_type="slack", config={})
-        manager.unbind_channel(binding["id"])
-        assert len(manager.list_channel_bindings(agent["id"])) == 0
-
-
 class TestSummaryMemory:
     def test_initial_summary_empty(self, manager):
         agent = manager.create_agent(name="test", agent_type="simple")

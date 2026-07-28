@@ -546,42 +546,6 @@ class TestSDKMemoryHandle:
         handle.close()
 
 
-class TestBenchmarkRegistryDiscovery:
-    """BenchmarkRegistry discovers latency + throughput."""
-
-    def test_discovers_benchmarks(self):
-        from grandpa.bench import ensure_registered
-        from grandpa.core.registry import BenchmarkRegistry
-
-        ensure_registered()
-        assert BenchmarkRegistry.contains("latency")
-        assert BenchmarkRegistry.contains("throughput")
-
-
-class TestBenchmarkSuiteRunAll:
-    """BenchmarkSuite runs all and produces JSONL."""
-
-    def test_suite_produces_jsonl(self):
-        import json
-
-        from grandpa.bench import ensure_registered
-        from grandpa.bench._stubs import BenchmarkSuite
-        from grandpa.core.registry import BenchmarkRegistry
-
-        ensure_registered()
-        benchmarks = [cls() for _, cls in BenchmarkRegistry.items()]
-        suite = BenchmarkSuite(benchmarks)
-
-        engine = _make_engine("benchmark response")
-        results = suite.run_all(engine, "test-model", num_samples=2)
-        assert len(results) >= 2
-
-        jsonl = suite.to_jsonl(results)
-        for line in jsonl.strip().split("\n"):
-            obj = json.loads(line)
-            assert "benchmark_name" in obj
-
-
 class TestFullPipeline:
     """Full pipeline: SDK → agent → engine → telemetry."""
 

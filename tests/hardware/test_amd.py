@@ -131,9 +131,9 @@ class TestAMDDetection:
 
 
 class TestAMDEngineRecommendation:
-    """Tests that AMD datacenter cards map to vllm, consumer cards to lemonade."""
+    """All supported Windows hardware uses the local Ollama runtime."""
 
-    def test_mi300x_recommends_vllm(self):
+    def test_mi300x_recommends_ollama(self):
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="AMD EPYC 9654",
@@ -146,9 +146,9 @@ class TestAMDEngineRecommendation:
                 count=1,
             ),
         )
-        assert recommend_engine(hw) == "vllm"
+        assert recommend_engine(hw) == "ollama"
 
-    def test_mi350_recommends_vllm(self):
+    def test_mi350_recommends_ollama(self):
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="AMD EPYC 9654",
@@ -161,9 +161,9 @@ class TestAMDEngineRecommendation:
                 count=1,
             ),
         )
-        assert recommend_engine(hw) == "vllm"
+        assert recommend_engine(hw) == "ollama"
 
-    def test_amd_consumer_recommends_lemonade(self):
+    def test_amd_consumer_recommends_ollama(self):
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="AMD Ryzen 9 7950X",
@@ -176,9 +176,9 @@ class TestAMDEngineRecommendation:
                 count=1,
             ),
         )
-        assert recommend_engine(hw) == "lemonade"
+        assert recommend_engine(hw) == "ollama"
 
-    def test_amd_generic_recommends_lemonade(self):
+    def test_amd_generic_recommends_ollama(self):
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="AMD EPYC",
@@ -186,9 +186,9 @@ class TestAMDEngineRecommendation:
             ram_gb=256.0,
             gpu=GpuInfo(vendor="amd", name="AMD GPU", vram_gb=0.0, count=1),
         )
-        assert recommend_engine(hw) == "lemonade"
+        assert recommend_engine(hw) == "ollama"
 
-    def test_amd_multi_gpu_recommends_vllm(self):
+    def test_amd_multi_gpu_recommends_ollama(self):
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="AMD EPYC 9654",
@@ -201,4 +201,4 @@ class TestAMDEngineRecommendation:
                 count=4,
             ),
         )
-        assert recommend_engine(hw) == "vllm"
+        assert recommend_engine(hw) == "ollama"

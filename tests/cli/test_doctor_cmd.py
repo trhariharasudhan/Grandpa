@@ -15,7 +15,6 @@ from grandpa.cli.doctor_cmd import (
     _check_background_scheduler_ready,
     _check_config_exists,
     _check_default_model,
-    _check_nodejs,
     _check_python_version,
     _check_runtime_environment,
     _grandpa_executable_candidates,
@@ -179,7 +178,7 @@ class TestCheckEngineProbing:
         # Directly test the engine probing logic without calling _check_engines
         # to avoid complex module-level mock interactions
         mock_config = MagicMock()
-        keys = ["ollama", "vllm"]
+        keys = ["ollama", "custom-local"]
 
         results = []
         for key in sorted(keys):
@@ -191,12 +190,14 @@ class TestCheckEngineProbing:
 
         names = [r.name for r in results]
         assert "Engine: ollama" in names
-        assert "Engine: vllm" in names
-        # ollama should be ok, vllm should be warn
+        assert "Engine: custom-local" in names
+        # Ollama should be ready; an explicitly configured custom runtime warns.
         ollama_result = next(r for r in results if r.name == "Engine: ollama")
-        vllm_result = next(r for r in results if r.name == "Engine: vllm")
+        custom_result = next(
+            r for r in results if r.name == "Engine: custom-local"
+        )
         assert ollama_result.status == "ok"
-        assert vllm_result.status == "warn"
+        assert custom_result.status == "warn"
 
 
 class TestCheckDefaultModel:
@@ -208,30 +209,6 @@ class TestCheckDefaultModel:
             result = _check_default_model()
         assert result.status == "ok"
         assert "auto" in result.message.lower()
-
-
-class TestCheckNodejs:
-    def test_check_nodejs_found(self) -> None:
-        """Node.js check reports version when node is available."""
-        with (
-            patch("shutil.which", return_value="/usr/bin/node"),
-            patch(
-                "subprocess.run",
-                return_value=MagicMock(stdout="v22.5.0\n"),
-            ),
-        ):
-            result = _check_nodejs()
-        assert result.status == "ok"
-        assert "v22.5.0" in result.message
-
-    def test_check_nodejs_not_found(self) -> None:
-        """Node.js check warns when node is not installed."""
-        with patch("shutil.which", return_value=None):
-            result = _check_nodejs()
-        assert result.status == "warn"
-        assert "Not found" in result.message
-        assert result.details is not None
-        assert "OpenClaw" not in result.details
 
 
 class TestBackgroundSchedulerReadiness:

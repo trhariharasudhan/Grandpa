@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import subprocess
 from dataclasses import dataclass
@@ -18,8 +17,6 @@ ALLOWLIST_PREFIXES = (
     ("git", "branch"),
     ("uv", "run"),
     ("npm", "run", "build"),
-    ("docker", "version"),
-    ("docker", "info"),
 )
 
 
@@ -79,7 +76,6 @@ def project_diagnostics(repo: Path | str = REPO_ROOT) -> DeveloperResult:
         "pyproject": (repo / "pyproject.toml").exists(),
         "uv_lock": (repo / "uv.lock").exists(),
         "python_package": (repo / "src" / "grandpa").is_dir(),
-        "dockerfile": (repo / "deploy" / "docker" / "Dockerfile").exists(),
         "tests": (repo / "tests").exists(),
         "env_example": any(repo.glob("*.env.example")),
     }
@@ -89,23 +85,6 @@ def project_diagnostics(repo: Path | str = REPO_ROOT) -> DeveloperResult:
         f"Project diagnostics complete: {len(checks) - len(missing)}/{len(checks)} checks ready.",
         {"checks": checks, "missing": missing, "repo": str(repo)},
     )
-
-
-def docker_diagnostics() -> DeveloperResult:
-    try:
-        version = subprocess.run(["docker", "version", "--format", "{{json .}}"], capture_output=True, text=True, timeout=8, check=False)
-    except Exception as exc:
-        return DeveloperResult("unsupported", "Docker command is not available.", {"error": str(exc)})
-    ok = version.returncode == 0
-    data: dict[str, Any] = {"command_available": True, "daemon_reachable": ok}
-    if ok:
-        try:
-            data["version"] = json.loads(version.stdout)
-        except json.JSONDecodeError:
-            data["version_text"] = version.stdout[:500]
-    else:
-        data["error"] = version.stderr[:500]
-    return DeveloperResult("handled" if ok else "warning", "Docker diagnostics complete.", data)
 
 
 def api_test_plan(method: str, url: str, *, body: str = "") -> DeveloperResult:
@@ -129,14 +108,12 @@ def analyze_log_text(text: str) -> DeveloperResult:
 def diagnostics() -> dict[str, Any]:
     git = git_summary()
     project = project_diagnostics()
-    docker = docker_diagnostics()
     return {
         "status": "ready",
         "git": git.data,
         "project": project.data,
-        "docker": docker.data,
         "allowlist_prefixes": [" ".join(prefix) for prefix in ALLOWLIST_PREFIXES],
-        "templates": ["bug investigation", "api smoke test", "docker diagnosis", "release checklist"],
+        "templates": ["bug investigation", "api smoke test", "release checklist"],
         "safety": {"dangerous_shell_blocked": True, "risky_execution_requires_approval": True, "dry_run_default": True},
     }
 
@@ -159,7 +136,6 @@ __all__ = [
     "analyze_log_text",
     "classify_command",
     "diagnostics",
-    "docker_diagnostics",
     "git_summary",
     "project_diagnostics",
     "terminal_plan",

@@ -19,5 +19,5 @@ uv run python scripts/validate_daily_use.py --skip-app-launch
 ```
 
 The validator checks CLI, local memory, notes/files, reminders, and safe action
-parsing. Docker checks run only when configured and available. It does not
+parsing. It does not
 delete files, overwrite user data, or run arbitrary shell automation.

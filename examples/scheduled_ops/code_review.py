@@ -40,7 +40,7 @@ import click
     "--engine",
     "engine_key",
     default=None,
-    help="Engine backend to use (e.g. ollama, vllm).",
+    help="Local engine backend to use (default: ollama).",
 )
 def main(repo_path: str, days: int, model: str | None, engine_key: str | None) -> None:
     """Review recent commits and produce a summary report."""

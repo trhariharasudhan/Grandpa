@@ -38,7 +38,9 @@ The redaction step in REDACT mode applies each scanner's `redact()` method in se
 
 ## GuardrailsEngine Wrapper Pattern
 
-`GuardrailsEngine` implements the full `InferenceEngine` ABC and delegates every call to a wrapped engine instance. This means any engine — `OllamaEngine`, `VLLMEngine`, `LlamaCppEngine` — can be made security-aware without modifying the engine itself.
+`GuardrailsEngine` implements the full `InferenceEngine` ABC and delegates every
+call to a wrapped local engine instance. Ollama can therefore be made
+security-aware without changing the engine itself.
 
 ```mermaid
 classDiagram

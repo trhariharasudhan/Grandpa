@@ -106,7 +106,7 @@ class TestNVIDIADetection:
 class TestNVIDIAEngineRecommendation:
     """Tests that NVIDIA cards map to the correct inference engine."""
 
-    def test_a100_recommends_vllm(self):
+    def test_a100_recommends_ollama(self):
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="EPYC",
@@ -119,9 +119,9 @@ class TestNVIDIAEngineRecommendation:
                 count=1,
             ),
         )
-        assert recommend_engine(hw) == "vllm"
+        assert recommend_engine(hw) == "ollama"
 
-    def test_h100_recommends_vllm(self):
+    def test_h100_recommends_ollama(self):
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="EPYC",
@@ -134,7 +134,7 @@ class TestNVIDIAEngineRecommendation:
                 count=1,
             ),
         )
-        assert recommend_engine(hw) == "vllm"
+        assert recommend_engine(hw) == "ollama"
 
     def test_v100_recommends_ollama(self):
         hw = HardwareInfo(
@@ -167,7 +167,7 @@ class TestNVIDIAEngineRecommendation:
         assert recommend_engine(hw) == "ollama"
 
     def test_multi_gpu_config(self):
-        """Multi-GPU datacenter setup still recommends vllm."""
+        """Multi-GPU systems still use the supported Ollama runtime."""
         hw = HardwareInfo(
             platform="linux",
             cpu_brand="EPYC",
@@ -175,5 +175,5 @@ class TestNVIDIAEngineRecommendation:
             ram_gb=1024.0,
             gpu=GpuInfo(vendor="nvidia", name="NVIDIA H100", vram_gb=80.0, count=8),
         )
-        assert recommend_engine(hw) == "vllm"
+        assert recommend_engine(hw) == "ollama"
         assert hw.gpu.count == 8

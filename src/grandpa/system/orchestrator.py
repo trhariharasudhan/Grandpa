@@ -94,18 +94,6 @@ class QueryOrchestrator:
 
     def _detect_agent_intent(self, query: str) -> Optional[str]:
         """Detect if a query should be routed to a specific agent."""
-        import re
-
-        from grandpa.core.registry import AgentRegistry
-
-        if re.search(
-            r"\b(good\s+morning|morning\s+digest|daily\s+briefing|morning\s+briefing)\b",
-            query,
-            re.IGNORECASE,
-        ):
-            if AgentRegistry.contains("morning_digest"):
-                return "morning_digest"
-
         return None
 
     def _run_agent(
@@ -166,32 +154,6 @@ class QueryOrchestrator:
             agent_kwargs["operator_id"] = operator_id
             agent_kwargs["session_store"] = s.session_store
             agent_kwargs["memory_backend"] = s.memory_backend
-
-        if agent_name == "morning_digest" and hasattr(s.config, "digest"):
-            dc = s.config.digest
-            section_sources = {}
-            for sec in dc.sections:
-                sc = getattr(dc, sec, None)
-                if sc and hasattr(sc, "sources"):
-                    section_sources[sec] = sc.sources
-            agent_kwargs.update(
-                {
-                    "persona": dc.persona,
-                    "sections": dc.sections,
-                    "section_sources": section_sources,
-                    "timezone": dc.timezone,
-                    "voice_id": dc.voice_id,
-                    "voice_speed": dc.voice_speed,
-                    "tts_backend": dc.tts_backend,
-                    "honorific": dc.honorific,
-                }
-            )
-            from grandpa.tools.digest_collect import DigestCollectTool
-            from grandpa.tools.text_to_speech import TextToSpeechTool
-
-            digest_tools = [DigestCollectTool(), TextToSpeechTool()]
-            existing = agent_kwargs.get("tools", [])
-            agent_kwargs["tools"] = digest_tools + list(existing)
 
         try:
             ag = agent_cls(s.engine, s.model, **agent_kwargs)

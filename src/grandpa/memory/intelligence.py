@@ -29,7 +29,7 @@ TOPIC_KEYWORDS: dict[str, set[str]] = {
 
 ENTITY_KEYWORDS: dict[str, set[str]] = {
     "Projects": {"grandpa", "assistant", "project", "app"},
-    "Technologies": {"python", "fastapi", "ollama", "local ai", "docker", "sqlite"},
+    "Technologies": {"python", "fastapi", "ollama", "local ai", "sqlite"},
     "Devices": {"windows", "desktop", "pc", "chrome", "edge", "vs code", "vscode"},
     "People": {"hari", "user"},
 }
@@ -448,7 +448,7 @@ def memory_insights(store: MemoryStore | None = None) -> dict[str, Any]:
         "safety": {
             "local_only": True,
             "password_learning": False,
-            "browser_history_mining": False,
+            "browser_history_collection": False,
             "credential_storage": False,
         },
     }

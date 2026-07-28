@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import os
 from pathlib import Path
 from unittest.mock import MagicMock
@@ -15,13 +14,10 @@ from grandpa.core.config import GpuInfo, HardwareInfo
 from grandpa.core.events import EventBus, reset_event_bus
 from grandpa.core.registry import (
     AgentRegistry,
-    BenchmarkRegistry,
-    ChannelRegistry,
     CompressionRegistry,
     ConnectorRegistry,
     EngineRegistry,
     MemoryRegistry,
-    MinerRegistry,
     ModelRegistry,
     RouterPolicyRegistry,
     SkillRegistry,
@@ -30,7 +26,9 @@ from grandpa.core.registry import (
     TTSRegistry,
 )
 
-_TEST_HOME = Path(os.environ.get("GRANDPA_TEST_HOME", Path.cwd() / "runtime" / "test-home"))
+_TEST_HOME = Path(
+    os.environ.get("GRANDPA_TEST_HOME", Path.cwd() / "runtime" / "test-home")
+)
 _TEST_HOME.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("GRANDPA_HOME", str(_TEST_HOME))
 _config.DEFAULT_CONFIG_DIR = _TEST_HOME
@@ -40,22 +38,6 @@ _OPTIONAL_ENVIRONMENT_TESTS = {
     "tests/connectors/test_live_smoke.py": (
         "GRANDPA_RUN_LIVE_CONNECTOR_TESTS",
         "live connector smoke test; set GRANDPA_RUN_LIVE_CONNECTOR_TESTS=1 to run",
-    ),
-    "tests/connectors/test_new_connectors_live.py": (
-        "GRANDPA_RUN_LIVE_CONNECTOR_TESTS",
-        "live connector credentials/network test; set GRANDPA_RUN_LIVE_CONNECTOR_TESTS=1 to run",
-    ),
-    "tests/evals/comparison/test_openclaw_runner_contract.py": (
-        "GRANDPA_RUN_EXTERNAL_RUNNER_TESTS",
-        "external OpenClaw runner contract requires a working Node runtime outside sandbox constraints",
-    ),
-    "tests/evals/comparison/test_hermes_runner_contract.py": (
-        "GRANDPA_RUN_EXTERNAL_RUNNER_TESTS",
-        "external Hermes runner contract requires a working Node runtime outside sandbox constraints",
-    ),
-    "tests/evals/datasets/test_external_agent_datasets.py": (
-        "GRANDPA_RUN_EXTERNAL_RUNNER_TESTS",
-        "external agent dataset tests require foreign framework fixtures",
     ),
     "tests/skills/test_integration_live.py": (
         "GRANDPA_RUN_LIVE_SKILL_TESTS",
@@ -84,7 +66,9 @@ _RELEASE_TEST_PATHS = {
 }
 
 
-def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
     """Classify optional/environment suites and keep default full runs local."""
     for item in items:
         rel_path = item.path.as_posix()
@@ -104,50 +88,24 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(pytest.mark.optional)
             item.add_marker(pytest.mark.environment)
             if not _RUST_EXTENSION_AVAILABLE:
-                item.add_marker(pytest.mark.skip(reason="grandpa_rust extension is not built"))
-        if rel_path == "tests/core/test_credentials.py" and item.name == "test_file_permissions":
+                item.add_marker(
+                    pytest.mark.skip(reason="grandpa_rust extension is not built")
+                )
+        if (
+            rel_path == "tests/core/test_credentials.py"
+            and item.name == "test_file_permissions"
+        ):
             item.add_marker(pytest.mark.environment)
             if os.name == "nt":
-                item.add_marker(
-                    pytest.mark.skip(reason="POSIX chmod mode assertions are not reliable on Windows")
-                )
-        if rel_path == "tests/telemetry/test_energy_rapl.py":
-            item.add_marker(pytest.mark.environment)
-            if os.name == "nt":
-                item.add_marker(
-                    pytest.mark.skip(reason="Linux RAPL sysfs paths cannot be represented on Windows")
-                )
-        if rel_path == "tests/engine/test_gemma_cpp.py" and "TestGemmaCppLive" in item.nodeid:
-            item.add_marker(pytest.mark.live)
-            item.add_marker(pytest.mark.optional)
-            item.add_marker(pytest.mark.environment)
-            if os.environ.get("GEMMA_CPP_MODEL_PATH") is None:
-                item.add_marker(
-                    pytest.mark.skip(reason="gemma.cpp live tests require GEMMA_CPP_MODEL_PATH")
-                )
-        if rel_path == "tests/evals/test_dataset_splits_integration.py":
-            remote_dataset_params = (
-                "grandpa.evals.datasets.gaia",
-                "grandpa.evals.datasets.liveresearchbench",
-                "grandpa.evals.datasets.taubench",
-                "grandpa.evals.datasets.livecodebench",
-            )
-            if any(param in item.nodeid for param in remote_dataset_params):
-                item.add_marker(pytest.mark.optional)
-                item.add_marker(pytest.mark.environment)
-                item.add_marker(pytest.mark.slow)
-            if os.environ.get("GRANDPA_RUN_HF_DATASET_TESTS") != "1":
                 item.add_marker(
                     pytest.mark.skip(
-                        reason="remote/gated dataset split test; set GRANDPA_RUN_HF_DATASET_TESTS=1 to run"
+                        reason="POSIX chmod mode assertions are not reliable on Windows"
                     )
                 )
         if rel_path in _RELEASE_TEST_PATHS:
             item.add_marker(pytest.mark.release)
         marker_names = {marker.name for marker in item.iter_markers()}
-        if not marker_names.intersection(
-            {"optional", "environment", "slow", "live", "live_channel", "live_external"}
-        ):
+        if not marker_names.intersection({"optional", "environment", "slow", "live"}):
             item.add_marker(pytest.mark.core)
 
 
@@ -157,12 +115,9 @@ def _clean_registries() -> None:
     ModelRegistry.clear()
     EngineRegistry.clear()
     MemoryRegistry.clear()
-    MinerRegistry.clear()
     AgentRegistry.clear()
     ToolRegistry.clear()
     RouterPolicyRegistry.clear()
-    BenchmarkRegistry.clear()
-    ChannelRegistry.clear()
     SpeechRegistry.clear()
     CompressionRegistry.clear()
     ConnectorRegistry.clear()
@@ -374,36 +329,3 @@ def mock_engine():
 def event_bus() -> EventBus:
     """Fresh EventBus with history recording enabled."""
     return EventBus(record_history=True)
-
-
-# ---------------------------------------------------------------------------
-# Mining sidecar fixtures (shared across tests/mining/ and tests/engine/)
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def sample_sidecar_payload() -> dict:
-    """A valid vllm-pearl sidecar payload with all expected fields."""
-    return {
-        "provider": "vllm-pearl",
-        "vllm_endpoint": "http://127.0.0.1:8000/v1",
-        "model": "pearl-ai/Llama-3.3-70B-Instruct-pearl",
-        "gateway_url": "http://127.0.0.1:8337",
-        "gateway_metrics_url": "http://127.0.0.1:8339",
-        "container_id": "abc123def456",
-        "wallet_address": "prl1qexampleaddress",
-        "started_at": 1714867200,
-    }
-
-
-@pytest.fixture
-def sidecar_path(tmp_path: Path) -> Path:
-    """Path to a (not-yet-written) mining sidecar JSON file."""
-    return tmp_path / "mining.json"
-
-
-@pytest.fixture
-def written_sidecar(sidecar_path: Path, sample_sidecar_payload: dict) -> Path:
-    """A written mining sidecar JSON file; returns the path."""
-    sidecar_path.write_text(json.dumps(sample_sidecar_payload))
-    return sidecar_path

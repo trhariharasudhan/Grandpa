@@ -90,24 +90,12 @@ class TestCLI:
         assert "search" in result.output
         assert "stats" in result.output
 
-    def test_mine_subcommands_exist(self) -> None:
-        result = CliRunner().invoke(cli, ["mine", "--help"])
-        assert result.exit_code == 0
-        assert "doctor" in result.output
-        assert "start" in result.output
-        assert "stop" in result.output
-
     def test_telemetry_subcommands_exist(self) -> None:
         result = CliRunner().invoke(cli, ["telemetry", "--help"])
         assert result.exit_code == 0
         assert "stats" in result.output
         assert "export" in result.output
         assert "clear" in result.output
-
-    def test_bench_subcommands_exist(self) -> None:
-        result = CliRunner().invoke(cli, ["bench", "--help"])
-        assert result.exit_code == 0
-        assert "run" in result.output
 
     def test_scheduler_subcommands_exist(self) -> None:
         result = CliRunner().invoke(cli, ["scheduler", "--help"])
@@ -117,12 +105,6 @@ class TestCLI:
         assert "pause" in result.output
         assert "resume" in result.output
         assert "cancel" in result.output
-
-    def test_channel_subcommands_exist(self) -> None:
-        result = CliRunner().invoke(cli, ["channel", "--help"])
-        assert result.exit_code == 0
-        assert "send" in result.output
-        assert "list" in result.output
 
     def test_core_commands_remain_registered(self) -> None:
         commands = set(cli.commands)
@@ -140,40 +122,6 @@ class TestCLI:
         assert "grandpa.cli.deep_research_setup_cmd" not in imported
         assert "grandpa.connectors.pipeline" not in imported
         assert "grandpa.connectors.embeddings" not in imported
-
-    def test_deep_research_missing_optional_dependency_guidance(self) -> None:
-        real_import_module = importlib.import_module
-
-        def fake_import_module(name: str, package: str | None = None):
-            if name == "grandpa.cli.deep_research_setup_cmd":
-                raise ModuleNotFoundError("No module named 'numpy'", name="numpy")
-            return real_import_module(name, package)
-
-        with mock.patch("importlib.import_module", side_effect=fake_import_module):
-            result = CliRunner().invoke(cli, ["deep-research-setup", "--skip-chat"])
-
-        assert result.exit_code != 0
-        assert "requires optional dependencies" in result.output
-        assert "uv sync --extra memory-faiss" in result.output
-
-    def test_lazy_command_does_not_hide_programming_import_errors(self) -> None:
-        real_import_module = importlib.import_module
-
-        def fake_import_module(name: str, package: str | None = None):
-            if name == "grandpa.cli.deep_research_setup_cmd":
-                raise ModuleNotFoundError(
-                    "No module named 'grandpa.internal_typo'",
-                    name="grandpa.internal_typo",
-                )
-            return real_import_module(name, package)
-
-        with mock.patch("importlib.import_module", side_effect=fake_import_module):
-            with pytest.raises(ModuleNotFoundError):
-                CliRunner().invoke(
-                    cli,
-                    ["deep-research-setup", "--skip-chat"],
-                    catch_exceptions=False,
-                )
 
     def test_lazy_command_preserves_unrelated_programming_errors(self) -> None:
         command = cli.commands["reminders"]

@@ -7,7 +7,6 @@ from grandpa.cli.doctor_cmd import (
     _build_doctor_dashboard,
     _check_background_tasks,
     _check_daily_use_readiness,
-    _check_docker_readiness,
     _check_engines,
     _check_existing_sqlite_db,
     _check_known_app,
@@ -72,33 +71,6 @@ def test_known_app_found(monkeypatch) -> None:
     assert result.message == "Ready"
 
 
-def test_docker_missing_is_optional(monkeypatch) -> None:
-    monkeypatch.setattr("shutil.which", lambda name: None)
-
-    results = _check_docker_readiness()
-
-    assert len(results) == 1
-    assert results[0].name == "Docker"
-    assert results[0].status == "info"
-    assert results[0].message == "Optional / not configured"
-
-
-def test_docker_required_feature_warns_when_missing(monkeypatch) -> None:
-    config = SimpleNamespace(
-        sandbox=SimpleNamespace(enabled=True, runtime="docker"),
-        mining=SimpleNamespace(enabled=False),
-    )
-    monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
-    monkeypatch.setattr("shutil.which", lambda name: None)
-
-    results = _check_docker_readiness()
-
-    assert len(results) == 1
-    assert results[0].name == "Docker"
-    assert results[0].status == "warn"
-    assert results[0].message == "Required but unavailable"
-
-
 def test_optional_rust_extension_absence_is_informational(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.cli._bg_state.get_status",
@@ -123,7 +95,7 @@ def test_inactive_engines_do_not_increase_warning_count(monkeypatch) -> None:
     monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
     monkeypatch.setattr(
         "grandpa.core.registry.EngineRegistry.keys",
-        lambda: ["ollama", "vllm"],
+        lambda: ["ollama", "custom-local"],
     )
     monkeypatch.setattr(
         "grandpa.engine._discovery._make_engine",
@@ -133,21 +105,26 @@ def test_inactive_engines_do_not_increase_warning_count(monkeypatch) -> None:
     results = _check_engines()
 
     assert next(result for result in results if result.name == "Engine: ollama").status == "ok"
-    inactive = next(result for result in results if result.name == "Engine: vllm")
+    inactive = next(
+        result for result in results if result.name == "Engine: custom-local"
+    )
     assert inactive.status == "info"
     assert _readiness_label(results) == "READY"
 
 
 def test_configured_unreachable_engine_warns(monkeypatch) -> None:
     config = SimpleNamespace(
-        engine=SimpleNamespace(default="vllm"),
+        engine=SimpleNamespace(default="custom-local"),
         intelligence=SimpleNamespace(preferred_engine=""),
     )
     unhealthy_engine = MagicMock()
     unhealthy_engine.health.return_value = False
 
     monkeypatch.setattr("grandpa.cli.doctor_cmd._get_config", lambda: config)
-    monkeypatch.setattr("grandpa.core.registry.EngineRegistry.keys", lambda: ["vllm"])
+    monkeypatch.setattr(
+        "grandpa.core.registry.EngineRegistry.keys",
+        lambda: ["custom-local"],
+    )
     monkeypatch.setattr(
         "grandpa.engine._discovery._make_engine",
         lambda key, cfg: unhealthy_engine,
@@ -155,7 +132,7 @@ def test_configured_unreachable_engine_warns(monkeypatch) -> None:
 
     results = _check_engines()
 
-    assert results[0].name == "Engine: vllm"
+    assert results[0].name == "Engine: custom-local"
     assert results[0].status == "warn"
 
 
@@ -182,8 +159,6 @@ def test_daily_readiness_contains_expected_checks(monkeypatch) -> None:
             "ready",
         ),
     )
-    monkeypatch.setattr("grandpa.cli.doctor_cmd._check_docker_readiness", lambda: [])
-
     results = _check_daily_use_readiness()
     names = {result.name for result in results}
 
@@ -207,7 +182,6 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
         "_check_security_profile",
         CheckResult("Security profile", "ok", "Ready"),
     )
-    patch_check("_check_nodejs", CheckResult("Node.js", "ok", "v24"))
     monkeypatch.setattr(
         "grandpa.cli.doctor_cmd._check_engines",
         lambda: [CheckResult("Engine: ollama", "ok", "Reachable")],
@@ -282,10 +256,6 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
         "_check_web_search_readiness",
         CheckResult("Web search", "ok", "Ready"),
     )
-    monkeypatch.setattr(
-        "grandpa.cli.doctor_cmd._check_docker_readiness",
-        lambda: [CheckResult("Docker command available", "ok", "Ready")],
-    )
     patch_check("_check_notifications_ready", CheckResult("Notifications", "ok", "Ready"))
     patch_check(
         "_check_background_scheduler_ready",
@@ -304,7 +274,6 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
     all_names = {check.name for section in sections for check in section.checks}
     assert "REST API server installed" in all_names
     assert "Windows app resolver ready" in all_names
-    assert "Docker command available" in all_names
 
 
 def test_readiness_label() -> None:

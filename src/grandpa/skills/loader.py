@@ -250,7 +250,7 @@ def load_skill_directory(path: str | Path) -> SkillManifest:
     # Promote .source file's source field into manifest.metadata.grandpa.source
     source_data = _read_source_metadata(path)
     if source_data:
-        # Extract just the source name (e.g. "hermes" from "hermes:apple-notes")
+        # Extract just the local source name from optional source metadata.
         source_str = source_data.get("source", "")
         source_name = source_str.partition(":")[0] if source_str else ""
         if source_name:

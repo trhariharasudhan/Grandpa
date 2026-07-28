@@ -23,17 +23,19 @@ body:
   - type: dropdown
     id: area
     attributes:
-      label: Primitive Area
+      label: Product Area
       description: Which part of Grandpa does this touch?
       options:
-        - Intelligence
-        - Engine
-        - Agent
-        - Tools
-        - Learning
-        - Evals
+        - Voice and Speech
+        - Windows Automation
+        - Screen and OCR
+        - Files and Processes
+        - Reminders and Scheduling
+        - Local Inference
+        - Safety and Security
+        - Personal Integrations
+        - Local API
         - CLI
-        - Channels
         - Rust
         - Other
     validations:

@@ -11,8 +11,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.panel import Panel
 
-from grandpa.cli._bootstrap import detect_cloud_keys
-from grandpa.cli.model import find_model_spec, hf_download, ollama_pull
+from grandpa.cli.model import find_model_spec, ollama_pull
 from grandpa.cli.scan_cmd import PrivacyScanner
 from grandpa.core.config import (
     DEFAULT_CONFIG_DIR,
@@ -27,16 +26,7 @@ from grandpa.core.config import (
 )
 
 # Engines supported by ``Grandpa init --engine``.
-_SUPPORTED_ENGINES = [
-    "ollama",
-    "vllm",
-    "sglang",
-    "llamacpp",
-    "mlx",
-    "lmstudio",
-    "exo",
-    "nexa",
-]
+_SUPPORTED_ENGINES = ["ollama"]
 
 
 def _detect_running_engines() -> list[str]:
@@ -45,13 +35,6 @@ def _detect_running_engines() -> list[str]:
 
     _PROBES: dict[str, str] = {
         "ollama": "http://localhost:11434/api/tags",
-        "vllm": "http://localhost:8000/v1/models",
-        "sglang": "http://localhost:30000/v1/models",
-        "llamacpp": "http://localhost:8080/v1/models",
-        "mlx": "http://localhost:8080/v1/models",
-        "lmstudio": "http://localhost:1234/v1/models",
-        "exo": "http://localhost:52415/v1/models",
-        "nexa": "http://localhost:18181/v1/models",
     }
     running: list[str] = []
     for key, url in _PROBES.items():
@@ -67,112 +50,21 @@ def _detect_running_engines() -> list[str]:
 def _next_steps_text(engine: str, model: str = "") -> str:
     """Return engine-specific next-steps guidance after init."""
     pull_model = model or "qwen3.5:2b"
-    steps: dict[str, str] = {
-        "ollama": (
-            "Next steps:\n"
-            "\n"
-            "  1. Install and start Ollama:\n"
-            "     curl -fsSL https://ollama.com/install.sh | sh\n"
-            "     ollama serve\n"
-            "\n"
-            f"  2. Pull a model:\n"
-            f"     ollama pull {pull_model}\n"
-            "\n"
-            "  3. Try it out:\n"
-            '     Grandpa ask "Hello"\n'
-            "\n"
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "vllm": (
-            "Next steps:\n"
-            "\n"
-            "  1. Install and start vLLM:\n"
-            "     pip install vllm\n"
-            "     vllm serve Qwen/Qwen3-4B\n"
-            "\n"
-            "  2. Try it out:\n"
-            '     Grandpa ask "Hello"\n'
-            "\n"
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "llamacpp": (
-            "Next steps:\n"
-            "\n"
-            "  1. Install and start llama.cpp:\n"
-            "     brew install llama.cpp\n"
-            "     llama-server -m path/to/model.gguf\n"
-            "\n"
-            "  2. Try it out:\n"
-            '     Grandpa ask "Hello"\n'
-            "\n"
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "sglang": (
-            "Next steps:\n"
-            "\n"
-            "  1. Install and start SGLang:\n"
-            "     pip install sglang[all]\n"
-            "     python -m sglang.launch_server --model-path Qwen/Qwen3-8B\n"
-            "\n"
-            "  2. Try it out:\n"
-            '     Grandpa ask "Hello"\n'
-            "\n"
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "mlx": (
-            "Next steps:\n"
-            "\n"
-            "  1. Install and start MLX:\n"
-            "     pip install mlx-lm\n"
-            "     mlx_lm.server --model mlx-community/Qwen2.5-7B-4bit\n"
-            "\n"
-            "  2. Try it out:\n"
-            '     Grandpa ask "Hello"\n'
-            "\n"
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "lmstudio": (
-            "Next steps:\n"
-            "\n"
-            "  1. Download LM Studio:\n"
-            "     https://lmstudio.ai\n"
-            "\n"
-            "  2. Load a model and start the local server (port 1234)\n"
-            "\n"
-            "  3. Try it out:\n"
-            '     Grandpa ask "Hello"\n'
-            "\n"
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "exo": (
-            "Next steps:\n\n"
-            "  1. Install and start Exo:\n"
-            "     pip install exo\n"
-            "     exo\n\n"
-            "  2. Try it out:\n"
-            '     Grandpa ask "Hello"\n\n'
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "nexa": (
-            "Next steps:\n\n"
-            "  1. Install and start Nexa:\n"
-            "     pip install nexaai\n"
-            "     nexa server\n\n"
-            "  2. Try it out:\n"
-            '     Grandpa ask "Hello"\n\n'
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-        "lemonade": (
-            "Next steps:\n\n"
-            "  1. Install Lemonade for your platform:\n"
-            "     https://lemonade-server.ai/\n\n"
-            "  2. Start the Lemonade server\n\n"
-            "  3. Try it out:\n"
-            '     Grandpa ask "Hello"\n\n'
-            "  Run `Grandpa doctor` to verify your setup."
-        ),
-    }
-    return steps.get(engine, steps["ollama"])
+    return (
+        "Next steps:\n"
+        "\n"
+        "  1. Install and start Ollama:\n"
+        "     https://ollama.com/download/windows\n"
+        "     ollama serve\n"
+        "\n"
+        f"  2. Pull a model:\n"
+        f"     ollama pull {pull_model}\n"
+        "\n"
+        "  3. Try it out:\n"
+        '     grandpa ask "Hello"\n'
+        "\n"
+        "  Run `grandpa doctor` to verify your setup."
+    )
 
 
 def _quick_privacy_check(console: Console) -> None:
@@ -193,34 +85,11 @@ def _quick_privacy_check(console: Console) -> None:
 
 
 def _do_download(engine: str, model: str, spec, console: Console) -> None:
-    """Dispatch model download based on engine type."""
+    """Download a model through the supported local engine."""
     import os
 
-    if engine == "ollama":
-        host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
-        ollama_pull(host, model, console)
-    elif engine == "llamacpp":
-        repo = spec.metadata.get("hf_repo", "")
-        gguf = spec.metadata.get("gguf_file", "")
-        if repo and gguf:
-            console.print(f"  Downloading [cyan]{gguf}[/cyan] from {repo}...")
-            hf_download(repo, gguf, console)
-        else:
-            console.print(f"  [yellow]No GGUF download info for {model}[/yellow]")
-    elif engine == "mlx":
-        mlx_repo = spec.metadata.get("mlx_repo", "")
-        if mlx_repo:
-            console.print(f"  Downloading [cyan]{mlx_repo}[/cyan]...")
-            hf_download(mlx_repo, None, console)
-        else:
-            console.print(f"  [yellow]No MLX repo info for {model}[/yellow]")
-    elif engine in ("vllm", "sglang"):
-        console.print(
-            f"  [cyan]{model}[/cyan] will download automatically when "
-            f"{engine} starts serving it."
-        )
-    else:
-        console.print(f"  Download {model} through the {engine} interface.")
+    host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    ollama_pull(host, model, console)
 
 
 @click.command()
@@ -260,30 +129,6 @@ def _do_download(engine: str, model: str, spec, console: Console) -> None:
     help="Remote engine host URL (e.g. http://192.168.1.50:11434).",
 )
 @click.option(
-    "--digest",
-    "enable_digest",
-    is_flag=True,
-    default=False,
-    help="Include Morning Digest config section.",
-)
-@click.option(
-    "--preset",
-    type=click.Choice(
-        [
-            "morning-digest-mac",
-            "morning-digest-linux",
-            "morning-digest-minimal",
-            "deep-research",
-            "code-assistant",
-            "scheduled-monitor",
-            "chat-simple",
-        ],
-        case_sensitive=False,
-    ),
-    default=None,
-    help="Use a pre-built starter config instead of generating one.",
-)
-@click.option(
     "--from-bare-Grandpa",
     is_flag=True,
     default=False,
@@ -298,21 +143,10 @@ def init(
     no_download: bool = False,
     skip_scan: bool = False,
     host: Optional[str] = None,
-    enable_digest: bool = False,
-    preset: Optional[str] = None,
     from_bare_grandpa: bool = False,
 ) -> None:
     """Detect hardware and generate ~/.grandpa/config.toml."""
     console = Console()
-
-    # Cloud auto-detect — inform user if a key is in env.
-    detected_cloud = detect_cloud_keys()
-    if detected_cloud is not None:
-        console.print(
-            f"[cyan]Detected cloud key in env:[/cyan] {detected_cloud.env_var} "
-            f"(provider: {detected_cloud.provider}). "
-            f"Cloud inference is available via this key."
-        )
 
     if DEFAULT_CONFIG_PATH.exists() and not force:
         console.print(
@@ -320,35 +154,6 @@ def init(
         )
         console.print("Use [bold]--force[/bold] to overwrite.")
         raise SystemExit(1)
-
-    # Handle --preset: copy a starter config and return early
-    if preset:
-        examples_dir = (
-            Path(__file__).resolve().parents[2] / "configs" / "Grandpa" / "examples"
-        )
-        # Also check installed package location
-        if not examples_dir.exists():
-            examples_dir = (
-                Path(__file__).resolve().parents[3]
-                / "configs"
-                / "Grandpa"
-                / "examples"
-            )
-        preset_path = examples_dir / f"{preset}.toml"
-        if not preset_path.exists():
-            console.print(f"[red]Preset '{preset}' not found.[/red]")
-            console.print(f"  Looked in: {examples_dir}")
-            raise SystemExit(1)
-        DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        DEFAULT_CONFIG_PATH.write_text(preset_path.read_text())
-        console.print(
-            f"[green]Preset '{preset}' installed to {DEFAULT_CONFIG_PATH}[/green]"
-        )
-        console.print(
-            "\n  Edit the config to customize, then run "
-            "[bold]Grandpa doctor[/bold] to verify."
-        )
-        return
 
     console.print("[bold]Detecting hardware...[/bold]")
     hw = detect_hardware()
@@ -460,43 +265,6 @@ def init(
             border_style="green",
         )
     )
-    # Append Morning Digest section if requested
-    if enable_digest:
-        digest_section = """
-# ─── Morning Digest ─────────────────────────────────────────
-[digest]
-enabled = true
-schedule = "0 7 * * *"
-timezone = "America/Los_Angeles"
-persona = "Grandpa"
-honorific = "sir"
-tts_backend = "cartesia"
-voice_id = "c8f7835e-28a3-4f0c-80d7-c1302ac62aae"
-voice_speed = 1.2
-sections = ["health", "messages", "calendar", "world"]
-
-[digest.health]
-sources = ["oura"]
-
-[digest.messages]
-sources = ["gmail", "google_tasks", "imessage"]
-
-[digest.calendar]
-sources = ["gcalendar"]
-
-[digest.world]
-sources = ["hackernews", "news_rss"]
-"""
-        target = config if config else DEFAULT_CONFIG_PATH
-        existing = target.read_text()
-        target.write_text(existing + digest_section)
-        toml_content = target.read_text()
-        console.print(
-            "[green]Morning Digest config added.[/green] "
-            "Run [bold]Grandpa connect gdrive[/bold] to connect "
-            "Google services, then [bold]Grandpa digest --fresh[/bold]."
-        )
-
     console.print("[green]Config written successfully.[/green]")
 
     # Create default memory files (skip if they already exist)

@@ -6,7 +6,7 @@ web_search, and think tools to find and synthesize information from the web.
 ## Requirements
 
 - grandpa installed (`git clone https://github.com/grandpa/grandpa.git && cd grandpa && uv sync` or `uv sync --extra dev`)
-- An inference engine running (Ollama, cloud API, vLLM, etc.)
+- Ollama running with a local chat model
 
 ## Usage
 
@@ -14,7 +14,7 @@ web_search, and think tools to find and synthesize information from the web.
 python examples/browser_assistant/browser_assistant.py --help
 python examples/browser_assistant/browser_assistant.py --query "Find the latest Python 3.13 features"
 python examples/browser_assistant/browser_assistant.py --query "Compare AWS vs GCP pricing" \
-    --model gpt-4o --engine cloud --max-turns 20
+    --model qwen3.5:4b --engine ollama --max-turns 20
 ```
 
 ## How It Works

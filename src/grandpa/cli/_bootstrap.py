@@ -1,17 +1,9 @@
-"""Cloud-key auto-detection and initial-config writing.
-
-Used by both ``install.sh`` (via ``Grandpa _bootstrap --write-config``)
-and ``Grandpa init`` (so there is a single source of truth for the
-TOML rendered at install time).
-"""
+"""Initial local Ollama configuration writer."""
 
 from __future__ import annotations
 
 import datetime as _dt
-import os
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -23,49 +15,6 @@ from grandpa.core.config import (
     recommend_engine,
     recommend_model,
 )
-
-# Marker used to redact secret values in __repr__.
-_REDACTED_PLACEHOLDER = "***redacted***"
-
-# Precedence order matters: first match wins.
-# OpenRouter first because one key unlocks the most models; Anthropic
-# next because it's the highest-quality single-provider option; then
-# OpenAI; then Google (with GEMINI_API_KEY as an alias).
-_KEY_TO_PROVIDER: tuple[tuple[str, str], ...] = (
-    ("OPENROUTER_API_KEY", "openrouter"),
-    ("ANTHROPIC_API_KEY", "anthropic"),
-    ("OPENAI_API_KEY", "openai"),
-    ("GOOGLE_API_KEY", "google"),
-    ("GEMINI_API_KEY", "google"),
-)
-
-
-@dataclass(slots=True)
-class CloudProvider:
-    """A detected cloud provider + the env var it came from."""
-
-    provider: str
-    env_var: str
-    api_key: str
-
-    def __repr__(self) -> str:
-        return (
-            f"CloudProvider(provider={self.provider!r}, "
-            f"env_var={self.env_var!r}, api_key='{_REDACTED_PLACEHOLDER}')"
-        )
-
-
-def detect_cloud_keys() -> Optional[CloudProvider]:
-    """Return the first matching cloud provider per precedence order, else None.
-
-    Empty-string values are treated as unset (matches shell convention).
-    """
-    for env_var, provider in _KEY_TO_PROVIDER:
-        value = os.environ.get(env_var, "")
-        if value:
-            return CloudProvider(provider=provider, env_var=env_var, api_key=value)
-    return None
-
 
 # ---------------------------------------------------------------------------
 # Initial config writer
@@ -106,12 +55,10 @@ def write_initial_config(
     hardware: HardwareInfo,
     engine: str,
     model: str,
-    cloud: Optional[CloudProvider] = None,
 ) -> Path:
     """Render the initial ``config.toml`` and seed memory files.
 
-    Called by both ``install.sh`` (via ``Grandpa _bootstrap --write-config``)
-    and ``Grandpa init`` so the TOML format has one definition.
+    Called by ``Grandpa init`` so the TOML format has one definition.
     """
     _cfg.DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -123,8 +70,6 @@ def write_initial_config(
         )
 
     intelligence_section = f"default_model = {_toml_quote(model)}"
-    if cloud is not None:
-        intelligence_section += f"\nprovider = {_toml_quote(cloud.provider)}"
 
     # Provenance must come before table declarations to be top-level keys.
     provenance = _render_provenance_lines().rstrip("\n")
@@ -180,18 +125,8 @@ def _seed_memory_files() -> None:
 
 
 # ---------------------------------------------------------------------------
-# CLI command — invoked by install.sh, hidden from `Grandpa --help`
+# CLI command — internal helper, hidden from ``Grandpa --help``
 # ---------------------------------------------------------------------------
-
-# Default model picked at install time when a cloud key is detected via
-# --prefer-cloud-when-available.  These IDs will rot as new model versions
-# ship; bump them when sub-project A's release notes track new defaults.
-_CLOUD_PROVIDER_DEFAULT_MODELS: dict[str, str] = {
-    "openrouter": "anthropic/claude-opus-4-6",
-    "anthropic": "claude-opus-4-6",
-    "openai": "gpt-5",
-    "google": "gemini-3-pro",
-}
 
 
 @click.command("_bootstrap", hidden=True)
@@ -211,19 +146,12 @@ _CLOUD_PROVIDER_DEFAULT_MODELS: dict[str, str] = {
     default="",
     help="Model id (e.g. qwen3.5:2b). Empty = auto-recommend.",
 )
-@click.option(
-    "--prefer-cloud-when-available",
-    is_flag=True,
-    default=False,
-    help="If a known cloud-API key is in env, override engine/model to cloud.",
-)
 def bootstrap_cmd(
     write_config: bool,
     engine: str,
     model: str,
-    prefer_cloud_when_available: bool,
 ) -> None:
-    """Internal helper used by install.sh — not for direct user invocation."""
+    """Internal helper for writing the initial local configuration."""
     if not write_config:
         raise click.UsageError("--write-config is required")
 
@@ -231,19 +159,9 @@ def bootstrap_cmd(
     chosen_engine = engine or recommend_engine(hw)
     chosen_model = model or recommend_model(hw, chosen_engine)
 
-    cloud = None
-    if prefer_cloud_when_available:
-        cloud = detect_cloud_keys()
-        if cloud is not None:
-            chosen_engine = "cloud"
-            chosen_model = _CLOUD_PROVIDER_DEFAULT_MODELS.get(
-                cloud.provider, chosen_model
-            )
-
     write_initial_config(
         hardware=hw,
         engine=chosen_engine,
         model=chosen_model,
-        cloud=cloud,
     )
     click.echo(f"Wrote {_cfg.DEFAULT_CONFIG_PATH}")

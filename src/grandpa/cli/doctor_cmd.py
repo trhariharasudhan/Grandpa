@@ -50,7 +50,9 @@ def _check_python_version() -> CheckResult:
 
 def _project_root() -> Path | None:
     for parent in Path(__file__).resolve().parents:
-        if (parent / "pyproject.toml").exists() and (parent / "src" / "grandpa").exists():
+        if (parent / "pyproject.toml").exists() and (
+            parent / "src" / "grandpa"
+        ).exists():
             return parent
     return None
 
@@ -163,8 +165,6 @@ def _check_config_exists() -> CheckResult:
 def _windows_setup_hint(tool: str) -> str:
     hints = {
         "ollama": "Install Ollama from https://ollama.com/download and run `ollama serve`.",
-        "docker": "Install Docker Desktop and wait until the engine is running.",
-        "node": "Install Node.js 22+ from https://nodejs.org/.",
         "pillow": "Run `uv sync --extra server --link-mode=copy`; Pillow is a project dependency.",
         "pyautogui": (
             "Run `uv sync --extra server --link-mode=copy`; "
@@ -360,11 +360,7 @@ def _check_optional_deps() -> List[CheckResult]:
     results: List[CheckResult] = []
     optional_packages = [
         ("fastapi", "Grandpa[server]", "REST API server"),
-        ("torch", "pip install torch", "SFT/GRPO training"),
-        ("pynvml", "Grandpa[gpu-metrics]", "NVIDIA energy monitoring"),
-        ("amdsmi", "Grandpa[energy-amd]", "AMD energy monitoring"),
         ("colbert", "Grandpa[memory-colbert]", "ColBERT memory backend"),
-        ("zeus", "Grandpa[energy-apple]", "Apple Silicon energy monitoring"),
     ]
     for pkg, install_hint, description in optional_packages:
         try:
@@ -407,39 +403,6 @@ def _check_security_profile() -> CheckResult:
         )
 
 
-def _check_nodejs() -> CheckResult:
-    """Check Node.js version for Node-backed integrations."""
-    node_path = shutil.which("node")
-    if not node_path:
-        return CheckResult(
-            "Node.js",
-            "warn",
-            "Not found",
-            details=_windows_setup_hint("node"),
-        )
-    try:
-        result = subprocess.run(
-            ["node", "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        version_str = result.stdout.strip()
-        # Parse "v22.1.0" -> (22, 1, 0)
-        parts = version_str.lstrip("v").split(".")
-        major = int(parts[0])
-        if major >= 22:
-            return CheckResult("Node.js", "ok", version_str)
-        return CheckResult(
-            "Node.js",
-            "warn",
-            f"{version_str} (requires >= v22)",
-            details=_windows_setup_hint("node"),
-        )
-    except Exception as exc:
-        return CheckResult("Node.js", "warn", f"Error checking version: {exc}")
-
-
 def _ollama_host(config: Any | None = None) -> str:
     from grandpa.engine.ollama import normalize_ollama_host
 
@@ -448,7 +411,9 @@ def _ollama_host(config: Any | None = None) -> str:
     return normalize_ollama_host(host)
 
 
-def _fetch_ollama_models(host: str, timeout: float = 1.5) -> tuple[bool, list[str], str]:
+def _fetch_ollama_models(
+    host: str, timeout: float = 1.5
+) -> tuple[bool, list[str], str]:
     from grandpa.engine.ollama import OllamaEngine, normalize_ollama_host
 
     normalized_host = normalize_ollama_host(host)
@@ -523,9 +488,13 @@ def _check_windows_app_resolver_ready() -> CheckResult:
         from grandpa.windows_app_resolver import APP_DEFINITIONS
 
         count = len(APP_DEFINITIONS)
-        return CheckResult("Windows app resolver ready", "ok", f"Ready ({count} allowlisted apps)")
+        return CheckResult(
+            "Windows app resolver ready", "ok", f"Ready ({count} allowlisted apps)"
+        )
     except Exception as exc:
-        return CheckResult("Windows app resolver ready", "fail", "Failed", details=str(exc))
+        return CheckResult(
+            "Windows app resolver ready", "fail", "Failed", details=str(exc)
+        )
 
 
 def _check_known_app(app_name: str) -> CheckResult:
@@ -751,13 +720,27 @@ def _check_gmail_readiness() -> CheckResult:
         try:
             GmailAuthManager._ensure_dependencies()  # noqa: SLF001 - doctor validates optional runtime dependencies.
         except GmailDependencyError as exc:
-            return CheckResult("Gmail integration", "warn", "Dependencies missing", details=str(exc))
+            return CheckResult(
+                "Gmail integration", "warn", "Dependencies missing", details=str(exc)
+            )
         if status.ready:
             account = f" ({status.account})" if status.account else ""
-            return CheckResult("Gmail integration", "ok", f"Connected{account}", details=f"Token: {status.token_path}")
-        return CheckResult("Gmail integration", "warn", "OAuth setup incomplete", details=status.message)
+            return CheckResult(
+                "Gmail integration",
+                "ok",
+                f"Connected{account}",
+                details=f"Token: {status.token_path}",
+            )
+        return CheckResult(
+            "Gmail integration",
+            "warn",
+            "OAuth setup incomplete",
+            details=status.message,
+        )
     except Exception as exc:
-        return CheckResult("Gmail integration", "warn", "Could not check Gmail", details=str(exc))
+        return CheckResult(
+            "Gmail integration", "warn", "Could not check Gmail", details=str(exc)
+        )
 
 
 def _check_calendar_readiness() -> CheckResult:
@@ -776,13 +759,33 @@ def _check_calendar_readiness() -> CheckResult:
         try:
             CalendarAuthManager._ensure_dependencies()  # noqa: SLF001 - doctor validates optional runtime dependencies.
         except CalendarDependencyError as exc:
-            return CheckResult("Google Calendar integration", "warn", "Dependencies missing", details=str(exc))
+            return CheckResult(
+                "Google Calendar integration",
+                "warn",
+                "Dependencies missing",
+                details=str(exc),
+            )
         if status.ready:
             account = f" ({status.account})" if status.account else ""
-            return CheckResult("Google Calendar integration", "ok", f"Connected{account}", details=f"Token: {status.token_path}")
-        return CheckResult("Google Calendar integration", "warn", "OAuth setup incomplete", details=status.message)
+            return CheckResult(
+                "Google Calendar integration",
+                "ok",
+                f"Connected{account}",
+                details=f"Token: {status.token_path}",
+            )
+        return CheckResult(
+            "Google Calendar integration",
+            "warn",
+            "OAuth setup incomplete",
+            details=status.message,
+        )
     except Exception as exc:
-        return CheckResult("Google Calendar integration", "warn", "Could not check Calendar", details=str(exc))
+        return CheckResult(
+            "Google Calendar integration",
+            "warn",
+            "Could not check Calendar",
+            details=str(exc),
+        )
 
 
 def _check_notes_readiness() -> CheckResult:
@@ -793,10 +796,16 @@ def _check_notes_readiness() -> CheckResult:
         if status == "ready":
             return CheckResult("Notes storage", "ok", "Ready", details=message)
         if status == "permission_denied":
-            return CheckResult("Notes storage", "warn", "Permission denied", details=message)
-        return CheckResult("Notes storage", "warn", "Storage unavailable", details=message)
+            return CheckResult(
+                "Notes storage", "warn", "Permission denied", details=message
+            )
+        return CheckResult(
+            "Notes storage", "warn", "Storage unavailable", details=message
+        )
     except Exception as exc:
-        return CheckResult("Notes storage", "warn", "Could not check notes storage", details=str(exc))
+        return CheckResult(
+            "Notes storage", "warn", "Could not check notes storage", details=str(exc)
+        )
 
 
 def _check_downloads_readiness() -> CheckResult:
@@ -807,12 +816,23 @@ def _check_downloads_readiness() -> CheckResult:
         if status == "ready":
             return CheckResult("Downloads directory", "ok", "Ready", details=message)
         if status == "permission_denied":
-            return CheckResult("Downloads directory", "warn", "Permission denied", details=message)
+            return CheckResult(
+                "Downloads directory", "warn", "Permission denied", details=message
+            )
         if status == "missing":
-            return CheckResult("Downloads directory", "warn", "Configured folder missing", details=message)
-        return CheckResult("Downloads directory", "warn", "Unavailable", details=message)
+            return CheckResult(
+                "Downloads directory",
+                "warn",
+                "Configured folder missing",
+                details=message,
+            )
+        return CheckResult(
+            "Downloads directory", "warn", "Unavailable", details=message
+        )
     except Exception as exc:
-        return CheckResult("Downloads directory", "warn", "Could not check Downloads", details=str(exc))
+        return CheckResult(
+            "Downloads directory", "warn", "Could not check Downloads", details=str(exc)
+        )
 
 
 def _check_web_search_readiness() -> CheckResult:
@@ -822,88 +842,13 @@ def _check_web_search_readiness() -> CheckResult:
         status, message = WebSearchClient().status()
         if status == "ready":
             return CheckResult("Web search", "ok", "Ready", details=message)
-        return CheckResult("Web search", "info", "Optional / not configured", details=message)
-    except Exception as exc:
-        return CheckResult("Web search", "warn", "Could not check web search", details=str(exc))
-
-
-def _docker_required(config: Any | None = None) -> bool:
-    config = config or _get_config()
-    sandbox = getattr(config, "sandbox", None)
-    if bool(getattr(sandbox, "enabled", False)) and str(
-        getattr(sandbox, "runtime", "")
-    ).lower() == "docker":
-        return True
-    mining = getattr(config, "mining", None)
-    return bool(getattr(mining, "enabled", False))
-
-
-def _check_docker_readiness() -> List[CheckResult]:
-    required = _docker_required()
-    docker = shutil.which("docker")
-    if not docker:
-        if not required:
-            return [
-                CheckResult(
-                    "Docker",
-                    "info",
-                    "Optional / not configured",
-                    details="No enabled feature currently requires Docker.",
-                )
-            ]
-        return [
-            CheckResult(
-                "Docker",
-                "warn",
-                "Required but unavailable",
-                details=_windows_setup_hint("docker"),
-            ),
-        ]
-    results = [
-        CheckResult(
-            "Docker",
-            "ok" if required else "info",
-            "Ready" if required else "Available / not configured",
-            docker,
+        return CheckResult(
+            "Web search", "info", "Optional / not configured", details=message
         )
-    ]
-    try:
-        proc = subprocess.run(
-            ["docker", "version", "--format", "{{.Server.Version}}"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-        if proc.returncode == 0:
-            if required:
-                results.append(
-                    CheckResult(
-                        "Docker daemon reachable",
-                        "ok",
-                        f"Ready ({proc.stdout.strip()})",
-                    )
-                )
-        else:
-            if required:
-                results.append(
-                    CheckResult(
-                        "Docker daemon reachable",
-                        "warn",
-                        "Required but unavailable",
-                        details=_windows_setup_hint("docker"),
-                    )
-                )
     except Exception as exc:
-        if required:
-            results.append(
-                CheckResult(
-                    "Docker daemon reachable",
-                    "warn",
-                    "Required but unavailable",
-                    details=f"{_windows_setup_hint('docker')} Last error: {exc}",
-                )
-            )
-    return results
+        return CheckResult(
+            "Web search", "warn", "Could not check web search", details=str(exc)
+        )
 
 
 def _check_notifications_ready() -> CheckResult:
@@ -917,7 +862,9 @@ def _check_notifications_ready() -> CheckResult:
             "Routine and reminder notifications can be stored locally.",
         )
     except Exception as exc:
-        return CheckResult("Notifications", "warn", "Missing/optional", details=str(exc))
+        return CheckResult(
+            "Notifications", "warn", "Missing/optional", details=str(exc)
+        )
 
 
 def _check_background_scheduler_ready() -> CheckResult:
@@ -989,7 +936,10 @@ def _check_release_gate_status() -> CheckResult:
         "Final release gate",
         "fail",
         overall,
-        str(status.get("recommendation") or "Fix release gate blockers before packaging."),
+        str(
+            status.get("recommendation")
+            or "Fix release gate blockers before packaging."
+        ),
     )
 
 
@@ -1087,7 +1037,6 @@ def _check_daily_use_readiness() -> List[CheckResult]:
             _check_voice_runtime_ready(),
         ]
     )
-    checks.extend(_check_docker_readiness())
     return checks
 
 
@@ -1111,7 +1060,6 @@ def _run_all_checks() -> List[CheckResult]:
     checks.extend(_check_models())
     checks.append(_check_default_model())
     checks.extend(_check_optional_deps())
-    checks.append(_check_nodejs())
     checks.append(_check_security_profile())
     return checks
 
@@ -1127,7 +1075,6 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         _check_config_parses(),
         _check_rest_api_installed(),
         _check_security_profile(),
-        _check_nodejs(),
     ]
 
     ai_engines = []
@@ -1180,11 +1127,6 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         daily_features.append(web_search_readiness)
 
     system_integration: List[CheckResult] = []
-    for check in _check_docker_readiness():
-        if check.status == "info":
-            optional_integrations.append(check)
-        else:
-            system_integration.append(check)
     system_integration.extend(
         [
             _check_notifications_ready(),

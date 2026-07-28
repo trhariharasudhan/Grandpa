@@ -69,19 +69,6 @@ class BudgetLimitsRequest(BaseModel):
     max_requests_per_hour: Optional[int] = None
 
 
-class FeedbackScoreRequest(BaseModel):
-    trace_id: str
-    score: float
-    source: str = "api"
-
-
-class OptimizeRunRequest(BaseModel):
-    benchmark: str
-    max_trials: int = 20
-    optimizer_model: str = "claude-sonnet-4-6"
-    max_samples: int = 50
-
-
 class VoiceSpeakRequest(BaseModel):
     text: str
     interrupt: bool = False
@@ -484,47 +471,6 @@ async def telemetry_stats(request: Request):
             d.pop("per_engine", None)
             d["total_requests"] = d.pop("total_calls", 0)
             return d
-        finally:
-            agg.close()
-    except Exception as exc:
-        return {"error": str(exc)}
-
-
-@telemetry_router.get("/energy")
-async def telemetry_energy(request: Request):
-    """Get energy monitoring data."""
-    try:
-        from grandpa.core.config import DEFAULT_CONFIG_DIR
-        from grandpa.telemetry.aggregator import TelemetryAggregator
-
-        db_path = DEFAULT_CONFIG_DIR / "telemetry.db"
-        if not db_path.exists():
-            return {
-                "total_energy_j": 0,
-                "energy_per_token_j": 0,
-                "avg_power_w": 0,
-                "cpu_temp_c": None,
-                "gpu_temp_c": None,
-            }
-
-        session_start = getattr(request.app.state, "session_start", None)
-        agg = TelemetryAggregator(db_path)
-        try:
-            stats = agg.summary(since=session_start)
-            total_energy = stats.total_energy_joules
-            total_tokens = stats.total_tokens
-            total_latency = stats.total_latency
-            return {
-                "total_energy_j": total_energy,
-                "energy_per_token_j": (
-                    total_energy / total_tokens if total_tokens > 0 else 0
-                ),
-                "avg_power_w": (
-                    total_energy / total_latency if total_latency > 0 else 0
-                ),
-                "cpu_temp_c": None,
-                "gpu_temp_c": None,
-            }
         finally:
             agg.close()
     except Exception as exc:
@@ -1312,73 +1258,6 @@ async def websocket_chat_stream(websocket: WebSocket):
                 )
     except WebSocketDisconnect:
         pass  # Client disconnected — nothing to clean up
-
-
-# ---- Learning routes ----
-
-learning_router = APIRouter(prefix="/v1/learning", tags=["learning"])
-
-
-@learning_router.get("/stats")
-async def learning_stats(request: Request):
-    """Return learning system statistics across all sub-policies."""
-    result: Dict[str, Any] = {}
-
-    # Skill discovery
-    try:
-        from grandpa.learning.agents.skill_discovery import SkillDiscovery
-
-        discovery = SkillDiscovery()
-        result["skill_discovery"] = {
-            "available": True,
-            "discovered_count": len(discovery.discovered_skills),
-        }
-    except Exception as exc:
-        logger.warning("Failed to load skill discovery stats: %s", exc)
-        result["skill_discovery"] = {"available": False}
-
-    return result
-
-
-@learning_router.get("/policy")
-async def learning_policy(request: Request):
-    """Return current routing policy configuration."""
-    result: Dict[str, Any] = {}
-
-    # Load config and extract learning section
-    try:
-        from grandpa.core.config import load_config
-
-        config = load_config()
-        lc = config.learning
-        result["enabled"] = lc.enabled
-        result["update_interval"] = lc.update_interval
-        result["auto_update"] = lc.auto_update
-        result["routing"] = {
-            "policy": lc.routing.policy,
-            "min_samples": lc.routing.min_samples,
-        }
-        result["intelligence"] = {
-            "policy": lc.intelligence.policy,
-        }
-        result["agent"] = {
-            "policy": lc.agent.policy,
-        }
-        result["metrics"] = {
-            "accuracy_weight": lc.metrics.accuracy_weight,
-            "latency_weight": lc.metrics.latency_weight,
-            "cost_weight": lc.metrics.cost_weight,
-            "efficiency_weight": lc.metrics.efficiency_weight,
-        }
-    except Exception as exc:
-        logger.warning("Failed to load learning config: %s", exc)
-        result["enabled"] = False
-        result["routing"] = {"policy": "heuristic", "min_samples": 5}
-        result["intelligence"] = {"policy": "none"}
-        result["agent"] = {"policy": "none"}
-        result["metrics"] = {}
-
-    return result
 
 
 # ---- Speech routes ----
@@ -2230,104 +2109,6 @@ def _raise_for_expected_voice_error(result: dict[str, Any]) -> None:
         raise HTTPException(status_code=422, detail=result.get("message") or result)
 
 
-# ---- Feedback routes ----
-
-feedback_router = APIRouter(prefix="/v1/feedback", tags=["feedback"])
-
-
-@feedback_router.post("")
-async def submit_feedback(req: FeedbackScoreRequest, request: Request):
-    """Submit feedback for a trace."""
-    try:
-        from grandpa.core.config import DEFAULT_CONFIG_DIR
-        from grandpa.traces.store import TraceStore
-
-        db_path = DEFAULT_CONFIG_DIR / "traces.db"
-        if not db_path.exists():
-            raise HTTPException(status_code=404, detail="No trace database")
-
-        store = TraceStore(db_path)
-        updated = store.update_feedback(req.trace_id, req.score)
-        store.close()
-
-        if not updated:
-            raise HTTPException(
-                status_code=404, detail=f"Trace '{req.trace_id}' not found"
-            )
-        return {"status": "recorded", "trace_id": req.trace_id}
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-
-
-@feedback_router.get("/stats")
-async def feedback_stats(request: Request):
-    """Get feedback statistics."""
-    return {"total": 0, "mean_score": 0.0}
-
-
-# ---- Optimize routes ----
-
-optimize_router = APIRouter(prefix="/v1/optimize", tags=["optimize"])
-
-
-@optimize_router.get("/runs")
-async def list_optimize_runs(request: Request):
-    """List optimization runs."""
-    try:
-        from grandpa.core.config import DEFAULT_CONFIG_DIR
-        from grandpa.learning.optimize.store import OptimizationStore
-
-        db_path = DEFAULT_CONFIG_DIR / "optimize.db"
-        if not db_path.exists():
-            return {"runs": []}
-
-        store = OptimizationStore(db_path)
-        runs = store.list_runs()
-        store.close()
-        return {"runs": runs}
-    except Exception as exc:
-        logger.warning("Failed to list optimization runs: %s", exc)
-        return {"runs": []}
-
-
-@optimize_router.get("/runs/{run_id}")
-async def get_optimize_run(run_id: str, request: Request):
-    """Get optimization run details."""
-    try:
-        from grandpa.core.config import DEFAULT_CONFIG_DIR
-        from grandpa.learning.optimize.store import OptimizationStore
-
-        db_path = DEFAULT_CONFIG_DIR / "optimize.db"
-        if not db_path.exists():
-            return {"run_id": run_id, "status": "not_found"}
-
-        store = OptimizationStore(db_path)
-        run = store.get_run(run_id)
-        store.close()
-
-        if run is None:
-            return {"run_id": run_id, "status": "not_found"}
-
-        return {
-            "run_id": run.run_id,
-            "status": run.status,
-            "benchmark": run.benchmark,
-            "trials": len(run.trials),
-            "best_trial_id": (run.best_trial.trial_id if run.best_trial else None),
-        }
-    except Exception as exc:
-        logger.warning("Failed to get optimization run %s: %s", run_id, exc)
-        return {"run_id": run_id, "status": "not_found"}
-
-
-@optimize_router.post("/runs")
-async def start_optimize_run(req: OptimizeRunRequest, request: Request):
-    """Start a new optimization run."""
-    return {"status": "started", "run_id": "placeholder"}
-
-
 def include_all_routes(app) -> None:
     """Include all extended API routers in a FastAPI app."""
     from grandpa.server.approval_routes import (
@@ -2357,35 +2138,10 @@ def include_all_routes(app) -> None:
     app.include_router(budget_router)
     app.include_router(metrics_router)
     app.include_router(websocket_router)
-    app.include_router(learning_router)
     app.include_router(speech_router)
     app.include_router(voice_router)
     app.include_router(conversation_router)
     app.include_router(vision_router)
-    app.include_router(feedback_router)
-    app.include_router(optimize_router)
-
-    # Agent Manager routes (if available)
-    try:
-        if hasattr(app.state, "agent_manager") and app.state.agent_manager:
-            from grandpa.server.agent_manager_routes import (  # noqa: PLC0415
-                create_agent_manager_router,
-            )
-
-            (
-                agents_r,
-                templates_r,
-                global_r,
-                tools_r,
-                sendblue_r,
-            ) = create_agent_manager_router(app.state.agent_manager)
-            app.include_router(agents_r)
-            app.include_router(templates_r)
-            app.include_router(global_r)
-            app.include_router(tools_r)
-            app.include_router(sendblue_r)
-    except ImportError:
-        pass
 
     # WebSocket bridge for real-time agent events
     try:
@@ -2422,11 +2178,8 @@ __all__ = [
     "budget_router",
     "metrics_router",
     "websocket_router",
-    "learning_router",
     "speech_router",
     "voice_router",
     "conversation_router",
     "vision_router",
-    "feedback_router",
-    "optimize_router",
 ]

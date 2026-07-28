@@ -15,7 +15,6 @@ if TYPE_CHECKING:
     from grandpa.security.audit import AuditLogger
     from grandpa.security.boundary import BoundaryGuard
     from grandpa.security.capabilities import CapabilityPolicy
-    from grandpa.telemetry.gpu_monitor import GpuMonitor
     from grandpa.telemetry.store import TelemetryStore
     from grandpa.traces.collector import TraceCollector
     from grandpa.traces.store import TraceStore
@@ -32,12 +31,11 @@ class SecurityContext:
 
 @dataclass
 class Observability:
-    """Telemetry, traces, and hardware monitoring."""
+    """Local telemetry and traces."""
 
     telemetry_store: Optional[TelemetryStore] = None
     trace_store: Optional[TraceStore] = None
     trace_collector: Optional[TraceCollector] = None
-    gpu_monitor: Optional[GpuMonitor] = None
 
 
 @dataclass

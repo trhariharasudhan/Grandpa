@@ -853,14 +853,10 @@ def ask(
     if resolved is None:
         console.print(
             "[red bold]No inference engine available.[/red bold]\n\n"
-            "Make sure an engine is running:\n"
-            "  [cyan]ollama serve[/cyan]          — start Ollama\n"
-            "  [cyan]vllm serve <model>[/cyan]    — start vLLM\n"
-            "  [cyan]llama-server -m <gguf>[/cyan] — start llama.cpp\n\n"
-            "Or set OPENAI_API_KEY / ANTHROPIC_API_KEY for cloud inference.\n\n"
-            "[dim]To use a remote engine:[/dim]\n"
-            "  [cyan]Grandpa config set engine.ollama.host http://<remote-ip>:11434[/cyan]\n"
-            "  [dim]or[/dim] [cyan]export OLLAMA_HOST=http://<remote-ip>:11434[/cyan]"
+            "Start the local Ollama runtime:\n"
+            "  [cyan]ollama serve[/cyan]\n"
+            "Then install a model, for example:\n"
+            "  [cyan]ollama pull qwen3.5:2b[/cyan]"
         )
         sys.exit(1)
 
@@ -886,19 +882,8 @@ def ask(
     sec = setup_security(config, engine, bus)
     engine = sec.engine
 
-    # Wrap engine with InstrumentedEngine for telemetry (energy + GPU metrics)
-    energy_monitor = None
-    want_energy = config.telemetry.gpu_metrics or enable_profile
-    if want_energy:
-        try:
-            from grandpa.telemetry.energy_monitor import create_energy_monitor
-
-            energy_monitor = create_energy_monitor(
-                prefer_vendor=config.telemetry.energy_vendor or None,
-            )
-        except Exception as exc:
-            logger.debug("Failed to create energy monitor: %s", exc)
-    engine = InstrumentedEngine(engine, bus, energy_monitor=energy_monitor)
+    # Record local inference telemetry without external upload or hardware probes.
+    engine = InstrumentedEngine(engine, bus)
 
     # Discover models and merge into registry
     all_engines = discover_engines(config)
@@ -1150,12 +1135,6 @@ def ask(
             complexity_result=complexity_result,
         )
 
-    # Cleanup
-    if energy_monitor is not None:
-        try:
-            energy_monitor.close()
-        except Exception as exc:
-            logger.debug("Error closing energy monitor: %s", exc)
     if telem_store is not None:
         try:
             telem_store.close()

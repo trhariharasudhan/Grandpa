@@ -180,7 +180,7 @@ For streaming calls, `GuardrailsEngine.stream()` yields tokens in real time and 
 | `private_key` | CRITICAL | PEM private key header `-----BEGIN PRIVATE KEY-----` |
 | `password_assignment` | HIGH | `password = "..."`, `passwd: "..."`, etc. |
 | `db_connection_string` | HIGH | `postgres://`, `mysql://`, `mongodb://`, `redis://` URLs |
-| `slack_token` | HIGH | `xoxb-`, `xoxp-`, `xoxo-`, `xoxr-`, `xoxs-` followed by token |
+| `oauth_token` | HIGH | Provider access and refresh token patterns |
 | `generic_api_key` | HIGH | `api_key = "..."`, `secret_key = "..."`, `auth_token = "..."` |
 
 ### Direct Usage

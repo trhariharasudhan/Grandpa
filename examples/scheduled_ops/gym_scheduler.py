@@ -36,7 +36,7 @@ import click
     "--engine",
     "engine_key",
     default=None,
-    help="Engine backend to use (e.g. ollama, vllm).",
+    help="Local engine backend to use (default: ollama).",
 )
 @click.option(
     "--register/--no-register",

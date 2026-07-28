@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 class AuthMiddleware:
     """Validate bearer credentials on protected HTTP and WebSocket routes.
 
-    Webhook routes and health checks are exempt — they use
-    per-channel signature verification instead.
+    Health and other non-API routes are exempt. All API routes are protected
+    when an API key is configured.
     """
 
     def __init__(self, app: ASGIApp, api_key: str = "") -> None:

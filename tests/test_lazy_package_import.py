@@ -35,4 +35,4 @@ def test_core_dependencies_do_not_install_deprecated_pynvml() -> None:
     dependencies = project["project"]["dependencies"]
 
     assert not any(item.casefold().startswith("pynvml") for item in dependencies)
-    assert any(item.casefold().startswith("nvidia-ml-py") for item in dependencies)
+    assert not any(item.casefold().startswith("nvidia-ml-py") for item in dependencies)

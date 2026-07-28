@@ -37,14 +37,14 @@ def _make_mock_rust(side_effect=None, return_value=None):
 
 
 class TestShellExecTool:
-    def test_registered_via_tools_package_import(self):
+    def test_not_registered_via_tools_package_import(self):
         import grandpa.tools as tools_pkg
         from grandpa.core.registry import ToolRegistry
 
         sys.modules.pop("grandpa.tools.shell_exec", None)
         importlib.reload(tools_pkg)
 
-        assert ToolRegistry.contains("shell_exec")
+        assert not ToolRegistry.contains("shell_exec")
 
     def test_spec(self):
         tool = ShellExecTool()

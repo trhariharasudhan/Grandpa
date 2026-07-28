@@ -24,7 +24,8 @@ from grandpa.server.api_routes import agents_router
 def test_agent_registry_contains_expected_specialists():
     agents = {agent["agent_id"]: agent for agent in list_agents()}
 
-    assert {"research_agent", "browser_agent", "desktop_agent", "memory_agent", "coding_agent", "mobile_agent"} <= set(agents)
+    assert {"research_agent", "browser_agent", "desktop_agent", "memory_agent", "coding_agent"} <= set(agents)
+    assert "mobile_agent" not in agents
     assert agents["browser_agent"]["capabilities"]
     assert agent_registry_diagnostics()["approval_bypass_allowed"] is False
 

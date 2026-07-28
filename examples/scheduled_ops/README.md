@@ -13,7 +13,6 @@ This tutorial demonstrates how to use grandpa to run **autonomous scheduled agen
 
 | Script | Agent | Tools | Schedule | Purpose |
 |---|---|---|---|---|
-| `daily_digest.py` | `orchestrator` | `web_search`, `think` | Daily 9:00 AM | Search and summarize top news for chosen topics |
 | `code_review.py` | `native_react` | `git_log`, `git_diff`, `file_read`, `think` | Monday 8:00 AM | Review the past week of commits in a repository |
 | `gym_scheduler.py` | `orchestrator` | `web_search`, `think` | MWF 6:00 AM | Check gym hours and class availability |
 
@@ -22,9 +21,6 @@ This tutorial demonstrates how to use grandpa to run **autonomous scheduled agen
 ### 1. Run a script manually
 
 ```bash
-# News digest for AI and robotics
-uv run python examples/scheduled_ops/daily_digest.py --topics "AI,robotics"
-
 # Code review of the current repo (last 7 days)
 uv run python examples/scheduled_ops/code_review.py --repo-path .
 
@@ -35,8 +31,8 @@ uv run python examples/scheduled_ops/gym_scheduler.py --gym "24 Hour Fitness"
 All scripts accept `--model` and `--engine` flags to select a specific model or backend:
 
 ```bash
-uv run python examples/scheduled_ops/daily_digest.py \
-    --model qwen3:8b --engine ollama --topics "AI,finance"
+uv run python examples/scheduled_ops/code_review.py \
+    --model qwen3:8b --engine ollama --repo-path .
 ```
 
 ### 2. Set up schedules using the CLI
@@ -44,10 +40,6 @@ uv run python examples/scheduled_ops/daily_digest.py \
 Register each script as a recurring task with `Grandpa scheduler create`:
 
 ```bash
-# Morning digest every day at 9 AM
-Grandpa scheduler create "Run daily news digest" \
-    --type cron --value "0 9 * * *"
-
 # Weekly code review every Monday at 8 AM
 Grandpa scheduler create "Run weekly code review" \
     --type cron --value "0 8 * * 1"
@@ -65,14 +57,14 @@ Grandpa scheduler start
 
 ### 3. Use the TOML configuration
 
-The `schedules.toml` file defines all three schedules in one place:
+The `schedules.toml` file demonstrates recurring schedules:
 
 ```toml
-[schedules.daily_digest]
+[schedules.code_review]
 type = "cron"
-value = "0 9 * * *"
-description = "Morning news and social media digest"
-script = "daily_digest.py"
+value = "0 8 * * 1"
+description = "Weekly local repository review"
+script = "code_review.py"
 ```
 
 You can point your own tooling or a custom loader at this file to register tasks in bulk.
@@ -102,22 +94,6 @@ task = scheduler.create_task(
 )
 print(f"Task registered: {task.id}, next run: {task.next_run}")
 ```
-
-## Adding Slack or Channel Output
-
-To send results to a Slack channel (or any other supported channel), pipe the output or extend the scripts:
-
-```bash
-# Pipe output to a channel
-uv run python examples/scheduled_ops/daily_digest.py | Grandpa channel send slack
-
-# Or add channel output inside the script:
-# from grandpa.channels import ChannelRegistry
-# channel = ChannelRegistry.create("slack", webhook_url="https://hooks.slack.com/...")
-# channel.send(response)
-```
-
-See `Grandpa channel list` for all available channels.
 
 ## Customization Tips
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import subprocess
 import sys
 
 import click
@@ -101,7 +100,7 @@ def info(model_name: str) -> None:
     )
     ctx_len = f"{spec.context_length:,}" if spec.context_length else "unknown"
     vram = f"{spec.min_vram_gb}GB" if spec.min_vram_gb else "-"
-    engines_str = ", ".join(spec.supported_engines) if spec.supported_engines else "-"
+    engines_str = "ollama" if "ollama" in spec.supported_engines else "-"
     provider = spec.provider or "-"
     api_key = "required" if spec.requires_api_key else "not required"
     lines = [
@@ -120,7 +119,6 @@ def info(model_name: str) -> None:
     # Append metadata fields with well-known labels
     meta_labels = {
         "architecture": "Architecture",
-        "hf_repo": "HuggingFace",
         "url": "More Info",
         "teacher": "Teacher Model",
         "quantization": "Quant Format",
@@ -133,8 +131,6 @@ def info(model_name: str) -> None:
         if value is not None:
             if key.startswith("pricing_"):
                 value = f"${value}/M tokens"
-            elif key == "hf_repo":
-                value = f"https://huggingface.co/{value}"
             pad = " " * max(1, 14 - len(label))
             lines.append(f"[bold]{label}:[/bold]{pad}{value}")
 
@@ -193,73 +189,24 @@ def find_model_spec(model_name: str):
     return None
 
 
-def hf_download(repo: str, filename: str | None, console: Console) -> bool:
-    """Download from HuggingFace via huggingface-cli. Returns True on success."""
-    cmd = ["huggingface-cli", "download", repo]
-    if filename:
-        cmd.append(filename)
-    try:
-        subprocess.run(cmd, check=True)
-        console.print("[green]Download complete.[/green]")
-        return True
-    except FileNotFoundError:
-        console.print(
-            "[red]huggingface-cli not found.[/red]\n"
-            "Install it: [cyan]pip install huggingface_hub[/cyan]\n"
-            f"Or download manually: https://huggingface.co/{repo}"
-        )
-        return False
-    except subprocess.CalledProcessError:
-        console.print("[red]Download failed.[/red]")
-        return False
-
-
 @model.command()
 @click.argument("model_name")
-@click.option("--engine", default=None, help="Engine to download for.")
+@click.option(
+    "--engine",
+    type=click.Choice(["ollama"], case_sensitive=False),
+    default=None,
+    help="Local engine to download for.",
+)
 def pull(model_name: str, engine: str | None) -> None:
-    """Download a model."""
+    """Download a model through Ollama."""
     console = Console()
     config = load_config()
     engine = engine or config.engine.default or "ollama"
 
-    if engine == "ollama":
-        host = (
-            config.engine.ollama_host
-            or os.environ.get("OLLAMA_HOST")
-            or "http://localhost:11434"
-        ).rstrip("/")
-        if not ollama_pull(host, model_name, console):
-            sys.exit(1)
-    elif engine in ("llamacpp", "mlx"):
-        spec = find_model_spec(model_name)
-        if not spec:
-            console.print(f"[red]Model not in catalog:[/red] {model_name}")
-            sys.exit(1)
-        if engine == "llamacpp":
-            repo = spec.metadata.get("hf_repo", "")
-            gguf = spec.metadata.get("gguf_file", "")
-            if not repo or not gguf:
-                console.print(f"[red]No GGUF download info for {model_name}[/red]")
-                sys.exit(1)
-            console.print(f"Downloading [cyan]{gguf}[/cyan] from {repo}...")
-            if not hf_download(repo, gguf, console):
-                sys.exit(1)
-        else:  # mlx
-            mlx_repo = spec.metadata.get("mlx_repo", "")
-            if not mlx_repo:
-                console.print(f"[red]No MLX repo info for {model_name}[/red]")
-                sys.exit(1)
-            console.print(f"Downloading [cyan]{mlx_repo}[/cyan]...")
-            if not hf_download(mlx_repo, None, console):
-                sys.exit(1)
-    elif engine in ("vllm", "sglang"):
-        console.print(
-            f"[cyan]{model_name}[/cyan] will download automatically when "
-            f"{engine} starts serving it."
-        )
-    else:
-        console.print(
-            f"Manual download required for engine [cyan]{engine}[/cyan].\n"
-            f"Check the engine documentation for instructions."
-        )
+    host = (
+        config.engine.ollama_host
+        or os.environ.get("OLLAMA_HOST")
+        or "http://localhost:11434"
+    ).rstrip("/")
+    if not ollama_pull(host, model_name, console):
+        sys.exit(1)

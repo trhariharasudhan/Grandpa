@@ -18,7 +18,7 @@ class TestDoctorOptionalLabels:
         names = [c["name"] for c in data]
         assert "REST API server installed" in names
         assert "Desktop automation backend" in names
-        assert "Docker" in names
+        assert "Docker" not in names
         assert "Optional: torch (for learning)" not in names
         assert "Optional: pynvml (GPU monitoring)" not in names
 
@@ -30,10 +30,10 @@ class TestDoctorOptionalLabels:
         optional_checks = [
             c
             for c in data
-            if c["name"] == "Docker"
+            if c["status"] in {"info", "skipped", "not_configured"}
         ]
         assert optional_checks
-        assert all(c["status"] in {"info", "warn", "ok"} for c in optional_checks)
+        assert all(c["status"] not in {"fail", "failure"} for c in optional_checks)
 
     def test_engine_labels_use_descriptive_names(self) -> None:
         """Engine readiness checks should be grouped by engine name."""

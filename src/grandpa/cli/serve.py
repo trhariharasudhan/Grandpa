@@ -38,12 +38,12 @@ logger = logging.getLogger(__name__)
     "--agent",
     "agent_name",
     default=None,
-    help="Agent for non-streaming requests (simple, orchestrator, react, openhands).",
+    help="Agent for non-streaming requests (simple, orchestrator, react).",
 )
 @click.option(
     "--allow-insecure-bind",
     is_flag=True,
-    help="Allow binding non-loopback without an API key. Intended for local Docker use.",
+    help="Allow binding non-loopback without an API key (unsafe on untrusted networks).",
 )
 def serve(
     host: str | None,
@@ -109,53 +109,11 @@ def serve(
     sec = setup_security(config, engine, bus)
     engine = sec.engine
 
-    # If cloud API keys are set, wrap with MultiEngine so both local
-    # and cloud models appear in the model list and can be used.
-    import os
-
-    _has_cloud = (
-        os.environ.get("OPENAI_API_KEY")
-        or os.environ.get("ANTHROPIC_API_KEY")
-        or os.environ.get("GEMINI_API_KEY")
-        or os.environ.get("GOOGLE_API_KEY")
-        or os.environ.get("OPENROUTER_API_KEY")
-    )
-    if _has_cloud and engine_name != "cloud":
-        try:
-            from grandpa.engine.cloud import CloudEngine
-            from grandpa.engine.multi import MultiEngine
-
-            cloud = CloudEngine()
-            engine = MultiEngine([(engine_name, engine), ("cloud", cloud)])
-            engine_name = "multi"
-            if cloud.health():
-                console.print("  Cloud:  [cyan]enabled[/cyan] (API keys detected)")
-            else:
-                console.print(
-                    "  Cloud:  [yellow]keys set but packages missing[/yellow] "
-                    "(run: uv sync --extra inference-cloud --extra inference-google)"
-                )
-        except Exception as exc:
-            logger.debug("Cloud engine init failed: %s", exc)
-
     # Wrap engine with InstrumentedEngine for telemetry recording
     try:
         from grandpa.telemetry.instrumented_engine import InstrumentedEngine
 
-        energy_mon = None
-        try:
-            from grandpa.telemetry.energy_monitor import create_energy_monitor
-
-            energy_mon = create_energy_monitor()
-            if energy_mon is not None:
-                console.print(
-                    f"  Energy: [cyan]{energy_mon.vendor().value}[/cyan] "
-                    f"({energy_mon.energy_method()})"
-                )
-        except Exception as exc:
-            logger.debug("Energy monitor creation failed: %s", exc)
-
-        engine = InstrumentedEngine(engine, bus, energy_monitor=energy_mon)
+        engine = InstrumentedEngine(engine, bus)
     except Exception as exc:
         logger.debug("Engine instrumentation failed: %s", exc)
 
@@ -239,88 +197,6 @@ def serve(
 
             console.print(f"[yellow]Agent '{agent_key}' failed to load: {exc}[/yellow]")
             traceback.print_exc()
-
-    # Set up channel backend if enabled
-    channel_bridge = None
-    if config.channel.enabled and config.channel.default_channel:
-        try:
-            from grandpa.system import SystemBuilder
-
-            # Reuse _resolve_channel logic from SystemBuilder
-            sb = SystemBuilder(config)
-            sb._bus = bus
-            channel_bridge = sb._resolve_channel(config, bus)
-            if channel_bridge is not None:
-                channel_bridge.connect()
-                console.print(
-                    f"  Channel: [cyan]{config.channel.default_channel}[/cyan]"
-                )
-        except Exception as exc:
-            console.print(f"[yellow]Channel failed to start: {exc}[/yellow]")
-            channel_bridge = None
-
-    # Wire channel messages → agent / engine (per-chat session isolation)
-    if channel_bridge is not None:
-        from grandpa.system import GrandpaSystem
-
-        channel_agent = config.channel.default_agent or agent_key or "simple"
-
-        _channel_tools: list = []
-        if channel_agent:
-            try:
-                from grandpa.agents import load_builtin_agents
-
-                load_builtin_agents()
-                from grandpa.core.registry import AgentRegistry
-
-                if AgentRegistry.contains(channel_agent):
-                    _ch_cls = AgentRegistry.get(channel_agent)
-                    if getattr(_ch_cls, "accepts_tools", False):
-                        from grandpa.tools import load_builtin_tools
-
-                        load_builtin_tools()
-                        from grandpa.core.registry import ToolRegistry
-                        from grandpa.tools._stubs import BaseTool
-
-                        _DEFAULT_TOOLS = {"think", "calculator", "web_search"}
-                        configured = config.agent.tools
-                        if configured:
-                            if isinstance(configured, list):
-                                _allowed = {
-                                    t.strip()
-                                    for t in configured
-                                    if isinstance(t, str) and t.strip()
-                                }
-                            else:
-                                _allowed = {
-                                    t.strip()
-                                    for t in configured.split(",")
-                                    if t.strip()
-                                }
-                        else:
-                            _allowed = _DEFAULT_TOOLS
-
-                        for _tname in ToolRegistry.keys():
-                            if _tname not in _allowed:
-                                continue
-                            _tcls = ToolRegistry.get(_tname)
-                            if isinstance(_tcls, type) and issubclass(_tcls, BaseTool):
-                                _channel_tools.append(_tcls())
-                            elif isinstance(_tcls, BaseTool):
-                                _channel_tools.append(_tcls)
-            except Exception as exc:
-                logger.warning("Channel tools failed to load: %s", exc)
-
-        _wire_system = GrandpaSystem(
-            config=config,
-            bus=bus,
-            engine=engine,
-            engine_key=engine_name,
-            model=model_name,
-            agent_name=channel_agent,
-            tools=_channel_tools,
-        )
-        _wire_system.wire_channel(channel_bridge)
 
     # Set up speech backend
     speech_backend = None
@@ -413,7 +289,7 @@ def serve(
         except Exception as exc:
             logger.debug("Memory backend init failed: %s", exc)
 
-    # --- Channel Gateway: API key, sessions, ChannelBridge ---
+    # The API is loopback-first and may be protected with a local API key.
     import os as _os
 
     api_key = _os.environ.get("Grandpa_API_KEY", "")
@@ -451,35 +327,6 @@ def serve(
     if _cred_parts:
         logger.info("Credentials loaded — %s", ", ".join(_cred_parts))
 
-    webhook_config = {
-        "twilio_auth_token": _os.environ.get("TWILIO_AUTH_TOKEN", ""),
-        "bluebubbles_password": _os.environ.get("BLUEBUBBLES_PASSWORD", ""),
-        "whatsapp_verify_token": _os.environ.get("WHATSAPP_VERIFY_TOKEN", ""),
-        "whatsapp_app_secret": _os.environ.get("WHATSAPP_APP_SECRET", ""),
-    }
-
-    # Wrap existing channel in ChannelBridge orchestrator
-    if channel_bridge is not None:
-        try:
-            from grandpa.server.channel_bridge import (
-                ChannelBridge,
-            )
-            from grandpa.server.session_store import (
-                SessionStore,
-            )
-
-            session_store = SessionStore()
-            channels = {channel_bridge.channel_id: channel_bridge}
-            channel_bridge = ChannelBridge(
-                channels=channels,
-                session_store=session_store,
-                bus=bus,
-                system=None,
-                agent_manager=agent_manager,
-            )
-        except Exception as exc:
-            logger.debug("ChannelBridge init skipped: %s", exc)
-
     app = create_app(
         engine,
         model_name,
@@ -487,14 +334,12 @@ def serve(
         bus=bus,
         engine_name=engine_name,
         agent_name=agent_key or "",
-        channel_bridge=channel_bridge,
         config=config,
         memory_backend=memory_backend,
         speech_backend=speech_backend,
         agent_manager=agent_manager,
         agent_scheduler=agent_scheduler,
         api_key=api_key,
-        webhook_config=webhook_config,
         cors_origins=config.server.cors_origins,
     )
 

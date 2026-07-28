@@ -299,32 +299,12 @@ class TestSystemBuilder:
         with pytest.raises(RuntimeError, match="No inference engine"):
             builder.build()
 
-    def test_builder_sandbox_setter(self):
-        config = GrandpaConfig()
-        builder = SystemBuilder(config)
-        result = builder.sandbox(True)
-        assert result is builder  # fluent
-        assert builder._sandbox is True
-
     def test_builder_scheduler_setter(self):
         config = GrandpaConfig()
         builder = SystemBuilder(config)
         result = builder.scheduler(True)
         assert result is builder  # fluent
         assert builder._scheduler is True
-
-    def test_builder_sandbox_scheduler_chaining(self):
-        config = GrandpaConfig()
-        builder = (
-            SystemBuilder(config)
-            .engine("ollama")
-            .model("test")
-            .sandbox(True)
-            .scheduler(True)
-        )
-        assert builder._sandbox is True
-        assert builder._scheduler is True
-        assert builder._engine_key == "ollama"
 
 
 class TestGrandpaSystemClose:
@@ -409,7 +389,6 @@ class TestGrandpaSystemClose:
         )
         assert system.scheduler_store is None
         assert system.scheduler is None
-        assert system.container_runner is None
 
     def test_close_with_agent_scheduler(self):
         engine = MagicMock()

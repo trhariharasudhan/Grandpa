@@ -121,14 +121,6 @@ class RouterPolicyRegistry(RegistryBase[Any]):
     """Registry for router policy implementations."""
 
 
-class BenchmarkRegistry(RegistryBase[Any]):
-    """Registry for benchmark implementations."""
-
-
-class ChannelRegistry(RegistryBase[Any]):
-    """Registry for channel implementations."""
-
-
 class LearningRegistry(RegistryBase[Any]):
     """Registry for learning policies."""
 
@@ -150,29 +142,16 @@ class TTSRegistry(RegistryBase[Any]):
 
 
 class ConnectorRegistry(RegistryBase[Any]):
-    """Registry for data source connectors (Gmail, Slack, etc.)."""
-
-
-class MinerRegistry(RegistryBase[Any]):
-    """Registry for Pearl mining provider implementations.
-
-    Each provider implements the ``MiningProvider`` ABC defined in
-    ``grandpa.mining._stubs``. Registry keys are short lowercase strings
-    such as ``"vllm-pearl"`` (CUDA + Hopper) and (future) ``"mlx-pearl"``,
-    ``"llamacpp-pearl-metal"``, ``"ollama-pearl"``.
-    """
+    """Registry for local document sources."""
 
 
 __all__ = [
     "AgentRegistry",
-    "BenchmarkRegistry",
-    "ChannelRegistry",
     "CompressionRegistry",
     "ConnectorRegistry",
     "EngineRegistry",
     "LearningRegistry",
     "MemoryRegistry",
-    "MinerRegistry",
     "ModelRegistry",
     "RegistryBase",
     "RouterPolicyRegistry",

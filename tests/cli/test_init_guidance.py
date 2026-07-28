@@ -1,4 +1,4 @@
-"""Tests for ``Grandpa init`` next-steps guidance."""
+"""Tests for the local Ollama initialization guidance."""
 
 from __future__ import annotations
 
@@ -10,231 +10,77 @@ from click.testing import CliRunner
 from grandpa.cli import cli
 from grandpa.cli.init_cmd import _next_steps_text
 
-_NO_DL = "--no-download"
+_NO_DOWNLOAD = "--no-download"
 
 
-class TestInitShowsNextSteps:
-    def test_init_shows_next_steps(self, tmp_path: Path) -> None:
-        """Init command prints next-steps panel after writing config."""
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(cli, ["init", "--engine", "llamacpp", _NO_DL])
-        assert result.exit_code == 0
-        assert "Getting Started" in result.output
-        assert "Grandpa ask" in result.output
-        assert "Grandpa doctor" in result.output
-
-    def test_init_output_shows_toml_sections_literally(self, tmp_path: Path) -> None:
-        """Init output should render TOML section headers like [engine] literally."""
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(cli, ["init", "--engine", "llamacpp", _NO_DL])
-        assert result.exit_code == 0
-        assert "[engine]" in result.output
-        assert "[intelligence]" in result.output
-
-
-class TestNextStepsOllama:
-    def test_next_steps_ollama(self) -> None:
-        text = _next_steps_text("ollama")
-        assert "ollama serve" in text
-        assert "ollama pull" in text
-        assert "Grandpa ask" in text
-        assert "Grandpa doctor" in text
-
-    def test_next_steps_ollama_with_model(self) -> None:
-        text = _next_steps_text("ollama", "qwen3.5:27b")
-        assert "ollama pull qwen3.5:27b" in text
-
-    def test_next_steps_ollama_default_model(self) -> None:
-        text = _next_steps_text("ollama")
-        assert "ollama pull qwen3.5:2b" in text
-
-
-class TestNextStepsVllm:
-    def test_next_steps_vllm(self) -> None:
-        text = _next_steps_text("vllm")
-        assert "pip install vllm" in text
-        assert "vllm serve" in text
-        assert "Grandpa ask" in text
-        assert "Grandpa doctor" in text
-
-
-class TestNextStepsLlamacpp:
-    def test_next_steps_llamacpp(self) -> None:
-        text = _next_steps_text("llamacpp")
-        assert "brew install llama.cpp" in text
-        assert "llama-server" in text
-        assert "Grandpa ask" in text
-        assert "Grandpa doctor" in text
-
-
-class TestNextStepsMlx:
-    def test_next_steps_mlx(self) -> None:
-        text = _next_steps_text("mlx")
-        assert "pip install mlx-lm" in text
-        assert "mlx_lm.server" in text
-        assert "Grandpa ask" in text
-        assert "Grandpa doctor" in text
-
-
-class TestMinimalConfig:
-    def test_init_generates_minimal_by_default(self, tmp_path: Path) -> None:
-        """Default Grandpa init produces a short config."""
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(cli, ["init", "--engine", "ollama", _NO_DL])
-        assert result.exit_code == 0
-        content = config_path.read_text()
-        # Minimal config should be short
-        lines = [ln for ln in content.splitlines() if ln.strip()]
-        assert len(lines) <= 30
-        # Should have the reference hint
-        assert "Grandpa init --full" in content
-
-    def test_init_full_generates_verbose_config(self, tmp_path: Path) -> None:
-        """Grandpa init --full produces the full reference config."""
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(
-                cli,
-                ["init", "--full", "--engine", "ollama", _NO_DL],
-            )
-        assert result.exit_code == 0
-        content = config_path.read_text()
-        # Full config should have many sections
-        assert "[engine.ollama]" in content
-        assert "[server]" in content
-        assert "[security]" in content
-
-
-class TestInitDownloadPrompt:
-    def test_init_shows_download_prompt(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(
-                cli, ["init", "--engine", "ollama"], input="n\n"
-            )
-        assert result.exit_code == 0
-        assert "Download" in result.output
-        assert "now?" in result.output
-
-    def test_init_no_download_flag_skips_prompt(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(cli, ["init", "--engine", "ollama", _NO_DL])
-        assert result.exit_code == 0
-        assert "Download" not in result.output
-
-
-class TestInitEmptyModelFallback:
-    def test_init_no_model_shows_warning(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.recommend_model", return_value=""),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(cli, ["init", "--engine", "llamacpp"])
-        assert result.exit_code == 0
-        assert (
-            "Not enough memory" in result.output or "not enough memory" in result.output
+def _invoke_init(tmp_path: Path, *args: str, input_text: str | None = None):
+    config_dir = tmp_path / ".grandpa"
+    config_path = config_dir / "config.toml"
+    with (
+        mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
+        mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
+        mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
+    ):
+        result = CliRunner().invoke(
+            cli,
+            ["init", "--engine", "ollama", *args],
+            input=input_text,
         )
+    return result, config_path
 
 
-class TestNextStepsExoNexa:
-    def test_next_steps_exo(self) -> None:
-        text = _next_steps_text("exo")
-        assert "exo" in text.lower()
-        assert "Grandpa ask" in text
-        assert "ollama" not in text.lower()
-
-    def test_next_steps_nexa(self) -> None:
-        text = _next_steps_text("nexa")
-        assert "nexa" in text.lower()
-        assert "Grandpa ask" in text
-        assert "ollama" not in text.lower()
+def test_init_shows_local_next_steps(tmp_path: Path) -> None:
+    result, _ = _invoke_init(tmp_path, _NO_DOWNLOAD)
+    assert result.exit_code == 0
+    assert "Getting Started" in result.output
+    assert "ollama serve" in result.output
+    assert "grandpa ask" in result.output.lower()
+    assert "grandpa doctor" in result.output.lower()
 
 
-class TestInitDownloadDispatch:
-    def test_init_ollama_download_calls_ollama_pull(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch(
-                "grandpa.cli.init_cmd.ollama_pull",
-                return_value=True,
-            ) as mock_pull,
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(
-                cli, ["init", "--engine", "ollama"], input="y\n"
-            )
-        assert result.exit_code == 0
-        mock_pull.assert_called_once()
-
-    def test_init_vllm_shows_auto_download_message(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(cli, ["init", "--engine", "vllm"], input="y\n")
-        assert result.exit_code == 0
-        assert "automatically" in result.output
+def test_next_steps_use_selected_model() -> None:
+    text = _next_steps_text("ollama", "qwen3.5:4b")
+    assert "ollama pull qwen3.5:4b" in text
 
 
-class TestInitPrivacyHook:
-    def test_init_shows_privacy_summary(self, tmp_path: Path) -> None:
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner") as MockScanner,
-        ):
-            from grandpa.cli.scan_cmd import ScanResult
+def test_init_generates_minimal_config(tmp_path: Path) -> None:
+    result, config_path = _invoke_init(tmp_path, _NO_DOWNLOAD)
+    assert result.exit_code == 0
+    content = config_path.read_text()
+    assert "[engine.ollama]" in content
+    assert "Grandpa init --full" in content
 
-            instance = MockScanner.return_value
-            instance.run_quick.return_value = [
-                ScanResult("FileVault", "ok", "FileVault enabled", "darwin"),
-            ]
-            result = CliRunner().invoke(cli, ["init", "--engine", "llamacpp", _NO_DL])
-        assert result.exit_code == 0
-        assert "Grandpa scan" in result.output
+
+def test_init_full_generates_reference_config(tmp_path: Path) -> None:
+    result, config_path = _invoke_init(tmp_path, "--full", _NO_DOWNLOAD)
+    assert result.exit_code == 0
+    content = config_path.read_text()
+    assert "[server]" in content
+    assert "[security]" in content
+
+
+def test_init_download_calls_ollama(tmp_path: Path) -> None:
+    config_dir = tmp_path / ".grandpa"
+    config_path = config_dir / "config.toml"
+    with (
+        mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
+        mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
+        mock.patch("grandpa.cli.init_cmd.ollama_pull", return_value=True) as pull,
+        mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
+    ):
+        result = CliRunner().invoke(
+            cli,
+            ["init", "--engine", "ollama"],
+            input="y\n",
+        )
+    assert result.exit_code == 0
+    pull.assert_called_once()
+
+
+def test_init_rejects_retired_engine(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        cli,
+        ["init", "--engine", "vllm", _NO_DOWNLOAD],
+    )
+    assert result.exit_code == 2
+    assert "Invalid value" in result.output

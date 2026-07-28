@@ -48,7 +48,6 @@ theme:
 
 extra_css:
   - stylesheets/extra.css
-  - https://cdn.jsdelivr.net/npm/@docsearch/css@3
 
 plugins:
   - search:
@@ -125,18 +124,9 @@ markdown_extensions:
       custom_checkbox: true
   - pymdownx.tilde
 
-extra_javascript:
-  - javascripts/leaderboard.js
-  - https://cdn.jsdelivr.net/npm/@docsearch/js@3
-  - javascripts/docsearch-init.js
-
 extra:
   version:
     default: v1.0.0
-  algolia:
-    app_id: ""       # Fill after DocSearch approval
-    api_key: ""      # Search-only key
-    index_name: ""   # e.g. "grandpa"
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/grandpa/grandpa
@@ -145,49 +135,26 @@ nav:
   - Home: index.md
   - Getting Started:
       - Installation: getting-started/installation.md
-      - macOS Guide: getting-started/macos.md
       - Quick Start: getting-started/quickstart.md
-      - Code Snippets: getting-started/snippets.md
+      - Daily Use Setup: getting-started/daily-use-setup.md
       - Configuration: getting-started/configuration.md
-  - Tutorials:
-      - Overview: tutorials/index.md
-      - Deep Research Assistant: tutorials/deep-research.md
-      - Scheduled Personal Ops: tutorials/scheduled-ops.md
-      - Messaging Hub: tutorials/messaging-hub.md
-      - Code Companion: tutorials/code-companion.md
   - Architecture:
       - Overview: architecture/overview.md
-      - Intelligence: architecture/intelligence.md
-      - Engine: architecture/engine.md
-      - Agents: architecture/agents.md
-      - Tools & Memory: architecture/memory.md
-      - Learning: architecture/learning.md
+      - Domain Boundaries: architecture/domain-architecture.md
       - Query Flow: architecture/query-flow.md
       - Security: architecture/security.md
-      - Design Principles: architecture/design-principles.md
-  - API Reference: api-reference/
   - User Guide:
       - CLI: user-guide/cli.md
-      - Pearl CLI: user-guide/pearl.md
-      - Pearl Mining: user-guide/mining.md
-      - Pearl Mining on Apple Silicon: user-guide/mining-apple-silicon.md
-      - Python SDK: user-guide/python-sdk.md
-      - Morning Digest: user-guide/morning-digest.md
-      - Deep Research: user-guide/deep-research.md
-      - Code Assistant: user-guide/code-assistant.md
-      - Scheduled Monitor: user-guide/scheduled-monitor.md
-      - Simple Chat: user-guide/chat-simple.md
-      - Agents: user-guide/agents.md
-      - Channels & Connectors: user-guide/channels-and-connectors.md
-      - Tools: user-guide/tools.md
+      - Voice Operator: user-guide/voice-operator.md
+      - Windows Automation: user-guide/windows-automation.md
+      - Screen and OCR: user-guide/screen-and-ocr.md
       - Memory: user-guide/memory.md
-      - External MCP Servers: user-guide/mcp-external-servers.md
       - Scheduler: user-guide/scheduler.md
-      - Telemetry: user-guide/telemetry.md
+      - Personal Integrations: user-guide/personal-integrations.md
+      - Local API Server: user-guide/local-api-server.md
       - Security: user-guide/security.md
-      - LLM-guided spec search: user-guide/llm-guided-spec-search.md
-  - Leaderboard: leaderboard.md
-  - Roadmap: development/roadmap.md
   - Development:
-      - Mining: development/mining.md
-      - Pearl Model Enablement: development/pearl-model-enablement.md
+      - Repository Structure: development/repo-structure.md
+      - Contributing: development/contributing.md
+      - Local Artifacts: development/local-artifacts.md
+      - Release Checklist: development/release-checklist.md

@@ -177,7 +177,7 @@ class TestLoadSkillDirectorySourcePromotion:
             "---\nname: imported-skill\ndescription: x\n---\nBody"
         )
         (skill_dir / ".source").write_text(
-            'source = "hermes:apple-notes"\n'
+            'source = "workspace:apple-notes"\n'
             'commit = "abc123"\n'
             'category = "apple"\n'
             'installed_at = "2026-04-04T22:30:00Z"\n'
@@ -187,7 +187,7 @@ class TestLoadSkillDirectorySourcePromotion:
         )
         manifest = load_skill_directory(skill_dir)
         oj = manifest.metadata.get("grandpa", {})
-        assert oj.get("source") == "hermes"
+        assert oj.get("source") == "workspace"
 
     def test_no_dot_source_file_no_metadata(self, tmp_path: Path):
         """When no .source file is present, metadata.grandpa.source is unset."""

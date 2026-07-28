@@ -38,23 +38,6 @@ class TestInitHost:
         content = config_path.read_text()
         assert "http://192.168.1.50:11434" in content
 
-    def test_init_host_with_vllm(self, tmp_path: Path) -> None:
-        """Grandpa init --host applies to the selected engine."""
-        config_dir = tmp_path / ".grandpa"
-        config_path = config_dir / "config.toml"
-        with (
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_DIR", config_dir),
-            mock.patch("grandpa.cli.init_cmd.DEFAULT_CONFIG_PATH", config_path),
-            mock.patch("grandpa.cli.init_cmd.PrivacyScanner"),
-        ):
-            result = CliRunner().invoke(
-                cli,
-                ["init", "--engine", "vllm", "--host", "http://10.0.0.5:8000", _NO_DL],
-            )
-        assert result.exit_code == 0
-        content = config_path.read_text()
-        assert "http://10.0.0.5:8000" in content
-
     def test_init_host_probes_and_reports(self, tmp_path: Path) -> None:
         """Grandpa init --host shows reachability status."""
         config_dir = tmp_path / ".grandpa"

@@ -3,7 +3,7 @@
 Extracts the accessibility tree (AX tree) from the current browser page,
 providing a structured text representation of the DOM with element IDs,
 roles, names, and states. Used by top-performing agents on WebArena-family
-benchmarks.
+local browser-awareness workflows.
 """
 
 from __future__ import annotations

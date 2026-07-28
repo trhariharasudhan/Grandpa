@@ -109,9 +109,9 @@ class TestAppleDetection:
 
 
 class TestAppleEngineRecommendation:
-    """Tests that Apple Silicon hardware maps to mlx."""
+    """The supported local runtime remains Ollama on detected hardware."""
 
-    def test_m4_max_recommends_mlx(self):
+    def test_m4_max_recommends_ollama(self):
         hw = HardwareInfo(
             platform="darwin",
             cpu_brand="Apple M4 Max",
@@ -119,7 +119,7 @@ class TestAppleEngineRecommendation:
             ram_gb=128.0,
             gpu=GpuInfo(vendor="apple", name="Apple M4 Max", vram_gb=128.0, count=1),
         )
-        assert recommend_engine(hw) == "mlx"
+        assert recommend_engine(hw) == "ollama"
 
     def test_unified_memory(self):
         """On Apple Silicon, GPU VRAM equals system RAM (unified memory)."""
@@ -133,4 +133,4 @@ class TestAppleEngineRecommendation:
             gpu=gpu,
         )
         assert hw.gpu.vram_gb == hw.ram_gb
-        assert recommend_engine(hw) == "mlx"
+        assert recommend_engine(hw) == "ollama"

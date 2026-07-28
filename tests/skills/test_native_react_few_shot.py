@@ -68,46 +68,6 @@ class TestReactSystemPromptPlaceholder:
         assert "Output: a" in rendered
 
 
-class TestSystemBuilderCapturesFewShot:
-    def test_skill_manager_examples_stored_on_system(self, tmp_path):
-        """SystemBuilder.build() pulls examples from SkillManager and
-        stashes them on the GrandpaSystem instance for _run_agent to
-        forward to tool-using agents."""
-
-        from grandpa.skills.manager import SkillManager
-        from grandpa.skills.overlay import SkillOverlay, write_overlay
-        from grandpa.skills.types import SkillManifest
-
-        # Build an overlay so the manager picks up real few-shot examples
-        overlay_dir = tmp_path / "overlays"
-        write_overlay(
-            SkillOverlay(
-                skill_name="seeded-skill",
-                optimizer="dspy",
-                optimized_at="2026-04-08T00:00:00Z",
-                trace_count=10,
-                description="Optimized",
-                few_shot=[{"input": "ping", "output": "pong"}],
-            ),
-            overlay_dir,
-        )
-
-        from grandpa.core.events import EventBus
-
-        mgr = SkillManager(bus=EventBus(), overlay_dir=overlay_dir)
-        mgr._skills["seeded-skill"] = SkillManifest(
-            name="seeded-skill",
-            description="Original",
-            markdown_content="Body",
-        )
-        mgr.discover()  # applies overlay
-
-        # The captured examples should now contain our seeded one
-        examples = mgr.get_few_shot_examples()
-        assert len(examples) >= 1
-        assert any("ping" in s and "pong" in s for s in examples)
-
-
 class TestRunAgentForwardsExamples:
     def test_run_agent_passes_examples_to_tool_using_agent(self):
         """_run_agent injects system._skill_few_shot_examples into

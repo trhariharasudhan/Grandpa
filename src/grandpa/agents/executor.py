@@ -298,14 +298,9 @@ class AgentExecutor:
 
         tool_instances: list[Any] = []
         if tool_names:
-            try:
-                from grandpa.server.agent_manager_routes import (
-                    _ensure_registries_populated,
-                )
+            from grandpa.tools import load_builtin_tools
 
-                _ensure_registries_populated()
-            except ImportError:
-                pass
+            load_builtin_tools()
             from grandpa.core.registry import ToolRegistry
 
             for tname in tool_names:

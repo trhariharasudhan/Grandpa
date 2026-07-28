@@ -89,7 +89,6 @@ class TestRegistryCmd:
         assert "ToolRegistry" in output or "tool" in output.lower()
         assert "EngineRegistry" in output or "engine" in output.lower()
         assert "MemoryRegistry" in output or "memory" in output.lower()
-        assert "ChannelRegistry" in output or "channel" in output.lower()
 
     def test_registry_show_nonexistent_key(self) -> None:
         """Test that showing a nonexistent key in a registry is handled."""

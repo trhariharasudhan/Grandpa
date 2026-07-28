@@ -42,9 +42,8 @@ body:
     attributes:
       label: Operating System
       options:
-        - Linux
-        - macOS
         - Windows
+        - Other
     validations:
       required: true
   - type: dropdown
@@ -63,10 +62,10 @@ body:
     attributes:
       label: Hardware
       options:
-        - NVIDIA GPU
-        - AMD GPU
-        - Apple Silicon
         - CPU only
+        - AMD GPU
+        - NVIDIA GPU
+        - Other
     validations:
       required: true
   - type: dropdown
@@ -76,12 +75,6 @@ body:
       description: Which inference engine are you using?
       options:
         - Ollama
-        - vLLM
-        - llama.cpp
-        - SGLang
-        - MLX
-        - Cloud (OpenAI/Anthropic/Google)
-        - LiteLLM
         - Other
     validations:
       required: false

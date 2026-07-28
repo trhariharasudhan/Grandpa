@@ -447,7 +447,7 @@ class OllamaEngine(InferenceEngine):
                     if raw_tool_calls:
                         # Ollama emits fully-formed tool_calls in a single
                         # chunk (not fragmented). Convert to the
-                        # OpenAI-delta fragment shape that agent_manager_routes
+                        # OpenAI-compatible delta fragment shape for local streaming
                         # expects in _merge_tool_call_fragments.
                         fragments: List[Dict[str, Any]] = []
                         for i, tc in enumerate(raw_tool_calls):

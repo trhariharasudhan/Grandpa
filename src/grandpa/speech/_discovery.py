@@ -2,19 +2,13 @@
 
 from __future__ import annotations
 
-import os
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from grandpa.core.config import GrandpaConfig
     from grandpa.speech._stubs import SpeechBackend
 
-# Priority order: local first, then cloud
-DISCOVERY_ORDER = [
-    "faster-whisper",
-    "openai",
-    "deepgram",
-]
+DISCOVERY_ORDER = ["faster-whisper"]
 
 
 def _create_backend(
@@ -36,18 +30,7 @@ def _create_backend(
                 device=config.speech.device,
                 compute_type=config.speech.compute_type,
             )
-        elif key == "openai":
-            api_key = os.environ.get("OPENAI_API_KEY", "")
-            if not api_key:
-                return None
-            return backend_cls(api_key=api_key)
-        elif key == "deepgram":
-            api_key = os.environ.get("DEEPGRAM_API_KEY", "")
-            if not api_key:
-                return None
-            return backend_cls(api_key=api_key)
-        else:
-            return backend_cls()
+        return backend_cls()
     except Exception:
         return None
 

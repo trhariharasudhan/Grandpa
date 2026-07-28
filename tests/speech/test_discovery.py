@@ -43,6 +43,4 @@ def test_auto_discovery_priority():
     """Auto mode tries backends in priority order."""
     from grandpa.speech._discovery import DISCOVERY_ORDER
 
-    assert DISCOVERY_ORDER[0] == "faster-whisper"
-    assert "openai" in DISCOVERY_ORDER
-    assert "deepgram" in DISCOVERY_ORDER
+    assert DISCOVERY_ORDER == ["faster-whisper"]

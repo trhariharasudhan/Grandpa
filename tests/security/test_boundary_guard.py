@@ -156,16 +156,6 @@ class TestEngineTagging:
 
         assert InferenceEngine.is_cloud is False
 
-    def test_cloud_engine_is_cloud(self) -> None:
-        from grandpa.engine.cloud import CloudEngine
-
-        assert CloudEngine.is_cloud is True
-
-    def test_litellm_engine_is_cloud(self) -> None:
-        from grandpa.engine.litellm import LiteLLMEngine
-
-        assert LiteLLMEngine.is_cloud is True
-
     def test_ollama_engine_is_local(self) -> None:
         from grandpa.engine.ollama import OllamaEngine
 
@@ -189,11 +179,6 @@ class TestToolTagging:
         from grandpa.tools.http_request import HttpRequestTool
 
         assert HttpRequestTool.is_local is False
-
-    def test_channel_send_is_external(self) -> None:
-        from grandpa.tools.channel_tools import ChannelSendTool
-
-        assert ChannelSendTool.is_local is False
 
     def test_think_tool_is_local(self) -> None:
         from grandpa.tools.think import ThinkTool

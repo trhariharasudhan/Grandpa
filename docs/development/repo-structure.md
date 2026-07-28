@@ -1,55 +1,45 @@
 # Repository Structure
 
-Grandpa is a Python-centered local Windows assistant. The CLI, voice runtime,
-automation, screen understanding, safety policies, and optional local API all
-share the `src/grandpa` package.
-
-## High-Level Map
-
 ```text
 Grandpa/
-  .github/      CI, release, documentation, and issue automation
-  configs/      Example local runtime configurations
-  deploy/       Docker and service deployment assets
-  docs/         Project documentation
-  examples/     Safe usage and integration examples
-  models/       Ollama Modelfile recipes; no model weights
-  rust/         Native acceleration workspace
-  scripts/      Install, validation, release, and maintenance utilities
-  src/grandpa/  Python runtime
-  tests/        Python regression suite
-  tools/        Supporting development tools
+  .github/      Focused CI, issue templates, and release automation
+  configs/      Local Ollama and assistant configuration examples
+  docs/         User, architecture, testing, and development documentation
+  examples/     Small local assistant usage examples
+  models/       Ollama Modelfile recipes; no downloaded weights
+  rust/         Optional native acceleration and compatibility workspace
+  scripts/      Installation, validation, release, and maintenance utilities
+  src/grandpa/  Python application and runtime domains
+  tests/        Local regression and safety tests
 ```
 
-## Runtime Architecture
+## Runtime Map
 
 ```mermaid
 flowchart LR
-  Voice["Microphone / Voice"] --> Router["Intent and command routing"]
-  CLI["CLI / Chat"] --> Router
-  Router --> Policy["Safety and permission policy"]
-  Policy --> Automation["Windows automation"]
-  Policy --> Files["Files and processes"]
-  Policy --> Screen["Screen capture, OCR, locator"]
-  Router --> Ollama["Local Ollama inference"]
-  Automation --> Audit["Audit log"]
-  Files --> Audit
-  Screen --> Audit
-  API["Optional loopback FastAPI server"] --> Router
-  Rust["Rust acceleration workspace"] --> Router
-  Tests["Tests"] --> Router
+  Voice["Voice"] --> Router["Router"]
+  CLI["CLI and chat"] --> Router
+  Router --> Ollama["Local Ollama"]
+  Router --> Safety["Safety policy"]
+  Safety --> Windows["Windows automation"]
+  Safety --> Screen["Screen and OCR"]
+  Safety --> Data["Files, reminders, memory"]
+  Safety --> Integrations["Optional Gmail and Calendar"]
+  Windows --> Logs["Local logs"]
+  Screen --> Logs
+  Data --> Logs
 ```
 
-## Important Boundaries
+## Ownership
 
-- `src/grandpa/cli/` owns terminal entrypoints and interactive sessions.
-- `src/grandpa/voice/` and `src/grandpa/speech/` own local audio behavior.
-- `src/grandpa/automation/`, `src/grandpa/desktop/`, and Windows control modules
-  own typed, permission-aware actions.
-- Screen modules may observe the visible desktop but must not bypass Windows
-  protected surfaces.
-- `src/grandpa/security/` and policy modules remain authoritative for risky
-  actions.
-- `src/grandpa/server/` is an optional local API, not a bundled user interface.
-- `rust/` remains because native acceleration is independent of user-interface
-  packaging.
+- `cli`, `voice`, and `speech` own user interaction.
+- `engine` owns local inference.
+- `automation`, `desktop`, `screen`, `files`, and `browser` own typed actions.
+- `safety` and `security` own policy and audit.
+- `memory`, `sessions`, `scheduler`, and `reminders` own local state.
+- `server` exposes only the optional loopback API.
+- `gmail` and `calendar` are optional personal integrations, not channels.
+
+Generated artifacts such as `.uv-cache`, `dist`, `site`, `target`,
+`__pycache__`, and test caches are documented in
+[Local Artifacts](local-artifacts.md) and must not be committed.

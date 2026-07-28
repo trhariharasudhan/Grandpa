@@ -56,8 +56,8 @@ class SearchHit:
     thread_context: List[Dict[str, Any]] = field(default_factory=list)
     # ``url`` is the connector-provided deep-link, persisted on
     # ``knowledge_chunks.url``. Empty when the source didn't supply one — in
-    # that case callers may fall back to a doc_id-based reconstruction (Slack,
-    # Gmail), or render the citation as non-clickable.
+    # that case callers may fall back to a doc_id-based reconstruction or
+    # render the citation as non-clickable.
     url: str = ""
 
     def to_dict(self) -> Dict[str, Any]:

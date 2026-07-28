@@ -137,7 +137,15 @@ def decompose_multi_step_task(request: str) -> list[PlannerStep]:
     goal = classify_goal(clean)
     if goal == "developer_startup":
         return [
-            PlannerStep("step_1", "Check desktop readiness", "desktop.summary", {"desktop_service": "diagnostics", "supported_environments": ["windows", "linux-readonly", "docker-readonly"]}),
+            PlannerStep(
+                "step_1",
+                "Check desktop readiness",
+                "desktop.summary",
+                {
+                    "desktop_service": "diagnostics",
+                    "supported_environments": ["windows"],
+                },
+            ),
             PlannerStep("step_2", "Check workflow runtime", "automation.workflow_status", {"desktop_service": "automation"}, dependencies=("step_1",)),
         ]
     if goal == "browser_research":

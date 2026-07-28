@@ -6,7 +6,7 @@ with context-augmented retrieval and citations.
 ## Requirements
 
 - grandpa installed (`git clone https://github.com/grandpa/grandpa.git && cd grandpa && uv sync` or `uv sync --extra dev`)
-- An inference engine running (Ollama, cloud API, vLLM, etc.)
+- Ollama running with a local chat model
 - A memory backend available (SQLite is the built-in default)
 
 ## Usage
@@ -15,7 +15,7 @@ with context-augmented retrieval and citations.
 python examples/doc_qa/doc_qa.py --help
 python examples/doc_qa/doc_qa.py --docs-path ./docs --query "How does authentication work?"
 python examples/doc_qa/doc_qa.py --docs-path ./papers --query "What are the main findings?" \
-    --model gpt-4o --engine cloud --chunk-size 256 --top-k 10
+    --model qwen3.5:4b --engine ollama --chunk-size 256 --top-k 10
 ```
 
 ## How It Works

@@ -108,7 +108,6 @@ MEDIUM_RISK_ACTIONS = {
     "browser_reload",
     "browser_form_fill",
     "browser_download",
-    "browser_whatsapp",
 }
 HIGH_RISK_ACTIONS = {
     "file_delete",
@@ -799,7 +798,6 @@ def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionRes
         "browser_reload": ("reload", "visible"),
         "browser_form_fill": ("form_fill", request.target),
         "browser_download": ("download", request.target),
-        "browser_whatsapp": ("whatsapp", request.target),
     }
     browser_action = mapping.get(action)
     if browser_action is None:

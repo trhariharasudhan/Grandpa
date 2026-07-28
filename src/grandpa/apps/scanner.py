@@ -145,7 +145,15 @@ def _iter_program_files_candidates(roots: list[Path]):
 def _matches_product_folder(path: Path, product_dir: Path) -> bool:
     app_name = normalize_app_name(path.stem)
     folder_names = {normalize_app_name(product_dir.name), normalize_app_name(path.parent.name)}
-    known_launchers = {"chrome", "msedge", "firefox", "code", "spotify", "slack", "discord", "obs64", "blender"}
+    known_launchers = {
+        "chrome",
+        "msedge",
+        "firefox",
+        "code",
+        "spotify",
+        "obs64",
+        "blender",
+    }
     return app_name in known_launchers or any(
         folder and (app_name == folder or app_name in folder or folder in app_name)
         for folder in folder_names

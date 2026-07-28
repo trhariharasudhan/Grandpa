@@ -10,11 +10,10 @@ from grandpa.tools._stubs import BaseTool, ToolExecutor, ToolSpec
 logger = logging.getLogger(__name__)
 _BUILTINS = (
     "calculator", "think", "retrieval", "llm_tool", "file_read", "web_search",
-    "code_interpreter", "code_interpreter_docker", "repl", "storage_tools",
-    "mcp_adapter", "channel_tools", "http_request", "docker_shell_exec", "shell_exec",
+    "code_interpreter", "repl", "storage_tools",
+    "mcp_adapter", "http_request", "shell_exec",
     "memory_manage", "user_profile_manage", "skill_manage", "file_write", "apply_patch",
-    "git_tool", "db_query", "pdf_tool", "image_tool", "audio_tool", "knowledge_tools",
-    "text_to_speech", "digest_collect",
+    "git_tool", "db_query", "pdf_tool", "knowledge_tools", "text_to_speech",
 )
 _builtins_loaded = False
 

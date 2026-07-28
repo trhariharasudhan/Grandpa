@@ -2,6 +2,10 @@
 
 All notable changes to grandpa are documented in this file.
 
+> Historical entries may describe integrations or experimental subsystems that
+> have since been retired. See the current README and user guide for supported
+> product scope.
+
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---

@@ -14,35 +14,12 @@ logger = logging.getLogger(__name__)
 # Map registry keys to config host attribute (None = no host arg)
 _HOST_MAP: Dict[str, str | None] = {
     "ollama": "ollama_host",
-    "vllm": "vllm_host",
-    "llamacpp": "llamacpp_host",
-    "sglang": "sglang_host",
-    "mlx": "mlx_host",
-    "lmstudio": "lmstudio_host",
-    "exo": "exo_host",
-    "nexa": "nexa_host",
-    "uzu": "uzu_host",
-    "apple_fm": "apple_fm_host",
-    "lemonade": "lemonade_host",
-    "cloud": None,
-    "litellm": None,
-    "gemma_cpp": None,
 }
 
 
 def _make_engine(key: str, config: GrandpaConfig) -> InferenceEngine:
     """Instantiate a registered engine with the appropriate config host."""
     cls = EngineRegistry.get(key)
-
-    # gemma_cpp: pass config fields instead of host
-    if key == "gemma_cpp":
-        cfg = config.engine.gemma_cpp
-        return cls(
-            model_path=cfg.model_path or None,
-            tokenizer_path=cfg.tokenizer_path or None,
-            model_type=cfg.model_type or None,
-            num_threads=cfg.num_threads,
-        )
 
     host_attr = _HOST_MAP.get(key)
     if host_attr is not None:
@@ -52,60 +29,11 @@ def _make_engine(key: str, config: GrandpaConfig) -> InferenceEngine:
     return cls()
 
 
-def _maybe_register_mining_sidecar_engine() -> None:
-    """If a mining sidecar exists with a ``vllm_endpoint``, register a derived
-    vLLM engine class pointing at it.  Idempotent.  Quiet on error.
-
-    The trigger is the *shape* of the sidecar (presence of ``vllm_endpoint``),
-    not the value of its ``provider`` field — this leaves room for future
-    non-engine-replacing providers (e.g., a hypothetical cpu-pearl) whose
-    sidecars don't include ``vllm_endpoint``.
-    """
-    try:
-        from grandpa.mining import Sidecar
-        from grandpa.mining._constants import SIDECAR_PATH
-    except ImportError:
-        return
-
-    if EngineRegistry.contains("vllm-pearl-mining"):
-        return  # idempotent
-
-    payload = Sidecar.read(SIDECAR_PATH)
-    if payload is None:
-        return
-
-    endpoint = payload.get("vllm_endpoint")
-    model = payload.get("model")
-    if not endpoint or not model:
-        return  # data-driven gate: no vllm_endpoint → don't register
-
-    from grandpa.engine._openai_compat import _OpenAICompatibleEngine
-
-    # Strip a trailing "/v1" path segment so _default_host is the bare
-    # base URL and _api_prefix="/v1" combines correctly in request paths.
-    api_prefix = "/v1"
-    base_url = endpoint.rstrip("/")
-    if base_url.endswith(api_prefix):
-        base_url = base_url[: -len(api_prefix)]
-
-    _cls = type(
-        "VllmPearlMiningEngine",
-        (_OpenAICompatibleEngine,),
-        {
-            "engine_id": "vllm-pearl-mining",
-            "_default_host": base_url,
-            "_api_prefix": api_prefix,
-        },
-    )
-    EngineRegistry.register_value("vllm-pearl-mining", _cls)
-
-
 def discover_engines(config: GrandpaConfig) -> List[Tuple[str, InferenceEngine]]:
     """Probe registered engines and return ``[(key, instance)]`` for healthy ones.
 
     Results are sorted with the config default engine first.
     """
-    _maybe_register_mining_sidecar_engine()
     healthy: List[Tuple[str, InferenceEngine]] = []
     for key in EngineRegistry.keys():
         try:

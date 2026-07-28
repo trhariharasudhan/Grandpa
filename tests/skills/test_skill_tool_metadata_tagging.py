@@ -54,11 +54,11 @@ class TestSkillToolMetadataTagging:
             name="apple-notes",
             description="Apple Notes",
             markdown_content="Use memo",
-            metadata={"grandpa": {"source": "hermes"}},
+            metadata={"grandpa": {"source": "workspace"}},
         )
         tool = self._make_tool(manifest)
         result = tool.execute(task="create a note")
-        assert result.metadata["skill_source"] == "hermes"
+        assert result.metadata["skill_source"] == "workspace"
 
     def test_skill_kind_instructional_when_no_steps(self):
         manifest = SkillManifest(

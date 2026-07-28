@@ -38,7 +38,7 @@ import click
     "engine_key",
     default="ollama",
     show_default=True,
-    help="Engine backend (ollama, cloud, vllm, etc.).",
+    help="Local engine backend (default: ollama).",
 )
 def main(
     branch: str,

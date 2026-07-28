@@ -75,11 +75,11 @@ class TestBundledSkillsHaveSteps:
 
 
 class TestSkillCount:
-    """The builtin directory must contain at least 20 skill files."""
+    """The focused local bundle contains its expected core skills."""
 
     def test_skill_count(self):
-        assert len(_toml_files) >= 20, (
-            f"Expected at least 20 bundled skills, found {len(_toml_files)}"
+        assert len(_toml_files) >= 18, (
+            f"Expected at least 18 bundled skills, found {len(_toml_files)}"
         )
 
 

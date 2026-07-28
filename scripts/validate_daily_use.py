@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -120,22 +119,6 @@ def _console_safe(text: str) -> str:
     return text.encode(encoding, errors="replace").decode(encoding, errors="replace")
 
 
-def _docker_daemon_ready() -> bool:
-    if not shutil.which("docker"):
-        return False
-    try:
-        completed = subprocess.run(
-            ["docker", "version", "--format", "{{.Server.Version}}"],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            timeout=8,
-        )
-    except Exception:
-        return False
-    return completed.returncode == 0
-
-
 def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
     steps = [
         ValidationStep("doctor dashboard", ["uv", "run", "grandpa", "doctor"], timeout=240),
@@ -209,34 +192,6 @@ def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
             ),
         )
 
-    if not args.skip_docker:
-        if _docker_daemon_ready():
-            steps.append(
-                ValidationStep(
-                    "docker build",
-                    [
-                        "docker",
-                        "build",
-                        "-f",
-                        "deploy/docker/Dockerfile",
-                        "-t",
-                        "grandpa:local",
-                        ".",
-                    ],
-                    timeout=600,
-                )
-            )
-        else:
-            steps.append(
-                ValidationStep(
-                    "docker build",
-                    ["docker", "version"],
-                    timeout=30,
-                    required=False,
-                    expected_text="Server",
-                )
-            )
-
     return steps
 
 
@@ -247,13 +202,9 @@ _LOCAL_ACTION_DRY_RUN = (
 )
 
 _CAPABILITY_DIAGNOSTICS = (
-    "from grandpa import communication_integration, future_features, iot_smart_home, "
-    "real_world_tasks; "
-    "checks=[communication_integration.diagnostics()['status'], "
-    "real_world_tasks.diagnostics()['status'], "
-    "iot_smart_home.diagnostics()['status'], "
-    "future_features.diagnostics()['status']]; "
-    "assert all(item == 'ready' for item in checks), checks; "
+    "from grandpa.desktop.automation import DesktopAutomation; "
+    "from grandpa.screen_vision import ScreenVision; "
+    "assert DesktopAutomation and ScreenVision; "
     "print('capabilities ok')"
 )
 
@@ -288,11 +239,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--skip-app-launch",
         action="store_true",
         help="Dry-run the safe app command parser instead of opening Notepad.",
-    )
-    parser.add_argument(
-        "--skip-docker",
-        action="store_true",
-        help="Skip Docker build validation.",
     )
     parser.add_argument(
         "--verbose",

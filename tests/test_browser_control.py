@@ -143,13 +143,6 @@ def test_download_requires_confirmation():
     assert result.risk_level == "MEDIUM"
 
 
-def test_whatsapp_message_requires_confirmation():
-    result = execute_browser_action("whatsapp", "message hello")
-
-    assert result.status == "requires_confirmation"
-    assert result.risk_level == "MEDIUM"
-
-
 def test_browser_diagnostics_reports_visible_context(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
     monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Docs - Google Chrome")

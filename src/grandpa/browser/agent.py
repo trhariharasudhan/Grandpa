@@ -29,7 +29,7 @@ _PASSWORD_PAYMENT_RE = re.compile(
     r"\b(password|passcode|otp|token|api\s*key|secret|credit\s*card|card\s*number|cvv|payment|checkout|purchase|pay|login|sign\s*in)\b",
     re.IGNORECASE,
 )
-_MESSAGE_RE = re.compile(r"\b(send|message|whatsapp|telegram|gmail|email|reply)\b", re.IGNORECASE)
+_MESSAGE_RE = re.compile(r"\b(send|message|gmail|email|reply)\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)

@@ -12,8 +12,11 @@ def test_voice_doctor_handles_missing_sounddevice(monkeypatch) -> None:
 
     checks = diagnostics.run_voice_doctor()
 
-    assert checks[0]["status"] == "warn"
-    assert "missing sounddevice" in checks[0]["message"]
+    sounddevice_check = next(
+        check for check in checks if check["name"] == "sounddevice import"
+    )
+    assert sounddevice_check["status"] == "warn"
+    assert "missing sounddevice" in sounddevice_check["message"]
 
 
 def test_device_list_handles_no_devices(monkeypatch) -> None:

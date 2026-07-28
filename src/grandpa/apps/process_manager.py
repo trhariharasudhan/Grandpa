@@ -23,7 +23,6 @@ _PROCESS_DISPLAY_NAMES = {
     "chatgpt": "ChatGPT",
     "windowsterminal": "Windows Terminal",
     "systemsettings": "Windows Settings",
-    "whatsapp.root": "WhatsApp",
     "xboxpcapp": "Xbox",
     "notepad": "Notepad",
     "explorer": "File Explorer",

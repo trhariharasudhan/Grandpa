@@ -42,7 +42,7 @@ class KnowledgeSearchTool(BaseTool):
         return ToolSpec(
             name="knowledge_search",
             description=(
-                "Search ingested personal knowledge (emails, Slack messages,"
+                "Search ingested personal knowledge (email, notes, and local"
                 " documents) using full-text BM25 retrieval with optional"
                 " filters for source, type, author, and date range."
             ),
@@ -57,7 +57,7 @@ class KnowledgeSearchTool(BaseTool):
                         "type": "string",
                         "description": (
                             "Filter by source connector"
-                            " (e.g. 'gmail', 'slack', 'obsidian')."
+                            " (e.g. 'gmail', 'notes', 'documents')."
                         ),
                     },
                     "doc_type": {

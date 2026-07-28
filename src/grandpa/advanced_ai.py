@@ -15,7 +15,6 @@ from typing import Any, Iterable
 
 from grandpa.learning.routing.complexity import score_complexity
 
-_CLOUD_PREFIXES = ("gpt-", "o1-", "o3-", "o4-", "claude-", "gemini-", "openrouter/")
 _EMBEDDING_HINTS = ("embed", "embedding", "nomic-embed")
 _LOCAL_PRIORITY = (
     "qwen2.5:3b",
@@ -23,12 +22,6 @@ _LOCAL_PRIORITY = (
     "gemma3:4b",
     "llama3.2",
     "mistral",
-)
-_CLOUD_PRIORITY = (
-    "gpt-5-mini",
-    "gpt-5",
-    "gpt-4o-mini",
-    "gpt-4o",
 )
 
 
@@ -109,7 +102,7 @@ def classify_task(query: str) -> str:
     text = query.lower().strip()
     if not text:
         return "general"
-    if re.search(r"\b(browser|webpage|youtube|tab|link|button|whatsapp|download|gmail)\b", text):
+    if re.search(r"\b(browser|webpage|youtube|tab|link|button|download|gmail)\b", text):
         return "browser"
     if re.search(r"\b(screen|screenshot|visible|ocr|error message|popup)\b", text):
         return "screen"
@@ -149,6 +142,9 @@ def choose_model(
     available_models: Iterable[str] = (),
     cloud_allowed: bool = False,
 ) -> ModelRoutingDecision:
+    # Retained as a compatibility argument for API callers. Grandpa's runtime
+    # is local-only, so a caller cannot enable cloud routing here.
+    del cloud_allowed
     models = [model for model in dict.fromkeys(available_models) if model]
     complexity = score_complexity(query)
     task_type = classify_task(query)
@@ -163,29 +159,17 @@ def choose_model(
             confidence=0.96,
             reason="Requested model is available.",
             local_preferred=local_preferred,
-            cloud_allowed=cloud_allowed,
+            cloud_allowed=False,
             task_type=task_type,
             complexity_tier=complexity.tier,
         )
 
     non_embedding = [model for model in models if not any(hint in model.lower() for hint in _EMBEDDING_HINTS)]
-    local_models = [model for model in non_embedding if not _is_cloud_model(model)]
-    cloud_models = [model for model in non_embedding if _is_cloud_model(model)]
-
     selected = ""
     reason = ""
-    if not local_preferred and cloud_allowed and cloud_models and complexity.tier in {"complex", "very_complex"}:
-        selected = _best_match(cloud_models, _CLOUD_PRIORITY) or cloud_models[0]
-        reason = "Complex reasoning task can use cloud when explicitly allowed."
-    elif local_models:
-        selected = _best_match(local_models, _LOCAL_PRIORITY) or local_models[0]
+    if non_embedding:
+        selected = _best_match(non_embedding, _LOCAL_PRIORITY) or non_embedding[0]
         reason = "Local-first routing selected an available local model."
-    elif cloud_allowed and cloud_models:
-        selected = _best_match(cloud_models, _CLOUD_PRIORITY) or cloud_models[0]
-        reason = "No local chat model was available, so cloud fallback was selected."
-    elif non_embedding:
-        selected = non_embedding[0]
-        reason = "Selected the first available chat-capable model."
 
     if selected:
         return ModelRoutingDecision(
@@ -196,7 +180,7 @@ def choose_model(
             reason=reason,
             fallback_used=bool(requested_model and requested_model != selected),
             local_preferred=local_preferred,
-            cloud_allowed=cloud_allowed,
+            cloud_allowed=False,
             task_type=task_type,
             complexity_tier=complexity.tier,
         )
@@ -209,7 +193,7 @@ def choose_model(
         reason="No available model list was provided; keeping the requested model.",
         fallback_used=False,
         local_preferred=local_preferred,
-        cloud_allowed=cloud_allowed,
+        cloud_allowed=False,
         task_type=task_type,
         complexity_tier=complexity.tier,
     )
@@ -270,10 +254,13 @@ def ai_diagnostics(*, engine: Any | None = None, model: str = "", query: str = "
         query or "What can Grandpa do?",
         requested_model=model,
         available_models=models,
-        cloud_allowed=_has_cloud(models),
+        cloud_allowed=False,
     )
-    local_count = sum(1 for item in models if not _is_cloud_model(item) and not any(h in item.lower() for h in _EMBEDDING_HINTS))
-    cloud_count = sum(1 for item in models if _is_cloud_model(item))
+    local_count = sum(
+        1
+        for item in models
+        if not any(h in item.lower() for h in _EMBEDDING_HINTS)
+    )
     embedding_count = sum(1 for item in models if any(h in item.lower() for h in _EMBEDDING_HINTS))
     return {
         "status": "ready" if models or engine is None else "limited",
@@ -282,7 +269,7 @@ def ai_diagnostics(*, engine: Any | None = None, model: str = "", query: str = "
         "models": {
             "total": len(models),
             "local_chat": local_count,
-            "cloud": cloud_count,
+            "cloud": 0,
             "embedding": embedding_count,
             "available": models[:30],
         },
@@ -403,19 +390,9 @@ def _best_match(models: list[str], priority: tuple[str, ...]) -> str:
 
 
 def _engine_hint(model: str) -> str:
-    if _is_cloud_model(model):
-        return "cloud"
     if any(hint in model.lower() for hint in _EMBEDDING_HINTS):
         return "embedding"
     return "local"
-
-
-def _is_cloud_model(model: str) -> bool:
-    return model.startswith(_CLOUD_PREFIXES)
-
-
-def _has_cloud(models: Iterable[str]) -> bool:
-    return any(_is_cloud_model(model) for model in models)
 
 
 def _semantic_status() -> dict[str, Any]:

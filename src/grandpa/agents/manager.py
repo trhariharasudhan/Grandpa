@@ -42,17 +42,6 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
 );
 """
 
-_CREATE_BINDINGS = """\
-CREATE TABLE IF NOT EXISTS channel_bindings (
-    id              TEXT PRIMARY KEY,
-    agent_id        TEXT NOT NULL REFERENCES managed_agents(id),
-    channel_type    TEXT NOT NULL,
-    config_json     TEXT NOT NULL DEFAULT '{}',
-    session_id      TEXT,
-    routing_mode    TEXT NOT NULL DEFAULT 'dedicated'
-);
-"""
-
 _CREATE_CHECKPOINTS = """\
 CREATE TABLE IF NOT EXISTS agent_checkpoints (
     id TEXT PRIMARY KEY,
@@ -101,7 +90,6 @@ class AgentManager:
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.execute(_CREATE_AGENTS)
         self._conn.execute(_CREATE_TASKS)
-        self._conn.execute(_CREATE_BINDINGS)
         self._conn.executescript(_CREATE_CHECKPOINTS)
         self._conn.executescript(_CREATE_MESSAGES)
         self._conn.executescript(_CREATE_LEARNING_LOG)
@@ -415,58 +403,6 @@ class AgentManager:
         ).fetchone()
         return self._row_to_task(row) if row else None
 
-    # ── Channel bindings ──────────────────────────────────────────
-
-    def bind_channel(
-        self,
-        agent_id: str,
-        channel_type: str,
-        config: Optional[Dict[str, Any]] = None,
-        routing_mode: str = "dedicated",
-    ) -> Dict[str, Any]:
-        binding_id = uuid.uuid4().hex[:12]
-        session_id = uuid.uuid4().hex[:16]
-        config_json = json.dumps(config or {})
-        self._conn.execute(
-            "INSERT INTO channel_bindings "
-            "(id, agent_id, channel_type, config_json, session_id, routing_mode) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (binding_id, agent_id, channel_type, config_json, session_id, routing_mode),
-        )
-        self._conn.commit()
-        return self._get_binding(binding_id)  # type: ignore[return-value]
-
-    def list_channel_bindings(self, agent_id: str) -> List[Dict[str, Any]]:
-        rows = self._conn.execute(
-            "SELECT * FROM channel_bindings WHERE agent_id = ?", (agent_id,)
-        ).fetchall()
-        return [self._row_to_binding(r) for r in rows]
-
-    def unbind_channel(self, binding_id: str) -> None:
-        self._conn.execute("DELETE FROM channel_bindings WHERE id = ?", (binding_id,))
-        self._conn.commit()
-
-    def _get_binding(self, binding_id: str) -> Optional[Dict[str, Any]]:
-        row = self._conn.execute(
-            "SELECT * FROM channel_bindings WHERE id = ?", (binding_id,)
-        ).fetchone()
-        return self._row_to_binding(row) if row else None
-
-    def find_binding_for_channel(
-        self, channel_type: str, channel_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """Find a dedicated binding for a specific channel."""
-        rows = self._conn.execute(
-            "SELECT * FROM channel_bindings WHERE channel_type = ?",
-            (channel_type,),
-        ).fetchall()
-        for row in rows:
-            binding = self._row_to_binding(row)
-            config = binding.get("config", {})
-            if config.get("channel") == channel_id:
-                return binding
-        return None
-
     # ── Templates ─────────────────────────────────────────────────
 
     @staticmethod
@@ -737,16 +673,4 @@ class AgentManager:
             "progress": json.loads(progress_raw) if progress_raw else {},
             "findings": json.loads(findings_raw) if findings_raw else [],
             "created_at": row["created_at"],
-        }
-
-    @staticmethod
-    def _row_to_binding(row: sqlite3.Row) -> Dict[str, Any]:
-        config_raw = row["config_json"]
-        return {
-            "id": row["id"],
-            "agent_id": row["agent_id"],
-            "channel_type": row["channel_type"],
-            "config": json.loads(config_raw) if config_raw else {},
-            "session_id": row["session_id"] or "",
-            "routing_mode": row["routing_mode"] or "auto",
         }

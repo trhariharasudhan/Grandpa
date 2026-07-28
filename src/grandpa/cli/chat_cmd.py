@@ -123,14 +123,16 @@ def _log_generation_exception(exc: BaseException) -> None:
         handler.setFormatter(
             logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
         )
-        logger.addHandler(handler)
+        diagnostic_logger = logging.getLogger(f"{__name__}.generation")
+        diagnostic_logger.propagate = False
+        diagnostic_logger.addHandler(handler)
         try:
-            logger.error(
+            diagnostic_logger.error(
                 "Chat generation failed",
                 exc_info=(type(exc), exc, exc.__traceback__),
             )
         finally:
-            logger.removeHandler(handler)
+            diagnostic_logger.removeHandler(handler)
             handler.close()
     except Exception:
         logger.debug("Failed to write chat generation diagnostics", exc_info=True)

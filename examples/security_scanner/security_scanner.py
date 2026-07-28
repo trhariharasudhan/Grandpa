@@ -37,7 +37,7 @@ def main() -> None:
         "--engine",
         type=str,
         default="ollama",
-        help="Engine backend: ollama, cloud, vllm, etc. (default: ollama).",
+        help="Local engine backend (default: ollama).",
     )
     parser.add_argument(
         "--max-turns",

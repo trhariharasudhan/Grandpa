@@ -25,9 +25,8 @@ MD_REPORT = REPORT_DIR / "final-release-gate.md"
 GateStatus = Literal["pass", "fail", "warn", "skipped"]
 
 NON_BLOCKING_WARNING_HINTS = {
-    "docker": "Docker daemon off is optional unless you are publishing container images.",
     "voice": "Real microphone hardware cannot be fully validated from an unattended CLI check.",
-    "engine": "Optional cloud/local engines may be unavailable while the default engine works.",
+    "engine": "The configured local engine must be available for inference.",
 }
 
 
@@ -75,7 +74,7 @@ def main() -> int:
         ),
         GateCheck(
             "daily-use validator",
-            ["uv", "run", "--python", "3.11", "python", "scripts\\validate_daily_use.py", "--skip-app-launch", "--skip-docker"],
+            ["uv", "run", "--python", "3.11", "python", "scripts\\validate_daily_use.py", "--skip-app-launch"],
             timeout=360,
         ),
         GateCheck(
@@ -332,8 +331,6 @@ def _subprocess(command: list[str], cwd: Path, timeout: int, *, extra_env: dict[
 
 def _classify_warning(output: str) -> str:
     lower = output.lower()
-    if "docker daemon" in lower or "cannot connect to the docker daemon" in lower:
-        return NON_BLOCKING_WARNING_HINTS["docker"]
     if "microphone" in lower or "browser-based speech" in lower:
         return NON_BLOCKING_WARNING_HINTS["voice"]
     if "unreachable" in lower and "engine" in lower:

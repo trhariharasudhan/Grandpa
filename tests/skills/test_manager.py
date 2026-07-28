@@ -300,8 +300,8 @@ class TestSkillManagerSourcedLayout:
         from grandpa.core.events import EventBus
         from grandpa.skills.manager import SkillManager
 
-        # Build hermes/<name>/ and openclaw/<name>/ subdirs
-        for source, name in [("hermes", "apple-notes"), ("openclaw", "etherscan")]:
+        # Build workspace/<name>/ and user-local/<name>/ subdirs
+        for source, name in [("workspace", "apple-notes"), ("user-local", "etherscan")]:
             d = tmp_path / source / name
             d.mkdir(parents=True)
             (d / "SKILL.md").write_text(
@@ -327,7 +327,7 @@ class TestSkillManagerSourcedLayout:
         )
 
         # Sourced layout
-        sourced = tmp_path / "hermes" / "my-sourced-skill"
+        sourced = tmp_path / "workspace" / "my-sourced-skill"
         sourced.mkdir(parents=True)
         (sourced / "SKILL.md").write_text(
             "---\nname: my-sourced-skill\ndescription: sourced\n---\n"
@@ -338,184 +338,6 @@ class TestSkillManagerSourcedLayout:
         names = mgr.skill_names()
         assert "my-flat-skill" in names
         assert "my-sourced-skill" in names
-
-
-class TestSkillManagerOverlayLoading:
-    def test_overlay_description_overrides_manifest(self, tmp_path: Path):
-        """When an overlay exists, the optimized description replaces
-        the manifest's description after discover()."""
-        from grandpa.core.events import EventBus
-        from grandpa.skills.manager import SkillManager
-        from grandpa.skills.overlay import SkillOverlay, write_overlay
-
-        skill_dir = tmp_path / "skills" / "research-skill"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: research-skill\ndescription: Original description\n---\nBody"
-        )
-
-        overlay_dir = tmp_path / "overlays"
-        write_overlay(
-            SkillOverlay(
-                skill_name="research-skill",
-                optimizer="dspy",
-                optimized_at="2026-04-08T14:30:00Z",
-                trace_count=25,
-                description="A much better optimized description",
-            ),
-            overlay_dir,
-        )
-
-        mgr = SkillManager(bus=EventBus(), overlay_dir=overlay_dir)
-        mgr.discover(paths=[tmp_path / "skills"])
-
-        manifest = mgr.resolve("research-skill")
-        assert manifest.description == "A much better optimized description"
-
-    def test_overlay_few_shot_stored_in_metadata(self, tmp_path: Path):
-        from grandpa.core.events import EventBus
-        from grandpa.skills.manager import SkillManager
-        from grandpa.skills.overlay import SkillOverlay, write_overlay
-
-        skill_dir = tmp_path / "skills" / "test-skill"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: test-skill\ndescription: x\n---\nBody"
-        )
-
-        overlay_dir = tmp_path / "overlays"
-        write_overlay(
-            SkillOverlay(
-                skill_name="test-skill",
-                optimizer="dspy",
-                optimized_at="2026-04-08T14:30:00Z",
-                trace_count=20,
-                description="x",
-                few_shot=[
-                    {"input": "q1", "output": "a1"},
-                    {"input": "q2", "output": "a2"},
-                ],
-            ),
-            overlay_dir,
-        )
-
-        mgr = SkillManager(bus=EventBus(), overlay_dir=overlay_dir)
-        mgr.discover(paths=[tmp_path / "skills"])
-
-        manifest = mgr.resolve("test-skill")
-        oj = manifest.metadata.get("grandpa", {})
-        few_shot = oj.get("few_shot", [])
-        assert len(few_shot) == 2
-        assert few_shot[0]["input"] == "q1"
-
-    def test_no_overlay_dir_does_not_crash(self, tmp_path: Path):
-        from grandpa.core.events import EventBus
-        from grandpa.skills.manager import SkillManager
-
-        skill_dir = tmp_path / "skills" / "test-skill"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: test-skill\ndescription: original\n---\nBody"
-        )
-
-        # No overlay_dir argument — should still work
-        mgr = SkillManager(bus=EventBus())
-        mgr.discover(paths=[tmp_path / "skills"])
-        manifest = mgr.resolve("test-skill")
-        assert manifest.description == "original"
-
-    def test_get_few_shot_examples_returns_formatted_strings(self, tmp_path: Path):
-        from grandpa.core.events import EventBus
-        from grandpa.skills.manager import SkillManager
-        from grandpa.skills.overlay import SkillOverlay, write_overlay
-
-        skill_dir = tmp_path / "skills" / "fs-skill"
-        skill_dir.mkdir(parents=True)
-        (skill_dir / "SKILL.md").write_text(
-            "---\nname: fs-skill\ndescription: x\n---\nBody"
-        )
-
-        overlay_dir = tmp_path / "overlays"
-        write_overlay(
-            SkillOverlay(
-                skill_name="fs-skill",
-                optimizer="dspy",
-                optimized_at="2026-04-08T14:30:00Z",
-                trace_count=20,
-                description="x",
-                few_shot=[
-                    {"input": "what is X?", "output": "X is Y"},
-                ],
-            ),
-            overlay_dir,
-        )
-
-        mgr = SkillManager(bus=EventBus(), overlay_dir=overlay_dir)
-        mgr.discover(paths=[tmp_path / "skills"])
-
-        examples = mgr.get_few_shot_examples()
-        assert len(examples) >= 1
-        assert any("what is X?" in s and "X is Y" in s for s in examples)
-
-    def test_overlay_dir_read_from_config_when_not_explicit(
-        self, tmp_path: Path
-    ) -> None:
-        """Plan 2A I1 fix: SkillManager picks up overlay_dir from
-        cfg.learning.skills.overlay_dir when no explicit value is passed."""
-        from unittest.mock import patch
-
-        from grandpa.core.config import (
-            GrandpaConfig,
-            LearningConfig,
-            SkillsLearningConfig,
-        )
-        from grandpa.core.events import EventBus
-        from grandpa.skills.manager import SkillManager
-
-        cfg = GrandpaConfig()
-        cfg.learning = LearningConfig()
-        cfg.learning.skills = SkillsLearningConfig(
-            overlay_dir=str(tmp_path / "configured-overlays")
-        )
-
-        with patch("grandpa.core.config.load_config", return_value=cfg):
-            mgr = SkillManager(bus=EventBus())
-            assert mgr._overlay_dir == (tmp_path / "configured-overlays").expanduser()
-
-    def test_discover_with_empty_paths_still_loads_overlays(
-        self, tmp_path: Path
-    ) -> None:
-        """Plan 2A I2 fix: discover() with no paths still applies overlays
-        to skills that were seeded by other means."""
-        from grandpa.core.events import EventBus
-        from grandpa.skills.manager import SkillManager
-        from grandpa.skills.overlay import SkillOverlay, write_overlay
-        from grandpa.skills.types import SkillManifest
-
-        overlay_dir = tmp_path / "overlays"
-        write_overlay(
-            SkillOverlay(
-                skill_name="seeded-skill",
-                optimizer="dspy",
-                optimized_at="2026-04-08T14:30:00Z",
-                trace_count=15,
-                description="Optimized seeded description",
-            ),
-            overlay_dir,
-        )
-
-        mgr = SkillManager(bus=EventBus(), overlay_dir=overlay_dir)
-        # Seed a skill directly (simulating a non-disk source)
-        mgr._skills["seeded-skill"] = SkillManifest(
-            name="seeded-skill",
-            description="Original description",
-            markdown_content="Body",
-        )
-        # Call discover() with no paths — should still load overlays
-        mgr.discover()
-
-        manifest = mgr.resolve("seeded-skill")
-        assert manifest.description == "Optimized seeded description"
 
 
 class TestSkillManagerRemove:

@@ -19,17 +19,6 @@ NEW_LOCAL_MODELS = [
     "trinity-mini",  # 26B total, 3.0B active, MoE
 ]
 
-# Cloud model keys
-CLOUD_MODELS = [
-    "gpt-5-mini",
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-haiku-4-5",
-    "gemini-2.5-pro",
-    "gemini-3-flash",
-]
-
-
 def _setup_models() -> None:
     """Register builtin models needed for the tests."""
     register_builtin_models()
@@ -132,36 +121,6 @@ class TestRouterWithNewModels:
         )
         selected = router.select_model(ctx)
         assert selected == "glm-4.7-flash"
-
-
-class TestRouterCloudFallback:
-    """Router behavior when only cloud models are available."""
-
-    def test_no_local_falls_to_cloud(self) -> None:
-        _setup_models()
-        router = HeuristicRouter(available_models=CLOUD_MODELS)
-        ctx = RoutingContext(query="hi", query_length=2)
-        selected = router.select_model(ctx)
-        assert selected in CLOUD_MODELS
-
-    def test_cloud_model_selection_with_math(self) -> None:
-        _setup_models()
-        router = HeuristicRouter(available_models=CLOUD_MODELS)
-        ctx = RoutingContext(
-            query="solve x",
-            query_length=7,
-            has_math=True,
-        )
-        selected = router.select_model(ctx)
-        assert selected in CLOUD_MODELS
-
-    def test_empty_models_returns_fallback(self) -> None:
-        router = HeuristicRouter(
-            available_models=[],
-            fallback_model="gpt-5-mini",
-        )
-        ctx = RoutingContext(query="hello", query_length=5)
-        assert router.select_model(ctx) == "gpt-5-mini"
 
 
 class TestRouterParameterized:

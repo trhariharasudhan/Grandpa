@@ -1,4 +1,4 @@
-"""Credential persistence for tools and channels.
+"""Credential persistence for trusted local tools.
 
 Stores credentials in ~/.grandpa/credentials.toml with 0o600 permissions.
 Thread-safe writes via lock. Sets os.environ on save for immediate effect.
@@ -20,34 +20,6 @@ _DEFAULT_PATH = Path.home() / ".grandpa" / "credentials.toml"
 
 TOOL_CREDENTIALS: dict[str, list[str]] = {
     "web_search": ["TAVILY_API_KEY"],
-    "image_generate": ["OPENAI_API_KEY"],
-    "slack": ["SLACK_BOT_TOKEN", "SLACK_APP_TOKEN"],
-    "telegram": ["TELEGRAM_BOT_TOKEN"],
-    "discord": ["DISCORD_BOT_TOKEN"],
-    "email": ["EMAIL_USERNAME", "EMAIL_PASSWORD"],
-    "whatsapp": ["WHATSAPP_ACCESS_TOKEN", "WHATSAPP_PHONE_NUMBER_ID"],
-    "signal": ["SIGNAL_CLI_PATH"],
-    "google_chat": ["GOOGLE_CHAT_WEBHOOK_URL"],
-    "teams": ["TEAMS_WEBHOOK_URL"],
-    "bluebubbles": ["BLUEBUBBLES_SERVER_URL", "BLUEBUBBLES_PASSWORD"],
-    "line": ["LINE_CHANNEL_ACCESS_TOKEN", "LINE_CHANNEL_SECRET"],
-    "viber": ["VIBER_AUTH_TOKEN"],
-    "messenger": ["MESSENGER_PAGE_ACCESS_TOKEN", "MESSENGER_VERIFY_TOKEN"],
-    "reddit": [
-        "REDDIT_CLIENT_ID",
-        "REDDIT_CLIENT_SECRET",
-        "REDDIT_USERNAME",
-        "REDDIT_PASSWORD",
-    ],
-    "mastodon": ["MASTODON_ACCESS_TOKEN", "MASTODON_API_BASE_URL"],
-    "twitch": ["TWITCH_TOKEN", "TWITCH_CHANNEL"],
-    "matrix": ["MATRIX_HOMESERVER", "MATRIX_ACCESS_TOKEN"],
-    "mattermost": ["MATTERMOST_URL", "MATTERMOST_TOKEN"],
-    "zulip": ["ZULIP_EMAIL", "ZULIP_API_KEY", "ZULIP_SITE"],
-    "rocketchat": ["ROCKETCHAT_URL", "ROCKETCHAT_USER_ID", "ROCKETCHAT_AUTH_TOKEN"],
-    "xmpp": ["XMPP_JID", "XMPP_PASSWORD"],
-    "feishu": ["FEISHU_APP_ID", "FEISHU_APP_SECRET"],
-    "nostr": ["NOSTR_PRIVATE_KEY"],
 }
 
 
@@ -119,7 +91,7 @@ def get_tool_credential(
     """Read a single credential without polluting ``os.environ``.
 
     Falls back to ``os.environ`` if the key is not in credentials.toml,
-    for backward compatibility with Docker env var workflows.
+    for backward compatibility with environment-variable configuration.
     """
     creds = load_credentials(path=path)
     tool_creds = creds.get(tool_name, {})

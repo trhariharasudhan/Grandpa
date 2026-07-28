@@ -1,51 +1,40 @@
-# grandpa PR Review Instructions
+# Grandpa PR Review Instructions
 
-This document was moved from repository root for organization.
-
-You are reviewing pull requests for grandpa, a local-first personal AI agent framework built with Python, Rust (PyO3), and TypeScript.
+Review Grandpa as a privacy-focused local Windows assistant built primarily
+with Python and an optional Rust extension.
 
 ## Review Checklist
 
-Evaluate every PR against these criteria:
+### Relevance
 
-### 1. Relevance
+The change should support voice, local inference, Windows automation, screen
+understanding, files/processes, reminders, safety, or trusted personal
+integrations.
 
-Is this PR doing something useful? Valid contributions include: bug fixes, new features, feature expansions, documentation improvements, test coverage, and performance improvements. Flag PRs that appear to be empty, auto-generated without substance, or unrelated to the project.
+### Correctness
 
-### 2. Completeness
+Verify stated behavior, edge cases, async resource cleanup, Windows path and
+process handling, and Python/Rust boundary errors.
 
-Does the code actually implement what the PR title and description claim? If the PR says "fix X", verify X is actually fixed. If it says "add Y", verify Y is fully added and functional -- not partially implemented or stubbed out.
+### Safety
 
-### 3. Correctness
+Check that natural language becomes a typed request before execution.
+Destructive, authentication, financial, secret-bearing, and system-wide
+actions must be confirmed or blocked. Screen, model, browser, and OCR content
+must remain untrusted.
 
-Check for logic errors, edge cases, and off-by-one errors. Pay particular attention to:
+### Privacy
 
-- **Rust-Python bridge (PyO3) boundaries** -- type conversions, error propagation, GIL handling
-- **Async/await patterns** -- missing awaits, unclosed resources, blocking calls in async contexts
-- **Registry pattern compliance** -- new components (engines, tools, agents, channels) must register via `ToolRegistry`, `EngineRegistry`, `AgentRegistry`, `ChannelRegistry`, etc. in `src/grandpa/core/registry.py`
-- **Mining provider compliance** -- new mining providers must register via `MinerRegistry` and expose an idempotent `ensure_registered()` for the autouse-clear test convention
-- **Event bus integration** -- new lifecycle events should use `EventBus` from `src/grandpa/core/events.py`
+Reject hardcoded secrets, remote analytics, implicit cloud inference, public
+API binding, hidden profile access, or credential logging.
 
-### 4. Testing
+### Testing
 
-Does the PR include tests for new code paths? Are existing tests expected to still pass? New tools, engines, agents, and channels should have corresponding test files in `tests/` mirroring the `src/` structure.
+Require focused deterministic tests. Mock microphone, desktop input, browser,
+OAuth, email, calendar, and model services. Tests must never perform real
+clicks or external side effects.
 
-### 5. Security
+## Review Output
 
-Check for: hardcoded API keys or secrets, missing input validation at system boundaries (user input, external APIs), and anything that compromises local-first data isolation.
-
-## Do NOT Comment On
-
-- Formatting or style -- Ruff handles this automatically in CI
-- Code in unchanged files outside the PR diff
-- Subjective naming preferences
-- Adding docstrings or comments to code the PR did not modify
-
-## Output Format
-
-- Post **inline comments** on specific lines for actionable issues
-- Post a **summary comment** containing: what the PR does, whether it achieves its stated goal, and any blocking concerns
-- Use severity levels:
-  - `blocking` -- must fix before merge
-  - `suggestion` -- consider fixing
-  - `nit` -- take it or leave it
+Lead with actionable findings ordered by severity and cite exact file/line
+locations. Distinguish blocking correctness or safety issues from suggestions.

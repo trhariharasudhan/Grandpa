@@ -31,31 +31,11 @@ class SkillManager:
         bus: EventBus,
         *,
         capability_policy: Optional[Any] = None,
-        overlay_dir: Optional[Path] = None,
     ) -> None:
         self._bus = bus
         self._capability_policy = capability_policy
         self._skills: Dict[str, SkillManifest] = {}
         self._tool_executor: Optional[ToolExecutor] = None
-        if overlay_dir is None:
-            # Try to read from config first; fall back to the default
-            # ~/.grandpa/learning/skills/ if config can't be loaded.
-            try:
-                from grandpa.core.config import load_config
-
-                cfg = load_config()
-                cfg_dir = getattr(
-                    getattr(cfg.learning, "skills", None),
-                    "overlay_dir",
-                    None,
-                )
-                if cfg_dir:
-                    overlay_dir = Path(cfg_dir).expanduser()
-            except Exception:
-                pass
-            if overlay_dir is None:
-                overlay_dir = Path("~/.grandpa/learning/skills/").expanduser()
-        self._overlay_dir = Path(overlay_dir).expanduser()
 
     # ------------------------------------------------------------------
     # Discovery
@@ -65,15 +45,12 @@ class SkillManager:
         """Scan directories in order and register skills.
 
         First-seen name wins (workspace path listed first = highest precedence).
-        After loading, the full dependency graph is validated and any
-        sidecar overlays in ``overlay_dir`` are applied to discovered skills.
+        After loading, the full dependency graph is validated.
 
         Parameters
         ----------
         paths:
-            Directories to scan.  If *None* or empty, no skills are loaded
-            from disk — but ``_load_overlays()`` still runs (in case the
-            caller had previously seeded ``self._skills`` directly).
+            Directories to scan. If *None* or empty, no skills are loaded.
         """
         if paths:
             for directory in paths:
@@ -86,37 +63,6 @@ class SkillManager:
             # Validate the dependency graph after loading skills
             if self._skills:
                 validate_dependencies(self._skills)
-
-        # Load optimization overlays (Plan 2A) — always runs, even when no
-        # paths are provided, so callers can apply overlays to skills loaded
-        # via other means.
-        self._load_overlays()
-
-    def _load_overlays(self) -> None:
-        """Apply optimization overlays to discovered skills.
-
-        For each skill, look for ``<overlay_dir>/<skill-name>/optimized.toml``.
-        If present, override the manifest description and stash few-shot
-        examples under ``manifest.metadata.grandpa.few_shot``.
-
-        Bad overlays are silently ignored — they should not break discovery.
-        """
-        from grandpa.skills.overlay import SkillOverlayLoader
-
-        loader = SkillOverlayLoader(self._overlay_dir)
-        for name, manifest in self._skills.items():
-            overlay = loader.load(name)
-            if overlay is None:
-                continue
-            if overlay.description:
-                manifest.description = overlay.description
-            if overlay.few_shot:
-                new_metadata = dict(manifest.metadata) if manifest.metadata else {}
-                oj = dict(new_metadata.get("grandpa") or new_metadata.get("Grandpa") or {})
-                oj["few_shot"] = list(overlay.few_shot)
-                new_metadata.pop("Grandpa", None)
-                new_metadata["grandpa"] = oj
-                manifest.metadata = new_metadata
 
     # ------------------------------------------------------------------
     # Resolve / introspect
@@ -234,100 +180,6 @@ class SkillManager:
                 if inp or out:
                     examples.append(f"### {name}\nInput: {inp}\nOutput: {out}")
         return examples
-
-    # ------------------------------------------------------------------
-    # Trace-driven skill discovery (Plan 2A)
-    # ------------------------------------------------------------------
-
-    def discover_from_traces(
-        self,
-        trace_store: Any,
-        *,
-        min_frequency: int = 3,
-        min_outcome: float = 0.5,
-        output_dir: Optional[Path] = None,
-    ) -> List[Dict[str, Any]]:
-        """Mine the trace store for recurring tool sequences.
-
-        For each recurring sequence found by :class:`SkillDiscovery`, write
-        a TOML skill manifest into *output_dir* (default
-        ``~/.grandpa/skills/discovered/``).  Returns a list of dicts with
-        ``name`` and ``path`` for each manifest written.
-
-        Names are normalized to spec-compliant kebab-case (lowercase with
-        hyphens, no underscores) so the resulting manifests load cleanly
-        through the discovery walker.
-        """
-        from grandpa.learning.agents.skill_discovery import SkillDiscovery
-
-        traces = trace_store.list_traces(limit=10000)
-        discovery = SkillDiscovery(
-            min_frequency=min_frequency,
-            min_outcome=min_outcome,
-        )
-        discovered = discovery.analyze_traces(traces)
-
-        if output_dir is None:
-            output_dir = Path("~/.grandpa/skills/discovered/").expanduser()
-        output_dir = Path(output_dir).expanduser()
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        written: List[Dict[str, Any]] = []
-        for skill in discovered:
-            name = self._normalize_skill_name(skill.name)
-            skill_subdir = output_dir / name
-            skill_subdir.mkdir(parents=True, exist_ok=True)
-            toml_path = skill_subdir / "skill.toml"
-            toml_path.write_text(
-                self._serialize_discovered_skill(name, skill),
-                encoding="utf-8",
-            )
-            written.append({"name": name, "path": str(toml_path)})
-
-        return written
-
-    @staticmethod
-    def _normalize_skill_name(raw_name: str) -> str:
-        """Convert an arbitrary discovered name to a spec-compliant kebab name.
-
-        - Lowercase
-        - Replace underscores and whitespace with hyphens
-        - Collapse runs of hyphens
-        - Strip leading/trailing hyphens
-        """
-        import re
-
-        normalized = raw_name.lower()
-        normalized = re.sub(r"[_\s]+", "-", normalized)
-        normalized = re.sub(r"-+", "-", normalized)
-        normalized = normalized.strip("-")
-        if not normalized:
-            normalized = "discovered-skill"
-        return normalized
-
-    @staticmethod
-    def _serialize_discovered_skill(name: str, skill: Any) -> str:
-        """Serialize a DiscoveredSkill into a spec-compliant skill.toml."""
-        lines: List[str] = ["[skill]"]
-        lines.append(f'name = "{name}"')
-        lines.append('version = "0.1.0"')
-        # Truncate description to spec max 1024 chars
-        description = (skill.description or f"Discovered skill: {name}")[:1024]
-        # Escape backslashes and double quotes for basic TOML strings
-        description = description.replace("\\", "\\\\").replace('"', '\\"')
-        lines.append(f'description = "{description}"')
-        lines.append('author = "Grandpa (auto-discovered)"')
-        lines.append('tags = ["auto-discovered"]')
-        lines.append("")
-
-        for tool_name in skill.tool_sequence:
-            lines.append("[[skill.steps]]")
-            lines.append(f'tool_name = "{tool_name}"')
-            lines.append('arguments_template = "{}"')
-            lines.append('output_key = ""')
-            lines.append("")
-
-        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Execution

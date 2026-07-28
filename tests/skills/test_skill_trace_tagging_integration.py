@@ -42,7 +42,7 @@ class TestSkillTraceTaggingEndToEnd:
             name="research-skill",
             description="x",
             markdown_content="Just instructions.",
-            metadata={"grandpa": {"source": "hermes"}},
+            metadata={"grandpa": {"source": "workspace"}},
         )
         skill_executor = SkillExecutor(ToolExecutor([], bus=bus))
         skill_tool = SkillTool(manifest, skill_executor)
@@ -56,7 +56,7 @@ class TestSkillTraceTaggingEndToEnd:
 
         # Now the published TOOL_CALL_END event should carry the metadata
         assert captured_metadata.get("skill") == "research-skill"
-        assert captured_metadata.get("skill_source") == "hermes"
+        assert captured_metadata.get("skill_source") == "workspace"
         assert captured_metadata.get("skill_kind") == "instructional"
 
     def test_trace_collector_writes_metadata_to_step(self) -> None:
@@ -70,7 +70,7 @@ class TestSkillTraceTaggingEndToEnd:
             name="my-skill",
             description="x",
             markdown_content="Body",
-            metadata={"grandpa": {"source": "openclaw"}},
+            metadata={"grandpa": {"source": "user-local"}},
         )
         skill_executor = SkillExecutor(ToolExecutor([], bus=bus))
         skill_tool = SkillTool(manifest, skill_executor)
@@ -110,7 +110,7 @@ class TestSkillTraceTaggingEndToEnd:
         assert first.metadata.get("skill") == "my-skill", (
             f"Expected metadata.skill='my-skill', got {first.metadata!r}"
         )
-        assert first.metadata.get("skill_source") == "openclaw"
+        assert first.metadata.get("skill_source") == "user-local"
         assert first.metadata.get("skill_kind") == "instructional"
 
 
@@ -195,7 +195,7 @@ class TestEventMetadataIsJsonSafe:
             name="my-skill",
             description="x",
             markdown_content="Body",
-            metadata={"grandpa": {"source": "hermes"}},
+            metadata={"grandpa": {"source": "workspace"}},
         )
         skill_executor = SkillExecutor(ToolExecutor([], bus=bus))
         skill_tool = SkillTool(manifest, skill_executor)
@@ -205,7 +205,7 @@ class TestEventMetadataIsJsonSafe:
 
         # Skill keys must survive the filter
         assert captured.get("skill") == "my-skill"
-        assert captured.get("skill_source") == "hermes"
+        assert captured.get("skill_source") == "workspace"
         assert captured.get("skill_kind") == "instructional"
 
         # And it must still be JSON-serializable

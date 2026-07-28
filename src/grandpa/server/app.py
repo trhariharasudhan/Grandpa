@@ -5,141 +5,13 @@ from __future__ import annotations
 import logging
 import time
 
-from fastapi import APIRouter, FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI
 
 from grandpa.server.api_routes import include_all_routes
-from grandpa.server.connectors_router import create_connectors_router
-from grandpa.server.digest_routes import create_digest_router
 from grandpa.server.routes import router
 from grandpa.server.upload_router import router as upload_router
 
 logger = logging.getLogger(__name__)
-
-
-def _restore_sendblue_bindings(app: FastAPI) -> None:
-    """Restore SendBlue channel bindings from the database on startup.
-
-    If a SendBlue binding was created via the Messaging tab and the server
-    restarts, this ensures the ChannelBridge + DeepResearchAgent are wired
-    up so incoming webhooks continue to work.
-    """
-    try:
-        mgr = getattr(app.state, "agent_manager", None)
-        if mgr is None:
-            return
-
-        # Check all agents for sendblue bindings
-        for agent in mgr.list_agents():
-            agent_id = agent.get("id", agent.get("agent_id", ""))
-            bindings = mgr.list_channel_bindings(agent_id)
-            for b in bindings:
-                if b.get("channel_type") != "sendblue":
-                    continue
-                config = b.get("config", {})
-                api_key_id = config.get("api_key_id", "")
-                api_secret_key = config.get("api_secret_key", "")
-                from_number = config.get("from_number", "")
-                if not api_key_id or not api_secret_key:
-                    continue
-
-                from grandpa.channels.sendblue import SendBlueChannel
-
-                sb = SendBlueChannel(
-                    api_key_id=api_key_id,
-                    api_secret_key=api_secret_key,
-                    from_number=from_number,
-                )
-                sb.connect()
-                app.state.sendblue_channel = sb
-
-                # Create ChannelBridge if none exists
-                bridge = getattr(app.state, "channel_bridge", None)
-                if bridge and hasattr(bridge, "_channels"):
-                    bridge._channels["sendblue"] = sb
-                else:
-                    from grandpa.server.channel_bridge import ChannelBridge
-                    from grandpa.server.session_store import SessionStore
-
-                    session_store = SessionStore()
-                    engine = getattr(app.state, "engine", None)
-                    dr_agent = None
-                    if engine:
-                        from grandpa.server.agent_manager_routes import (
-                            _build_deep_research_tools,
-                        )
-
-                        tools = _build_deep_research_tools(engine=engine, model="")
-                        if tools:
-                            from grandpa.agents.deep_research import (
-                                DeepResearchAgent,
-                            )
-
-                            model_name = getattr(app.state, "model", "") or getattr(
-                                engine, "_model", ""
-                            )
-                            dr_agent = DeepResearchAgent(
-                                engine=engine,
-                                model=model_name,
-                                tools=tools,
-                            )
-
-                    bus = getattr(app.state, "bus", None)
-                    if bus is None:
-                        from grandpa.core.events import EventBus
-
-                        bus = EventBus()
-
-                    app.state.channel_bridge = ChannelBridge(
-                        channels={"sendblue": sb},
-                        session_store=session_store,
-                        bus=bus,
-                        agent_manager=mgr,
-                        deep_research_agent=dr_agent,
-                    )
-
-                logger.info(
-                    "Restored SendBlue channel binding: %s",
-                    from_number,
-                )
-                return  # Only need one SendBlue binding
-    except Exception as exc:
-        logger.debug("SendBlue binding restore skipped: %s", exc)
-
-
-def _missing_research_router(module_name: str) -> APIRouter:
-    fallback = APIRouter(prefix="/api", tags=["research"])
-
-    @fallback.post("/research")
-    async def _research_unavailable() -> JSONResponse:
-        return JSONResponse(
-            status_code=503,
-            content={
-                "error": "research_unavailable",
-                "message": (
-                    "Research mode is unavailable because an optional dependency "
-                    f"is not installed: {module_name}."
-                ),
-                "install": "uv sync --extra memory-faiss",
-            },
-        )
-
-    return fallback
-
-
-def _load_research_router() -> APIRouter:
-    try:
-        from grandpa.server.research_router import router as research_router
-
-        return research_router
-    except ModuleNotFoundError as exc:
-        if exc.name in {"numpy", "faiss", "sentence_transformers"}:
-            logger.warning(
-                "Research routes disabled; optional dependency missing: %s",
-                exc.name,
-            )
-            return _missing_research_router(exc.name or "unknown")
-        raise
 
 
 def create_app(
@@ -150,14 +22,12 @@ def create_app(
     bus=None,
     engine_name: str = "",
     agent_name: str = "",
-    channel_bridge=None,
     config=None,
     memory_backend=None,
     speech_backend=None,
     agent_manager=None,
     agent_scheduler=None,
     api_key: str = "",
-    webhook_config: dict | None = None,
     cors_origins: list[str] | None = None,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
@@ -172,8 +42,6 @@ def create_app(
         Optional agent instance for agent-mode completions.
     bus:
         Optional event bus for telemetry.
-    channel_bridge:
-        Optional channel bridge for multi-platform messaging.
     config:
         Optional GrandpaConfig for other settings.
     """
@@ -203,7 +71,6 @@ def create_app(
     app.state.agent_name = agent_name or (
         getattr(agent, "agent_id", None) if agent else None
     )
-    app.state.channel_bridge = channel_bridge
     app.state.config = config
     app.state.memory_backend = memory_backend
     app.state.speech_backend = speech_backend
@@ -227,44 +94,6 @@ def create_app(
                 _trace_store.subscribe_to_bus(_bus)
     except Exception:
         pass  # traces are optional; don't block server startup
-
-    # Wire up external analytics if enabled (PostHog) — never block startup.
-    app.state.analytics_client = None
-    app.state.analytics_bridge = None
-    try:
-        from grandpa.analytics import (
-            AnalyticsClient,
-            EventBridge,
-            is_analytics_enabled,
-        )
-        from grandpa.core.config import load_config
-
-        _cfg = config if config is not None else load_config()
-        if is_analytics_enabled(_cfg.analytics):
-            _client = AnalyticsClient(_cfg.analytics)
-            app.state.analytics_client = _client
-            _bus_ref = getattr(app.state, "bus", None)
-            if _bus_ref is not None:
-                _bridge = EventBridge(_bus_ref, _client)
-                _bridge.start()
-                app.state.analytics_bridge = _bridge
-
-            @app.on_event("shutdown")
-            async def _shutdown_analytics() -> None:
-                bridge = getattr(app.state, "analytics_bridge", None)
-                if bridge is not None:
-                    try:
-                        bridge.stop()
-                    except Exception:
-                        pass
-                client = getattr(app.state, "analytics_client", None)
-                if client is not None:
-                    try:
-                        client.shutdown()
-                    except Exception:
-                        pass
-    except Exception as _exc:
-        logger.debug("Analytics init skipped: %s", _exc)
 
     try:
         from grandpa.pc_control import initialize_pc_control_store
@@ -292,14 +121,8 @@ def create_app(
         logger.debug("Routine scheduler daemon init skipped: %s", exc)
 
     app.include_router(router)
-    app.include_router(create_connectors_router())
-    app.include_router(create_digest_router())
     app.include_router(upload_router)
-    app.include_router(_load_research_router())
     include_all_routes(app)
-
-    # Restore SendBlue channel bindings from database on startup
-    _restore_sendblue_bindings(app)
 
     # Add security headers middleware
     try:
@@ -319,24 +142,6 @@ def create_app(
             app.add_middleware(AuthMiddleware, api_key=api_key)
         except Exception as exc:
             logger.debug("Auth middleware init skipped: %s", exc)
-
-    # Mount webhook routes (always — SendBlue may be configured dynamically)
-    if webhook_config:
-        try:
-            from grandpa.server.webhook_routes import (
-                create_webhook_router,
-            )
-
-            webhook_router = create_webhook_router(
-                bridge=channel_bridge,
-                twilio_auth_token=webhook_config.get("twilio_auth_token", ""),
-                bluebubbles_password=webhook_config.get("bluebubbles_password", ""),
-                whatsapp_verify_token=webhook_config.get("whatsapp_verify_token", ""),
-                whatsapp_app_secret=webhook_config.get("whatsapp_app_secret", ""),
-            )
-            app.include_router(webhook_router)
-        except Exception as exc:
-            logger.debug("Webhook routes init skipped: %s", exc)
 
     return app
 

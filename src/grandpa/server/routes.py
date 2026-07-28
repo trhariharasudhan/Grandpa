@@ -125,15 +125,11 @@ def _apply_ai_routing(engine, request_body: ChatCompletionRequest, user_text: st
         from grandpa.advanced_ai import build_plan
 
         models = _available_engine_models(engine)
-        cloud_allowed = any(
-            model.startswith(("gpt-", "o1-", "o3-", "o4-", "claude-", "gemini-", "openrouter/"))
-            for model in models
-        )
         plan = build_plan(
             user_text,
             requested_model=request_body.model,
             available_models=models,
-            cloud_allowed=cloud_allowed,
+            cloud_allowed=False,
         )
         selected = plan.routing.selected_model
         if selected and selected != request_body.model:
@@ -516,18 +512,8 @@ async def _handle_stream(
     complexity_info=None,
 ):
     """Stream response using SSE format."""
-    from grandpa.server.cloud_router import (
-        is_cloud_model,
-        stream_cloud,
-        stream_local,
-    )
-
     messages = _to_messages(req.messages)
     chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-
-    # Route directly to the right backend — bypasses engine routing entirely
-    # so broken MultiEngine state can never misdirect requests.
-    use_cloud = is_cloud_model(model)
 
     async def generate():
         full_content = ""
@@ -544,44 +530,12 @@ async def _handle_stream(
         yield f"data: {first_chunk.model_dump_json()}\n\n"
 
         try:
-            # Cloud models → direct cloud API (reads keys from disk).
-            # Local models → engine.stream() first so mock engines work in
-            # tests.  Fall back to stream_local() only when the engine would
-            # mis-route the request to a cloud backend (MultiEngine routing
-            # confusion), which is detected by checking the routed engine's
-            # is_cloud attribute.
-            if use_cloud:
-                token_iter = stream_cloud(
-                    model, messages, req.temperature, req.max_tokens
-                )
-            else:
-                # Use engine.stream() by default (preserves mock-engine
-                # compatibility in tests).  Only fall back to stream_local()
-                # when a real MultiEngine would mis-route the local model to a
-                # cloud backend — detected via isinstance so mocks are not
-                # accidentally matched.
-                _use_local_fallback = False
-                try:
-                    from grandpa.engine.multi import MultiEngine
-
-                    _inner = getattr(engine, "_inner", engine)
-                    if isinstance(_inner, MultiEngine):
-                        _routed = _inner._engine_for(model)
-                        if _routed is not None and getattr(_routed, "is_cloud", False):
-                            _use_local_fallback = True
-                except Exception:
-                    pass
-                if _use_local_fallback:
-                    token_iter = stream_local(
-                        model, messages, req.temperature, req.max_tokens
-                    )
-                else:
-                    token_iter = engine.stream(
-                        messages,
-                        model=model,
-                        temperature=req.temperature,
-                        max_tokens=req.max_tokens,
-                    )
+            token_iter = engine.stream(
+                messages,
+                model=model,
+                temperature=req.temperature,
+                max_tokens=req.max_tokens,
+            )
             async for token in token_iter:
                 full_content += token
                 chunk = ChatCompletionChunk(
@@ -649,11 +603,9 @@ async def _handle_stream(
         )
         finish_dict = _json.loads(finish_data.model_dump_json())
 
-        # Tag the finish chunk with the correct engine label.
-        # We use the routing decision (use_cloud) directly rather than
-        # unwrapping the engine chain, which can be in a broken state.
+        # The supported runtime uses local Ollama.
         finish_dict.setdefault("telemetry", {})
-        finish_dict["telemetry"]["engine"] = "cloud" if use_cloud else "ollama"
+        finish_dict["telemetry"]["engine"] = "ollama"
 
         if complexity_info is not None:
             finish_dict["complexity"] = complexity_info.model_dump()
@@ -729,21 +681,9 @@ async def _handle_local_action_stream(model: str, action_result, complexity_info
 
 @router.get("/v1/models")
 async def list_models(request: Request) -> ModelListResponse:
-    """List locally installed models (Ollama).
-
-    Cloud models are not included here — they live in the Cloud Models tab
-    of the UI and are selected there, not from this endpoint.
-    """
-    from grandpa.server.cloud_router import is_cloud_model, list_local_models
-
-    # Prefer engine.list_models() so mock engines work in tests.
-    # Filter out any cloud model IDs that may appear via MultiEngine.
-    # Fall back to direct Ollama query only when the engine returns nothing.
+    """List locally installed Ollama models."""
     engine = request.app.state.engine
-    all_ids = engine.list_models()
-    model_ids = [m for m in all_ids if not is_cloud_model(m)]
-    if not model_ids:
-        model_ids = await list_local_models()
+    model_ids = engine.list_models()
 
     return ModelListResponse(
         data=[ModelObject(id=mid) for mid in model_ids],
@@ -822,114 +762,6 @@ async def delete_model(model_name: str, request: Request):
     return {"status": "deleted", "model": model_name}
 
 
-@router.post("/v1/cloud/reload")
-async def reload_cloud_engine(request: Request):
-    """Hot-reload cloud API keys and (re-)initialize the cloud engine.
-
-    Called by the desktop app immediately after the user saves a cloud API
-    key so that cloud models become available without a full app restart.
-    """
-    import os
-    from pathlib import Path
-
-    # Re-read ~/.grandpa/cloud-keys.env and update the running process env.
-    keys_path = Path.home() / ".grandpa" / "cloud-keys.env"
-    if keys_path.exists():
-        for raw_line in keys_path.read_text().splitlines():
-            line = raw_line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                os.environ[k.strip()] = v.strip()
-
-    # Try to build a fresh CloudEngine.
-    try:
-        from grandpa.engine.cloud import CloudEngine
-        from grandpa.engine.multi import MultiEngine
-
-        cloud = CloudEngine()
-        if not cloud.health():
-            return {
-                "status": "no_cloud",
-                "message": "No cloud models available (check API keys)",
-            }
-    except Exception as exc:
-        return {"status": "error", "message": str(exc)}
-
-    # Locate the innermost engine, working through InstrumentedEngine layers.
-    outer = request.app.state.engine
-    inner = getattr(outer, "_inner", outer)
-
-    if isinstance(inner, MultiEngine):
-        # Replace or insert the cloud entry in the existing MultiEngine.
-        new_engines = [(k, e) for k, e in inner._engines if k != "cloud"]
-        new_engines.append(("cloud", cloud))
-        inner._engines = new_engines
-        inner._refresh_map()
-    else:
-        # Wrap the existing engine (which may be security-wrapped) with a new
-        # MultiEngine that includes the cloud engine.
-        engine_name = getattr(request.app.state, "engine_name", "local")
-        new_multi = MultiEngine([(engine_name, inner), ("cloud", cloud)])
-        if hasattr(outer, "_inner"):
-            outer._inner = new_multi
-        else:
-            request.app.state.engine = new_multi
-        request.app.state.engine_name = "multi"
-
-    return {"status": "ok", "message": "Cloud engine reloaded"}
-
-
-@router.get("/v1/savings")
-async def savings(request: Request):
-    """Return savings summary compared to cloud providers.
-
-    Only includes telemetry from the current server session so that
-    counters start at zero each time a new model + agent is launched.
-    """
-    from grandpa.core.config import DEFAULT_CONFIG_DIR
-    from grandpa.server.savings import compute_savings, savings_to_dict
-    from grandpa.telemetry.aggregator import TelemetryAggregator
-
-    db_path = DEFAULT_CONFIG_DIR / "telemetry.db"
-    if not db_path.exists():
-        empty = compute_savings(0, 0, 0)
-        return savings_to_dict(empty)
-
-    session_start = getattr(request.app.state, "session_start", None)
-
-    agg = TelemetryAggregator(db_path)
-    try:
-        summary = agg.summary(since=session_start)
-        # Exclude cloud model tokens from savings — only local
-        # inference counts toward cost savings.
-        _cloud_prefixes = (
-            "gpt-",
-            "o1-",
-            "o3-",
-            "o4-",
-            "claude-",
-            "gemini-",
-            "openrouter/",
-        )
-        local_models = [
-            m
-            for m in summary.per_model
-            if not any(m.model_id.startswith(p) for p in _cloud_prefixes)
-        ]
-        result = compute_savings(
-            prompt_tokens=sum(m.prompt_tokens for m in local_models),
-            completion_tokens=sum(m.completion_tokens for m in local_models),
-            total_calls=sum(m.call_count for m in local_models),
-            session_start=session_start if session_start else 0.0,
-            prompt_tokens_evaluated=sum(
-                m.prompt_tokens_evaluated for m in local_models
-            ),
-        )
-        return savings_to_dict(result)
-    finally:
-        agg.close()
-
-
 @router.post("/v1/telemetry/reset")
 async def reset_telemetry():
     """Clear all stored telemetry records.
@@ -990,15 +822,11 @@ async def ai_plan(request: Request):
     requested_model = str(body.get("model") or getattr(request.app.state, "model", "")).strip()
     engine = getattr(request.app.state, "engine", None)
     models = _available_engine_models(engine) if engine is not None else []
-    cloud_allowed = bool(body.get("cloud_allowed", False)) or any(
-        model.startswith(("gpt-", "o1-", "o3-", "o4-", "claude-", "gemini-", "openrouter/"))
-        for model in models
-    )
     return build_plan(
         query,
         requested_model=requested_model,
         available_models=models,
-        cloud_allowed=cloud_allowed,
+        cloud_allowed=False,
     ).to_dict()
 
 
@@ -1286,69 +1114,6 @@ async def security_suspicious_action(request: Request):
     return suspicious_action_score(str(body.get("text", "")))
 
 
-@router.get("/v1/communication/diagnostics")
-async def communication_diagnostics():
-    from grandpa.communication_integration import diagnostics
-
-    return diagnostics()
-
-
-@router.post("/v1/communication/reply-plan")
-async def communication_reply_plan(request: Request):
-    from grandpa.communication_integration import reply_plan
-
-    body = await request.json()
-    result = reply_plan(str(body.get("service", "gmail")), str(body.get("recipient", "")), str(body.get("intent", "")))
-    return {"status": result.status, "message": result.message, **result.data}
-
-
-@router.get("/v1/real-world/diagnostics")
-async def real_world_diagnostics():
-    from grandpa.real_world_tasks import diagnostics
-
-    return diagnostics()
-
-
-@router.post("/v1/real-world/shopping-plan")
-async def real_world_shopping_plan(request: Request):
-    from grandpa.real_world_tasks import shopping_plan
-
-    body = await request.json()
-    result = shopping_plan(str(body.get("query", "")))
-    return {"status": result.status, "message": result.message, **result.data}
-
-
-@router.get("/v1/iot/diagnostics")
-async def iot_diagnostics():
-    from grandpa.iot_smart_home import diagnostics
-
-    return diagnostics()
-
-
-@router.post("/v1/iot/discovery-plan")
-async def iot_discovery_plan(request: Request):
-    from grandpa.iot_smart_home import discovery_plan
-
-    body = await request.json()
-    result = discovery_plan(str(body.get("cidr", "192.168.1.0/24")))
-    return {"status": result.status, "message": result.message, **result.data}
-
-
-@router.get("/v1/future/diagnostics")
-async def future_diagnostics():
-    from grandpa.future_features import diagnostics
-
-    return diagnostics()
-
-
-@router.post("/v1/future/overlay-simulation")
-async def future_overlay_simulation():
-    from grandpa.future_features import overlay_simulation
-
-    result = overlay_simulation()
-    return {"status": result.status, "message": result.message, **result.data}
-
-
 @router.get("/v1/routines")
 async def routines(request: Request):
     """Return local routines and reminders."""
@@ -1563,54 +1328,6 @@ async def health(request: Request):
     if not healthy:
         raise HTTPException(status_code=503, detail="Engine unhealthy")
     return {"status": "ok"}
-
-
-# ---------------------------------------------------------------------------
-# Channel endpoints
-# ---------------------------------------------------------------------------
-
-
-@router.get("/v1/channels")
-async def list_channels(request: Request):
-    """List available messaging channels."""
-    bridge = getattr(request.app.state, "channel_bridge", None)
-    if bridge is None:
-        return {"channels": [], "message": "Channel bridge not configured"}
-    channels = bridge.list_channels()
-    return {"channels": channels, "status": bridge.status().value}
-
-
-@router.post("/v1/channels/send")
-async def channel_send(request: Request):
-    """Send a message to a channel."""
-    bridge = getattr(request.app.state, "channel_bridge", None)
-    if bridge is None:
-        raise HTTPException(status_code=503, detail="Channel bridge not configured")
-
-    body = await request.json()
-    channel_name = body.get("channel", "")
-    content = body.get("content", "")
-    conversation_id = body.get("conversation_id", "")
-
-    if not channel_name or not content:
-        raise HTTPException(
-            status_code=400,
-            detail="'channel' and 'content' are required",
-        )
-
-    ok = bridge.send(channel_name, content, conversation_id=conversation_id)
-    if not ok:
-        raise HTTPException(status_code=502, detail="Failed to send message")
-    return {"status": "sent", "channel": channel_name}
-
-
-@router.get("/v1/channels/status")
-async def channel_status(request: Request):
-    """Return channel bridge connection status."""
-    bridge = getattr(request.app.state, "channel_bridge", None)
-    if bridge is None:
-        return {"status": "not_configured"}
-    return {"status": bridge.status().value}
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from grandpa.core.config import GrandpaConfig
 from grandpa.core.events import EventBus
-from grandpa.core.types import Message, Role
+from grandpa.core.types import Message
 from grandpa.engine._stubs import InferenceEngine
 from grandpa.system.bundles import (
     AgentRuntime,
@@ -23,13 +23,10 @@ if TYPE_CHECKING:
     from grandpa.agents.executor import AgentExecutor
     from grandpa.agents.manager import AgentManager
     from grandpa.agents.scheduler import AgentScheduler
-    from grandpa.channels._stubs import BaseChannel
     from grandpa.learning._stubs import RouterPolicy
-    from grandpa.learning.learning_orchestrator import LearningOrchestrator
     from grandpa.mcp.client import MCPClient
     from grandpa.mcp.server import MCPServer
     from grandpa.operators.manager import OperatorManager
-    from grandpa.sandbox.runner import ContainerRunner
     from grandpa.scheduler.scheduler import TaskScheduler
     from grandpa.scheduler.store import SchedulerStore
     from grandpa.security.audit import AuditLogger
@@ -39,7 +36,6 @@ if TYPE_CHECKING:
     from grandpa.skills.manager import SkillManager
     from grandpa.speech._stubs import SpeechBackend
     from grandpa.system.orchestrator import QueryOrchestrator
-    from grandpa.telemetry.gpu_monitor import GpuMonitor
     from grandpa.telemetry.store import TelemetryStore
     from grandpa.tools.storage._stubs import MemoryBackend
     from grandpa.traces.collector import TraceCollector
@@ -63,16 +59,13 @@ class GrandpaSystem:
     tools: List[BaseTool] = field(default_factory=list)
     tool_executor: Optional[ToolExecutor] = None
     memory_backend: Optional[MemoryBackend] = None
-    channel_backend: Optional[BaseChannel] = None
     router: Optional[RouterPolicy] = None
     mcp_server: Optional[MCPServer] = None
     telemetry_store: Optional[TelemetryStore] = None
     trace_store: Optional[TraceStore] = None
     trace_collector: Optional[TraceCollector] = None
-    gpu_monitor: Optional[GpuMonitor] = None
     scheduler_store: Optional[SchedulerStore] = None
     scheduler: Optional[TaskScheduler] = None
-    container_runner: Optional[ContainerRunner] = None
     workflow_engine: Optional[WorkflowEngine] = None
     session_store: Optional[SessionStore] = None
     capability_policy: Optional[CapabilityPolicy] = None
@@ -84,7 +77,6 @@ class GrandpaSystem:
     agent_executor: Optional[AgentExecutor] = None
     speech_backend: Optional[SpeechBackend] = None
     skill_manager: Optional[SkillManager] = None
-    _learning_orchestrator: Optional[LearningOrchestrator] = None
     _mcp_clients: List[MCPClient] = field(default_factory=list)
 
     @property
@@ -101,7 +93,6 @@ class GrandpaSystem:
             telemetry_store=self.telemetry_store,
             trace_store=self.trace_store,
             trace_collector=self.trace_collector,
-            gpu_monitor=self.gpu_monitor,
         )
 
     @property
@@ -186,98 +177,6 @@ class GrandpaSystem:
             prior_messages=prior_messages,
         )
 
-    def wire_channel(self, channel_bridge: Any) -> None:
-        """Register a message handler on *channel_bridge* that routes every
-        incoming message through this system (agent or engine) and replies.
-
-        Sessions are isolated per ``"<channel>:<conversation_id>"`` key so
-        each chat retains its own history.
-
-        Parameters
-        ----------
-        channel_bridge:
-            A connected :class:`~grandpa.channels._stubs.BaseChannel`
-            instance whose ``on_message`` method accepts a callable.
-        """
-        from grandpa.core.types import Message
-        from grandpa.sessions.session import SessionStore
-
-        if self.session_store is None:
-            from pathlib import Path
-
-            self.session_store = SessionStore(
-                db_path=Path(self.config.sessions.db_path).expanduser(),
-                max_age_hours=self.config.sessions.max_age_hours,
-                consolidation_threshold=self.config.sessions.consolidation_threshold,
-            )
-
-        _system = self  # capture for closure
-
-        def _on_channel_message(cm) -> None:
-            session_key = f"{cm.channel}:{cm.conversation_id}"
-            session = _system.session_store.get_or_create(
-                session_key,
-                channel=cm.channel,
-                channel_user_id=cm.sender,
-            )
-
-            prior_msgs: List[Message] = []
-            for sm in session.messages:
-                try:
-                    role = Role(sm.role)
-                except ValueError:
-                    role = Role.USER
-                prior_msgs.append(Message(role=role, content=sm.content))
-
-            reply = ""
-            try:
-                if _system.agent_name and _system.agent_name != "none":
-                    result = _system.ask(
-                        cm.content,
-                        context=False,
-                        agent=_system.agent_name,
-                        prior_messages=prior_msgs,
-                    )
-                    reply = result.get("content", "")
-                else:
-                    result = _system.ask(
-                        cm.content,
-                        context=False,
-                        prior_messages=prior_msgs,
-                    )
-                    reply = result.get("content", "")
-            except Exception:
-                logger.exception("Channel message handler error")
-                reply = "Sorry, I encountered an error processing your message."
-
-            try:
-                _system.session_store.save_message(
-                    session.session_id,
-                    "user",
-                    cm.content,
-                    channel=cm.channel,
-                )
-                _system.session_store.save_message(
-                    session.session_id,
-                    "assistant",
-                    reply,
-                    channel=cm.channel,
-                )
-            except Exception:
-                logger.debug("Session save error", exc_info=True)
-
-            if reply:
-                try:
-                    channel_bridge.send(
-                        cm.channel,
-                        reply,
-                        conversation_id=cm.conversation_id,
-                    )
-                except Exception:
-                    logger.exception("Channel send error")
-
-        channel_bridge.on_message(_on_channel_message)
-
     def _close_mcp_clients(self) -> None:
         """Close all persistent MCP client connections."""
         for client in self._mcp_clients:
@@ -293,14 +192,11 @@ class GrandpaSystem:
         for resource in (
             self.scheduler_store,
             self.engine,
-            self.gpu_monitor,
             self.telemetry_store,
             self.trace_store,
             self.memory_backend,
             self.session_store,
-            self.channel_backend,
             self.workflow_engine,
-            self.container_runner,
         ):
             if resource and hasattr(resource, "close"):
                 resource.close()

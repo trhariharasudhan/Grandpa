@@ -25,9 +25,9 @@ def _make_app(api_key: str) -> FastAPI:
     async def health():
         return {"status": "ok"}
 
-    @app.post("/webhooks/twilio")
-    async def twilio_webhook():
-        return {"status": "received"}
+    @app.get("/public/ping")
+    async def public_ping():
+        return {"status": "ok"}
 
     @app.websocket("/v1/events")
     async def events(websocket: WebSocket):
@@ -68,8 +68,8 @@ class TestAuthMiddleware:
         resp = client.get("/health")
         assert resp.status_code == 200
 
-    def test_webhooks_exempt(self, client):
-        resp = client.post("/webhooks/twilio")
+    def test_non_api_route_exempt(self, client):
+        resp = client.get("/public/ping")
         assert resp.status_code == 200
 
     def test_no_key_configured_allows_all(self):

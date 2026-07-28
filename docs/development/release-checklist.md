@@ -1,52 +1,39 @@
 # Release Checklist
 
-Before tagging a release, run through this checklist on real machines (not just CI containers).
+## Automated Gates
 
-## Manual smoke tests (~30 min total)
-
-For each platform below, start from a fresh user account / VM snapshot. Run the install one-liner and verify the steps in the table.
-
-| Platform | One-liner | Verify |
-|---|---|---|
-| macOS Intel laptop | `curl -fsSL <url> \| bash` | (1)–(8) below |
-| macOS ARM laptop | same | (1)–(8) |
-| Ubuntu 22.04 fresh VM | same | (1)–(8) |
-| Fedora 40 fresh VM | same | (1)–(8) |
-| WSL2 Ubuntu on Windows | same | (1)–(8) |
-
-### Verification steps
-
-1. **Install completes ≤ 5 min** on typical broadband.
-2. **`Grandpa` (no args)** drops into a chat session within 2 s.
-3. **First chat turn returns a response** from `qwen3.5:2b` via Ollama.
-4. **Banner shows background work** ("Setting up in background: …") while it's still going.
-5. **Completion notification fires** between turns when the bg work finishes (Rust extension or a model).
-6. **`Grandpa doctor`** exits 0 once all bg work completes; shows the Background tasks table.
-7. **Re-run `curl … | bash`** on the same machine. It completes ≤ 30 s, says `[ok] step already done` for every step.
-8. **`grandpa-uninstall`** removes `~/.grandpa/` and `~/.local/bin/Grandpa*`. Verify with `ls`.
-
-## Cloud quick-path verification
-
-On any one platform:
-
-```bash
-export ANTHROPIC_API_KEY=test-fake-key
-Grandpa init --force
+```powershell
+uv lock
+uv sync --extra dev --extra server --extra voice --extra screen
+python -m compileall -q src scripts tests
+uv run --no-sync ruff check src tests scripts
+python -m pytest -q
+git diff --check
+uv build
 ```
 
-Verify init proposes cloud (mentions "anthropic" in the prompt), and the resulting `config.toml` has `[intelligence] provider = "anthropic"`.
+## Windows Smoke Tests
 
-## Failure-mode spot checks
+Run on a clean Windows user profile:
 
-Run at least one failure scenario per release; rotate which one.
+```powershell
+uv run grandpa --help
+uv run grandpa doctor
+uv run grandpa status
+uv run grandpa apps scan
+uv run grandpa screen active
+uv run grandpa automation --help
+uv run grandpa reminders --help
+```
 
-- Disconnect network mid-install — verify clear error and re-run completes.
-- Delete `~/.grandpa/config.toml` — verify bare `Grandpa` re-runs init.
-- Delete `~/.grandpa/.venv` — verify re-running curl heals it.
-- `EUID=0 bash install.sh` — verify hard-fail with "don't run as root".
+Manually verify one Ollama chat turn, push-to-talk diagnostics, screen OCR, and
+a harmless application action. Do not automate real clicks, destructive
+actions, email sending, or calendar changes in release tests.
 
-## CI gates (automated, no manual action)
+## Security Review
 
-- All pytest tests pass: `uv run pytest tests/`
-- All bats tests pass: see `.github/workflows/bash-tests.yml`
-- Container integration matrix is green: see `.github/workflows/installer-integration.yml`
+- API defaults to loopback.
+- Destructive actions require confirmation.
+- No remote analytics or cloud inference fallback is enabled.
+- OAuth credentials and `%USERPROFILE%\.grandpa` data are absent from artifacts.
+- Wheel contents contain no deleted bridge, deployment, or research packages.

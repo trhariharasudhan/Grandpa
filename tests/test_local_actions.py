@@ -130,7 +130,6 @@ def test_browser_click_requires_confirmation():
     [
         ("fill search with python", "form_fill|search=python", "filling a browser field"),
         ("download this file", "download|visible selection", "browser download"),
-        ("send hello on whatsapp", "whatsapp|message hello", "WhatsApp Web message"),
     ],
 )
 def test_browser_workflow_actions_require_confirmation(command, target, message_part):
