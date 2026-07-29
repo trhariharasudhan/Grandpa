@@ -116,6 +116,8 @@ class ScreenAutomationService:
                     self.clear_target()
                 return AutomationResult(status, verification.message, action)
             self._target_window = verification.expected
+        if action.kind == "scroll_until":
+            return self._scroll_until(action, dry_run=dry_run)
         if action.requires_confirmation and not dry_run:
             preview = self._preview(action)
             if preview is not None:
@@ -140,6 +142,62 @@ class ScreenAutomationService:
         if verification_message := _verification_message(verification):
             return replace(result, message=f"{verification_message}\n{result.message}")
         return result
+
+    def _scroll_until(
+        self, action: AutomationAction, *, dry_run: bool
+    ) -> AutomationResult:
+        if dry_run:
+            return AutomationResult(
+                "handled",
+                f'Would scroll until "{action.target}" appears.',
+                action,
+                data={"dry_run": True},
+            )
+        attempts = max(1, min(12, int(action.args.get("max_attempts", 6))))
+        for attempt in range(attempts + 1):
+            matches = self.executor.locator.locate(action.target, limit=2)
+            if matches:
+                return AutomationResult(
+                    "handled",
+                    f'Found "{matches[0].text}" after {attempt} scroll step(s).',
+                    action,
+                    matches[0],
+                    data={"scroll_steps": attempt, "verified": True},
+                )
+            if attempt == attempts:
+                break
+            step = AutomationAction(
+                "scroll",
+                str(action.args.get("direction") or "down"),
+                {
+                    "amount": int(action.args.get("amount", -5)),
+                    "window": action.args.get("window"),
+                },
+            )
+            result = self._execute(step)
+            if result.status != "handled":
+                return replace(
+                    result,
+                    action=action,
+                    message="Scrolling stopped before the target was found. "
+                    + result.message,
+                )
+            if self._target_window is not None:
+                verify = self.window_targets.verify_foreground(self._target_window)
+                if not verify.ok:
+                    self.clear_target()
+                    return AutomationResult(
+                        "target_lost",
+                        verify.message,
+                        action,
+                        data={"scroll_steps": attempt + 1},
+                    )
+        return AutomationResult(
+            "not_found",
+            f'I did not find "{action.target}" after {attempts} scroll steps.',
+            action,
+            data={"scroll_steps": attempts, "verified": True},
+        )
 
     def confirm(self, token: str) -> AutomationResult:
         action = self.confirmations.consume(token)
@@ -714,6 +772,7 @@ def _needs_verified_target(action: AutomationAction) -> bool:
         "middle_click",
         "drag",
         "scroll",
+        "scroll_until",
     }
 
 

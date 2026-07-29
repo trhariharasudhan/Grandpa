@@ -71,7 +71,7 @@ class AutomationPlanner:
         if match:
             return AutomationAction("locate", _clean_element_target(match.group(1)))
         match = re.fullmatch(r"find (?:the )?(.+)", command)
-        if match and _looks_like_ui_target(match.group(1)):
+        if match:
             return AutomationAction("locate", _clean_element_target(match.group(1)))
         match = re.fullmatch(r"highlight (?:the )?(.+)", command)
         if match:
@@ -79,6 +79,20 @@ class AutomationPlanner:
         return None
 
     def _parse_mouse(self, command: str) -> AutomationAction | None:
+        match = re.fullmatch(
+            r"scroll (up|down) until (?:the )?(.+?)(?: appears| is visible)?",
+            command,
+        )
+        if match:
+            return AutomationAction(
+                "scroll_until",
+                _clean_element_target(match.group(2)),
+                {
+                    "direction": match.group(1),
+                    "amount": -5 if match.group(1) == "down" else 5,
+                    "max_attempts": 6,
+                },
+            )
         match = re.fullmatch(r"move (?:the )?mouse(?: to)?[ ,]+(-?\d+)[ ,]+(-?\d+)", command)
         if match:
             return AutomationAction("move", args={"x": int(match.group(1)), "y": int(match.group(2))})

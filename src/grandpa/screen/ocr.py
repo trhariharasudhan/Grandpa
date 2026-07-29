@@ -94,7 +94,13 @@ class TesseractOcrEngine:
             lang = language or self.config.ocr_language
             raw = pytesseract.image_to_string(candidate, lang=lang)
             text = normalize_ocr_text(raw, max_chars=self.config.max_ocr_chars)
-            blocks, confidence = _extract_blocks(pytesseract, candidate, lang)
+            blocks, confidence = _extract_blocks(
+                pytesseract,
+                candidate,
+                lang,
+                scale_x=image.width / candidate.width,
+                scale_y=image.height / candidate.height,
+            )
         except OcrUnavailableError:
             raise
         except Exception as exc:
@@ -119,7 +125,12 @@ class TesseractOcrEngine:
 
 
 def _extract_blocks(
-    pytesseract: Any, image: Image.Image, language: str
+    pytesseract: Any,
+    image: Image.Image,
+    language: str,
+    *,
+    scale_x: float = 1.0,
+    scale_y: float = 1.0,
 ) -> tuple[tuple[OcrBlock, ...], float]:
     try:
         data = pytesseract.image_to_data(
@@ -140,14 +151,33 @@ def _extract_blocks(
         if confidence >= 0:
             confidences.append(confidence)
         bounds = (
-            int(data.get("left", [0])[index]),
-            int(data.get("top", [0])[index]),
-            int(data.get("width", [0])[index]),
-            int(data.get("height", [0])[index]),
+            round(int(data.get("left", [0])[index]) * scale_x),
+            round(int(data.get("top", [0])[index]) * scale_y),
+            round(int(data.get("width", [0])[index]) * scale_x),
+            round(int(data.get("height", [0])[index]) * scale_y),
         )
-        blocks.append(OcrBlock(text, max(0.0, confidence / 100), bounds))
+        block_number = _data_value(data, "block_num", index)
+        paragraph_number = _data_value(data, "par_num", index)
+        line_number = _data_value(data, "line_num", index)
+        blocks.append(
+            OcrBlock(
+                text,
+                max(0.0, confidence / 100),
+                bounds,
+                reading_order=len(blocks),
+                line_id=f"{block_number}:{paragraph_number}:{line_number}",
+                paragraph_id=f"{block_number}:{paragraph_number}",
+            )
+        )
     average = sum(confidences) / len(confidences) / 100 if confidences else 0.0
     return tuple(blocks[:500]), average
+
+
+def _data_value(data: dict[str, Any], key: str, index: int) -> int:
+    try:
+        return int(data.get(key, [0])[index])
+    except (IndexError, TypeError, ValueError):
+        return 0
 
 
 __all__ = [

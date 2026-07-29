@@ -123,6 +123,13 @@ cli.add_command(_lazy("project", "grandpa.cli.projects_cmd:project", short_help=
 cli.add_command(_lazy("screen", "grandpa.cli.screen_cmd:screen", short_help="Inspect the screen read-only."))
 cli.add_command(
     _lazy(
+        "vision",
+        "grandpa.cli.vision_cmd:vision",
+        short_help="Inspect the visible UI element graph.",
+    )
+)
+cli.add_command(
+    _lazy(
         "automation",
         "grandpa.cli.automation_cmd:automation",
         short_help="Safely automate visible Windows controls.",

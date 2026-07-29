@@ -65,6 +65,9 @@ class ScreenshotResult:
     temporary_path: str = ""
     backend: str = ""
     saved_path: str = ""
+    capture_source: str = "desktop"
+    window_handle: int = 0
+    process_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,9 @@ class OcrBlock:
     text: str
     confidence: float
     bounds: tuple[int, int, int, int]
+    reading_order: int = 0
+    line_id: str = ""
+    paragraph_id: str = ""
 
 
 @dataclass(frozen=True)

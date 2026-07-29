@@ -22,6 +22,14 @@ class ScreenElementLocator:
         self._screen_service = screen_service
 
     def locate(self, query: str, *, limit: int = 5) -> tuple[LocatedElement, ...]:
+        if self._screen_service is None:
+            try:
+                return self._locate_with_vision(query, limit=limit)
+            except Exception:
+                logger.debug(
+                    "Vision Engine lookup unavailable; using Screen Vision OCR fallback",
+                    exc_info=True,
+                )
         service = self._screen_service or _default_screen_service()
         screenshot = service.capture_backend.capture(active_window=False)
         ocr = service.ocr_engine.extract_text(screenshot.image)
@@ -73,6 +81,31 @@ class ScreenElementLocator:
             logger.debug("Window metadata was unavailable during element lookup")
         matches.sort(key=lambda item: (-item.confidence, item.bounds.top, item.bounds.left))
         return tuple(matches[: max(1, limit)])
+
+    def _locate_with_vision(
+        self, query: str, *, limit: int
+    ) -> tuple[LocatedElement, ...]:
+        from grandpa.vision.service import VisionEngine
+
+        result = VisionEngine().find(query, limit=limit, actionable=True)
+        return tuple(
+            LocatedElement(
+                text=match.node.label,
+                role=match.node.type,
+                confidence=match.confidence,
+                bounds=BoundingBox(
+                    match.node.bounds.left,
+                    match.node.bounds.top,
+                    match.node.bounds.width,
+                    match.node.bounds.height,
+                ),
+                source=match.node.source,
+                window_title=(
+                    result.graph.capture.window_title if result.graph else ""
+                ),
+            )
+            for match in result.matches
+        )
 
 
 class HighlightOverlay:

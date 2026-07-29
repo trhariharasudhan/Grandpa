@@ -38,14 +38,23 @@ class ScreenCapture:
         self.config = config or ScreenConfig.load()
 
     def capture(
-        self, *, monitor: int | None = None, active_window: bool = False
+        self,
+        *,
+        monitor: int | None = None,
+        active_window: bool = False,
+        region: tuple[int, int, int, int] | None = None,
     ) -> ScreenshotResult:
-        if active_window and monitor is not None:
+        selected_sources = sum(
+            (monitor is not None, active_window, region is not None)
+        )
+        if selected_sources > 1:
             raise ScreenCaptureError(
-                "Choose either a monitor or the active window, not both."
+                "Choose one capture source: monitor, active window, or region."
             )
         monitors = list_monitors()
         title = ""
+        window_handle = 0
+        process_id = 0
         selected_monitor: int | None = monitor
         if active_window:
             window = get_active_window()
@@ -55,7 +64,10 @@ class ScreenCapture:
                 )
             region = window.bounds
             title = window.title
+            window_handle = window.handle
+            process_id = window.pid
             selected_monitor = window.monitor_index or None
+            capture_source = "active_window"
         elif monitor is not None:
             selected = next((item for item in monitors if item.index == monitor), None)
             if selected is None:
@@ -63,8 +75,13 @@ class ScreenCapture:
                     f"Monitor {monitor} was not found. Use `grandpa screen monitors` to list available monitors."
                 )
             region = selected.bounds
+            capture_source = "monitor"
+        elif region is not None:
+            region = tuple(int(value) for value in region)
+            capture_source = "region"
         else:
             region = virtual_desktop_bounds(monitors)
+            capture_source = "full_desktop"
         if region[2] <= region[0] or region[3] <= region[1]:
             raise ScreenCaptureError("No capturable desktop region was detected.")
 
@@ -87,6 +104,9 @@ class ScreenCapture:
             active_window_title=title,
             captured_at=datetime.now(),
             backend=backend,
+            capture_source=capture_source,
+            window_handle=window_handle,
+            process_id=process_id,
         )
         logger.info(
             "Screen capture completed backend=%s monitor=%s dimensions=%sx%s",
