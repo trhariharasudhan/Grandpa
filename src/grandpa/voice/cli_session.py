@@ -26,6 +26,7 @@ from grandpa.voice.errors import (
 from grandpa.voice.microphone import MicrophoneCapture
 from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 from grandpa.voice.text_to_speech import GrandpaTextToSpeech
+from grandpa.voice.vad import VoiceActivityConfig
 from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASES, WakeWordDetector
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ class VoiceSessionState(StrEnum):
     LISTENING_FOR_COMMAND = "listening_for_command"
     THINKING = "thinking"
     SPEAKING = "speaking"
+    RECOVERING = "recovering"
 
 
 class AudioCapture(Protocol):
@@ -224,6 +226,9 @@ class VoiceSession:
         self.output(prompt)
         try:
             audio = self.microphone.capture(stop_event=self.stop_event)
+            warning = str(getattr(self.microphone, "last_warning", "") or "").strip()
+            if warning:
+                self.output(warning)
             if self.stop_event is not None and self.stop_event.is_set():
                 return None
             transcript = self.transcriber.transcribe(audio).strip()
@@ -233,7 +238,15 @@ class VoiceSession:
             self.output(str(exc))
             logger.info("Recoverable voice recognition error: %s", exc)
             return None
-        except (VoiceDependencyError, MicrophoneUnavailableError):
+        except VoiceDependencyError:
+            raise
+        except MicrophoneUnavailableError as exc:
+            recover = getattr(self.microphone, "recover", None)
+            if callable(recover) and recover():
+                self.state = VoiceSessionState.RECOVERING
+                self.output("Microphone unavailable. Reconnecting...")
+                logger.warning("Recoverable microphone error: %s", exc)
+                return None
             raise
         except VoiceError as exc:
             self.output(str(exc))
@@ -387,6 +400,17 @@ def build_voice_session(
             else config.phrase_duration_limit
         ),
         device=config.microphone,
+        recovery_attempts=config.microphone_recovery_attempts,
+        vad_config=VoiceActivityConfig(
+            minimum_rms=config.speech_start_rms,
+            minimum_speech_seconds=config.minimum_speech_seconds,
+            silence_seconds=config.silence_timeout_seconds,
+            maximum_utterance_seconds=(
+                config.wake_command_timeout_seconds
+                if config.wake_word_enabled
+                else config.phrase_duration_limit
+            ),
+        ),
     )
     transcriber = FasterWhisperSpeechToText(
         language=config.language,

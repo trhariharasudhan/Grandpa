@@ -16,6 +16,7 @@ from typing import Any
 from grandpa.jarvis.voice_input import (
     SoundDeviceMicrophoneRecorder,
 )
+from grandpa.voice.device_manager import MicrophoneDeviceManager
 from grandpa.voice.errors import (
     MicrophoneUnavailableError,
     VoiceDependencyError,
@@ -39,6 +40,13 @@ class VoiceDeviceInfo:
     name: str
     input_channels: int
     default: bool = False
+    default_communications: bool | None = None
+    sample_rate: int = 16_000
+    driver: str = ""
+    transport: str = "unknown"
+    virtual: bool = False
+    low_input_latency: float | None = None
+    high_input_latency: float | None = None
 
 
 @dataclass(frozen=True)
@@ -55,7 +63,11 @@ class VoiceDependencyStatus:
 
     @property
     def missing_required(self) -> tuple[str, ...]:
-        return tuple(check.module for check in self.checks if check.required and check.status == "missing")
+        return tuple(
+            check.module
+            for check in self.checks
+            if check.required and check.status == "missing"
+        )
 
     @property
     def initialization_errors(self) -> tuple[VoiceDependencyCheck, ...]:
@@ -71,9 +83,17 @@ def check_voice_dependencies() -> VoiceDependencyStatus:
             importlib.import_module(module_name)
         except ModuleNotFoundError as exc:
             status = "missing" if exc.name == module_name else "error"
-            checks.append(VoiceDependencyCheck(module_name, status, required, f"{type(exc).__name__}: {exc}"))
+            checks.append(
+                VoiceDependencyCheck(
+                    module_name, status, required, f"{type(exc).__name__}: {exc}"
+                )
+            )
         except Exception as exc:
-            checks.append(VoiceDependencyCheck(module_name, "error", required, f"{type(exc).__name__}: {exc}"))
+            checks.append(
+                VoiceDependencyCheck(
+                    module_name, "error", required, f"{type(exc).__name__}: {exc}"
+                )
+            )
         else:
             checks.append(VoiceDependencyCheck(module_name, "installed", required))
     return VoiceDependencyStatus(tuple(checks))
@@ -119,7 +139,9 @@ def log_voice_initialization_error(exc: BaseException) -> Path:
             handle.write(f"Python: {runtime['python_executable']}\n")
             handle.write(f"Virtual environment: {runtime['virtual_environment']}\n")
             handle.write(f"Exception: {type(exc).__name__}: {exc}\n")
-            handle.write("".join(traceback.format_exception(type(exc), exc, exc.__traceback__)))
+            handle.write(
+                "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            )
     except OSError:
         logger.debug("Could not write voice diagnostic log", exc_info=True)
     return path
@@ -127,38 +149,46 @@ def log_voice_initialization_error(exc: BaseException) -> Path:
 
 def list_input_devices() -> tuple[VoiceDeviceInfo, ...]:
     sounddevice = _import_sounddevice()
-    devices = sounddevice.query_devices()
-    default_index = _default_input_device(sounddevice)
-    result: list[VoiceDeviceInfo] = []
-    for index, device in enumerate(devices):
-        channels = int(device.get("max_input_channels") or 0)
-        if channels <= 0:
-            continue
-        result.append(
-            VoiceDeviceInfo(
-                index=index,
-                name=str(device.get("name") or f"Input device {index}"),
-                input_channels=channels,
-                default=index == default_index,
-            )
+    manager = MicrophoneDeviceManager(sounddevice)
+    return tuple(
+        VoiceDeviceInfo(
+            index=device.index,
+            name=device.name,
+            input_channels=device.input_channels,
+            default=device.is_default,
+            default_communications=device.is_default_communications,
+            sample_rate=device.default_sample_rate,
+            driver=device.driver,
+            transport=device.transport,
+            virtual=device.is_virtual,
+            low_input_latency=device.low_input_latency,
+            high_input_latency=device.high_input_latency,
         )
-    return tuple(result)
+        for device in manager.enumerate()
+    )
 
 
-def run_voice_doctor(*, duration_seconds: float = 2.0, device: int | None = None) -> list[dict[str, Any]]:
+def run_voice_doctor(
+    *, duration_seconds: float = 2.0, device: int | None = None
+) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     runtime = voice_runtime_diagnostics()
     checks.extend(
         [
             _check("Python executable", "pass", runtime["python_executable"]),
-            _check("Virtual environment", "pass" if runtime["in_project_virtual_environment"] else "warn", runtime["virtual_environment"]),
+            _check(
+                "Virtual environment",
+                "pass" if runtime["in_project_virtual_environment"] else "warn",
+                runtime["virtual_environment"],
+            ),
             _check("Grandpa executable", "pass", runtime["grandpa_executable"]),
         ]
     )
     environment_processes = runtime["environment_processes"]
     if environment_processes:
         process_summary = ", ".join(
-            f"{process['name']} (PID {process['pid']})" for process in environment_processes[:8]
+            f"{process['name']} (PID {process['pid']})"
+            for process in environment_processes[:8]
         )
         checks.append(
             _check(
@@ -169,7 +199,13 @@ def run_voice_doctor(*, duration_seconds: float = 2.0, device: int | None = None
             )
         )
     else:
-        checks.append(_check("Environment file-lock risk", "pass", "No other project-environment processes detected."))
+        checks.append(
+            _check(
+                "Environment file-lock risk",
+                "pass",
+                "No other project-environment processes detected.",
+            )
+        )
     for dependency in check_voice_dependencies().checks:
         status = "pass" if dependency.status == "installed" else "warn"
         detail = "Installed." if dependency.status == "installed" else dependency.detail
@@ -181,51 +217,120 @@ def run_voice_doctor(*, duration_seconds: float = 2.0, device: int | None = None
         checks.append(_check("sounddevice import", "warn", str(exc)))
         checks.extend(_stt_checks())
         checks.extend(_tts_checks())
-        checks.append(_check("Windows microphone permission", "warn", _windows_permission_hint()))
+        checks.append(
+            _check("Windows microphone permission", "warn", _windows_permission_hint())
+        )
         return checks
 
     try:
         devices = list_input_devices()
         if devices:
-            checks.append(_check("input devices", "pass", f"{len(devices)} input device(s) found."))
+            checks.append(
+                _check(
+                    "input devices", "pass", f"{len(devices)} input device(s) found."
+                )
+            )
         else:
-            checks.append(_check("input devices", "warn", "No input devices were reported by sounddevice."))
+            checks.append(
+                _check(
+                    "input devices",
+                    "warn",
+                    "No input devices were reported by sounddevice.",
+                )
+            )
     except Exception as exc:
-        checks.append(_check("input devices", "warn", f"Could not list input devices: {exc}"))
+        checks.append(
+            _check("input devices", "warn", f"Could not list input devices: {exc}")
+        )
         devices = ()
 
     default_index = _default_input_device(sounddevice)
+    try:
+        manager = MicrophoneDeviceManager(sounddevice)
+        selection = manager.select(requested_index=device)
+    except MicrophoneUnavailableError as exc:
+        selection = None
+        checks.append(_check("selected input device", "warn", str(exc)))
+    else:
+        selected = selection.device
+        details = (
+            f"{selected.index}: {selected.name}; channels={selected.input_channels}; "
+            f"sample_rate={selected.default_sample_rate}; driver={selected.driver or 'unknown'}; "
+            f"transport={selected.transport}; low_latency={selected.low_input_latency}"
+        )
+        checks.append(_check("selected input device", "pass", details))
+        if selection.warning:
+            checks.append(_check("microphone fallback", "warn", selection.warning))
     checks.append(
         _check(
             "default input device",
-            "pass" if default_index is not None else "warn",
-            str(default_index) if default_index is not None else "No default input device reported.",
+            "pass" if default_index is not None or selection is not None else "warn",
+            (
+                str(default_index)
+                if default_index is not None
+                else "No default index reported; Grandpa selected a usable input device."
+                if selection is not None
+                else "No default input device reported."
+            ),
         )
     )
-    checks.append(_check("sample rate", "pass", "Using 16000 Hz for push-to-talk capture."))
+    checks.append(
+        _check("sample rate", "pass", "Using 16000 Hz for push-to-talk capture.")
+    )
 
     if devices and duration_seconds > 0:
         try:
-            recorder = SoundDeviceMicrophoneRecorder(duration_seconds=duration_seconds, device=device)
+            recorder = SoundDeviceMicrophoneRecorder(
+                duration_seconds=duration_seconds, device=device
+            )
             recorder.record_wav()
             status = "pass" if recorder.last_rms >= 250 else "warn"
-            message = f"Recorded {duration_seconds:g}s. RMS level: {recorder.last_rms:.1f}."
+            message = (
+                f"Recorded {duration_seconds:g}s. RMS level: {recorder.last_rms:.1f}."
+            )
             if status == "warn":
-                message += " I did not hear much audio; check microphone or speak louder."
+                message += (
+                    " I did not hear much audio; check microphone or speak louder."
+                )
             checks.append(_check("record test", status, message))
+            diagnostics = recorder.last_diagnostics
+            if diagnostics is not None:
+                checks.append(
+                    _check(
+                        "captured frames",
+                        "pass",
+                        (
+                            f"device={diagnostics.selected_device_id} "
+                            f"name={diagnostics.device_name}; "
+                            f"channels={diagnostics.channels}; "
+                            f"sample_rate={diagnostics.sample_rate}; "
+                            f"frames={diagnostics.captured_frame_count}"
+                        ),
+                    )
+                )
         except MicrophoneUnavailableError as exc:
             checks.append(_check("record test", "warn", str(exc)))
 
     checks.extend(_stt_checks())
     checks.extend(_tts_checks())
-    checks.append(_check("Windows microphone permission", "warn", _windows_permission_hint()))
+    checks.append(
+        _check("Windows microphone permission", "pass", _windows_permission_hint())
+    )
     return checks
 
 
 def _stt_checks() -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     faster_whisper = importlib.util.find_spec("faster_whisper") is not None
-    checks.append(_check("faster-whisper import", "pass" if faster_whisper else "warn", "Installed." if faster_whisper else "Install with: uv sync --extra voice or uv sync --extra speech"))
+    checks.append(
+        _check(
+            "faster-whisper import",
+            "pass" if faster_whisper else "warn",
+            "Installed."
+            if faster_whisper
+            else "Install with: uv sync --extra voice or uv sync --extra speech",
+        )
+    )
     status = SpeechInputEngine().stt_status()
     checks.append(
         _check(
@@ -235,7 +340,13 @@ def _stt_checks() -> list[dict[str, Any]]:
         )
     )
     if faster_whisper:
-        checks.append(_check("model availability", "warn", "First transcription may download/load the configured Whisper model."))
+        checks.append(
+            _check(
+                "model availability",
+                "warn",
+                "First transcription may download/load the configured Whisper model.",
+            )
+        )
     return checks
 
 
@@ -246,11 +357,25 @@ def _tts_checks() -> list[dict[str, Any]]:
     ready = info.get("status") == "ready"
     backend = str(info.get("engine") or "print_only")
     voice = str(info.get("voice") or "default")
-    checks.append(_check("TTS backend", "pass" if ready else "warn", f"{backend} available." if ready else "No audible TTS backend found; print-only fallback will be used."))
+    checks.append(
+        _check(
+            "TTS backend",
+            "pass" if ready else "warn",
+            f"{backend} available."
+            if ready
+            else "No audible TTS backend found; print-only fallback will be used.",
+        )
+    )
     checks.append(_check("TTS selected voice", "pass" if ready else "warn", voice))
     try:
         result = engine.speak("Hello, I am Grandpa.", interrupt=True, dry_run=True)
-        checks.append(_check("TTS speech test", "pass" if result.status in {"dry_run", "completed"} else "warn", result.message))
+        checks.append(
+            _check(
+                "TTS speech test",
+                "pass" if result.status in {"dry_run", "completed"} else "warn",
+                result.message,
+            )
+        )
     except Exception as exc:
         checks.append(_check("TTS speech test", "warn", str(exc)))
     return checks
@@ -290,9 +415,19 @@ def _environment_processes(expected_venv: Path) -> list[dict[str, Any]]:
         try:
             if process.info["pid"] in ignored_pids:
                 continue
-            values = [str(process.info.get("exe") or ""), *(process.info.get("cmdline") or [])]
-            if any(os.path.normcase(value).startswith(root) for value in values if value):
-                matches.append({"pid": process.info["pid"], "name": process.info.get("name") or "python"})
+            values = [
+                str(process.info.get("exe") or ""),
+                *(process.info.get("cmdline") or []),
+            ]
+            if any(
+                os.path.normcase(value).startswith(root) for value in values if value
+            ):
+                matches.append(
+                    {
+                        "pid": process.info["pid"],
+                        "name": process.info.get("name") or "python",
+                    }
+                )
         except (psutil.Error, OSError, ValueError):
             continue
     return matches[:25]

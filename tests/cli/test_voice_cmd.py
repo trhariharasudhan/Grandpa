@@ -33,9 +33,23 @@ def test_voice_command_runs_session(monkeypatch) -> None:
         calls.update(kwargs)
         return FakeSession()
 
-    monkeypatch.setattr("grandpa.cli.voice_cmd.build_voice_session", fake_build_voice_session)
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.build_voice_session", fake_build_voice_session
+    )
 
-    result = CliRunner().invoke(cli, ["voice", "--model", "tiny.en", "--language", "en", "--device", "cpu", "--no-tts"])
+    result = CliRunner().invoke(
+        cli,
+        [
+            "voice",
+            "--model",
+            "tiny.en",
+            "--language",
+            "en",
+            "--device",
+            "cpu",
+            "--no-tts",
+        ],
+    )
 
     assert result.exit_code == 0
     assert calls["model"] == "tiny.en"
@@ -58,7 +72,9 @@ def test_voice_command_passes_wake_word_options(monkeypatch) -> None:
         calls.update(kwargs)
         return FakeSession()
 
-    monkeypatch.setattr("grandpa.cli.voice_cmd.build_voice_session", fake_build_voice_session)
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.build_voice_session", fake_build_voice_session
+    )
 
     result = CliRunner().invoke(
         cli,
@@ -81,7 +97,11 @@ def test_voice_command_passes_wake_word_options(monkeypatch) -> None:
 
 
 def test_voice_list_microphones(monkeypatch) -> None:
-    device = type("Device", (), {"index": 2, "name": "Microphone Array", "input_channels": 1, "default": True})()
+    device = type(
+        "Device",
+        (),
+        {"index": 2, "name": "Microphone Array", "input_channels": 1, "default": True},
+    )()
     monkeypatch.setattr("grandpa.cli.voice_cmd.list_input_devices", lambda: (device,))
 
     result = CliRunner().invoke(cli, ["voice", "--list-microphones"])
@@ -92,7 +112,9 @@ def test_voice_list_microphones(monkeypatch) -> None:
 
 
 def test_voice_list_voices(monkeypatch) -> None:
-    monkeypatch.setattr("grandpa.cli.voice_cmd.list_system_voices", lambda: ["Microsoft David"])
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.list_system_voices", lambda: ["Microsoft David"]
+    )
 
     result = CliRunner().invoke(cli, ["voice", "--list-voices"])
 
@@ -107,7 +129,9 @@ def test_voice_missing_dependency_message(monkeypatch) -> None:
         def run(self) -> int:
             raise VoiceDependencyError()
 
-    monkeypatch.setattr("grandpa.cli.voice_cmd.build_voice_session", lambda **_kwargs: FakeSession())
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.build_voice_session", lambda **_kwargs: FakeSession()
+    )
 
     result = CliRunner().invoke(cli, ["voice"])
 
@@ -119,10 +143,14 @@ def test_voice_missing_dependency_message(monkeypatch) -> None:
 def test_voice_dependency_check_reports_only_missing_module(monkeypatch) -> None:
     def fake_import(name: str):
         if name == "sounddevice":
-            raise ModuleNotFoundError("No module named 'sounddevice'", name="sounddevice")
+            raise ModuleNotFoundError(
+                "No module named 'sounddevice'", name="sounddevice"
+            )
         return object()
 
-    monkeypatch.setattr("grandpa.voice.diagnostics.importlib.import_module", fake_import)
+    monkeypatch.setattr(
+        "grandpa.voice.diagnostics.importlib.import_module", fake_import
+    )
 
     status = check_voice_dependencies()
 
@@ -135,11 +163,15 @@ def test_voice_dependency_internal_import_failure_is_not_missing(monkeypatch) ->
             raise ModuleNotFoundError("No module named 'cffi'", name="cffi")
         return object()
 
-    monkeypatch.setattr("grandpa.voice.diagnostics.importlib.import_module", fake_import)
+    monkeypatch.setattr(
+        "grandpa.voice.diagnostics.importlib.import_module", fake_import
+    )
 
     status = check_voice_dependencies()
 
-    sounddevice = next(check for check in status.checks if check.module == "sounddevice")
+    sounddevice = next(
+        check for check in status.checks if check.module == "sounddevice"
+    )
     assert sounddevice.status == "error"
     assert "sounddevice" not in status.missing_required
 
@@ -156,7 +188,11 @@ def test_voice_diagnose_option(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.cli.voice_cmd.run_voice_doctor",
         lambda **_kwargs: [
-            {"status": "pass", "name": "Python executable", "message": r"D:\Grandpa\.venv\Scripts\python.exe"}
+            {
+                "status": "pass",
+                "name": "Python executable",
+                "message": r"D:\Grandpa\.venv\Scripts\python.exe",
+            }
         ],
     )
 
@@ -164,3 +200,21 @@ def test_voice_diagnose_option(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "Python executable" in result.output
+
+
+def test_voice_diagnose_subcommand_does_not_record(monkeypatch) -> None:
+    calls = {}
+
+    def fake_doctor(**kwargs):
+        calls.update(kwargs)
+        return [
+            {"status": "pass", "name": "selected input device", "message": "2: USB Mic"}
+        ]
+
+    monkeypatch.setattr("grandpa.cli.voice_cmd.run_voice_doctor", fake_doctor)
+
+    result = CliRunner().invoke(cli, ["voice", "diagnose", "--device", "2"])
+
+    assert result.exit_code == 0
+    assert calls == {"device": 2, "duration_seconds": 0}
+    assert "USB Mic" in result.output

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from typing import Protocol
 
+from grandpa.voice.errors import VoiceRecognitionError
 from grandpa.voice.microphone import CapturedAudio
-from grandpa.voice.speech_input import SpeechInputEngine
+from grandpa.voice.speech_input import SpeechInputEngine, SpeechInputResult
 
 
 class SpeechToTextEngine(Protocol):
@@ -26,17 +28,40 @@ class FasterWhisperSpeechToText:
         device: str | None = None,
         compute_type: str | None = None,
         engine: SpeechInputEngine | None = None,
+        max_attempts: int = 2,
+        retry_delay_seconds: float = 0.1,
     ) -> None:
         self.language = language or None
-        self._engine = engine or SpeechInputEngine(model=model, device=device, compute_type=compute_type)
+        self._engine = engine or SpeechInputEngine(
+            model=model, device=device, compute_type=compute_type
+        )
+        self.max_attempts = max(1, max_attempts)
+        self.retry_delay_seconds = max(0.0, retry_delay_seconds)
+        self.last_result: SpeechInputResult | None = None
 
     def transcribe(self, audio: CapturedAudio) -> str:
-        result = self._engine.listen(
-            audio_bytes=audio.data,
-            audio_format=audio.format,
-            language=self.language,
-        )
-        return " ".join(result.transcript.strip().split())
+        last_error: VoiceRecognitionError | None = None
+        for attempt in range(self.max_attempts):
+            try:
+                result = self._engine.listen(
+                    audio_bytes=audio.data,
+                    audio_format=audio.format,
+                    language=self.language,
+                )
+                transcript = " ".join(result.transcript.strip().split())
+                if not transcript:
+                    raise VoiceRecognitionError(
+                        "I did not hear a complete phrase. Please try again.",
+                        detail="The STT backend returned an empty transcript.",
+                    )
+                self.last_result = result
+                return transcript
+            except VoiceRecognitionError as exc:
+                last_error = exc
+                if attempt + 1 < self.max_attempts and self.retry_delay_seconds:
+                    time.sleep(self.retry_delay_seconds)
+        assert last_error is not None
+        raise last_error
 
 
 __all__ = ["FasterWhisperSpeechToText", "SpeechToTextEngine"]

@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import importlib
 import io
-import math
 import wave
-from array import array
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -15,11 +13,13 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - Python <3.11 fallback
     import tomli as tomllib  # type: ignore[no-redef]
 
+from grandpa.voice.device_manager import MicrophoneDeviceManager
 from grandpa.voice.errors import (
     MicrophoneUnavailableError,
     VoiceDependencyError,
     VoiceRecognitionError,
 )
+from grandpa.voice.microphone import calculate_pcm16_rms
 from grandpa.voice.speech_input import SpeechInputEngine
 
 VOICE_INPUT_INSTALL_MESSAGE = (
@@ -68,8 +68,16 @@ class SoundDeviceMicrophoneRecorder:
 
     def record_wav(self) -> bytes:
         sounddevice = _import_sounddevice()
-        selected_device, device_info, warning = _select_input_device(sounddevice, self.device, self.device_name)
-        channel_count = max(1, min(self.channels, int(device_info.get("max_input_channels") or self.channels or 1)))
+        selected_device, device_info, warning = _select_input_device(
+            sounddevice, self.device, self.device_name
+        )
+        channel_count = max(
+            1,
+            min(
+                self.channels,
+                int(device_info.get("max_input_channels") or self.channels or 1),
+            ),
+        )
         sample_rate = int(self.sample_rate)
         frame_count = max(1, int(self.duration_seconds * sample_rate))
         try:
@@ -119,7 +127,10 @@ def listen_for_jarvis_command(
     audio_bytes = audio_recorder.record_wav()
     rms = float(getattr(audio_recorder, "last_rms", 0.0) or 0.0)
     if rms and rms < silence_threshold:
-        raise VoiceRecognitionError("I did not hear anything. Check microphone or speak louder.", detail=f"rms={rms:.2f}")
+        raise VoiceRecognitionError(
+            "I did not hear anything. Check microphone or speak louder.",
+            detail=f"rms={rms:.2f}",
+        )
     engine = speech_engine or SpeechInputEngine()
     result = engine.listen(audio_bytes=audio_bytes, audio_format="wav")
     transcript = result.transcript.strip()
@@ -138,7 +149,9 @@ def _import_sounddevice():
         return importlib.import_module("sounddevice")
     except ModuleNotFoundError as exc:
         if exc.name == "sounddevice":
-            raise VoiceDependencyError(VOICE_INPUT_INSTALL_MESSAGE, detail=str(exc)) from exc
+            raise VoiceDependencyError(
+                VOICE_INPUT_INSTALL_MESSAGE, detail=str(exc)
+            ) from exc
         raise VoiceDependencyError(
             "The `sounddevice` package could not initialize because one of its dependencies is unavailable.",
             detail=f"{type(exc).__name__}: {exc}",
@@ -150,48 +163,23 @@ def _import_sounddevice():
         ) from exc
 
 
-def _select_input_device(sounddevice: Any, requested_device: int | None, requested_name: str | None = None) -> tuple[int | None, dict[str, Any], str | None]:
-    devices = _safe_query_devices(sounddevice)
-    if requested_device is not None:
-        if requested_device < 0:
-            raise _microphone_error(f"Invalid microphone device index: {requested_device}")
-        if devices is None:
-            return requested_device, {"name": f"Input device {requested_device}", "max_input_channels": 1}, None
-        if requested_device >= len(devices):
-            raise _microphone_error(f"Microphone device {requested_device} was not found.\n{_available_input_devices_message(devices)}")
-        info = _device_dict(devices[requested_device])
-        if int(info.get("max_input_channels") or 0) <= 0:
-            raise _microphone_error(f"Microphone device {requested_device} has no input channels.\n{_available_input_devices_message(devices)}")
-        return requested_device, info, None
-
-    if devices is not None:
-        input_devices = _input_devices(devices)
-        preferred_name = _clean_device_name(requested_name) or _load_preferred_microphone_name()
-        if preferred_name:
-            match = _find_input_device_by_name(input_devices, preferred_name)
-            if match:
-                index, info = match
-                return index, info, None
-            if requested_name:
-                raise _microphone_error(f"Microphone named '{requested_name}' was not found.\n{_available_input_devices_message(devices)}")
-            fallback = _best_available_input_device(sounddevice, devices, input_devices)
-            if fallback:
-                index, info = fallback
-                return index, info, f"Configured microphone '{preferred_name}' was not found. Using {info.get('name') or f'input device {index}'}."
-            raise _microphone_error(f"Configured microphone '{preferred_name}' was not found.\n{_available_input_devices_message(devices)}")
-
-        default_index = _default_input_device(sounddevice)
-        if default_index is not None and 0 <= default_index < len(devices):
-            info = _device_dict(devices[default_index])
-            if int(info.get("max_input_channels") or 0) > 0:
-                return default_index, info, None
-        best_device = _best_available_input_device(sounddevice, devices, input_devices)
-        if best_device:
-            index, info = best_device
-            return index, info, None
-        raise _microphone_error("No usable microphone was detected.")
-
-    return None, {"name": "System default input", "max_input_channels": 1}, None
+def _select_input_device(
+    sounddevice: Any, requested_device: int | None, requested_name: str | None = None
+) -> tuple[int | None, dict[str, Any], str | None]:
+    manager = MicrophoneDeviceManager(
+        sounddevice,
+        preference_loader=_load_preferred_microphone_name,
+    )
+    selection = manager.select(
+        requested_index=requested_device,
+        requested_name=requested_name,
+        allow_fallback=requested_device is None and requested_name is None,
+    )
+    return (
+        selection.device.index,
+        selection.device.to_sounddevice_dict(),
+        selection.warning,
+    )
 
 
 def _safe_query_devices(sounddevice: Any) -> list[Any] | None:
@@ -251,7 +239,9 @@ def _best_available_input_device(
     return candidates[0] if candidates else None
 
 
-def _find_input_device_by_name(input_devices: list[tuple[int, dict[str, Any]]], name: str) -> tuple[int, dict[str, Any]] | None:
+def _find_input_device_by_name(
+    input_devices: list[tuple[int, dict[str, Any]]], name: str
+) -> tuple[int, dict[str, Any]] | None:
     normalized = _normalize_device_name(name)
     if not normalized:
         return None
@@ -335,17 +325,6 @@ def _captured_frame_count(recording: Any, fallback: int) -> int:
         return int(len(recording))
     except Exception:
         return fallback
-
-
-def calculate_pcm16_rms(frames: bytes) -> float:
-    if not frames:
-        return 0.0
-    samples = array("h")
-    samples.frombytes(frames[: len(frames) - (len(frames) % 2)])
-    if not samples:
-        return 0.0
-    total = sum(sample * sample for sample in samples)
-    return math.sqrt(total / len(samples))
 
 
 __all__ = [

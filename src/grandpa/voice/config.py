@@ -19,6 +19,10 @@ class VoiceAssistantConfig:
     compute_type: str = "int8"
     microphone: int | None = None
     phrase_duration_limit: float = 5.0
+    speech_start_rms: float = 180.0
+    minimum_speech_seconds: float = 0.25
+    silence_timeout_seconds: float = 0.75
+    microphone_recovery_attempts: int = 2
     tts_engine: str = "pyttsx3"
     tts_rate: int = 175
     tts_volume: float = 1.0
@@ -75,6 +79,16 @@ def load_voice_assistant_config(
         if microphone is not None
         else _env_int("GRANDPA_VOICE_MICROPHONE"),
         phrase_duration_limit=_env_float("GRANDPA_VOICE_PHRASE_DURATION_LIMIT", 5.0),
+        speech_start_rms=max(0.0, _env_float("GRANDPA_VOICE_SPEECH_START_RMS", 180.0)),
+        minimum_speech_seconds=max(
+            0.0, _env_float("GRANDPA_VOICE_MINIMUM_SPEECH_SECONDS", 0.25)
+        ),
+        silence_timeout_seconds=max(
+            0.1, _env_float("GRANDPA_VOICE_SILENCE_TIMEOUT_SECONDS", 0.75)
+        ),
+        microphone_recovery_attempts=max(
+            0, _env_int("GRANDPA_VOICE_RECOVERY_ATTEMPTS", 2) or 0
+        ),
         tts_engine=_first_non_empty(os.getenv("GRANDPA_VOICE_TTS_ENGINE"), "pyttsx3"),
         tts_rate=_env_int("GRANDPA_VOICE_RATE", 175) or 175,
         tts_volume=_env_float("GRANDPA_VOICE_VOLUME", 1.0),

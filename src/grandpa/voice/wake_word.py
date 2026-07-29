@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,7 +19,7 @@ from typing import Any
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
 DEFAULT_WAKE_PHRASE = "hey grandpa"
-DEFAULT_WAKE_PHRASES = ("grandpa", "hey grandpa")
+DEFAULT_WAKE_PHRASES = ("grandpa", "hey grandpa", "hi grandpa", "wake grandpa")
 DEFAULT_WAKE_WORD_SETTINGS = DEFAULT_CONFIG_DIR / "wake_word.json"
 
 
@@ -31,12 +32,17 @@ class WakeWordConfig:
     response_enabled: bool = True
     response_text: str = "Yes?"
     command_timeout_seconds: float = 10.0
+    cooldown_seconds: float = 1.5
 
     @classmethod
     def from_env(cls) -> "WakeWordConfig":
         raw_enabled = os.getenv("GRANDPA_WAKE_WORD_ENABLED", "true").strip().lower()
         raw_phrases = os.getenv("GRANDPA_WAKE_WORDS", "")
-        phrases = tuple(phrase.strip().lower() for phrase in raw_phrases.split(",") if phrase.strip())
+        phrases = tuple(
+            phrase.strip().lower()
+            for phrase in raw_phrases.split(",")
+            if phrase.strip()
+        )
         return cls(
             enabled=raw_enabled not in {"0", "false", "no", "off"},
             phrases=phrases or ("hey grandpa", "grandpa"),
@@ -62,13 +68,20 @@ class WakeWordMatch:
 class WakeWordDetector:
     """Transcript-based wake phrase detector."""
 
-    def __init__(self, config: WakeWordConfig | tuple[str, ...] | None = None) -> None:
+    def __init__(
+        self,
+        config: WakeWordConfig | tuple[str, ...] | None = None,
+        *,
+        clock: Any = time.monotonic,
+    ) -> None:
         if isinstance(config, WakeWordConfig):
             self.config = config
         elif config is None:
             self.config = WakeWordConfig(enabled=True)
         else:
             self.config = WakeWordConfig(enabled=True, phrases=tuple(config))
+        self.clock = clock
+        self._last_detection_at: float | None = None
 
     @property
     def phrases(self) -> tuple[str, ...]:
@@ -77,9 +90,11 @@ class WakeWordDetector:
     def matches(self, transcript: str) -> bool:
         """Return True when transcript contains a configured wake phrase."""
 
-        return self.detect(transcript).matched
+        return self.detect(transcript, enforce_cooldown=False).matched
 
-    def detect(self, transcript: str) -> WakeWordMatch:
+    def detect(
+        self, transcript: str, *, enforce_cooldown: bool = True
+    ) -> WakeWordMatch:
         text = normalize_wake_text(transcript)
         if not text or not self.config.enabled:
             return WakeWordMatch(matched=False, command_text=transcript.strip())
@@ -91,14 +106,29 @@ class WakeWordDetector:
             match_index = _word_sequence_index(words, phrase_words)
             if match_index is None:
                 continue
+            now = float(self.clock())
+            if (
+                enforce_cooldown
+                and self._last_detection_at is not None
+                and now - self._last_detection_at < self.config.cooldown_seconds
+            ):
+                return WakeWordMatch(
+                    matched=False,
+                    command_text=transcript.strip(),
+                    confidence=0.0,
+                )
             command = " ".join(words[match_index + len(phrase_words) :]).strip()
+            if enforce_cooldown:
+                self._last_detection_at = now
             return WakeWordMatch(
                 matched=True,
                 phrase=phrase,
                 command_text=command,
                 confidence=0.95 if match_index == 0 else 0.82,
             )
-        return WakeWordMatch(matched=False, command_text=transcript.strip(), confidence=0.0)
+        return WakeWordMatch(
+            matched=False, command_text=transcript.strip(), confidence=0.0
+        )
 
     def diagnostics(self) -> dict[str, Any]:
         return {
@@ -174,7 +204,11 @@ class WakeWordSession:
         }
 
     def detect_mock(self, text: str) -> dict[str, Any]:
-        detector = WakeWordDetector(WakeWordConfig(enabled=self.enabled and self.listening, phrases=(self.wake_phrase,)))
+        detector = WakeWordDetector(
+            WakeWordConfig(
+                enabled=self.enabled and self.listening, phrases=(self.wake_phrase,)
+            )
+        )
         detected = detector.matches(text)
         if detected:
             self.last_detection_time = datetime.now(UTC).isoformat()
@@ -209,7 +243,9 @@ class WakeWordSession:
             "enabled": self.enabled,
             "wake_phrase": self.wake_phrase,
         }
-        self.settings_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        self.settings_path.write_text(
+            json.dumps(data, indent=2) + "\n", encoding="utf-8"
+        )
 
 
 __all__ = [
