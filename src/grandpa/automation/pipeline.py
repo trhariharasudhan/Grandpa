@@ -16,6 +16,8 @@ ExecutionStatus = Literal[
     "failed",
     "blocked",
     "confirmation_required",
+    "dialog_pending",
+    "cancelled",
     "target_lost",
     "unsupported",
 ]
@@ -118,13 +120,22 @@ class WindowsCommandPipeline:
         desktop = handle_desktop_command(text, dry_run=dry_run)
         if not desktop.should_fallback:
             action = desktop.action
+            launch_target = _desktop_launch_target(
+                getattr(desktop, "pc_response", None)
+            )
+            if launch_target is not None:
+                self.automation_service.pin_target(launch_target)
             return CommandExecutionResult(
                 _canonical_status(desktop.status),
                 desktop.message,
                 "desktop",
                 action.action_type if action else "",
                 action.target if action else "",
-                data=self._metadata(),
+                data=self._metadata(
+                    {"target_verified": launch_target is not None}
+                    if action and action.action_type == "open_app"
+                    else None
+                ),
             )
 
         return CommandExecutionResult(
@@ -151,6 +162,29 @@ def _canonical_status(status: str) -> ExecutionStatus:
         "error": "failed",
         "no_match": "unsupported",
     }.get(status, status)  # type: ignore[return-value]
+
+
+def _desktop_launch_target(response: object) -> object | None:
+    evidence = getattr(response, "evidence", None)
+    if not isinstance(evidence, dict):
+        return None
+    value = evidence.get("launch_target")
+    if not isinstance(value, dict):
+        return None
+    try:
+        from grandpa.automation.windows import WindowIdentity
+
+        return WindowIdentity(
+            int(value["window_handle"]),
+            str(value["window_title"]),
+            int(value["process_id"]),
+            "notepad.exe",
+            "notepad",
+            str(value["document_id"]),
+            str(value["document_title"]),
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
 
 
 __all__ = [

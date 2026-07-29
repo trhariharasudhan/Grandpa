@@ -24,6 +24,7 @@ from grandpa.core.config import DEFAULT_CONFIG_DIR
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 ActionStatus = Literal[
     "completed",
+    "partial_success",
     "dry_run",
     "approval_required",
     "rejected",

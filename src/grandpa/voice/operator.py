@@ -22,6 +22,9 @@ OperatorStatus = Literal[
     "handled",
     "blocked",
     "target_lost",
+    "ambiguous",
+    "dialog_pending",
+    "cancelled",
     "unsupported",
     "exit",
     "error",
@@ -94,7 +97,10 @@ def parse_voice_operator_command(
     text: str,
     *,
     has_pending_confirmation: bool = False,
+    has_pending_window_choice: bool = False,
+    has_pending_dialog: bool = False,
 ) -> VoiceOperatorIntent:
+    raw_command = str(text).strip()
     command = normalize_voice_operator_transcript(text)
     if not command:
         return VoiceOperatorIntent("none", status="unsupported", message="I did not hear a command.")
@@ -114,6 +120,20 @@ def parse_voice_operator_command(
             args={"command": command},
             message="Handling automation confirmation.",
         )
+    if has_pending_window_choice:
+        return VoiceOperatorIntent(
+            "screen_automation",
+            "window_choice",
+            args={"command": command},
+            message="Selecting a window.",
+        )
+    if has_pending_dialog:
+        return VoiceOperatorIntent(
+            "screen_automation",
+            "dialog_response",
+            args={"command": raw_command},
+            message="Handling the verified window dialog.",
+        )
 
     automation_action = AutomationPlanner().parse(command)
     if automation_action is not None and automation_action.kind in {
@@ -127,6 +147,7 @@ def parse_voice_operator_command(
         "locate",
         "highlight",
         "focus",
+        "close",
         "type",
         "paste",
         "press",
@@ -142,6 +163,7 @@ def parse_voice_operator_command(
                 "type": "keyboard_type",
                 "press": "keyboard_hotkey",
                 "focus": "focus_window",
+                "close": "close_window",
             }.get(automation_action.kind, automation_action.kind),
             automation_action.target,
             intent_args,
@@ -407,6 +429,7 @@ def execute_voice_operator_intent(
                 "target": intent.target,
                 "args": intent.args or {},
                 "confirmation_token": result.confirmation_token,
+                **result.data,
             },
             requires_confirmation=result.status == "needs_confirmation",
         )
@@ -611,6 +634,8 @@ def run_voice_operator_loop(
         intent = parse_voice_operator_command(
             normalized_text,
             has_pending_confirmation=automation_service.has_pending_confirmation,
+            has_pending_window_choice=automation_service.has_pending_window_choice,
+            has_pending_dialog=automation_service.has_pending_dialog,
         )
         result = execute_voice_operator_intent(
             intent,
@@ -746,7 +771,14 @@ def _window_message(action: str) -> str:
 
 
 def _coerce_status(status: str) -> OperatorStatus:
-    if status in {"blocked", "target_lost", "unsupported"}:
+    if status in {
+        "ambiguous",
+        "blocked",
+        "cancelled",
+        "dialog_pending",
+        "target_lost",
+        "unsupported",
+    }:
         return status
     if status == "approval_required":
         return "handled"

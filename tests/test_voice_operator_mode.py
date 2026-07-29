@@ -24,6 +24,15 @@ def test_parse_open_vscode() -> None:
     assert intent.target == "vscode"
 
 
+def test_parse_open_another_notepad_preserves_new_instance_intent() -> None:
+    intent = parse_voice_operator_command("open another Notepad")
+
+    assert intent.kind == "local_action"
+    assert intent.action == "open_app"
+    assert intent.target == "notepad"
+    assert intent.args == {"new_instance": True}
+
+
 def test_normalizes_common_launch_phrases() -> None:
     assert normalize_voice_operator_transcript("start notepad") == "open notepad"
     assert normalize_voice_operator_transcript("launch chrome") == "open chrome"
@@ -244,6 +253,93 @@ def test_dangerous_command_is_blocked_and_not_executed() -> None:
 
     assert result.status == "blocked"
     assert calls == []
+
+
+def test_voice_window_ambiguity_hides_native_ids_but_keeps_structured_details() -> None:
+    from grandpa.automation.service import ScreenAutomationService
+    from grandpa.automation.windows import WindowIdentity, WindowVerification
+
+    choices = (
+        WindowIdentity(10, "First.txt - Notepad", 101, "notepad.exe", "notepad"),
+        WindowIdentity(20, "Second.txt - Notepad", 202, "notepad.exe", "notepad"),
+    )
+
+    class AmbiguousTargets:
+        def focus_and_verify(self, target, *, dry_run: bool = False):
+            return WindowVerification(False, "Multiple windows.", candidates=choices)
+
+    service = ScreenAutomationService(window_targets=AmbiguousTargets())
+    intent = parse_voice_operator_command("focus Notepad")
+
+    result = execute_voice_operator_intent(intent, automation_service=service)
+
+    assert result.message.splitlines() == [
+        "I found multiple matching windows. Which one?",
+        "1. First.txt - Notepad",
+        "2. Second.txt - Notepad",
+    ]
+    assert "101" not in result.message
+    assert "202" not in result.message
+    assert result.action["window_choices"][0] == {
+        "title": "First.txt - Notepad",
+        "hwnd": 10,
+        "pid": 101,
+    }
+    assert service.has_pending_window_choice is True
+
+    followup = parse_voice_operator_command(
+        "choose the first one",
+        has_pending_window_choice=True,
+    )
+    assert followup.kind == "screen_automation"
+    assert followup.action == "window_choice"
+
+
+def test_voice_dialog_prompt_hides_native_ids_and_routes_followup() -> None:
+    from grandpa.automation.service import ScreenAutomationService
+    from grandpa.automation.windows import (
+        DialogIdentity,
+        WindowCloseResult,
+        WindowIdentity,
+        WindowVerification,
+    )
+
+    window = WindowIdentity(
+        10, "Untitled - Notepad", 101, "notepad.exe", "notepad"
+    )
+    dialog = DialogIdentity(
+        20, "Notepad", 101, 10, "notepad_unsaved"
+    )
+
+    class DialogTargets:
+        def focus_and_verify(self, target, *, dry_run: bool = False):
+            return WindowVerification(True, "Focused.", window, window)
+
+        def close_and_verify(self, target, *, dry_run: bool = False):
+            return WindowCloseResult(
+                "dialog_pending",
+                "Notepad has unsaved changes.",
+                window,
+                dialog,
+            )
+
+    service = ScreenAutomationService(window_targets=DialogTargets())
+    service.handle("focus Notepad")
+    pending = service.handle("close Notepad")
+    result = service.confirm(pending.confirmation_token or "")
+
+    assert result.message == (
+        "Notepad has unsaved changes. Save, don't save, or cancel?"
+    )
+    assert "101" not in result.message
+    assert "20" not in result.message
+
+    followup = parse_voice_operator_command(
+        "don't save",
+        has_pending_dialog=True,
+    )
+    assert followup.kind == "screen_automation"
+    assert followup.action == "dialog_response"
 
 
 def test_typed_fallback_after_microphone_unavailable() -> None:

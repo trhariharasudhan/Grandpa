@@ -7,6 +7,7 @@ import re
 from grandpa.automation.models import AutomationAction
 
 _DESTRUCTIVE_TERMS = {
+    "close",
     "delete",
     "remove",
     "erase",
@@ -136,6 +137,12 @@ class AutomationPlanner:
         return None
 
     def _parse_window(self, command: str) -> AutomationAction | None:
+        match = re.fullmatch(r"(?:close|quit) (.+)", command)
+        if match:
+            target = match.group(1).strip()
+            if target in {"this window", "current window", "the window"}:
+                target = "active"
+            return AutomationAction("close", target)
         match = re.fullmatch(r"(?:focus|switch to|bring) (.+?)(?: to front)?", command)
         if match:
             return AutomationAction("focus", match.group(1).strip())
@@ -149,13 +156,19 @@ class AutomationPlanner:
 def apply_safety_policy(action: AutomationAction, command: str) -> AutomationAction:
     text = f"{command} {action.target}".casefold()
     sensitive = any(term in text for term in _SENSITIVE_TERMS) or _contains_sensitive_value(text)
-    destructive = any(term in text for term in _DESTRUCTIVE_TERMS)
+    # Text after "type" is literal input, not a second automation command.
+    # Credential/payment-field protections still apply through `sensitive`.
+    destructive = action.kind != "type" and any(
+        term in text for term in _DESTRUCTIVE_TERMS
+    )
     interactive_click = action.kind in {"click", "double_click", "right_click", "middle_click", "drag"}
     risky_enter = action.kind == "press" and action.args.get("keys") == ["enter"] and destructive
     needs_confirmation = interactive_click or sensitive or destructive or risky_enter
     reason = ""
     if sensitive:
         reason = "This action may involve authentication or sensitive data."
+    elif action.kind == "close":
+        reason = "Closing a window may discard unsaved work."
     elif destructive:
         reason = "This action may cause a destructive or financial change."
     elif interactive_click:

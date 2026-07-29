@@ -29,6 +29,29 @@ def test_parse_open_app_aliases() -> None:
     assert paint.target == "paint"
 
 
+def test_parse_multi_instance_app_phrases_without_weakening_app_name() -> None:
+    parser = DesktopParser()
+
+    for command in (
+        "Open another Notepad",
+        "Open a new Notepad window",
+        "Launch another instance of Notepad",
+        "Start a second Notepad",
+    ):
+        action = parser.parse(command)
+
+        assert action is not None
+        assert action.action == "open_application"
+        assert action.application == "Notepad"
+        assert action.target == "notepad"
+        assert action.new_instance is True
+
+    normal = parser.parse("Open Notepad")
+    assert normal is not None
+    assert normal.target == "notepad"
+    assert normal.new_instance is False
+
+
 def test_parse_open_known_user_folder() -> None:
     action = DesktopParser().parse("Go to Downloads")
 
@@ -127,6 +150,20 @@ def test_handle_desktop_command_runs_through_pc_control_payload() -> None:
             "require_approval": False,
         }
     ]
+
+
+def test_multi_instance_flag_reaches_existing_open_app_flow() -> None:
+    payloads: list[dict] = []
+
+    result = handle_desktop_command(
+        "Open another Notepad",
+        runner=lambda payload: payloads.append(payload) or FakePcResponse(),
+    )
+
+    assert result.status == "handled"
+    assert payloads[0]["action_type"] == "open_app"
+    assert payloads[0]["target"] == "notepad"
+    assert payloads[0]["args"] == {"new_instance": True}
 
 
 def test_dangerous_action_uses_confirmation_payload() -> None:

@@ -9,8 +9,14 @@ from grandpa.desktop.control import (
     get_application_service,
     list_desktop_services,
 )
+from grandpa.desktop.control.applications import ApplicationControlService
 from grandpa.server.routes import router
 from grandpa.windows_app_resolver import AppResolution
+from grandpa.windows_window_control import (
+    NotepadDocumentInfo,
+    NotepadDocumentTarget,
+    WindowInfo,
+)
 
 
 def test_desktop_control_registry_lists_domain_services():
@@ -37,6 +43,50 @@ def test_application_service_preserves_safe_aliases():
 
     assert service.app_id("VS Code") == "vscode"
     assert service.app_id("unknown app") is None
+
+
+def test_application_service_verifies_new_notepad_document(monkeypatch):
+    existing = NotepadDocumentTarget(
+        WindowInfo(10, "Existing - Notepad", "notepad", 101),
+        NotepadDocumentInfo("doc-old", "Existing", True, True, 0),
+    )
+    created = NotepadDocumentTarget(
+        WindowInfo(10, "Untitled - Notepad", "notepad", 101),
+        NotepadDocumentInfo("doc-new", "Untitled", False, True, 1),
+    )
+    monkeypatch.setattr(
+        "grandpa.windows_app_resolver.resolve_app",
+        lambda _app: AppResolution(
+            "notepad",
+            "Notepad",
+            "found",
+            "path",
+            "notepad.exe",
+            "test",
+            "Found Notepad.",
+        ),
+    )
+    monkeypatch.setattr(
+        "grandpa.windows_window_control.snapshot_notepad_documents",
+        lambda: (existing,),
+    )
+    monkeypatch.setattr(
+        "grandpa.windows_window_control.create_new_notepad_document",
+        lambda: ("created", created),
+    )
+
+    result = ApplicationControlService().execute(
+        pc_control.LocalActionRequest(
+            "open_app",
+            "notepad",
+            {"new_instance": True},
+        ),
+        "open_app",
+    )
+
+    assert result.ok is True
+    assert result.message == "Opened a new Notepad document."
+    assert result.evidence["launch_target"]["document_id"] == "doc-new"
 
 
 def test_pc_control_facade_still_detects_app(monkeypatch, tmp_path):

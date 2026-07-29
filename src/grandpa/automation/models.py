@@ -12,6 +12,8 @@ AutomationStatus = Literal[
     "failed",
     "needs_confirmation",
     "confirmation_required",
+    "dialog_pending",
+    "cancelled",
     "blocked",
     "target_lost",
     "unsupported",

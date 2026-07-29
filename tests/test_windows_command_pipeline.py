@@ -44,6 +44,54 @@ def test_pipeline_routes_desktop_command_and_returns_canonical_status(
     assert result.data["session_id"] == "voice-1"
 
 
+def test_pipeline_pins_verified_notepad_document_from_launch_evidence(
+    monkeypatch,
+) -> None:
+    class SessionAutomation(NoMatchAutomation):
+        def __init__(self) -> None:
+            self.pinned = None
+
+        def pin_target(self, target) -> None:
+            self.pinned = target
+
+    automation = SessionAutomation()
+    monkeypatch.setattr(
+        "grandpa.screen.handle_screen_command",
+        lambda _text: SimpleNamespace(should_fallback=True),
+    )
+    monkeypatch.setattr(
+        "grandpa.desktop.automation.handle_desktop_command",
+        lambda _text, dry_run=False: SimpleNamespace(
+            should_fallback=False,
+            status="handled",
+            message="Opened and verified a new Notepad document.",
+            action=SimpleNamespace(action_type="open_app", target="notepad"),
+            pc_response=SimpleNamespace(
+                evidence={
+                    "launch_target": {
+                        "window_handle": 10,
+                        "process_id": 101,
+                        "window_title": "Untitled - Notepad",
+                        "document_id": "doc-new",
+                        "document_title": "Untitled",
+                    }
+                }
+            ),
+        ),
+    )
+
+    result = WindowsCommandPipeline(
+        automation_service=automation,
+        source="voice",
+        session_id="voice-new-document",
+    ).handle("open another Notepad")
+
+    assert result.status == "success"
+    assert result.data["target_verified"] is True
+    assert automation.pinned is not None
+    assert automation.pinned.document_id == "doc-new"
+
+
 def test_pipeline_logs_internal_failure_and_returns_voice_safe_message(
     monkeypatch,
     caplog,

@@ -29,6 +29,7 @@ DesktopActionType = Literal[
 ]
 DesktopActionStatus = Literal[
     "handled",
+    "partial_success",
     "needs_confirmation",
     "blocked",
     "unsupported",
@@ -47,6 +48,20 @@ class DesktopAction:
     label: str = ""
     args: dict[str, Any] = field(default_factory=dict)
     requires_confirmation: bool = False
+
+    @property
+    def action(self) -> str:
+        """Stable intent name used by deterministic parser consumers."""
+
+        return "open_application" if self.action_type == "open_app" else self.action_type
+
+    @property
+    def application(self) -> str:
+        return self.label if self.action_type == "open_app" else ""
+
+    @property
+    def new_instance(self) -> bool:
+        return bool(self.args.get("new_instance"))
 
 
 @dataclass(frozen=True)
@@ -92,6 +107,7 @@ class DesktopParser:
         )
         if target is None:
             return None
+        target, new_instance = _parse_new_instance_target(target)
         if _looks_like_path_target(target):
             return None
         folder = resolve_folder(target)
@@ -103,7 +119,8 @@ class DesktopParser:
             return None
         app = resolve_application(target)
         app_id, label = app if app is not None else (target, _label_from_target(target))
-        return DesktopAction("open_app", "open_app", app_id, label)
+        args = {"new_instance": True} if new_instance else {}
+        return DesktopAction("open_app", "open_app", app_id, label, args)
 
     def _parse_close(self, command: str) -> DesktopAction | None:
         target = _strip_prefix(command, ("close ", "quit "))
@@ -284,6 +301,25 @@ def _strip_prefix(value: str, prefixes: tuple[str, ...]) -> str | None:
     return None
 
 
+def _parse_new_instance_target(target: str) -> tuple[str, bool]:
+    """Remove only explicit multi-instance wording from an app target."""
+
+    value = target.strip()
+    patterns = (
+        r"another instance of (.+)",
+        r"another (.+)",
+        r"a new (.+?)(?: window)?",
+        r"a second (.+?)(?: window)?",
+        r"second (.+?)(?: window)?",
+        r"new (.+?) window",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, value)
+        if match:
+            return match.group(1).strip(), True
+    return value, False
+
+
 def _looks_like_path_target(value: str) -> bool:
     return "\\" in value or "/" in value or re.search(r"\.[a-z0-9]{1,8}\b", value) is not None
 
@@ -295,9 +331,11 @@ def _default_runner(payload: dict[str, Any]) -> Any:
 
 
 def _coerce_status(response: Any) -> DesktopActionStatus:
+    status = str(getattr(response, "status", "error"))
+    if status == "partial_success":
+        return "partial_success"
     if getattr(response, "ok", False):
         return "handled"
-    status = str(getattr(response, "status", "error"))
     if status == "approval_required":
         return "needs_confirmation"
     if status in {"blocked", "unsupported"}:

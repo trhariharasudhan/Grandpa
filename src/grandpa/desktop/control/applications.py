@@ -49,7 +49,12 @@ class ApplicationControlService:
         from grandpa.windows_app_resolver import launch_app, resolve_app
 
         resolution = resolve_app(app_id)
-        evidence = {"app_id": app_id, "resolution": resolution.to_dict()}
+        new_instance = bool(request.args.get("new_instance"))
+        evidence = {
+            "app_id": app_id,
+            "new_instance": new_instance,
+            "resolution": resolution.to_dict(),
+        }
         if resolution.status not in {"found", "available"}:
             return LocalActionResponse(
                 ok=False,
@@ -63,6 +68,52 @@ class ApplicationControlService:
             )
         if action == "detect_app":
             return LocalActionResponse(True, None, "completed", resolution.message, False, "LOW", evidence)
+
+        notepad_before = ()
+        if app_id == "notepad":
+            from grandpa.windows_window_control import (
+                create_new_notepad_document,
+                snapshot_notepad_documents,
+            )
+
+            notepad_before = snapshot_notepad_documents()
+            if new_instance and notepad_before:
+                creation_status, created = create_new_notepad_document()
+                evidence["notepad_creation_status"] = creation_status
+                if created is not None:
+                    evidence["launch_target"] = _notepad_target_evidence(created)
+                    return LocalActionResponse(
+                        True,
+                        None,
+                        "completed",
+                        "Opened a new Notepad document.",
+                        False,
+                        "LOW",
+                        evidence,
+                    )
+                message = {
+                    "ambiguous": (
+                        "I found multiple Notepad windows and did not choose one "
+                        "arbitrarily. Focus the intended window and try again."
+                    ),
+                    "unsupported": (
+                        "This Notepad version does not expose a verified Add New Tab control."
+                    ),
+                    "unverified": (
+                        "Notepad accepted the new-document request, but the new tab "
+                        "could not be verified."
+                    ),
+                }.get(creation_status, "A new Notepad document could not be verified.")
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "failed",
+                    message,
+                    False,
+                    "LOW",
+                    evidence,
+                    error=creation_status,
+                )
 
         launch_args: list[str] = []
         project_path = str(request.args.get("project_path") or "").strip()
@@ -107,11 +158,30 @@ class ApplicationControlService:
         launch = launch_app(app_id, args=launch_args)
         evidence["launch"] = launch.to_dict()
         ok = launch.status == "found"
+        response_status = "completed" if ok else "failed"
+        message = launch.message
+        if ok and app_id == "notepad":
+            from grandpa.windows_window_control import wait_for_new_notepad_document
+
+            created = wait_for_new_notepad_document(notepad_before)
+            if created is not None:
+                evidence["launch_target"] = _notepad_target_evidence(created)
+                message = "Opened and verified a new Notepad document."
+            else:
+                ok = False
+                message = (
+                    "Notepad launched, but I could not distinguish a new document "
+                    "from the existing tabs."
+                )
+                evidence["notepad_creation_status"] = "unverified"
+                response_status = "partial_success"
+        if ok and new_instance and app_id != "notepad":
+            message = f"Opening another {resolution.display_name} window."
         return LocalActionResponse(
             ok=ok,
             action_id=None,
-            status="completed" if ok else "failed",
-            message=launch.message,
+            status=response_status,
+            message=message,
             approval_required=False,
             risk_level="LOW",
             evidence=evidence,
@@ -205,3 +275,13 @@ class ApplicationControlService:
 
 
 __all__ = ["ApplicationControlService", "SAFE_APP_ALIASES"]
+
+
+def _notepad_target_evidence(target: Any) -> dict[str, Any]:
+    return {
+        "window_handle": target.window.handle,
+        "process_id": target.window.process_id,
+        "window_title": target.window.title,
+        "document_id": target.document.document_id,
+        "document_title": target.document.title,
+    }
