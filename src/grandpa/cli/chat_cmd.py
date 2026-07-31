@@ -788,6 +788,20 @@ def _handle_natural_assistant_intent(
     spoken: bool = False,
     automation_service=None,
 ) -> str | None:
+    from grandpa.planner.routing import handle_executive_goal
+
+    planned = handle_executive_goal(
+        text,
+        automation_service=automation_service,
+        source="voice" if spoken else "chat",
+    )
+    if planned is not None:
+        return planned
+    from grandpa.browser import handle_browser_command
+
+    browser_result = handle_browser_command(text)
+    if not browser_result.should_fallback:
+        return browser_result.message
     from grandpa.automation import WindowsCommandPipeline
 
     pipeline_result = WindowsCommandPipeline(

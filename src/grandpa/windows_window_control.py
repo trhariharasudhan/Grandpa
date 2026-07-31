@@ -1039,6 +1039,87 @@ def _invoke_uia_labeled_control(
         return False
 
 
+def invoke_uia_controls_by_id(
+    hwnd: int,
+    process_id: int,
+    automation_ids: tuple[str, ...],
+) -> bool:
+    """Invoke an exact, preflighted sequence of controls owned by one window."""
+
+    resolved = _resolve_uia_controls_by_id(hwnd, process_id, automation_ids)
+    if resolved is None:
+        return False
+    module, controls = resolved
+    try:
+        for control_id in automation_ids:
+            pattern = controls[control_id][0].GetCurrentPattern(10000)
+            pattern.QueryInterface(module.IUIAutomationInvokePattern).Invoke()
+        return True
+    except Exception:
+        return False
+
+
+def uia_controls_available_by_id(
+    hwnd: int,
+    process_id: int,
+    automation_ids: tuple[str, ...],
+) -> bool:
+    """Check an exact UIA sequence without invoking any control."""
+
+    return _resolve_uia_controls_by_id(hwnd, process_id, automation_ids) is not None
+
+
+def read_uia_control_names_by_id(
+    hwnd: int,
+    process_id: int,
+    automation_ids: tuple[str, ...],
+) -> dict[str, str]:
+    """Read names from exact controls in one verified window subtree."""
+
+    resolved = _resolve_uia_controls_by_id(hwnd, process_id, automation_ids)
+    if resolved is None:
+        return {}
+    _module, controls = resolved
+    try:
+        return {
+            control_id: str(controls[control_id][0].CurrentName or "")
+            for control_id in automation_ids
+        }
+    except Exception:
+        return {}
+
+
+def _resolve_uia_controls_by_id(
+    hwnd: int,
+    process_id: int,
+    automation_ids: tuple[str, ...],
+):
+    if not automation_ids or not _window_exists(hwnd):
+        return None
+    if _window_process_id(hwnd) != process_id:
+        return None
+    try:
+        automation, module = _uia()
+        root = automation.ElementFromHandle(hwnd)
+        elements = root.FindAll(4, automation.CreateTrueCondition())
+        controls: dict[str, list[object]] = {item: [] for item in automation_ids}
+        for index in range(int(elements.Length)):
+            element = elements.GetElement(index)
+            control_id = str(element.CurrentAutomationId or "")
+            if control_id in controls:
+                controls[control_id].append(element)
+        if any(len(controls[item]) != 1 for item in automation_ids):
+            return None
+        control_processes = {
+            int(controls[item][0].CurrentProcessId) for item in automation_ids
+        }
+        if len(control_processes) != 1 or not next(iter(control_processes), 0):
+            return None
+        return module, controls
+    except Exception:
+        return None
+
+
 def _apply_action(action: WindowAction, hwnd: int) -> None:
     try:
         import win32con  # type: ignore
@@ -1098,6 +1179,9 @@ __all__ = [
     "diagnose_notepad_window",
     "find_owned_notepad_dialog",
     "invoke_dialog_choice",
+    "invoke_uia_controls_by_id",
+    "uia_controls_available_by_id",
+    "read_uia_control_names_by_id",
     "list_notepad_documents",
     "snapshot_notepad_documents",
     "list_open_windows",

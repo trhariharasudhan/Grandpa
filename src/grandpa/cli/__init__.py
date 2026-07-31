@@ -135,6 +135,13 @@ cli.add_command(
         short_help="Safely automate visible Windows controls.",
     )
 )
+cli.add_command(
+    _lazy(
+        "plan",
+        "grandpa.cli.plan_cmd:plan",
+        short_help="Create and run verified multi-step plans.",
+    )
+)
 cli.add_command(_lazy("serve", "grandpa.cli.serve:serve", short_help="Run the API server."))
 cli.add_command(_lazy("model", "grandpa.cli.model:model", short_help="Manage models."))
 cli.add_command(_lazy("memory", "grandpa.cli.memory_cmd:memory", short_help="Manage memory."))

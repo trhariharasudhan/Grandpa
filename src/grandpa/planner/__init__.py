@@ -1,4 +1,4 @@
-"""Deterministic planner for Grandpa's runtime skill system."""
+"""Planning APIs for Grandpa's runtime and bounded executive planner."""
 
 from grandpa.planner.engine import (
     ExecutionGraph,
@@ -12,10 +12,16 @@ from grandpa.planner.engine import (
     estimate_risk,
     planner_diagnostics,
 )
+from grandpa.planner.executive import ExecutivePlanner
+from grandpa.planner.models import ExecutionPlan, PlanResult, PlanStep
 
 __all__ = [
     "ExecutionGraph",
     "ExecutionNode",
+    "ExecutionPlan",
+    "ExecutivePlanner",
+    "PlanResult",
+    "PlanStep",
     "PlannerAnalysis",
     "PlannerStep",
     "analyze_request",

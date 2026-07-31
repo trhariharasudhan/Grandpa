@@ -379,3 +379,27 @@ def test_stt_exception_allows_retry_or_typed_input() -> None:
     assert code == 0
     assert any("I did not hear anything" in line for line in output)
     assert any("try again" in line for line in output)
+
+
+def test_voice_operator_routes_multistep_goal_to_executive_planner(monkeypatch) -> None:
+    output: list[str] = []
+    actions: list[dict] = []
+    inputs = iter(["open chrome and search for fastapi", "quit"])
+    monkeypatch.setattr(
+        "grandpa.planner.routing.handle_executive_goal",
+        lambda text, **_kwargs: "Task completed."
+        if "search for fastapi" in text.casefold()
+        else None,
+    )
+
+    code = run_voice_operator_loop(
+        input_func=lambda _prompt: next(inputs),
+        output_func=output.append,
+        action_runner=lambda payload: actions.append(payload),
+        prefer_voice=False,
+        dry_run=True,
+    )
+
+    assert code == 0
+    assert "Task completed." in output
+    assert actions == []

@@ -631,6 +631,17 @@ def run_voice_operator_loop(
             output_func(f"Raw transcript: {text}")
             output_func(f"Normalized transcript: {normalized_text}")
         output_func(f"Understood: {normalized_text}")
+        from grandpa.planner.routing import handle_executive_goal
+
+        planned = handle_executive_goal(
+            normalized_text,
+            automation_service=automation_service,
+            source="voice_operator",
+        )
+        if planned is not None:
+            output_func(planned)
+            _speak_best_effort(speaker, planned, dry_run=dry_run)
+            continue
         intent = parse_voice_operator_command(
             normalized_text,
             has_pending_confirmation=automation_service.has_pending_confirmation,

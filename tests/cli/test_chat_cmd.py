@@ -1225,3 +1225,18 @@ class TestChatOllamaUnavailable:
         log_text = log_path.read_text(encoding="utf-8")
         assert "Chat generation failed" in log_text
         assert "RuntimeError: programming bug" in log_text
+
+
+def test_chat_routes_multistep_goal_to_executive_planner(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "grandpa.planner.routing.handle_executive_goal",
+        lambda text, **_kwargs: "Task completed."
+        if "search for fastapi" in text.casefold()
+        else None,
+    )
+
+    message = _handle_natural_assistant_intent(
+        "Open Chrome and search for FastAPI"
+    )
+
+    assert message == "Task completed."

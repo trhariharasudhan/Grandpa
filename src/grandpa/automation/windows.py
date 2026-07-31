@@ -108,8 +108,18 @@ class WindowTargetController:
         ) = None,
         exists_func: Callable[[int], bool] | None = None,
         document_exists_func: Callable[[WindowIdentity], bool] | None = None,
+        ready_func: Callable[[WindowIdentity], bool] | None = None,
+        control_sequence_func: (
+            Callable[[int, int, tuple[str, ...]], bool] | None
+        ) = None,
+        control_available_func: (
+            Callable[[int, int, tuple[str, ...]], bool] | None
+        ) = None,
+        control_text_func: (
+            Callable[[int, int, tuple[str, ...]], dict[str, str]] | None
+        ) = None,
         sleep_func: Callable[[float], None] = time.sleep,
-        timeout: float = 0.75,
+        timeout: float = 1.5,
         poll_interval: float = 0.05,
     ) -> None:
         self._resolve = resolve_func or resolve_window
@@ -121,12 +131,81 @@ class WindowTargetController:
         self._save_as = save_as_func or complete_window_save_as
         self._exists = exists_func or window_handle_exists
         self._document_exists = document_exists_func or window_document_exists
+        self._ready = ready_func or window_identity_ready
+        self._control_sequence = (
+            control_sequence_func or invoke_window_control_sequence
+        )
+        self._control_available = (
+            control_available_func or window_controls_available
+        )
+        self._control_text = control_text_func or read_window_control_texts
         self._sleep = sleep_func
         self.timeout = timeout
         self.poll_interval = poll_interval
 
     def resolve(self, target: str) -> WindowIdentity | None:
         return self._resolve(target)
+
+    def candidates(self, target: str) -> tuple[WindowIdentity, ...]:
+        """Return every safely resolved candidate without selecting an ambiguity."""
+
+        try:
+            resolved = self._resolve(target)
+        except WindowTargetResolutionError as exc:
+            return exc.candidates
+        return (resolved,) if resolved is not None else ()
+
+    def is_ready(self, target: WindowIdentity) -> bool:
+        """Check that a resolved top-level window is still usable."""
+
+        try:
+            return bool(self._ready(target))
+        except Exception:
+            return False
+
+    def invoke_controls(
+        self, target: WindowIdentity, automation_ids: tuple[str, ...]
+    ) -> bool:
+        """Invoke exact UIA controls only inside the pinned window process."""
+
+        try:
+            return bool(
+                self._control_sequence(
+                    target.handle,
+                    target.process_id,
+                    automation_ids,
+                )
+            )
+        except Exception:
+            return False
+
+    def controls_available(
+        self, target: WindowIdentity, automation_ids: tuple[str, ...]
+    ) -> bool:
+        try:
+            return bool(
+                self._control_available(
+                    target.handle,
+                    target.process_id,
+                    automation_ids,
+                )
+            )
+        except Exception:
+            return False
+
+    def read_controls(
+        self, target: WindowIdentity, automation_ids: tuple[str, ...]
+    ) -> dict[str, str]:
+        try:
+            return dict(
+                self._control_text(
+                    target.handle,
+                    target.process_id,
+                    automation_ids,
+                )
+            )
+        except Exception:
+            return {}
 
     def focus_and_verify(
         self, target: str | WindowIdentity, *, dry_run: bool = False
@@ -409,9 +488,33 @@ def foreground_window() -> WindowIdentity | None:
 
 
 def focus_window_handle(handle: int) -> None:
+    """Bring one verified HWND forward using a bounded Windows-native handoff."""
+
     from grandpa.windows_window_control import _apply_action
 
     _apply_action("focus", handle)
+    if sys.platform != "win32":
+        return
+
+    user32 = ctypes.windll.user32
+    foreground = int(user32.GetForegroundWindow())
+    if foreground == int(handle):
+        return
+
+    current_thread = int(ctypes.windll.kernel32.GetCurrentThreadId())
+    foreground_thread = int(user32.GetWindowThreadProcessId(foreground, None))
+    attached = False
+    try:
+        if foreground_thread and foreground_thread != current_thread:
+            attached = bool(
+                user32.AttachThreadInput(current_thread, foreground_thread, True)
+            )
+        user32.ShowWindow(int(handle), 9)  # SW_RESTORE
+        user32.BringWindowToTop(int(handle))
+        user32.SetForegroundWindow(int(handle))
+    finally:
+        if attached:
+            user32.AttachThreadInput(current_thread, foreground_thread, False)
 
 
 def close_window_identity(window: WindowIdentity) -> object:
@@ -429,6 +532,36 @@ def close_window_identity(window: WindowIdentity) -> object:
         ),
         target=window.target or window.title,
     )
+
+
+def invoke_window_control_sequence(
+    handle: int,
+    process_id: int,
+    automation_ids: tuple[str, ...],
+) -> bool:
+    from grandpa.windows_window_control import invoke_uia_controls_by_id
+
+    return invoke_uia_controls_by_id(handle, process_id, automation_ids)
+
+
+def window_controls_available(
+    handle: int,
+    process_id: int,
+    automation_ids: tuple[str, ...],
+) -> bool:
+    from grandpa.windows_window_control import uia_controls_available_by_id
+
+    return uia_controls_available_by_id(handle, process_id, automation_ids)
+
+
+def read_window_control_texts(
+    handle: int,
+    process_id: int,
+    automation_ids: tuple[str, ...],
+) -> dict[str, str]:
+    from grandpa.windows_window_control import read_uia_control_names_by_id
+
+    return read_uia_control_names_by_id(handle, process_id, automation_ids)
 
 
 def detect_window_dialog(window: WindowIdentity) -> DialogIdentity | None:
@@ -555,6 +688,22 @@ def window_document_exists(window: WindowIdentity) -> bool:
         )
     )
     return any(item.document_id == window.document_id for item in documents)
+
+
+def window_identity_ready(window: WindowIdentity) -> bool:
+    """Return whether a visible target HWND is available for safe automation."""
+
+    if not window_handle_exists(window.handle):
+        return False
+    if sys.platform != "win32":
+        return True
+    try:
+        user32 = ctypes.windll.user32
+        return bool(user32.IsWindowVisible(window.handle)) and bool(
+            user32.IsWindowEnabled(window.handle)
+        )
+    except Exception:
+        return False
 
 
 def same_window(expected: WindowIdentity, actual: WindowIdentity | None) -> bool:
@@ -697,6 +846,10 @@ __all__ = [
     "is_terminal_window",
     "same_window",
     "invoke_window_dialog_choice",
+    "invoke_window_control_sequence",
     "window_handle_exists",
+    "window_identity_ready",
+    "window_controls_available",
+    "read_window_control_texts",
     "window_payload",
 ]
