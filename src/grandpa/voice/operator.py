@@ -255,6 +255,18 @@ def parse_voice_operator_command(
         item_a, item_b = match.group(1).strip(), match.group(2).strip()
         return VoiceOperatorIntent("browser_intelligence", "compare", f"{item_a} vs {item_b}", {"item_a": item_a, "item_b": item_b}, message=f"Comparing {item_a} and {item_b}.")
 
+    # Memory Integration Voice Commands
+    from grandpa.memory.service import MemoryService
+    memory_route = MemoryService.get_instance().parse_and_route_intent(command)
+    if memory_route is not None:
+        return VoiceOperatorIntent(
+            "memory",
+            memory_route.intent.value,
+            memory_route.target_key or memory_route.project_name or command,
+            {"command": command, "route": memory_route},
+            message="Handling memory command.",
+        )
+
     from grandpa.browser_awareness import BrowserAwarenessParser
 
     awareness_action = BrowserAwarenessParser().parse(command)
@@ -605,6 +617,16 @@ def execute_voice_operator_intent(
             comparison = engine.compare_items(item_a, item_b)
             spoken = format_voice_summary(comparison.summary)
             return VoiceOperatorResult("handled", comparison.summary, spoken, comparison.to_dict())
+
+    if intent.kind == "memory":
+        from grandpa.cli.chat_cmd import _handle_natural_memory_intent
+        cmd_text = str((intent.args or {}).get("command") or intent.target)
+        msg = _handle_natural_memory_intent(cmd_text)
+        if msg:
+            from grandpa.browser_intelligence import format_voice_summary
+            spoken = format_voice_summary(msg)
+            return VoiceOperatorResult("handled", msg, spoken, {"kind": "memory", "command": cmd_text})
+        return VoiceOperatorResult("handled", intent.message, intent.message)
     if intent.kind == "screen":
         return _execute_screen_intent(intent, screen_reader=screen_reader)
     if intent.kind != "local_action":

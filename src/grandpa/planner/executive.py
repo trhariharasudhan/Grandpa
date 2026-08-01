@@ -264,6 +264,30 @@ class ExecutivePlanner:
                     plan.updated_at = utc_now()
                     self._sync_diagnostics(plan)
                     self.store.save(plan)
+
+                    # Persist verified plan completion to Project Memory
+                    try:
+                        import subprocess
+
+                        from grandpa.memory.service import MemoryService
+                        vcommit = None
+                        try:
+                            cp = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd="D:\\Grandpa", capture_output=True, text=True, timeout=3)
+                            if cp.returncode == 0 and cp.stdout.strip():
+                                vcommit = cp.stdout.strip()
+                        except Exception:
+                            pass
+                        MemoryService.get_instance().remember_project_result(
+                            project_name="Grandpa",
+                            goal=plan.original_goal,
+                            status=plan.status.value,
+                            latest_feature="Memory Integration V1",
+                            latest_commit=vcommit,
+                            next_task="Memory Integration V1 complete",
+                        )
+                    except Exception:
+                        pass
+
                     return PlanResult(
                         plan.status.value,
                         "Task completed with partial verification evidence."
@@ -369,6 +393,20 @@ class ExecutivePlanner:
         plan.updated_at = utc_now()
         self._sync_diagnostics(plan)
         self.store.save(plan)
+
+        # Record failed plan outcome in ProjectMemory
+        try:
+            from grandpa.memory.service import MemoryService
+            MemoryService.get_instance().remember_project_result(
+                project_name="Grandpa",
+                goal=plan.original_goal,
+                status="failed",
+                last_failed_plan=f"Goal '{plan.original_goal}' failed ({code}): {message}",
+            )
+        except Exception as exc:
+            import sys
+            sys.stderr.write(f"MEM_ERR: {exc}\n")
+
         return PlanResult(plan.status.value, message, plan, FailureReason(code, message, step_id))
 
     def _sync_diagnostics(self, plan: ExecutionPlan) -> None:

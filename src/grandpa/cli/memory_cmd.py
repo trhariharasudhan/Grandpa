@@ -143,14 +143,15 @@ def search(
     svc = MemoryService.get_instance()
     v1_results = svc.search(query_text, limit=top_k)
 
-    mem = _get_backend(backend)
+    mem = None
     results = []
     try:
+        mem = _get_backend(backend)
         results = mem.retrieve(query_text, top_k=top_k)
     except Exception:
         pass
     finally:
-        if hasattr(mem, "close"):
+        if mem is not None and hasattr(mem, "close"):
             mem.close()
 
     if not v1_results and not results:
@@ -200,28 +201,33 @@ def stats(backend: str | None) -> None:
     svc = MemoryService.get_instance()
     v1_items = svc.list_memories(limit=1000)
 
-    mem = _get_backend(backend)
+    mem = None
+    count = 0
+    backend_id = "sqlite"
     try:
-        count = 0
+        mem = _get_backend(backend)
         if hasattr(mem, "count"):
             count = mem.count()
-
-        table = Table(title="Memory Statistics")
-        table.add_column("Property", style="cyan")
-        table.add_column("Value")
-        table.add_row("Backend", mem.backend_id)
-        table.add_row("V1 Memories Count", str(len(v1_items)))
-        table.add_row("Vector Documents", str(count))
-
-        if hasattr(svc.store, "db_path") and svc.store.db_path.exists():
-            size_kb = svc.store.db_path.stat().st_size / 1024
-            table.add_row("V1 Database Size", f"{size_kb:.1f} KB")
-            table.add_row("V1 Database Path", str(svc.store.db_path))
-
-        console.print(table)
+        backend_id = getattr(mem, "backend_id", "sqlite")
+    except Exception:
+        pass
     finally:
-        if hasattr(mem, "close"):
+        if mem is not None and hasattr(mem, "close"):
             mem.close()
+
+    table = Table(title="Memory Statistics")
+    table.add_column("Property", style="cyan")
+    table.add_column("Value")
+    table.add_row("Backend", backend_id)
+    table.add_row("V1 Memories Count", str(len(v1_items)))
+    table.add_row("Vector Documents", str(count))
+
+    if hasattr(svc.store, "db_path") and svc.store.db_path.exists():
+        size_kb = svc.store.db_path.stat().st_size / 1024
+        table.add_row("V1 Database Size", f"{size_kb:.1f} KB")
+        table.add_row("V1 Database Path", str(svc.store.db_path))
+
+    console.print(table)
 
 
 @memory.command(name="remember")
@@ -403,3 +409,197 @@ def projects_cmd() -> None:
         )
 
     console.print(table)
+
+
+@memory.command(name="recent")
+@click.option("--limit", "-n", default=10, type=int, help="Limit number of items")
+def recent_cmd(limit: int) -> None:
+    """Show recent memories across all categories."""
+    console = Console()
+    svc = MemoryService.get_instance()
+    items = svc.list_memories(limit=limit)
+
+    if not items:
+        console.print("[yellow]No recent memory items found.[/yellow]")
+        return
+
+    table = Table(title="Recent Memories")
+    table.add_column("Key", style="cyan")
+    table.add_column("Category", width=12)
+    table.add_column("Updated", width=20)
+    table.add_column("Content")
+
+    for item in items:
+        preview = redact_sensitive(item.content[:80])
+        table.add_row(
+            item.key,
+            item.category,
+            time.ctime(item.updated_at),
+            preview,
+        )
+
+    console.print(table)
+
+
+@memory.command(name="relevant")
+@click.argument("query")
+@click.option("--project", "-p", default=None, help="Project name context")
+def relevant_cmd(query: str, project: str | None) -> None:
+    """Retrieve bounded relevant memories for a query context."""
+    console = Console()
+    svc = MemoryService.get_instance()
+    items = svc.retrieve_relevant(query=query, project_name=project, limit=5)
+
+    if not items:
+        console.print(f"[yellow]No relevant memory items found for query '{query}'.[/yellow]")
+        return
+
+    table = Table(title=f"Relevant Memories for '{query}'")
+    table.add_column("Key", style="cyan")
+    table.add_column("Category", width=12)
+    table.add_column("Content")
+
+    for item in items:
+        table.add_row(item.key, item.category, redact_sensitive(item.content[:100]))
+
+    console.print(table)
+
+
+@memory.command(name="project")
+@click.argument("name")
+def project_cmd(name: str) -> None:
+    """Show project-specific memory details."""
+    console = Console()
+    svc = MemoryService.get_instance()
+
+    clean_name = name.strip().lower().replace(" ", "_")
+    items = svc.list_memories(category="project", project_name=name, limit=100)
+
+    if not items:
+        # Fallback to key-prefix search
+        all_proj_items = svc.list_memories(category="project", limit=100)
+        items = [
+            item for item in all_proj_items
+            if (item.project_name and item.project_name.lower() == name.lower())
+            or item.key.startswith(f"proj_{clean_name}")
+        ]
+
+    if not items:
+        console.print(f"[yellow]No memory found for project '{name}'.[/yellow]")
+        return
+
+    summary_val = "N/A"
+    path_val = "N/A"
+    feature_val = "N/A"
+    commit_val = "N/A"
+    next_task_val = "N/A"
+    failed_plan_val = "N/A"
+
+    for item in items:
+        k = item.key.lower()
+        content = item.content
+        meta = item.metadata or {}
+
+        # Set values from metadata if they exist
+        if meta.get("project_path"):
+            path_val = meta["project_path"]
+        if meta.get("latest_feature"):
+            feature_val = meta["latest_feature"]
+        if meta.get("latest_commit"):
+            commit_val = meta["latest_commit"]
+        if meta.get("next_task"):
+            next_task_val = meta["next_task"]
+        if meta.get("last_failed_plan"):
+            failed_plan_val = meta["last_failed_plan"]
+
+        # Check explicit keys or suffixes
+        if k == "project_path" or k.endswith("_path") or k.endswith("_project_path"):
+            path_val = content
+        elif k == "latest_feature" or k.endswith("_latest_feature") or k.endswith("_feature"):
+            feature_val = content
+        elif k == "latest_commit" or k.endswith("_latest_commit") or k.endswith("_commit"):
+            commit_val = content
+        elif k == "next_task" or k.endswith("_next_task"):
+            next_task_val = content
+        elif k == "last_failed_plan" or k.endswith("_last_failed_plan"):
+            failed_plan_val = content
+        elif k == f"proj_{clean_name}_summary" or k == "summary" or k.endswith("_summary"):
+            summary_val = content
+        else:
+            if summary_val == "N/A":
+                summary_val = content
+
+    console.print(f"📁 [bold]Project Memory: {name}[/bold]")
+    console.print(f"  Summary       : {summary_val}")
+    console.print(f"  Path          : {path_val}")
+    console.print(f"  Latest Feature: {feature_val}")
+    console.print(f"  Latest Commit : {commit_val}")
+    console.print(f"  Next Task     : {next_task_val}")
+    console.print(f"  Failed Plan   : {failed_plan_val}")
+
+
+@memory.command(name="explain")
+@click.argument("query")
+@click.option("--project", "-p", default=None, help="Project name context")
+def explain_cmd(query: str, project: str | None) -> None:
+    """Explain why memories were matched and ranked for a query."""
+    console = Console()
+    svc = MemoryService.get_instance()
+    explanation = svc.explain_retrieval(query, project_name=project)
+
+    console.print(f"🔍 [bold]Memory Retrieval Explanation for '{query}'[/bold]")
+    console.print(f"  Matched Count : {explanation['matched_count']}")
+
+    for match in explanation["matches"]:
+        console.print(f"\n  • Key: [cyan]{match['key']}[/cyan] ({match['category']})")
+        console.print(f"    Reasons : {', '.join(match['reasons'])}")
+        console.print(f"    Preview : {match['content_preview']}")
+
+
+@memory.command(name="session")
+@click.argument("action", type=click.Choice(["status", "clear", "promote"]))
+@click.argument("key", required=False)
+def session_cmd(action: str, key: str | None) -> None:
+    """Manage short-term session memory."""
+    console = Console()
+    svc = MemoryService.get_instance()
+
+    if action == "status":
+        memories = svc.short_term.get_session_memories()
+        enabled = svc.session_memory_enabled()
+        console.print(f"⚡ [bold]Session Memory Status:[/bold] {'[green]ENABLED[/green]' if enabled else '[red]DISABLED[/red]'}")
+        console.print(f"  Buffered Items : {len(memories)}")
+        for m in memories:
+            console.print(f"  - [{m.key}] {redact_sensitive(m.content[:80])}")
+
+    elif action == "clear":
+        svc.short_term.clear()
+        console.print("[green]Session memory cleared.[/green]")
+
+    elif action == "promote":
+        if not key:
+            console.print("[yellow]Please specify a key to promote from session memory.[/yellow]")
+            return
+        promoted = svc.short_term.promote(key, svc.store)
+        if promoted:
+            console.print(f"[green]Session memory '{key}' promoted to long-term knowledge.[/green]")
+        else:
+            console.print(f"[yellow]Key '{key}' not found in current session memory.[/yellow]")
+
+
+@memory.command(name="disable")
+def disable_cmd() -> None:
+    """Disable memory retrieval for current session."""
+    console = Console()
+    svc = MemoryService.get_instance()
+    svc.set_session_memory_enabled(False)
+    console.print("🛑 [yellow]Memory retrieval DISABLED for current session.[/yellow]")
+
+
+@memory.command(name="enable")
+def enable_cmd() -> None:
+    """Enable memory retrieval for current session."""
+    console = Console()
+    svc = MemoryService.get_instance()
+    svc.set_session_memory_enabled(True)
+    console.print("✅ [green]Memory retrieval ENABLED for current session.[/green]")

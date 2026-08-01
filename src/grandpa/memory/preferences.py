@@ -27,6 +27,19 @@ class PreferenceMemory:
         item = self.store.get_by_key(pref_key)
         if item:
             return item.content
+
+        # Check if the preference was explicitly soft-deleted by the user
+        try:
+            with self.store._connect() as conn:
+                cursor = conn.execute(
+                    "SELECT 1 FROM memories WHERE key = ? AND is_deleted = 1",
+                    (pref_key,),
+                )
+                if cursor.fetchone():
+                    return None
+        except Exception:
+            pass
+
         raw_key = key.replace("pref_", "").lower()
         return self.DEFAULT_PREFERENCES.get(raw_key, default)
 

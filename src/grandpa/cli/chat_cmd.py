@@ -822,27 +822,131 @@ def _handle_natural_assistant_intent(
 
 
 def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
-    normalized = _normalize_local_intent(text)
-    if normalized in NATURAL_MEMORY_ALL_INTENTS:
-        from grandpa.memory_context import MemoryStore
+    from grandpa.memory.intent import MemoryIntent
+    from grandpa.memory.service import MemoryService
 
-        memory_store = store or MemoryStore()
-        return _format_memories(memory_store.list_memories())
-    if normalized in NATURAL_MEMORY_LIST_INTENTS:
-        from grandpa.memory_context import MemoryStore
+    svc = MemoryService.get_instance()
+    route = svc.parse_and_route_intent(text)
+    if route is None:
+        return None
 
-        memory_store = store or MemoryStore()
-        return _format_user_memories(memory_store.list_memories())
-    if normalized in NATURAL_MEMORY_RECALL_INTENTS:
-        from grandpa.memory_context import MemoryStore, handle_memory_command
+    if route.intent == MemoryIntent.DO_NOT_REMEMBER:
+        svc.set_session_memory_enabled(False)
+        return "Memory retrieval has been disabled for this session."
 
-        memory_store = store or MemoryStore()
-        result = handle_memory_command(text, store=memory_store)
-        return (
-            result.message
-            if not result.should_fallback
-            else _format_memories(memory_store.list_memories())
-        )
+    if route.intent == MemoryIntent.SESSION_CONTROL:
+        if route.action_type == "enable_session_memory":
+            svc.set_session_memory_enabled(True)
+            return "Memory retrieval has been enabled for this session."
+        if route.action_type == "disable_session_memory":
+            svc.set_session_memory_enabled(False)
+            return "Memory retrieval has been disabled for this session."
+
+    if route.intent == MemoryIntent.CLEAR:
+        if route.scope == "session":
+            svc.short_term.clear()
+            return "Cleared short-term session memory."
+
+    if route.intent == MemoryIntent.REMEMBER:
+        if route.action_type == "save_preference" and route.target_key and route.target_value:
+            svc.remember_preference(route.target_key, route.target_value)
+            return f"Saved preference: {route.target_key} = {route.target_value}"
+        if route.action_type == "save_project_info" and route.target_value:
+            svc.remember_project_result(
+                project_name=route.project_name or "Grandpa",
+                goal="Set project information",
+                status="completed",
+                project_path=route.target_value if "d:\\" in route.target_value.lower() else "D:\\Grandpa",
+            )
+            return f"Saved project memory for {route.project_name or 'Grandpa'}."
+        if route.target_value:
+            item = svc.remember_explicit(text=route.target_value, category=route.scope if route.scope in ("knowledge", "project", "session", "preference") else "knowledge")
+            return f"I will remember that: {item.content}"
+
+    if route.intent == MemoryIntent.RECALL:
+        if route.action_type == "recall_preference" and route.target_key:
+            val = svc.preferences.get_preference(route.target_key)
+            if val:
+                return f"Your {route.target_key.replace('pref_', '').replace('_', ' ')} is {val}."
+            return f"I do not have a recorded preference for {route.target_key}."
+        if route.action_type == "recall_latest_feature":
+            proj = svc.projects.get_project_summary(route.project_name or "Grandpa")
+            if proj and proj.metadata.get("latest_feature"):
+                return f"The last completed feature for {route.project_name or 'Grandpa'} was {proj.metadata['latest_feature']}."
+            return f"No completed feature history found for {route.project_name or 'Grandpa'}."
+        if route.action_type == "recall_latest_commit":
+            proj = svc.projects.get_project_summary(route.project_name or "Grandpa")
+            if proj and proj.metadata.get("latest_commit"):
+                return f"The latest recorded commit for {route.project_name or 'Grandpa'} is {proj.metadata['latest_commit']}."
+            return f"No commit history recorded for {route.project_name or 'Grandpa'}."
+        if route.action_type == "recall_last_failed_plan":
+            proj = svc.projects.get_project_summary(route.project_name or "Grandpa")
+            if proj and proj.metadata.get("last_failed_plan"):
+                return f"The last failed plan for {route.project_name or 'Grandpa'} was: {proj.metadata['last_failed_plan']}."
+            return f"No failed plan history recorded for {route.project_name or 'Grandpa'}."
+
+    if route.intent == MemoryIntent.FORGET:
+        if route.scope == "preference" and route.target_key:
+            svc.preferences.delete_preference(route.target_key)
+            return f"Forgot preference: {route.target_key}."
+        if route.target_key:
+            svc.forget(route.target_key)
+            return f"Forgot memory for {route.target_key}."
+
+    if route.intent == MemoryIntent.SHOW:
+        if route.action_type == "show_preferences":
+            prefs = svc.preferences.list_all_preferences()
+            lines = ["Saved preferences:"]
+            for k, v in prefs.items():
+                lines.append(f"- {k}: {v}")
+            return "\n".join(lines)
+        if route.action_type == "show_project_status":
+            proj = svc.projects.get_project_summary(route.project_name or "Grandpa")
+            if proj:
+                return f"Project {proj.project_name or 'Grandpa'}: {proj.content}"
+            return f"No project memory found for {route.project_name or 'Grandpa'}."
+
+    if route.intent == MemoryIntent.RESUME:
+        proj_name = route.project_name or "Grandpa"
+        items = svc.list_memories(category="project", project_name=proj_name, limit=100)
+
+        path_val = "D:\\Grandpa"
+        feature_val = "N/A"
+        commit_val = "N/A"
+        next_task_val = "N/A"
+
+        for item in items:
+            k = item.key.lower()
+            content = item.content
+            meta = item.metadata or {}
+            if meta.get("project_path"):
+                path_val = meta["project_path"]
+            if meta.get("latest_feature"):
+                feature_val = meta["latest_feature"]
+            if meta.get("latest_commit"):
+                commit_val = meta["latest_commit"]
+            if meta.get("next_task"):
+                next_task_val = meta["next_task"]
+
+            if k == "project_path" or k.endswith("_path") or k.endswith("_project_path"):
+                path_val = content
+            elif k == "latest_feature" or k.endswith("_latest_feature") or k.endswith("_feature"):
+                feature_val = content
+            elif k == "latest_commit" or k.endswith("_latest_commit") or k.endswith("_commit"):
+                commit_val = content
+            elif k == "next_task" or k.endswith("_next_task"):
+                next_task_val = content
+
+        parts = [f"Resuming {proj_name} project.", f"Path: {path_val}."]
+        if feature_val != "N/A":
+            parts.append(f"Latest Feature: {feature_val}.")
+        if commit_val != "N/A":
+            parts.append(f"Latest Commit: {commit_val}.")
+        if next_task_val != "N/A":
+            parts.append(f"Next Task: {next_task_val}.")
+
+        return " ".join(parts)
+
     return None
 
 
