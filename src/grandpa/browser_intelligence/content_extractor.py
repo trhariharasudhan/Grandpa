@@ -52,19 +52,36 @@ def extract_section_content(
     matched_tables: list[TableItem] = []
     key_points: list[str] = []
 
-    # 1. Ordered element traversal if page.elements is available
+    # 1. Ordered element traversal with Main Content vs Sidebar TOC scoring
     if page.elements:
-        match_idx = -1
-        matched_level = 2
+        candidate_indices: list[tuple[int, int, int]] = []  # (score, idx, level)
         for idx, el in enumerate(page.elements):
             text = str(el.get("text", ""))
             norm_t = _normalize_heading(text)
             if any(kw in norm_t for kw in keywords) or norm_t in keywords:
-                match_idx = idx
-                matched_level = int(el.get("level") or 2)
-                clean_h = text.replace("¶", "").strip()
-                matched_headings.append(clean_h)
-                break
+                # Score candidate by checking following 4 elements
+                score = 0
+                has_body = False
+                for f_idx in range(idx + 1, min(idx + 5, len(page.elements))):
+                    fel = page.elements[f_idx]
+                    frole = str(fel.get("role", "text"))
+                    ftxt = str(fel.get("text", "")).strip()
+                    if frole in ("paragraph", "code_block", "text") and len(ftxt) > 15:
+                        has_body = True
+                        score += 10
+                    elif frole == "code_block" or "pip install" in ftxt.lower():
+                        has_body = True
+                        score += 15
+                if not has_body:
+                    score -= 10
+                candidate_indices.append((score, idx, int(el.get("level") or 2)))
+
+        if candidate_indices:
+            # Sort candidates by score descending
+            candidate_indices.sort(key=lambda c: c[0], reverse=True)
+            _, match_idx, matched_level = candidate_indices[0]
+            clean_h = str(page.elements[match_idx].get("text", "")).replace("¶", "").strip()
+            matched_headings.append(clean_h)
 
         if match_idx != -1:
             for idx in range(match_idx + 1, len(page.elements)):

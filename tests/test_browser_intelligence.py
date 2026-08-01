@@ -393,6 +393,34 @@ def test_next_equal_heading_boundary() -> None:
     assert "MIT License terms" not in extracted.text
 
 
+def test_sidebar_toc_vs_main_content_heading_disambiguation() -> None:
+    # Simulates MkDocs page with Sidebar TOC links followed by Main Content Heading + body
+    elements = (
+        {"role": "heading", "text": "Installation", "level": 2, "order": 0},
+        {"role": "link", "text": "Example", "level": 0, "order": 1},
+        {"role": "link", "text": "Create it", "level": 0, "order": 2},
+        {"role": "link", "text": "Run it", "level": 0, "order": 3},
+        {"role": "heading", "text": "Installation ¶", "level": 2, "order": 4},
+        {"role": "paragraph", "text": "FastAPI is a modern web framework for Python 3.8+.", "level": 0, "order": 5},
+        {"role": "code_block", "text": "pip install fastapi[standard]", "level": 0, "order": 6},
+    )
+    page = PageContent(title="FastAPI", url="https://fastapi.tiangolo.com", domain="fastapi.tiangolo.com", elements=elements)
+    extracted = extract_section_content(page, target_section="installation")
+    assert extracted.status == "success"
+    assert "pip install fastapi[standard]" in extracted.text
+    assert "FastAPI is a modern web framework" in extracted.text
+    assert "ExampleCreate itRun it" not in extracted.text
+
+
+def test_summarize_rejects_chrome_controls() -> None:
+    from grandpa.browser_intelligence.summarizer import heuristic_summarize
+    chrome_text = "FastAPI - Google Chrome\nOpen tab in split view\nNew tab\n\nFastAPI is a modern high-performance web framework for Python.\nIt provides automatic OpenAPI docs."
+    summary = heuristic_summarize(chrome_text, summary_type="short")
+    assert "Google Chrome" not in summary
+    assert "Open tab in split view" not in summary
+    assert "FastAPI is a modern" in summary
+
+
 def test_cli_browser_commands() -> None:
     runner = click.testing.CliRunner()
 

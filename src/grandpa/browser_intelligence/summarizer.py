@@ -21,6 +21,27 @@ SUMMARY_TOKEN_LIMITS: dict[SummaryType, int] = {
 }
 
 
+_BROWSER_CHROME_KEYWORDS = (
+    "google chrome",
+    "microsoft edge",
+    "open tab in split view",
+    "new tab",
+    "close tab",
+    "reload page",
+    "bookmark",
+    "address and search bar",
+    "extension:",
+    "minimize",
+    "maximize",
+    "restore",
+)
+
+
+def _is_chrome_text(p: str) -> bool:
+    plower = p.strip().lower()
+    return any(ck in plower for ck in _BROWSER_CHROME_KEYWORDS)
+
+
 def heuristic_summarize(text: str, summary_type: SummaryType = "short") -> str:
     """Generate a clean local heuristic summary when LLM is offline or not installed."""
     clean = sanitize_untrusted_text(text)
@@ -39,8 +60,8 @@ def heuristic_summarize(text: str, summary_type: SummaryType = "short") -> str:
             return "Insufficient page content is available to summarize."
         paragraphs = lines
 
-    # Filter out title-only duplicate paragraphs
-    substantive_p = [p for p in paragraphs if len(p.split()) > 3]
+    # Filter out title-only duplicate paragraphs and browser chrome text
+    substantive_p = [p for p in paragraphs if len(p.split()) > 3 and not _is_chrome_text(p)]
     if not substantive_p:
         return "Insufficient page content is available to summarize."
 

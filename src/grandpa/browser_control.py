@@ -658,6 +658,33 @@ def _strip_browser_suffix(title: str) -> str:
     return value
 
 
+_BROWSER_CHROME_KEYWORDS = (
+    "google chrome",
+    "microsoft edge",
+    "open tab in split view",
+    "new tab",
+    "close tab",
+    "reload page",
+    "bookmark",
+    "address and search bar",
+    "extension:",
+    "minimize",
+    "maximize",
+    "restore",
+    "app menu",
+    "system menu",
+    "downloads",
+    "chrome web store",
+)
+
+
+def _is_browser_chrome_node(text: str) -> bool:
+    tlower = text.strip().lower()
+    if not tlower:
+        return True
+    return any(ck in tlower for ck in _BROWSER_CHROME_KEYWORDS)
+
+
 def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
     """Extract structured DOM context from a visible Chrome or Edge browser window handle via UIA Accessibility tree."""
     if not hwnd or sys.platform != "win32":
@@ -672,86 +699,62 @@ def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
         if not elem:
             return {}
 
+        # 1. Locate Webpage Document Root Element (ControlType.Document = 50030)
+        doc_root = None
+        try:
+            cond_doc = uia.CreatePropertyCondition(
+                UIAutomationClient.UIA_ControlTypePropertyId,
+                UIAutomationClient.UIA_DocumentControlTypeId,
+            )
+            doc_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_doc)
+            if doc_elems and doc_elems.Length > 0:
+                doc_root = doc_elems.GetElement(0)
+        except Exception:
+            pass
+
+        target_elem = doc_root or elem
+        scope = "webpage_document" if doc_root else "browser_chrome_fallback"
+
         headings: list[str] = []
         paragraphs: list[str] = []
         buttons: list[str] = []
         links: list[dict[str, str]] = []
         inputs: list[dict[str, str]] = []
         all_text_chunks: list[str] = []
+        elements: list[dict[str, Any]] = []
 
-        # 1. Hyperlinks
+        # 2. Extract Hyperlinks under target_elem
         try:
             cond_link = uia.CreatePropertyCondition(
                 UIAutomationClient.UIA_ControlTypePropertyId,
                 UIAutomationClient.UIA_HyperlinkControlTypeId,
             )
-            link_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_link)
+            link_elems = target_elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_link)
             for i in range(min(50, link_elems.Length)):
                 le = link_elems.GetElement(i)
                 try:
                     name = str(le.CurrentName or "").strip()
-                    if name:
+                    if name and not _is_browser_chrome_node(name):
                         links.append({"text": _redact_sensitive_visible_text(name)[:160], "href": ""})
                 except Exception:
                     pass
         except Exception:
             pass
 
-        # 2. Buttons
-        try:
-            cond_btn = uia.CreatePropertyCondition(
-                UIAutomationClient.UIA_ControlTypePropertyId,
-                UIAutomationClient.UIA_ButtonControlTypeId,
-            )
-            btn_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_btn)
-            for i in range(min(30, btn_elems.Length)):
-                be = btn_elems.GetElement(i)
-                try:
-                    name = str(be.CurrentName or "").strip()
-                    if name and name not in buttons and not name.lower().startswith("close") and not name.lower().startswith("minimize"):
-                        buttons.append(_redact_sensitive_visible_text(name)[:160])
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # 3. Inputs (excluding password, hidden, sensitive)
-        try:
-            cond_edit = uia.CreatePropertyCondition(
-                UIAutomationClient.UIA_ControlTypePropertyId,
-                UIAutomationClient.UIA_EditControlTypeId,
-            )
-            edit_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_edit)
-            for i in range(min(20, edit_elems.Length)):
-                ee = edit_elems.GetElement(i)
-                try:
-                    name = str(ee.CurrentName or "").strip()
-                    if name in ("Address and search bar", "Address", "Search"):
-                        continue
-                    if name and not _looks_high_risk(name):
-                        inputs.append({"label": _redact_sensitive_visible_text(name)[:160], "type": "text"})
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # 4. Extract Text & Custom controls (Headings, Paragraphs, Code Blocks, List Items)
-        elements: list[dict[str, Any]] = []
-
+        # 3. Extract Text & Custom controls under target_elem
         try:
             cond_true = uia.CreateTrueCondition()
-            all_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_true)
-            max_count = min(300, all_elems.Length)
+            all_elems = target_elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_true)
+            max_count = min(350, all_elems.Length)
             for i in range(max_count):
                 el_node = all_elems.GetElement(i)
                 try:
                     ctype = el_node.CurrentControlType
                     name = str(el_node.CurrentName or "").strip()
-                    if not name or name in ("Address and search bar", "Google Chrome", "Microsoft Edge"):
+                    if not name or _is_browser_chrome_node(name):
                         continue
                     clean_txt = _redact_sensitive_visible_text(name)[:500]
 
-                    # ControlType constants: Text=50020, Hyperlink=50005, Button=50000, Edit=50004, Custom=50025, ListItem=50008, Group=50026
                     role = "text"
                     if ctype == UIAutomationClient.UIA_HyperlinkControlTypeId:
                         role = "link"
@@ -764,7 +767,6 @@ def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
                     elif len(clean_txt) < 80 and not clean_txt.endswith(".") and not clean_txt.startswith("<"):
                         role = "heading"
 
-                    # Populate lists
                     all_text_chunks.append(clean_txt)
                     if role == "heading" and clean_txt not in headings:
                         headings.append(clean_txt)
@@ -777,6 +779,7 @@ def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
                         "text": clean_txt,
                         "level": 2 if role == "heading" else 0,
                         "order": len(elements),
+                        "scope": scope,
                     })
                 except Exception:
                     pass
@@ -795,10 +798,11 @@ def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
             "links": links[:40],
             "inputs": inputs[:15],
             "visible_text": visible_text,
-            "elements": elements[:150],
+            "elements": elements[:200],
             "acquisition_source": acquisition_source,
             "confidence": confidence,
             "status": status,
+            "scope": scope,
         }
     except Exception:
         return {}
