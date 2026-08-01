@@ -83,6 +83,13 @@ ACTION_CATALOG: dict[str, ActionDefinition] = {
     "speak_response": _action("speak_response", required=("text",), recovery=False, literal=("text",)),
     "request_confirmation": _action("request_confirmation", required=("message",), risk=RiskLevel.MEDIUM, confirm=True, recovery=False, literal=("message",)),
     "request_clarification": _action("request_clarification", required=("message",), optional=("choices",), recovery=False, literal=("message",)),
+    "browser_analyze_page": _action("browser_analyze_page", verify=("execution_success",)),
+    "browser_extract_content": _action("browser_extract_content", optional=("section", "topic"), verify=("execution_success",), literal=("section", "topic")),
+    "browser_verify_source": _action("browser_verify_source", optional=("url", "subject"), verify=("execution_success",)),
+    "browser_summarize": _action("browser_summarize", optional=("type",), verify=("execution_success",)),
+    "browser_compare": _action("browser_compare", required=("item_a", "item_b"), verify=("execution_success",)),
+    "browser_research": _action("browser_research", required=("topic",), verify=("execution_success",), literal=("topic",)),
+    "browser_navigate_smart": _action("browser_navigate_smart", required=("target",), verify=("execution_success",)),
 }
 
 PROHIBITED_ACTION_NAMES = frozenset(

@@ -81,6 +81,11 @@ class BrowserContext:
     elements: tuple[dict[str, Any], ...] = ()
     session: dict[str, Any] | None = None
     message: str = ""
+    acquisition_source: str = "unavailable"
+    confidence: str = "Low"
+    status: str = "unavailable"
+    hwnd: int = 0
+    process_name: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -99,6 +104,11 @@ class BrowserContext:
             "elements": list(self.elements),
             "session": self.session or {},
             "message": self.message,
+            "acquisition_source": self.acquisition_source,
+            "confidence": self.confidence,
+            "status": self.status,
+            "hwnd": self.hwnd,
+            "process_name": self.process_name,
             "local_only": True,
         }
 
@@ -186,22 +196,29 @@ def get_visible_browser_context() -> BrowserContext:
             message="Visible browser context is currently available only on Windows.",
         )
 
-    title = _active_window_title()
-    browser = _browser_from_title(title)
-    if not browser:
+    browser_info = _find_visible_browser_window()
+    if not browser_info:
         return BrowserContext(
             supported=False,
-            active_window_title=title or None,
-            message="I could not find Chrome or Edge as the active visible browser.",
+            message="I could not find an active visible Chrome or Edge browser webpage.",
         )
 
+    hwnd, browser, title = browser_info
     page_title = _strip_browser_suffix(title)
-    dom = _load_visible_dom_context()
+    uia_url = _get_address_bar_url_for_hwnd(hwnd)
+    dom = _load_visible_dom_context(hwnd)
+    final_url = uia_url or dom.get("url") or os.environ.get("GRANDPA_BROWSER_ACTIVE_URL") or None
+
+    pname = _get_process_name_for_hwnd(hwnd) if hwnd else ""
+    acq_source = str(dom.get("acquisition_source") or ("accessibility_tree" if (dom.get("headings") or dom.get("paragraphs")) else ("uia_text" if dom.get("visible_text") else "unavailable")))
+    confidence = str(dom.get("confidence") or ("High" if acq_source in ("full_dom", "accessibility_tree") else ("Medium" if acq_source == "uia_text" else "Low")))
+    status = str(dom.get("status") or ("success" if acq_source in ("full_dom", "accessibility_tree") else ("partial_success" if dom.get("visible_text") else "unavailable")))
+
     context = BrowserContext(
         supported=True,
         browser=browser,
         title=dom.get("title") or page_title or title,
-        url=dom.get("url") or os.environ.get("GRANDPA_BROWSER_ACTIVE_URL"),
+        url=final_url,
         active_window_title=title,
         headings=tuple(dom.get("headings") or ()),
         buttons=tuple(dom.get("buttons") or ()),
@@ -213,6 +230,11 @@ def get_visible_browser_context() -> BrowserContext:
         elements=tuple(dom.get("elements") or ()),
         session=dom.get("session") or {},
         message="Visible browser context is available.",
+        acquisition_source=acq_source,
+        confidence=confidence,
+        status=status,
+        hwnd=hwnd,
+        process_name=pname,
     )
     try:
         BrowserContextStore().record("context", title=context.title, url=context.url)
@@ -379,10 +401,11 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
         store.record("task", query=target, status="handled")
         return BrowserActionResult("handled", action, target, f"Browser task noted: {target}.")
 
-    if action == "open":
-        webbrowser.open(target)
-        BrowserContextStore().record("open", url=target, status="handled")
-        return BrowserActionResult("handled", action, target, f"Opening {target}.")
+    if action == "open" or action == "navigate":
+        url = target if (target.startswith("http://") or target.startswith("https://")) else f"https://{target}" if target else "about:blank"
+        webbrowser.open(url)
+        BrowserContextStore().record("navigate", url=url, status="handled")
+        return BrowserActionResult("handled", action, target, f"Navigated browser to {url}.")
 
     if action == "new_tab":
         webbrowser.open_new_tab(target or "about:blank")
@@ -442,6 +465,171 @@ def extract_dom_snapshot(html: str, *, title: str = "", url: str = "") -> Browse
     )
 
 
+def _get_process_name_for_hwnd(hwnd: int) -> str:
+    if not hwnd or sys.platform != "win32":
+        return ""
+    try:
+        import ctypes
+
+        import psutil
+
+        pid = ctypes.c_ulong()
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value:
+            return psutil.Process(pid.value).name().lower()
+    except Exception:
+        pass
+    return ""
+
+
+_REJECT_URL_WORDS = (
+    "uv run",
+    "pytest",
+    "powershell",
+    "cmd.exe",
+    "git ",
+    "python",
+    "python.exe",
+    "cd ",
+    "dir ",
+    "\n",
+    "\r",
+)
+
+
+def _is_valid_url_address(val: str) -> bool:
+    val = val.strip()
+    if not val or len(val) > 1000:
+        return False
+    if any(w in val.lower() for w in _REJECT_URL_WORDS):
+        return False
+    if " " in val:
+        return False
+
+    target_url = val if (val.startswith("http://") or val.startswith("https://")) else "https://" + val
+    try:
+        parsed = urllib.parse.urlparse(target_url)
+        if not parsed.scheme or parsed.scheme not in ("http", "https"):
+            return False
+        netloc = parsed.netloc.split(":")[0]
+        if not netloc:
+            return False
+        if "." not in netloc and netloc != "localhost":
+            return False
+        if any(c in netloc for c in ("\\", "/", ";", "|", "<", ">", '"', "'")):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def _is_live_desktop_enabled() -> bool:
+    if os.environ.get("GRANDPA_DISABLE_LIVE_DESKTOP") == "1":
+        return False
+    if "PYTEST_CURRENT_TEST" in os.environ and os.environ.get("GRANDPA_ENABLE_LIVE_DESKTOP") != "1":
+        return False
+    return True
+
+
+def _get_address_bar_url_for_hwnd(hwnd: int) -> str:
+    if not hwnd or sys.platform != "win32" or not _is_live_desktop_enabled():
+        return ""
+    try:
+        import comtypes.client
+
+        UIAutomationClient = comtypes.client.GetModule("UIAutomationCore.dll")
+        uia = comtypes.client.CreateObject(UIAutomationClient.CUIAutomation)
+        elem = uia.ElementFromHandle(hwnd)
+        if not elem:
+            return ""
+
+        cond_edit = uia.CreatePropertyCondition(
+            UIAutomationClient.UIA_ControlTypePropertyId,
+            UIAutomationClient.UIA_EditControlTypeId,
+        )
+        edits = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_edit)
+        for i in range(edits.Length):
+            ed_elem = edits.GetElement(i)
+            try:
+                val = str(ed_elem.GetCurrentPropertyValue(UIAutomationClient.UIA_ValueValuePropertyId) or "").strip()
+                if val and _is_valid_url_address(val):
+                    if not val.startswith("http://") and not val.startswith("https://"):
+                        val = "https://" + val
+                    return val
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return ""
+
+
+def _find_visible_browser_window() -> tuple[int, str, str] | None:
+    if sys.platform != "win32":
+        return None
+
+    try:
+        from grandpa.windows_window_control import (
+            _get_foreground_window,
+            _get_window_title,
+        )
+    except Exception:
+        return None
+
+    # 1. Check if active window title ends with a valid browser suffix (handles monkeypatching & active browsers)
+    title = _active_window_title()
+    if title:
+        browser = _browser_from_title(title)
+        if browser:
+            try:
+                fg_hwnd = _get_foreground_window()
+            except Exception:
+                fg_hwnd = 0
+            return (fg_hwnd or 0, browser, title)
+
+    # 2. Check process name for foreground window
+    allowed = {"chrome.exe", "msedge.exe", "firefox.exe"}
+    try:
+        fg_hwnd = _get_foreground_window()
+        if fg_hwnd:
+            fg_title = _get_window_title(fg_hwnd)
+            fg_pname = _get_process_name_for_hwnd(fg_hwnd)
+            if fg_pname in allowed:
+                bname = "Chrome" if fg_pname == "chrome.exe" else ("Firefox" if fg_pname == "firefox.exe" else "Microsoft Edge")
+                return (fg_hwnd, bname, fg_title)
+
+        # 3. Foreground window is terminal/IDE -> enumerate desktop windows for visible Chrome/Edge if live desktop enabled
+        if not _is_live_desktop_enabled():
+            return None
+        import ctypes
+
+        user32 = ctypes.windll.user32
+        match = None
+
+        def callback(hwnd: int, _lparam: int) -> bool:
+            nonlocal match
+            if user32.IsWindowVisible(hwnd):
+                wtitle = _get_window_title(int(hwnd))
+                pname = _get_process_name_for_hwnd(int(hwnd))
+                if pname in allowed and wtitle and not wtitle.startswith("DevTools"):
+                    bname = "Chrome" if pname == "chrome.exe" else ("Firefox" if pname == "firefox.exe" else "Microsoft Edge")
+                    match = (int(hwnd), bname, wtitle)
+                    return False
+            return True
+
+        cb_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+        user32.EnumWindows(cb_type(callback), 0)
+        if match:
+            return match
+    except Exception:
+        pass
+
+    # 4. Environment context payload override (for tests/mocks)
+    if os.environ.get("GRANDPA_BROWSER_CONTEXT_JSON") or os.environ.get("GRANDPA_BROWSER_CONTEXT_FILE"):
+        return (0, "Chrome", "Browser Page")
+
+    return None
+
+
 def _active_window_title() -> str:
     try:
         from grandpa.windows_window_control import (
@@ -455,10 +643,10 @@ def _active_window_title() -> str:
 
 
 def _browser_from_title(title: str) -> str | None:
-    lower = title.lower()
-    for browser, keywords in _BROWSER_KEYWORDS.items():
-        if any(keyword in lower for keyword in keywords):
-            return "Chrome" if browser == "chrome" else "Microsoft Edge"
+    value = title.strip()
+    for suffix in _BROWSER_SUFFIXES:
+        if value.endswith(suffix):
+            return "Chrome" if "Chrome" in suffix else "Microsoft Edge"
     return None
 
 
@@ -470,12 +658,162 @@ def _strip_browser_suffix(title: str) -> str:
     return value
 
 
-def _load_visible_dom_context() -> dict[str, Any]:
+def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
+    """Extract structured DOM context from a visible Chrome or Edge browser window handle via UIA Accessibility tree."""
+    if not hwnd or sys.platform != "win32":
+        return {}
+
+    try:
+        import comtypes.client
+
+        UIAutomationClient = comtypes.client.GetModule("UIAutomationCore.dll")
+        uia = comtypes.client.CreateObject(UIAutomationClient.CUIAutomation)
+        elem = uia.ElementFromHandle(hwnd)
+        if not elem:
+            return {}
+
+        headings: list[str] = []
+        paragraphs: list[str] = []
+        buttons: list[str] = []
+        links: list[dict[str, str]] = []
+        inputs: list[dict[str, str]] = []
+        all_text_chunks: list[str] = []
+
+        # 1. Hyperlinks
+        try:
+            cond_link = uia.CreatePropertyCondition(
+                UIAutomationClient.UIA_ControlTypePropertyId,
+                UIAutomationClient.UIA_HyperlinkControlTypeId,
+            )
+            link_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_link)
+            for i in range(min(50, link_elems.Length)):
+                le = link_elems.GetElement(i)
+                try:
+                    name = str(le.CurrentName or "").strip()
+                    if name:
+                        links.append({"text": _redact_sensitive_visible_text(name)[:160], "href": ""})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 2. Buttons
+        try:
+            cond_btn = uia.CreatePropertyCondition(
+                UIAutomationClient.UIA_ControlTypePropertyId,
+                UIAutomationClient.UIA_ButtonControlTypeId,
+            )
+            btn_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_btn)
+            for i in range(min(30, btn_elems.Length)):
+                be = btn_elems.GetElement(i)
+                try:
+                    name = str(be.CurrentName or "").strip()
+                    if name and name not in buttons and not name.lower().startswith("close") and not name.lower().startswith("minimize"):
+                        buttons.append(_redact_sensitive_visible_text(name)[:160])
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 3. Inputs (excluding password, hidden, sensitive)
+        try:
+            cond_edit = uia.CreatePropertyCondition(
+                UIAutomationClient.UIA_ControlTypePropertyId,
+                UIAutomationClient.UIA_EditControlTypeId,
+            )
+            edit_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_edit)
+            for i in range(min(20, edit_elems.Length)):
+                ee = edit_elems.GetElement(i)
+                try:
+                    name = str(ee.CurrentName or "").strip()
+                    if name in ("Address and search bar", "Address", "Search"):
+                        continue
+                    if name and not _looks_high_risk(name):
+                        inputs.append({"label": _redact_sensitive_visible_text(name)[:160], "type": "text"})
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        # 4. Extract Text & Custom controls (Headings, Paragraphs, Code Blocks, List Items)
+        elements: list[dict[str, Any]] = []
+
+        try:
+            cond_true = uia.CreateTrueCondition()
+            all_elems = elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_true)
+            max_count = min(300, all_elems.Length)
+            for i in range(max_count):
+                el_node = all_elems.GetElement(i)
+                try:
+                    ctype = el_node.CurrentControlType
+                    name = str(el_node.CurrentName or "").strip()
+                    if not name or name in ("Address and search bar", "Google Chrome", "Microsoft Edge"):
+                        continue
+                    clean_txt = _redact_sensitive_visible_text(name)[:500]
+
+                    # ControlType constants: Text=50020, Hyperlink=50005, Button=50000, Edit=50004, Custom=50025, ListItem=50008, Group=50026
+                    role = "text"
+                    if ctype == UIAutomationClient.UIA_HyperlinkControlTypeId:
+                        role = "link"
+                    elif ctype == UIAutomationClient.UIA_ButtonControlTypeId:
+                        role = "button"
+                    elif ctype == UIAutomationClient.UIA_ListItemControlTypeId or clean_txt.startswith("•") or clean_txt.startswith("-"):
+                        role = "list_item"
+                    elif "pip install" in clean_txt.lower() or "python" in clean_txt.lower() or clean_txt.startswith("$"):
+                        role = "code_block"
+                    elif len(clean_txt) < 80 and not clean_txt.endswith(".") and not clean_txt.startswith("<"):
+                        role = "heading"
+
+                    # Populate lists
+                    all_text_chunks.append(clean_txt)
+                    if role == "heading" and clean_txt not in headings:
+                        headings.append(clean_txt)
+                    elif role in ("paragraph", "text") and (len(clean_txt) >= 30 or clean_txt.endswith(".")):
+                        if clean_txt not in paragraphs:
+                            paragraphs.append(clean_txt)
+
+                    elements.append({
+                        "role": role,
+                        "text": clean_txt,
+                        "level": 2 if role == "heading" else 0,
+                        "order": len(elements),
+                    })
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        visible_text = "\n\n".join(all_text_chunks[:60])
+        acquisition_source = "accessibility_tree" if (headings or paragraphs or links) else ("uia_text" if visible_text else "unavailable")
+        confidence = "High" if acquisition_source == "accessibility_tree" else ("Medium" if acquisition_source == "uia_text" else "Low")
+        status = "success" if acquisition_source in ("accessibility_tree", "full_dom") else ("partial_success" if visible_text else "unavailable")
+
+        return {
+            "headings": headings[:30],
+            "paragraphs": paragraphs[:40],
+            "buttons": buttons[:30],
+            "links": links[:40],
+            "inputs": inputs[:15],
+            "visible_text": visible_text,
+            "elements": elements[:150],
+            "acquisition_source": acquisition_source,
+            "confidence": confidence,
+            "status": status,
+        }
+    except Exception:
+        return {}
+
+
+def _load_visible_dom_context(hwnd: int = 0) -> dict[str, Any]:
     raw = os.environ.get("GRANDPA_BROWSER_CONTEXT_JSON")
     if raw:
         try:
             data = json.loads(raw)
-            return _sanitize_dom_context(data)
+            sanitized = _sanitize_dom_context(data)
+            sanitized.setdefault("acquisition_source", "full_dom")
+            sanitized.setdefault("confidence", "High")
+            sanitized.setdefault("status", "success")
+            return sanitized
         except Exception:
             return {}
 
@@ -483,9 +821,19 @@ def _load_visible_dom_context() -> dict[str, Any]:
     if path:
         try:
             data = json.loads(Path(path).read_text(encoding="utf-8"))
-            return _sanitize_dom_context(data)
+            sanitized = _sanitize_dom_context(data)
+            sanitized.setdefault("acquisition_source", "full_dom")
+            sanitized.setdefault("confidence", "High")
+            sanitized.setdefault("status", "success")
+            return sanitized
         except Exception:
             return {}
+
+    if hwnd:
+        uia_context = _extract_uia_dom_context(hwnd)
+        if uia_context and (uia_context.get("headings") or uia_context.get("visible_text")):
+            return uia_context
+
     return {}
 
 

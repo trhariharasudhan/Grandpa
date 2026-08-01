@@ -237,6 +237,24 @@ def parse_voice_operator_command(
             message="Handling Gmail command.",
         )
 
+    # Browser Intelligence Voice Commands
+    if command in {"what page is this", "what page is this?", "where am i", "current page", "what browser page is this"}:
+        return VoiceOperatorIntent("browser_intelligence", "page", message="Checking active browser page.")
+    if command in {"summarize this page", "summarize page", "summarize this webpage", "summarize current page"}:
+        return VoiceOperatorIntent("browser_intelligence", "summarize", message="Summarizing current browser page.")
+    match = re.fullmatch(r"(?:read|extract)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:steps|section)?", command)
+    if match:
+        sec = match.group(1)
+        return VoiceOperatorIntent("browser_intelligence", "extract", sec, {"section": sec}, message=f"Reading {sec} steps.")
+    match = re.fullmatch(r"open\s+official\s+(.+)", command)
+    if match:
+        tgt = match.group(1).strip()
+        return VoiceOperatorIntent("browser_intelligence", "open_official", tgt, {"target": tgt}, message=f"Opening official {tgt}.")
+    match = re.fullmatch(r"compare\s+(.+?)\s+(?:vs|and|with)\s+(.+)", command)
+    if match:
+        item_a, item_b = match.group(1).strip(), match.group(2).strip()
+        return VoiceOperatorIntent("browser_intelligence", "compare", f"{item_a} vs {item_b}", {"item_a": item_a, "item_b": item_b}, message=f"Comparing {item_a} and {item_b}.")
+
     from grandpa.browser_awareness import BrowserAwarenessParser
 
     awareness_action = BrowserAwarenessParser().parse(command)
@@ -293,6 +311,24 @@ def parse_voice_operator_command(
     window_action = _parse_window_action(command)
     if window_action:
         return VoiceOperatorIntent("local_action", window_action, "active", message=_window_message(window_action))
+
+    # Browser Intelligence Voice Commands
+    if command in {"what page is this", "what page is this?", "where am i", "current page", "what browser page is this"}:
+        return VoiceOperatorIntent("browser_intelligence", "page", message="Checking active browser page.")
+    if command in {"summarize this page", "summarize page", "summarize this webpage", "summarize current page"}:
+        return VoiceOperatorIntent("browser_intelligence", "summarize", message="Summarizing current browser page.")
+    match = re.fullmatch(r"(?:read|extract)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:steps|section)?", command)
+    if match:
+        sec = match.group(1)
+        return VoiceOperatorIntent("browser_intelligence", "extract", sec, {"section": sec}, message=f"Reading {sec} steps.")
+    match = re.fullmatch(r"open\s+official\s+(.+)", command)
+    if match:
+        tgt = match.group(1).strip()
+        return VoiceOperatorIntent("browser_intelligence", "open_official", tgt, {"target": tgt}, message=f"Opening official {tgt}.")
+    match = re.fullmatch(r"compare\s+(.+?)\s+(?:vs|and|with)\s+(.+)", command)
+    if match:
+        item_a, item_b = match.group(1).strip(), match.group(2).strip()
+        return VoiceOperatorIntent("browser_intelligence", "compare", f"{item_a} vs {item_b}", {"item_a": item_a, "item_b": item_b}, message=f"Comparing {item_a} and {item_b}.")
 
     if command in {"screenshot", "take screenshot", "capture screen", "capture screenshot"}:
         return VoiceOperatorIntent("screen", "screenshot", message="Capturing the screen.")
@@ -528,6 +564,47 @@ def execute_voice_operator_intent(
             {"action_type": "file_automation", "target": intent.target, "args": intent.args or {}},
             requires_confirmation=result.requires_confirmation,
         )
+    if intent.kind == "browser_intelligence":
+        from grandpa.browser_intelligence import (
+            LocalPageSummarizer,
+            ProductComparisonEngine,
+            SmartNavigator,
+            extract_section_content,
+            format_voice_summary,
+            read_current_browser_page,
+        )
+
+        page = read_current_browser_page()
+        if intent.action == "page":
+            msg = f"You are currently on {page.title} at domain {page.domain}."
+            return VoiceOperatorResult("handled", msg, msg, {"title": page.title, "domain": page.domain})
+
+        if intent.action == "summarize":
+            summarizer = LocalPageSummarizer()
+            summary = summarizer.summarize_page(page, summary_type="short")
+            spoken = format_voice_summary(summary)
+            return VoiceOperatorResult("handled", summary, spoken, {"summary": summary})
+
+        if intent.action == "extract":
+            sec = str((intent.args or {}).get("section") or "installation")
+            extracted = extract_section_content(page, target_section=sec)
+            spoken = format_voice_summary(extracted.text)
+            return VoiceOperatorResult("handled", extracted.text, spoken, extracted.to_dict())
+
+        if intent.action == "open_official":
+            target = str((intent.args or {}).get("target") or intent.target)
+            nav = SmartNavigator()
+            nav_res = nav.search_and_open_official(target)
+            msg = nav_res.get("message", f"Opened official site for {target}.")
+            return VoiceOperatorResult("handled", msg, msg, nav_res)
+
+        if intent.action == "compare":
+            item_a = str((intent.args or {}).get("item_a") or "Raspberry Pi 5")
+            item_b = str((intent.args or {}).get("item_b") or "Jetson Nano")
+            engine = ProductComparisonEngine()
+            comparison = engine.compare_items(item_a, item_b)
+            spoken = format_voice_summary(comparison.summary)
+            return VoiceOperatorResult("handled", comparison.summary, spoken, comparison.to_dict())
     if intent.kind == "screen":
         return _execute_screen_intent(intent, screen_reader=screen_reader)
     if intent.kind != "local_action":

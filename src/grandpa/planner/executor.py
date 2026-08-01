@@ -176,6 +176,121 @@ class PlannerStepExecutor:
             return StepResult("confirmation_required", str(parameters["message"]), step.step_id)
         if action == "request_clarification":
             return StepResult("clarification_required", str(parameters["message"]), step.step_id, {"choices": parameters.get("choices", [])})
+        if action == "browser_analyze_page":
+            from grandpa.browser_intelligence import (
+                analyze_page_structure,
+                format_page_analysis_cli,
+                read_current_browser_page,
+            )
+
+            page = read_current_browser_page()
+            analysis = analyze_page_structure(page)
+            status = "success" if page.title or page.domain else "failed"
+            return StepResult(status, format_page_analysis_cli(analysis), step.step_id, analysis)
+
+        if action == "browser_extract_content":
+            from grandpa.browser_intelligence import (
+                extract_section_content,
+                format_extracted_content_cli,
+                read_current_browser_page,
+            )
+
+            section = str(parameters.get("section") or "installation")
+            page = read_current_browser_page()
+            # Bounded readiness polling if page content is loading
+            for _ in range(6):
+                if page.headings or page.paragraphs or page.visible_text:
+                    break
+                time.sleep(0.4)
+                page = read_current_browser_page()
+
+            extracted = extract_section_content(page, target_section=section)
+            step_status = "success" if extracted.status in ("success", "partial_success") else "failed"
+            return StepResult(step_status, format_extracted_content_cli(extracted), step.step_id, extracted.to_dict())
+
+        if action == "browser_verify_source":
+            from grandpa.browser_intelligence import (
+                format_verification_cli,
+                read_current_browser_page,
+                verify_source,
+            )
+
+            page = read_current_browser_page()
+            url = str(parameters.get("url") or page.url)
+            subject = str(parameters.get("subject") or page.title)
+            verification = verify_source(url, subject=subject)
+            step_status = "success" if (verification.url and (verification.is_official or verification.trust_score >= 0.6)) else "failed"
+            return StepResult(step_status, format_verification_cli(verification), step.step_id, verification.to_dict())
+
+        if action == "browser_summarize":
+            from grandpa.browser_intelligence import (
+                LocalPageSummarizer,
+                heuristic_summarize,
+                read_current_browser_page,
+            )
+
+            summary_type = str(parameters.get("type") or "short")
+            page = read_current_browser_page()
+
+            # Check if previous step extracted section content
+            extracted_text = ""
+            if hasattr(self, "previous_step_results") and self.previous_step_results:
+                for prev in reversed(self.previous_step_results):
+                    if prev.step_id and "extract" in prev.step_id and prev.output:
+                        extracted_text = prev.output
+                        break
+
+            if extracted_text and len(extracted_text.split()) > 5:
+                summary = heuristic_summarize(extracted_text, summary_type=summary_type)  # type: ignore[arg-type]
+            else:
+                summarizer = LocalPageSummarizer()
+                summary = summarizer.summarize_page(page, summary_type=summary_type)  # type: ignore[arg-type]
+
+            step_status = "failed" if ("no active browser page" in summary.lower() or "insufficient page content" in summary.lower()) else "success"
+            return StepResult(step_status, summary, step.step_id, {"summary": summary, "type": summary_type})
+
+        if action == "browser_compare":
+            from grandpa.browser_intelligence import (
+                ProductComparisonEngine,
+                format_comparison_cli,
+            )
+
+            item_a = str(parameters["item_a"])
+            item_b = str(parameters["item_b"])
+            engine = ProductComparisonEngine()
+            comparison = engine.compare_items(item_a, item_b)
+            return StepResult("success", format_comparison_cli(comparison), step.step_id, comparison.to_dict())
+
+        if action == "browser_research":
+            from grandpa.browser_intelligence import (
+                WebResearchEngine,
+                format_research_report_cli,
+            )
+
+            topic = str(parameters["topic"])
+            research_engine = WebResearchEngine()
+            report = research_engine.research_topic(topic)
+            return StepResult("success", format_research_report_cli(report), step.step_id, report.to_dict())
+
+        if action == "browser_navigate_smart":
+            from grandpa.browser_intelligence import (
+                SmartNavigator,
+                read_current_browser_page,
+            )
+
+            target = str(parameters["target"])
+            nav = SmartNavigator()
+            nav_result = nav.smart_navigate(target)
+
+            # Poll for page content readiness after navigation
+            for _ in range(6):
+                page = read_current_browser_page()
+                if page.headings or page.paragraphs or page.visible_text:
+                    break
+                time.sleep(0.4)
+
+            step_status = "success" if nav_result.get("status") in ("handled", "success") else "failed"
+            return StepResult(step_status, nav_result.get("message", "Navigated."), step.step_id, nav_result)
         return StepResult("blocked", f"Unsupported planner action: {action}", step.step_id)
 
     @property

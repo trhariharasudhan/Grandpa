@@ -160,6 +160,7 @@ cli.add_command(_lazy("calendar", "grandpa.cli.calendar_cmd:calendar", short_hel
 cli.add_command(_lazy("notes", "grandpa.cli.notes_cmd:notes", short_help="Manage local notes."))
 cli.add_command(_lazy("downloads", "grandpa.cli.downloads_cmd:downloads", short_help="Inspect and organize Downloads."))
 cli.add_command(_lazy("search", "grandpa.cli.search_cmd:search", short_help="Search the web."))
+cli.add_command(_lazy("browser", "grandpa.cli.browser_cmd:browser", short_help="Browser intelligence & page understanding."))
 cli.add_command(_lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manage agents."))
 cli.add_command(_lazy("workflow", "grandpa.cli.workflow_cmd:workflow", short_help="Run workflows."))
 cli.add_command(_lazy("skill", "grandpa.cli.skill_cmd:skill", short_help="Manage skills."))

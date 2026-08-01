@@ -124,6 +124,56 @@ class DeterministicDecomposer:
                 ("click_element", f"Click {target}", {"name": target}, "target_state_changed"),
             )
 
+        # Multi-step Browser Intelligence goal: Open/Find official <topic> and summarize/read <section>
+        match = re.fullmatch(
+            r"(?:open|find|search for|locate)\s+(?:official\s+)?(.+?)\s*(?:docs|documentation|site|page)?\s+(?:and|then)\s+(?:summarize|read|extract)\s+(?:the\s+)?(installation|requirements|pricing|specs|faq|code)\s*(?:section|steps)?",
+            normalized,
+        )
+        if match:
+            topic = match.group(1).strip()
+            sec = match.group(2).strip()
+            return _chain(
+                ("browser_navigate_smart", f"Open official {topic} docs", {"target": f"official {topic} docs"}, "execution_success"),
+                ("browser_extract_content", f"Extract {sec} section", {"section": sec}, "execution_success"),
+                ("browser_summarize", f"Summarize {sec} section", {"type": sec}, "execution_success"),
+            )
+
+        match = re.fullmatch(r"research\s+(.+)", normalized)
+        if match:
+            topic = match.group(1).strip()
+            return _chain(
+                ("browser_research", f"Research {topic}", {"topic": topic}, "execution_success"),
+            )
+
+        match = re.fullmatch(r"compare\s+(.+?)\s+(?:vs|and|with)\s+(.+)", normalized)
+        if match:
+            item_a = match.group(1).strip()
+            item_b = match.group(2).strip()
+            return _chain(
+                ("browser_compare", f"Compare {item_a} and {item_b}", {"item_a": item_a, "item_b": item_b}, "execution_success"),
+            )
+
+        match = re.fullmatch(r"(?:open|find)\s+official\s+(.+)", normalized)
+        if match:
+            target = match.group(1).strip()
+            return _chain(
+                ("browser_navigate_smart", f"Find official {target}", {"target": f"official {target}"}, "execution_success"),
+            )
+
+        match = re.fullmatch(r"(?:summarize|read)\s+(?:the\s+)?(?:current\s+)?page(?:\s+as\s+(short|detailed|bullet|technical|installation|requirements))?", normalized)
+        if match:
+            stype = match.group(1) or "short"
+            return _chain(
+                ("browser_summarize", f"Summarize page ({stype})", {"type": stype}, "execution_success"),
+            )
+
+        match = re.fullmatch(r"(?:extract|read)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:from\s+page)?", normalized)
+        if match:
+            sec = match.group(1)
+            return _chain(
+                ("browser_extract_content", f"Extract {sec} section", {"section": sec}, "execution_success"),
+            )
+
         return _single_step(normalized)
 
 
