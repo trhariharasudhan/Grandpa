@@ -162,6 +162,7 @@ cli.add_command(_lazy("downloads", "grandpa.cli.downloads_cmd:downloads", short_
 cli.add_command(_lazy("search", "grandpa.cli.search_cmd:search", short_help="Search the web."))
 cli.add_command(_lazy("browser", "grandpa.cli.browser_cmd:browser", short_help="Browser intelligence & page understanding."))
 cli.add_command(_lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manage agents."))
+cli.add_command(_lazy("agent", "grandpa.cli.agent_run_cmd:agent_group", short_help="Grandpa Agent Runtime V1."))
 cli.add_command(_lazy("workflow", "grandpa.cli.workflow_cmd:workflow", short_help="Run workflows."))
 cli.add_command(_lazy("skill", "grandpa.cli.skill_cmd:skill", short_help="Manage skills."))
 cli.add_command(_lazy("start", "grandpa.cli.daemon_cmd:start", short_help="Start background services."))
