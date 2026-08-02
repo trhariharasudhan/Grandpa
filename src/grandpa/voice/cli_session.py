@@ -33,7 +33,10 @@ logger = logging.getLogger(__name__)
 
 EXIT_PHRASES = {
     "stop listening",
+    "please stop listening",
+    "stop listen",
     "exit voice mode",
+    "exit voice",
     "goodbye grandpa",
     "goodbye",
     "quit",
@@ -234,6 +237,9 @@ class VoiceSession:
             transcript = self.transcriber.transcribe(audio).strip()
             if self.stop_event is not None and self.stop_event.is_set():
                 return None
+            if is_prompt_echo(transcript):
+                logger.info("Ignoring Whisper initial prompt echo: %r", transcript)
+                return None
         except VoiceRecognitionError as exc:
             self.output(str(exc))
             logger.info("Recoverable voice recognition error: %s", exc)
@@ -304,9 +310,9 @@ class VoiceSession:
             self.speaker.speak(text, stop_event=stop)
             if not self._wait_for_speaker(stop) or stop.is_set():
                 return
-        except VoiceError as exc:
+        except Exception as exc:
             self.output(
-                f"Text-to-speech is unavailable. Continuing in text-only voice mode. ({exc})"
+                f"Text-to-speech is unavailable. TTS failed: {type(exc).__name__}: {exc}"
             )
             logger.warning("Voice assistant TTS error: %s", exc)
             return
@@ -455,8 +461,12 @@ def build_voice_session(
 def is_exit_phrase(text: str) -> bool:
     """Return True when recognized text asks to stop voice mode."""
 
-    normalized = re.sub(r"\s+", " ", text.strip().casefold())
-    return normalized in EXIT_PHRASES
+    normalized = re.sub(r"\s+", " ", text.strip().casefold()).rstrip(".?!,")
+    if normalized in EXIT_PHRASES:
+        return True
+    if "stop listening" in normalized or "stop listening" in normalized.replace("-", " "):
+        return True
+    return False
 
 
 def normalize_echo_text(text: str) -> str:
@@ -500,6 +510,20 @@ def is_probable_speaker_echo(
     return SequenceMatcher(None, candidate, spoken).ratio() >= similarity_threshold
 
 
+def is_prompt_echo(text: str) -> bool:
+    """Return True if the transcribed text is likely just the Whisper prompt hint echo."""
+    normalized = re.sub(r"[^\w\s]", "", text.strip().lower())
+    prompt_words = {"grandpa", "assistant", "ollama", "the", "current", "year", "may", "be", "2026"}
+    words = normalized.split()
+    if len(words) < 2:
+        return False
+    if all(w in prompt_words for w in words):
+        if len(words) == 2 and not any(w in {"assistant", "ollama", "may", "be"} for w in words):
+            return False
+        return True
+    return False
+
+
 __all__ = [
     "EXIT_PHRASES",
     "VoiceSession",
@@ -508,4 +532,5 @@ __all__ = [
     "is_exit_phrase",
     "is_probable_speaker_echo",
     "normalize_echo_text",
+    "is_prompt_echo",
 ]

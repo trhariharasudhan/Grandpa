@@ -74,6 +74,7 @@ class FasterWhisperBackend(SpeechBackend):
             kwargs = {}
             if language:
                 kwargs["language"] = language
+            kwargs["initial_prompt"] = "Grandpa assistant. Ollama. The current year may be 2026."
 
             segments_iter, info = model.transcribe(tmp_path, **kwargs)
             segments_list = list(segments_iter)

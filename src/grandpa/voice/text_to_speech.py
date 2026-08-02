@@ -56,7 +56,9 @@ class GrandpaTextToSpeech:
             self._finished.clear()
             self._speaking.set()
             try:
-                self._engine.speak(clean, interrupt=True)
+                res = self._engine.speak(clean, interrupt=True)
+                if res is not None and getattr(res, "status", None) == "fallback":
+                    raise RuntimeError(f"TTS backend failed: {res.message}. Error: {res.error}")
             finally:
                 self._speaking.clear()
                 self._finished.set()
@@ -68,10 +70,28 @@ class GrandpaTextToSpeech:
         error: list[BaseException] = []
 
         def _worker() -> None:
+            import sys
+            initialized_com = False
+            if sys.platform == "win32":
+                try:
+                    import pythoncom
+                    pythoncom.CoInitialize()
+                    initialized_com = True
+                except Exception:
+                    pass
             try:
-                self._engine.speak(clean, interrupt=True)
+                res = self._engine.speak(clean, interrupt=True)
+                if res is not None and getattr(res, "status", None) == "fallback":
+                    raise RuntimeError(f"TTS backend failed: {res.message}. Error: {res.error}")
             except BaseException as exc:
                 error.append(exc)
+            finally:
+                if initialized_com:
+                    try:
+                        import pythoncom
+                        pythoncom.CoUninitialize()
+                    except Exception:
+                        pass
 
         thread = threading.Thread(
             target=_worker,
