@@ -119,7 +119,8 @@ cli.add_command(_lazy("ask", "grandpa.cli.ask:ask", short_help="Ask Grandpa once
 cli.add_command(_lazy("chat", "grandpa.cli.chat_cmd:chat", short_help="Start chat mode."))
 cli.add_command(_lazy("apps", "grandpa.cli.apps_cmd:apps", short_help="Scan and query installed apps."))
 cli.add_command(_lazy("projects", "grandpa.cli.projects_cmd:projects", short_help="Manage developer projects."))
-cli.add_command(_lazy("project", "grandpa.cli.projects_cmd:project", short_help="Alias for projects."))
+cli.add_command(_lazy("project", "grandpa.cli.project_cmd:project_group", short_help="Autonomous development workflow V1."))
+cli.add_command(_lazy("roadmap", "grandpa.cli.roadmap_cmd:roadmap_group", short_help="Manage project roadmaps and milestones."))
 cli.add_command(_lazy("screen", "grandpa.cli.screen_cmd:screen", short_help="Inspect the screen read-only."))
 cli.add_command(
     _lazy(
@@ -165,6 +166,7 @@ cli.add_command(_lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manag
 cli.add_command(_lazy("agent", "grandpa.cli.agent_run_cmd:agent_group", short_help="Grandpa Agent Runtime V1."))
 cli.add_command(_lazy("workflow", "grandpa.cli.workflow_cmd:workflow", short_help="Run workflows."))
 cli.add_command(_lazy("skill", "grandpa.cli.skill_cmd:skill", short_help="Manage skills."))
+cli.add_command(_lazy("sprint", "grandpa.cli.sprint_cmd:sprint_group", short_help="Autonomous Sprint Runner V1."))
 cli.add_command(_lazy("start", "grandpa.cli.daemon_cmd:start", short_help="Start background services."))
 cli.add_command(_lazy("stop", "grandpa.cli.daemon_cmd:stop", short_help="Stop background services."))
 cli.add_command(_lazy("restart", "grandpa.cli.daemon_cmd:restart", short_help="Restart background services."))

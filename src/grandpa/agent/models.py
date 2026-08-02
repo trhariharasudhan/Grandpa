@@ -9,14 +9,30 @@ from typing import Any
 
 
 class AgentIntent(str, Enum):
-    PROJECT_CONTINUE = "project_continue"
-    PROJECT_STATUS = "project_status"
-    RESEARCH = "research"
-    BROWSER_TASK = "browser_task"
-    AUTOMATION_TASK = "automation_task"
-    MEMORY_TASK = "memory_task"
-    PLANNING_TASK = "planning_task"
+    GREETING = "greeting"
+    TIME_QUERY = "time_query"
+    CONVERSATIONAL = "conversational"
+    MEMORY = "memory"
+    PROJECT = "project"
+    ROADMAP = "roadmap"
+    SPRINT = "sprint"
+    AGENT = "agent"
+    PLANNER = "planner"
+    BROWSER = "browser"
+    VISION = "vision"
+    AUTOMATION = "automation"
+    SYSTEM_STATUS = "system_status"
+    STOP_CANCEL = "stop_cancel"
     UNKNOWN = "unknown"
+
+    # Compatibility aliases
+    PROJECT_CONTINUE = "project"
+    PROJECT_STATUS = "project"
+    RESEARCH = "agent"
+    BROWSER_TASK = "browser"
+    AUTOMATION_TASK = "automation"
+    MEMORY_TASK = "memory"
+    PLANNING_TASK = "planner"
 
 
 class StepStatus(str, Enum):

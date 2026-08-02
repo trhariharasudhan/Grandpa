@@ -822,6 +822,16 @@ def _handle_natural_assistant_intent(
 
 
 def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
+    normalized = _normalize_local_intent(text)
+    if normalized in NATURAL_MEMORY_ALL_INTENTS:
+        from grandpa.memory_context import MemoryStore
+        memory_store = store or MemoryStore()
+        return _format_memories(memory_store.list_memories())
+    if normalized in NATURAL_MEMORY_LIST_INTENTS:
+        from grandpa.memory_context import MemoryStore
+        memory_store = store or MemoryStore()
+        return _format_user_memories(memory_store.list_memories())
+
     from grandpa.memory.intent import MemoryIntent
     from grandpa.memory.service import MemoryService
 

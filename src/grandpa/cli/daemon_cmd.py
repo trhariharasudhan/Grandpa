@@ -146,6 +146,13 @@ def _terminate_pid(pid: int, *, grace_seconds: float = 10.0) -> None:
     except Exception:
         return
 
+    if platform.system().lower() == "windows":
+        try:
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
+        except Exception:
+            pass
+        return
+
     try:
         os.kill(pid, signal.SIGTERM)
         deadline = time.time() + grace_seconds

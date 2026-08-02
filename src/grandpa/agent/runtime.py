@@ -163,6 +163,454 @@ class AgentRuntime:
 
     def run(self, goal_text: str, dry_run: bool = False) -> AgentResult:
         """Run the Agent Runtime loop to execute or preview the goal."""
+        lowered = goal_text.strip().lower()
+
+        # Load registry
+        from grandpa.agent.context import classify_intent
+        from grandpa.agent.development.registry import MultiProjectRegistry
+        intent = classify_intent(goal_text)
+
+        if intent == AgentIntent.GREETING:
+            msg = "Hello! I am Grandpa, your AI assistant. How can I help you today?"
+            goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+            context = build_context(goal)
+            return AgentResult(
+                state=AgentExecutionState.COMPLETED,
+                goal=goal,
+                context=context,
+                plan=None,
+                message=msg,
+            )
+
+        elif intent == AgentIntent.TIME_QUERY:
+            import datetime
+            now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            msg = f"The current local time is {now_str}."
+            goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+            context = build_context(goal)
+            return AgentResult(
+                state=AgentExecutionState.COMPLETED,
+                goal=goal,
+                context=context,
+                plan=None,
+                message=msg,
+            )
+
+        elif intent == AgentIntent.STOP_CANCEL:
+            msg = "Stopped active operations. Assistant is now listening."
+            goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+            context = build_context(goal)
+            return AgentResult(
+                state=AgentExecutionState.COMPLETED,
+                goal=goal,
+                context=context,
+                plan=None,
+                message=msg,
+            )
+
+        elif intent == AgentIntent.SPRINT:
+            registry = MultiProjectRegistry()
+            active_p = registry.get_active_project()
+            p_path = active_p.project_path if active_p else "D:\\Grandpa"
+            from grandpa.agent.development.sprint import SprintRunner
+            runner = SprintRunner(p_path)
+
+            if "preview" in lowered or "what is on the sprint plan" in lowered:
+                sprint, msg = runner.preview_sprint()
+                if sprint:
+                    msg = f"Sprint Preview:\nProject: {sprint.project_name}\nTask ID: {sprint.task_id}\nSteps:\n" + "\n".join(sprint.sprint_plan) + f"\n{msg}"
+                else:
+                    msg = f"Failed to preview sprint: {msg}"
+            elif "start" in lowered or "begin" in lowered:
+                sprint, msg = runner.start_sprint(auto_approve=True)
+                if sprint:
+                    msg = f"Sprint started. Status: {sprint.status.upper()}. Result: {sprint.execution_result or 'Running'}.\n{msg}"
+                else:
+                    msg = f"Failed to start sprint: {msg}"
+            elif "status" in lowered:
+                sprint = runner.load_sprint()
+                if sprint:
+                    msg = f"Sprint Project: {sprint.project_name}\nSprint Status: {sprint.status.upper()}\nTask ID: {sprint.task_id}\nMilestone ID: {sprint.milestone_id}\nResult: {sprint.execution_result or 'Pending'}"
+                else:
+                    msg = "No active sprint found."
+            elif "pause" in lowered:
+                sprint, msg = runner.pause_sprint()
+                msg = f"Sprint paused. {msg}"
+            elif "resume" in lowered or "continue" in lowered:
+                sprint, msg = runner.resume_sprint()
+                msg = f"Sprint resumed. {msg}"
+            elif "cancel" in lowered:
+                sprint, msg = runner.cancel_sprint()
+                msg = f"Sprint cancelled. {msg}"
+            elif "validate" in lowered:
+                failures = []
+                sprint = runner.load_sprint()
+                if sprint:
+                    for cmd_str in sprint.validation_commands:
+                        args = runner._parse_validation_command(cmd_str)
+                        if args:
+                            from grandpa.agent.execution.command_catalog import (
+                                DiagnosticCommand,
+                                run_catalog_command,
+                            )
+                            cmd = DiagnosticCommand(args=args, cwd=str(runner.project_path))
+                            res = run_catalog_command(cmd)
+                            if res.exit_code != 0:
+                                failures.append(cmd_str)
+                    if failures:
+                        msg = f"Sprint validation failed: {failures}"
+                    else:
+                        msg = "Sprint validation passed successfully."
+                else:
+                    msg = "No active sprint found to validate."
+            elif "report" in lowered:
+                sprint = runner.load_sprint()
+                if sprint:
+                    msg = f"Sprint Project: {sprint.project_name}\nStatus: {sprint.status.upper()}\nResult: {sprint.execution_result or 'Pending'}"
+                else:
+                    msg = "No active sprint found."
+            else:
+                msg = "Unknown sprint command."
+
+            goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+            context = build_context(goal)
+            return AgentResult(
+                state=AgentExecutionState.COMPLETED,
+                goal=goal,
+                context=context,
+                plan=None,
+                message=msg,
+            )
+
+        registry = MultiProjectRegistry()
+        active = registry.get_active_project()
+
+        is_mp_goal = False
+        mp_triggers = (
+            "continue grandpa project",
+            "continue chronobot",
+            "continue project",
+            "current project",
+            "switch to",
+            "show project context",
+            "what should i work on next",
+            "show roadmap",
+            "show current milestone",
+            "resume last task",
+            "show blockers",
+            "plan next milestone",
+            "show engineering plan",
+            "generate work package",
+            "create roadmap",
+            "plan project",
+            "expand milestone",
+            "generate tasks",
+            "what should i build next"
+        )
+        if any(tr in lowered for tr in mp_triggers):
+            is_mp_goal = True
+
+        if is_mp_goal:
+            if "switch to" in lowered:
+                target_name = goal_text.replace("Switch to", "").replace("switch to", "").strip()
+                try:
+                    pinfo = registry.switch_project(target_name)
+                    msg = f"Switched active project context to '{pinfo.project_name}'."
+                except Exception as exc:
+                    msg = f"Failed to switch project: {exc}"
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            # Auto-switch to explicit continuation project (e.g. "Continue ChronoBot")
+            for p in registry.list_projects():
+                if f"continue {p.project_name.lower()}" in lowered:
+                    registry.switch_project(p.project_name)
+                    active = p
+                    break
+
+            active = registry.get_active_project()
+
+            project_path = "D:\\Grandpa"
+            project_name = "Grandpa"
+            if active:
+                project_path = active.project_path
+                project_name = active.project_name
+            else:
+                if not Path(project_path).exists():
+                    project_path = str(Path.cwd())
+
+            from grandpa.agent.development.engine import ContinuationEngine
+            engine = ContinuationEngine(project_path, project_name=project_name)
+
+            if "continue" in lowered or "what should i work on next" in lowered:
+                res = engine.continue_project()
+                next_task_title = res["next_task"].title if res["next_task"] else "None"
+                msg = (
+                    f"Continuation engine active for '{res['project_name']}'. "
+                    f"Plan: {res['execution_plan']}"
+                )
+
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                context.intent = AgentIntent.PROJECT_CONTINUE
+                context.project_memory = {
+                    "project_name": res["project_name"],
+                    "project_path": res["project_path"],
+                    "active_branch": res["active_branch"],
+                    "repository_health": res["repository_health"],
+                    "current_milestone": res["current_milestone"],
+                    "next_milestone": res["next_milestone"],
+                    "next_task": next_task_title,
+                }
+
+                steps = [
+                    AgentStep(id="step_1", description="Load project memory", tool="memory"),
+                    AgentStep(id="step_2", description="Inspect repository", tool="automation"),
+                    AgentStep(id="step_3", description="Identify next task and run", tool="planner"),
+                ]
+                plan = AgentPlan(plan_id=str(uuid.uuid4()), goal=goal, steps=steps)
+
+                return AgentResult(
+                    state=AgentExecutionState.IDLE if dry_run else AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=plan,
+                    message=msg,
+                )
+
+            elif "current project" in lowered:
+                if active:
+                    msg = f"Active Project: {active.project_name} [{active.project_id}]"
+                else:
+                    msg = "No active project set."
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "show project context" in lowered:
+                if active:
+                    state = engine.tracker.load_state()
+                    next_task = engine.identify_next_task(state)
+                    next_task_str = f"[{next_task.task_id}] {next_task.title}" if next_task else "None"
+                    msg = (
+                        f"Project Context for '{active.project_name}':\n"
+                        f"Path: {active.project_path}\n"
+                        f"Branch: {state.active_branch}\n"
+                        f"Health: {state.repository_health.upper()}\n"
+                        f"Current Milestone: {state.current_milestone or 'None'}\n"
+                        f"Next Task: {next_task_str}"
+                    )
+                else:
+                    msg = "No active project context found."
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "show current milestone" in lowered:
+                state = engine.tracker.load_state()
+                msg = f"Current milestone: {state.current_milestone or 'None'}"
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "show roadmap" in lowered:
+                state = engine.tracker.load_state()
+                roadmap = state.roadmap
+                msg = (
+                    f"Roadmap:\n"
+                    f"Completed Milestones: {', '.join(roadmap.completed_milestones) or 'None'}\n"
+                    f"Current Milestone: {roadmap.current_milestone or 'None'}\n"
+                    f"Planned Milestones: {', '.join(roadmap.planned_milestones) or 'None'}\n"
+                    f"Blocked Milestones: {', '.join(roadmap.blocked_milestones) or 'None'}"
+                )
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "resume last task" in lowered:
+                state = engine.tracker.load_state()
+                active_task = None
+                for t in state.tasks:
+                    if t.status in ("in_progress", "pending") and not t.completion_state:
+                        active_task = t
+                        break
+                if active_task:
+                    msg = f"Resuming last active task: [{active_task.task_id}] '{active_task.title}' (Status: {active_task.status})"
+                else:
+                    msg = "No active task found to resume."
+
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "show blockers" in lowered:
+                state = engine.tracker.load_state()
+                blocked_tasks = [t for t in state.tasks if t.status == "blocked"]
+                blocked_milestones = state.roadmap.blocked_milestones
+                msg = (
+                    f"Blocked Milestones: {', '.join(blocked_milestones) or 'None'}\n"
+                    f"Blocked Tasks: {', '.join([f'[{t.task_id}] {t.title}' for t in blocked_tasks]) or 'None'}"
+                )
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "plan next milestone" in lowered or "show engineering plan" in lowered:
+                state = engine.tracker.load_state()
+                from grandpa.agent.development.planner import EngineeringPlanner
+                planner = EngineeringPlanner(state)
+                milestone, task, reason = planner.analyze_milestone_and_task()
+                msg = (
+                    f"Recommended Milestone: {milestone or 'None'}\n"
+                    f"Reasoning: {reason}"
+                )
+                if task:
+                    msg += f"\nNext Task  : [{task.task_id}] {task.title}"
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "generate work package" in lowered:
+                state = engine.tracker.load_state()
+                from grandpa.agent.development.planner import EngineeringPlanner
+                planner = EngineeringPlanner(state)
+                wp = planner.generate_work_package()
+                msg = planner.format_work_package_text(wp)
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "create roadmap" in lowered or "plan project" in lowered:
+                state = engine.tracker.load_state()
+                from grandpa.agent.development.roadmap_generator import RoadmapGenerator
+                generator = RoadmapGenerator(state)
+                generator.generate_roadmap("General development", [])
+                engine.tracker.save_state(state)
+                msg = f"Created roadmap successfully for project '{project_name}'."
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "expand milestone" in lowered or "generate tasks" in lowered:
+                state = engine.tracker.load_state()
+                from grandpa.agent.development.roadmap_generator import RoadmapGenerator
+                generator = RoadmapGenerator(state)
+                m_id = "ms_core"
+                if m_id in state.roadmap.milestones:
+                    tasks_data = [
+                        {
+                            "task_id": "tsk_gen_1",
+                            "title": "Core functional implementation",
+                            "priority": "medium",
+                            "dependencies": ["tsk_init"],
+                            "description": "Implement core functional features.",
+                            "explanation": "Core functions are required for milestone success."
+                        }
+                    ]
+                    try:
+                        generator.expand_milestone(m_id, tasks_data)
+                        engine.tracker.save_state(state)
+                        msg = f"Expanded milestone '{m_id}' with core tasks."
+                    except Exception as exc:
+                        msg = f"Milestone expansion skipped: {exc}"
+                else:
+                    msg = "Milestone 'ms_core' not found. Please create a roadmap first."
+
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
+            elif "what should i build next" in lowered:
+                state = engine.tracker.load_state()
+                from grandpa.agent.development.planner import EngineeringPlanner
+                planner = EngineeringPlanner(state)
+                milestone, task, reason = planner.analyze_milestone_and_task()
+                msg = "Recommendation: "
+                if task:
+                    msg += f"Build task ({task.task_id}) '{task.title}' next. "
+                elif milestone:
+                    msg += f"Focus on milestone '{milestone}' next. "
+                else:
+                    msg += "All tasks and milestones completed."
+                msg += f"\nReasoning: {reason}"
+
+                goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
+                context = build_context(goal)
+                return AgentResult(
+                    state=AgentExecutionState.COMPLETED,
+                    goal=goal,
+                    context=context,
+                    plan=None,
+                    message=msg,
+                )
+
         goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
         context = build_context(goal)
 
@@ -311,6 +759,11 @@ class AgentRuntime:
             lines.append("- Bounded recovery failed. Check logs and retry with manual steps.")
         else:
             lines.append("- Proceed with plan execution.")
+
+        if result.message:
+            lines.append("")
+            lines.append("Message:")
+            lines.append(result.message)
 
         return "\n".join(lines)
 

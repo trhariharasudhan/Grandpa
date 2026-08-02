@@ -351,7 +351,7 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
         if not context.supported:
             return BrowserActionResult("unsupported", action, target, context.message, context=context)
         text = context.visible_text.strip()
-        if not text:
+        if not text or context.acquisition_source not in ("full_dom", "accessibility_tree"):
             return BrowserActionResult(
                 "unsupported",
                 action,
@@ -687,7 +687,7 @@ def _is_browser_chrome_node(text: str) -> bool:
 
 def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
     """Extract structured DOM context from a visible Chrome or Edge browser window handle via UIA Accessibility tree."""
-    if not hwnd or sys.platform != "win32":
+    if not hwnd or sys.platform != "win32" or not _is_live_desktop_enabled():
         return {}
 
     try:

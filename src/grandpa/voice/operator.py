@@ -730,6 +730,34 @@ def run_voice_operator_loop(
             output_func(f"Raw transcript: {text}")
             output_func(f"Normalized transcript: {normalized_text}")
         output_func(f"Understood: {normalized_text}")
+
+        if normalized_text in {"stop listening", "exit", "quit"}:
+            output_func("Voice Operator Mode stopped.")
+            return 0
+
+        # Unified assistant routing
+        from grandpa.agent.context import classify_intent
+        from grandpa.agent.models import AgentIntent
+        intent_type = classify_intent(normalized_text)
+
+        if intent_type in (
+            AgentIntent.GREETING,
+            AgentIntent.TIME_QUERY,
+            AgentIntent.PROJECT,
+            AgentIntent.ROADMAP,
+            AgentIntent.SPRINT,
+            AgentIntent.AGENT,
+            AgentIntent.PLANNER,
+        ):
+            from grandpa.agent.runtime import AgentRuntime
+            runtime = AgentRuntime()
+            res = runtime.run(normalized_text)
+            output_func(res.message)
+            _speak_best_effort(speaker, res.message, dry_run=dry_run)
+            if intent_type == AgentIntent.STOP_CANCEL or normalized_text in ("stop listening", "exit", "quit"):
+                return 0
+            continue
+
         from grandpa.planner.routing import handle_executive_goal
 
         planned = handle_executive_goal(
