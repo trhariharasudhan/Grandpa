@@ -112,7 +112,9 @@ class TestCLI:
         assert {"doctor", "chat", "reminders"}.issubset(commands)
 
     def test_reminders_help_does_not_import_deep_research_modules(self) -> None:
-        with mock.patch("importlib.import_module", wraps=importlib.import_module) as spy:
+        with mock.patch(
+            "importlib.import_module", wraps=importlib.import_module
+        ) as spy:
             result = CliRunner().invoke(cli, ["reminders", "--help"])
 
         assert result.exit_code == 0

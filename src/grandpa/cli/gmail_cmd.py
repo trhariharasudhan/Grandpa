@@ -71,7 +71,9 @@ def read(selector: str) -> None:
 @gmail.command("summarize")
 @click.argument("selector", required=False, default="latest")
 def summarize(selector: str) -> None:
-    command = "summarize latest email" if selector == "latest" else f"summarize {selector}"
+    command = (
+        "summarize latest email" if selector == "latest" else f"summarize {selector}"
+    )
     click.echo(handle_gmail_command(command).message)
 
 

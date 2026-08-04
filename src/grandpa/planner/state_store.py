@@ -58,7 +58,9 @@ class PlanStateStore:
                 plan = self._read_path(path)
                 if plan is not None:
                     plans.setdefault(plan.session_id, plan)
-        return tuple(sorted(plans.values(), key=lambda item: item.updated_at, reverse=True))
+        return tuple(
+            sorted(plans.values(), key=lambda item: item.updated_at, reverse=True)
+        )
 
     def delete(self, session_id: str) -> None:
         with self._lock:
@@ -72,7 +74,9 @@ class PlanStateStore:
         payload = sanitize_plan_data(model_to_dict(plan))
         path = self._path(plan.session_id)
         temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8")
+        temporary.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=True), encoding="utf-8"
+        )
         temporary.replace(path)
 
     def _read_snapshot(self, session_id: str) -> ExecutionPlan | None:
@@ -86,7 +90,11 @@ class PlanStateStore:
             return None
 
     def _path(self, session_id: str) -> Path:
-        safe = "".join(character for character in session_id if character.isalnum() or character in "_-")[:80]
+        safe = "".join(
+            character
+            for character in session_id
+            if character.isalnum() or character in "_-"
+        )[:80]
         return self.root / f"{safe or 'default'}.json"
 
 
@@ -97,7 +105,10 @@ def sanitize_plan_data(value: Any, key: str = "") -> Any:
     if any(marker in normalized for marker in _SENSITIVE_KEYS):
         return "[REDACTED]"
     if isinstance(value, dict):
-        return {str(name): sanitize_plan_data(item, str(name)) for name, item in value.items()}
+        return {
+            str(name): sanitize_plan_data(item, str(name))
+            for name, item in value.items()
+        }
     if isinstance(value, list):
         return [sanitize_plan_data(item, key) for item in value]
     if isinstance(value, str) and _looks_sensitive(value):
@@ -107,7 +118,10 @@ def sanitize_plan_data(value: Any, key: str = "") -> Any:
 
 def _looks_sensitive(value: str) -> bool:
     lowered = value.casefold()
-    return any(marker in lowered for marker in ("password=", "bearer ", "api_key", "api key", "cvv"))
+    return any(
+        marker in lowered
+        for marker in ("password=", "bearer ", "api_key", "api key", "cvv")
+    )
 
 
 def _plan_from_dict(data: dict[str, Any]) -> ExecutionPlan:
@@ -120,17 +134,28 @@ def _plan_from_dict(data: dict[str, Any]) -> ExecutionPlan:
                 description=str(item["description"]),
                 action=str(item["action"]),
                 parameters=dict(item.get("parameters") or {}),
-                dependencies=tuple(StepDependency(**value) for value in item.get("dependencies", [])),
-                preconditions=tuple(StepCondition(**value) for value in item.get("preconditions", [])),
-                expected_postconditions=tuple(StepCondition(**value) for value in item.get("expected_postconditions", [])),
-                verification=StepVerification(**item.get("verification", {"strategy": "execution_success"})),
+                dependencies=tuple(
+                    StepDependency(**value) for value in item.get("dependencies", [])
+                ),
+                preconditions=tuple(
+                    StepCondition(**value) for value in item.get("preconditions", [])
+                ),
+                expected_postconditions=tuple(
+                    StepCondition(**value)
+                    for value in item.get("expected_postconditions", [])
+                ),
+                verification=StepVerification(
+                    **item.get("verification", {"strategy": "execution_success"})
+                ),
                 timeout_seconds=float(item.get("timeout_seconds", 15)),
                 retry_policy=RetryPolicy(**item.get("retry_policy", {})),
                 recovery_policy=RecoveryPolicy(**item.get("recovery_policy", {})),
                 risk=RiskLevel(item.get("risk", "low")),
                 requires_confirmation=bool(item.get("requires_confirmation", False)),
                 status=StepStatus(item.get("status", "pending")),
-                attempts=[_attempt_from_dict(value) for value in item.get("attempts", [])],
+                attempts=[
+                    _attempt_from_dict(value) for value in item.get("attempts", [])
+                ],
                 result_metadata=dict(item.get("result_metadata") or {}),
             )
         )

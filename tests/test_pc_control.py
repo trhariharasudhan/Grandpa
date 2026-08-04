@@ -18,21 +18,39 @@ from grandpa.windows_window_control import WindowControlResult
 
 @pytest.fixture(autouse=True)
 def _isolated_pc_control(tmp_path, monkeypatch):
-    monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl"))
-    monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db"))
-    monkeypatch.setenv("GRANDPA_PC_CONTROL_RETENTION_CONFIG", str(tmp_path / "retention.json"))
-    monkeypatch.setenv("GRANDPA_CLIPBOARD_HISTORY_DB", str(tmp_path / "clipboard_history.db"))
+    monkeypatch.setenv(
+        "GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl")
+    )
+    monkeypatch.setenv(
+        "GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db")
+    )
+    monkeypatch.setenv(
+        "GRANDPA_PC_CONTROL_RETENTION_CONFIG", str(tmp_path / "retention.json")
+    )
+    monkeypatch.setenv(
+        "GRANDPA_CLIPBOARD_HISTORY_DB", str(tmp_path / "clipboard_history.db")
+    )
     pc_control.reset_emergency_stop()
     yield
     pc_control.reset_emergency_stop()
 
 
 def _found_app(app_id: str = "notepad") -> AppResolution:
-    return AppResolution(app_id, app_id.title(), "found", "command", f"{app_id}.exe", "test", "Found app.")
+    return AppResolution(
+        app_id,
+        app_id.title(),
+        "found",
+        "command",
+        f"{app_id}.exe",
+        "test",
+        "Found app.",
+    )
 
 
 def test_app_open_command_dry_run():
-    result = run_local_action({"action_type": "open_app", "target": "notepad", "dry_run": True})
+    result = run_local_action(
+        {"action_type": "open_app", "target": "notepad", "dry_run": True}
+    )
 
     assert result.ok is True
     assert result.status == "dry_run"
@@ -40,7 +58,9 @@ def test_app_open_command_dry_run():
 
 
 def test_installed_app_detection(monkeypatch):
-    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("chrome"))
+    monkeypatch.setattr(
+        "grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("chrome")
+    )
 
     result = run_local_action({"action_type": "detect_app", "target": "chrome"})
 
@@ -52,7 +72,9 @@ def test_vscode_opens_with_project_path_argument(monkeypatch, tmp_path: Path):
     project = tmp_path / "Grandpa"
     project.mkdir()
     launch_calls = []
-    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+    monkeypatch.setattr(
+        "grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode")
+    )
 
     def fake_launch_app(name, *, args=None):
         launch_calls.append((name, args))
@@ -74,10 +96,14 @@ def test_vscode_opens_with_project_path_argument(monkeypatch, tmp_path: Path):
 
 def test_vscode_invalid_project_path_is_rejected(monkeypatch, tmp_path: Path):
     missing = tmp_path / "missing"
-    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+    monkeypatch.setattr(
+        "grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode")
+    )
     monkeypatch.setattr(
         "grandpa.windows_app_resolver.launch_app",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("should not launch")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("should not launch")
+        ),
     )
 
     result = run_local_action(
@@ -96,7 +122,9 @@ def test_vscode_invalid_project_path_is_rejected(monkeypatch, tmp_path: Path):
 def test_vscode_protected_project_path_is_blocked(monkeypatch, tmp_path: Path):
     project = tmp_path / "Grandpa"
     project.mkdir()
-    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+    monkeypatch.setattr(
+        "grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode")
+    )
     monkeypatch.setattr("grandpa.pc_control._is_protected_path", lambda _path: True)
 
     result = run_local_action(
@@ -135,7 +163,9 @@ def test_true_windows_protected_paths_are_blocked(path: Path):
 
 def test_normal_vscode_open_still_uses_no_project_argument(monkeypatch):
     launch_calls = []
-    monkeypatch.setattr("grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode"))
+    monkeypatch.setattr(
+        "grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("vscode")
+    )
 
     def fake_launch_app(name, *, args=None):
         launch_calls.append((name, args))
@@ -157,7 +187,9 @@ def test_blocked_unknown_app():
 
 
 def test_close_app_dry_run():
-    result = run_local_action({"action_type": "close_app", "target": "notepad", "dry_run": True})
+    result = run_local_action(
+        {"action_type": "close_app", "target": "notepad", "dry_run": True}
+    )
 
     assert result.ok is True
     assert result.risk_level == "MEDIUM"
@@ -166,7 +198,9 @@ def test_close_app_dry_run():
 def test_window_action_no_window_found(monkeypatch):
     monkeypatch.setattr(
         "grandpa.windows_window_control.control_window",
-        lambda _action, _target: WindowControlResult("not_found", "focus", "notepad", "I could not find an open Notepad window."),
+        lambda _action, _target: WindowControlResult(
+            "not_found", "focus", "notepad", "I could not find an open Notepad window."
+        ),
     )
 
     result = run_local_action({"action_type": "focus_window", "target": "notepad"})
@@ -179,7 +213,11 @@ def test_window_action_no_window_found(monkeypatch):
 def test_volume_action_mocked(monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(pc_control.sys, "platform", "win32")
-    monkeypatch.setitem(__import__("sys").modules, "pyautogui", SimpleNamespace(press=lambda key: calls.append(key)))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "pyautogui",
+        SimpleNamespace(press=lambda key: calls.append(key)),
+    )
 
     result = run_local_action({"action_type": "volume_up"})
 
@@ -192,7 +230,9 @@ def test_volume_set_missing_backend_is_graceful(monkeypatch):
     monkeypatch.setitem(sys.modules, "comtypes", None)
     monkeypatch.setitem(sys.modules, "pycaw", None)
 
-    result = run_local_action({"action_type": "volume_set", "target": "50", "args": {"level": 50}})
+    result = run_local_action(
+        {"action_type": "volume_set", "target": "50", "args": {"level": 50}}
+    )
 
     assert result.ok is False
     assert result.status == "unsupported"
@@ -222,8 +262,22 @@ def test_multi_monitor_detection(monkeypatch):
             {
                 "count": 2,
                 "monitors": [
-                    {"id": "monitor-1", "left": 0, "top": 0, "width": 1920, "height": 1080, "primary": True},
-                    {"id": "monitor-2", "left": 1920, "top": 0, "width": 1280, "height": 1024, "primary": False},
+                    {
+                        "id": "monitor-1",
+                        "left": 0,
+                        "top": 0,
+                        "width": 1920,
+                        "height": 1080,
+                        "primary": True,
+                    },
+                    {
+                        "id": "monitor-2",
+                        "left": 1920,
+                        "top": 0,
+                        "width": 1280,
+                        "height": 1024,
+                        "primary": False,
+                    },
                 ],
             },
         ),
@@ -242,7 +296,14 @@ def test_active_process_awareness(monkeypatch):
         lambda: DesktopContextResult(
             True,
             "Active process: notepad.exe.",
-            {"process": {"pid": 123, "name": "notepad.exe", "title": "Untitled - Notepad", "executable": "notepad.exe"}},
+            {
+                "process": {
+                    "pid": 123,
+                    "name": "notepad.exe",
+                    "title": "Untitled - Notepad",
+                    "executable": "notepad.exe",
+                }
+            },
         ),
         raising=False,
     )
@@ -258,10 +319,15 @@ def test_clipboard_read_write_mocked(monkeypatch):
     monkeypatch.setitem(
         __import__("sys").modules,
         "pyperclip",
-        SimpleNamespace(copy=lambda text: clipboard.update(value=text), paste=lambda: clipboard["value"]),
+        SimpleNamespace(
+            copy=lambda text: clipboard.update(value=text),
+            paste=lambda: clipboard["value"],
+        ),
     )
 
-    write = run_local_action({"action_type": "clipboard_write", "target": "secret text"})
+    write = run_local_action(
+        {"action_type": "clipboard_write", "target": "secret text"}
+    )
     read = run_local_action({"action_type": "clipboard_read"})
 
     assert write.ok is True
@@ -276,7 +342,10 @@ def test_clipboard_inspect_and_history_are_metadata_only(monkeypatch):
     monkeypatch.setitem(
         __import__("sys").modules,
         "pyperclip",
-        SimpleNamespace(copy=lambda text: clipboard.update(value=text), paste=lambda: clipboard["value"]),
+        SimpleNamespace(
+            copy=lambda text: clipboard.update(value=text),
+            paste=lambda: clipboard["value"],
+        ),
     )
 
     inspect_result = run_local_action({"action_type": "clipboard_inspect"})
@@ -295,10 +364,34 @@ def test_safe_file_create_rename_move_copy(tmp_path):
     moved = tmp_path / "folder" / "moved.txt"
     copied = tmp_path / "copy.txt"
 
-    assert run_local_action({"action_type": "file_create", "target": str(source), "args": {"content": "hello"}}).ok
-    assert run_local_action({"action_type": "file_rename", "target": str(source), "args": {"destination": str(renamed)}}).ok
-    assert run_local_action({"action_type": "file_move", "target": str(renamed), "args": {"destination": str(moved)}}).ok
-    assert run_local_action({"action_type": "file_copy", "target": str(moved), "args": {"destination": str(copied)}}).ok
+    assert run_local_action(
+        {
+            "action_type": "file_create",
+            "target": str(source),
+            "args": {"content": "hello"},
+        }
+    ).ok
+    assert run_local_action(
+        {
+            "action_type": "file_rename",
+            "target": str(source),
+            "args": {"destination": str(renamed)},
+        }
+    ).ok
+    assert run_local_action(
+        {
+            "action_type": "file_move",
+            "target": str(renamed),
+            "args": {"destination": str(moved)},
+        }
+    ).ok
+    assert run_local_action(
+        {
+            "action_type": "file_copy",
+            "target": str(moved),
+            "args": {"destination": str(copied)},
+        }
+    ).ok
     assert copied.read_text(encoding="utf-8") == "hello"
 
 
@@ -318,15 +411,21 @@ def test_delete_requires_approval(tmp_path):
 
 
 def test_protected_path_blocked():
-    result = run_local_action({"action_type": "file_create", "target": "C:\\Windows\\grandpa-test.txt"})
+    result = run_local_action(
+        {"action_type": "file_create", "target": "C:\\Windows\\grandpa-test.txt"}
+    )
 
     assert result.status == "blocked"
     assert result.error == "protected_path"
 
 
 def test_keyboard_mouse_dry_run():
-    key = run_local_action({"action_type": "keyboard_type", "target": "hello", "dry_run": True})
-    mouse = run_local_action({"action_type": "mouse_click", "args": {"x": 10, "y": 20}, "dry_run": True})
+    key = run_local_action(
+        {"action_type": "keyboard_type", "target": "hello", "dry_run": True}
+    )
+    mouse = run_local_action(
+        {"action_type": "mouse_click", "args": {"x": 10, "y": 20}, "dry_run": True}
+    )
 
     assert key.ok is True
     assert mouse.ok is True
@@ -334,11 +433,13 @@ def test_keyboard_mouse_dry_run():
 
 
 def test_mouse_drag_dry_run():
-    result = run_local_action({
-        "action_type": "mouse_drag",
-        "args": {"start_x": 1, "start_y": 2, "end_x": 30, "end_y": 40},
-        "dry_run": True,
-    })
+    result = run_local_action(
+        {
+            "action_type": "mouse_drag",
+            "args": {"start_x": 1, "start_y": 2, "end_x": 30, "end_y": 40},
+            "dry_run": True,
+        }
+    )
 
     assert result.ok is True
     assert result.risk_level == "MEDIUM"
@@ -346,7 +447,9 @@ def test_mouse_drag_dry_run():
 
 def test_protected_active_window_blocks_automation(monkeypatch):
     monkeypatch.setattr(pc_control.sys, "platform", "win32")
-    monkeypatch.setattr("grandpa.desktop_context.active_window_is_protected", lambda: True)
+    monkeypatch.setattr(
+        "grandpa.desktop_context.active_window_is_protected", lambda: True
+    )
 
     result = run_local_action({"action_type": "keyboard_type", "target": "hello"})
 
@@ -360,7 +463,11 @@ def test_desktop_session_summary(monkeypatch):
         lambda: DesktopContextResult(
             True,
             "Detected 1 monitor. Active process: chrome.exe.",
-            {"monitors": {"count": 1}, "active_process": {"name": "chrome.exe"}, "process_count": 10},
+            {
+                "monitors": {"count": 1},
+                "active_process": {"name": "chrome.exe"},
+                "process_count": 10,
+            },
         ),
     )
 
@@ -489,9 +596,15 @@ def test_audit_log_schema_redacts_clipboard(monkeypatch):
         "pyperclip",
         SimpleNamespace(copy=lambda _text: None, paste=lambda: "sensitive clipboard"),
     )
-    run_local_action({"action_type": "clipboard_write", "target": "sensitive clipboard"})
+    run_local_action(
+        {"action_type": "clipboard_write", "target": "sensitive clipboard"}
+    )
 
-    line = Path(pc_control.get_audit_log_path()).read_text(encoding="utf-8").splitlines()[-1]
+    line = (
+        Path(pc_control.get_audit_log_path())
+        .read_text(encoding="utf-8")
+        .splitlines()[-1]
+    )
     record = json.loads(line)
     assert record["target"] == "[redacted]"
     assert "sensitive clipboard" not in line
@@ -503,7 +616,9 @@ def test_recent_audit_entries_are_redacted(monkeypatch):
         "pyperclip",
         SimpleNamespace(copy=lambda _text: None, paste=lambda: "sensitive clipboard"),
     )
-    run_local_action({"action_type": "clipboard_write", "target": "sensitive clipboard"})
+    run_local_action(
+        {"action_type": "clipboard_write", "target": "sensitive clipboard"}
+    )
 
     entries = pc_control.read_recent_audit_entries()
 
@@ -518,7 +633,9 @@ def test_retention_cleanup_removes_old_decided_records_but_keeps_pending(tmp_pat
     pc_control.reject_local_action(old.action_id or "")
     pending_target = tmp_path / "pending.txt"
     pending_target.write_text("x", encoding="utf-8")
-    pending = run_local_action({"action_type": "file_delete", "target": str(pending_target)})
+    pending = run_local_action(
+        {"action_type": "file_delete", "target": str(pending_target)}
+    )
     old_time = time.time() - 40 * 86400
     with sqlite3.connect(pc_control.get_approval_db_path()) as conn:
         conn.execute(
@@ -555,14 +672,28 @@ def test_expired_approval_preserved_until_retention_window(tmp_path):
 def test_audit_log_rotation_keeps_newest_entries(monkeypatch, tmp_path):
     policy_path = Path(pc_control.get_retention_config_path())
     policy_path.write_text(
-        json.dumps({"approval_retention_days": 30, "audit_max_bytes": 100, "audit_keep_recent_lines": 2}),
+        json.dumps(
+            {
+                "approval_retention_days": 30,
+                "audit_max_bytes": 100,
+                "audit_keep_recent_lines": 2,
+            }
+        ),
         encoding="utf-8",
     )
     audit_path = Path(pc_control.get_audit_log_path())
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     audit_path.write_text(
         "\n".join(
-            json.dumps({"timestamp": i, "action_type": "open_app", "target": f"app-{i}", "risk_level": "LOW", "status": "completed"})
+            json.dumps(
+                {
+                    "timestamp": i,
+                    "action_type": "open_app",
+                    "target": f"app-{i}",
+                    "risk_level": "LOW",
+                    "status": "completed",
+                }
+            )
             for i in range(5)
         )
         + "\n",
@@ -583,7 +714,15 @@ def test_corrupted_audit_entry_recovery():
     audit_path.parent.mkdir(parents=True, exist_ok=True)
     audit_path.write_text(
         "{not-json}\n"
-        + json.dumps({"timestamp": 1, "action_type": "open_app", "target": "notepad", "risk_level": "LOW", "status": "completed"})
+        + json.dumps(
+            {
+                "timestamp": 1,
+                "action_type": "open_app",
+                "target": "notepad",
+                "risk_level": "LOW",
+                "status": "completed",
+            }
+        )
         + "\n",
         encoding="utf-8",
     )

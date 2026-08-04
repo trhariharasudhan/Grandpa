@@ -29,7 +29,9 @@ def test_create_append_open_and_search_notes(tmp_path) -> None:
     automation = NotesAutomation(store=store)
 
     created = automation.handle("create a note called Grandpa Ideas")
-    appended = automation.handle("append this to my grandpa ideas note browser automation plan")
+    appended = automation.handle(
+        "append this to my grandpa ideas note browser automation plan"
+    )
     opened = automation.handle("open my note Grandpa Ideas")
     searched = automation.handle("search notes for browser automation")
 
@@ -62,7 +64,9 @@ def test_rename_pin_archive_restore_and_recent_notes(tmp_path) -> None:
     assert "Grandpa Project Notes" in recent.message
 
 
-def test_delete_requires_confirmation_and_confirmed_delete_removes_file(tmp_path) -> None:
+def test_delete_requires_confirmation_and_confirmed_delete_removes_file(
+    tmp_path,
+) -> None:
     store = NotesStore(tmp_path)
     automation = NotesAutomation(store=store)
     automation.handle("create a note called Delete Me")
@@ -85,7 +89,9 @@ def test_storage_prevents_path_traversal_and_secret_capture(tmp_path) -> None:
     with pytest.raises(NotesSafetyError):
         safety.ensure_inside_root(tmp_path, tmp_path.parent / "outside.md")
 
-    result = NotesAutomation(store=store).handle("add this to my notes token: abcdefgh123456")
+    result = NotesAutomation(store=store).handle(
+        "add this to my notes token: abcdefgh123456"
+    )
 
     assert result.status == "blocked"
     assert "secret" in result.message
@@ -112,7 +118,9 @@ def test_parser_handles_requested_natural_commands() -> None:
     assert parser.parse("delete note Grandpa Ideas").action == "delete"
 
 
-def test_notes_slash_command_routes_through_safe_facade(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_notes_slash_command_routes_through_safe_facade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
 
     def fake_handle(text: str):
@@ -133,7 +141,9 @@ def test_notes_slash_command_is_registered_for_picker() -> None:
     assert "/notes search <query>" in command.subcommands
 
 
-def test_voice_assistant_routes_notes_without_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_voice_assistant_routes_notes_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "grandpa.notes.handle_notes_command",
         lambda _text: SimpleNamespace(
@@ -171,7 +181,9 @@ def test_voice_operator_routes_notes_commands(monkeypatch: pytest.MonkeyPatch) -
     assert result.action["action_type"] == "notes"
 
 
-def test_doctor_reports_notes_storage_ready(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+def test_doctor_reports_notes_storage_ready(
+    monkeypatch: pytest.MonkeyPatch, tmp_path
+) -> None:
     class FakeStore:
         def status(self):
             return "ready", f"Notes storage ready at {tmp_path}."

@@ -26,15 +26,31 @@ def load_storage_backends() -> None:
 
 def __getattr__(name: str):
     exports = {
-        "Chunk": ("chunking", "Chunk"), "ChunkConfig": ("chunking", "ChunkConfig"),
-        "chunk_text": ("chunking", "chunk_text"), "ContextConfig": ("context", "ContextConfig"),
-        "inject_context": ("context", "inject_context"), "ingest_path": ("ingest", "ingest_path"),
+        "Chunk": ("chunking", "Chunk"),
+        "ChunkConfig": ("chunking", "ChunkConfig"),
+        "chunk_text": ("chunking", "chunk_text"),
+        "ContextConfig": ("context", "ContextConfig"),
+        "inject_context": ("context", "inject_context"),
+        "ingest_path": ("ingest", "ingest_path"),
         "read_document": ("ingest", "read_document"),
     }
     if name not in exports:
         raise AttributeError(name)
     module, attribute = exports[name]
-    return getattr(importlib.import_module(f"grandpa.tools.storage.{module}"), attribute)
+    return getattr(
+        importlib.import_module(f"grandpa.tools.storage.{module}"), attribute
+    )
 
 
-__all__ = ["Chunk", "ChunkConfig", "ContextConfig", "MemoryBackend", "RetrievalResult", "chunk_text", "inject_context", "ingest_path", "read_document", "load_storage_backends"]
+__all__ = [
+    "Chunk",
+    "ChunkConfig",
+    "ContextConfig",
+    "MemoryBackend",
+    "RetrievalResult",
+    "chunk_text",
+    "inject_context",
+    "ingest_path",
+    "read_document",
+    "load_storage_backends",
+]

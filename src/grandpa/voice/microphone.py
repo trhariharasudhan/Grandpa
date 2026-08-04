@@ -82,7 +82,7 @@ class MicrophoneCapture:
             except Exception as exc:
                 self.close()
                 self.last_error = f"{type(exc).__name__}: {exc}"
-                if attempts >= self.recovery_attempts or self.device is not None:
+                if attempts >= self.recovery_attempts:
                     from grandpa.voice.errors import MicrophoneUnavailableError
 
                     raise MicrophoneUnavailableError(
@@ -91,8 +91,12 @@ class MicrophoneCapture:
                         detail=self.last_error,
                     ) from exc
                 attempts += 1
-                selection = manager.recover(selection.device, exc)
-                self.last_warning = selection.warning
+                import time
+
+                time.sleep(0.3)
+                if self.device is None:
+                    selection = manager.recover(selection.device, exc)
+                    self.last_warning = selection.warning
 
     def _capture_from_device(
         self,

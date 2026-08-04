@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 from grandpa.automation import ScreenAutomationService
 from grandpa.cli.chat_cmd import (
@@ -54,6 +55,7 @@ class VoiceCommandProcessor:
     _engine_name: str = field(default="", init=False)
     _engine: object | None = field(default=None, init=False)
     _model: str = field(default="", init=False)
+    _pending_action: dict[str, Any] | None = field(default=None, init=False)
 
     def handle_user_input(self, text: str) -> VoiceAssistantResponse:
         """Process recognized text and return a user-facing response string."""
@@ -63,6 +65,74 @@ class VoiceCommandProcessor:
             return VoiceAssistantResponse(
                 "I did not catch a command.", status="empty", kind="voice"
             )
+
+        norm = " ".join(user_input.lower().strip().rstrip("?.!").split())
+
+        # Check session control / cancel intents deterministically
+        cancel_phrases = {
+            "stop reasoning",
+            "stop thinking",
+            "cancel that",
+            "cancel current action",
+            "cancel current task",
+            "never mind",
+        }
+        if norm in cancel_phrases:
+            self._pending_action = None
+            return VoiceAssistantResponse(
+                "Acknowledged. Action cancelled.",
+                status="cancelled",
+                kind="session_control",
+            )
+
+        # Check Grandpa conversational identity deterministically
+        identity_phrases = {
+            "tell me about yourself",
+            "who are you",
+            "what can you do",
+            "what is your name",
+            "tell me about you",
+        }
+        if norm in identity_phrases:
+            resp_msg = (
+                "I am Grandpa, a privacy-focused local Windows AI assistant. "
+                "I can chat, open and control applications, understand the screen, "
+                "manage files and reminders, and run safe local automations."
+            )
+            from grandpa.memory_context import remember_conversation
+
+            remember_conversation("user", user_input)
+            remember_conversation("assistant", resp_msg)
+            return VoiceAssistantResponse(resp_msg, status="handled", kind="local")
+
+        from grandpa.memory_context import remember_conversation
+
+        # Check if we have a pending confirmation
+        if self._pending_action is not None:
+            pending = self._pending_action
+            self._pending_action = None  # Clear state
+
+            user_input_lower = user_input.lower().rstrip(".?!,")
+            if user_input_lower in {"yes", "y", "yeah", "sure", "ok", "okay"}:
+                remember_conversation("user", user_input)
+                from grandpa.local_actions import handle_local_action
+
+                result = handle_local_action(pending["command"], execute=True)
+                remember_conversation("assistant", result.message)
+                return VoiceAssistantResponse(
+                    result.message,
+                    status=result.status,
+                    kind=result.kind or "local",
+                )
+            elif user_input_lower in {"no", "n", "nope", "cancel"}:
+                remember_conversation("user", user_input)
+                msg = "Okay, cancelled."
+                remember_conversation("assistant", msg)
+                return VoiceAssistantResponse(
+                    msg,
+                    status="cancelled",
+                    kind="voice",
+                )
 
         try:
             from grandpa.core_ai_brain import (
@@ -78,6 +148,21 @@ class VoiceCommandProcessor:
             remember_conversation("user", user_input)
             brain_analysis = process_user_message(user_input)
             effective_text = brain_analysis.effective_text
+
+            from grandpa.core.runtime_context import handle_datetime_intent
+
+            dt_resp = handle_datetime_intent(effective_text)
+            if dt_resp is not None:
+                remember_conversation("assistant", dt_resp)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=dt_resp,
+                    kind="voice",
+                    target=None,
+                    status="handled",
+                )
+                self._append_turn(user_input, dt_resp)
+                return VoiceAssistantResponse(dt_resp, status="handled", kind="voice")
 
             local_response = self._handle_local_pipeline(effective_text)
             if local_response is not None:
@@ -138,6 +223,33 @@ class VoiceCommandProcessor:
     def _handle_local_pipeline(
         self, effective_text: str
     ) -> VoiceAssistantResponse | None:
+        lower = effective_text.lower().strip()
+        local_prefixes = (
+            "open ",
+            "launch ",
+            "start ",
+            "go to ",
+            "focus ",
+            "minimize ",
+            "maximize ",
+            "restore ",
+            "close ",
+            "switch to ",
+            "switch ",
+        )
+        if lower.startswith(local_prefixes):
+            from grandpa.local_actions import handle_local_action
+
+            local_action = handle_local_action(effective_text)
+            if not local_action.should_fallback:
+                if local_action.status == "pending_confirmation":
+                    self._pending_action = local_action.pending_action
+                return VoiceAssistantResponse(
+                    local_action.message,
+                    status=local_action.status,
+                    kind=local_action.kind or "local",
+                )
+
         natural_intent_message = _handle_natural_assistant_intent(
             effective_text,
             spoken=True,
@@ -212,16 +324,6 @@ class VoiceCommandProcessor:
                 browser_action.message, status=browser_action.status, kind="browser"
             )
 
-        from grandpa.local_actions import handle_local_action
-
-        local_action = handle_local_action(effective_text)
-        if not local_action.should_fallback:
-            return VoiceAssistantResponse(
-                local_action.message,
-                status=local_action.status,
-                kind=local_action.kind or "local",
-            )
-
         from grandpa.file_assistant import handle_file_command
 
         file_action = handle_file_command(effective_text)
@@ -240,6 +342,18 @@ class VoiceCommandProcessor:
                 scheduler_action.message,
                 status=scheduler_action.status,
                 kind=getattr(scheduler_action, "kind", "routine"),
+            )
+
+        from grandpa.local_actions import handle_local_action
+
+        local_action = handle_local_action(effective_text)
+        if not local_action.should_fallback:
+            if local_action.status == "pending_confirmation":
+                self._pending_action = local_action.pending_action
+            return VoiceAssistantResponse(
+                local_action.message,
+                status=local_action.status,
+                kind=local_action.kind or "local",
             )
 
         return None

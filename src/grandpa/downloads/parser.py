@@ -23,13 +23,20 @@ class DownloadsParser:
         )
 
     def _parse_read(self, command: str, raw: str) -> DownloadAction | None:
-        if command in {"show my recent downloads", "show recent downloads", "downloads recent"}:
+        if command in {
+            "show my recent downloads",
+            "show recent downloads",
+            "downloads recent",
+        }:
             return DownloadAction("recent")
         if command in {"show downloads from today", "downloads today"}:
             return DownloadAction("today")
         if command in {"open latest download", "downloads latest"}:
             return DownloadAction("open", selector="latest")
-        if command in {"open the folder containing the latest download", "open latest download folder"}:
+        if command in {
+            "open the folder containing the latest download",
+            "open latest download folder",
+        }:
             return DownloadAction("open_folder", selector="latest")
         if command in {"show large downloads", "downloads large"}:
             return DownloadAction("large")
@@ -37,7 +44,10 @@ class DownloadsParser:
             return DownloadAction("incomplete")
         if command in {"show duplicate downloads", "downloads duplicates"}:
             return DownloadAction("duplicates")
-        match = re.fullmatch(r"(?:find downloaded|downloads search|find download(?:ed)? file) (.+)", command)
+        match = re.fullmatch(
+            r"(?:find downloaded|downloads search|find download(?:ed)? file) (.+)",
+            command,
+        )
         if match:
             query = raw[match.start(1) : match.end(1)]
             return DownloadAction("search", query=query)
@@ -58,24 +68,39 @@ class DownloadsParser:
             if not match:
                 continue
             if selector:
-                return DownloadAction("move", selector=selector, destination=destination)
+                return DownloadAction(
+                    "move", selector=selector, destination=destination
+                )
             raw_selector = raw[match.start(1) : match.end(1)]
             raw_destination = raw[match.start(2) : match.end(2)]
-            return DownloadAction("move", selector=raw_selector, destination=raw_destination)
+            return DownloadAction(
+                "move", selector=raw_selector, destination=raw_destination
+            )
         return None
 
     def _parse_organize(self, command: str) -> DownloadAction | None:
-        if command in {"organize my downloads folder", "organize downloads", "downloads organize"}:
+        if command in {
+            "organize my downloads folder",
+            "organize downloads",
+            "downloads organize",
+        }:
             return DownloadAction("organize")
         return None
 
     def _parse_archive_delete(self, command: str, raw: str) -> DownloadAction | None:
         if command in {"archive old downloads", "downloads archive old"}:
             return DownloadAction("archive", selector="old", days=30)
-        match = re.fullmatch(r"(?:delete downloads older than|downloads delete older than) (\d+) days", command)
+        match = re.fullmatch(
+            r"(?:delete downloads older than|downloads delete older than) (\d+) days",
+            command,
+        )
         if match:
             return DownloadAction("delete", selector="old", days=int(match.group(1)))
-        if command in {"clear temporary download files", "downloads delete temporary", "downloads delete temp"}:
+        if command in {
+            "clear temporary download files",
+            "downloads delete temporary",
+            "downloads delete temp",
+        }:
             return DownloadAction("delete", selector="temporary")
         match = re.fullmatch(r"downloads archive (.+)", command)
         if match:

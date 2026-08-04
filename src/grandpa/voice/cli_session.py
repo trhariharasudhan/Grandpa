@@ -11,6 +11,7 @@ from difflib import SequenceMatcher
 from enum import StrEnum
 from typing import Callable, Protocol
 
+from grandpa.cli.theme import FAREWELL_TEXT
 from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
@@ -24,6 +25,7 @@ from grandpa.voice.errors import (
     VoiceRecognitionError,
 )
 from grandpa.voice.microphone import MicrophoneCapture
+from grandpa.voice.presenter import VoicePresenter
 from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 from grandpa.voice.text_to_speech import GrandpaTextToSpeech
 from grandpa.voice.vad import VoiceActivityConfig
@@ -122,9 +124,19 @@ class VoiceSession:
     cooldown_wait: Callable[[threading.Event, float], bool] = field(
         default=lambda stop, seconds: stop.wait(seconds)
     )
+    presenter: VoicePresenter | None = None
+    stt_model: str = "base"
     state: VoiceSessionState = VoiceSessionState.IDLE
     _last_spoken_text: str = field(default="", init=False, repr=False)
     _last_spoken_at: float | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if self.presenter is None:
+            from grandpa.voice.presenter import VoicePresenter
+
+            self.presenter = VoicePresenter(output=self.output)
+        else:
+            self.presenter.output = self.output
 
     def run(self) -> int:
         """Run until an exit phrase, Ctrl+C, or unrecoverable setup error."""
@@ -132,28 +144,47 @@ class VoiceSession:
         stop = self.stop_event or threading.Event()
         self.stop_event = stop
         logger.info("Voice assistant session started")
-        self.output("Grandpa Voice Assistant")
-        self.output('Say "stop listening" to exit.')
-        self.output("")
+        self.presenter.print_banner("ollama", self.stt_model)
 
         exit_code = 0
         try:
+            # Check inference engine availability at startup if responder supports it
+            if hasattr(self.responder, "_ensure_engine"):
+                try:
+                    self.responder._ensure_engine()
+                except (
+                    EngineConnectionError,
+                    EngineModelLoadError,
+                    EngineModelNotFoundError,
+                ) as exc:
+                    from grandpa.cli.chat_cmd import _engine_unavailable_message
+
+                    msg = (
+                        _engine_unavailable_message("ollama", exc)
+                        if isinstance(exc, EngineConnectionError)
+                        else str(exc)
+                    )
+                    self.presenter.print_error(msg)
+                    return 1
+
             if self.wake_word_enabled:
                 self._run_wake_word_loop(stop)
             else:
                 self._run_direct_loop(stop)
         except KeyboardInterrupt:
-            self.output("Stopping Grandpa Voice Assistant...")
+            self.presenter.print_assistant_message(FAREWELL_TEXT)
+            self._exit_message_printed = True
             stop.set()
             logger.info("Voice assistant stopped by keyboard interrupt")
         except (VoiceDependencyError, MicrophoneUnavailableError) as exc:
-            self.output(str(exc))
+            self.presenter.print_error(str(exc))
+            self._exit_message_printed = True
             logger.warning("Voice assistant setup error: %s", exc)
             exit_code = 1
         finally:
             stop.set()
             self._cleanup()
-            self.output("Voice assistant stopped.")
+            self._exit_message_printed = True
         return exit_code
 
     def _run_direct_loop(self, stop: threading.Event) -> None:
@@ -177,8 +208,9 @@ class VoiceSession:
             if wake_transcript is None:
                 continue
             if is_exit_phrase(wake_transcript):
-                self.output("Grandpa: Goodbye.")
-                self._speak("Goodbye.")
+                self.presenter.print_assistant_message(FAREWELL_TEXT)
+                self._exit_message_printed = True
+                self._speak(FAREWELL_TEXT)
                 logger.info(
                     "Voice assistant stopped by exit phrase while waiting for wake word"
                 )
@@ -189,9 +221,9 @@ class VoiceSession:
                 continue
 
             self.state = VoiceSessionState.WAKE_DETECTED
-            self.output("Wake word detected.")
+            self.presenter.print_status("Wake word detected.")
             if self.wake_response_enabled:
-                self.output(f"Grandpa: {self.wake_response_text}")
+                self.presenter.print_assistant_message(self.wake_response_text)
                 self._speak(self.wake_response_text)
             if stop.is_set():
                 break
@@ -202,7 +234,7 @@ class VoiceSession:
             if match.command_text:
                 self._handle_transcript(match.command_text, stop)
                 if not stop.is_set():
-                    self.output("Returning to wake-word mode...")
+                    self.presenter.print_status("Returning to wake-word mode...")
                 continue
 
             self.state = VoiceSessionState.LISTENING_FOR_COMMAND
@@ -212,12 +244,14 @@ class VoiceSession:
             if stop.is_set():
                 break
             if command is None:
-                self.output("No command heard. Returning to wake-word mode.")
-                self.output("Returning to wake-word mode...")
+                self.presenter.print_status(
+                    "No command heard. Returning to wake-word mode."
+                )
+                self.presenter.print_status("Returning to wake-word mode...")
                 continue
             self._handle_transcript(command, stop)
             if not stop.is_set():
-                self.output("Returning to wake-word mode...")
+                self.presenter.print_status("Returning to wake-word mode...")
 
     def _listen_for_transcript(
         self, prompt: str, *, quiet_empty: bool = False
@@ -226,12 +260,17 @@ class VoiceSession:
         if not self._wait_for_speaker(stop) or stop.is_set():
             return None
         self._reset_microphone()
-        self.output(prompt)
+        self.presenter.print_status(prompt)
+        self.presenter.start_listening()
         try:
             audio = self.microphone.capture(stop_event=self.stop_event)
+        finally:
+            self.presenter.stop_listening()
+
+        try:
             warning = str(getattr(self.microphone, "last_warning", "") or "").strip()
             if warning:
-                self.output(warning)
+                self.presenter.print_error(warning)
             if self.stop_event is not None and self.stop_event.is_set():
                 return None
             transcript = self.transcriber.transcribe(audio).strip()
@@ -241,7 +280,18 @@ class VoiceSession:
                 logger.info("Ignoring Whisper initial prompt echo: %r", transcript)
                 return None
         except VoiceRecognitionError as exc:
-            self.output(str(exc))
+            err_msg = str(exc).lower()
+            detail = str(getattr(exc, "detail", "")).lower()
+            if (
+                "empty" in err_msg
+                or "no speech" in err_msg
+                or "empty" in detail
+                or "no speech" in detail
+                or "did not hear" in err_msg
+            ):
+                logger.info("Silence/empty transcript ignored silently: %s", exc)
+                return None
+            self.presenter.print_error(str(exc))
             logger.info("Recoverable voice recognition error: %s", exc)
             return None
         except VoiceDependencyError:
@@ -250,20 +300,20 @@ class VoiceSession:
             recover = getattr(self.microphone, "recover", None)
             if callable(recover) and recover():
                 self.state = VoiceSessionState.RECOVERING
-                self.output("Microphone unavailable. Reconnecting...")
+                self.presenter.print_error("Microphone unavailable. Reconnecting...")
                 logger.warning("Recoverable microphone error: %s", exc)
                 return None
             raise
         except VoiceError as exc:
-            self.output(str(exc))
+            self.presenter.print_error(str(exc))
             logger.info("Recoverable voice error: %s", exc)
             return None
         if not transcript:
             if not quiet_empty:
-                self.output("I did not catch that.")
+                self.presenter.print_status("I did not catch that.")
             return None
         if self._is_probable_echo(transcript):
-            self.output("Ignoring probable speaker echo.")
+            self.presenter.print_status("Ignoring probable speaker echo.")
             logger.debug(
                 "Ignored probable TTS echo transcript_chars=%s", len(transcript)
             )
@@ -271,16 +321,17 @@ class VoiceSession:
         return transcript
 
     def _handle_transcript(self, transcript: str, stop: threading.Event) -> None:
-        self.output(f"You: {transcript}")
+        self.presenter.print_user_message(transcript)
         if is_exit_phrase(transcript):
-            self.output("Grandpa: Goodbye.")
-            self._speak("Goodbye.")
+            self.presenter.print_assistant_message(FAREWELL_TEXT)
+            self._exit_message_printed = True
+            self._speak(FAREWELL_TEXT)
             logger.info("Voice assistant stopped by exit phrase")
             stop.set()
             return
 
         self.state = VoiceSessionState.THINKING
-        self.output("Thinking...")
+        self.presenter.start_thinking()
         try:
             response = self.responder.handle_user_input(transcript)
         except (
@@ -288,18 +339,45 @@ class VoiceSession:
             EngineModelLoadError,
             EngineModelNotFoundError,
         ) as exc:
-            response = str(exc)
-            logger.warning("Voice assistant engine error: %s", exc)
+            from grandpa.cli.chat_cmd import _engine_unavailable_message
+
+            msg = (
+                _engine_unavailable_message("ollama", exc)
+                if isinstance(exc, EngineConnectionError)
+                else str(exc)
+            )
+            self.presenter.print_error(msg)
+            return
+        finally:
+            self.presenter.stop_thinking()
+
         if stop.is_set():
             return
         response_text = str(getattr(response, "text", response)).strip()
         if not response_text:
             response_text = "I handled that."
-        self.output(f"Grandpa: {response_text}")
+
+        # Spacing: one blank line after user message + spinner
+        self.presenter.print_blank_line()
+
+        # Check for confirmation and execution statuses
+        if getattr(response, "status", None) in {
+            "pending_confirmation",
+            "needs_confirmation",
+        }:
+            self.presenter.print_confirmation_required(response_text)
+        elif getattr(response, "status", None) == "handled" and getattr(
+            response, "kind", None
+        ) in {"app", "window", "folder", "chrome_profile", "session_control"}:
+            self.presenter.print_action_completed(response_text)
+        else:
+            self.presenter.print_assistant_message(response_text)
+
+        # Spacing: one blank line after assistant response
+        self.presenter.print_blank_line()
+
         self.state = VoiceSessionState.SPEAKING
-        self.output("Speaking...")
         self._speak(response_text)
-        self.output("")
 
     def _speak(self, text: str) -> None:
         if self.speaker is None:
@@ -311,7 +389,7 @@ class VoiceSession:
             if not self._wait_for_speaker(stop) or stop.is_set():
                 return
         except Exception as exc:
-            self.output(
+            self.presenter.print_error(
                 f"Text-to-speech is unavailable. TTS failed: {type(exc).__name__}: {exc}"
             )
             logger.warning("Voice assistant TTS error: %s", exc)
@@ -384,6 +462,9 @@ def build_voice_session(
     wake_phrases: tuple[str, ...] | None = None,
     wake_response_enabled: bool = True,
     output: Callable[[str], None] = print,
+    quiet: bool = False,
+    verbose: bool = False,
+    screen_reader: bool = False,
 ) -> VoiceSession:
     """Construct the default offline voice session components."""
 
@@ -442,6 +523,13 @@ def build_voice_session(
         config.compute_type,
         config.tts_enabled,
     )
+    from grandpa.voice.presenter import VoicePresenter
+
+    presenter = VoicePresenter(
+        quiet=quiet,
+        verbose=verbose,
+        screen_reader=screen_reader,
+    )
     return VoiceSession(
         capture,
         transcriber,
@@ -455,6 +543,8 @@ def build_voice_session(
         post_tts_cooldown_ms=config.post_tts_cooldown_ms,
         echo_window_seconds=config.echo_window_seconds,
         echo_similarity_threshold=config.echo_similarity_threshold,
+        presenter=presenter,
+        stt_model=config.stt_model,
     )
 
 
@@ -464,7 +554,9 @@ def is_exit_phrase(text: str) -> bool:
     normalized = re.sub(r"\s+", " ", text.strip().casefold()).rstrip(".?!,")
     if normalized in EXIT_PHRASES:
         return True
-    if "stop listening" in normalized or "stop listening" in normalized.replace("-", " "):
+    if "stop listening" in normalized or "stop listening" in normalized.replace(
+        "-", " "
+    ):
         return True
     return False
 
@@ -513,13 +605,33 @@ def is_probable_speaker_echo(
 def is_prompt_echo(text: str) -> bool:
     """Return True if the transcribed text is likely just the Whisper prompt hint echo."""
     normalized = re.sub(r"[^\w\s]", "", text.strip().lower())
-    prompt_words = {"grandpa", "assistant", "ollama", "the", "current", "year", "may", "be", "2026"}
+    prompt_words = {
+        "grandpa",
+        "assistant",
+        "ollama",
+        "the",
+        "current",
+        "year",
+        "may",
+        "be",
+        "2026",
+        "3026",
+        "2023",
+        "2024",
+        "2025",
+    }
     words = normalized.split()
-    if len(words) < 2:
+    if not words:
         return False
-    if all(w in prompt_words for w in words):
-        if len(words) == 2 and not any(w in {"assistant", "ollama", "may", "be"} for w in words):
+    # If all words are prompt words, reject it (with the length 2 exception)
+    if len(words) >= 2 and all(w in prompt_words for w in words):
+        if len(words) == 2 and not any(
+            w in {"assistant", "ollama", "may", "be", "3026"} for w in words
+        ):
             return False
+        return True
+    # Check if the string matches common mutated echo sentences:
+    if "current year may be" in normalized or "current year is" in normalized:
         return True
     return False
 

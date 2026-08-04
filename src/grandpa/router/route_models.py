@@ -15,7 +15,9 @@ _SENSITIVE_KEYS = ("password", "secret", "token", "key", "clipboard", "content")
 def _redact(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            str(key): "[redacted]" if any(part in str(key).lower() for part in _SENSITIVE_KEYS) else _redact(item)
+            str(key): "[redacted]"
+            if any(part in str(key).lower() for part in _SENSITIVE_KEYS)
+            else _redact(item)
             for key, item in value.items()
         }
     if isinstance(value, list):
@@ -42,7 +44,11 @@ class IntentRoute:
 
     @property
     def can_execute_as_skill(self) -> bool:
-        return self.execution_source == "skill" and bool(self.skill_name) and self.confidence >= 0.7
+        return (
+            self.execution_source == "skill"
+            and bool(self.skill_name)
+            and self.confidence >= 0.7
+        )
 
     @property
     def can_execute_as_planner(self) -> bool:

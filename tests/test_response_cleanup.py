@@ -4,7 +4,9 @@ from grandpa.response_cleanup import clean_assistant_response, clean_error_messa
 
 
 def test_removes_full_think_block():
-    text = "<think>I should reason privately.</think>\nPython is a programming language."
+    text = (
+        "<think>I should reason privately.</think>\nPython is a programming language."
+    )
 
     assert clean_assistant_response(text) == "Python is a programming language."
 
@@ -17,7 +19,9 @@ def test_removes_bare_reasoning_before_end_tag():
         "Python is a high-level programming language."
     )
 
-    assert clean_assistant_response(text) == "Python is a high-level programming language."
+    assert (
+        clean_assistant_response(text) == "Python is a high-level programming language."
+    )
 
 
 def test_removes_reasoning_preface_without_censoring_answer():
@@ -51,4 +55,6 @@ def test_preserves_legitimate_technical_explanation():
 def test_error_message_hides_tracebacks():
     traceback = 'Traceback (most recent call last):\n  File "x.py", line 1'
 
-    assert clean_error_message(traceback) == "Sorry, generation failed. Please try again."
+    assert (
+        clean_error_message(traceback) == "Sorry, generation failed. Please try again."
+    )

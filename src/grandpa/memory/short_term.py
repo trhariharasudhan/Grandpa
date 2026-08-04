@@ -17,7 +17,12 @@ class ShortTermMemory:
         self.max_items = max_items
         self._buffer: list[MemoryItem] = []
 
-    def add(self, content: str, key: str | None = None, metadata: dict[str, Any] | None = None) -> MemoryItem:
+    def add(
+        self,
+        content: str,
+        key: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> MemoryItem:
         """Add a short-term session memory entry."""
         item_key = key or f"session_{self.session_id}_{len(self._buffer) + 1}"
         item = MemoryItem(

@@ -209,9 +209,7 @@ def test_unrelated_or_wrong_pid_modal_is_not_recognized(monkeypatch):
     monkeypatch.setattr(
         windows_window_control, "_get_owner_window", lambda _handle: 100
     )
-    monkeypatch.setattr(
-        windows_window_control, "_get_root_owner", lambda _handle: 100
-    )
+    monkeypatch.setattr(windows_window_control, "_get_root_owner", lambda _handle: 100)
     monkeypatch.setattr(
         windows_window_control,
         "_list_dialog_controls",
@@ -271,10 +269,7 @@ def test_dialog_choice_rejects_wrong_owner_before_click(monkeypatch):
     )
 
     assert (
-        windows_window_control.invoke_dialog_choice(
-            dialog, target, "discard"
-        )
-        is False
+        windows_window_control.invoke_dialog_choice(dialog, target, "discard") is False
     )
 
 
@@ -327,9 +322,7 @@ def test_uia_dialog_invocation_ignores_duplicate_text_label(monkeypatch):
         lambda: (Automation(), Module()),
     )
 
-    assert windows_window_control._invoke_uia_labeled_control(
-        100, 123, {"cancel"}
-    )
+    assert windows_window_control._invoke_uia_labeled_control(100, 123, {"cancel"})
     assert invoked == [True]
 
 
@@ -402,9 +395,7 @@ def test_create_new_notepad_document_uses_verified_add_tab_control(monkeypatch):
     monkeypatch.setattr(
         windows_window_control, "snapshot_notepad_documents", lambda: ()
     )
-    monkeypatch.setattr(
-        windows_window_control, "_apply_action", lambda *_args: None
-    )
+    monkeypatch.setattr(windows_window_control, "_apply_action", lambda *_args: None)
     monkeypatch.setattr(
         windows_window_control,
         "_invoke_uia_labeled_control",

@@ -15,7 +15,10 @@ from grandpa.planner.state_store import sanitize_plan_data
 
 def format_plan(plan: ExecutionPlan) -> str:
     lines = ["Goal:", plan.original_goal, "", "Plan:"]
-    lines.extend(f"{step.order}. {step.description}" for step in sorted(plan.steps, key=lambda item: item.order))
+    lines.extend(
+        f"{step.order}. {step.description}"
+        for step in sorted(plan.steps, key=lambda item: item.order)
+    )
     lines.extend(
         [
             "",
@@ -52,7 +55,9 @@ def format_plan_result(result: PlanResult) -> str:
 def format_status(plan: ExecutionPlan | None) -> str:
     if plan is None:
         return "No plan exists for this session."
-    completed = sum(step.status.value in {"completed", "skipped"} for step in plan.steps)
+    completed = sum(
+        step.status.value in {"completed", "skipped"} for step in plan.steps
+    )
     return (
         f"Plan {plan.plan_id}\n"
         f"Status: {plan.status.value}\n"
@@ -93,7 +98,9 @@ def format_graph(plan: ExecutionPlan | None, *, mermaid: bool = False) -> str:
 
 
 def format_dump(plan: ExecutionPlan) -> str:
-    return json.dumps(sanitize_plan_data(model_to_dict(plan)), indent=2, ensure_ascii=True)
+    return json.dumps(
+        sanitize_plan_data(model_to_dict(plan)), indent=2, ensure_ascii=True
+    )
 
 
 def format_debug_trace(plan: ExecutionPlan) -> str:
@@ -106,12 +113,23 @@ def format_debug_trace(plan: ExecutionPlan) -> str:
 
 
 def progress(plan: ExecutionPlan) -> PlanProgress:
-    completed = sum(step.status.value in {"completed", "skipped"} for step in plan.steps)
-    return PlanProgress(plan.plan_id, completed, len(plan.steps), plan.current_step_id, plan.status.value)
+    completed = sum(
+        step.status.value in {"completed", "skipped"} for step in plan.steps
+    )
+    return PlanProgress(
+        plan.plan_id,
+        completed,
+        len(plan.steps),
+        plan.current_step_id,
+        plan.status.value,
+    )
 
 
 def _safe_message(value: str) -> str:
-    if any(marker in value.casefold() for marker in ("password", "otp", "token", "card number")):
+    if any(
+        marker in value.casefold()
+        for marker in ("password", "otp", "token", "card number")
+    ):
         return "[sensitive details redacted]"
     return value
 

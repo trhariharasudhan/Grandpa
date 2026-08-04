@@ -5,7 +5,9 @@ from __future__ import annotations
 from grandpa.notes.models import Note
 
 
-def format_note_list(notes: tuple[Note, ...], *, empty_message: str = "No notes found.") -> str:
+def format_note_list(
+    notes: tuple[Note, ...], *, empty_message: str = "No notes found."
+) -> str:
     if not notes:
         return empty_message
     lines = ["Notes:"]
@@ -31,7 +33,9 @@ def format_note_detail(note: Note) -> str:
 def format_search_results(notes: tuple[Note, ...], query: str) -> str:
     if not notes:
         return f'No notes matched "{query}".'
-    return f'Search results for "{query}":\n' + "\n".join(f"- {note.title}" for note in notes)
+    return f'Search results for "{query}":\n' + "\n".join(
+        f"- {note.title}" for note in notes
+    )
 
 
 __all__ = ["format_note_detail", "format_note_list", "format_search_results"]

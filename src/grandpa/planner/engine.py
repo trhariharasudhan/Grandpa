@@ -94,7 +94,9 @@ class PlannerAnalysis:
             "intent": self.intent,
             "goal_class": self.goal_class,
             "required_skills": list(self.required_skills),
-            "dependencies": {key: list(value) for key, value in self.dependencies.items()},
+            "dependencies": {
+                key: list(value) for key, value in self.dependencies.items()
+            },
             "estimated_risk": self.estimated_risk,
             "approval_needed_steps": list(self.approval_needed_steps),
             "workflow_suitable": self.workflow_suitable,
@@ -109,20 +111,35 @@ class PlannerAnalysis:
 
 def classify_goal(request: str) -> str:
     clean = _clean(request)
-    if any(word in clean for word in ("research", "summarize", "summarise", "tutorial")):
+    if any(
+        word in clean for word in ("research", "summarize", "summarise", "tutorial")
+    ):
         return "browser_research"
     if any(word in clean for word in ("organize", "organise", "downloads", "archive")):
         return "file_organization"
-    if any(word in clean for word in ("coding workspace", "code workspace", "developer workspace", "coding setup")):
+    if any(
+        word in clean
+        for word in (
+            "coding workspace",
+            "code workspace",
+            "developer workspace",
+            "coding setup",
+        )
+    ):
         return "developer_startup"
     if any(word in clean for word in ("diagnostic", "status", "readiness")):
         return "diagnostics"
-    if any(word in clean for word in ("delete", "wipe", "format", "shutdown", "payment", "purchase")):
+    if any(
+        word in clean
+        for word in ("delete", "wipe", "format", "shutdown", "payment", "purchase")
+    ):
         return "dangerous"
     return "general"
 
 
-def estimate_risk(steps: list[PlannerStep] | tuple[PlannerStep, ...], goal_class: str = "") -> RiskLevel:
+def estimate_risk(
+    steps: list[PlannerStep] | tuple[PlannerStep, ...], goal_class: str = ""
+) -> RiskLevel:
     if goal_class == "dangerous" or any(step.risk_level == "BLOCKED" for step in steps):
         return "BLOCKED"
     if any(step.risk_level == "HIGH" for step in steps):
@@ -146,7 +163,13 @@ def decompose_multi_step_task(request: str) -> list[PlannerStep]:
                     "supported_environments": ["windows"],
                 },
             ),
-            PlannerStep("step_2", "Check workflow runtime", "automation.workflow_status", {"desktop_service": "automation"}, dependencies=("step_1",)),
+            PlannerStep(
+                "step_2",
+                "Check workflow runtime",
+                "automation.workflow_status",
+                {"desktop_service": "automation"},
+                dependencies=("step_1",),
+            ),
         ]
     if goal == "browser_research":
         return [
@@ -167,12 +190,21 @@ def decompose_multi_step_task(request: str) -> list[PlannerStep]:
         ]
     if goal == "file_organization":
         return [
-            PlannerStep("step_1", "Check workflow runtime", "automation.workflow_status", {"desktop_service": "automation"}),
+            PlannerStep(
+                "step_1",
+                "Check workflow runtime",
+                "automation.workflow_status",
+                {"desktop_service": "automation"},
+            ),
             PlannerStep(
                 "step_2",
                 "Require approval before file organization",
                 "desktop.keyboard_type",
-                {"text": "file organization placeholder", "desktop_service": "automation", "approval_reason": "file organization needs explicit user confirmation"},
+                {
+                    "text": "file organization placeholder",
+                    "desktop_service": "automation",
+                    "approval_reason": "file organization needs explicit user confirmation",
+                },
                 dependencies=("step_1",),
                 risk_level="MEDIUM",
                 approval_required=True,
@@ -181,9 +213,24 @@ def decompose_multi_step_task(request: str) -> list[PlannerStep]:
         ]
     if goal == "diagnostics":
         return [
-            PlannerStep("step_1", "Check desktop diagnostics", "desktop.diagnostics", {"desktop_service": "diagnostics"}),
-            PlannerStep("step_2", "Check browser diagnostics", "browser.diagnostics", dependencies=("step_1",)),
-            PlannerStep("step_3", "Check visual diagnostics", "vision.visual_diagnostics", dependencies=("step_2",)),
+            PlannerStep(
+                "step_1",
+                "Check desktop diagnostics",
+                "desktop.diagnostics",
+                {"desktop_service": "diagnostics"},
+            ),
+            PlannerStep(
+                "step_2",
+                "Check browser diagnostics",
+                "browser.diagnostics",
+                dependencies=("step_1",),
+            ),
+            PlannerStep(
+                "step_3",
+                "Check visual diagnostics",
+                "vision.visual_diagnostics",
+                dependencies=("step_2",),
+            ),
         ]
     if goal == "dangerous":
         return [
@@ -215,9 +262,19 @@ def build_execution_plan(request: str) -> ExecutionGraph:
         )
         for step in steps
     )
-    workflow_suitable = len(steps) > 1 or classify_goal(request) in {"developer_startup", "browser_research", "file_organization"}
-    reason = "Multi-step request can be tracked by the workflow runtime." if workflow_suitable else ""
-    return ExecutionGraph(nodes=nodes, workflow_suitable=workflow_suitable, handoff_reason=reason)
+    workflow_suitable = len(steps) > 1 or classify_goal(request) in {
+        "developer_startup",
+        "browser_research",
+        "file_organization",
+    }
+    reason = (
+        "Multi-step request can be tracked by the workflow runtime."
+        if workflow_suitable
+        else ""
+    )
+    return ExecutionGraph(
+        nodes=nodes, workflow_suitable=workflow_suitable, handoff_reason=reason
+    )
 
 
 def analyze_request(request: str) -> PlannerAnalysis:
@@ -231,7 +288,13 @@ def analyze_request(request: str) -> PlannerAnalysis:
     required = tuple(step.skill for step in steps)
     dependencies = {step.id: step.dependencies for step in steps if step.dependencies}
     memory = _memory_context(clean)
-    unsupported = "" if steps and risk != "BLOCKED" else "No safe local plan is available." if risk != "BLOCKED" else "Dangerous requests are blocked."
+    unsupported = (
+        ""
+        if steps and risk != "BLOCKED"
+        else "No safe local plan is available."
+        if risk != "BLOCKED"
+        else "Dangerous requests are blocked."
+    )
     return PlannerAnalysis(
         request=clean,
         intent=goal.replace("_", " "),

@@ -48,7 +48,10 @@ def test_visible_context_uses_explicit_local_dom_payload(monkeypatch):
         "visible_text": "Welcome. This page explains safe browser context.",
     }
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Example Page - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Example Page - Google Chrome",
+    )
     monkeypatch.setenv("GRANDPA_BROWSER_CONTEXT_JSON", json.dumps(payload))
 
     context = get_visible_browser_context()
@@ -62,7 +65,9 @@ def test_visible_context_uses_explicit_local_dom_payload(monkeypatch):
 
 def test_visible_context_requires_visible_browser(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Notes - Notepad")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title", lambda: "Notes - Notepad"
+    )
 
     context = get_visible_browser_context()
 
@@ -72,7 +77,10 @@ def test_visible_context_requires_visible_browser(monkeypatch):
 
 def test_summary_requires_dom_text(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Example - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Example - Google Chrome",
+    )
     monkeypatch.delenv("GRANDPA_BROWSER_CONTEXT_JSON", raising=False)
 
     result = execute_browser_action("summary", "visible")
@@ -83,7 +91,10 @@ def test_summary_requires_dom_text(monkeypatch):
 
 def test_summary_uses_visible_text(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Example - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Example - Google Chrome",
+    )
     monkeypatch.setenv(
         "GRANDPA_BROWSER_CONTEXT_JSON",
         json.dumps({"visible_text": "One. Two. Three. Four.", "title": "Example"}),
@@ -121,7 +132,9 @@ def test_browser_context_store_records_recent_activity(tmp_path):
 
 def test_safe_form_fill_requires_confirmation(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Search - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title", lambda: "Search - Google Chrome"
+    )
 
     result = execute_browser_action("form_fill", "search=python")
 
@@ -145,7 +158,9 @@ def test_download_requires_confirmation():
 
 def test_browser_diagnostics_reports_visible_context(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Docs - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title", lambda: "Docs - Google Chrome"
+    )
     monkeypatch.setenv(
         "GRANDPA_BROWSER_CONTEXT_JSON",
         json.dumps(
@@ -170,20 +185,23 @@ def test_browser_diagnostics_reports_visible_context(monkeypatch):
 
 def test_visible_context_redacts_sensitive_values(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Checkout - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Checkout - Google Chrome",
+    )
     monkeypatch.setenv(
         "GRANDPA_BROWSER_CONTEXT_JSON",
         json.dumps(
-        {
-            "title": "Checkout",
-            "url": "https://example.test",
-            "inputs": [
-                {"type": "password", "label": "Password"},
-                {"type": "text", "label": "credit card number"},
-                {"type": "text", "label": "Search"},
-            ],
-            "visible_text": "api_key=abcd1234abcd1234 credit card 4111 1111 1111 1111 safe text",
-        }
+            {
+                "title": "Checkout",
+                "url": "https://example.test",
+                "inputs": [
+                    {"type": "password", "label": "Password"},
+                    {"type": "text", "label": "credit card number"},
+                    {"type": "text", "label": "Search"},
+                ],
+                "visible_text": "api_key=abcd1234abcd1234 credit card 4111 1111 1111 1111 safe text",
+            }
         ),
     )
     context = get_visible_browser_context()
@@ -196,7 +214,10 @@ def test_visible_context_redacts_sensitive_values(monkeypatch):
 
 def test_summary_uses_explicit_visible_context(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Grandpa Docs - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Grandpa Docs - Google Chrome",
+    )
     monkeypatch.setenv(
         "GRANDPA_BROWSER_CONTEXT_JSON",
         json.dumps(
@@ -216,7 +237,10 @@ def test_summary_uses_explicit_visible_context(monkeypatch):
 
 def test_links_and_buttons_use_visible_context(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Grandpa Docs - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Grandpa Docs - Google Chrome",
+    )
     monkeypatch.setenv(
         "GRANDPA_BROWSER_CONTEXT_JSON",
         json.dumps(
@@ -249,7 +273,10 @@ def test_missing_visible_context_fallback(monkeypatch):
 
 def test_browser_context_route_uses_local_visible_context(monkeypatch):
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Route Page - Microsoft Edge")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Route Page - Microsoft Edge",
+    )
     monkeypatch.setenv(
         "GRANDPA_BROWSER_CONTEXT_JSON",
         json.dumps(

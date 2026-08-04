@@ -27,16 +27,25 @@ def test_milestone_and_task_prioritization() -> None:
         completed_milestones=[],
         current_milestone="Milestone_1",
         planned_milestones=["Milestone_2"],
-        blocked_milestones=[]
+        blocked_milestones=[],
     )
-    t1 = Task(task_id="t1", title="Task 1", completion_state=False, dependencies=[], priority="medium")
-    t2 = Task(task_id="t2", title="Task 2", completion_state=False, dependencies=["t1"], priority="high")
+    t1 = Task(
+        task_id="t1",
+        title="Task 1",
+        completion_state=False,
+        dependencies=[],
+        priority="medium",
+    )
+    t2 = Task(
+        task_id="t2",
+        title="Task 2",
+        completion_state=False,
+        dependencies=["t1"],
+        priority="high",
+    )
 
     state = ProjectState(
-        project_name="TestProj",
-        project_path="/mock",
-        tasks=[t1, t2],
-        roadmap=roadmap
+        project_name="TestProj", project_path="/mock", tasks=[t1, t2], roadmap=roadmap
     )
 
     planner = EngineeringPlanner(state)
@@ -61,13 +70,10 @@ def test_blocker_prioritization() -> None:
         completed_milestones=[],
         current_milestone="Milestone_1",
         planned_milestones=["Milestone_2"],
-        blocked_milestones=["Milestone_Blocked"]
+        blocked_milestones=["Milestone_Blocked"],
     )
     state = ProjectState(
-        project_name="TestProj",
-        project_path="/mock",
-        tasks=[],
-        roadmap=roadmap
+        project_name="TestProj", project_path="/mock", tasks=[], roadmap=roadmap
     )
 
     planner = EngineeringPlanner(state)
@@ -78,7 +84,13 @@ def test_blocker_prioritization() -> None:
 
     # 2. Blocked task check
     roadmap.blocked_milestones = []
-    t_blocked = Task(task_id="t_blocked", title="Blocked task", completion_state=False, dependencies=[], status="blocked")
+    t_blocked = Task(
+        task_id="t_blocked",
+        title="Blocked task",
+        completion_state=False,
+        dependencies=[],
+        status="blocked",
+    )
     state.tasks = [t_blocked]
     planner = EngineeringPlanner(state)
     m, task, reason = planner.analyze_milestone_and_task()
@@ -91,16 +103,22 @@ def test_work_package_generation() -> None:
         completed_milestones=[],
         current_milestone="Milestone_1",
         planned_milestones=["Milestone_2"],
-        blocked_milestones=[]
+        blocked_milestones=[],
     )
-    t1 = Task(task_id="t1", title="Task 1", completion_state=False, dependencies=[], priority="medium")
+    t1 = Task(
+        task_id="t1",
+        title="Task 1",
+        completion_state=False,
+        dependencies=[],
+        priority="medium",
+    )
     state = ProjectState(
         project_name="TestProj",
         project_path="/mock",
         tasks=[t1],
         roadmap=roadmap,
         active_branch="main",
-        repository_health="healthy"
+        repository_health="healthy",
     )
 
     planner = EngineeringPlanner(state)
@@ -119,6 +137,7 @@ def test_work_package_generation() -> None:
 
 def test_cli_engineer_commands(temp_workspace) -> None:
     import os
+
     os.environ["GRANDPA_HOME"] = str(temp_workspace)
 
     runner = click.testing.CliRunner()
@@ -152,6 +171,7 @@ def test_cli_engineer_commands(temp_workspace) -> None:
 
 def test_agent_runtime_engineer_goals(temp_workspace) -> None:
     import os
+
     os.environ["GRANDPA_HOME"] = str(temp_workspace)
 
     # Setup project context
@@ -160,6 +180,7 @@ def test_agent_runtime_engineer_goals(temp_workspace) -> None:
     tracker.save_state(tracker.load_state())
 
     from grandpa.agent.development import MultiProjectRegistry
+
     registry = MultiProjectRegistry()
     registry.register_project("TestProj", str(p_path))
 

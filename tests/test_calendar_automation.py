@@ -35,7 +35,9 @@ class FakeCalendarClient:
     def account(self) -> str:
         return "hari@example.com"
 
-    def list_events(self, date_range: str = "today", *, query: str = "", limit: int = 10) -> tuple[CalendarEventSummary, ...]:
+    def list_events(
+        self, date_range: str = "today", *, query: str = "", limit: int = 10
+    ) -> tuple[CalendarEventSummary, ...]:
         events = (
             CalendarEventSummary(
                 "event-1",
@@ -57,10 +59,19 @@ class FakeCalendarClient:
             return ()
         return events[:limit]
 
-    def search_events(self, query: str, *, limit: int = 10) -> tuple[CalendarEventSummary, ...]:
+    def search_events(
+        self, query: str, *, limit: int = 10
+    ) -> tuple[CalendarEventSummary, ...]:
         return self.list_events("upcoming", query=query, limit=limit)
 
-    def create_event(self, *, title: str, start_text: str, duration_minutes: int = 60, timezone: str = "") -> str:
+    def create_event(
+        self,
+        *,
+        title: str,
+        start_text: str,
+        duration_minutes: int = 60,
+        timezone: str = "",
+    ) -> str:
         self.created.append(
             {
                 "title": title,
@@ -71,8 +82,24 @@ class FakeCalendarClient:
         )
         return "created-1"
 
-    def update_event(self, event_id: str, *, title: str = "", start_text: str = "", duration_minutes: int = 60) -> str:
-        self.updated.append((event_id, {"title": title, "start_text": start_text, "duration_minutes": duration_minutes}))
+    def update_event(
+        self,
+        event_id: str,
+        *,
+        title: str = "",
+        start_text: str = "",
+        duration_minutes: int = 60,
+    ) -> str:
+        self.updated.append(
+            (
+                event_id,
+                {
+                    "title": title,
+                    "start_text": start_text,
+                    "duration_minutes": duration_minutes,
+                },
+            )
+        )
         return event_id
 
     def delete_event(self, event_id: str) -> None:
@@ -87,9 +114,15 @@ def test_parser_handles_core_calendar_commands() -> None:
 
     assert parser.parse("calendar setup") == CalendarAction("setup")
     assert parser.parse("calendar disconnect") == CalendarAction("disconnect")
-    assert parser.parse("What is on my calendar today?") == CalendarAction("list", date_range="today")
-    assert parser.parse("What meetings do I have tomorrow?") == CalendarAction("list", date_range="tomorrow")
-    assert parser.parse("Show free time this afternoon") == CalendarAction("freebusy", date_range="this afternoon")
+    assert parser.parse("What is on my calendar today?") == CalendarAction(
+        "list", date_range="today"
+    )
+    assert parser.parse("What meetings do I have tomorrow?") == CalendarAction(
+        "list", date_range="tomorrow"
+    )
+    assert parser.parse("Show free time this afternoon") == CalendarAction(
+        "freebusy", date_range="this afternoon"
+    )
     assert parser.parse("Create a meeting tomorrow at 3 PM").action == "create"
 
 
@@ -154,7 +187,9 @@ def test_auto_accept_invitations_are_blocked() -> None:
     assert "will not auto-accept" in result.message
 
 
-def test_calendar_slash_command_routes_through_safe_facade(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_calendar_slash_command_routes_through_safe_facade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
 
     def fake_handle(text: str):
@@ -175,7 +210,9 @@ def test_calendar_slash_command_is_registered_for_picker() -> None:
     assert "/calendar today" in command.subcommands
 
 
-def test_voice_assistant_routes_calendar_without_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_voice_assistant_routes_calendar_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "grandpa.calendar.handle_calendar_command",
         lambda _text: SimpleNamespace(
@@ -194,7 +231,9 @@ def test_voice_assistant_routes_calendar_without_llm(monkeypatch: pytest.MonkeyP
     assert response.text == "No calendar events found."
 
 
-def test_voice_operator_routes_calendar_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_voice_operator_routes_calendar_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     intent = parse_voice_operator_command("show free time this afternoon")
     assert intent.kind == "calendar"
 
@@ -231,7 +270,9 @@ def test_auth_status_and_disconnect_use_local_credential_paths(tmp_path: Path) -
     assert not token.exists()
 
 
-def test_doctor_reports_unconfigured_calendar_as_optional(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_doctor_reports_unconfigured_calendar_as_optional(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     class FakeAuth:
         def status(self):
             return CalendarAuthStatus(

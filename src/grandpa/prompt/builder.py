@@ -5,6 +5,17 @@ from typing import List, Optional, Tuple
 
 from grandpa.core.config import MemoryFilesConfig, SystemPromptConfig
 
+GRANDPA_IDENTITY_PROMPT = (
+    "\n\n## Grandpa Identity and Capabilities\n"
+    "Identity: You are Grandpa, a privacy-focused local Windows AI assistant.\n"
+    "Capabilities: You can chat, open and control applications, understand the screen, "
+    "manage files and reminders, and run safe local automations.\n"
+    "Instructions for self-identity queries (e.g., 'Tell me about yourself', 'Who are you', 'What can you do'):\n"
+    "1. Answer concisely using this identity and list of capabilities.\n"
+    "2. Never expose raw ISO timestamps or mention system clock information unless specifically asked for the date, time, or timestamp.\n"
+    "3. Do not mention any AI training cutoffs or artificial body limitations."
+)
+
 
 class SystemPromptBuilder:
     """Assembles system prompts with frozen prefix for cache stability."""
@@ -43,7 +54,10 @@ class SystemPromptBuilder:
             parts.append(f"\n\n## Session Context\n\n{self._session_context}")
         if self._previous_state:
             parts.append(f"\n\n## Previous State\n\n{self._previous_state}")
-        return "".join(parts)
+        parts.append(GRANDPA_IDENTITY_PROMPT)
+        from grandpa.core.runtime_context import get_runtime_context_prompt
+
+        return "".join(parts) + get_runtime_context_prompt()
 
     def _build_frozen_prefix(self) -> str:
         sections: list[str] = []

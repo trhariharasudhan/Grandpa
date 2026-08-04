@@ -22,7 +22,9 @@ def test_planner_classifies_and_builds_execution_graph():
     assert analysis.workflow_suitable is True
     assert analysis.estimated_risk == "LOW"
     assert "browser.diagnostics" in analysis.required_skills
-    assert analysis.graph.nodes[1].dependencies == ["step_1"] or analysis.graph.nodes[1].dependencies == ("step_1",)
+    assert analysis.graph.nodes[1].dependencies == ["step_1"] or analysis.graph.nodes[
+        1
+    ].dependencies == ("step_1",)
 
     graph = build_execution_plan("set up my coding workspace")
     assert graph.workflow_suitable is True
@@ -90,11 +92,16 @@ def test_planner_agent_mcp_api_routes():
     assert diagnostics.status_code == 200
     assert diagnostics.json()["planner"]["status"] == "ready"
 
-    analysis = client.post("/v1/planner/analyze", json={"request": "set up my coding workspace"})
+    analysis = client.post(
+        "/v1/planner/analyze", json={"request": "set up my coding workspace"}
+    )
     assert analysis.status_code == 200
     assert analysis.json()["workflow_suitable"] is True
 
-    task = client.post("/v1/agent/run", json={"request": "research Python tutorials and summarize them"})
+    task = client.post(
+        "/v1/agent/run",
+        json={"request": "research Python tutorials and summarize them"},
+    )
     assert task.status_code == 200
     assert task.json()["analysis"]["goal_class"] == "browser_research"
 

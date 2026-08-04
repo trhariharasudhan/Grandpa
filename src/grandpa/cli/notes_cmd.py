@@ -51,14 +51,18 @@ def append(name: str, content: tuple[str, ...]) -> None:
 @click.argument("old_name")
 @click.argument("new_name", nargs=-1)
 def rename(old_name: str, new_name: tuple[str, ...]) -> None:
-    click.echo(handle_notes_command(f"rename note {old_name} to {' '.join(new_name)}").message)
+    click.echo(
+        handle_notes_command(f"rename note {old_name} to {' '.join(new_name)}").message
+    )
 
 
 @notes.command("delete")
 @click.argument("name", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm note deletion.")
 def delete(name: tuple[str, ...], yes: bool) -> None:
-    click.echo(handle_notes_command("delete note " + " ".join(name), confirmed=yes).message)
+    click.echo(
+        handle_notes_command("delete note " + " ".join(name), confirmed=yes).message
+    )
 
 
 @notes.command("archive")

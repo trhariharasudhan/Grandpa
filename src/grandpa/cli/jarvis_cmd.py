@@ -14,8 +14,14 @@ from grandpa.voice.errors import VoiceError
 
 
 @click.command("jarvis")
-@click.option("--dry-run", is_flag=True, help="Resolve and print the action without executing it.")
-@click.option("--voice", is_flag=True, help="Listen once from the microphone and route the transcript.")
+@click.option(
+    "--dry-run", is_flag=True, help="Resolve and print the action without executing it."
+)
+@click.option(
+    "--voice",
+    is_flag=True,
+    help="Listen once from the microphone and route the transcript.",
+)
 @click.argument("command", nargs=-1, required=False)
 def jarvis(dry_run: bool, voice: bool, command: tuple[str, ...]) -> None:
     """Route a Jarvis-style local text command through safe actions."""
@@ -27,7 +33,9 @@ def jarvis(dry_run: bool, voice: bool, command: tuple[str, ...]) -> None:
     else:
         text = " ".join(command).strip()
         if not text:
-            raise click.ClickException('Provide a command, or use "grandpa jarvis --voice".')
+            raise click.ClickException(
+                'Provide a command, or use "grandpa jarvis --voice".'
+            )
 
     _run_jarvis_text(text, dry_run=dry_run, console=console, recognized=recognized)
 
@@ -59,7 +67,9 @@ def _safe_error(message: str) -> None:
         pass
 
 
-def _run_jarvis_text(text: str, *, dry_run: bool, console: Console, recognized: bool = False) -> None:
+def _run_jarvis_text(
+    text: str, *, dry_run: bool, console: Console, recognized: bool = False
+) -> None:
     result = route_jarvis_command(text, dry_run=dry_run)
 
     if result.payload is None:

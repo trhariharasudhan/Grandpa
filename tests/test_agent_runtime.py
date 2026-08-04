@@ -31,20 +31,50 @@ def setup_temp_memory_agent():
 
 
 def test_intent_classification() -> None:
-    assert classify_intent("Continue the Grandpa project") == AgentIntent.PROJECT_CONTINUE
-    assert classify_intent("What is the status of the project?") == AgentIntent.PROJECT_STATUS
-    assert classify_intent("Research FastAPI deployment benefits") == AgentIntent.RESEARCH
-    assert classify_intent("Open Cloud Run webpage in browser") == AgentIntent.BROWSER_TASK
-    assert classify_intent("Click on the visual button coordinate") == AgentIntent.AUTOMATION_TASK
-    assert classify_intent("Remember that I prefer PowerShell shell") == AgentIntent.MEMORY_TASK
-    assert classify_intent("Plan a new memory integration feature") == AgentIntent.PLANNING_TASK
+    assert (
+        classify_intent("Continue the Grandpa project") == AgentIntent.PROJECT_CONTINUE
+    )
+    assert (
+        classify_intent("What is the status of the project?")
+        == AgentIntent.PROJECT_STATUS
+    )
+    assert (
+        classify_intent("Research FastAPI deployment benefits") == AgentIntent.RESEARCH
+    )
+    assert (
+        classify_intent("Open Cloud Run webpage in browser") == AgentIntent.BROWSER_TASK
+    )
+    assert (
+        classify_intent("Click on the visual button coordinate")
+        == AgentIntent.AUTOMATION_TASK
+    )
+    assert (
+        classify_intent("Remember that I prefer PowerShell shell")
+        == AgentIntent.MEMORY_TASK
+    )
+    assert (
+        classify_intent("Plan a new memory integration feature")
+        == AgentIntent.PLANNING_TASK
+    )
     assert classify_intent("Fly to the moon") == AgentIntent.UNKNOWN
 
 
-def test_context_creation_and_memory_retrieval(setup_temp_memory_agent: MemoryService) -> None:
+def test_context_creation_and_memory_retrieval(
+    setup_temp_memory_agent: MemoryService,
+) -> None:
     svc = setup_temp_memory_agent
-    svc.remember(content="D:\\Grandpa", category="project", key="project_path", project_name="Grandpa")
-    svc.remember(content="Memory V1", category="project", key="latest_feature", project_name="Grandpa")
+    svc.remember(
+        content="D:\\Grandpa",
+        category="project",
+        key="project_path",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="Memory V1",
+        category="project",
+        key="latest_feature",
+        project_name="Grandpa",
+    )
 
     goal = AgentGoal(raw_text="Continue Grandpa project", session_id="test_sess")
     context = build_context(goal)
@@ -53,19 +83,28 @@ def test_context_creation_and_memory_retrieval(setup_temp_memory_agent: MemorySe
     assert context.project_memory.get("project_path") == "D:\\Grandpa"
     assert context.project_memory.get("latest_feature") == "Memory V1"
     # Git branch might or might not be None depending on env, but we shouldn't fabricate missing values
-    assert "current_branch" in context.project_memory or context.project_memory.get("current_branch") is None
+    assert (
+        "current_branch" in context.project_memory
+        or context.project_memory.get("current_branch") is None
+    )
 
 
 def test_tool_routing() -> None:
     executor = AgentExecutor()
 
-    step_mem = AgentStep(id="s1", description="Read preferred shell settings", tool="memory")
+    step_mem = AgentStep(
+        id="s1", description="Read preferred shell settings", tool="memory"
+    )
     assert executor.route_tool(step_mem).tool_name == "MemoryService"
 
-    step_res = AgentStep(id="s2", description="Research FastAPI docs online", tool="research")
+    step_res = AgentStep(
+        id="s2", description="Research FastAPI docs online", tool="research"
+    )
     assert executor.route_tool(step_res).tool_name == "BrowserIntelligence"
 
-    step_vis = AgentStep(id="s3", description="Inspect UI elements coordinate", tool="vision")
+    step_vis = AgentStep(
+        id="s3", description="Inspect UI elements coordinate", tool="vision"
+    )
     assert executor.route_tool(step_vis).tool_name == "VisionEngine"
 
     step_auto = AgentStep(id="s4", description="Click target button", tool="automation")
@@ -76,21 +115,35 @@ def test_tool_routing() -> None:
 
 
 def test_safety_blocking_dangerous_actions() -> None:
-    executor = AgentExecutor(confirm_callback=lambda _prompt: False) # Always reject confirmation
+    executor = AgentExecutor(
+        confirm_callback=lambda _prompt: False
+    )  # Always reject confirmation
 
-    del_step = AgentStep(id="s1", description="Delete index.html file", tool="automation")
+    del_step = AgentStep(
+        id="s1", description="Delete index.html file", tool="automation"
+    )
     res1 = executor.execute_step(del_step, None)
     assert del_step.status == StepStatus.FAILED
     assert "safety policy" in del_step.error
     assert res1 is None
 
-    git_step = AgentStep(id="s2", description="git push origin main", tool="automation", args={"command": "git push origin main"})
+    git_step = AgentStep(
+        id="s2",
+        description="git push origin main",
+        tool="automation",
+        args={"command": "git push origin main"},
+    )
     res2 = executor.execute_step(git_step, None)
     assert git_step.status == StepStatus.FAILED
     assert "Git history" in git_step.error or "safety policy" in git_step.error
     assert res2 is None
 
-    shell_step = AgentStep(id="s3", description="Run cmd shell script", tool="automation", args={"command": "rmdir /s /q C:\\"})
+    shell_step = AgentStep(
+        id="s3",
+        description="Run cmd shell script",
+        tool="automation",
+        args={"command": "rmdir /s /q C:\\"},
+    )
     res3 = executor.execute_step(shell_step, None)
     assert shell_step.status == StepStatus.FAILED
     assert "shell" in shell_step.error
@@ -108,7 +161,9 @@ def test_verification_logic() -> None:
     assert not v_ok.failures
 
     # Failed step verification
-    step_fail = AgentStep(id="s2", description="Get preference", tool="memory", error="Connection reset")
+    step_fail = AgentStep(
+        id="s2", description="Get preference", tool="memory", error="Connection reset"
+    )
     v_fail = verifier.verify_step(step_fail, None)
     assert not v_fail.action_completed
     assert not v_fail.expected_result_obtained
@@ -118,6 +173,7 @@ def test_verification_logic() -> None:
 def test_bounded_recovery() -> None:
     # Set progress callback
     progress_msgs = []
+
     def prog_cb(m: str) -> None:
         progress_msgs.append(m)
 
@@ -125,9 +181,11 @@ def test_bounded_recovery() -> None:
 
     # Force step execution failure
     step = AgentStep(id="s1", description="Invalid Action", tool="memory")
+
     # Make _dispatch raise an exception to trigger recovery retries
     def failing_dispatch(*args, **kwargs):
         raise ValueError("Simulated dispatch failure")
+
     executor._dispatch = failing_dispatch
 
     goal = AgentGoal(raw_text="Plan a new feature", session_id="test_sess")
@@ -137,7 +195,7 @@ def test_bounded_recovery() -> None:
         executor.execute_step(step, context)
 
     assert step.status == StepStatus.FAILED
-    assert len(context.recovery_attempts) == 3 # Should attempt exactly 3 times
+    assert len(context.recovery_attempts) == 3  # Should attempt exactly 3 times
     assert all(not r.success for r in context.recovery_attempts)
 
 

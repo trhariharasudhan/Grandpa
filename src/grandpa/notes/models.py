@@ -21,7 +21,9 @@ NotesActionType = Literal[
     "unpin",
 ]
 
-NotesActionStatus = Literal["handled", "needs_confirmation", "blocked", "unsupported", "no_match", "error"]
+NotesActionStatus = Literal[
+    "handled", "needs_confirmation", "blocked", "unsupported", "no_match", "error"
+]
 
 
 @dataclass(frozen=True)
@@ -36,8 +38,12 @@ class Note:
     category: str = "general"
     pinned: bool = False
     archived: bool = False
-    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    updated_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
 
 
 @dataclass(frozen=True)

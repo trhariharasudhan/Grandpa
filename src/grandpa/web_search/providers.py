@@ -20,17 +20,25 @@ class WebSearchProviderConfig:
 
 
 def default_provider_config() -> WebSearchProviderConfig:
-    provider = os.environ.get("GRANDPA_WEB_SEARCH_PROVIDER", "brave").strip().lower() or "brave"
+    provider = (
+        os.environ.get("GRANDPA_WEB_SEARCH_PROVIDER", "brave").strip().lower()
+        or "brave"
+    )
     env_by_provider = {
         "brave": "BRAVE_SEARCH_API_KEY",
         "bing": "BING_SEARCH_API_KEY",
         "serper": "SERPER_API_KEY",
     }
-    api_key_env = os.environ.get("GRANDPA_WEB_SEARCH_API_KEY_ENV", env_by_provider.get(provider, "BRAVE_SEARCH_API_KEY"))
+    api_key_env = os.environ.get(
+        "GRANDPA_WEB_SEARCH_API_KEY_ENV",
+        env_by_provider.get(provider, "BRAVE_SEARCH_API_KEY"),
+    )
     max_results = _int_env("GRANDPA_WEB_SEARCH_MAX_RESULTS", 8)
     timeout_seconds = _int_env("GRANDPA_WEB_SEARCH_TIMEOUT_SECONDS", 10)
     cache_minutes = _int_env("GRANDPA_WEB_SEARCH_CACHE_MINUTES", 15)
-    return WebSearchProviderConfig(provider, api_key_env, max_results, timeout_seconds, cache_minutes)
+    return WebSearchProviderConfig(
+        provider, api_key_env, max_results, timeout_seconds, cache_minutes
+    )
 
 
 def _int_env(name: str, default: int) -> int:

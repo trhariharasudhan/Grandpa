@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 HANDLERS: dict[str, tuple[str, str, str]] = {
-    "browser diagnostics": ("diagnostics|browser", "Checking browser diagnostics.", "Checking browser diagnostics."),
-    "show browser diagnostics": ("diagnostics|browser", "Checking browser diagnostics.", "Checking browser diagnostics."),
-    "browser status": ("diagnostics|browser", "Checking browser diagnostics.", "Checking browser diagnostics."),
+    "browser diagnostics": (
+        "diagnostics|browser",
+        "Checking browser diagnostics.",
+        "Checking browser diagnostics.",
+    ),
+    "show browser diagnostics": (
+        "diagnostics|browser",
+        "Checking browser diagnostics.",
+        "Checking browser diagnostics.",
+    ),
+    "browser status": (
+        "diagnostics|browser",
+        "Checking browser diagnostics.",
+        "Checking browser diagnostics.",
+    ),
 }
 
 

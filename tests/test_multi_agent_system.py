@@ -24,14 +24,22 @@ from grandpa.server.api_routes import agents_router
 def test_agent_registry_contains_expected_specialists():
     agents = {agent["agent_id"]: agent for agent in list_agents()}
 
-    assert {"research_agent", "browser_agent", "desktop_agent", "memory_agent", "coding_agent"} <= set(agents)
+    assert {
+        "research_agent",
+        "browser_agent",
+        "desktop_agent",
+        "memory_agent",
+        "coding_agent",
+    } <= set(agents)
     assert "mobile_agent" not in agents
     assert agents["browser_agent"]["capabilities"]
     assert agent_registry_diagnostics()["approval_bypass_allowed"] is False
 
 
 def test_agent_selection_for_research_goal():
-    selected = [agent.agent_id for agent in select_agents_for_goal("research Python tutorials")]
+    selected = [
+        agent.agent_id for agent in select_agents_for_goal("research Python tutorials")
+    ]
 
     assert "memory_agent" in selected
     assert "research_agent" in selected
@@ -88,7 +96,9 @@ def test_multi_agent_api_routes(tmp_path, monkeypatch):
     assert diagnostics.status_code == 200
     assert diagnostics.json()["ready"] is True
 
-    response = client.post("/v1/agents/orchestrate", json={"user_request": "collect diagnostics report"})
+    response = client.post(
+        "/v1/agents/orchestrate", json={"user_request": "collect diagnostics report"}
+    )
     assert response.status_code == 200
     payload = response.json()
     assert payload["task_id"].startswith("mag_")
@@ -104,7 +114,9 @@ def test_multi_agent_api_routes(tmp_path, monkeypatch):
 
 
 def test_multi_agent_diagnostics_are_json_serializable(tmp_path):
-    diagnostics = multi_agent_diagnostics(store=MultiAgentTaskStore(tmp_path / "multi_agent.db"))
+    diagnostics = multi_agent_diagnostics(
+        store=MultiAgentTaskStore(tmp_path / "multi_agent.db")
+    )
 
     assert diagnostics["status"] == "ready"
     json.dumps(diagnostics)

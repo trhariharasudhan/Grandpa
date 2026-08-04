@@ -416,17 +416,74 @@ class Grandpa:
         """Smart automatic model router."""
         q = query.lower()
 
-        image_keywords = ["image", "photo", "picture", "screenshot", "vision", "analyze image", "describe image"]
-        coding_keywords = ["code", "python", "javascript", "html", "css", "fastapi", "flask", "bug", "debug", "build", "program", "developer", "api", "backend", "frontend"]
-        reasoning_keywords = ["explain", "why", "how", "physics", "quantum", "black hole", "deeply", "architecture", "design", "reason", "compare"]
+        from grandpa.engine import discover_engines, discover_models
+
+        all_engines = discover_engines(self._config)
+        all_models = discover_models(all_engines)
+        installed = []
+        for ek, model_ids in all_models.items():
+            installed.extend(model_ids)
+
+        image_keywords = [
+            "image",
+            "photo",
+            "picture",
+            "screenshot",
+            "vision",
+            "analyze image",
+            "describe image",
+        ]
+        coding_keywords = [
+            "code",
+            "python",
+            "javascript",
+            "html",
+            "css",
+            "fastapi",
+            "flask",
+            "bug",
+            "debug",
+            "build",
+            "program",
+            "developer",
+            "api",
+            "backend",
+            "frontend",
+        ]
+        reasoning_keywords = [
+            "explain",
+            "why",
+            "how",
+            "physics",
+            "quantum",
+            "black hole",
+            "deeply",
+            "architecture",
+            "design",
+            "reason",
+            "compare",
+        ]
+
+        default_model = self._config.intelligence.default_model or "qwen:latest"
 
         if any(k in q for k in image_keywords):
-            return "llava"
-        if any(k in q for k in coding_keywords):
-            return "deepseek-coder:6.7b"
-        if any(k in q for k in reasoning_keywords):
-            return "qwen3:4b"
-        return "qwen2.5:3b"
+            target = "llava"
+        elif any(k in q for k in coding_keywords):
+            target = "deepseek-coder:6.7b"
+        elif any(k in q for k in reasoning_keywords):
+            target = "qwen3:4b"
+        else:
+            target = default_model
+
+        if target in installed:
+            return target
+
+        matched = None
+        for m in installed:
+            if target.split(":")[0] in m:
+                matched = m
+                break
+        return matched or default_model
 
     def _run_agent(
         self,

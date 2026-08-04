@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+from io import StringIO
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -16,6 +18,7 @@ from grandpa.agents._stubs import (
 )
 from grandpa.cli import input_ui, theme
 from grandpa.cli.chat_cmd import (
+    ThinkingAnimation,
     _create_one_shot_reminder,
     _handle_apps_slash_command,
     _handle_help_slash_command,
@@ -24,6 +27,7 @@ from grandpa.cli.chat_cmd import (
     _handle_natural_assistant_intent,
     _handle_reminders_slash_command,
     _read_input,
+    _stream_engine_response,
     _unknown_slash_command_message,
     chat,
 )
@@ -33,6 +37,7 @@ from grandpa.cli.slash_commands import (
     command_preview_options,
     get_command,
     unknown_command_message,
+    validate_command_registry,
 )
 from grandpa.cli.theme import render_help, render_user_message
 from grandpa.core.config import GrandpaConfig
@@ -42,6 +47,7 @@ from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
     EngineModelNotFoundError,
+    EngineModelPullError,
 )
 from grandpa.memory_context import MemoryStore
 from grandpa.reminders import ReminderStore
@@ -92,6 +98,55 @@ class TestChatCommand:
         assert result.exit_code == 0
         assert "interactive" in result.output.lower() or "chat" in result.output.lower()
 
+    def test_thinking_animation_renders_spinner_without_label(self) -> None:
+        console = MagicMock()
+        animation = ThinkingAnimation(console)
+        writes: list[str] = []
+
+        class OneFrameEvent:
+            checks = 0
+
+            def is_set(self) -> bool:
+                self.checks += 1
+                return self.checks > 1
+
+            def wait(self, _interval: float) -> None:
+                return None
+
+        animation._stop = OneFrameEvent()
+        animation._write = writes.append
+
+        animation._run()
+
+        assert writes == ["\r⠋"]
+        assert "Thinking" not in "".join(writes)
+
+    def test_stream_stops_spinner_on_first_chunk_and_assembles_response(self) -> None:
+        class StreamingEngine:
+            async def stream(self, _messages, *, model):
+                assert model == "test-model"
+                yield "Hello"
+                yield " world"
+
+        output = StringIO()
+        console = Console(file=output, color_system=None)
+        thinking = MagicMock()
+
+        content = asyncio.run(
+            _stream_engine_response(
+                StreamingEngine(),
+                [],
+                model="test-model",
+                console=console,
+                thinking=thinking,
+            )
+        )
+
+        assert content == "Hello world"
+        assert output.getvalue().count("Grandpa >") == 1
+        assert "Hello world" in output.getvalue()
+        assert thinking.stop.call_count >= 1
+
     def test_options(self) -> None:
         result = CliRunner().invoke(chat, ["--help"])
         assert result.exit_code == 0
@@ -100,6 +155,112 @@ class TestChatCommand:
         assert "--agent" in result.output
         assert "--tools" in result.output
         assert "--system" in result.output
+
+    def test_slash_registry_is_consistent_with_interactive_commands(self) -> None:
+        from grandpa.cli.interactive_tui import INTERACTIVE_COMMANDS
+
+        interactive_names = {command.name for command in INTERACTIVE_COMMANDS.commands}
+
+        assert validate_command_registry() == []
+        assert interactive_names.issubset(set(command_names()))
+        assert get_command("/desktop").routing == "help"  # type: ignore[union-attr]
+        assert "Help only" in get_command("/desktop").status  # type: ignore[union-attr]
+
+    def test_compound_natural_fact_is_recalled_across_chat_turns(
+        self,
+        tmp_path,
+        monkeypatch,
+    ) -> None:
+        monkeypatch.setenv(
+            "GRANDPA_PERSONAL_MEMORY_DB",
+            str(tmp_path / "personal_memory.db"),
+        )
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        engine.supports_streaming = False
+        engine.generate.return_value = {"content": "Thanks for telling me."}
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input=(
+                    "My favorite bike brand is Yamaha.\n"
+                    "What is my favorite bike brand?\n"
+                    "/quit\n"
+                ),
+            )
+
+        assert result.exit_code == 0
+        assert "Your favorite bike brand is Yamaha." in result.output
+        engine.generate.assert_called_once()
+
+    def test_chat_uses_streaming_engine_without_duplicate_prefix(self) -> None:
+        class StreamingEngine:
+            engine_id = "stream-test"
+            supports_streaming = True
+
+            async def stream(self, _messages, *, model):
+                assert model == "test-model"
+                yield "Hello"
+                yield " there"
+
+            def health(self):
+                return True
+
+        engine = StreamingEngine()
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("stream-test", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input="hello\n/quit\n",
+            )
+
+        assert result.exit_code == 0
+        assert "Hello there" in result.output
+        assert result.output.count("Grandpa > Hello there") == 1
+
+    def test_explicit_chat_renders_modern_logo_once_without_legacy_banner(
+        self,
+    ) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        engine.health.return_value = True
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+            patch("grandpa.cli.interactive_tui.render_logo") as logo,
+            patch("grandpa.cli.chat_cmd.render_chat_home") as legacy,
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input="/exit\n",
+            )
+
+        assert result.exit_code == 0
+        logo.assert_called_once()
+        legacy.assert_not_called()
+        assert "Username > /exit" in result.output
+        assert "Grandpa > Goodbye!" not in result.output
+        assert "Goodbye! I’ll be here when you need me." in result.output
 
     def test_slash_commands_listed(self) -> None:
         result = CliRunner().invoke(chat, ["--help"])
@@ -137,7 +298,9 @@ class TestChatCommand:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/help\n/quit\n")
+            result = CliRunner().invoke(
+                chat, ["--model", "test-model"], input="/help\n/quit\n"
+            )
 
         assert result.exit_code == 0
         assert "Grandpa Command Center" in result.output
@@ -194,7 +357,9 @@ class TestChatCommand:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/help examples\n/quit\n")
+            result = CliRunner().invoke(
+                chat, ["--model", "test-model"], input="/help examples\n/quit\n"
+            )
 
         assert result.exit_code == 0
         assert "/help examples" in result.output
@@ -213,7 +378,9 @@ class TestChatCommand:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/\n/quit\n")
+            result = CliRunner().invoke(
+                chat, ["--model", "test-model"], input="/\n/quit\n"
+            )
 
         assert result.exit_code == 0
         assert "Unknown command: /" not in result.output
@@ -231,11 +398,38 @@ class TestChatCommand:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="hi\n/quit\n")
+            result = CliRunner().invoke(
+                chat, ["--model", "test-model"], input="hi\n/quit\n"
+            )
 
         assert result.exit_code == 0
-        assert result.output.count("> hi") == 1
-        assert "< Hello! How can I assist you today?" in result.output
+        assert result.output.count("Username > hi") == 1
+        assert "Grandpa > Hello! How can I assist you today?" in result.output
+
+    def test_next_prompt_follows_assistant_response_without_extra_blank_line(
+        self,
+    ) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        engine.generate.return_value = {"content": "Hello! How can I help?"}
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input="hi\n/quit\n",
+            )
+
+        output = "\n".join(line.rstrip() for line in result.output.splitlines())
+        assert result.exit_code == 0
+        assert "Grandpa > Hello! How can I help?\nUsername >" in output
+        assert "Grandpa > Hello! How can I help?\n\nUsername >" not in output
 
     def test_submitted_slash_command_is_printed_once(self) -> None:
         engine = MagicMock()
@@ -248,7 +442,9 @@ class TestChatCommand:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/help\n/quit\n")
+            result = CliRunner().invoke(
+                chat, ["--model", "test-model"], input="/help\n/quit\n"
+            )
 
         assert result.exit_code == 0
         assert result.output.count("> /help") == 1
@@ -266,7 +462,9 @@ class TestChatCommand:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="\n/quit\n")
+            result = CliRunner().invoke(
+                chat, ["--model", "test-model"], input="\n/quit\n"
+            )
 
         assert result.exit_code == 0
         assert "> \n" not in result.output
@@ -288,7 +486,9 @@ class TestReadInput:
         with mock.patch("builtins.input", return_value="hello"):
             assert _read_input() == "hello"
 
-    def test_chat_input_fallback_when_prompt_toolkit_unavailable(self, monkeypatch) -> None:
+    def test_chat_input_fallback_when_prompt_toolkit_unavailable(
+        self, monkeypatch
+    ) -> None:
         monkeypatch.setattr(input_ui, "PROMPT_TOOLKIT_AVAILABLE", False)
         prompts = []
 
@@ -299,11 +499,11 @@ class TestReadInput:
         monkeypatch.setattr("builtins.input", fake_input)
 
         assert input_ui.read_chat_input() == "/help"
-        assert prompts == ["> "]
+        assert prompts == ["Username > "]
         assert "You>" not in prompts
 
     def test_prompt_colors_are_theme_correct(self) -> None:
-        assert input_ui.USER_PROMPT == "> "
+        assert input_ui.USER_PROMPT == "Username > "
         assert input_ui.USER_PROMPT_COLOR == "#6244c5"
         assert input_ui.ASSISTANT_PROMPT_COLOR == "#ffc448"
         assert theme.TEXT_ACCENT == "#6244c5"
@@ -313,23 +513,34 @@ class TestReadInput:
 
         render_user_message(console, "hi")
 
-        assert console.print.call_args.args[0] == "[bold #6244c5]>[/bold #6244c5] hi"
+        rendered = console.print.call_args.args[0]
+        assert rendered.plain == "Username > hi"
+        assert rendered.spans[0].style == "bold #6244c5"
 
-    def test_assistant_prompt_uses_purple_marker(self) -> None:
+    def test_assistant_prompt_uses_grandpa_label(self) -> None:
         console = MagicMock()
 
         theme.render_assistant_response(console, "hello")
 
         first_call = console.print.call_args_list[0]
-        assert "<" in first_call.args[0]
-        assert "#ffc448" in first_call.args[0]
+        assert first_call.args[0].plain == "Grandpa >"
+        assert first_call.args[0].style == "bold #ffc448"
 
 
 class TestSlashCommandRegistry:
     def test_registry_contains_expected_commands(self) -> None:
         names = set(command_names())
 
-        assert {"/help", "/mode", "/memory", "/reminders", "/desktop", "/voice", "/order", "/github"} <= names
+        assert {
+            "/help",
+            "/mode",
+            "/memory",
+            "/reminders",
+            "/desktop",
+            "/voice",
+            "/order",
+            "/github",
+        } <= names
 
     def test_registry_has_friendly_labels(self) -> None:
         assert get_command("/help").display_label == "Help"  # type: ignore[union-attr]
@@ -455,7 +666,7 @@ class TestSlashCommandRegistry:
             def run(self):
                 return "/help"
 
-        def fake_app(buffer, input_control, picker_state, bindings):
+        def fake_app(buffer, input_control, picker_state, bindings, **kwargs):
             captured["buffer"] = buffer
             captured["input_control"] = input_control
             captured["picker_state"] = picker_state
@@ -508,18 +719,31 @@ class TestSlashCommandRegistry:
 
     def test_picker_preview_options_preserve_submit_commands(self) -> None:
         assert input_ui._command_preview_options("/mode")[0] == ("/mode list", "List")
-        assert input_ui._command_preview_options("/mode")[2] == ("/mode coding", "Coding")
-        assert input_ui._command_preview_options("/memory")[2] == ("/memory search <query>", "Search Query")
+        assert input_ui._command_preview_options("/mode")[2] == (
+            "/mode coding",
+            "Coding",
+        )
+        assert input_ui._command_preview_options("/memory")[2] == (
+            "/memory search <query>",
+            "Search Query",
+        )
 
     def test_model_preview_uses_installed_models(self, monkeypatch) -> None:
-        monkeypatch.setattr(input_ui, "_installed_ollama_models", lambda: ["gemma3:4b", "grandpa-fast:latest"])
+        monkeypatch.setattr(
+            input_ui,
+            "_installed_ollama_models",
+            lambda: ["gemma3:4b", "grandpa-fast:latest"],
+        )
 
         assert input_ui._picker_preview_lines("/model") == [
             "Model",
             "gemma3:4b",
             "grandpa-fast:latest",
         ]
-        assert input_ui._command_preview_options("/model")[1] == ("/model gemma3:4b", "gemma3:4b")
+        assert input_ui._command_preview_options("/model")[1] == (
+            "/model gemma3:4b",
+            "gemma3:4b",
+        )
 
     def test_model_preview_handles_ollama_failure(self, monkeypatch) -> None:
         monkeypatch.setattr(input_ui, "_installed_ollama_models", lambda: [])
@@ -538,7 +762,9 @@ class TestChatSlashCommands:
             calls.append(command)
             return type("Result", (), {"message": "Installed applications: Chrome."})()
 
-        monkeypatch.setattr("grandpa.desktop.automation.handle_desktop_command", fake_handle)
+        monkeypatch.setattr(
+            "grandpa.desktop.automation.handle_desktop_command", fake_handle
+        )
 
         message = _handle_apps_slash_command("/apps list")
 
@@ -701,7 +927,9 @@ class TestChatSlashCommands:
 
     def test_memory_search_filters_internal_entries_by_default(self, tmp_path) -> None:
         store = MemoryStore(tmp_path / "memory.db")
-        store.remember("work_context", "agent_goal_browser", "browser automation diagnostics")
+        store.remember(
+            "work_context", "agent_goal_browser", "browser automation diagnostics"
+        )
 
         message = _handle_memory_slash_command("/memory search browser", store=store)
 
@@ -709,9 +937,13 @@ class TestChatSlashCommands:
 
     def test_memory_search_all_includes_internal_entries(self, tmp_path) -> None:
         store = MemoryStore(tmp_path / "memory.db")
-        store.remember("work_context", "agent_goal_browser", "browser automation diagnostics")
+        store.remember(
+            "work_context", "agent_goal_browser", "browser automation diagnostics"
+        )
 
-        message = _handle_memory_slash_command("/memory search browser --all", store=store)
+        message = _handle_memory_slash_command(
+            "/memory search browser --all", store=store
+        )
 
         assert message is not None
         assert "Matching memories:" in message
@@ -720,9 +952,13 @@ class TestChatSlashCommands:
     def test_memory_search_all_keeps_query_relevance(self, tmp_path) -> None:
         store = MemoryStore(tmp_path / "memory.db")
         store.remember("work_context", "agent_goal_grandpa", "Grandpa internal task")
-        store.remember("work_context", "agent_goal_browser", "browser automation diagnostics")
+        store.remember(
+            "work_context", "agent_goal_browser", "browser automation diagnostics"
+        )
 
-        message = _handle_memory_slash_command("/memory search Grandpa --all", store=store)
+        message = _handle_memory_slash_command(
+            "/memory search Grandpa --all", store=store
+        )
 
         assert message is not None
         assert "Matching memories:" in message
@@ -734,7 +970,9 @@ class TestChatSlashCommands:
         store.remember("preferences", "name", "Hari")
         memory_id = store.list_memories()[0]["id"]
 
-        message = _handle_memory_slash_command(f"/memory forget {memory_id}", store=store)
+        message = _handle_memory_slash_command(
+            f"/memory forget {memory_id}", store=store
+        )
 
         assert message == "Forgot 1 memory."
         assert store.list_memories() == []
@@ -783,9 +1021,14 @@ class TestChatSlashCommands:
         from datetime import UTC, datetime, timedelta
 
         store = ReminderStore(tmp_path / "reminders.db")
-        reminder = store.create("drink water", datetime(2026, 6, 13, 12, 30, tzinfo=UTC) + timedelta(minutes=30))
+        reminder = store.create(
+            "drink water",
+            datetime(2026, 6, 13, 12, 30, tzinfo=UTC) + timedelta(minutes=30),
+        )
 
-        message = _handle_reminders_slash_command(f"/reminders cancel {reminder.id}", store=store)
+        message = _handle_reminders_slash_command(
+            f"/reminders cancel {reminder.id}", store=store
+        )
 
         assert message == "Reminder cancelled."
         assert store.get(reminder.id).status == "cancelled"  # type: ignore[union-attr]
@@ -801,7 +1044,9 @@ class TestChatSlashCommands:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/abc\n/quit\n")
+            result = CliRunner().invoke(
+                chat, ["--model", "test-model"], input="/abc\n/quit\n"
+            )
 
         assert result.exit_code == 0
         assert "Unknown command: /abc" in result.output
@@ -818,7 +1063,11 @@ class TestChatSlashCommands:
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
         ):
-            result = CliRunner().invoke(chat, ["--model", "test-model"], input="/model grandpa-fast:latest\n/quit\n")
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "test-model"],
+                input="/model grandpa-fast:latest\n/quit\n",
+            )
 
         assert result.exit_code == 0
         assert "Model changed to" in result.output
@@ -829,9 +1078,13 @@ class TestChatSlashCommands:
         from datetime import UTC
 
         store = ReminderStore(tmp_path / "reminders.db")
-        monkeypatch.setattr("grandpa.reminder_parser.default_reminder_timezone", lambda: UTC)
+        monkeypatch.setattr(
+            "grandpa.reminder_parser.default_reminder_timezone", lambda: UTC
+        )
 
-        message = _create_one_shot_reminder("remind me in 30 minutes to drink water", store=store)
+        message = _create_one_shot_reminder(
+            "remind me in 30 minutes to drink water", store=store
+        )
 
         assert message is not None
         assert "Reminder created" in message
@@ -841,7 +1094,9 @@ class TestChatSlashCommands:
         store = MemoryStore(tmp_path / "memory.db")
         store.remember("preferences", "name", "Hari")
 
-        message = _handle_natural_assistant_intent("show my memories", memory_store=store)
+        message = _handle_natural_assistant_intent(
+            "show my memories", memory_store=store
+        )
 
         assert message is not None
         assert "Saved memories:" in message
@@ -851,7 +1106,9 @@ class TestChatSlashCommands:
         store = MemoryStore(tmp_path / "memory.db")
         store.remember("work_context", "agent_goal_setup", "internal goal")
 
-        message = _handle_natural_assistant_intent("show all memories", memory_store=store)
+        message = _handle_natural_assistant_intent(
+            "show all memories", memory_store=store
+        )
 
         assert message is not None
         assert "Saved memories:" in message
@@ -861,19 +1118,28 @@ class TestChatSlashCommands:
         from datetime import UTC, datetime, timedelta
 
         store = ReminderStore(tmp_path / "reminders.db")
-        store.create("drink water", datetime(2026, 6, 13, 12, 0, tzinfo=UTC) + timedelta(minutes=30))
+        store.create(
+            "drink water",
+            datetime(2026, 6, 13, 12, 0, tzinfo=UTC) + timedelta(minutes=30),
+        )
 
-        message = _handle_natural_assistant_intent("list my reminders", reminder_store=store)
+        message = _handle_natural_assistant_intent(
+            "list my reminders", reminder_store=store
+        )
 
         assert message is not None
         assert "Reminders:" in message
         assert "drink water" in message
 
-    def test_what_reminders_do_i_have_routes_to_one_shot_reminders(self, tmp_path) -> None:
+    def test_what_reminders_do_i_have_routes_to_one_shot_reminders(
+        self, tmp_path
+    ) -> None:
         from datetime import UTC, datetime, timedelta
 
         store = ReminderStore(tmp_path / "reminders.db")
-        store.create("call Arjun", datetime(2026, 6, 13, 19, 0, tzinfo=UTC) + timedelta(days=1))
+        store.create(
+            "call Arjun", datetime(2026, 6, 13, 19, 0, tzinfo=UTC) + timedelta(days=1)
+        )
 
         for text in (
             "what reminders do I have?",
@@ -892,7 +1158,9 @@ class TestChatSlashCommands:
     def test_empty_natural_reminder_list_has_creation_hint(self, tmp_path) -> None:
         store = ReminderStore(tmp_path / "reminders.db")
 
-        message = _handle_natural_assistant_intent("what reminders do I have", reminder_store=store)
+        message = _handle_natural_assistant_intent(
+            "what reminders do I have", reminder_store=store
+        )
 
         assert message == (
             "No pending reminders found. You can create one with: "
@@ -902,7 +1170,9 @@ class TestChatSlashCommands:
     def test_delete_reminder_not_found_stays_local(self, tmp_path) -> None:
         store = ReminderStore(tmp_path / "reminders.db")
 
-        message = _handle_natural_assistant_intent("delete reminder 4", reminder_store=store)
+        message = _handle_natural_assistant_intent(
+            "delete reminder 4", reminder_store=store
+        )
 
         assert message == "Reminder not found. Use /reminders list to see reminder IDs."
 
@@ -910,9 +1180,14 @@ class TestChatSlashCommands:
         from datetime import UTC, datetime, timedelta
 
         store = ReminderStore(tmp_path / "reminders.db")
-        reminder = store.create("drink water", datetime(2026, 6, 13, 12, 0, tzinfo=UTC) + timedelta(minutes=30))
+        reminder = store.create(
+            "drink water",
+            datetime(2026, 6, 13, 12, 0, tzinfo=UTC) + timedelta(minutes=30),
+        )
 
-        message = _handle_natural_assistant_intent(f"delete reminder {reminder.id}", reminder_store=store)
+        message = _handle_natural_assistant_intent(
+            f"delete reminder {reminder.id}", reminder_store=store
+        )
 
         assert message == "Reminder cancelled."
         assert store.get(reminder.id).status == "cancelled"  # type: ignore[union-attr]
@@ -987,10 +1262,10 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "qwen2.5:3b"],
-                input="hello\nn\n",
+                input="hello\nn\n/quit\n",
             )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert (
             'Ollama is running, but model "qwen2.5:3b" is not installed.'
             in result.output
@@ -1018,10 +1293,10 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "qwen2.5:3b"],
-                input="hello\n\n",
+                input="hello\n\n/quit\n",
             )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert "Install it with: ollama pull qwen2.5:3b" in result.output
         engine.pull_model.assert_not_called()
 
@@ -1042,14 +1317,14 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "qwen2.5:3b"],
-                input="hello\ny\n",
+                input="hello\ny\n/quit\n",
             )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         engine.pull_model.assert_called_once_with("qwen2.5:3b")
         assert 'Pulling "qwen2.5:3b" from Ollama' in result.output
         assert 'Model "qwen2.5:3b" was installed.' in result.output
-        assert "Please rerun the chat command." in result.output
+        assert "You can retry your message now." in result.output
         assert "Traceback" not in result.output
 
     def test_missing_ollama_model_pull_connection_failure_uses_unavailable_message(
@@ -1073,20 +1348,22 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "qwen2.5:3b"],
-                input="hello\ny\n",
+                input="hello\ny\n/quit\n",
             )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         engine.pull_model.assert_called_once_with("qwen2.5:3b")
         assert "Ollama is not available." in result.output
         assert "Start it with: ollama serve" in result.output
         assert "Traceback" not in result.output
 
-    def test_missing_ollama_model_pull_programming_error_is_not_swallowed(self) -> None:
+    def test_missing_ollama_model_pull_failure_returns_to_tui(self) -> None:
         engine = MagicMock()
         engine.engine_id = "ollama"
         engine.generate.side_effect = EngineModelNotFoundError("qwen2.5:3b")
-        engine.pull_model.side_effect = RuntimeError("pull bug")
+        engine.pull_model.side_effect = EngineModelPullError(
+            "qwen2.5:3b", "invalid model name"
+        )
         config = GrandpaConfig()
         config.agent.default_agent = "none"
         config.intelligence.default_model = "qwen2.5:3b"
@@ -1099,12 +1376,14 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "qwen2.5:3b"],
-                input="hello\ny\n",
+                input="hello\ny\n/quit\n",
             )
 
-        assert isinstance(result.exception, RuntimeError)
-        assert "pull bug" in str(result.exception)
-        assert "Ollama is not available." not in result.output
+        assert result.exit_code == 0
+        assert "Grandpa >" in result.output
+        assert "Could not install model" in result.output
+        assert "invalid model name" in result.output
+        assert "Traceback" not in result.output
 
     def test_ollama_connection_failure_has_actionable_message(self) -> None:
         engine = MagicMock()
@@ -1124,10 +1403,10 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "test-model"],
-                input="hello\n",
+                input="hello\n/quit\n",
             )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert "Ollama is not available." in result.output
         assert "Start it with: ollama serve" in result.output
         assert "Verify it with: ollama list" in result.output
@@ -1163,10 +1442,10 @@ class TestChatOllamaUnavailable:
             result = CliRunner().invoke(
                 chat,
                 ["--model", "grandpa-fast:latest"],
-                input="hello\n",
+                input="hello\n/quit\n",
             )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 0
         assert "available memory is too low" in result.output
         assert "grandpa-light:latest" in result.output
         assert "Traceback" not in result.output
@@ -1230,13 +1509,191 @@ class TestChatOllamaUnavailable:
 def test_chat_routes_multistep_goal_to_executive_planner(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.planner.routing.handle_executive_goal",
-        lambda text, **_kwargs: "Task completed."
-        if "search for fastapi" in text.casefold()
-        else None,
+        lambda text, **_kwargs: (
+            "Task completed." if "search for fastapi" in text.casefold() else None
+        ),
     )
 
-    message = _handle_natural_assistant_intent(
-        "Open Chrome and search for FastAPI"
-    )
+    message = _handle_natural_assistant_intent("Open Chrome and search for FastAPI")
 
     assert message == "Task completed."
+
+
+def test_chat_shutdown_rendering_exit_command() -> None:
+    from unittest.mock import MagicMock, patch
+
+    from grandpa.core.config import GrandpaConfig
+
+    engine = MagicMock()
+    engine.engine_id = "mock"
+    engine.health.return_value = True
+    config = GrandpaConfig()
+    config.intelligence.default_model = "test-model"
+
+    with (
+        patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+        patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+        patch("grandpa.intelligence.register_builtin_models"),
+        patch("grandpa.cli.interactive_tui.render_logo"),
+        patch("grandpa.cli.chat_cmd.render_chat_home"),
+    ):
+        result = CliRunner().invoke(
+            chat,
+            ["--model", "test-model"],
+            input="exit\n",
+        )
+
+    assert result.exit_code == 0
+    assert "Grandpa > Goodbye!" not in result.output
+    assert "Goodbye! I’ll be here when you need me." in result.output
+
+
+def test_chat_shutdown_rendering_eof_or_ctrl_c() -> None:
+    from unittest.mock import MagicMock, patch
+
+    from grandpa.core.config import GrandpaConfig
+
+    engine = MagicMock()
+    engine.engine_id = "mock"
+    engine.health.return_value = True
+    config = GrandpaConfig()
+    config.intelligence.default_model = "test-model"
+
+    # Mock read_chat_input to return None directly (simulating EOF or Ctrl+C)
+    with (
+        patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+        patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+        patch("grandpa.intelligence.register_builtin_models"),
+        patch("grandpa.cli.interactive_tui.render_logo"),
+        patch("grandpa.cli.chat_cmd.render_chat_home"),
+        patch("grandpa.cli.chat_cmd.read_chat_input", return_value=None),
+    ):
+        result = CliRunner().invoke(
+            chat,
+            ["--model", "test-model"],
+        )
+
+    assert result.exit_code == 0
+    assert "Grandpa > Goodbye!" not in result.output
+    assert "Goodbye! I’ll be here when you need me." in result.output
+
+
+def test_alternate_screen_enters_and_exits() -> None:
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    from grandpa.cli.theme import alternate_screen
+
+    mock_stdout_write = MagicMock()
+    with (
+        patch.object(sys.stdout, "isatty", return_value=True),
+        patch.object(sys.stderr, "isatty", return_value=True),
+        patch.object(sys.stdout, "write", mock_stdout_write),
+        patch.object(sys.stdout, "flush"),
+    ):
+        with alternate_screen(enabled=True):
+            # Assert enter sequence was written
+            written_before_exit = "".join(
+                call[0][0] for call in mock_stdout_write.call_args_list
+            )
+            assert "\x1b[?1049h" in written_before_exit
+            assert "\x1b[?1049l" not in written_before_exit
+
+        # Assert exit sequence was written after context exited
+        written_after_exit = "".join(
+            call[0][0] for call in mock_stdout_write.call_args_list
+        )
+        assert "\x1b[?1049l" in written_after_exit
+
+
+def test_alternate_screen_non_tty_fallback() -> None:
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    from grandpa.cli.theme import alternate_screen
+
+    mock_stdout_write = MagicMock()
+    with (
+        patch.object(sys.stdout, "isatty", return_value=False),
+        patch.object(sys.stdout, "write", mock_stdout_write),
+    ):
+        with alternate_screen(enabled=True):
+            pass
+
+    # No alternate screen escape codes written for non-TTY
+    written_data = "".join(call[0][0] for call in mock_stdout_write.call_args_list)
+    assert "\x1b[?1049h" not in written_data
+    assert "\x1b[?1049l" not in written_data
+
+
+def test_alternate_screen_cleanup_on_exception() -> None:
+    import sys
+    from unittest.mock import MagicMock, patch
+
+    from grandpa.cli.theme import alternate_screen
+
+    mock_stdout_write = MagicMock()
+    with (
+        patch.object(sys.stdout, "isatty", return_value=True),
+        patch.object(sys.stderr, "isatty", return_value=True),
+        patch.object(sys.stdout, "write", mock_stdout_write),
+        patch.object(sys.stdout, "flush"),
+    ):
+        try:
+            with alternate_screen(enabled=True):
+                raise ValueError("injected exception")
+        except ValueError:
+            pass
+
+    # Assert exit sequence was written despite exception
+    written_data = "".join(call[0][0] for call in mock_stdout_write.call_args_list)
+    assert "\x1b[?1049l" in written_data
+
+
+def test_fullscreen_resolution_cli_vs_config() -> None:
+    from unittest.mock import MagicMock, patch
+
+    from grandpa.cli.chat_cmd import chat
+    from grandpa.core.config import GrandpaConfig
+
+    engine = MagicMock()
+    engine.engine_id = "mock"
+    engine.health.return_value = True
+    config = GrandpaConfig()
+    config.fullscreen = True  # Enabled in config
+
+    # If --no-fullscreen is passed, it should override config setting
+    with (
+        patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+        patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+        patch("grandpa.intelligence.register_builtin_models"),
+        patch("grandpa.cli.interactive_tui.render_logo"),
+        patch("grandpa.cli.chat_cmd.render_chat_home"),
+        patch("grandpa.cli.chat_cmd.read_chat_input", return_value=None),
+        patch("grandpa.cli.chat_cmd.alternate_screen") as mock_alternate_screen,
+    ):
+        result = CliRunner().invoke(
+            chat,
+            ["--no-fullscreen", "--model", "test-model"],
+        )
+
+        assert result.exit_code == 0
+        # verify alternate_screen was entered with enabled=False
+        mock_alternate_screen.assert_called_once_with(enabled=False)
+
+
+def test_bare_grandpa_and_chat_parity() -> None:
+    from unittest.mock import patch
+
+    from grandpa.cli import cli
+
+    # Invoke root CLI with --no-fullscreen and verify check_and_route passes it
+    with (
+        patch("grandpa.cli._first_run.check_and_route") as mock_route,
+        patch("grandpa.cli.log_config.setup_logging"),
+        patch("grandpa.cli._version_check.check_for_updates"),
+    ):
+        CliRunner().invoke(cli, ["--no-fullscreen"])
+        mock_route.assert_called_once()
+        ctx = mock_route.call_args[0][0]
+        assert ctx.obj.get("fullscreen") is False

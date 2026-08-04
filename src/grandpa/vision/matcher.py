@@ -72,7 +72,9 @@ class HybridElementMatcher:
         if node.type in {"paragraph", "text_line"}:
             text_score *= 0.88
 
-        source_score = 0.25 if node.source == "uia+ocr" else 0.18 if node.source == "uia" else 0.05
+        source_score = (
+            0.25 if node.source == "uia+ocr" else 0.18 if node.source == "uia" else 0.05
+        )
         if node.source == "uia+ocr":
             reasons.append("OCR and UI Automation agree")
         elif node.source == "uia":
@@ -85,10 +87,7 @@ class HybridElementMatcher:
             reasons.append("clickable")
         confidence = min(
             1.0,
-            text_score * 0.67
-            + source_score
-            + state_score
-            + node.confidence * 0.07,
+            text_score * 0.67 + source_score + state_score + node.confidence * 0.07,
         )
         if actionable and node.source == "ocr":
             confidence = min(confidence, 0.69)

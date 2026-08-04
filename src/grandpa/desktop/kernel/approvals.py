@@ -29,7 +29,9 @@ def pending() -> list[dict[str, Any]]:
     return pc_control._list_pending_actions_impl()
 
 
-def records(*, limit: int = 100, statuses: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
+def records(
+    *, limit: int = 100, statuses: tuple[str, ...] | None = None
+) -> list[dict[str, Any]]:
     from grandpa import pc_control
 
     if statuses is None:

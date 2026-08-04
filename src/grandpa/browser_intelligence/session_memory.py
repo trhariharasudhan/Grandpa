@@ -64,7 +64,9 @@ class BrowserSessionMemory:
             self.state.navigation_history.append(url)
         self._save_to_disk()
 
-    def record_verification(self, title: str, url: str, is_official: bool, trust_score: float) -> None:
+    def record_verification(
+        self, title: str, url: str, is_official: bool, trust_score: float
+    ) -> None:
         """Record verified page in session."""
         if not url:
             return

@@ -36,7 +36,11 @@ class AppInventoryRecord(ApplicationInfo):
         object.__setattr__(self, "aliases", tuple(aliases))
         object.__setattr__(self, "display_name", display_name)
         object.__setattr__(self, "path", launch_target)
-        object.__setattr__(self, "working_directory", str(Path(launch_target).parent) if launch_target else "")
+        object.__setattr__(
+            self,
+            "working_directory",
+            str(Path(launch_target).parent) if launch_target else "",
+        )
         object.__setattr__(self, "publisher", "")
         object.__setattr__(self, "version", "")
         object.__setattr__(self, "source", source)
@@ -48,15 +52,21 @@ class AppInventoryRecord(ApplicationInfo):
         object.__setattr__(self, "canonical_key", normalized_name)
 
 
-def list_apps(*, store_path: Path = DEFAULT_APP_INVENTORY_PATH) -> list[AppInventoryRecord]:
+def list_apps(
+    *, store_path: Path = DEFAULT_APP_INVENTORY_PATH
+) -> list[AppInventoryRecord]:
     return [_compat_record(app) for app in load_app_registry(store_path=store_path)]
 
 
-def save_inventory(apps: list[AppInventoryRecord], *, store_path: Path = DEFAULT_APP_INVENTORY_PATH) -> None:
+def save_inventory(
+    apps: list[AppInventoryRecord], *, store_path: Path = DEFAULT_APP_INVENTORY_PATH
+) -> None:
     save_app_registry(apps, store_path=store_path)
 
 
-def find_app(name: str, *, store_path: Path = DEFAULT_APP_INVENTORY_PATH) -> AppFindResult:
+def find_app(
+    name: str, *, store_path: Path = DEFAULT_APP_INVENTORY_PATH
+) -> AppFindResult:
     return resolve_app(name, list_apps(store_path=store_path))
 
 
@@ -65,7 +75,9 @@ def launch_inventory_app(record: AppInventoryRecord) -> str:
 
 
 def _compat_record(app: ApplicationInfo) -> AppInventoryRecord:
-    return AppInventoryRecord(app.display_name, app.name, app.path, app.source, app.aliases, app.last_seen_at)
+    return AppInventoryRecord(
+        app.display_name, app.name, app.path, app.source, app.aliases, app.last_seen_at
+    )
 
 
 __all__ = [

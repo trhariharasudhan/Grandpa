@@ -28,8 +28,14 @@ def health() -> dict[str, Any]:
     return {
         "name": "release_gate",
         "ready": bool(payload.get("pass") or payload.get("overall_status") == "ready"),
-        "status": str(payload.get("overall_status") or payload.get("status") or "unknown"),
-        "dependencies": {"latest_report": bool(payload.get("report_path") or payload.get("last_run_at"))},
+        "status": str(
+            payload.get("overall_status") or payload.get("status") or "unknown"
+        ),
+        "dependencies": {
+            "latest_report": bool(
+                payload.get("report_path") or payload.get("last_run_at")
+            )
+        },
     }
 
 
@@ -38,6 +44,10 @@ def readiness() -> dict[str, Any]:
     return {
         "ready": bool(payload.get("pass") or payload.get("overall_status") == "ready"),
         "recommendation": payload.get("recommendation", ""),
-        "warnings": payload.get("summary", {}).get("warnings", 0) if isinstance(payload.get("summary"), dict) else 0,
-        "blockers": payload.get("summary", {}).get("blockers", 0) if isinstance(payload.get("summary"), dict) else 0,
+        "warnings": payload.get("summary", {}).get("warnings", 0)
+        if isinstance(payload.get("summary"), dict)
+        else 0,
+        "blockers": payload.get("summary", {}).get("blockers", 0)
+        if isinstance(payload.get("summary"), dict)
+        else 0,
     }

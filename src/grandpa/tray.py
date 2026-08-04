@@ -77,12 +77,19 @@ class TraySingleInstance:
         self.lock_path.parent.mkdir(parents=True, exist_ok=True)
         for _attempt in range(3):
             try:
-                self._fd = os.open(str(self.lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(self._fd, f"{self._pid}\n{self._token}\n".encode("ascii", errors="ignore"))
+                self._fd = os.open(
+                    str(self.lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY
+                )
+                os.write(
+                    self._fd,
+                    f"{self._pid}\n{self._token}\n".encode("ascii", errors="ignore"),
+                )
                 return
             except FileExistsError as exc:
                 if self._existing_lock_is_live():
-                    raise TrayAlreadyRunningError("Grandpa tray is already running.") from exc
+                    raise TrayAlreadyRunningError(
+                        "Grandpa tray is already running."
+                    ) from exc
                 self._remove_stale_lock()
             except OSError as exc:
                 raise RuntimeError(f"Could not create tray lock: {exc}") from exc
@@ -112,7 +119,11 @@ class TraySingleInstance:
 
     def _read_lock_pid(self) -> int | None:
         try:
-            raw_pid = self.lock_path.read_text(encoding="ascii", errors="ignore").splitlines()[0].strip()
+            raw_pid = (
+                self.lock_path.read_text(encoding="ascii", errors="ignore")
+                .splitlines()[0]
+                .strip()
+            )
             pid = int(raw_pid)
         except (IndexError, OSError, ValueError):
             return None
@@ -120,7 +131,9 @@ class TraySingleInstance:
 
     def _owns_current_lock(self) -> bool:
         try:
-            lines = self.lock_path.read_text(encoding="ascii", errors="ignore").splitlines()
+            lines = self.lock_path.read_text(
+                encoding="ascii", errors="ignore"
+            ).splitlines()
         except OSError:
             return False
         if len(lines) < 2:
@@ -146,7 +159,9 @@ def _pid_is_alive(pid: int) -> bool:
 
         if not psutil.pid_exists(pid):
             return False
-        if sys.platform == "win32" and not _pid_belongs_to_current_windows_user(psutil, pid):
+        if sys.platform == "win32" and not _pid_belongs_to_current_windows_user(
+            psutil, pid
+        ):
             return True
         return True
     except ImportError:
@@ -216,7 +231,9 @@ class GrandpaTrayController:
             self.daemon.start.callback(None, None, None, None, None)
         except SystemExit as exc:
             if exc.code:
-                return self._remember(False, "failed", "Grandpa could not start or is already running.")
+                return self._remember(
+                    False, "failed", "Grandpa could not start or is already running."
+                )
         except Exception as exc:
             logger.exception("Tray start action failed")
             return self._remember(False, "failed", f"Grandpa start failed: {exc}")
@@ -261,7 +278,11 @@ class GrandpaTrayController:
     def exit_tray(self, icon: Any | None = None) -> TrayActionResult:
         if icon is not None:
             icon.stop()
-        return self._remember(True, "exited", "Grandpa tray exited. Background service was left unchanged.")
+        return self._remember(
+            True,
+            "exited",
+            "Grandpa tray exited. Background service was left unchanged.",
+        )
 
     def _remember(self, ok: bool, status: str, message: str) -> TrayActionResult:
         self.last_message = message
@@ -271,7 +292,9 @@ class GrandpaTrayController:
 def validate_tray_environment(platform: str | None = None) -> None:
     if (platform or sys.platform) != "win32":
         raise TrayUnsupportedError("Grandpa tray is only supported on Windows.")
-    missing = [name for name in ("pystray", "PIL") if importlib.util.find_spec(name) is None]
+    missing = [
+        name for name in ("pystray", "PIL") if importlib.util.find_spec(name) is None
+    ]
     if missing:
         raise TrayDependencyError(
             "Grandpa tray dependencies are not installed.\n"

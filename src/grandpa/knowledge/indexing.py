@@ -39,7 +39,9 @@ def infer_title(source: str, content: str, title: str | None = None) -> str:
     return "Untitled knowledge document"
 
 
-def infer_tags(source: str, content: str, tags: list[str] | tuple[str, ...] | None = None) -> list[str]:
+def infer_tags(
+    source: str, content: str, tags: list[str] | tuple[str, ...] | None = None
+) -> list[str]:
     found = {tag.strip().lower() for tag in (tags or []) if tag and tag.strip()}
     suffix = Path(source).suffix.lower()
     source_lower = source.lower().replace("\\", "/")
@@ -61,7 +63,9 @@ def infer_tags(source: str, content: str, tags: list[str] | tuple[str, ...] | No
     return sorted(found)
 
 
-def chunk_text(text: str, *, max_words: int = 180, overlap: int = 30) -> list[dict[str, Any]]:
+def chunk_text(
+    text: str, *, max_words: int = 180, overlap: int = 30
+) -> list[dict[str, Any]]:
     words = normalize_text(text).split()
     if not words:
         return []
@@ -92,9 +96,15 @@ def read_supported_file(path: str | Path) -> tuple[str, dict[str, Any]]:
 
     file_path = Path(path)
     suffix = file_path.suffix.lower()
-    metadata = {"path": str(file_path), "extension": suffix, "future_supported": suffix in FUTURE_EXTENSIONS}
+    metadata = {
+        "path": str(file_path),
+        "extension": suffix,
+        "future_supported": suffix in FUTURE_EXTENSIONS,
+    }
     if suffix not in SUPPORTED_EXTENSIONS:
-        raise ValueError(f"Unsupported knowledge source for v1: {suffix or 'no extension'}")
+        raise ValueError(
+            f"Unsupported knowledge source for v1: {suffix or 'no extension'}"
+        )
     raw = file_path.read_text(encoding="utf-8", errors="replace")
     if suffix == ".json":
         try:

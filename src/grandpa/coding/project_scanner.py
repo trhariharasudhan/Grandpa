@@ -22,7 +22,9 @@ IGNORED_DIRS = {
 }
 
 
-def scan_projects(root: str | Path | None = None, *, max_depth: int = 2) -> dict[str, Any]:
+def scan_projects(
+    root: str | Path | None = None, *, max_depth: int = 2
+) -> dict[str, Any]:
     """Detect software projects under ``root`` without executing anything."""
     base = _safe_root(root)
     projects: list[dict[str, Any]] = []
@@ -32,7 +34,9 @@ def scan_projects(root: str | Path | None = None, *, max_depth: int = 2) -> dict
         if detected["is_project"] and path not in seen:
             projects.append(detected)
             seen.add(path)
-    projects.sort(key=lambda item: (0 if item["path"] == str(base) else 1, item["name"].lower()))
+    projects.sort(
+        key=lambda item: (0 if item["path"] == str(base) else 1, item["name"].lower())
+    )
     return {
         "root": str(base),
         "projects": projects,
@@ -64,7 +68,9 @@ def detect_project(path: str | Path | None = None) -> dict[str, Any]:
         "path": str(project),
         "is_project": bool(types),
         "types": types,
-        "markers": {name: str(marker) for name, marker in markers.items() if marker.exists()},
+        "markers": {
+            name: str(marker) for name, marker in markers.items() if marker.exists()
+        },
         "read_only": True,
     }
 
@@ -76,7 +82,11 @@ def _candidate_dirs(root: Path, *, max_depth: int) -> list[Path]:
         if depth >= max_depth:
             return
         try:
-            children = [item for item in path.iterdir() if item.is_dir() and item.name not in IGNORED_DIRS]
+            children = [
+                item
+                for item in path.iterdir()
+                if item.is_dir() and item.name not in IGNORED_DIRS
+            ]
         except OSError:
             return
         for child in children:

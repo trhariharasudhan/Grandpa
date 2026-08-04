@@ -108,7 +108,7 @@ class TestRunSandboxed:
 
     def test_output_truncation(self) -> None:
         # Generate output larger than max_output_bytes
-        python_cmd = f"\"{sys.executable}\" -c \"print('A' * 200)\""
+        python_cmd = f'"{sys.executable}" -c "print(\'A\' * 200)"'
         result = run_sandboxed(
             python_cmd,
             timeout=10.0,

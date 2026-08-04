@@ -23,7 +23,9 @@ DownloadActionType = Literal[
     "open_folder",
 ]
 
-DownloadActionStatus = Literal["handled", "needs_confirmation", "blocked", "unsupported", "no_match", "error"]
+DownloadActionStatus = Literal[
+    "handled", "needs_confirmation", "blocked", "unsupported", "no_match", "error"
+]
 
 
 @dataclass(frozen=True)
@@ -68,4 +70,10 @@ class DownloadResult:
         return self.status == "no_match"
 
 
-__all__ = ["DownloadAction", "DownloadActionStatus", "DownloadActionType", "DownloadItem", "DownloadResult"]
+__all__ = [
+    "DownloadAction",
+    "DownloadActionStatus",
+    "DownloadActionType",
+    "DownloadItem",
+    "DownloadResult",
+]

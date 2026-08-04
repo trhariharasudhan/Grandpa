@@ -10,7 +10,9 @@ from grandpa.agent.execution.patch_builder import calculate_file_hash
 from grandpa.tools.apply_patch import ApplyPatchTool
 
 
-def apply_patch_proposal(proposal: PatchProposal, workspace_root: str) -> PatchApplicationResult:
+def apply_patch_proposal(
+    proposal: PatchProposal, workspace_root: str
+) -> PatchApplicationResult:
     """Safely apply each file change in the approved PatchProposal, creating backups and supporting rollbacks."""
     # 1. Double check file freshness before applying any change
     for change in proposal.file_changes:
@@ -36,7 +38,9 @@ def apply_patch_proposal(proposal: PatchProposal, workspace_root: str) -> PatchA
             res = tool.execute(patch=change.diff_text, path=change.path, backup=True)
             if not res.success:
                 failed = True
-                err_msg = f"Failed to apply patch hunk to '{change.path}': {res.content}"
+                err_msg = (
+                    f"Failed to apply patch hunk to '{change.path}': {res.content}"
+                )
                 break
 
             applied_changes.append(change.path)

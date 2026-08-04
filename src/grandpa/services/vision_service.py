@@ -29,8 +29,12 @@ def diagnostics() -> dict[str, Any]:
 
 def health() -> dict[str, Any]:
     payload = safe_call("vision", diagnostics)
-    screen = payload.get("screen", {}) if isinstance(payload.get("screen"), dict) else {}
-    visual = payload.get("visual", {}) if isinstance(payload.get("visual"), dict) else {}
+    screen = (
+        payload.get("screen", {}) if isinstance(payload.get("screen"), dict) else {}
+    )
+    visual = (
+        payload.get("visual", {}) if isinstance(payload.get("visual"), dict) else {}
+    )
     return {
         "name": "vision",
         "ready": bool(screen) or bool(visual.get("opencv_available")),
@@ -38,7 +42,9 @@ def health() -> dict[str, Any]:
         "dependencies": {
             "screen_awareness": bool(screen),
             "opencv": bool(visual.get("opencv_available")),
-            "ocr": screen.get("ocr", {}).get("available") if isinstance(screen.get("ocr"), dict) else None,
+            "ocr": screen.get("ocr", {}).get("available")
+            if isinstance(screen.get("ocr"), dict)
+            else None,
         },
     }
 

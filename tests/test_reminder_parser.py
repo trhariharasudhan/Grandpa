@@ -119,14 +119,18 @@ def test_cli_add_creates_reminder_from_phrase(monkeypatch, tmp_path) -> None:
     assert saved[0].message == "call Arjun"
 
 
-def test_chat_creates_one_shot_reminder_from_natural_text(monkeypatch, tmp_path) -> None:
+def test_chat_creates_one_shot_reminder_from_natural_text(
+    monkeypatch, tmp_path
+) -> None:
     store = ReminderStore(tmp_path / "reminders.db")
     monkeypatch.setattr(
         "grandpa.reminder_parser.default_reminder_timezone",
         lambda: UTC,
     )
 
-    message = _create_one_shot_reminder("remind me in 30 minutes to drink water", store=store)
+    message = _create_one_shot_reminder(
+        "remind me in 30 minutes to drink water", store=store
+    )
 
     reminders = store.list()
     assert message is not None

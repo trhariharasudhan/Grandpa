@@ -61,7 +61,9 @@ def heuristic_summarize(text: str, summary_type: SummaryType = "short") -> str:
         paragraphs = lines
 
     # Filter out title-only duplicate paragraphs and browser chrome text
-    substantive_p = [p for p in paragraphs if len(p.split()) > 3 and not _is_chrome_text(p)]
+    substantive_p = [
+        p for p in paragraphs if len(p.split()) > 3 and not _is_chrome_text(p)
+    ]
     if not substantive_p:
         return "Insufficient page content is available to summarize."
 
@@ -88,7 +90,7 @@ def heuristic_summarize(text: str, summary_type: SummaryType = "short") -> str:
 class LocalPageSummarizer:
     """Local-first page summarizer integrated with Ollama and bounded output rules."""
 
-    def __init__(self, preferred_model: str = "qwen2.5:3b") -> None:
+    def __init__(self, preferred_model: str | None = None) -> None:
         self.preferred_model = preferred_model
 
     def summarize_page(
@@ -98,7 +100,9 @@ class LocalPageSummarizer:
         custom_instructions: str = "",
     ) -> str:
         """Summarize PageContent using Ollama or heuristic fallback."""
-        source_text = sanitize_untrusted_text(page.visible_text or "\n\n".join(page.paragraphs))
+        source_text = sanitize_untrusted_text(
+            page.visible_text or "\n\n".join(page.paragraphs)
+        )
 
         if not source_text or len(source_text.split()) < 5:
             return "Insufficient page content is available to summarize."
@@ -107,8 +111,20 @@ class LocalPageSummarizer:
 
         # Attempt Ollama local engine
         try:
+            from grandpa.core.config import load_config
             from grandpa.engine import get_engine
-            engine = get_engine("ollama")
+
+            config = load_config()
+            selected = get_engine(config, "ollama")
+            if selected is None:
+                raise Exception("No ollama engine found")
+            _, engine = selected
+
+            model = (
+                self.preferred_model
+                or config.intelligence.default_model
+                or "qwen:latest"
+            )
 
             prompt = (
                 f"You are Grandpa's local browser page summarizer.\n"
@@ -131,13 +147,15 @@ class LocalPageSummarizer:
 
             response = engine.generate(
                 prompt=prompt,
-                model=self.preferred_model,
+                model=model,
                 max_tokens=max_tokens,
                 temperature=0.2,
             )
             if response and response.text:
                 return sanitize_untrusted_text(response.text.strip())
         except Exception as exc:
-            logger.debug(f"Ollama local summarizer offline or failed ({exc}). Using heuristic fallback.")
+            logger.debug(
+                f"Ollama local summarizer offline or failed ({exc}). Using heuristic fallback."
+            )
 
         return heuristic_summarize(source_text, summary_type=summary_type)

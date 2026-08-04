@@ -53,9 +53,13 @@ class VoiceConversation:
         self.state = state
         self.touch()
 
-    def add_message(self, role: str, content: str, metadata: dict[str, Any] | None = None) -> None:
+    def add_message(
+        self, role: str, content: str, metadata: dict[str, Any] | None = None
+    ) -> None:
         if content:
-            self.messages.append(VoiceMessage(role=role, content=content, metadata=metadata or {}))
+            self.messages.append(
+                VoiceMessage(role=role, content=content, metadata=metadata or {})
+            )
             if len(self.messages) > self.context_window:
                 self.messages = self.messages[-self.context_window :]
         self.touch()
@@ -73,7 +77,9 @@ class VoiceConversation:
             "current_goal": self.current_goal,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
-            "last_messages": [message.to_dict() for message in self.messages[-self.context_window :]],
+            "last_messages": [
+                message.to_dict() for message in self.messages[-self.context_window :]
+            ],
         }
 
 

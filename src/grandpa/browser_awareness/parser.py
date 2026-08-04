@@ -14,21 +14,57 @@ class BrowserAwarenessParser:
         command = _normalize(text)
         if not command:
             return None
-        if command in {"what page am i on", "current page", "show current page", "where am i in the browser"}:
+        if command in {
+            "what page am i on",
+            "current page",
+            "show current page",
+            "where am i in the browser",
+        }:
             return BrowserAwarenessAction("current")
-        if command in {"what is the title of this page", "page title", "show page title", "browser title"}:
+        if command in {
+            "what is the title of this page",
+            "page title",
+            "show page title",
+            "browser title",
+        }:
             return BrowserAwarenessAction("title")
-        if command in {"show the current url", "current url", "show url", "what is the url", "browser url"}:
+        if command in {
+            "show the current url",
+            "current url",
+            "show url",
+            "what is the url",
+            "browser url",
+        }:
             return BrowserAwarenessAction("url")
-        if command in {"read this page", "read the page", "read page", "summarize visible content"}:
+        if command in {
+            "read this page",
+            "read the page",
+            "read page",
+            "summarize visible content",
+        }:
             return BrowserAwarenessAction("read")
-        if command in {"summarize this page", "summarize the page", "page summary", "summarize visible page"}:
+        if command in {
+            "summarize this page",
+            "summarize the page",
+            "page summary",
+            "summarize visible page",
+        }:
             return BrowserAwarenessAction("summarize")
-        if command in {"list the links on this page", "list links on this page", "show page links", "browser links"}:
+        if command in {
+            "list the links on this page",
+            "list links on this page",
+            "show page links",
+            "browser links",
+        }:
             return BrowserAwarenessAction("links")
         if command in {"read the selected text", "read selected text", "selected text"}:
             return BrowserAwarenessAction("selected_text")
-        if command in {"what tabs are open", "what tabs are open in the browser", "list browser tabs", "browser tabs"}:
+        if command in {
+            "what tabs are open",
+            "what tabs are open in the browser",
+            "list browser tabs",
+            "browser tabs",
+        }:
             return BrowserAwarenessAction("tabs")
         match = re.fullmatch(r"find text ['\"]?(.+?)['\"]? on this page", command)
         if match:

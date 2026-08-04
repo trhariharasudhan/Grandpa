@@ -79,7 +79,9 @@ class ScreenElementLocator:
                 )
         except Exception:
             logger.debug("Window metadata was unavailable during element lookup")
-        matches.sort(key=lambda item: (-item.confidence, item.bounds.top, item.bounds.left))
+        matches.sort(
+            key=lambda item: (-item.confidence, item.bounds.top, item.bounds.left)
+        )
         return tuple(matches[: max(1, limit)])
 
     def _locate_with_vision(
@@ -111,7 +113,9 @@ class ScreenElementLocator:
 class HighlightOverlay:
     """Draw a short-lived, click-through-free visual rectangle without clicking."""
 
-    def __init__(self, renderer: Callable[[LocatedElement, float], None] | None = None) -> None:
+    def __init__(
+        self, renderer: Callable[[LocatedElement, float], None] | None = None
+    ) -> None:
         self._renderer = renderer or _render_tk_overlay
 
     def show(self, element: LocatedElement, *, duration_seconds: float = 1.5) -> None:
@@ -130,7 +134,11 @@ def _match_confidence(query: str, candidate: str, ocr_confidence: float) -> floa
     query_tokens = set(query.split())
     candidate_tokens = set(candidate.split())
     token_score = len(query_tokens & candidate_tokens) / max(1, len(query_tokens))
-    phrase_score = 1.0 if query in candidate or (len(candidate) >= 4 and candidate in query) else 0.0
+    phrase_score = (
+        1.0
+        if query in candidate or (len(candidate) >= 4 and candidate in query)
+        else 0.0
+    )
     fuzzy_score = SequenceMatcher(None, query, candidate).ratio()
     text_score = max(phrase_score, token_score, fuzzy_score)
     return round(text_score * 0.8 + max(0.0, min(1.0, ocr_confidence)) * 0.2, 3)
@@ -142,7 +150,14 @@ def _normalize(value: str) -> str:
 
 def _infer_role(query: str, text: str) -> str:
     haystack = f"{query} {text}".casefold()
-    for role in ("button", "icon", "label", "input field", "search box", "window title"):
+    for role in (
+        "button",
+        "icon",
+        "label",
+        "input field",
+        "search box",
+        "window title",
+    ):
         if role in haystack:
             return role
     return "text"
@@ -157,7 +172,9 @@ def _render_tk_overlay(element: LocatedElement, duration_seconds: float) -> None
             root = tk.Tk()
             root.overrideredirect(True)
             root.attributes("-topmost", True)
-            root.geometry(f"{max(1, box.width)}x{max(1, box.height)}+{box.left}+{box.top}")
+            root.geometry(
+                f"{max(1, box.width)}x{max(1, box.height)}+{box.left}+{box.top}"
+            )
             transparent = "#010101"
             root.configure(bg=transparent)
             try:

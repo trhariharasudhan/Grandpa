@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from typing import List, Optional
 
 from grandpa.core.registry import SpeechRegistry
 from grandpa.speech._stubs import Segment, SpeechBackend, TranscriptionResult
+
+logger = logging.getLogger(__name__)
 
 try:
     from faster_whisper import WhisperModel
@@ -41,7 +44,9 @@ class FasterWhisperBackend(SpeechBackend):
                     "Install with: uv sync --extra speech"
                 )
             last_error: Exception | None = None
-            for compute_type in _compute_type_candidates(self._device, self._compute_type):
+            for compute_type in _compute_type_candidates(
+                self._device, self._compute_type
+            ):
                 try:
                     self._model = WhisperModel(
                         self._model_size,
@@ -74,15 +79,34 @@ class FasterWhisperBackend(SpeechBackend):
             kwargs = {}
             if language:
                 kwargs["language"] = language
-            kwargs["initial_prompt"] = "Grandpa assistant. Ollama. The current year may be 2026."
+            kwargs["initial_prompt"] = "Grandpa, Ollama"
 
             segments_iter, info = model.transcribe(tmp_path, **kwargs)
             segments_list = list(segments_iter)
         finally:
             _delete_temp_audio(tmp_path)
 
+        # Filter segments based on confidence metadata to reject background noise/hallucination
+        valid_segments = []
+        for seg in segments_list:
+            no_speech = getattr(seg, "no_speech_prob", 0.0)
+            avg_log = getattr(seg, "avg_logprob", 0.0)
+            # Avoid type errors in unit tests where MagicMock returns mock objects for attributes
+            if isinstance(no_speech, (int, float)) and isinstance(
+                avg_log, (int, float)
+            ):
+                if no_speech > 0.6 or avg_log < -1.0:
+                    logger.info(
+                        "Ignoring noisy segment %r (no_speech_prob=%f, avg_logprob=%f)",
+                        seg.text,
+                        no_speech,
+                        avg_log,
+                    )
+                    continue
+            valid_segments.append(seg)
+
         # Build result
-        text = "".join(seg.text for seg in segments_list).strip()
+        text = "".join(seg.text for seg in valid_segments).strip()
         segments = [
             Segment(
                 text=seg.text.strip(),
@@ -90,7 +114,7 @@ class FasterWhisperBackend(SpeechBackend):
                 end=seg.end,
                 confidence=None,
             )
-            for seg in segments_list
+            for seg in valid_segments
         ]
 
         return TranscriptionResult(

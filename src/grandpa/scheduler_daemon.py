@@ -90,7 +90,9 @@ class BackgroundSchedulerDaemon:
                     "routines": routine_result,
                     "reminders": reminder_result,
                     "routines_run": routine_result.get("routines_run", 0),
-                    "legacy_reminders_triggered": routine_result.get("reminders_triggered", 0),
+                    "legacy_reminders_triggered": routine_result.get(
+                        "reminders_triggered", 0
+                    ),
                     "reminders_triggered": len(reminder_result.get("triggered", [])),
                     "reminders_failed": len(reminder_result.get("failed", [])),
                 }

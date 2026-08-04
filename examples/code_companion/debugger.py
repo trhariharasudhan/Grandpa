@@ -59,8 +59,7 @@ def main(
         from grandpa import Grandpa
     except ImportError:
         click.echo(
-            "Error: grandpa is not installed. "
-            "Install it with:  uv sync --extra dev",
+            "Error: grandpa is not installed. Install it with:  uv sync --extra dev",
             err=True,
         )
         sys.exit(1)

@@ -10,7 +10,9 @@ from grandpa.knowledge.indexing import tokenize
 from grandpa.knowledge.storage import KnowledgeDocument, KnowledgeStore
 
 
-def summarize_document(document: KnowledgeDocument, *, max_sentences: int = 4) -> dict[str, Any]:
+def summarize_document(
+    document: KnowledgeDocument, *, max_sentences: int = 4
+) -> dict[str, Any]:
     sentences = _sentences(document.content)
     chosen = sentences[:max_sentences]
     if not chosen and document.content:
@@ -27,7 +29,9 @@ def summarize_document(document: KnowledgeDocument, *, max_sentences: int = 4) -
     }
 
 
-def summarize_topic(topic: str, *, store: KnowledgeStore | None = None, limit: int = 8) -> dict[str, Any]:
+def summarize_topic(
+    topic: str, *, store: KnowledgeStore | None = None, limit: int = 8
+) -> dict[str, Any]:
     from grandpa.knowledge.retrieval import search_documents
 
     results = search_documents(query=topic, tag=topic, limit=limit, store=store)
@@ -55,7 +59,9 @@ def summarize_project(*, store: KnowledgeStore | None = None) -> dict[str, Any]:
     return {
         "document_count": len(docs),
         "titles": titles,
-        "top_tags": [{"tag": tag, "count": count} for tag, count in tags.most_common(10)],
+        "top_tags": [
+            {"tag": tag, "count": count} for tag, count in tags.most_common(10)
+        ],
         "summary": (
             f"Grandpa has {len(docs)} project knowledge document(s) indexed. "
             f"Recent project documents: {', '.join(titles[:5])}."

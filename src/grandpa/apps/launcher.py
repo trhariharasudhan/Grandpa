@@ -23,7 +23,9 @@ def launch_application(app: ApplicationInfo, *, args: list[str] | None = None) -
     launch_args = list(args or [])
     logger.info("Application launch requested: %s (%s)", app.display_name, target)
     if target.suffix.lower() == ".exe":
-        subprocess.Popen([str(target), *launch_args], cwd=app.working_directory or None, shell=False)  # noqa: S603
+        subprocess.Popen(
+            [str(target), *launch_args], cwd=app.working_directory or None, shell=False
+        )  # noqa: S603
     else:
         if launch_args:
             raise ValueError("shortcut_args_unsupported")

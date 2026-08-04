@@ -28,7 +28,11 @@ def _pc_action(action_type: str, target: str = ""):
         response = run_local_action(payload)
         return SkillResult(
             ok=response.ok,
-            status="dry_run" if response.status == "dry_run" else "completed" if response.ok else response.status,
+            status="dry_run"
+            if response.status == "dry_run"
+            else "completed"
+            if response.ok
+            else response.status,
             message=response.message,
             data={"evidence": response.evidence, "action_id": response.action_id},
             risk_level=response.risk_level,
@@ -39,7 +43,9 @@ def _pc_action(action_type: str, target: str = ""):
     return _execute
 
 
-def _browser_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _browser_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser_control import execute_browser_action
 
     result = execute_browser_action("diagnostics", "browser")
@@ -47,16 +53,33 @@ def _browser_diagnostics(_params: dict[str, Any], _context: SkillExecutionContex
         ok=result.status in {"handled", "ready"},
         status="completed" if result.status in {"handled", "ready"} else "unsupported",
         message=result.message,
-        data={"details": result.target, "context": result.context.to_dict() if result.context else {}},
+        data={
+            "details": result.target,
+            "context": result.context.to_dict() if result.context else {},
+        },
         risk_level=getattr(result, "risk_level", "LOW"),
         approval_required=bool(getattr(result, "approval_required", False)),
     )
 
 
-def _browser_agent_result(payload: dict[str, Any], *, default_status: str = "completed") -> SkillResult:
+def _browser_agent_result(
+    payload: dict[str, Any], *, default_status: str = "completed"
+) -> SkillResult:
     status = str(payload.get("status") or default_status)
-    approval = status == "requires_approval" or bool(payload.get("task", {}).get("approval_required")) if isinstance(payload.get("task"), dict) else False
-    risk = str(payload.get("task", {}).get("risk_level") or ("MEDIUM" if approval else "LOW")) if isinstance(payload.get("task"), dict) else ("MEDIUM" if approval else "LOW")
+    approval = (
+        status == "requires_approval"
+        or bool(payload.get("task", {}).get("approval_required"))
+        if isinstance(payload.get("task"), dict)
+        else False
+    )
+    risk = (
+        str(
+            payload.get("task", {}).get("risk_level")
+            or ("MEDIUM" if approval else "LOW")
+        )
+        if isinstance(payload.get("task"), dict)
+        else ("MEDIUM" if approval else "LOW")
+    )
     if status == "planned":
         normalized = "completed"
     elif status == "requires_approval":
@@ -68,54 +91,78 @@ def _browser_agent_result(payload: dict[str, Any], *, default_status: str = "com
     return SkillResult(
         ok=normalized in {"completed", "approval_required"},
         status=normalized,
-        message=str(payload.get("message") or payload.get("summary") or "Browser agent completed."),
+        message=str(
+            payload.get("message")
+            or payload.get("summary")
+            or "Browser agent completed."
+        ),
         data=payload,
         risk_level=risk if risk in {"LOW", "MEDIUM", "HIGH", "BLOCKED"} else "LOW",
         approval_required=approval,
     )
 
 
-def _browser_page_summary(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _browser_page_summary(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser.agent import summarize_current_page
 
     return _browser_agent_result(summarize_current_page())
 
 
-def _browser_visible_links(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _browser_visible_links(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser.agent import extract_visible_links
 
     return _browser_agent_result(extract_visible_links())
 
 
-def _browser_visible_buttons(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _browser_visible_buttons(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser.agent import extract_visible_buttons
 
     return _browser_agent_result(extract_visible_buttons())
 
 
-def _browser_search_plan(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _browser_search_plan(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser.agent import search_web_plan
 
     query = str(params.get("query") or context.user_request or "").strip()
     return _browser_agent_result(search_web_plan(query), default_status="planned")
 
 
-def _browser_form_fill_plan(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _browser_form_fill_plan(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser.agent import fill_form_plan
 
-    field = str(params.get("field") or params.get("target") or context.user_request or "").strip()
+    field = str(
+        params.get("field") or params.get("target") or context.user_request or ""
+    ).strip()
     value = str(params.get("value") or "").strip()
-    return _browser_agent_result(fill_form_plan(field, value), default_status="requires_approval")
+    return _browser_agent_result(
+        fill_form_plan(field, value), default_status="requires_approval"
+    )
 
 
-def _browser_download_plan(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _browser_download_plan(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser.agent import download_plan
 
     target = str(params.get("target") or context.user_request or "this file").strip()
-    return _browser_agent_result(download_plan(target), default_status="requires_approval")
+    return _browser_agent_result(
+        download_plan(target), default_status="requires_approval"
+    )
 
 
-def _browser_agent_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _browser_agent_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.browser.agent import browser_agent_diagnostics
 
     info = browser_agent_diagnostics()
@@ -128,7 +175,9 @@ def _browser_agent_diagnostics(_params: dict[str, Any], _context: SkillExecution
     )
 
 
-def _desktop_operator_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _desktop_operator_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.desktop.operator import operator_diagnostics
 
     info = operator_diagnostics()
@@ -141,13 +190,25 @@ def _desktop_operator_diagnostics(_params: dict[str, Any], _context: SkillExecut
     )
 
 
-def _desktop_operator_plan(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _desktop_operator_plan(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.desktop.operator import build_ui_navigation_plan
 
-    request = str(params.get("request") or params.get("goal") or context.user_request or "").strip()
-    info = build_ui_navigation_plan(request, persist=not bool(params.get("dry_run", False)))
+    request = str(
+        params.get("request") or params.get("goal") or context.user_request or ""
+    ).strip()
+    info = build_ui_navigation_plan(
+        request, persist=not bool(params.get("dry_run", False))
+    )
     task = info.get("task", {})
-    status = "approval_required" if task.get("status") == "waiting_approval" else "completed" if task.get("status") in {"planned", "completed"} else "blocked"
+    status = (
+        "approval_required"
+        if task.get("status") == "waiting_approval"
+        else "completed"
+        if task.get("status") in {"planned", "completed"}
+        else "blocked"
+    )
     risk = str(info.get("analysis", {}).get("risk_level") or "LOW")
     return SkillResult(
         ok=status in {"completed", "approval_required"},
@@ -159,7 +220,9 @@ def _desktop_operator_plan(params: dict[str, Any], context: SkillExecutionContex
     )
 
 
-def _desktop_active_app_actions(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _desktop_active_app_actions(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.desktop.operator import active_app_actions
 
     info = active_app_actions()
@@ -172,7 +235,9 @@ def _desktop_active_app_actions(_params: dict[str, Any], _context: SkillExecutio
     )
 
 
-def _desktop_app_profiles(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _desktop_app_profiles(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.desktop.operator import list_app_profiles
 
     info = list_app_profiles()
@@ -185,7 +250,9 @@ def _desktop_app_profiles(_params: dict[str, Any], _context: SkillExecutionConte
     )
 
 
-def _desktop_operator_history(params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _desktop_operator_history(
+    params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.desktop.operator import list_operator_tasks
 
     info = list_operator_tasks(limit=int(params.get("limit", 20)))
@@ -198,7 +265,9 @@ def _desktop_operator_history(params: dict[str, Any], _context: SkillExecutionCo
     )
 
 
-def _visual_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _visual_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     try:
         from grandpa.visual_targeting import visual_diagnostics
     except ModuleNotFoundError:
@@ -232,7 +301,9 @@ def _visual_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext
     )
 
 
-def _screen_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _screen_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.screen_awareness import screen_diagnostics
 
     info = screen_diagnostics()
@@ -251,13 +322,17 @@ def _screen_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext
     return SkillResult(
         ok=bool(info.get("supported", True)),
         status="completed" if info.get("supported", True) else "unsupported",
-        message=message if info.get("supported", True) else "Screen awareness is unavailable.",
+        message=message
+        if info.get("supported", True)
+        else "Screen awareness is unavailable.",
         data=info,
         risk_level="LOW",
     )
 
 
-def _workflow_status(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _workflow_status(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.smart_automation import diagnostics
 
     info = diagnostics()
@@ -270,14 +345,26 @@ def _workflow_status(_params: dict[str, Any], _context: SkillExecutionContext) -
     )
 
 
-def _clipboard_history(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _clipboard_history(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.pc_control import run_local_action
 
     limit = int(params.get("limit", 20))
-    response = run_local_action({"action_type": "clipboard_history", "target": "clipboard", "args": {"limit": limit}})
+    response = run_local_action(
+        {
+            "action_type": "clipboard_history",
+            "target": "clipboard",
+            "args": {"limit": limit},
+        }
+    )
     return SkillResult(
         ok=response.ok,
-        status="completed" if response.ok else response.status if response.status in {"unsupported", "blocked"} else "failed",
+        status="completed"
+        if response.ok
+        else response.status
+        if response.status in {"unsupported", "blocked"}
+        else "failed",
         message=response.message,
         data={"evidence": response.evidence, "action_id": response.action_id},
         risk_level=response.risk_level,
@@ -286,7 +373,9 @@ def _clipboard_history(params: dict[str, Any], context: SkillExecutionContext) -
     )
 
 
-def _planner_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _planner_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.planner import planner_diagnostics
 
     info = planner_diagnostics()
@@ -299,7 +388,9 @@ def _planner_diagnostics(_params: dict[str, Any], _context: SkillExecutionContex
     )
 
 
-def _skills_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _skills_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.skills.registry.core import registry_diagnostics
 
     info = registry_diagnostics()
@@ -312,12 +403,19 @@ def _skills_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext
     )
 
 
-def _memory_recall(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _memory_recall(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.memory_context import search_personal_memory
 
     query = str(params.get("query") or context.user_request or "").strip()
     if not query:
-        return SkillResult(ok=False, status="failed", message="Memory recall needs a query.", risk_level="LOW")
+        return SkillResult(
+            ok=False,
+            status="failed",
+            message="Memory recall needs a query.",
+            risk_level="LOW",
+        )
     info = search_personal_memory(query)
     memories = info.get("results", [])
     if not memories:
@@ -337,7 +435,9 @@ def _memory_recall(params: dict[str, Any], context: SkillExecutionContext) -> Sk
     )
 
 
-def _memory_profile(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _memory_profile(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.memory_context import memory_profile
 
     info = memory_profile()
@@ -350,7 +450,9 @@ def _memory_profile(_params: dict[str, Any], _context: SkillExecutionContext) ->
     )
 
 
-def _memory_preferences(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _memory_preferences(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.memory_context import memory_preferences
 
     info = memory_preferences()
@@ -364,7 +466,9 @@ def _memory_preferences(_params: dict[str, Any], _context: SkillExecutionContext
     )
 
 
-def _memory_relationships(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _memory_relationships(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.memory_context import memory_relationships
 
     info = memory_relationships()
@@ -377,20 +481,26 @@ def _memory_relationships(_params: dict[str, Any], _context: SkillExecutionConte
     )
 
 
-def _memory_insights(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _memory_insights(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.memory_context import memory_insight_summary
 
     info = memory_insight_summary()
     return SkillResult(
         ok=True,
         status="completed",
-        message=str(info.get("profile", {}).get("summary") or "Memory insights are ready."),
+        message=str(
+            info.get("profile", {}).get("summary") or "Memory insights are ready."
+        ),
         data=info,
         risk_level="LOW",
     )
 
 
-def _memory_topic_summary(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _memory_topic_summary(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.memory_context import memory_topics
 
     info = memory_topics()
@@ -404,7 +514,9 @@ def _memory_topic_summary(_params: dict[str, Any], _context: SkillExecutionConte
     )
 
 
-def _knowledge_search(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _knowledge_search(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import search_knowledge
 
     query = str(params.get("query") or context.user_request or "").strip()
@@ -420,16 +532,27 @@ def _knowledge_search(params: dict[str, Any], context: SkillExecutionContext) ->
     )
 
 
-def _knowledge_summary(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _knowledge_summary(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import KnowledgeEngine
 
     engine = KnowledgeEngine()
     document_id = str(params.get("document_id") or "").strip()
     topic = str(params.get("topic") or context.user_request or "").strip()
     try:
-        info = engine.summary(document_id=document_id, topic=topic, project=bool(params.get("project", False)))
+        info = engine.summary(
+            document_id=document_id,
+            topic=topic,
+            project=bool(params.get("project", False)),
+        )
     except KeyError:
-        return SkillResult(ok=False, status="failed", message="Knowledge document was not found.", risk_level="LOW")
+        return SkillResult(
+            ok=False,
+            status="failed",
+            message="Knowledge document was not found.",
+            risk_level="LOW",
+        )
     return SkillResult(
         ok=True,
         status="completed",
@@ -439,7 +562,9 @@ def _knowledge_summary(params: dict[str, Any], context: SkillExecutionContext) -
     )
 
 
-def _knowledge_recent(params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _knowledge_recent(
+    params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import recent_knowledge_documents
 
     info = recent_knowledge_documents(limit=int(params.get("limit", 10)))
@@ -453,20 +578,27 @@ def _knowledge_recent(params: dict[str, Any], _context: SkillExecutionContext) -
     )
 
 
-def _knowledge_projects(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _knowledge_projects(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import KnowledgeEngine
 
     info = KnowledgeEngine().projects()
     return SkillResult(
         ok=True,
         status="completed",
-        message=str(info.get("summary", {}).get("summary") or "Project knowledge summary is ready."),
+        message=str(
+            info.get("summary", {}).get("summary")
+            or "Project knowledge summary is ready."
+        ),
         data=info,
         risk_level="LOW",
     )
 
 
-def _knowledge_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _knowledge_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import knowledge_diagnostics
 
     info = knowledge_diagnostics()
@@ -479,7 +611,9 @@ def _knowledge_diagnostics(_params: dict[str, Any], _context: SkillExecutionCont
     )
 
 
-def _knowledge_semantic_search(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _knowledge_semantic_search(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import semantic_search_knowledge
 
     query = str(params.get("query") or context.user_request or "").strip()
@@ -494,16 +628,28 @@ def _knowledge_semantic_search(params: dict[str, Any], context: SkillExecutionCo
     )
 
 
-def _knowledge_related(params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _knowledge_related(
+    params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import related_knowledge
 
     document_id = str(params.get("document_id") or "").strip()
     if not document_id:
-        return SkillResult(ok=False, status="failed", message="Related knowledge needs a document_id.", risk_level="LOW")
+        return SkillResult(
+            ok=False,
+            status="failed",
+            message="Related knowledge needs a document_id.",
+            risk_level="LOW",
+        )
     try:
         info = related_knowledge(document_id, limit=int(params.get("limit", 8)))
     except KeyError:
-        return SkillResult(ok=False, status="failed", message="Knowledge document was not found.", risk_level="LOW")
+        return SkillResult(
+            ok=False,
+            status="failed",
+            message="Knowledge document was not found.",
+            risk_level="LOW",
+        )
     return SkillResult(
         ok=True,
         status="completed",
@@ -513,7 +659,9 @@ def _knowledge_related(params: dict[str, Any], _context: SkillExecutionContext) 
     )
 
 
-def _knowledge_context(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+def _knowledge_context(
+    params: dict[str, Any], context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import knowledge_context
 
     query = str(params.get("query") or context.user_request or "").strip()
@@ -527,7 +675,9 @@ def _knowledge_context(params: dict[str, Any], context: SkillExecutionContext) -
     )
 
 
-def _knowledge_embedding_status(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _knowledge_embedding_status(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.knowledge.engine import knowledge_embedding_status
 
     info = knowledge_embedding_status()
@@ -541,21 +691,39 @@ def _knowledge_embedding_status(_params: dict[str, Any], _context: SkillExecutio
     )
 
 
-def _coding_project_scan(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _coding_project_scan(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.coding.project_scanner import scan_projects
 
     data = scan_projects()
-    return SkillResult(ok=True, status="completed", message=f"Detected {data['count']} local project(s).", data=data, risk_level="LOW")
+    return SkillResult(
+        ok=True,
+        status="completed",
+        message=f"Detected {data['count']} local project(s).",
+        data=data,
+        risk_level="LOW",
+    )
 
 
-def _coding_project_summary(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _coding_project_summary(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.coding.code_summary import summarize_project
 
     data = summarize_project()
-    return SkillResult(ok=True, status="completed", message=data["summary"], data=data, risk_level="LOW")
+    return SkillResult(
+        ok=True,
+        status="completed",
+        message=data["summary"],
+        data=data,
+        risk_level="LOW",
+    )
 
 
-def _coding_architecture(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _coding_architecture(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.coding.architecture_analysis import analyze_architecture
 
     data = analyze_architecture()
@@ -568,7 +736,9 @@ def _coding_architecture(_params: dict[str, Any], _context: SkillExecutionContex
     )
 
 
-def _coding_dependencies(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _coding_dependencies(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.coding.dependency_analysis import analyze_dependencies
 
     data = analyze_dependencies()
@@ -581,11 +751,19 @@ def _coding_dependencies(_params: dict[str, Any], _context: SkillExecutionContex
     )
 
 
-def _coding_diagnostics(_params: dict[str, Any], _context: SkillExecutionContext) -> SkillResult:
+def _coding_diagnostics(
+    _params: dict[str, Any], _context: SkillExecutionContext
+) -> SkillResult:
     from grandpa.coding.diagnostics import coding_diagnostics
 
     data = coding_diagnostics()
-    return SkillResult(ok=True, status="completed", message="Coding agent diagnostics are ready.", data=data, risk_level="LOW")
+    return SkillResult(
+        ok=True,
+        status="completed",
+        message="Coding agent diagnostics are ready.",
+        data=data,
+        risk_level="LOW",
+    )
 
 
 def ensure_default_skills_registered() -> None:
@@ -638,7 +816,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_desktop_operator_diagnostics,
-            aliases=("desktop operator diagnostics", "operator diagnostics", "desktop operator status"),
+            aliases=(
+                "desktop operator diagnostics",
+                "operator diagnostics",
+                "desktop operator status",
+            ),
         ),
         RuntimeSkill(
             name="desktop.operator_plan",
@@ -646,7 +828,9 @@ def ensure_default_skills_registered() -> None:
             category="desktop",
             risk_level="MEDIUM",
             approval_required=False,
-            parameters=(SkillParameter("request", "Desktop task request", required=False),),
+            parameters=(
+                SkillParameter("request", "Desktop task request", required=False),
+            ),
             executor=_desktop_operator_plan,
             aliases=("desktop operator plan", "ui navigation plan"),
         ),
@@ -657,7 +841,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_desktop_active_app_actions,
-            aliases=("detect active app and suggest actions", "active app actions", "suggest active app actions"),
+            aliases=(
+                "detect active app and suggest actions",
+                "active app actions",
+                "suggest active app actions",
+            ),
         ),
         RuntimeSkill(
             name="desktop.app_profiles",
@@ -674,7 +862,11 @@ def ensure_default_skills_registered() -> None:
             category="desktop",
             risk_level="LOW",
             approval_required=False,
-            parameters=(SkillParameter("limit", "Maximum task rows", required=False, type="integer"),),
+            parameters=(
+                SkillParameter(
+                    "limit", "Maximum task rows", required=False, type="integer"
+                ),
+            ),
             executor=_desktop_operator_history,
             aliases=("desktop operator history", "operator task history"),
         ),
@@ -685,7 +877,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_browser_diagnostics,
-            aliases=("browser diagnostics", "show browser diagnostics", "browser status"),
+            aliases=(
+                "browser diagnostics",
+                "show browser diagnostics",
+                "browser status",
+            ),
         ),
         RuntimeSkill(
             name="browser.page_summary",
@@ -694,7 +890,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_browser_page_summary,
-            aliases=("summarize this webpage", "summarize current page", "page summary"),
+            aliases=(
+                "summarize this webpage",
+                "summarize current page",
+                "page summary",
+            ),
         ),
         RuntimeSkill(
             name="browser.visible_links",
@@ -730,7 +930,10 @@ def ensure_default_skills_registered() -> None:
             category="browser",
             risk_level="MEDIUM",
             approval_required=False,
-            parameters=(SkillParameter("field", "Field label", required=False), SkillParameter("value", "Value to enter", required=False)),
+            parameters=(
+                SkillParameter("field", "Field label", required=False),
+                SkillParameter("value", "Value to enter", required=False),
+            ),
             executor=_browser_form_fill_plan,
             aliases=("form fill plan", "fill form plan"),
         ),
@@ -740,7 +943,9 @@ def ensure_default_skills_registered() -> None:
             category="browser",
             risk_level="MEDIUM",
             approval_required=False,
-            parameters=(SkillParameter("target", "Visible file or link", required=False),),
+            parameters=(
+                SkillParameter("target", "Visible file or link", required=False),
+            ),
             executor=_browser_download_plan,
             aliases=("download plan", "browser download plan"),
         ),
@@ -760,7 +965,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_visual_diagnostics,
-            aliases=("visual targeting diagnostics", "show visual diagnostics", "visual automation diagnostics"),
+            aliases=(
+                "visual targeting diagnostics",
+                "show visual diagnostics",
+                "visual automation diagnostics",
+            ),
         ),
         RuntimeSkill(
             name="vision.screen_diagnostics",
@@ -769,7 +978,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_screen_diagnostics,
-            aliases=("screen diagnostics", "show screen diagnostics", "screen awareness diagnostics"),
+            aliases=(
+                "screen diagnostics",
+                "show screen diagnostics",
+                "screen awareness diagnostics",
+            ),
         ),
         RuntimeSkill(
             name="automation.workflow_status",
@@ -786,7 +999,11 @@ def ensure_default_skills_registered() -> None:
             category="desktop",
             risk_level="LOW",
             approval_required=False,
-            parameters=(SkillParameter("limit", "Maximum history rows", required=False, type="integer"),),
+            parameters=(
+                SkillParameter(
+                    "limit", "Maximum history rows", required=False, type="integer"
+                ),
+            ),
             executor=_clipboard_history,
             aliases=("clipboard history", "show clipboard history"),
         ),
@@ -874,7 +1091,11 @@ def ensure_default_skills_registered() -> None:
                 SkillParameter("tag", "Optional tag filter", required=False),
             ),
             executor=_knowledge_search,
-            aliases=("knowledge search", "search knowledge", "search project knowledge"),
+            aliases=(
+                "knowledge search",
+                "search knowledge",
+                "search project knowledge",
+            ),
         ),
         RuntimeSkill(
             name="knowledge.summary",
@@ -887,7 +1108,11 @@ def ensure_default_skills_registered() -> None:
                 SkillParameter("topic", "Topic to summarize", required=False),
             ),
             executor=_knowledge_summary,
-            aliases=("knowledge summary", "summarize knowledge", "project knowledge summary"),
+            aliases=(
+                "knowledge summary",
+                "summarize knowledge",
+                "project knowledge summary",
+            ),
         ),
         RuntimeSkill(
             name="knowledge.recent",
@@ -932,7 +1157,9 @@ def ensure_default_skills_registered() -> None:
             category="knowledge",
             risk_level="LOW",
             approval_required=False,
-            parameters=(SkillParameter("document_id", "Knowledge document id", required=True),),
+            parameters=(
+                SkillParameter("document_id", "Knowledge document id", required=True),
+            ),
             executor=_knowledge_related,
             aliases=("related knowledge", "related documents"),
         ),
@@ -942,7 +1169,9 @@ def ensure_default_skills_registered() -> None:
             category="knowledge",
             risk_level="LOW",
             approval_required=False,
-            parameters=(SkillParameter("query", "Knowledge context query", required=False),),
+            parameters=(
+                SkillParameter("query", "Knowledge context query", required=False),
+            ),
             executor=_knowledge_context,
             aliases=("knowledge context", "build knowledge context"),
         ),
@@ -971,7 +1200,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_coding_project_summary,
-            aliases=("coding project summary", "summarize repository", "summarize project"),
+            aliases=(
+                "coding project summary",
+                "summarize repository",
+                "summarize project",
+            ),
         ),
         RuntimeSkill(
             name="coding.architecture",
@@ -980,7 +1213,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_coding_architecture,
-            aliases=("coding architecture", "analyze architecture", "repository architecture"),
+            aliases=(
+                "coding architecture",
+                "analyze architecture",
+                "repository architecture",
+            ),
         ),
         RuntimeSkill(
             name="coding.dependencies",
@@ -989,7 +1226,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_coding_dependencies,
-            aliases=("coding dependencies", "dependency analysis", "analyze dependencies"),
+            aliases=(
+                "coding dependencies",
+                "dependency analysis",
+                "analyze dependencies",
+            ),
         ),
         RuntimeSkill(
             name="coding.diagnostics",
@@ -998,7 +1239,11 @@ def ensure_default_skills_registered() -> None:
             risk_level="LOW",
             approval_required=False,
             executor=_coding_diagnostics,
-            aliases=("coding diagnostics", "developer diagnostics", "project diagnostics"),
+            aliases=(
+                "coding diagnostics",
+                "developer diagnostics",
+                "project diagnostics",
+            ),
         ),
         RuntimeSkill(
             name="desktop.keyboard_type",

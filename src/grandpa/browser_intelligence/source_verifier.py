@@ -15,7 +15,11 @@ from grandpa.browser_intelligence.models import (
 _KNOWN_OFFICIAL_DOMAINS: dict[str, tuple[str, ...]] = {
     "fastapi": ("fastapi.tiangolo.com", "tiangolo.com"),
     "python": ("docs.python.org", "python.org", "pypi.org"),
-    "raspberry pi": ("raspberrypi.com", "raspberrypi.org", "documentation.raspberrypi.com"),
+    "raspberry pi": (
+        "raspberrypi.com",
+        "raspberrypi.org",
+        "documentation.raspberrypi.com",
+    ),
     "jetson": ("nvidia.com", "developer.nvidia.com", "docs.nvidia.com"),
     "nvidia": ("nvidia.com", "developer.nvidia.com", "docs.nvidia.com"),
     "windows": ("microsoft.com", "learn.microsoft.com", "support.microsoft.com"),
@@ -76,7 +80,11 @@ def compute_domain_trust_score(domain: str) -> float:
         score += 0.25
 
     # Check if domain matches known official registry
-    if any(_domain_matches_official(clean, off_dom) for sublist in _KNOWN_OFFICIAL_DOMAINS.values() for off_dom in sublist):
+    if any(
+        _domain_matches_official(clean, off_dom)
+        for sublist in _KNOWN_OFFICIAL_DOMAINS.values()
+        for off_dom in sublist
+    ):
         score += 0.25
 
     # Check low trust patterns
@@ -111,7 +119,11 @@ def is_official_domain(url_or_domain: str, subject: str = "") -> bool:
     raw_subj = subject.strip().lower()
 
     # Remove noise words from subject
-    subj_clean = re.sub(r"\b(official|docs|documentation|site|guide|page|tutorial|search|result|results)\b", "", raw_subj).strip()
+    subj_clean = re.sub(
+        r"\b(official|docs|documentation|site|guide|page|tutorial|search|result|results)\b",
+        "",
+        raw_subj,
+    ).strip()
     if not subj_clean:
         subj_clean = raw_subj
 
@@ -126,9 +138,15 @@ def is_official_domain(url_or_domain: str, subject: str = "") -> bool:
     clean_subj_slug = re.sub(r"[^\w]", "", subj_clean)
     if clean_subj_slug and len(clean_subj_slug) >= 3:
         # Require exact domain prefix or subdomain match (e.g. fastapi.org, docs.fastapi.com)
-        if clean_domain == f"{clean_subj_slug}.org" or clean_domain == f"{clean_subj_slug}.dev" or clean_domain == f"{clean_subj_slug}.io":
+        if (
+            clean_domain == f"{clean_subj_slug}.org"
+            or clean_domain == f"{clean_subj_slug}.dev"
+            or clean_domain == f"{clean_subj_slug}.io"
+        ):
             return True
-        if clean_domain.startswith(f"{clean_subj_slug}.") or clean_domain.startswith(f"docs.{clean_subj_slug}."):
+        if clean_domain.startswith(f"{clean_subj_slug}.") or clean_domain.startswith(
+            f"docs.{clean_subj_slug}."
+        ):
             return True
 
     return False

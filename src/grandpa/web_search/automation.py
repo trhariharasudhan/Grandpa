@@ -37,7 +37,11 @@ class WebSearchAutomation:
     ) -> None:
         self.parser = parser or WebSearchParser()
         self.client = client or WebSearchClient()
-        self.cache = cache or WebSearchCache(ttl_minutes=getattr(getattr(self.client, "config", None), "cache_minutes", 15))
+        self.cache = cache or WebSearchCache(
+            ttl_minutes=getattr(
+                getattr(self.client, "config", None), "cache_minutes", 15
+            )
+        )
         self.safety = safety or WebSearchSafetyPolicy()
         self.ranker = ranker or WebSearchRanker(self.safety)
         self.summarizer = summarizer or WebSearchSummarizer()
@@ -53,14 +57,31 @@ class WebSearchAutomation:
         try:
             if action.action == "status":
                 status, message = self.client.status()  # type: ignore[attr-defined]
-                return WebSearchResponse("handled" if status == "ready" else "not_configured", message, action)
+                return WebSearchResponse(
+                    "handled" if status == "ready" else "not_configured",
+                    message,
+                    action,
+                )
             if action.action == "clear_cache":
                 count = self.cache.clear()
-                return WebSearchResponse("handled", f"Cleared {count} cached web search entr{'y' if count == 1 else 'ies'}.", action)
+                return WebSearchResponse(
+                    "handled",
+                    f"Cleared {count} cached web search entr{'y' if count == 1 else 'ies'}.",
+                    action,
+                )
             if action.action == "sources":
-                return WebSearchResponse("handled", format_sources(self._last_results), action, self._last_results)
+                return WebSearchResponse(
+                    "handled",
+                    format_sources(self._last_results),
+                    action,
+                    self._last_results,
+                )
             if action.action != "search" or action.query is None:
-                return WebSearchResponse("unsupported", "That web search action is not supported yet.", action)
+                return WebSearchResponse(
+                    "unsupported",
+                    "That web search action is not supported yet.",
+                    action,
+                )
             return self._search(action)
         except WebSearchNotConfiguredError as exc:
             return WebSearchResponse("not_configured", str(exc), action, error=str(exc))
@@ -73,7 +94,9 @@ class WebSearchAutomation:
         except WebSearchProviderError as exc:
             return WebSearchResponse("error", str(exc), action, error=str(exc))
         except Exception as exc:
-            return WebSearchResponse("error", f"Web search failed: {exc}", action, error=str(exc))
+            return WebSearchResponse(
+                "error", f"Web search failed: {exc}", action, error=str(exc)
+            )
 
     def _search(self, action: WebSearchAction) -> WebSearchResponse:
         query = action.query
@@ -96,7 +119,9 @@ class WebSearchAutomation:
             ranked = cached
         self._last_results = ranked
         summary = self.summarizer.summarize(safe_query, ranked)
-        return WebSearchResponse("handled", format_search_response(summary, ranked), action, ranked)
+        return WebSearchResponse(
+            "handled", format_search_response(summary, ranked), action, ranked
+        )
 
 
 def handle_web_search_command(

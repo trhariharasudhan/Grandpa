@@ -95,7 +95,9 @@ def run_production_audit(*, write: bool = True) -> dict[str, Any]:
     checks.extend(_agent_checks())
     checks.extend(_knowledge_memory_checks())
 
-    report = _build_report(checks, started, _now_iso(), time.perf_counter() - wall_start)
+    report = _build_report(
+        checks, started, _now_iso(), time.perf_counter() - wall_start
+    )
     if write:
         _write_reports(report)
     return report
@@ -120,12 +122,15 @@ def _browser_checks() -> list[AuditCheck]:
                     "links": len(context.links),
                     "buttons": len(context.buttons),
                 },
-                [] if context.supported else ["Open a supported browser window to validate visible context."],
+                []
+                if context.supported
+                else ["Open a supported browser window to validate visible context."],
                 hardware_dependent=True,
             )
         ]
     except Exception as exc:
         return [_blocked("Browser Awareness", "Visible browser context", exc)]
+
 
 def _voice_checks() -> list[AuditCheck]:
     try:
@@ -145,16 +150,22 @@ def _voice_checks() -> list[AuditCheck]:
                 "unvalidated" if not input_ready else "partially_validated",
                 "The unattended audit cannot verify real microphone capture.",
                 {"speech_input": speech_input},
-                ["Validate capture with the local voice CLI and selected Windows input device."],
+                [
+                    "Validate capture with the local voice CLI and selected Windows input device."
+                ],
                 hardware_dependent=True,
             ),
             AuditCheck(
                 "Voice Runtime",
                 "Speech input pipeline",
-                "partially_validated" if speech_input.get("status") in {"ready", "push_to_talk"} else "unvalidated",
+                "partially_validated"
+                if speech_input.get("status") in {"ready", "push_to_talk"}
+                else "unvalidated",
                 f"Speech input engine reports {speech_input.get('status', 'unknown')}.",
                 {"speech_input": speech_input},
-                ["Live speech recognition was not exercised by this non-interactive audit."],
+                [
+                    "Live speech recognition was not exercised by this non-interactive audit."
+                ],
                 hardware_dependent=True,
             ),
             AuditCheck(
@@ -170,9 +181,13 @@ def _voice_checks() -> list[AuditCheck]:
                 "Voice Runtime",
                 "Wake phrase flow",
                 "partially_validated" if wake_enabled else "unvalidated",
-                "Wake phrase detector is configured." if wake_enabled else "Wake phrase mode is disabled or unavailable.",
+                "Wake phrase detector is configured."
+                if wake_enabled
+                else "Wake phrase mode is disabled or unavailable.",
                 {"wake_word": wake_word, "phrases": wake_word.get("phrases")},
-                ["Continuous real-time wake detection must be validated with microphone permissions."],
+                [
+                    "Continuous real-time wake detection must be validated with microphone permissions."
+                ],
                 hardware_dependent=True,
             ),
         ]
@@ -191,18 +206,31 @@ def _desktop_operator_checks() -> list[AuditCheck]:
         )
 
         diagnostics = operator_diagnostics()
-        terminal_plan = build_ui_navigation_plan("open terminal in VS Code", persist=False)
-        desktop_plan = build_ui_navigation_plan("summarize current desktop state", persist=False)
-        approval_plan = build_ui_navigation_plan("create a note in Notepad", persist=False)
-        recovery = recover_failed_action({"action_type": "click", "visual_target": {"confidence": 0.2}}, {"status": "failed"})
-        verification = verify_action_result({"action_type": "observe"}, {"ok": True, "status": "dry_run"})
+        terminal_plan = build_ui_navigation_plan(
+            "open terminal in VS Code", persist=False
+        )
+        desktop_plan = build_ui_navigation_plan(
+            "summarize current desktop state", persist=False
+        )
+        approval_plan = build_ui_navigation_plan(
+            "create a note in Notepad", persist=False
+        )
+        recovery = recover_failed_action(
+            {"action_type": "click", "visual_target": {"confidence": 0.2}},
+            {"status": "failed"},
+        )
+        verification = verify_action_result(
+            {"action_type": "observe"}, {"ok": True, "status": "dry_run"}
+        )
         approvals = approval_plan.get("task", {}).get("approvals") or []
         return [
             AuditCheck(
                 "Desktop Operator",
                 "Open terminal in VS Code planning",
                 "partially_validated",
-                terminal_plan.get("task", {}).get("result_summary", "Desktop operator plan created."),
+                terminal_plan.get("task", {}).get(
+                    "result_summary", "Desktop operator plan created."
+                ),
                 {"task": terminal_plan.get("task"), "plan": terminal_plan.get("plan")},
                 ["This audit does not focus VS Code or press shortcuts automatically."],
                 hardware_dependent=True,
@@ -213,14 +241,18 @@ def _desktop_operator_checks() -> list[AuditCheck]:
                 "partially_validated",
                 "Active application diagnostic flow returned a conservative observation.",
                 active_app_actions(),
-                ["Exact foreground app verification depends on the current Windows desktop state."],
+                [
+                    "Exact foreground app verification depends on the current Windows desktop state."
+                ],
                 hardware_dependent=True,
             ),
             AuditCheck(
                 "Desktop Operator",
                 "Summarize desktop state",
                 "partially_validated",
-                desktop_plan.get("task", {}).get("result_summary", "Desktop summary plan created."),
+                desktop_plan.get("task", {}).get(
+                    "result_summary", "Desktop summary plan created."
+                ),
                 {"task": desktop_plan.get("task"), "diagnostics": diagnostics},
                 ["No visible UI click was executed during this audit."],
                 hardware_dependent=True,
@@ -229,14 +261,21 @@ def _desktop_operator_checks() -> list[AuditCheck]:
                 "Desktop Operator",
                 "Approval workflow",
                 "validated" if approvals else "partially_validated",
-                "Risky desktop operator plan creates approval metadata." if approvals else "Approval metadata was not produced for the sampled plan.",
+                "Risky desktop operator plan creates approval metadata."
+                if approvals
+                else "Approval metadata was not produced for the sampled plan.",
                 {"approvals": approvals, "task": approval_plan.get("task")},
-                [] if approvals else ["Review Notepad note plan approval classification."],
+                []
+                if approvals
+                else ["Review Notepad note plan approval classification."],
             ),
             AuditCheck(
                 "Desktop Operator",
                 "Retry and recovery behavior",
-                "validated" if recovery.get("retry_allowed") and verification.get("status") == "verified" else "partially_validated",
+                "validated"
+                if recovery.get("retry_allowed")
+                and verification.get("status") == "verified"
+                else "partially_validated",
                 "Bounded retry and conservative verification helpers are available.",
                 {"recovery": recovery, "verification": verification},
             ),
@@ -278,10 +317,19 @@ def _agent_checks() -> list[AuditCheck]:
             AuditCheck(
                 "Agent System",
                 "Goal lifecycle states",
-                "validated" if goal.status in {"completed", "waiting_approval"} else "partially_validated",
+                "validated"
+                if goal.status in {"completed", "waiting_approval"}
+                else "partially_validated",
                 f"Autonomous goal reached {goal.status}.",
-                {"goal_id": goal.goal_id, "status": goal.status, "phase": goal.current_phase, "summary": goal.result_summary},
-                [] if goal.status in {"completed", "waiting_approval"} else ["Inspect agent goal events for incomplete lifecycle."],
+                {
+                    "goal_id": goal.goal_id,
+                    "status": goal.status,
+                    "phase": goal.current_phase,
+                    "summary": goal.result_summary,
+                },
+                []
+                if goal.status in {"completed", "waiting_approval"}
+                else ["Inspect agent goal events for incomplete lifecycle."],
             )
         )
         multi = orchestrate_goal("analyze Grandpa health")
@@ -289,9 +337,15 @@ def _agent_checks() -> list[AuditCheck]:
             AuditCheck(
                 "Agent System",
                 "Grandpa health analysis collaboration",
-                "validated" if multi.status in {"completed", "partial"} else "partially_validated",
+                "validated"
+                if multi.status in {"completed", "partial"}
+                else "partially_validated",
                 multi.summary or f"Multi-agent task ended as {multi.status}.",
-                {"task_id": multi.task_id, "status": multi.status, "agents": multi.participating_agents},
+                {
+                    "task_id": multi.task_id,
+                    "status": multi.status,
+                    "agents": multi.participating_agents,
+                },
             )
         )
     except Exception as exc:
@@ -324,17 +378,32 @@ def _knowledge_memory_checks() -> list[AuditCheck]:
                 AuditCheck(
                     "Knowledge + Memory",
                     "Semantic search",
-                    "validated" if semantic.get("semantic_search") else "partially_validated",
+                    "validated"
+                    if semantic.get("semantic_search")
+                    else "partially_validated",
                     semantic.get("truthful_note") or f"Semantic mode: {semantic_mode}.",
-                    {"semantic_search": semantic.get("semantic_search"), "semantic_mode": semantic_mode, "results": len(semantic.get("results") or [])},
-                    [] if semantic.get("semantic_search") else ["Ollama embeddings may be unavailable; keyword/fallback retrieval is active."],
+                    {
+                        "semantic_search": semantic.get("semantic_search"),
+                        "semantic_mode": semantic_mode,
+                        "results": len(semantic.get("results") or []),
+                    },
+                    []
+                    if semantic.get("semantic_search")
+                    else [
+                        "Ollama embeddings may be unavailable; keyword/fallback retrieval is active."
+                    ],
                 ),
                 AuditCheck(
                     "Knowledge + Memory",
                     "Hybrid search",
                     "validated",
-                    hybrid.get("truthful_note") or "Hybrid knowledge retrieval returned explainable ranking metadata.",
-                    {"retrieval": hybrid.get("retrieval"), "results": len(hybrid.get("results") or []), "diagnostics": diagnostics},
+                    hybrid.get("truthful_note")
+                    or "Hybrid knowledge retrieval returned explainable ranking metadata.",
+                    {
+                        "retrieval": hybrid.get("retrieval"),
+                        "results": len(hybrid.get("results") or []),
+                        "diagnostics": diagnostics,
+                    },
                 ),
                 AuditCheck(
                     "Knowledge + Memory",
@@ -346,10 +415,14 @@ def _knowledge_memory_checks() -> list[AuditCheck]:
                 AuditCheck(
                     "Knowledge + Memory",
                     "Preference extraction",
-                    "validated" if profile.get("preferences") else "partially_validated",
+                    "validated"
+                    if profile.get("preferences")
+                    else "partially_validated",
                     f"Detected {len(profile.get('preferences') or [])} preference(s).",
                     {"profile": profile},
-                    [] if profile.get("preferences") else ["No explicit user preferences are stored yet."],
+                    []
+                    if profile.get("preferences")
+                    else ["No explicit user preferences are stored yet."],
                 ),
                 AuditCheck(
                     "Knowledge + Memory",
@@ -361,11 +434,15 @@ def _knowledge_memory_checks() -> list[AuditCheck]:
             ]
         )
     except Exception as exc:
-        checks.append(_blocked("Knowledge + Memory", "Knowledge and memory diagnostics", exc))
+        checks.append(
+            _blocked("Knowledge + Memory", "Knowledge and memory diagnostics", exc)
+        )
     return checks
 
 
-def _build_report(checks: list[AuditCheck], started: str, finished: str, duration: float) -> dict[str, Any]:
+def _build_report(
+    checks: list[AuditCheck], started: str, finished: str, duration: float
+) -> dict[str, Any]:
     matrix = [check.to_dict() for check in checks]
     summary = _summary(matrix)
     blockers = [item for item in matrix if item["status"] == "blocked"]
@@ -380,7 +457,8 @@ def _build_report(checks: list[AuditCheck], started: str, finished: str, duratio
     core_score = round(
         (
             sum(1 for item in core_items if item["status"] == "validated") * 100
-            + sum(1 for item in core_items if item["status"] == "partially_validated") * 55
+            + sum(1 for item in core_items if item["status"] == "partially_validated")
+            * 55
         )
         / core_total
     )
@@ -391,7 +469,9 @@ def _build_report(checks: list[AuditCheck], started: str, finished: str, duratio
     elif core_score >= 80 and summary["unvalidated"] > 0:
         overall = "READY_WITH_HARDWARE_PENDING"
         passed = True
-        verdict = "Core software is ready; hardware-dependent validations remain pending."
+        verdict = (
+            "Core software is ready; hardware-dependent validations remain pending."
+        )
     elif core_score >= 80:
         overall = "READY"
         passed = True
@@ -413,9 +493,15 @@ def _build_report(checks: list[AuditCheck], started: str, finished: str, duratio
         "recommendation": _recommendation(overall, summary),
         "summary": summary,
         "feature_matrix": matrix,
-        "validated_features": [item for item in matrix if item["status"] == "validated"],
-        "partially_validated_features": [item for item in matrix if item["status"] == "partially_validated"],
-        "unvalidated_features": [item for item in matrix if item["status"] == "unvalidated"],
+        "validated_features": [
+            item for item in matrix if item["status"] == "validated"
+        ],
+        "partially_validated_features": [
+            item for item in matrix if item["status"] == "partially_validated"
+        ],
+        "unvalidated_features": [
+            item for item in matrix if item["status"] == "unvalidated"
+        ],
         "blocked_features": blockers,
         "hardware_dependent_features": hardware,
         "known_limitations": limitations,
@@ -427,7 +513,9 @@ def _build_report(checks: list[AuditCheck], started: str, finished: str, duratio
 
 def _write_reports(report: dict[str, Any]) -> None:
     REPORT_DIR.mkdir(parents=True, exist_ok=True)
-    JSON_REPORT.write_text(json.dumps(report, indent=2, ensure_ascii=True), encoding="utf-8")
+    JSON_REPORT.write_text(
+        json.dumps(report, indent=2, ensure_ascii=True), encoding="utf-8"
+    )
     MD_REPORT.write_text(_markdown(report), encoding="utf-8")
 
 
@@ -446,15 +534,27 @@ def _markdown(report: dict[str, Any]) -> str:
     ]
     for key, value in report["summary"].items():
         lines.append(f"- {key}: {value}")
-    lines.extend(["", "## Feature Matrix", "", "| Area | Check | Status | Summary |", "| --- | --- | --- | --- |"])
+    lines.extend(
+        [
+            "",
+            "## Feature Matrix",
+            "",
+            "| Area | Check | Status | Summary |",
+            "| --- | --- | --- | --- |",
+        ]
+    )
     for item in report["feature_matrix"]:
-        lines.append(f"| {item['feature_area']} | {item['name']} | {item['status']} | {_md_escape(item['summary'])} |")
+        lines.append(
+            f"| {item['feature_area']} | {item['name']} | {item['status']} | {_md_escape(item['summary'])} |"
+        )
     lines.extend(["", "## Known Limitations", ""])
     limitations = report.get("known_limitations") or []
     if not limitations:
         lines.append("No limitations recorded.")
     for item in limitations:
-        lines.append(f"- **{item['name']}**: {'; '.join(item.get('limitations') or [])}")
+        lines.append(
+            f"- **{item['name']}**: {'; '.join(item.get('limitations') or [])}"
+        )
     lines.append("")
     return "\n".join(lines)
 
@@ -462,20 +562,38 @@ def _markdown(report: dict[str, Any]) -> str:
 def _summary(matrix: list[dict[str, Any]]) -> dict[str, int]:
     return {
         "validated": sum(1 for item in matrix if item["status"] == "validated"),
-        "partially_validated": sum(1 for item in matrix if item["status"] == "partially_validated"),
+        "partially_validated": sum(
+            1 for item in matrix if item["status"] == "partially_validated"
+        ),
         "unvalidated": sum(1 for item in matrix if item["status"] == "unvalidated"),
         "blocked": sum(1 for item in matrix if item["status"] == "blocked"),
-        "hardware_dependent": sum(1 for item in matrix if item.get("hardware_dependent")),
+        "hardware_dependent": sum(
+            1 for item in matrix if item.get("hardware_dependent")
+        ),
         "total": len(matrix),
     }
 
 
 def _empty_summary() -> dict[str, int]:
-    return {"validated": 0, "partially_validated": 0, "unvalidated": 0, "blocked": 0, "hardware_dependent": 0, "total": 0}
+    return {
+        "validated": 0,
+        "partially_validated": 0,
+        "unvalidated": 0,
+        "blocked": 0,
+        "hardware_dependent": 0,
+        "total": 0,
+    }
 
 
 def _blocked(area: str, name: str, exc: Exception) -> AuditCheck:
-    return AuditCheck(area, name, "blocked", f"{name} failed safely: {exc.__class__.__name__}", {"error": exc.__class__.__name__}, [str(exc)[:180]])
+    return AuditCheck(
+        area,
+        name,
+        "blocked",
+        f"{name} failed safely: {exc.__class__.__name__}",
+        {"error": exc.__class__.__name__},
+        [str(exc)[:180]],
+    )
 
 
 def _recommendation(overall: str, summary: dict[str, int]) -> str:
@@ -501,15 +619,37 @@ def _md_escape(value: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run Grandpa production readiness audit.")
-    parser.add_argument("--no-write", action="store_true", help="Run checks without writing runtime reports.")
+    parser = argparse.ArgumentParser(
+        description="Run Grandpa production readiness audit."
+    )
+    parser.add_argument(
+        "--no-write",
+        action="store_true",
+        help="Run checks without writing runtime reports.",
+    )
     args = parser.parse_args(argv)
     report = run_production_audit(write=not args.no_write)
-    print(json.dumps({"overall_status": report["overall_status"], "score": report["score"], "core_score": report["core_score"], "summary": report["summary"]}, indent=2))
+    print(
+        json.dumps(
+            {
+                "overall_status": report["overall_status"],
+                "score": report["score"],
+                "core_score": report["core_score"],
+                "summary": report["summary"],
+            },
+            indent=2,
+        )
+    )
     return 0 if report["overall_status"] != "BLOCKED" else 1
 
 
-__all__ = ["JSON_REPORT", "MD_REPORT", "latest_report", "run_production_audit", "status"]
+__all__ = [
+    "JSON_REPORT",
+    "MD_REPORT",
+    "latest_report",
+    "run_production_audit",
+    "status",
+]
 
 
 if __name__ == "__main__":

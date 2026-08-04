@@ -22,4 +22,8 @@ def is_active() -> bool:
 
 
 def readiness() -> dict[str, object]:
-    return {"status": "ready", "active": is_active(), "mode": "blocks medium/high risk actions"}
+    return {
+        "status": "ready",
+        "active": is_active(),
+        "mode": "blocks medium/high risk actions",
+    }

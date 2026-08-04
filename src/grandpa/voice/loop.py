@@ -52,7 +52,9 @@ class VoiceLoopSession:
         if not self.enabled:
             return self._fail("Voice loop is disabled.")
         if not self.wake_word_session.enabled:
-            return self._fail("Wake word must be enabled before starting the voice loop.")
+            return self._fail(
+                "Wake word must be enabled before starting the voice loop."
+            )
         self.running = True
         self.mode = "waiting_for_wake_word"
         self.last_error = None

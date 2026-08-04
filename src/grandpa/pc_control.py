@@ -220,7 +220,9 @@ class LocalActionResponse:
         }
 
 
-def run_local_action(payload: dict[str, Any] | LocalActionRequest) -> LocalActionResponse:
+def run_local_action(
+    payload: dict[str, Any] | LocalActionRequest,
+) -> LocalActionResponse:
     from grandpa.desktop.kernel.requests import coerce_request
     from grandpa.desktop.kernel.risk import classify
 
@@ -251,7 +253,11 @@ def _run_local_action_impl(
 
     guard = _preflight_guard(request, risk)
     if guard is not None:
-        _audit(request, guard, approval_status="blocked" if guard.status == "blocked" else "none")
+        _audit(
+            request,
+            guard,
+            approval_status="blocked" if guard.status == "blocked" else "none",
+        )
         return guard
 
     if request.dry_run:
@@ -262,7 +268,11 @@ def _run_local_action_impl(
             message=_dry_run_message(request, risk),
             approval_required=False,
             risk_level=risk,
-            evidence={"would_execute": True, "action_type": request.action_type, "target": request.target},
+            evidence={
+                "would_execute": True,
+                "action_type": request.action_type,
+                "target": request.target,
+            },
         )
         _audit(request, response, approval_status="dry_run")
         return response
@@ -327,7 +337,9 @@ def _approve_local_action_impl(action_id: str) -> LocalActionResponse:
             _audit(request, response, approval_status="expired")
             return response
         if _EMERGENCY_STOP_ACTIVE and risk in {"MEDIUM", "HIGH"}:
-            _mark_pending_decision(action_id, status="cancelled", decision="emergency_stop")
+            _mark_pending_decision(
+                action_id, status="cancelled", decision="emergency_stop"
+            )
             response = LocalActionResponse(
                 ok=False,
                 action_id=action_id,
@@ -480,7 +492,9 @@ def _run_pc_control_maintenance_impl() -> dict[str, Any]:
         except Exception as exc:
             summary["errors"].append(f"expire_pending:{exc.__class__.__name__}")
         try:
-            summary["deleted_approval_records"] = _cleanup_old_approval_records(summary["retention"])
+            summary["deleted_approval_records"] = _cleanup_old_approval_records(
+                summary["retention"]
+            )
         except Exception as exc:
             summary["errors"].append(f"approval_cleanup:{exc.__class__.__name__}")
         try:
@@ -540,7 +554,16 @@ def _list_pending_actions_impl() -> list[dict[str, Any]]:
 
 def list_approval_records(
     *,
-    statuses: tuple[str, ...] = ("pending", "approved", "completed", "rejected", "expired", "cancelled", "blocked", "failed"),
+    statuses: tuple[str, ...] = (
+        "pending",
+        "approved",
+        "completed",
+        "rejected",
+        "expired",
+        "cancelled",
+        "blocked",
+        "failed",
+    ),
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     return _list_approval_records_impl(statuses=statuses, limit=limit)
@@ -548,7 +571,16 @@ def list_approval_records(
 
 def _list_approval_records_impl(
     *,
-    statuses: tuple[str, ...] = ("pending", "approved", "completed", "rejected", "expired", "cancelled", "blocked", "failed"),
+    statuses: tuple[str, ...] = (
+        "pending",
+        "approved",
+        "completed",
+        "rejected",
+        "expired",
+        "cancelled",
+        "blocked",
+        "failed",
+    ),
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     _expire_pending()
@@ -579,7 +611,9 @@ def _read_recent_audit_entries_impl(limit: int = 100) -> list[dict[str, Any]]:
         return []
     safe_limit = max(1, min(int(limit or 100), 500))
     try:
-        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[-safe_limit:]
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()[
+            -safe_limit:
+        ]
     except OSError:
         return []
     entries: list[dict[str, Any]] = []
@@ -633,7 +667,14 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
             return _execute_open_folder(request)
         if action == "close_app":
             return _execute_window_alias(request, "close")
-        if action in {"list_windows", "focus_window", "minimize_window", "maximize_window", "restore_window", "close_window"}:
+        if action in {
+            "list_windows",
+            "focus_window",
+            "minimize_window",
+            "maximize_window",
+            "restore_window",
+            "close_window",
+        }:
             return _execute_window(request, action)
         if action.startswith("volume_"):
             return _execute_volume(request, action)
@@ -645,7 +686,12 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
             return _execute_clipboard(request, action)
         if action in {"list_monitors", "monitor_info"}:
             return _execute_monitor(request, action)
-        if action in {"active_process", "list_processes", "desktop_summary", "pc_diagnostics"}:
+        if action in {
+            "active_process",
+            "list_processes",
+            "desktop_summary",
+            "pc_diagnostics",
+        }:
             return _execute_desktop_context(request, action)
         if action.startswith("file_"):
             return _execute_file(request, action)
@@ -707,10 +753,20 @@ def _execute_open_folder(request: LocalActionRequest) -> LocalActionResponse:
             error="protected_path",
         )
     os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606
-    return LocalActionResponse(True, None, "completed", f"Opened folder: {path}", False, "LOW", {"path": str(path)})
+    return LocalActionResponse(
+        True,
+        None,
+        "completed",
+        f"Opened folder: {path}",
+        False,
+        "LOW",
+        {"path": str(path)},
+    )
 
 
-def _execute_window_alias(request: LocalActionRequest, action: str) -> LocalActionResponse:
+def _execute_window_alias(
+    request: LocalActionRequest, action: str
+) -> LocalActionResponse:
     from grandpa.desktop.control import get_window_service
 
     return get_window_service().execute_alias(request, action)
@@ -734,7 +790,9 @@ def _execute_empty_recycle_bin() -> LocalActionResponse:
     return get_power_service().execute_empty_recycle_bin(platform=sys.platform)
 
 
-def _execute_brightness(request: LocalActionRequest, action: str) -> LocalActionResponse:
+def _execute_brightness(
+    request: LocalActionRequest, action: str
+) -> LocalActionResponse:
     from grandpa.desktop.control import get_power_service
 
     return get_power_service().execute_brightness(request, action)
@@ -746,7 +804,9 @@ def _execute_monitor(request: LocalActionRequest, action: str) -> LocalActionRes
     return get_monitor_service().execute(request, action)
 
 
-def _execute_desktop_context(request: LocalActionRequest, action: str) -> LocalActionResponse:
+def _execute_desktop_context(
+    request: LocalActionRequest, action: str
+) -> LocalActionResponse:
     from grandpa.desktop.control import get_diagnostics_service
 
     return get_diagnostics_service().execute(request, action)
@@ -831,7 +891,9 @@ def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionRes
     )
 
 
-def _preflight_guard(request: LocalActionRequest, risk: RiskLevel) -> LocalActionResponse | None:
+def _preflight_guard(
+    request: LocalActionRequest, risk: RiskLevel
+) -> LocalActionResponse | None:
     action = _normalise_action_type(request.action_type)
     if action.startswith("file_"):
         paths = [request.target]
@@ -929,7 +991,9 @@ def _load_retention_policy_impl() -> dict[str, int]:
                         policy[key] = value
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps(policy, indent=2, sort_keys=True), encoding="utf-8")
+            path.write_text(
+                json.dumps(policy, indent=2, sort_keys=True), encoding="utf-8"
+            )
     except OSError:
         return policy
     except json.JSONDecodeError:
@@ -975,7 +1039,16 @@ def _approval_counts_by_status() -> dict[str, int]:
             "SELECT status, COUNT(*) AS count FROM pc_control_approvals GROUP BY status"
         ).fetchall()
     counts = {str(row["status"]): int(row["count"]) for row in rows}
-    for status in ("pending", "completed", "approved", "rejected", "expired", "cancelled", "blocked", "failed"):
+    for status in (
+        "pending",
+        "completed",
+        "approved",
+        "rejected",
+        "expired",
+        "cancelled",
+        "blocked",
+        "failed",
+    ):
         counts.setdefault(status, 0)
     return counts
 
@@ -1005,7 +1078,9 @@ def _pending_from_row(row: sqlite3.Row) -> PendingLocalAction:
         expires_at=float(row["expires_at"]),
         status=str(row["status"]),
         decision=str(row["decision"]),
-        decision_timestamp=float(row["decision_timestamp"]) if row["decision_timestamp"] is not None else None,
+        decision_timestamp=float(row["decision_timestamp"])
+        if row["decision_timestamp"] is not None
+        else None,
     )
 
 
@@ -1021,7 +1096,9 @@ def _approval_row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "decision": str(row["decision"]),
         "created_at": float(row["created_at"]),
         "expires_at": float(row["expires_at"]),
-        "decision_timestamp": float(row["decision_timestamp"]) if row["decision_timestamp"] is not None else None,
+        "decision_timestamp": float(row["decision_timestamp"])
+        if row["decision_timestamp"] is not None
+        else None,
         "approval_required": bool(row["approval_required"]),
         "dry_run": False,
     }
@@ -1136,7 +1213,9 @@ def _create_pending(request: LocalActionRequest) -> str:
 
 
 def _cleanup_old_approval_records(policy: dict[str, int]) -> int:
-    retention_days = max(1, int(policy.get("approval_retention_days", DEFAULT_RETENTION_DAYS)))
+    retention_days = max(
+        1, int(policy.get("approval_retention_days", DEFAULT_RETENTION_DAYS))
+    )
     cutoff = time.time() - retention_days * 86400
     with _connect_approval_db() as conn:
         cur = conn.execute(
@@ -1153,7 +1232,9 @@ def _cleanup_old_approval_records(policy: dict[str, int]) -> int:
 def _rotate_audit_log_if_needed(policy: dict[str, int]) -> dict[str, Any]:
     path = get_audit_log_path()
     max_bytes = max(1, int(policy.get("audit_max_bytes", DEFAULT_AUDIT_MAX_BYTES)))
-    keep_lines = max(1, int(policy.get("audit_keep_recent_lines", DEFAULT_AUDIT_KEEP_RECENT_LINES)))
+    keep_lines = max(
+        1, int(policy.get("audit_keep_recent_lines", DEFAULT_AUDIT_KEEP_RECENT_LINES))
+    )
     result = {
         "audit_rotated": False,
         "audit_archived_path": None,
@@ -1212,7 +1293,9 @@ def _expire_pending() -> int:
     return len(rows)
 
 
-def _audit(request: LocalActionRequest, response: LocalActionResponse, *, approval_status: str) -> None:
+def _audit(
+    request: LocalActionRequest, response: LocalActionResponse, *, approval_status: str
+) -> None:
     path = get_audit_log_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {
@@ -1276,14 +1359,21 @@ def _is_protected_path(path: Path) -> bool:
         return True
     if set(parts) & PROTECTED_PATH_PARTS:
         return True
-    return any(_contains_path_sequence(parts, sequence) for sequence in PROTECTED_PATH_SEQUENCES)
+    return any(
+        _contains_path_sequence(parts, sequence)
+        for sequence in PROTECTED_PATH_SEQUENCES
+    )
 
 
 def _normalised_path_parts(path: Path) -> tuple[str, ...]:
     resolved = path.expanduser().resolve(strict=False)
     raw = str(resolved).replace("/", "\\")
     if len(raw) >= 2 and raw[1] == ":":
-        return tuple(part.rstrip("\\/").lower() for part in PureWindowsPath(raw).parts if part.rstrip("\\/"))
+        return tuple(
+            part.rstrip("\\/").lower()
+            for part in PureWindowsPath(raw).parts
+            if part.rstrip("\\/")
+        )
     return tuple(part.lower() for part in resolved.parts if part)
 
 
@@ -1298,7 +1388,10 @@ def _is_windows_root_protected(parts: tuple[str, ...]) -> bool:
 def _contains_path_sequence(parts: tuple[str, ...], sequence: tuple[str, ...]) -> bool:
     if len(sequence) > len(parts):
         return False
-    return any(parts[index : index + len(sequence)] == sequence for index in range(len(parts) - len(sequence) + 1))
+    return any(
+        parts[index : index + len(sequence)] == sequence
+        for index in range(len(parts) - len(sequence) + 1)
+    )
 
 
 def _redact_target(action_type: str, target: str) -> str:
@@ -1310,11 +1403,15 @@ def _redact_target(action_type: str, target: str) -> str:
 
 
 def _blocked(message: str) -> LocalActionResponse:
-    return LocalActionResponse(False, None, "blocked", message, False, "BLOCKED", error="blocked_by_policy")
+    return LocalActionResponse(
+        False, None, "blocked", message, False, "BLOCKED", error="blocked_by_policy"
+    )
 
 
 def _unsupported(message: str, risk: RiskLevel) -> LocalActionResponse:
-    return LocalActionResponse(False, None, "unsupported", message, False, risk, error="unsupported")
+    return LocalActionResponse(
+        False, None, "unsupported", message, False, risk, error="unsupported"
+    )
 
 
 __all__ = [

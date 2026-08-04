@@ -17,7 +17,9 @@ def _make_due(store: SchedulerStore, table: str, item_id: int) -> None:
 
 
 def test_execute_due_reminder_creates_notification(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(task_scheduler, "_record_scheduler_activity", lambda *args: None)
+    monkeypatch.setattr(
+        task_scheduler, "_record_scheduler_activity", lambda *args: None
+    )
     store = _store(tmp_path)
     reminder = store.add_reminder("stretch", "minutely")
     now = time.time()
@@ -32,16 +34,22 @@ def test_execute_due_reminder_creates_notification(tmp_path: Path, monkeypatch) 
 
 
 def test_execute_due_routine_runs_safe_actions(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(task_scheduler, "_record_scheduler_activity", lambda *args: None)
+    monkeypatch.setattr(
+        task_scheduler, "_record_scheduler_activity", lambda *args: None
+    )
     calls: list[str] = []
 
     def fake_handle(action: str, execute: bool = True) -> LocalActionResult:
         calls.append(action)
-        return LocalActionResult("handled", "app", action, f"ran {action}", f"ran {action}")
+        return LocalActionResult(
+            "handled", "app", action, f"ran {action}", f"ran {action}"
+        )
 
     monkeypatch.setattr(local_actions, "handle_local_action", fake_handle)
     store = _store(tmp_path)
-    routine = store.upsert_routine("morning routine", ["open chrome"], schedule="daily:09:00")
+    routine = store.upsert_routine(
+        "morning routine", ["open chrome"], schedule="daily:09:00"
+    )
     now = time.time()
     _make_due(store, "routines", routine["id"])
 
@@ -55,8 +63,12 @@ def test_execute_due_routine_runs_safe_actions(tmp_path: Path, monkeypatch) -> N
 
 
 def test_daemon_tick_reports_status(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setattr(task_scheduler, "_record_scheduler_activity", lambda *args: None)
-    daemon = BackgroundSchedulerDaemon(store=_store(tmp_path), poll_interval_seconds=0.1)
+    monkeypatch.setattr(
+        task_scheduler, "_record_scheduler_activity", lambda *args: None
+    )
+    daemon = BackgroundSchedulerDaemon(
+        store=_store(tmp_path), poll_interval_seconds=0.1
+    )
 
     result = daemon.tick()
     status = daemon.status()

@@ -53,8 +53,7 @@ def main() -> None:
         from grandpa import Grandpa
     except ImportError:
         print(
-            "Error: grandpa is not installed. "
-            "Install it with:  uv sync --extra dev",
+            "Error: grandpa is not installed. Install it with:  uv sync --extra dev",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -75,8 +74,7 @@ def main() -> None:
 
     print(f"Query: {args.query}")
     print(
-        f"Model: {args.model}  |  Engine: {args.engine}"
-        f"  |  Max turns: {args.max_turns}"
+        f"Model: {args.model}  |  Engine: {args.engine}  |  Max turns: {args.max_turns}"
     )
     print("-" * 60)
 

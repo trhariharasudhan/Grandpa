@@ -91,7 +91,9 @@ class PlannerStepExecutor:
             if parameters.get("project_path"):
                 from grandpa.projects import handle_project_command
 
-                command = f"open {parameters['project_path']} project in {parameters['app']}"
+                command = (
+                    f"open {parameters['project_path']} project in {parameters['app']}"
+                )
                 result = handle_project_command(command)
                 return _generic_result(step, result)
             prefix = "open another" if parameters.get("new_instance") else "open"
@@ -104,7 +106,9 @@ class PlannerStepExecutor:
         if action == "focus_window":
             return self._focus_application(step, str(parameters["app"]))
         if action == "close_window":
-            result = self._pipeline(step, f"close {parameters['app']}", confirmed=confirmed)
+            result = self._pipeline(
+                step, f"close {parameters['app']}", confirmed=confirmed
+            )
             return result
         if action == "type_text":
             return self._pipeline(step, f"type {parameters['text']}")
@@ -125,11 +129,15 @@ class PlannerStepExecutor:
         if action in {"find_element", "wait_for_element"}:
             return self._find(step, wait=action == "wait_for_element")
         if action == "click_element":
-            return self._pipeline(step, f"click {parameters['name']}", confirmed=confirmed)
+            return self._pipeline(
+                step, f"click {parameters['name']}", confirmed=confirmed
+            )
         if action == "highlight_element":
             return self._pipeline(step, f"highlight {parameters['name']}")
         if action == "focus_element":
-            return self._pipeline(step, f"click {parameters['name']}", confirmed=confirmed)
+            return self._pipeline(
+                step, f"click {parameters['name']}", confirmed=confirmed
+            )
         if action == "read_visible_text":
             return _vision_result(step, self.vision_engine.read())
         if action == "describe_screen":
@@ -138,9 +146,14 @@ class PlannerStepExecutor:
             types = tuple(parameters.get("types") or ("button", "edit", "hyperlink"))
             return _vision_result(step, self.vision_engine.list_elements(*types))
         if action == "scroll":
-            return self._pipeline(step, f"scroll {parameters['direction']} {parameters.get('amount', 5)}")
+            return self._pipeline(
+                step, f"scroll {parameters['direction']} {parameters.get('amount', 5)}"
+            )
         if action == "scroll_until":
-            return self._pipeline(step, f"scroll {parameters.get('direction', 'down')} until {parameters['name']} appears")
+            return self._pipeline(
+                step,
+                f"scroll {parameters.get('direction', 'down')} until {parameters['name']} appears",
+            )
         if action == "wait_for_window":
             return self._wait_for_window(step)
         if action == "navigate_url":
@@ -154,7 +167,11 @@ class PlannerStepExecutor:
             return self._pipeline(step, f"open {parameters['path']}")
         if action == "save_document":
             if parameters.get("path"):
-                return StepResult("clarification_required", "Saving to a new path requires the verified Save As flow.", step.step_id)
+                return StepResult(
+                    "clarification_required",
+                    "Saving to a new path requires the verified Save As flow.",
+                    step.step_id,
+                )
             return self._pipeline(step, "press ctrl s", confirmed=confirmed)
         if action == "invoke_verified_dialog_action":
             choice = str(parameters["choice"])
@@ -173,9 +190,16 @@ class PlannerStepExecutor:
                     step.step_id,
                     {"verified": True},
                 )
-            return StepResult("confirmation_required", str(parameters["message"]), step.step_id)
+            return StepResult(
+                "confirmation_required", str(parameters["message"]), step.step_id
+            )
         if action == "request_clarification":
-            return StepResult("clarification_required", str(parameters["message"]), step.step_id, {"choices": parameters.get("choices", [])})
+            return StepResult(
+                "clarification_required",
+                str(parameters["message"]),
+                step.step_id,
+                {"choices": parameters.get("choices", [])},
+            )
         if action == "browser_analyze_page":
             from grandpa.browser_intelligence import (
                 analyze_page_structure,
@@ -186,7 +210,9 @@ class PlannerStepExecutor:
             page = read_current_browser_page()
             analysis = analyze_page_structure(page)
             status = "success" if page.title or page.domain else "failed"
-            return StepResult(status, format_page_analysis_cli(analysis), step.step_id, analysis)
+            return StepResult(
+                status, format_page_analysis_cli(analysis), step.step_id, analysis
+            )
 
         if action == "browser_extract_content":
             from grandpa.browser_intelligence import (
@@ -205,8 +231,17 @@ class PlannerStepExecutor:
                 page = read_current_browser_page()
 
             extracted = extract_section_content(page, target_section=section)
-            step_status = "success" if extracted.status in ("success", "partial_success") else "failed"
-            return StepResult(step_status, format_extracted_content_cli(extracted), step.step_id, extracted.to_dict())
+            step_status = (
+                "success"
+                if extracted.status in ("success", "partial_success")
+                else "failed"
+            )
+            return StepResult(
+                step_status,
+                format_extracted_content_cli(extracted),
+                step.step_id,
+                extracted.to_dict(),
+            )
 
         if action == "browser_verify_source":
             from grandpa.browser_intelligence import (
@@ -219,8 +254,20 @@ class PlannerStepExecutor:
             url = str(parameters.get("url") or page.url)
             subject = str(parameters.get("subject") or page.title)
             verification = verify_source(url, subject=subject)
-            step_status = "success" if (verification.url and (verification.is_official or verification.trust_score >= 0.6)) else "failed"
-            return StepResult(step_status, format_verification_cli(verification), step.step_id, verification.to_dict())
+            step_status = (
+                "success"
+                if (
+                    verification.url
+                    and (verification.is_official or verification.trust_score >= 0.6)
+                )
+                else "failed"
+            )
+            return StepResult(
+                step_status,
+                format_verification_cli(verification),
+                step.step_id,
+                verification.to_dict(),
+            )
 
         if action == "browser_summarize":
             from grandpa.browser_intelligence import (
@@ -246,8 +293,20 @@ class PlannerStepExecutor:
                 summarizer = LocalPageSummarizer()
                 summary = summarizer.summarize_page(page, summary_type=summary_type)  # type: ignore[arg-type]
 
-            step_status = "failed" if ("no active browser page" in summary.lower() or "insufficient page content" in summary.lower()) else "success"
-            return StepResult(step_status, summary, step.step_id, {"summary": summary, "type": summary_type})
+            step_status = (
+                "failed"
+                if (
+                    "no active browser page" in summary.lower()
+                    or "insufficient page content" in summary.lower()
+                )
+                else "success"
+            )
+            return StepResult(
+                step_status,
+                summary,
+                step.step_id,
+                {"summary": summary, "type": summary_type},
+            )
 
         if action == "browser_compare":
             from grandpa.browser_intelligence import (
@@ -259,7 +318,12 @@ class PlannerStepExecutor:
             item_b = str(parameters["item_b"])
             engine = ProductComparisonEngine()
             comparison = engine.compare_items(item_a, item_b)
-            return StepResult("success", format_comparison_cli(comparison), step.step_id, comparison.to_dict())
+            return StepResult(
+                "success",
+                format_comparison_cli(comparison),
+                step.step_id,
+                comparison.to_dict(),
+            )
 
         if action == "browser_research":
             from grandpa.browser_intelligence import (
@@ -270,7 +334,12 @@ class PlannerStepExecutor:
             topic = str(parameters["topic"])
             research_engine = WebResearchEngine()
             report = research_engine.research_topic(topic)
-            return StepResult("success", format_research_report_cli(report), step.step_id, report.to_dict())
+            return StepResult(
+                "success",
+                format_research_report_cli(report),
+                step.step_id,
+                report.to_dict(),
+            )
 
         if action == "browser_navigate_smart":
             from grandpa.browser_intelligence import (
@@ -289,9 +358,20 @@ class PlannerStepExecutor:
                     break
                 time.sleep(0.4)
 
-            step_status = "success" if nav_result.get("status") in ("handled", "success") else "failed"
-            return StepResult(step_status, nav_result.get("message", "Navigated."), step.step_id, nav_result)
-        return StepResult("blocked", f"Unsupported planner action: {action}", step.step_id)
+            step_status = (
+                "success"
+                if nav_result.get("status") in ("handled", "success")
+                else "failed"
+            )
+            return StepResult(
+                step_status,
+                nav_result.get("message", "Navigated."),
+                step.step_id,
+                nav_result,
+            )
+        return StepResult(
+            "blocked", f"Unsupported planner action: {action}", step.step_id
+        )
 
     @property
     def vision_engine(self) -> Any:
@@ -301,14 +381,20 @@ class PlannerStepExecutor:
             self._vision_engine = VisionEngine()
         return self._vision_engine
 
-    def _pipeline(self, step: PlanStep, command: str, *, confirmed: bool = False) -> StepResult:
+    def _pipeline(
+        self, step: PlanStep, command: str, *, confirmed: bool = False
+    ) -> StepResult:
         before = (
             self._vision_signature()
             if step.verification.strategy in {"screen_changed", "target_state_changed"}
             else None
         )
         result = self.pipeline.handle(command)
-        if confirmed and result.status == "confirmation_required" and result.confirmation_token:
+        if (
+            confirmed
+            and result.status == "confirmation_required"
+            and result.confirmation_token
+        ):
             automation = self.automation_service.confirm(result.confirmation_token)
             converted = _automation_result(step, automation)
         else:
@@ -338,7 +424,10 @@ class PlannerStepExecutor:
         return _generic_result(step, self._browser_handler(command))
 
     def _find(self, step: PlanStep, *, wait: bool) -> StepResult:
-        timeout = min(float(step.parameters.get("timeout_seconds", step.timeout_seconds)), step.timeout_seconds)
+        timeout = min(
+            float(step.parameters.get("timeout_seconds", step.timeout_seconds)),
+            step.timeout_seconds,
+        )
         deadline = time.monotonic() + timeout
         while True:
             result = self.vision_engine.find(
@@ -363,7 +452,10 @@ class PlannerStepExecutor:
             time.sleep(0.1)
 
     def _wait_for_window(self, step: PlanStep) -> StepResult:
-        timeout = min(float(step.parameters.get("timeout_seconds", step.timeout_seconds)), step.timeout_seconds)
+        timeout = min(
+            float(step.parameters.get("timeout_seconds", step.timeout_seconds)),
+            step.timeout_seconds,
+        )
         app = str(step.parameters["app"])
         return self._wait_for_application_target(step, app, timeout=timeout)
 
@@ -489,7 +581,8 @@ class PlannerStepExecutor:
                     "verified": True,
                     "target_ready": True,
                     "candidate_windows": [pinned.title],
-                    "reused_existing": pinned.handle in {item.handle for item in prelaunch},
+                    "reused_existing": pinned.handle
+                    in {item.handle for item in prelaunch},
                 },
             )
         return self._wait_for_application_target(
@@ -513,9 +606,7 @@ class PlannerStepExecutor:
     ) -> StepResult:
         deadline = time.monotonic() + max(0.1, timeout)
         previous_handles = {item.handle for item in prelaunch}
-        previous_identities = {
-            (item.handle, item.document_id) for item in prelaunch
-        }
+        previous_identities = {(item.handle, item.document_id) for item in prelaunch}
         last_candidates: tuple[WindowIdentity, ...] = ()
         while time.monotonic() < deadline:
             candidates = tuple(
@@ -646,7 +737,13 @@ def _automation_result(step: PlanStep, result: Any) -> StepResult:
         if str(step.parameters.get("choice") or "").casefold() == "cancel"
         else "cancelled",
     }.get(str(result.status), str(result.status))
-    return StepResult(status, str(result.message), step.step_id, dict(getattr(result, "data", {}) or {}), getattr(result, "confirmation_token", None))
+    return StepResult(
+        status,
+        str(result.message),
+        step.step_id,
+        dict(getattr(result, "data", {}) or {}),
+        getattr(result, "confirmation_token", None),
+    )
 
 
 def _application_timeout(app: str, requested: float) -> float:
@@ -655,9 +752,7 @@ def _application_timeout(app: str, requested: float) -> float:
 
 
 def _window_matches(window: WindowIdentity, app: str) -> bool:
-    values = " ".join(
-        (window.target, window.title, window.process_name)
-    ).casefold()
+    values = " ".join((window.target, window.title, window.process_name)).casefold()
     aliases = {
         "calculator": ("calculator", "calculatorapp.exe"),
         "notepad": ("notepad", "notepad.exe"),
@@ -682,9 +777,7 @@ def _calculator_control_ids(expression: str) -> tuple[str, ...] | None:
         return None
 
 
-def _window_choice_message(
-    app: str, candidates: tuple[WindowIdentity, ...]
-) -> str:
+def _window_choice_message(app: str, candidates: tuple[WindowIdentity, ...]) -> str:
     choices = "\n".join(
         f"{index}. {item.title}" for index, item in enumerate(candidates[:5], 1)
     )
@@ -705,7 +798,17 @@ def _step_confirmation_message(step: PlanStep) -> str:
 
 
 def _generic_result(step: PlanStep, result: Any) -> StepResult:
-    status = {"handled": "success", "found": "success", "no_match": "unsupported", "needs_confirmation": "confirmation_required", "ambiguous": "clarification_required", "error": "failed"}.get(str(getattr(result, "status", "failed")), str(getattr(result, "status", "failed")))
+    status = {
+        "handled": "success",
+        "found": "success",
+        "no_match": "unsupported",
+        "needs_confirmation": "confirmation_required",
+        "ambiguous": "clarification_required",
+        "error": "failed",
+    }.get(
+        str(getattr(result, "status", "failed")),
+        str(getattr(result, "status", "failed")),
+    )
     return StepResult(
         status,
         str(getattr(result, "message", "")),
@@ -719,7 +822,12 @@ def _generic_result(step: PlanStep, result: Any) -> StepResult:
 
 def _vision_result(step: PlanStep, result: Any) -> StepResult:
     status = "success" if result.status == "handled" else "failed"
-    return StepResult(status, result.message, step.step_id, {"verified": status == "success", **dict(result.data)})
+    return StepResult(
+        status,
+        result.message,
+        step.step_id,
+        {"verified": status == "success", **dict(result.data)},
+    )
 
 
 __all__ = ["PlannerStepExecutor"]

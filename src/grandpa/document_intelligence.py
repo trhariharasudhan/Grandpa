@@ -22,7 +22,18 @@ from xml.etree import ElementTree as ET
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
 DEFAULT_DOCUMENT_DB = DEFAULT_CONFIG_DIR / "document_intelligence.db"
-SUPPORTED_EXTENSIONS = {".txt", ".md", ".markdown", ".log", ".csv", ".json", ".pdf", ".docx", ".xlsx", ".pptx"}
+SUPPORTED_EXTENSIONS = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".log",
+    ".csv",
+    ".json",
+    ".pdf",
+    ".docx",
+    ".xlsx",
+    ".pptx",
+}
 MAX_TEXT_CHARS = 20000
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", "build", "cache", ".cache"}
 
@@ -62,8 +73,12 @@ class DocumentIndex:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_modified ON documents(modified)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(type)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_documents_modified ON documents(modified)"
+            )
 
     def upsert(self, metadata: dict[str, Any]) -> None:
         with self._connect() as conn:
@@ -165,7 +180,11 @@ def summarize_document(path: Path | str) -> DocumentResult:
     path = Path(path)
     text = extract_document_text(path)
     if not text:
-        return DocumentResult("unsupported", f"I could not extract readable text from {path.name}.", {"path": str(path)})
+        return DocumentResult(
+            "unsupported",
+            f"I could not extract readable text from {path.name}.",
+            {"path": str(path)},
+        )
     metadata = document_metadata(path, text=text)
     tables = extract_tables(path, text=text)
     message = f"Summary of {path.name}:\n\n{metadata['summary']}"
@@ -194,7 +213,9 @@ def document_metadata(path: Path | str, *, text: str | None = None) -> dict[str,
     }
 
 
-def index_documents(paths: list[Path] | None = None, *, limit: int = 500) -> dict[str, Any]:
+def index_documents(
+    paths: list[Path] | None = None, *, limit: int = 500
+) -> dict[str, Any]:
     index = DocumentIndex()
     paths = paths or list(_iter_safe_documents(limit=limit))
     indexed = 0
@@ -209,35 +230,63 @@ def index_documents(paths: list[Path] | None = None, *, limit: int = 500) -> dic
             indexed += 1
         except OSError:
             skipped += 1
-    return {"indexed": indexed, "skipped": skipped, "storage": str(index.db_path), "local_only": True}
+    return {
+        "indexed": indexed,
+        "skipped": skipped,
+        "storage": str(index.db_path),
+        "local_only": True,
+    }
 
 
 def search_documents(query: str, *, limit: int = 10) -> DocumentResult:
     index_documents(limit=300)
     results = DocumentIndex().search(query, limit=limit)
     if not results:
-        return DocumentResult("handled", f"I did not find local documents matching {query}.", {"results": []})
+        return DocumentResult(
+            "handled",
+            f"I did not find local documents matching {query}.",
+            {"results": []},
+        )
     lines = [f"Documents matching {query}:"]
     for item in results:
-        lines.append(f"- {Path(item['path']).name} ({item['type']}, {item['modified_label'] if 'modified_label' in item else _date(item['modified'])})")
+        lines.append(
+            f"- {Path(item['path']).name} ({item['type']}, {item['modified_label'] if 'modified_label' in item else _date(item['modified'])})"
+        )
     return DocumentResult("handled", "\n".join(lines), {"results": results})
 
 
 def suggest_renames(query: str = "", *, limit: int = 10) -> DocumentResult:
     index_documents(limit=300)
-    rows = DocumentIndex().search(query, limit=limit) if query else DocumentIndex().all(limit=limit)
+    rows = (
+        DocumentIndex().search(query, limit=limit)
+        if query
+        else DocumentIndex().all(limit=limit)
+    )
     suggestions = []
     for row in rows:
         path = Path(row["path"])
         stem = _slug(row.get("title") or path.stem)
         if not stem:
             continue
-        suggested = f"{_date(row['modified'], compact=True)}-{stem}{path.suffix.lower()}"
+        suggested = (
+            f"{_date(row['modified'], compact=True)}-{stem}{path.suffix.lower()}"
+        )
         if suggested.lower() != path.name.lower():
-            suggestions.append({"path": str(path), "current": path.name, "suggested": suggested, "dry_run": True})
+            suggestions.append(
+                {
+                    "path": str(path),
+                    "current": path.name,
+                    "suggested": suggested,
+                    "dry_run": True,
+                }
+            )
     return DocumentResult(
         "handled",
-        "Suggested safe rename dry-run:\n" + "\n".join(f"- {item['current']} -> {item['suggested']}" for item in suggestions[:limit])
+        "Suggested safe rename dry-run:\n"
+        + "\n".join(
+            f"- {item['current']} -> {item['suggested']}"
+            for item in suggestions[:limit]
+        )
         if suggestions
         else "I did not find useful rename suggestions.",
         {"suggestions": suggestions, "dry_run": True},
@@ -246,13 +295,24 @@ def suggest_renames(query: str = "", *, limit: int = 10) -> DocumentResult:
 
 def organization_plan(query: str = "", *, dry_run: bool = True) -> DocumentResult:
     index_documents(limit=300)
-    rows = DocumentIndex().search(query, limit=25) if query else DocumentIndex().all(limit=25)
+    rows = (
+        DocumentIndex().search(query, limit=25)
+        if query
+        else DocumentIndex().all(limit=25)
+    )
     moves = []
     for row in rows:
         path = Path(row["path"])
         category = _organization_category(row)
         target_dir = path.parent / category
-        moves.append({"path": str(path), "target": str(target_dir / path.name), "category": category, "dry_run": dry_run})
+        moves.append(
+            {
+                "path": str(path),
+                "target": str(target_dir / path.name),
+                "category": category,
+                "dry_run": dry_run,
+            }
+        )
     return DocumentResult(
         "requires_confirmation" if not dry_run else "handled",
         f"Prepared {'dry-run ' if dry_run else ''}organization plan with {len(moves)} item(s).",
@@ -260,7 +320,9 @@ def organization_plan(query: str = "", *, dry_run: bool = True) -> DocumentResul
     )
 
 
-def extract_tables(path: Path | str, *, text: str | None = None) -> list[dict[str, Any]]:
+def extract_tables(
+    path: Path | str, *, text: str | None = None
+) -> list[dict[str, Any]]:
     path = Path(path)
     suffix = path.suffix.lower()
     if suffix == ".csv":
@@ -280,7 +342,11 @@ def extract_tables(path: Path | str, *, text: str | None = None) -> list[dict[st
             continue
         if len([cell for cell in cells if cell]) >= 2:
             rows.append(cells)
-    return [{"kind": "text_table", "rows": rows[:30], "row_count": len(rows)}] if rows else []
+    return (
+        [{"kind": "text_table", "rows": rows[:30], "row_count": len(rows)}]
+        if rows
+        else []
+    )
 
 
 def diagnostics() -> dict[str, Any]:
@@ -294,7 +360,11 @@ def diagnostics() -> dict[str, Any]:
         "supported_types": sorted(ext.lstrip(".") for ext in SUPPORTED_EXTENSIONS),
         "indexed_documents": len(rows),
         "type_counts": counts,
-        "storage": {"backend": "sqlite", "path": str(index.db_path), "local_only": True},
+        "storage": {
+            "backend": "sqlite",
+            "path": str(index.db_path),
+            "local_only": True,
+        },
         "safety": {
             "local_only": True,
             "silent_delete": False,
@@ -333,7 +403,11 @@ def _read_docx_text(path: Path) -> str:
 def _read_pptx_text(path: Path) -> str:
     chunks: list[str] = []
     with zipfile.ZipFile(path) as deck:
-        slide_names = sorted(name for name in deck.namelist() if name.startswith("ppt/slides/slide") and name.endswith(".xml"))
+        slide_names = sorted(
+            name
+            for name in deck.namelist()
+            if name.startswith("ppt/slides/slide") and name.endswith(".xml")
+        )
         for name in slide_names[:30]:
             root = ET.fromstring(deck.read(name))
             texts = [node.text or "" for node in root.iter() if node.tag.endswith("}t")]
@@ -363,7 +437,14 @@ def _xlsx_tables(path: Path) -> list[dict[str, Any]]:
                 values = ["" if value is None else str(value) for value in row]
                 if any(values):
                     rows.append(values)
-            tables.append({"kind": "xlsx", "sheet": sheet.title, "rows": rows, "row_count": len(rows)})
+            tables.append(
+                {
+                    "kind": "xlsx",
+                    "sheet": sheet.title,
+                    "rows": rows,
+                    "row_count": len(rows),
+                }
+            )
         workbook.close()
         return tables
     except Exception:
@@ -378,7 +459,9 @@ def _xlsx_tables_from_zip(path: Path) -> list[dict[str, Any]]:
     with zipfile.ZipFile(path) as workbook:
         shared = _xlsx_shared_strings(workbook)
         sheet_names = sorted(
-            name for name in workbook.namelist() if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
+            name
+            for name in workbook.namelist()
+            if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
         )
         tables = []
         for idx, name in enumerate(sheet_names[:8], start=1):
@@ -399,11 +482,20 @@ def _xlsx_tables_from_zip(path: Path) -> list[dict[str, Any]]:
                             break
                     if cell_type == "s" and value.isdigit():
                         shared_idx = int(value)
-                        value = shared[shared_idx] if shared_idx < len(shared) else value
+                        value = (
+                            shared[shared_idx] if shared_idx < len(shared) else value
+                        )
                     values.append(value)
                 if any(values):
                     rows.append(values)
-            tables.append({"kind": "xlsx", "sheet": f"Sheet{idx}", "rows": rows[:60], "row_count": len(rows)})
+            tables.append(
+                {
+                    "kind": "xlsx",
+                    "sheet": f"Sheet{idx}",
+                    "rows": rows[:60],
+                    "row_count": len(rows),
+                }
+            )
         return tables
 
 
@@ -437,7 +529,9 @@ def smart_summary(text: str, *, max_sentences: int = 6) -> str:
         score = sum(1 for tag in keywords if tag.lower() in sentence.lower())
         selected.append((score, sentence))
     selected.sort(key=lambda item: (item[0], len(item[1])), reverse=True)
-    picked = [sentence for _score, sentence in selected[:max_sentences]] or [clean[:700]]
+    picked = [sentence for _score, sentence in selected[:max_sentences]] or [
+        clean[:700]
+    ]
     return "\n".join(f"- {sentence[:420].strip()}" for sentence in picked)
 
 
@@ -447,7 +541,11 @@ def _iter_safe_documents(limit: int = 500) -> list[Path]:
         if not root.exists():
             continue
         for current, dirs, names in os.walk(root):
-            dirs[:] = [name for name in dirs if name not in SKIP_DIRS and not name.startswith(".")]
+            dirs[:] = [
+                name
+                for name in dirs
+                if name not in SKIP_DIRS and not name.startswith(".")
+            ]
             for name in names:
                 path = Path(current) / name
                 if path.suffix.lower() in SUPPORTED_EXTENSIONS:
@@ -459,7 +557,12 @@ def _iter_safe_documents(limit: int = 500) -> list[Path]:
 
 def _safe_roots() -> list[Path]:
     home = Path.home()
-    return [home / "Downloads", home / "Documents", home / "Desktop", Path("D:/Grandpa")]
+    return [
+        home / "Downloads",
+        home / "Documents",
+        home / "Desktop",
+        Path("D:/Grandpa"),
+    ]
 
 
 def _tokens(text: str) -> set[str]:
@@ -467,13 +570,30 @@ def _tokens(text: str) -> set[str]:
 
 
 def _tags_from_text(text: str) -> list[str]:
-    stop = {"the", "and", "for", "with", "from", "this", "that", "your", "into", "file", "document"}
+    stop = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "from",
+        "this",
+        "that",
+        "your",
+        "into",
+        "file",
+        "document",
+    }
     counts: dict[str, int] = {}
     for token in re.findall(r"[a-zA-Z][a-zA-Z0-9_-]{2,}", text.lower()):
         if token in stop:
             continue
         counts[token] = counts.get(token, 0) + 1
-    return [word for word, _count in sorted(counts.items(), key=lambda item: item[1], reverse=True)[:12]]
+    return [
+        word
+        for word, _count in sorted(
+            counts.items(), key=lambda item: item[1], reverse=True
+        )[:12]
+    ]
 
 
 def _title_from_text(text: str) -> str:
@@ -500,7 +620,9 @@ def _query_wants_last_month(query: str, modified: float) -> bool:
     if "last month" not in query.lower():
         return False
     now = datetime.now()
-    start = (now.replace(day=1) - timedelta(days=1)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    start = (now.replace(day=1) - timedelta(days=1)).replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0
+    )
     end = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     return start.timestamp() <= modified < end.timestamp()
 
@@ -524,7 +646,9 @@ def _slug(text: str) -> str:
 
 
 def _date(timestamp: float, *, compact: bool = False) -> str:
-    return datetime.fromtimestamp(timestamp).strftime("%Y%m%d" if compact else "%b %d, %Y")
+    return datetime.fromtimestamp(timestamp).strftime(
+        "%Y%m%d" if compact else "%b %d, %Y"
+    )
 
 
 __all__ = [

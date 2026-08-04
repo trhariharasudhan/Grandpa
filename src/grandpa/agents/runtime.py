@@ -11,7 +11,15 @@ from grandpa.planner import PlannerAnalysis, analyze_request
 from grandpa.skills.registry import ensure_default_skills_registered, execute_skill
 from grandpa.skills.runtime import SkillExecutionContext
 
-AgentTaskStatus = Literal["planned", "running", "waiting_approval", "completed", "failed", "cancelled", "unsupported"]
+AgentTaskStatus = Literal[
+    "planned",
+    "running",
+    "waiting_approval",
+    "completed",
+    "failed",
+    "cancelled",
+    "unsupported",
+]
 
 
 @dataclass
@@ -41,7 +49,9 @@ class AgentTask:
 _TASKS: dict[str, AgentTask] = {}
 
 
-def run_agent_goal(request: str, *, execute: bool = False, source: str = "agent-api") -> AgentTask:
+def run_agent_goal(
+    request: str, *, execute: bool = False, source: str = "agent-api"
+) -> AgentTask:
     """Plan and optionally execute a local agent goal."""
     ensure_default_skills_registered()
     analysis = analyze_request(request)
@@ -112,7 +122,9 @@ def _execute_task(task: AgentTask, *, source: str) -> None:
     for step in task.analysis.steps:
         if step.approval_required:
             task.status = "waiting_approval"
-            task.results.append({"step_id": step.id, "status": "approval_required", "skill": step.skill})
+            task.results.append(
+                {"step_id": step.id, "status": "approval_required", "skill": step.skill}
+            )
             task.updated_at = time()
             return
         result = execute_skill(
@@ -125,7 +137,9 @@ def _execute_task(task: AgentTask, *, source: str) -> None:
                 dry_run=True,
             ),
         )
-        task.results.append({"step_id": step.id, "skill": step.skill, "result": result.to_dict()})
+        task.results.append(
+            {"step_id": step.id, "skill": step.skill, "result": result.to_dict()}
+        )
         if not result.ok and result.status not in {"unsupported", "approval_required"}:
             task.status = "failed"
             task.updated_at = time()

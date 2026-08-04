@@ -38,12 +38,18 @@ def user_folder_aliases() -> dict[str, Path]:
         "videos": home / "Videos",
         "videos folder": home / "Videos",
         "project": Path.cwd(),
-        "grandpa project": Path("D:/Grandpa") if Path("D:/Grandpa").exists() else Path.cwd(),
+        "grandpa project": Path("D:/Grandpa")
+        if Path("D:/Grandpa").exists()
+        else Path.cwd(),
     }
 
 
 def safe_roots(extra_roots: tuple[Path, ...] = ()) -> tuple[Path, ...]:
-    env_roots = tuple(Path(item) for item in os.getenv("GRANDPA_FILE_SAFE_ROOTS", "").split(os.pathsep) if item)
+    env_roots = tuple(
+        Path(item)
+        for item in os.getenv("GRANDPA_FILE_SAFE_ROOTS", "").split(os.pathsep)
+        if item
+    )
     roots = (
         Path.cwd(),
         Path.home(),
@@ -86,7 +92,9 @@ def resolve_path(value: str, *, roots: tuple[Path, ...] = ()) -> Path:
     return (base / candidate).resolve(strict=False)
 
 
-def find_matches(query: str, *, roots: tuple[Path, ...] = (), limit: int = MAX_SEARCH_RESULTS) -> list[Path]:
+def find_matches(
+    query: str, *, roots: tuple[Path, ...] = (), limit: int = MAX_SEARCH_RESULTS
+) -> list[Path]:
     needle = str(query or "").strip().strip('"').casefold()
     if not needle:
         return []
@@ -109,7 +117,9 @@ def find_matches(query: str, *, roots: tuple[Path, ...] = (), limit: int = MAX_S
     return _sort_matches(found)
 
 
-def latest_by_suffix(suffixes: set[str], *, roots: tuple[Path, ...] = ()) -> Path | None:
+def latest_by_suffix(
+    suffixes: set[str], *, roots: tuple[Path, ...] = ()
+) -> Path | None:
     matches: list[Path] = []
     for root in roots or safe_roots():
         if not root.exists():
@@ -131,7 +141,11 @@ def describe_path(path: Path) -> str:
 
 def _walk(root: Path):
     for current, dirs, names in os.walk(root):
-        dirs[:] = [name for name in dirs if name.casefold() not in SKIP_DIR_NAMES and not name.startswith(".")]
+        dirs[:] = [
+            name
+            for name in dirs
+            if name.casefold() not in SKIP_DIR_NAMES and not name.startswith(".")
+        ]
         for name in names:
             yield Path(current) / name
         for name in dirs:

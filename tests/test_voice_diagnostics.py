@@ -7,7 +7,9 @@ def test_voice_doctor_handles_missing_sounddevice(monkeypatch) -> None:
     monkeypatch.setattr(
         diagnostics,
         "_import_sounddevice",
-        lambda: (_ for _ in ()).throw(diagnostics.VoiceDependencyError("missing sounddevice")),
+        lambda: (_ for _ in ()).throw(
+            diagnostics.VoiceDependencyError("missing sounddevice")
+        ),
     )
 
     checks = diagnostics.run_voice_doctor()
@@ -37,7 +39,9 @@ def test_voice_doctor_reports_tts_checks(monkeypatch) -> None:
             return {"status": "ready", "engine": "mock_tts", "voice": "Mock Voice"}
 
         def speak(self, text, *, interrupt=False, dry_run=False):
-            return SimpleNamespace(status="dry_run", message="Speech output queued safely.")
+            return SimpleNamespace(
+                status="dry_run", message="Speech output queued safely."
+            )
 
     monkeypatch.setattr(diagnostics, "SpeechOutputEngine", FakeSpeechOutputEngine)
 

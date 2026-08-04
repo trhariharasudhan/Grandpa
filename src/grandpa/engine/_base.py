@@ -30,6 +30,14 @@ class EngineModelLoadError(Exception):
         super().__init__(message)
 
 
+class EngineModelPullError(Exception):
+    """Raised when an explicitly requested model installation fails."""
+
+    def __init__(self, model: str, message: str) -> None:
+        self.model = model
+        super().__init__(message)
+
+
 def messages_to_dicts(messages: Sequence[Message]) -> List[Dict[str, Any]]:
     """Convert ``Message`` objects to OpenAI-format dicts."""
     out: List[Dict[str, Any]] = []
@@ -78,6 +86,7 @@ __all__ = [
     "EngineConnectionError",
     "EngineModelLoadError",
     "EngineModelNotFoundError",
+    "EngineModelPullError",
     "InferenceEngine",
     "estimate_prompt_tokens",
     "messages_to_dicts",

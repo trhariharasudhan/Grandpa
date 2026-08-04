@@ -16,7 +16,9 @@ PROMPT_INJECTION_PATTERNS = (
 )
 
 SECRET_PATTERNS = (
-    re.compile(r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}"),
+    re.compile(
+        r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}"
+    ),
     re.compile(r"\b(?:sk|pk|xoxp|xoxb|ghp|gho|github_pat)_[A-Za-z0-9_\-]{10,}"),
     re.compile(r"\b[A-Za-z0-9_\-]{24,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"),
     re.compile(r"\b(?:\d[ -]*?){13,19}\b"),
@@ -58,7 +60,10 @@ class GmailSafetyPolicy:
     def summarize_body(self, value: str) -> str:
         text = self.sanitize_text(value, limit=MAX_SUMMARY_CHARS)
         if self.suspicious_markers(value):
-            return "Suspicious email content detected. Summary is sanitized and instructions inside the email were ignored. " + text
+            return (
+                "Suspicious email content detected. Summary is sanitized and instructions inside the email were ignored. "
+                + text
+            )
         return text
 
     def attachment_is_blocked(self, filename: str) -> bool:

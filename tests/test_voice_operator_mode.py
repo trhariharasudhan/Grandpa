@@ -40,7 +40,9 @@ def test_normalizes_common_launch_phrases() -> None:
 
 
 def test_normalizes_repeated_launch_words_and_app_phrases() -> None:
-    assert normalize_voice_operator_transcript("open open open notepad") == "open notepad"
+    assert (
+        normalize_voice_operator_transcript("open open open notepad") == "open notepad"
+    )
     assert normalize_voice_operator_transcript("Open note pad") == "open notepad"
     assert normalize_voice_operator_transcript("Open note bad") == "open notepad"
     assert normalize_voice_operator_transcript("open chrome browser") == "open chrome"
@@ -150,7 +152,9 @@ def test_exit_command_stops_loop() -> None:
     code = run_voice_operator_loop(
         input_func=lambda _prompt: "stop listening",
         output_func=output.append,
-        action_runner=lambda _payload: SimpleNamespace(ok=True, status="completed", message="done", approval_required=False),
+        action_runner=lambda _payload: SimpleNamespace(
+            ok=True, status="completed", message="done", approval_required=False
+        ),
         prefer_voice=False,
     )
 
@@ -304,12 +308,8 @@ def test_voice_dialog_prompt_hides_native_ids_and_routes_followup() -> None:
         WindowVerification,
     )
 
-    window = WindowIdentity(
-        10, "Untitled - Notepad", 101, "notepad.exe", "notepad"
-    )
-    dialog = DialogIdentity(
-        20, "Notepad", 101, 10, "notepad_unsaved"
-    )
+    window = WindowIdentity(10, "Untitled - Notepad", 101, "notepad.exe", "notepad")
+    dialog = DialogIdentity(20, "Notepad", 101, 10, "notepad_unsaved")
 
     class DialogTargets:
         def focus_and_verify(self, target, *, dry_run: bool = False):
@@ -349,7 +349,12 @@ def test_typed_fallback_after_microphone_unavailable() -> None:
 
     def action_runner(payload):
         actions.append(payload)
-        return SimpleNamespace(ok=True, status="completed", message="Opened Chrome.", approval_required=False)
+        return SimpleNamespace(
+            ok=True,
+            status="completed",
+            message="Opened Chrome.",
+            approval_required=False,
+        )
 
     code = run_voice_operator_loop(
         input_func=lambda _prompt: next(inputs),
@@ -372,7 +377,11 @@ def test_stt_exception_allows_retry_or_typed_input() -> None:
     code = run_voice_operator_loop(
         input_func=lambda _prompt: next(inputs),
         output_func=output.append,
-        listen_func=lambda: (_ for _ in ()).throw(VoiceRecognitionError("I did not hear anything. Check microphone or speak louder.")),
+        listen_func=lambda: (_ for _ in ()).throw(
+            VoiceRecognitionError(
+                "I did not hear anything. Check microphone or speak louder."
+            )
+        ),
         prefer_voice=True,
     )
 
@@ -387,9 +396,9 @@ def test_voice_operator_routes_multistep_goal_to_executive_planner(monkeypatch) 
     inputs = iter(["open chrome and search for fastapi", "quit"])
     monkeypatch.setattr(
         "grandpa.planner.routing.handle_executive_goal",
-        lambda text, **_kwargs: "Task completed."
-        if "search for fastapi" in text.casefold()
-        else None,
+        lambda text, **_kwargs: (
+            "Task completed." if "search for fastapi" in text.casefold() else None
+        ),
     )
 
     code = run_voice_operator_loop(

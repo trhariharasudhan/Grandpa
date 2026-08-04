@@ -106,9 +106,14 @@ def classify_task(query: str) -> str:
         return "browser"
     if re.search(r"\b(screen|screenshot|visible|ocr|error message|popup)\b", text):
         return "screen"
-    if re.search(r"\b(open|close|minimize|maximize|focus|volume|clipboard|type|click|scroll|window)\b", text):
+    if re.search(
+        r"\b(open|close|minimize|maximize|focus|volume|clipboard|type|click|scroll|window)\b",
+        text,
+    ):
         return "pc_control"
-    if re.search(r"\b(file|folder|pdf|document|note|downloads|rename|copy|move)\b", text):
+    if re.search(
+        r"\b(file|folder|pdf|document|note|downloads|rename|copy|move)\b", text
+    ):
         return "files"
     if re.search(r"\b(remember|recall|preference|project|what did i)\b", text):
         return "memory"
@@ -126,7 +131,10 @@ def score_task_priority(query: str, task_type: str) -> float:
     score = 0.35
     if task_type in {"pc_control", "screen", "browser", "workflow"}:
         score += 0.18
-    if any(word in text for word in ("urgent", "now", "asap", "important", "error", "failed", "crash")):
+    if any(
+        word in text
+        for word in ("urgent", "now", "asap", "important", "error", "failed", "crash")
+    ):
         score += 0.25
     if any(word in text for word in ("later", "someday", "maybe")):
         score -= 0.12
@@ -148,7 +156,14 @@ def choose_model(
     models = [model for model in dict.fromkeys(available_models) if model]
     complexity = score_complexity(query)
     task_type = classify_task(query)
-    local_preferred = task_type in {"pc_control", "screen", "files", "memory", "workflow", "browser"}
+    local_preferred = task_type in {
+        "pc_control",
+        "screen",
+        "files",
+        "memory",
+        "workflow",
+        "browser",
+    }
     available = set(models)
 
     if requested_model and requested_model in available:
@@ -164,7 +179,11 @@ def choose_model(
             complexity_tier=complexity.tier,
         )
 
-    non_embedding = [model for model in models if not any(hint in model.lower() for hint in _EMBEDDING_HINTS)]
+    non_embedding = [
+        model
+        for model in models
+        if not any(hint in model.lower() for hint in _EMBEDDING_HINTS)
+    ]
     selected = ""
     reason = ""
     if non_embedding:
@@ -236,7 +255,9 @@ def build_plan(
     )
 
 
-def ai_diagnostics(*, engine: Any | None = None, model: str = "", query: str = "") -> dict[str, Any]:
+def ai_diagnostics(
+    *, engine: Any | None = None, model: str = "", query: str = ""
+) -> dict[str, Any]:
     models: list[str] = []
     engine_id = ""
     health = None
@@ -257,11 +278,11 @@ def ai_diagnostics(*, engine: Any | None = None, model: str = "", query: str = "
         cloud_allowed=False,
     )
     local_count = sum(
-        1
-        for item in models
-        if not any(h in item.lower() for h in _EMBEDDING_HINTS)
+        1 for item in models if not any(h in item.lower() for h in _EMBEDDING_HINTS)
     )
-    embedding_count = sum(1 for item in models if any(h in item.lower() for h in _EMBEDDING_HINTS))
+    embedding_count = sum(
+        1 for item in models if any(h in item.lower() for h in _EMBEDDING_HINTS)
+    )
     return {
         "status": "ready" if models or engine is None else "limited",
         "timestamp": time.time(),
@@ -290,53 +311,144 @@ def ai_diagnostics(*, engine: Any | None = None, model: str = "", query: str = "
 def _steps_for_task(query: str, task_type: str, tier: str) -> list[PlanStep]:
     if task_type == "pc_control":
         return [
-            PlanStep("Classify local action", "Check allowlist, risk, and approval policy.", "local_actions"),
-            PlanStep("Execute or request approval", "Run safe actions directly and gate risky ones.", "pc_control", "MEDIUM"),
-            PlanStep("Summarize outcome", "Return a concise truthful confirmation.", "chat"),
+            PlanStep(
+                "Classify local action",
+                "Check allowlist, risk, and approval policy.",
+                "local_actions",
+            ),
+            PlanStep(
+                "Execute or request approval",
+                "Run safe actions directly and gate risky ones.",
+                "pc_control",
+                "MEDIUM",
+            ),
+            PlanStep(
+                "Summarize outcome", "Return a concise truthful confirmation.", "chat"
+            ),
         ]
     if task_type == "browser":
         return [
-            PlanStep("Read visible browser context", "Use localhost extension snapshot when available.", "browser_control"),
-            PlanStep("Plan visible-page action", "Prefer read-only summary before interaction.", "browser_control"),
-            PlanStep("Gate risky browser action", "Require approval for clicks, forms, downloads, and messages.", "approvals", "MEDIUM"),
+            PlanStep(
+                "Read visible browser context",
+                "Use localhost extension snapshot when available.",
+                "browser_control",
+            ),
+            PlanStep(
+                "Plan visible-page action",
+                "Prefer read-only summary before interaction.",
+                "browser_control",
+            ),
+            PlanStep(
+                "Gate risky browser action",
+                "Require approval for clicks, forms, downloads, and messages.",
+                "approvals",
+                "MEDIUM",
+            ),
         ]
     if task_type == "screen":
         return [
-            PlanStep("Capture local screen context", "Use active-window, screenshot, and OCR backends.", "screen_awareness"),
-            PlanStep("Classify visible UI", "Detect popups, errors, buttons, fields, and safe suggestions.", "screen_awareness"),
-            PlanStep("Answer with uncertainty", "Avoid claiming exact UI positions without evidence.", "chat"),
+            PlanStep(
+                "Capture local screen context",
+                "Use active-window, screenshot, and OCR backends.",
+                "screen_awareness",
+            ),
+            PlanStep(
+                "Classify visible UI",
+                "Detect popups, errors, buttons, fields, and safe suggestions.",
+                "screen_awareness",
+            ),
+            PlanStep(
+                "Answer with uncertainty",
+                "Avoid claiming exact UI positions without evidence.",
+                "chat",
+            ),
         ]
     if task_type == "memory":
         return [
-            PlanStep("Search personal memory", "Use semantic recall first, then keyword fallback.", "memory"),
-            PlanStep("Score confidence", "Prefer recent and repeated memories.", "memory"),
-            PlanStep("Answer or ask for clarification", "Do not invent missing memories.", "chat"),
+            PlanStep(
+                "Search personal memory",
+                "Use semantic recall first, then keyword fallback.",
+                "memory",
+            ),
+            PlanStep(
+                "Score confidence", "Prefer recent and repeated memories.", "memory"
+            ),
+            PlanStep(
+                "Answer or ask for clarification",
+                "Do not invent missing memories.",
+                "chat",
+            ),
         ]
     if task_type == "files":
         return [
-            PlanStep("Resolve safe paths", "Stay inside allowed local folders unless approved.", "file_assistant"),
-            PlanStep("Read metadata or content", "Summarize supported local documents.", "file_assistant"),
-            PlanStep("Protect write/delete operations", "Require approval for risky filesystem changes.", "approvals", "MEDIUM"),
+            PlanStep(
+                "Resolve safe paths",
+                "Stay inside allowed local folders unless approved.",
+                "file_assistant",
+            ),
+            PlanStep(
+                "Read metadata or content",
+                "Summarize supported local documents.",
+                "file_assistant",
+            ),
+            PlanStep(
+                "Protect write/delete operations",
+                "Require approval for risky filesystem changes.",
+                "approvals",
+                "MEDIUM",
+            ),
         ]
     if task_type == "workflow":
         return [
-            PlanStep("Parse routine/reminder intent", "Find schedule, actions, and recurrence.", "scheduler"),
-            PlanStep("Classify routine actions", "Block dangerous actions and gate risky ones.", "approvals", "MEDIUM"),
-            PlanStep("Store or run routine", "Keep routine state local and auditable.", "scheduler"),
+            PlanStep(
+                "Parse routine/reminder intent",
+                "Find schedule, actions, and recurrence.",
+                "scheduler",
+            ),
+            PlanStep(
+                "Classify routine actions",
+                "Block dangerous actions and gate risky ones.",
+                "approvals",
+                "MEDIUM",
+            ),
+            PlanStep(
+                "Store or run routine",
+                "Keep routine state local and auditable.",
+                "scheduler",
+            ),
         ]
     if task_type == "developer":
         return [
-            PlanStep("Inspect context", "Prefer repo-aware search and tests before edits.", "tools"),
-            PlanStep("Plan safe changes", "Keep edits scoped and reversible.", "planner"),
+            PlanStep(
+                "Inspect context",
+                "Prefer repo-aware search and tests before edits.",
+                "tools",
+            ),
+            PlanStep(
+                "Plan safe changes", "Keep edits scoped and reversible.", "planner"
+            ),
             PlanStep("Validate", "Run focused tests and builds.", "workflow"),
         ]
     steps = [
-        PlanStep("Understand request", "Classify goal, constraints, and available context.", "planner"),
+        PlanStep(
+            "Understand request",
+            "Classify goal, constraints, and available context.",
+            "planner",
+        ),
         PlanStep("Recall context", "Use semantic memory when relevant.", "memory"),
-        PlanStep("Answer", "Use the selected model with concise grounded output.", "chat"),
+        PlanStep(
+            "Answer", "Use the selected model with concise grounded output.", "chat"
+        ),
     ]
     if tier in {"complex", "very_complex"}:
-        steps.insert(2, PlanStep("Decompose task", "Break the work into smaller verifiable steps.", "planner"))
+        steps.insert(
+            2,
+            PlanStep(
+                "Decompose task",
+                "Break the work into smaller verifiable steps.",
+                "planner",
+            ),
+        )
     return steps
 
 
@@ -369,9 +481,13 @@ def _memory_queries(query: str, task_type: str) -> list[str]:
 def _self_analysis(task_type: str, tier: str, routing: ModelRoutingDecision) -> str:
     bits = [f"Task type: {task_type}", f"complexity: {tier}"]
     if routing.fallback_used:
-        bits.append(f"model fallback: {routing.requested_model} -> {routing.selected_model}")
+        bits.append(
+            f"model fallback: {routing.requested_model} -> {routing.selected_model}"
+        )
     else:
-        bits.append(f"model: {routing.selected_model or routing.requested_model or 'not selected'}")
+        bits.append(
+            f"model: {routing.selected_model or routing.requested_model or 'not selected'}"
+        )
     if routing.local_preferred:
         bits.append("local-first path preferred")
     return "; ".join(bits) + "."

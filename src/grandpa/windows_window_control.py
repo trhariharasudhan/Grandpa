@@ -7,6 +7,8 @@ import re
 import sys
 import time
 from dataclasses import dataclass
+from pathlib import Path
+from threading import RLock
 from typing import Literal
 
 WindowAction = Literal["focus", "close", "minimize", "maximize", "restore", "list"]
@@ -22,6 +24,23 @@ WindowStatus = Literal[
     "error",
 ]
 
+
+_LAUNCHED_PIDS: dict[str, list[int]] = {}
+_LAUNCHED_LOCK = RLock()
+
+
+def record_launched_pid(app_id: str, pid: int) -> None:
+    with _LAUNCHED_LOCK:
+        if app_id not in _LAUNCHED_PIDS:
+            _LAUNCHED_PIDS[app_id] = []
+        _LAUNCHED_PIDS[app_id].append(pid)
+
+
+def get_launched_pids(app_id: str) -> list[int]:
+    with _LAUNCHED_LOCK:
+        return list(_LAUNCHED_PIDS.get(app_id, []))
+
+
 _APP_TITLE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "notepad": ("notepad",),
     "chrome": ("chrome",),
@@ -33,6 +52,101 @@ _APP_TITLE_KEYWORDS: dict[str, tuple[str, ...]] = {
     "control_panel": ("control panel",),
     "task_manager": ("task manager",),
 }
+
+_CANONICAL_APP_IDS = {
+    "calculator": "calculator",
+    "calc": "calculator",
+    "notepad": "notepad",
+    "text editor": "notepad",
+    "chrome": "chrome",
+    "google chrome": "chrome",
+    "vscode": "vscode",
+    "vs code": "vscode",
+    "visual studio code": "vscode",
+    "code": "vscode",
+    "edge": "edge",
+    "microsoft edge": "edge",
+    "explorer": "explorer",
+    "file explorer": "explorer",
+    "settings": "settings",
+    "control panel": "control_panel",
+    "task manager": "task_manager",
+}
+
+_CANONICAL_EXECUTABLES = {
+    "chrome": {"chrome.exe"},
+    "edge": {"msedge.exe"},
+    "vscode": {"code.exe"},
+    "notepad": {"notepad.exe"},
+    "calculator": {"calc.exe", "calculatorapp.exe"},
+    "explorer": {"explorer.exe"},
+}
+
+
+def _normalize_target(target: str) -> str:
+    target = target.lower().strip()
+    target = re.sub(r"[?!.,\s]+$", "", target)
+    target = re.sub(r"\s+", " ", target)
+
+    # Strip leading fillers that could be inside target
+    fillers = [
+        r"^please\s+",
+        r"^can\s+you\s+",
+        r"^could\s+you\s+",
+        r"^would\s+you\s+",
+        r"^okay\s*",
+        r"^ok\s*",
+        r"^hey\s+grandpa\s+",
+        r"^grandpa\s+",
+        r"^the\s+",
+        r"^my\s+",
+        r"^a\s+",
+        r"^an\s+",
+        r"^to\s+",
+    ]
+    for pattern in fillers:
+        target = re.sub(pattern, "", target).strip()
+
+    # Normalize trailing UI suffixes: screen, window, app, application, program
+    suffixes = [
+        r"\s+screen$",
+        r"\s+window$",
+        r"\s+app$",
+        r"\s+application$",
+        r"\s+program$",
+    ]
+    for pattern in suffixes:
+        target = re.sub(pattern, "", target).strip()
+
+    return target
+
+
+def _get_window_executable_name(hwnd: int) -> str:
+    try:
+        import win32api  # type: ignore
+        import win32con  # type: ignore
+        import win32process  # type: ignore
+
+        _tid, pid = win32process.GetWindowThreadProcessId(hwnd)
+        handle = win32api.OpenProcess(
+            win32con.PROCESS_QUERY_INFORMATION | win32con.PROCESS_VM_READ, False, pid
+        )
+        try:
+            exe_path = win32process.GetModuleFileNameEx(handle, 0)
+            return Path(exe_path).name.lower()
+        finally:
+            win32api.CloseHandle(handle)
+    except Exception:
+        try:
+            import psutil
+            import win32process  # type: ignore
+
+            _tid, pid = win32process.GetWindowThreadProcessId(hwnd)
+            p = psutil.Process(pid)
+            return p.name().lower()
+        except Exception:
+            return ""
+
 
 _SYSTEM_CRITICAL_KEYWORDS = (
     "task manager",
@@ -209,9 +323,7 @@ def control_window_info(
             if window.document_id:
                 outcome, dialog = _wait_for_close_outcome(window, close_timeout)
             else:
-                closed, dialog = _wait_for_window_close_or_dialog(
-                    window, close_timeout
-                )
+                closed, dialog = _wait_for_window_close_or_dialog(window, close_timeout)
                 outcome = "closed" if closed else "open"
             if dialog is not None:
                 return WindowControlResult(
@@ -240,13 +352,31 @@ def control_window_info(
                 )
             message = f"Closed {label}."
         else:
-            verb = {
-                "focus": "Focused",
-                "minimize": "Minimized",
-                "maximize": "Maximized",
-                "restore": "Restored",
-            }[action]
-            message = f"{verb} {label}."
+            if action == "focus":
+                # Verify foreground activation
+                verified = False
+                for _ in range(10):
+                    if _get_foreground_window() == window.handle:
+                        verified = True
+                        break
+                    time.sleep(0.05)
+                display_name = _get_app_display_name(window)
+                if not verified:
+                    return WindowControlResult(
+                        "error",
+                        action,
+                        resolved_target,
+                        f"I found {display_name}, but Windows prevented it from focusing.",
+                        (window,),
+                    )
+                message = f"{display_name} focused."
+            else:
+                verb = {
+                    "minimize": "Minimized",
+                    "maximize": "Maximized",
+                    "restore": "Restored",
+                }[action]
+                message = f"{verb} {label}."
         return WindowControlResult(
             "handled",
             action,
@@ -269,11 +399,13 @@ def _resolve_window(target: str) -> WindowInfo | WindowControlResult:
         handle = _get_foreground_window()
         title = _get_window_title(handle)
         if handle and title:
-            return _with_notepad_document(WindowInfo(
-                handle=handle,
-                title=title,
-                process_id=_window_process_id(handle),
-            ))
+            return _with_notepad_document(
+                WindowInfo(
+                    handle=handle,
+                    title=title,
+                    process_id=_window_process_id(handle),
+                )
+            )
         return WindowControlResult(
             "not_found",
             "focus",
@@ -281,7 +413,53 @@ def _resolve_window(target: str) -> WindowInfo | WindowControlResult:
             "I could not find the active window.",
         )
 
-    matches = _matching_windows(target)
+    norm_target = _normalize_target(target)
+    canonical_id = _CANONICAL_APP_IDS.get(norm_target, norm_target)
+
+    windows = _list_windows()
+    if not windows:
+        return WindowControlResult(
+            "not_found",
+            "focus",
+            target,
+            f"I could not find an open {_display_target(target)} window.",
+        )
+
+    # 1. Previously verified launched process/window handle
+    launched_pids = get_launched_pids(canonical_id)
+    if launched_pids:
+        matches = [w for w in windows if w.process_id in launched_pids]
+        if matches:
+            return _with_notepad_document(matches[0])
+
+    # 2. Exact canonical executable/process match
+    canonical_exes = _CANONICAL_EXECUTABLES.get(canonical_id, set())
+    if canonical_exes:
+        matches = []
+        for w in windows:
+            exe = _get_window_executable_name(w.handle)
+            if exe in canonical_exes:
+                matches.append(w)
+        if matches:
+            return _with_notepad_document(matches[0])
+
+    # 3. Exact normalized window-title match
+    matches = []
+    for w in windows:
+        w_norm = _normalize_target(w.title)
+        if w_norm == norm_target or w_norm == canonical_id:
+            matches.append(w)
+    if matches:
+        return _with_notepad_document(matches[0])
+
+    # 4. Safe alias-aware partial match
+    keywords = _APP_TITLE_KEYWORDS.get(canonical_id, (norm_target,))
+    matches = []
+    for w in windows:
+        w_title_lower = w.title.lower()
+        if any(keyword in w_title_lower for keyword in keywords):
+            matches.append(w)
+
     if not matches:
         return WindowControlResult(
             "not_found",
@@ -289,6 +467,7 @@ def _resolve_window(target: str) -> WindowInfo | WindowControlResult:
             target,
             f"I could not find an open {_display_target(target)} window.",
         )
+
     if len(matches) > 1:
         titles = "\n".join(f"- {window.title}" for window in matches[:5])
         return WindowControlResult(
@@ -298,12 +477,14 @@ def _resolve_window(target: str) -> WindowInfo | WindowControlResult:
             f"I found multiple {_display_target(target)} windows. Please clarify:\n{titles}",
             tuple(matches),
         )
+
     return _with_notepad_document(matches[0])
 
 
 def _matching_windows(target: str) -> list[WindowInfo]:
-    target = target.lower().strip()
-    keywords = _APP_TITLE_KEYWORDS.get(target, (target,))
+    norm_target = _normalize_target(target)
+    canonical_id = _CANONICAL_APP_IDS.get(norm_target, norm_target)
+    keywords = _APP_TITLE_KEYWORDS.get(canonical_id, (norm_target,))
     matches = []
     for window in _list_windows():
         title = window.title.lower()
@@ -312,7 +493,7 @@ def _matching_windows(target: str) -> list[WindowInfo]:
                 WindowInfo(
                     window.handle,
                     window.title,
-                    target,
+                    canonical_id,
                     window.process_id,
                 )
             )
@@ -396,9 +577,7 @@ def _get_window_title(hwnd: int) -> str:
 def _window_process_id(hwnd: int) -> int:
     try:
         process_id = ctypes.c_ulong()
-        ctypes.windll.user32.GetWindowThreadProcessId(
-            hwnd, ctypes.byref(process_id)
-        )
+        ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
         return int(process_id.value)
     except Exception:
         return 0
@@ -433,9 +612,7 @@ def _wait_for_close_outcome(
             return "dialog_pending", dialog
         if window.document_id:
             documents = list_notepad_documents(window)
-            if not any(
-                item.document_id == window.document_id for item in documents
-            ):
+            if not any(item.document_id == window.document_id for item in documents):
                 return "closed", None
             selected = next((item for item in documents if item.selected), None)
             if selected is not None and selected.document_id != window.document_id:
@@ -535,10 +712,7 @@ def wait_for_new_notepad_document(
     before: tuple[NotepadDocumentTarget, ...],
     timeout: float = 2.5,
 ) -> NotepadDocumentTarget | None:
-    known = {
-        (target.window.handle, target.document.document_id)
-        for target in before
-    }
+    known = {(target.window.handle, target.document.document_id) for target in before}
     deadline = time.monotonic() + max(0.0, timeout)
     while time.monotonic() < deadline:
         current = snapshot_notepad_documents()
@@ -653,9 +827,7 @@ def _uia_runtime_id(element: object) -> str:
 def _uia_is_selected(element: object, module: object) -> bool:
     try:
         pattern = element.GetCurrentPattern(10010)  # UIA_SelectionItemPatternId
-        selected = pattern.QueryInterface(
-            module.IUIAutomationSelectionItemPattern
-        )
+        selected = pattern.QueryInterface(module.IUIAutomationSelectionItemPattern)
         return bool(selected.CurrentIsSelected)
     except Exception:
         return False
@@ -705,11 +877,12 @@ def _find_owned_notepad_dialog(window: WindowInfo) -> DialogInfo | None:
         if candidate.process_id != window.process_id:
             continue
         owner = _get_owner_window(candidate.handle)
-        if owner != window.handle and _get_root_owner(candidate.handle) != window.handle:
+        if (
+            owner != window.handle
+            and _get_root_owner(candidate.handle) != window.handle
+        ):
             continue
-        controls = tuple(
-            _all_dialog_controls(candidate.handle, candidate.process_id)
-        )
+        controls = tuple(_all_dialog_controls(candidate.handle, candidate.process_id))
         kind = _classify_notepad_dialog(
             candidate.title,
             _get_window_class(candidate.handle),
@@ -775,9 +948,7 @@ def _classify_notepad_dialog(
         for label in labels
     )
     dialog_class = class_name.casefold() in {"#32770", "dialog"}
-    if has_save and has_discard and (
-        "notepad" in lowered_title or dialog_class
-    ):
+    if has_save and has_discard and ("notepad" in lowered_title or dialog_class):
         return "notepad_unsaved"
     return ""
 
@@ -831,14 +1002,9 @@ def _list_uia_controls(hwnd: int, process_id: int) -> list[DialogControl]:
         return []
 
 
-def _all_dialog_controls(
-    hwnd: int, process_id: int
-) -> list[DialogControl]:
+def _all_dialog_controls(hwnd: int, process_id: int) -> list[DialogControl]:
     controls = _list_dialog_controls(hwnd)
-    seen = {
-        (_normalise_control_label(item.label), item.handle)
-        for item in controls
-    }
+    seen = {(_normalise_control_label(item.label), item.handle) for item in controls}
     for item in _list_uia_controls(hwnd, process_id):
         key = (_normalise_control_label(item.label), item.handle)
         if key not in seen:
@@ -851,9 +1017,7 @@ def _uia():
     import comtypes.client  # type: ignore
 
     module = comtypes.client.GetModule("UIAutomationCore.dll")
-    unknown = comtypes.client.CreateObject(
-        "{FF48DBA4-60EF-4201-AA87-54103EEF594E}"
-    )
+    unknown = comtypes.client.CreateObject("{FF48DBA4-60EF-4201-AA87-54103EEF594E}")
     return unknown.QueryInterface(module.IUIAutomation), module
 
 
@@ -903,9 +1067,7 @@ def verify_dialog_identity(
             return False
     current = _find_owned_notepad_dialog(window)
     return bool(
-        current
-        and current.handle == dialog.handle
-        and current.kind == dialog.kind
+        current and current.handle == dialog.handle and current.kind == dialog.kind
     )
 
 
@@ -974,8 +1136,7 @@ def _set_save_as_filename(dialog: DialogInfo, path: str) -> bool:
         (
             control
             for control in dialog.controls
-            if control.control_id == 0x047C
-            or control.class_name.casefold() == "edit"
+            if control.control_id == 0x047C or control.class_name.casefold() == "edit"
         ),
         None,
     )
@@ -987,9 +1148,7 @@ def _set_save_as_filename(dialog: DialogInfo, path: str) -> bool:
             return True
         except Exception:
             try:
-                return bool(
-                    ctypes.windll.user32.SetWindowTextW(native.handle, path)
-                )
+                return bool(ctypes.windll.user32.SetWindowTextW(native.handle, path))
             except Exception:
                 return False
     try:
@@ -1163,6 +1322,18 @@ def _display_target(target: str) -> str:
     if target == "vscode":
         return "VS Code"
     return target.replace("_", " ").title()
+
+
+def _get_app_display_name(window: WindowInfo) -> str:
+    canonical_display_names = {
+        "chrome": "Chrome",
+        "notepad": "Notepad",
+        "calculator": "Calculator",
+        "vscode": "VS Code",
+        "edge": "Edge",
+        "explorer": "Explorer",
+    }
+    return canonical_display_names.get(window.app_id or "", window.title)
 
 
 __all__ = [

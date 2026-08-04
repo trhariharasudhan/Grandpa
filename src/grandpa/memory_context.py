@@ -11,15 +11,20 @@ import os
 import re
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from math import sqrt
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
+from grandpa.memory_recovery import recover_sqlite_database, validate_sqlite_connection
 
-DEFAULT_MEMORY_DB = DEFAULT_CONFIG_DIR / "personal_memory.db"
+# Canonical owner for conversational personal facts and activity.  The
+# ``grandpa.memory`` package remains a structured-memory compatibility backend.
+CANONICAL_PERSONAL_MEMORY_DB = DEFAULT_CONFIG_DIR / "personal_memory.db"
+DEFAULT_MEMORY_DB = CANONICAL_PERSONAL_MEMORY_DB
 SEMANTIC_DIMENSIONS = 128
 SEMANTIC_MODEL = "grandpa-local-semantic-v1"
 SEMANTIC_MIN_CONFIDENCE = 0.18
@@ -28,11 +33,48 @@ SENSITIVE_PATTERN = re.compile(
     r"card\s*number|cvv|otp|pin|private\s*key|seed\s*phrase)\b",
     re.IGNORECASE,
 )
+_PERSONAL_FACT_PATTERNS = (
+    re.compile(
+        r"^my\s+(?P<key>name|favorite\s+[a-z][a-z0-9]*"
+        r"(?:\s+[a-z][a-z0-9]*){0,3}|"
+        r"preferred\s+(?:browser|editor|language)|timezone|location|profession|"
+        r"role|pronouns)\s+is\s+(?P<value>.+)$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^my\s+project(?:\s+name)?\s+is\s+(?P<value>.+)$", re.IGNORECASE),
+)
+_MEMORY_QUERY_STOP_WORDS = {
+    "a",
+    "about",
+    "am",
+    "an",
+    "are",
+    "do",
+    "does",
+    "i",
+    "is",
+    "me",
+    "my",
+    "of",
+    "the",
+    "what",
+    "you",
+}
 
 MEMORY_CATEGORY_ALIASES: dict[str, set[str]] = {
     "project": {"project", "assistant", "ai", "app", "building", "working", "work"},
     "preferences": {"prefer", "preferred", "preference", "like", "default"},
-    "apps_tools": {"app", "apps", "tool", "tools", "editor", "coding", "code", "vscode", "browser"},
+    "apps_tools": {
+        "app",
+        "apps",
+        "tool",
+        "tools",
+        "editor",
+        "coding",
+        "code",
+        "vscode",
+        "browser",
+    },
     "routines": {"routine", "routines", "reminder", "reminders", "schedule"},
     "people": {"person", "people", "friend", "family", "team", "client"},
     "work_context": {"work", "task", "context", "recent", "lately"},
@@ -74,17 +116,61 @@ class MemoryStore:
     """SQLite-backed personal memory store."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or os.getenv("GRANDPA_PERSONAL_MEMORY_DB") or DEFAULT_MEMORY_DB)
+        self.db_path = Path(
+            db_path or os.getenv("GRANDPA_PERSONAL_MEMORY_DB") or DEFAULT_MEMORY_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._closed = False
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
+    def _open_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        if self._closed:
+            raise RuntimeError("MemoryStore is closed")
+        conn: sqlite3.Connection | None = None
+        try:
+            conn = self._open_connection()
+            validate_sqlite_connection(conn)
+        except sqlite3.DatabaseError:
+            if conn is not None:
+                conn.close()
+            recover_sqlite_database(self.db_path)
+            self._create_schema()
+            conn = self._open_connection()
+        try:
+            yield conn
+        except Exception:
+            conn.rollback()
+            raise
+        else:
+            conn.commit()
+        finally:
+            conn.close()
+
     def _init_db(self) -> None:
-        with self._connect() as conn:
+        if self._has_invalid_header():
+            recover_sqlite_database(self.db_path)
+        try:
+            self._create_schema()
+        except sqlite3.DatabaseError:
+            recover_sqlite_database(self.db_path)
+            self._create_schema()
+
+    def _has_invalid_header(self) -> bool:
+        if not self.db_path.exists() or self.db_path.stat().st_size == 0:
+            return False
+        with self.db_path.open("rb") as handle:
+            return handle.read(16) != b"SQLite format 3\x00"
+
+    def _create_schema(self) -> None:
+        conn = self._open_connection()
+        try:
+            validate_sqlite_connection(conn)
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS memories (
@@ -138,6 +224,20 @@ class MemoryStore:
                 "CREATE INDEX IF NOT EXISTS idx_memory_embedding_model "
                 "ON memory_embeddings(model)"
             )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def close(self) -> None:
+        """Prevent new connections; active operation handles close themselves."""
+
+        self._closed = True
+
+    def __enter__(self) -> "MemoryStore":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
 
     def remember(
         self,
@@ -185,17 +285,23 @@ class MemoryStore:
                 return cur.rowcount
         with self._connect() as conn:
             if clean_query.isdigit():
-                conn.execute("DELETE FROM memory_embeddings WHERE memory_id = ?", (int(clean_query),))
-                cur = conn.execute("DELETE FROM memories WHERE id = ?", (int(clean_query),))
+                conn.execute(
+                    "DELETE FROM memory_embeddings WHERE memory_id = ?",
+                    (int(clean_query),),
+                )
+                cur = conn.execute(
+                    "DELETE FROM memories WHERE id = ?", (int(clean_query),)
+                )
                 return cur.rowcount
             rows = conn.execute(
                 """
                 SELECT id FROM memories
                 WHERE lower(category) LIKE ?
                    OR lower(key) LIKE ?
+                   OR replace(lower(key), '_', ' ') LIKE ?
                    OR lower(value) LIKE ?
                 """,
-                (needle, needle, needle),
+                (needle, needle, needle, needle),
             ).fetchall()
             memory_ids = [row["id"] for row in rows]
             if memory_ids:
@@ -209,9 +315,10 @@ class MemoryStore:
                 DELETE FROM memories
                 WHERE lower(category) LIKE ?
                    OR lower(key) LIKE ?
+                   OR replace(lower(key), '_', ' ') LIKE ?
                    OR lower(value) LIKE ?
                 """,
-                (needle, needle, needle),
+                (needle, needle, needle, needle),
             )
             return cur.rowcount
 
@@ -259,7 +366,9 @@ class MemoryStore:
             direct = 1 if query.lower() in haystack.lower() else 0
             category_hint = 1 if item["category"] in inferred_categories else 0
             embedding = embeddings.get(int(item["id"]))
-            semantic = _cosine_similarity(query_embedding, embedding) if embedding else 0.0
+            semantic = (
+                _cosine_similarity(query_embedding, embedding) if embedding else 0.0
+            )
             lexical = min(1.0, overlap / max(1, len(query_tokens)))
             confidence = max(semantic, lexical * 0.72, direct * 0.95)
             confidence = min(1.0, confidence + category_hint * 0.12)
@@ -270,7 +379,9 @@ class MemoryStore:
                 enriched = dict(item)
                 enriched["score"] = round(confidence, 4)
                 enriched["relevance_score"] = round(confidence, 4)
-                enriched["match_type"] = "semantic" if semantic >= lexical else "keyword"
+                enriched["match_type"] = (
+                    "semantic" if semantic >= lexical else "keyword"
+                )
                 enriched["embedding_model"] = SEMANTIC_MODEL
                 scored.append((confidence, float(item["updated_at"]), enriched))
         scored.sort(key=lambda pair: (pair[0], pair[1]), reverse=True)
@@ -278,8 +389,12 @@ class MemoryStore:
 
     def semantic_status(self) -> dict[str, Any]:
         with self._connect() as conn:
-            memories = conn.execute("SELECT COUNT(*) AS count FROM memories").fetchone()["count"]
-            embeddings = conn.execute("SELECT COUNT(*) AS count FROM memory_embeddings").fetchone()["count"]
+            memories = conn.execute(
+                "SELECT COUNT(*) AS count FROM memories"
+            ).fetchone()["count"]
+            embeddings = conn.execute(
+                "SELECT COUNT(*) AS count FROM memory_embeddings"
+            ).fetchone()["count"]
         return {
             "enabled": True,
             "backend": "local-sqlite",
@@ -387,7 +502,9 @@ class MemoryStore:
                     continue
                 self._store_embedding(conn, item)
 
-    def _embedding_similarity(self, memory_id: int, query_embedding: list[float]) -> float:
+    def _embedding_similarity(
+        self, memory_id: int, query_embedding: list[float]
+    ) -> float:
         with self._connect() as conn:
             row = conn.execute(
                 "SELECT embedding FROM memory_embeddings WHERE memory_id = ?",
@@ -433,20 +550,32 @@ class MemoryStore:
         scores: dict[int, float] = {}
         habit_tokens = [
             (
-                set(re.findall(r"[a-z0-9]+", f"{habit['key']} {habit['label']}".lower())),
+                set(
+                    re.findall(r"[a-z0-9]+", f"{habit['key']} {habit['label']}".lower())
+                ),
                 min(0.12, 0.03 * int(habit["count"])),
             )
             for habit in habits
         ]
         for item in items:
             text = f"{item['category']} {item['key']} {item['value']}"
-            tokens = {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
-            score = sum(weight for candidate_tokens, weight in habit_tokens if tokens & candidate_tokens)
+            tokens = {
+                token
+                for token in re.findall(r"[a-z0-9]+", text.lower())
+                if len(token) > 1
+            }
+            score = sum(
+                weight
+                for candidate_tokens, weight in habit_tokens
+                if tokens & candidate_tokens
+            )
             scores[int(item["id"])] = min(score, 0.3)
         return scores
 
 
-def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> MemoryCommandResult:
+def handle_memory_command(
+    text: str, *, store: MemoryStore | None = None
+) -> MemoryCommandResult:
     """Handle explicit memory commands, returning fallback when not matched."""
 
     original = text.strip()
@@ -455,7 +584,9 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
     store = store or MemoryStore()
     lower = original.lower().strip(" ?!.")
 
-    remember_match = re.match(r"^(please\s+)?remember\s+(?:that\s+)?(.+)$", original, re.I)
+    remember_match = re.match(
+        r"^(please\s+)?remember\s+(?:that\s+)?(.+)$", original, re.I
+    )
     if remember_match:
         fact = remember_match.group(2).strip()
         return _remember_fact(store, fact)
@@ -465,7 +596,9 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
         target = forget_match.group(2).strip()
         removed = store.forget(target)
         if not removed:
-            normalized_target = re.sub(r"^(my|the|a|an)\s+", "", target, flags=re.I).strip()
+            normalized_target = re.sub(
+                r"^(my|the|a|an)\s+", "", target, flags=re.I
+            ).strip()
             if normalized_target != target:
                 removed = store.forget(normalized_target)
         message = (
@@ -475,7 +608,12 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
         )
         return MemoryCommandResult("handled", "memory", target, message, message)
 
-    if lower in {"clear memory", "clear my memory", "delete memory", "delete my memory"}:
+    if lower in {
+        "clear memory",
+        "clear my memory",
+        "delete memory",
+        "delete my memory",
+    }:
         store.clear_all()
         message = "I cleared Grandpa's local personal memory and recent activity."
         return MemoryCommandResult("handled", "memory", "clear", message, message)
@@ -516,13 +654,25 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
         "what's my project name",
     }
     if lower in project_questions:
-        return _recall_specific(store, "project", "project", "I do not know your project yet.")
+        return _recall_specific(
+            store, "project", "project", "I do not know your project yet."
+        )
 
     if "project" in lower and (
         re.search(r"[\u0B80-\u0BFF]", original)
         or any(word in lower for word in {"enna", "yenna", "my", "namma"})
     ):
-        return _recall_specific(store, "project", "project", "I do not know your project yet.")
+        return _recall_specific(
+            store, "project", "project", "I do not know your project yet."
+        )
+
+    attribute_match = re.match(
+        r"^(?:what(?:'s|\s+is)|tell\s+me)\s+my\s+(.+)$",
+        lower,
+    )
+    if attribute_match:
+        attribute = attribute_match.group(1).strip()
+        return _recall_personal_attribute(store, attribute)
 
     if _looks_like_memory_recall(original):
         return _recall(store, original)
@@ -530,7 +680,9 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
     if lower.startswith("what apps did i open"):
         return _apps_opened_today(store)
 
-    if lower.startswith("what did i do earlier") or lower.startswith("what was i doing"):
+    if lower.startswith("what did i do earlier") or lower.startswith(
+        "what was i doing"
+    ):
         return _recent_activity(store)
 
     continue_match = re.match(r"^continue\s+my\s+(.+?)\s+project\.?$", original, re.I)
@@ -539,6 +691,73 @@ def handle_memory_command(text: str, *, store: MemoryStore | None = None) -> Mem
         return _continue_project(store, topic)
 
     return _fallback()
+
+
+def capture_natural_personal_fact(
+    text: str,
+    *,
+    store: MemoryStore | None = None,
+) -> bool:
+    """Persist a conservative, explicit first-person durable fact."""
+
+    original = text.strip().strip(".")
+    if not original or len(original) > 300 or _looks_sensitive(original):
+        return False
+    for index, pattern in enumerate(_PERSONAL_FACT_PATTERNS):
+        match = pattern.fullmatch(original)
+        if not match:
+            continue
+        value = match.group("value").strip()
+        if not value or _looks_sensitive(value):
+            return False
+        if index == 1:
+            category, key = "project", "project"
+        else:
+            raw_key = match.group("key").strip()
+            key = _slug(raw_key)
+            category = "people" if key in {"name", "pronouns"} else "preferences"
+        (store or MemoryStore()).remember(
+            category,
+            key,
+            value,
+            source="natural_chat",
+        )
+        return True
+    return False
+
+
+def build_personal_memory_context(
+    query: str,
+    *,
+    store: MemoryStore | None = None,
+    limit: int = 4,
+) -> str:
+    """Build deterministic, relevant long-term context for one model request."""
+
+    query_tokens = _meaningful_memory_tokens(query)
+    if not query_tokens:
+        return ""
+    candidates = (store or MemoryStore()).search_memories(
+        query, limit=max(limit * 3, 8)
+    )
+    relevant: list[dict[str, Any]] = []
+    for item in candidates:
+        candidate_tokens = _meaningful_memory_tokens(
+            f"{item['category']} {item['key']} {item['value']}"
+        )
+        if query_tokens.issubset(candidate_tokens):
+            relevant.append(item)
+        if len(relevant) >= limit:
+            break
+    if not relevant:
+        return ""
+    lines = [
+        "Grandpa verified personal memory context:",
+        "- Treat these as user-provided facts. Do not infer facts not listed here.",
+    ]
+    for item in relevant:
+        lines.append(f"- {_friendly_label(item)}: {item['value']}")
+    return "\n".join(lines)
 
 
 def remember_conversation(role: str, content: str) -> None:
@@ -613,7 +832,9 @@ def search_personal_memory(
 ) -> dict[str, Any]:
     store = MemoryStore()
     results = store.search_memories(query, limit=limit, category=category)
-    uncertain = not results or float(results[0].get("score", 0.0)) < SEMANTIC_MIN_CONFIDENCE
+    uncertain = (
+        not results or float(results[0].get("score", 0.0)) < SEMANTIC_MIN_CONFIDENCE
+    )
     return {
         "query": query,
         "category": category or "all",
@@ -633,7 +854,12 @@ def memory_preferences() -> dict[str, Any]:
     from grandpa.memory.intelligence import MemoryIntelligenceStore
 
     prefs = MemoryIntelligenceStore(MemoryStore()).preferences()
-    return {"status": "ready", "preferences": prefs, "count": len(prefs), "local_only": True}
+    return {
+        "status": "ready",
+        "preferences": prefs,
+        "count": len(prefs),
+        "local_only": True,
+    }
 
 
 def memory_relationships() -> dict[str, Any]:
@@ -747,7 +973,9 @@ def _recall(store: MemoryStore, query: str) -> MemoryCommandResult:
         score = float(item.get("relevance_score", item.get("score", 0.0)))
         lines.append(f"- {label}: {item['value']} ({score:.0%} confidence)")
     message = "\n".join(lines)
-    return MemoryCommandResult("handled", "memory", query, message, "I found a few local memories.")
+    return MemoryCommandResult(
+        "handled", "memory", query, message, "I found a few local memories."
+    )
 
 
 def _profile_recall(store: MemoryStore) -> MemoryCommandResult:
@@ -763,7 +991,13 @@ def _profile_recall(store: MemoryStore) -> MemoryCommandResult:
     for item in top:
         lines.append(f"- {_friendly_label(item)}: {item['value']}")
     message = "\n".join(lines)
-    return MemoryCommandResult("handled", "memory", "profile", message, "I summarized your local memory profile.")
+    return MemoryCommandResult(
+        "handled",
+        "memory",
+        "profile",
+        message,
+        "I summarized your local memory profile.",
+    )
 
 
 def _preference_recall(store: MemoryStore) -> MemoryCommandResult:
@@ -776,20 +1010,30 @@ def _preference_recall(store: MemoryStore) -> MemoryCommandResult:
     lines = ["Here are the preferences I have learned locally:"]
     for item in prefs[:6]:
         confidence = float(item.get("confidence", 0.0))
-        lines.append(f"- {item['subject']}: {item['value']} ({confidence:.0%} confidence)")
+        lines.append(
+            f"- {item['subject']}: {item['value']} ({confidence:.0%} confidence)"
+        )
     message = "\n".join(lines)
-    return MemoryCommandResult("handled", "memory", "preferences", message, "I summarized your preferences.")
+    return MemoryCommandResult(
+        "handled", "memory", "preferences", message, "I summarized your preferences."
+    )
 
 
 def _project_recall(store: MemoryStore) -> MemoryCommandResult:
     try:
-        results = store.search_memories("project working app assistant grandpa", category="project", limit=5)
+        results = store.search_memories(
+            "project working app assistant grandpa", category="project", limit=5
+        )
         if not results:
             from grandpa.memory.intelligence import ranked_memory_context
 
-            results = ranked_memory_context("project working app assistant grandpa", limit=5, store=store).get("matches", [])
+            results = ranked_memory_context(
+                "project working app assistant grandpa", limit=5, store=store
+            ).get("matches", [])
     except Exception:
-        results = store.search_memories("project working app assistant grandpa", limit=5)
+        results = store.search_memories(
+            "project working app assistant grandpa", limit=5
+        )
     if not results:
         message = "I do not know which project you are working on yet."
         return MemoryCommandResult("handled", "memory", "projects", message, message)
@@ -797,7 +1041,9 @@ def _project_recall(store: MemoryStore) -> MemoryCommandResult:
     for item in results[:5]:
         lines.append(f"- {_friendly_label(item)}: {item['value']}")
     message = "\n".join(lines)
-    return MemoryCommandResult("handled", "memory", "projects", message, "I found your saved project context.")
+    return MemoryCommandResult(
+        "handled", "memory", "projects", message, "I found your saved project context."
+    )
 
 
 def _recall_specific(
@@ -812,13 +1058,32 @@ def _recall_specific(
             (category, key),
         ).fetchone()
     if not row:
-        return MemoryCommandResult("handled", "memory", key, empty_message, empty_message)
+        return MemoryCommandResult(
+            "handled", "memory", key, empty_message, empty_message
+        )
     message = f"Your project is {row['value']}."
     return MemoryCommandResult("handled", "memory", key, message, message)
 
 
+def _recall_personal_attribute(
+    store: MemoryStore,
+    attribute: str,
+) -> MemoryCommandResult:
+    key = _slug(attribute)
+    for item in store.list_memories(limit=250):
+        if item["key"] != key:
+            continue
+        label = attribute.strip().lower()
+        message = f"Your {label} is {item['value']}."
+        return MemoryCommandResult("handled", "memory", key, message, message)
+    message = f"I do not know your {attribute.strip().lower()} yet."
+    return MemoryCommandResult("handled", "memory", key, message, message)
+
+
 def _apps_opened_today(store: MemoryStore) -> MemoryCommandResult:
-    start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    start = (
+        datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    )
     rows = store.list_activity(limit=50, since=start, category="app")
     opened = [row for row in rows if row["action"] == "open"]
     if not opened:
@@ -839,14 +1104,18 @@ def _recent_activity(store: MemoryStore) -> MemoryCommandResult:
     rows = store.list_activity(limit=8, since=since)
     if not rows:
         message = "I do not have recent activity recorded yet."
-        return MemoryCommandResult("handled", "memory", "recent_activity", message, message)
+        return MemoryCommandResult(
+            "handled", "memory", "recent_activity", message, message
+        )
     lines = ["Here is your recent local activity:"]
     for row in rows[:6]:
         when = datetime.fromtimestamp(row["created_at"]).strftime("%H:%M")
         target = row.get("target") or row.get("detail") or row["category"]
         lines.append(f"- {when}: {row['action']} {target} ({row['status']})")
     message = "\n".join(lines)
-    return MemoryCommandResult("handled", "memory", "recent_activity", message, "Here is your recent activity.")
+    return MemoryCommandResult(
+        "handled", "memory", "recent_activity", message, "Here is your recent activity."
+    )
 
 
 def _continue_project(store: MemoryStore, topic: str) -> MemoryCommandResult:
@@ -859,7 +1128,9 @@ def _continue_project(store: MemoryStore, topic: str) -> MemoryCommandResult:
         lines.append(f"- {_friendly_label(item)}: {item['value']}")
     lines.append("Tell me what you want to do next and I will use this context.")
     message = "\n".join(lines)
-    return MemoryCommandResult("handled", "memory", topic, message, "I found saved project context.")
+    return MemoryCommandResult(
+        "handled", "memory", topic, message, "I found saved project context."
+    )
 
 
 def _fallback() -> MemoryCommandResult:
@@ -872,7 +1143,9 @@ def _looks_sensitive(text: str) -> bool:
 
 def _looks_like_memory_recall(text: str) -> bool:
     lower = text.lower().strip(" ?!.")
-    if not re.match(r"^(what|which|who|where|when|tell me|do you know|can you remember)", lower):
+    if not re.match(
+        r"^(what|which|who|where|when|tell me|do you know|can you remember)", lower
+    ):
         return False
     if "what apps did i open" in lower or "what windows" in lower:
         return False
@@ -989,6 +1262,14 @@ def _slug(text: str) -> str:
     return value[:64]
 
 
+def _meaningful_memory_tokens(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", text.casefold())
+        if len(token) > 1 and token not in _MEMORY_QUERY_STOP_WORDS
+    }
+
+
 def _friendly_label(item: dict[str, Any]) -> str:
     key = str(item["key"]).replace("_", " ")
     category = str(item["category"]).replace("_", " ")
@@ -1002,8 +1283,11 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 
 __all__ = [
+    "CANONICAL_PERSONAL_MEMORY_DB",
     "MemoryCommandResult",
     "MemoryStore",
+    "build_personal_memory_context",
+    "capture_natural_personal_fact",
     "clear_memory",
     "handle_memory_command",
     "memory_insight_summary",

@@ -65,7 +65,11 @@ def main() -> int:
     results.append(_tracked_artifact_check())
 
     checks = [
-        GateCheck("dependency sanity", ["uv", "sync", "--extra", "server", "--link-mode=copy"], timeout=240),
+        GateCheck(
+            "dependency sanity",
+            ["uv", "sync", "--extra", "server", "--link-mode=copy"],
+            timeout=240,
+        ),
         GateCheck(
             "doctor dashboard",
             ["uv", "run", "grandpa", "doctor"],
@@ -74,7 +78,15 @@ def main() -> int:
         ),
         GateCheck(
             "daily-use validator",
-            ["uv", "run", "--python", "3.11", "python", "scripts\\validate_daily_use.py", "--skip-app-launch"],
+            [
+                "uv",
+                "run",
+                "--python",
+                "3.11",
+                "python",
+                "scripts\\validate_daily_use.py",
+                "--skip-app-launch",
+            ],
             timeout=360,
         ),
         GateCheck(
@@ -98,11 +110,15 @@ def main() -> int:
     results.append(_full_suite_report_check())
 
     report = _build_report(started, results)
-    JSON_REPORT.write_text(json.dumps(report, indent=2, ensure_ascii=True), encoding="utf-8")
+    JSON_REPORT.write_text(
+        json.dumps(report, indent=2, ensure_ascii=True), encoding="utf-8"
+    )
     MD_REPORT.write_text(_markdown_report(report), encoding="utf-8")
 
     print(f"Final release gate: {report['overall_status']}")
-    print(f"Blockers: {len(report['blockers'])}; warnings: {len(report['warnings'])}; optional skipped: {len(report['skipped_optional'])}")
+    print(
+        f"Blockers: {len(report['blockers'])}; warnings: {len(report['warnings'])}; optional skipped: {len(report['skipped_optional'])}"
+    )
     print(f"JSON: {JSON_REPORT}")
     print(f"Markdown: {MD_REPORT}")
     return 1 if report["blockers"] else 0
@@ -114,7 +130,15 @@ def _git_status_check() -> GateResult:
     duration = (datetime.now() - started).total_seconds()
     output = completed[1]
     if completed[0] != 0:
-        return GateResult("git status summary", "fail", True, "git status --short", str(ROOT), duration, _tail(output))
+        return GateResult(
+            "git status summary",
+            "fail",
+            True,
+            "git status --short",
+            str(ROOT),
+            duration,
+            _tail(output),
+        )
     if output.strip():
         return GateResult(
             "git status summary",
@@ -125,7 +149,15 @@ def _git_status_check() -> GateResult:
             duration,
             f"Working tree has {len(output.splitlines())} changed/untracked item(s). Commit before pushing a release.",
         )
-    return GateResult("git status summary", "pass", False, "git status --short", str(ROOT), duration, "Working tree clean.")
+    return GateResult(
+        "git status summary",
+        "pass",
+        False,
+        "git status --short",
+        str(ROOT),
+        duration,
+        "Working tree clean.",
+    )
 
 
 def _tracked_artifact_check() -> GateResult:
@@ -133,14 +165,26 @@ def _tracked_artifact_check() -> GateResult:
     completed = _subprocess(["git", "ls-files"], ROOT, 30)
     duration = (datetime.now() - started).total_seconds()
     if completed[0] != 0:
-        return GateResult("ignored/generated artifact check", "fail", True, "git ls-files", str(ROOT), duration, _tail(completed[1]))
+        return GateResult(
+            "ignored/generated artifact check",
+            "fail",
+            True,
+            "git ls-files",
+            str(ROOT),
+            duration,
+            _tail(completed[1]),
+        )
     tracked = completed[1].splitlines()
     bad_prefixes = (
         "runtime/logs/",
         "runtime/reports/",
     )
     bad_suffixes = (".pyc",)
-    offenders = [item for item in tracked if item.startswith(bad_prefixes) or item.endswith(bad_suffixes)]
+    offenders = [
+        item
+        for item in tracked
+        if item.startswith(bad_prefixes) or item.endswith(bad_suffixes)
+    ]
     if offenders:
         return GateResult(
             "ignored/generated artifact check",
@@ -151,19 +195,47 @@ def _tracked_artifact_check() -> GateResult:
             duration,
             "Tracked generated artifacts: " + ", ".join(offenders[:12]),
         )
-    return GateResult("ignored/generated artifact check", "pass", True, "git ls-files", str(ROOT), duration, "No tracked generated artifacts found.")
+    return GateResult(
+        "ignored/generated artifact check",
+        "pass",
+        True,
+        "git ls-files",
+        str(ROOT),
+        duration,
+        "No tracked generated artifacts found.",
+    )
 
 
 def _run_check(check: GateCheck) -> GateResult:
     started = datetime.now()
-    code, output = _subprocess(check.command, check.cwd, check.timeout, extra_env=check.env)
+    code, output = _subprocess(
+        check.command, check.cwd, check.timeout, extra_env=check.env
+    )
     duration = (datetime.now() - started).total_seconds()
     command = _command_text(check.command)
     if code != 0:
         status: GateStatus = "fail" if check.required else "warn"
-        return GateResult(check.name, status, check.required, command, str(check.cwd), duration, _tail(output), _classify_warning(output))
+        return GateResult(
+            check.name,
+            status,
+            check.required,
+            command,
+            str(check.cwd),
+            duration,
+            _tail(output),
+            _classify_warning(output),
+        )
     warning = _classify_warning(output)
-    return GateResult(check.name, "pass", check.required, command, str(check.cwd), duration, _tail(output) or "completed", warning)
+    return GateResult(
+        check.name,
+        "pass",
+        check.required,
+        command,
+        str(check.cwd),
+        duration,
+        _tail(output) or "completed",
+        warning,
+    )
 
 
 def _release_manifest_check() -> GateResult:
@@ -178,7 +250,11 @@ def _release_manifest_check() -> GateResult:
             0,
             "No release artifact folder exists yet.",
         )
-    manifests = sorted(releases.glob("*/release-manifest.json"), key=lambda item: item.stat().st_mtime, reverse=True)
+    manifests = sorted(
+        releases.glob("*/release-manifest.json"),
+        key=lambda item: item.stat().st_mtime,
+        reverse=True,
+    )
     if not manifests:
         return GateResult(
             "release manifest sanity",
@@ -192,8 +268,24 @@ def _release_manifest_check() -> GateResult:
     try:
         json.loads(manifests[0].read_text(encoding="utf-8"))
     except Exception as exc:
-        return GateResult("release manifest sanity", "warn", False, str(manifests[0]), str(ROOT), 0, f"Manifest is invalid JSON: {exc}")
-    return GateResult("release manifest sanity", "pass", False, str(manifests[0]), str(ROOT), 0, f"Valid manifest: {manifests[0]}")
+        return GateResult(
+            "release manifest sanity",
+            "warn",
+            False,
+            str(manifests[0]),
+            str(ROOT),
+            0,
+            f"Manifest is invalid JSON: {exc}",
+        )
+    return GateResult(
+        "release manifest sanity",
+        "pass",
+        False,
+        str(manifests[0]),
+        str(ROOT),
+        0,
+        f"Valid manifest: {manifests[0]}",
+    )
 
 
 def _full_suite_report_check() -> GateResult:
@@ -222,7 +314,9 @@ def _full_suite_report_check() -> GateResult:
         )
     status = str(data.get("status") or "unknown")
     suites = data.get("suites") or []
-    summary = f"Latest full-suite report status: {status}; suites recorded: {len(suites)}."
+    summary = (
+        f"Latest full-suite report status: {status}; suites recorded: {len(suites)}."
+    )
     return GateResult(
         "full pytest suite status",
         "pass" if status == "pass" else "warn",
@@ -235,8 +329,15 @@ def _full_suite_report_check() -> GateResult:
 
 
 def _build_report(started: str, results: list[GateResult]) -> dict[str, object]:
-    blockers = [asdict(item) for item in results if item.status == "fail" and item.required]
-    warnings = [asdict(item) for item in results if item.status == "warn" or (item.warning_classification and item.status == "pass")]
+    blockers = [
+        asdict(item) for item in results if item.status == "fail" and item.required
+    ]
+    warnings = [
+        asdict(item)
+        for item in results
+        if item.status == "warn"
+        or (item.warning_classification and item.status == "pass")
+    ]
     skipped = [asdict(item) for item in results if item.status == "skipped"]
     passed = [asdict(item) for item in results if item.status == "pass"]
     overall = "READY" if not blockers else "BLOCKED"
@@ -245,8 +346,12 @@ def _build_report(started: str, results: list[GateResult]) -> dict[str, object]:
         if overall == "READY"
         else "Do not commit/push/package as a release until blockers are fixed."
     )
-    if overall == "READY" and any(item.name == "git status summary" and item.status == "warn" for item in results):
-        recommendation = "Ready after reviewing and committing intentional working-tree changes."
+    if overall == "READY" and any(
+        item.name == "git status summary" and item.status == "warn" for item in results
+    ):
+        recommendation = (
+            "Ready after reviewing and committing intentional working-tree changes."
+        )
     return {
         "schema_version": 1,
         "started_at": started,
@@ -254,7 +359,11 @@ def _build_report(started: str, results: list[GateResult]) -> dict[str, object]:
         "overall_status": overall,
         "pass": not blockers,
         "ready_to_commit": not blockers,
-        "ready_to_push": not blockers and not any(item.name == "git status summary" and item.status == "warn" for item in results),
+        "ready_to_push": not blockers
+        and not any(
+            item.name == "git status summary" and item.status == "warn"
+            for item in results
+        ),
         "ready_to_package": not blockers,
         "recommendation": recommendation,
         "blockers": blockers,
@@ -293,7 +402,9 @@ def _markdown_report(report: dict[str, object]) -> str:
     ]
     for item in report["checks"]:  # type: ignore[index]
         summary = str(item["summary"]).replace("\n", "<br>")
-        lines.append(f"| {item['name']} | {item['status']} | {item['required']} | {summary} |")
+        lines.append(
+            f"| {item['name']} | {item['status']} | {item['required']} | {summary} |"
+        )
     if report["blockers"]:  # type: ignore[index]
         lines.extend(["", "## Blockers", ""])
         for item in report["blockers"]:  # type: ignore[index]
@@ -301,12 +412,22 @@ def _markdown_report(report: dict[str, object]) -> str:
     if report["warnings"]:  # type: ignore[index]
         lines.extend(["", "## Warnings", ""])
         for item in report["warnings"]:  # type: ignore[index]
-            extra = f" ({item['warning_classification']})" if item.get("warning_classification") else ""
+            extra = (
+                f" ({item['warning_classification']})"
+                if item.get("warning_classification")
+                else ""
+            )
             lines.append(f"- **{item['name']}**: {item['summary']}{extra}")
     return "\n".join(lines) + "\n"
 
 
-def _subprocess(command: list[str], cwd: Path, timeout: int, *, extra_env: dict[str, str] | None = None) -> tuple[int, str]:
+def _subprocess(
+    command: list[str],
+    cwd: Path,
+    timeout: int,
+    *,
+    extra_env: dict[str, str] | None = None,
+) -> tuple[int, str]:
     env = os.environ.copy()
     if extra_env:
         env.update(extra_env)
@@ -325,7 +446,11 @@ def _subprocess(command: list[str], cwd: Path, timeout: int, *, extra_env: dict[
         return 127, f"Command not found: {exc}"
     except subprocess.TimeoutExpired as exc:
         return 124, f"Timed out after {timeout}s. {exc}"
-    output = "\n".join(part.strip() for part in (completed.stdout, completed.stderr) if part and part.strip())
+    output = "\n".join(
+        part.strip()
+        for part in (completed.stdout, completed.stderr)
+        if part and part.strip()
+    )
     return completed.returncode, output
 
 

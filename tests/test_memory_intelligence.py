@@ -60,7 +60,9 @@ def test_relationship_graph_and_topic_clustering(tmp_path: Path) -> None:
 
     assert any(node["id"] == "Grandpa" for node in graph["nodes"])
     assert graph["edges"]
-    assert any(topic["name"] in {"Development", "AI", "Projects"} for topic in topics["topics"])
+    assert any(
+        topic["name"] in {"Development", "AI", "Projects"} for topic in topics["topics"]
+    )
 
 
 def test_ranked_context_and_profile(tmp_path: Path) -> None:
@@ -93,9 +95,13 @@ def test_planner_uses_memory_intelligence(tmp_path: Path, monkeypatch) -> None:
     _store(tmp_path)
 
     def fake_ranked(query: str, limit: int = 3, store: MemoryStore | None = None):
-        return ranked_memory_context(query, limit=limit, store=store or _store(tmp_path))
+        return ranked_memory_context(
+            query, limit=limit, store=store or _store(tmp_path)
+        )
 
-    monkeypatch.setattr("grandpa.memory.intelligence.ranked_memory_context", fake_ranked)
+    monkeypatch.setattr(
+        "grandpa.memory.intelligence.ranked_memory_context", fake_ranked
+    )
 
     analysis = analyze_request("research Python tutorials and summarize them")
 

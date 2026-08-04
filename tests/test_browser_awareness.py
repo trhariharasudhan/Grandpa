@@ -53,7 +53,10 @@ def test_parse_summarize_page() -> None:
 
 def test_parse_url_and_title_requests() -> None:
     assert BrowserAwarenessParser().parse("show the current URL").action == "url"  # type: ignore[union-attr]
-    assert BrowserAwarenessParser().parse("what is the title of this page").action == "title"  # type: ignore[union-attr]
+    assert (
+        BrowserAwarenessParser().parse("what is the title of this page").action
+        == "title"
+    )  # type: ignore[union-attr]
 
 
 def test_parse_find_text() -> None:
@@ -86,7 +89,9 @@ def test_summarize_visible_content() -> None:
 
 
 def test_find_visible_text_count() -> None:
-    result = BrowserAwareness(capture=_snapshot).handle('find text "installation" on this page')
+    result = BrowserAwareness(capture=_snapshot).handle(
+        'find text "installation" on this page'
+    )
 
     assert result.status == "handled"
     assert 'Found "installation" 2 times' in result.message
@@ -115,7 +120,9 @@ def test_tabs_when_safely_available() -> None:
 
 
 def test_text_truncation_and_secret_redaction() -> None:
-    text = "api_key=abcd1234abcd1234 token=secretsecret123456 4111 1111 1111 1111 " + ("x" * 9000)
+    text = "api_key=abcd1234abcd1234 token=secretsecret123456 4111 1111 1111 1111 " + (
+        "x" * 9000
+    )
 
     cleaned = sanitize_visible_text(text, limit=120)
 
@@ -127,9 +134,11 @@ def test_text_truncation_and_secret_redaction() -> None:
 
 
 def test_unsupported_browser_returns_friendly_result() -> None:
-    result = BrowserAwareness(capture=lambda: BrowserPageSnapshot(False, message="No visible supported browser page.")).handle(
-        "summarize this page"
-    )
+    result = BrowserAwareness(
+        capture=lambda: BrowserPageSnapshot(
+            False, message="No visible supported browser page."
+        )
+    ).handle("summarize this page")
 
     assert result.status == "unsupported"
     assert "No visible supported browser page" in result.message
@@ -138,11 +147,18 @@ def test_unsupported_browser_returns_friendly_result() -> None:
 def test_browser_slash_awareness_routes(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.browser_awareness.handle_browser_awareness_command",
-        lambda command: SimpleNamespace(message=f"aware {command}", should_fallback=False),
+        lambda command: SimpleNamespace(
+            message=f"aware {command}", should_fallback=False
+        ),
     )
 
-    assert _handle_browser_slash_command("/browser current") == "aware what page am i on"
-    assert _handle_browser_slash_command("/browser find installation") == "aware find text installation on this page"
+    assert (
+        _handle_browser_slash_command("/browser current") == "aware what page am i on"
+    )
+    assert (
+        _handle_browser_slash_command("/browser find installation")
+        == "aware find text installation on this page"
+    )
 
 
 def test_chat_awareness_does_not_call_llm(monkeypatch) -> None:
@@ -158,7 +174,9 @@ def test_chat_awareness_does_not_call_llm(monkeypatch) -> None:
     config.intelligence.default_model = "test-model"
 
     monkeypatch.setattr("grandpa.cli.chat_cmd.load_config", lambda: config)
-    monkeypatch.setattr("grandpa.engine.get_engine", lambda *_args, **_kwargs: ("mock", engine))
+    monkeypatch.setattr(
+        "grandpa.engine.get_engine", lambda *_args, **_kwargs: ("mock", engine)
+    )
     monkeypatch.setattr("grandpa.intelligence.register_builtin_models", lambda: None)
     monkeypatch.setattr(
         "grandpa.browser_awareness.handle_browser_awareness_command",
@@ -170,7 +188,9 @@ def test_chat_awareness_does_not_call_llm(monkeypatch) -> None:
         ),
     )
 
-    result = CliRunner().invoke(chat, ["--model", "test-model"], input="what page am I on?\n/quit\n")
+    result = CliRunner().invoke(
+        chat, ["--model", "test-model"], input="what page am I on?\n/quit\n"
+    )
 
     assert result.exit_code == 0
     assert "FastAPI Documentation" in result.output

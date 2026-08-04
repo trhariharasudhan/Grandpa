@@ -60,10 +60,22 @@ def enable_startup(
             )
         content = _launcher_content(command)
         if entry_path.exists() and entry_path.read_text(encoding="utf-8") == content:
-            return StartupResult(True, "enabled", "Grandpa startup is already enabled.", entry_path=entry_path, command=command)
+            return StartupResult(
+                True,
+                "enabled",
+                "Grandpa startup is already enabled.",
+                entry_path=entry_path,
+                command=command,
+            )
         entry_path.parent.mkdir(parents=True, exist_ok=True)
         entry_path.write_text(content, encoding="utf-8", newline="\r\n")
-        return StartupResult(True, "enabled", "Grandpa startup enabled.", entry_path=entry_path, command=command)
+        return StartupResult(
+            True,
+            "enabled",
+            "Grandpa startup enabled.",
+            entry_path=entry_path,
+            command=command,
+        )
     except OSError as exc:
         return StartupResult(
             False,
@@ -87,7 +99,12 @@ def disable_startup(
     entry_path = get_startup_entry_path(startup_dir)
     try:
         if not entry_path.exists():
-            return StartupResult(True, "disabled", "Grandpa startup is already disabled.", entry_path=entry_path)
+            return StartupResult(
+                True,
+                "disabled",
+                "Grandpa startup is already disabled.",
+                entry_path=entry_path,
+            )
         if not _is_owned_entry(entry_path):
             return StartupResult(
                 False,
@@ -97,7 +114,9 @@ def disable_startup(
                 error="Refusing to remove unrelated Startup folder file.",
             )
         entry_path.unlink()
-        return StartupResult(True, "disabled", "Grandpa startup disabled.", entry_path=entry_path)
+        return StartupResult(
+            True, "disabled", "Grandpa startup disabled.", entry_path=entry_path
+        )
     except OSError as exc:
         return StartupResult(
             False,
@@ -122,7 +141,13 @@ def startup_status(
     command = startup_command(python_executable)
     try:
         if not entry_path.exists():
-            return StartupResult(True, "disabled", "Grandpa startup is disabled.", entry_path=entry_path, command=command)
+            return StartupResult(
+                True,
+                "disabled",
+                "Grandpa startup is disabled.",
+                entry_path=entry_path,
+                command=command,
+            )
         if not _is_owned_entry(entry_path):
             return StartupResult(
                 False,
@@ -142,7 +167,13 @@ def startup_status(
                 command=command,
                 stale=True,
             )
-        return StartupResult(True, "enabled", "Grandpa startup is enabled.", entry_path=entry_path, command=command)
+        return StartupResult(
+            True,
+            "enabled",
+            "Grandpa startup is enabled.",
+            entry_path=entry_path,
+            command=command,
+        )
     except OSError as exc:
         return StartupResult(
             False,
@@ -173,7 +204,9 @@ def _startup_dir(startup_dir: Path | str | None = None) -> Path:
     appdata = os.environ.get("APPDATA")
     if not appdata:
         raise OSError("APPDATA is not set; cannot locate the Windows Startup folder.")
-    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    return (
+        Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+    )
 
 
 def _launcher_content(command: list[str]) -> str:
@@ -184,7 +217,7 @@ def _launcher_content(command: list[str]) -> str:
         f"{ENTRY_MARKER}\n"
         "setlocal\n"
         f"if not exist {executable} exit /b 1\n"
-        f"start \"\" /min {executable} {args}\n"
+        f'start "" /min {executable} {args}\n'
         "endlocal\n"
     )
 
@@ -203,11 +236,21 @@ def _is_owned_entry(entry_path: Path) -> bool:
 
 def _is_stale_entry(entry_path: Path) -> bool:
     try:
-        for line in entry_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        for line in entry_path.read_text(
+            encoding="utf-8", errors="ignore"
+        ).splitlines():
             stripped = line.strip()
             if stripped.startswith("if not exist "):
-                raw = stripped.removeprefix("if not exist ").removesuffix(" exit /b 1").strip()
-                executable = raw[1:-1].replace('""', '"') if raw.startswith('"') and raw.endswith('"') else raw
+                raw = (
+                    stripped.removeprefix("if not exist ")
+                    .removesuffix(" exit /b 1")
+                    .strip()
+                )
+                executable = (
+                    raw[1:-1].replace('""', '"')
+                    if raw.startswith('"') and raw.endswith('"')
+                    else raw
+                )
                 return not Path(executable).exists()
     except OSError:
         return True

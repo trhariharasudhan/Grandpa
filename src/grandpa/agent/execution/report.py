@@ -14,7 +14,9 @@ def generate_sanitized_report(report: ExecutionReport) -> str:
 
     if report.repository_state:
         state = report.repository_state
-        lines.append(f"Git Status    : Branch={state.current_branch}, Commit={state.head_commit}")
+        lines.append(
+            f"Git Status    : Branch={state.current_branch}, Commit={state.head_commit}"
+        )
         lines.append(f"  Staged      : {len(state.staged_files)} file(s)")
         lines.append(f"  Unstaged    : {len(state.unstaged_files)} file(s)")
         lines.append(f"  Untracked   : {len(state.untracked_files)} file(s)")
@@ -24,7 +26,9 @@ def generate_sanitized_report(report: ExecutionReport) -> str:
         fa = report.failure_analysis
         lines.append("Failure Analysis:")
         lines.append(f"  Type        : {fa.failure_type.upper()}")
-        lines.append(f"  File        : {fa.failing_file or 'N/A'}:{fa.failing_line or 'N/A'}")
+        lines.append(
+            f"  File        : {fa.failing_file or 'N/A'}:{fa.failing_line or 'N/A'}"
+        )
         lines.append(f"  Root Cause  : {fa.root_cause}")
 
     if report.patch_proposal:
@@ -39,7 +43,9 @@ def generate_sanitized_report(report: ExecutionReport) -> str:
         for vr in report.validation_results:
             lines.append(f"  - Command   : {' '.join(vr.command)}")
             lines.append(f"    Exit Code : {vr.exit_code}")
-            lines.append(f"    Summary   : {vr.output_summary} (Passed: {vr.passed}, Failed: {vr.failed})")
+            lines.append(
+                f"    Summary   : {vr.output_summary} (Passed: {vr.passed}, Failed: {vr.failed})"
+            )
 
     lines.append(f"Final Status  : {report.final_status.upper()}")
     if report.summary:

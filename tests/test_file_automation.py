@@ -31,7 +31,9 @@ def test_parser_natural_file_commands() -> None:
     assert parser.parse("What is the weather?") is None
 
 
-def test_path_resolution_aliases_and_relative_paths(tmp_path: Path, monkeypatch) -> None:
+def test_path_resolution_aliases_and_relative_paths(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.setenv("GRANDPA_FILE_SAFE_ROOTS", str(tmp_path))
 
     assert resolve_destination("Desktop").name == "Desktop"
@@ -48,7 +50,10 @@ def test_find_matches_reports_ambiguity_inputs(tmp_path: Path) -> None:
 
     matches = find_matches("report.pdf", roots=(tmp_path,))
 
-    assert matches == sorted([first.resolve(strict=False), second.resolve(strict=False)], key=lambda path: str(path).casefold())
+    assert matches == sorted(
+        [first.resolve(strict=False), second.resolve(strict=False)],
+        key=lambda path: str(path).casefold(),
+    )
 
 
 def test_safety_blocks_protected_and_traversal_paths() -> None:
@@ -81,7 +86,9 @@ def test_copy_move_rename_and_overwrite_protection(tmp_path: Path) -> None:
     blocked = automation.handle("Create file final.pdf")
 
     assert copied.status == "handled"
-    assert copied.destination == (tmp_path / "copies" / "report.pdf").resolve(strict=False)
+    assert copied.destination == (tmp_path / "copies" / "report.pdf").resolve(
+        strict=False
+    )
     assert renamed.status == "handled"
     assert (tmp_path / "final.pdf").exists()
     assert blocked.status == "needs_confirmation"
@@ -134,7 +141,9 @@ def test_archive_rejects_unsafe_members(tmp_path: Path) -> None:
 
 
 def test_open_missing_path_returns_friendly_error(tmp_path: Path) -> None:
-    result = FileAutomation(roots=(tmp_path,), opener=lambda _path: None).handle("Open missing.txt")
+    result = FileAutomation(roots=(tmp_path,), opener=lambda _path: None).handle(
+        "Open missing.txt"
+    )
 
     assert result.status == "error"
     assert "could not find" in result.message.lower()
@@ -153,7 +162,9 @@ def test_file_executor_open_is_mockable(tmp_path: Path) -> None:
     assert opened == [target.resolve(strict=False)]
 
 
-def test_files_slash_command_routes_to_file_automation(tmp_path: Path, monkeypatch) -> None:
+def test_files_slash_command_routes_to_file_automation(
+    tmp_path: Path, monkeypatch
+) -> None:
     from grandpa import file_assistant
     from grandpa.cli.chat_cmd import _handle_files_slash_command
 

@@ -30,16 +30,24 @@ def temp_workspace():
 def test_goal_classification() -> None:
     # 1. Test browser automation goal
     evidence = detect_project_type("/mock")
-    assert classify_goal('Build browser automation using playwright', evidence) == "browser_automation"
+    assert (
+        classify_goal("Build browser automation using playwright", evidence)
+        == "browser_automation"
+    )
 
     # 2. Test FastAPI auth goal
-    assert classify_goal('Implement authentication and register routes', evidence) == "authentication"
+    assert (
+        classify_goal("Implement authentication and register routes", evidence)
+        == "authentication"
+    )
 
     # 3. Test React UI goal
-    assert classify_goal('Build react frontend view components', evidence) == "frontend_ui"
+    assert (
+        classify_goal("Build react frontend view components", evidence) == "frontend_ui"
+    )
 
     # 4. Test unknown goal
-    assert classify_goal('Run custom code operations', evidence) == "unknown"
+    assert classify_goal("Run custom code operations", evidence) == "unknown"
 
 
 def test_project_stack_detection(temp_workspace) -> None:
@@ -60,7 +68,7 @@ def test_roadmap_differentiation_and_ids(temp_workspace) -> None:
         project_name="TestProj",
         project_path=str(temp_workspace),
         tasks=[],
-        roadmap=Roadmap()
+        roadmap=Roadmap(),
     )
 
     generator = RoadmapGenerator(state)
@@ -69,7 +77,9 @@ def test_roadmap_differentiation_and_ids(temp_workspace) -> None:
     generator.generate_roadmap("Build browser automation using playwright", [])
     ms_keys = list(state.roadmap.milestones.keys())
     assert any("browser_automation" in k for k in ms_keys)
-    assert any("ms_browser_automation" in t.milestone for t in state.tasks if t.milestone)
+    assert any(
+        "ms_browser_automation" in t.milestone for t in state.tasks if t.milestone
+    )
 
     # 2. Test ID stability
     first_size = len(state.tasks)
@@ -80,10 +90,7 @@ def test_roadmap_differentiation_and_ids(temp_workspace) -> None:
 
 def test_validation_and_cycles() -> None:
     state = ProjectState(
-        project_name="TestProj",
-        project_path="/mock",
-        tasks=[],
-        roadmap=Roadmap()
+        project_name="TestProj", project_path="/mock", tasks=[], roadmap=Roadmap()
     )
 
     # Create cyclic milestone dependencies
@@ -115,7 +122,7 @@ def test_project_engineer_integration(temp_workspace) -> None:
         project_name="TestProj",
         project_path=str(temp_workspace),
         tasks=[],
-        roadmap=Roadmap()
+        roadmap=Roadmap(),
     )
     generator = RoadmapGenerator(state)
     generator.generate_roadmap("Build browser automation", [])
@@ -130,16 +137,21 @@ def test_project_engineer_integration(temp_workspace) -> None:
 
 def test_cli_roadmap_commands(temp_workspace) -> None:
     import os
+
     os.environ["GRANDPA_HOME"] = str(temp_workspace)
 
     runner = click.testing.CliRunner()
 
     p_path = temp_workspace / "TestProj"
     from grandpa.cli.project_cmd import project_group
+
     runner.invoke(project_group, ["create", "TestProj", str(p_path)])
 
     # 1. Create Roadmap CLI
-    res_create = runner.invoke(roadmap_group, ["create", "Build browser automation", "-g", "Open browser safely"])
+    res_create = runner.invoke(
+        roadmap_group,
+        ["create", "Build browser automation", "-g", "Open browser safely"],
+    )
     assert res_create.exit_code == 0
     assert "Created roadmap successfully" in res_create.output
 
@@ -164,7 +176,19 @@ def test_cli_roadmap_commands(temp_workspace) -> None:
     state = tracker.load_state()
     m_id = list(state.roadmap.milestones.keys())[0]
 
-    res_exp = runner.invoke(roadmap_group, ["expand", m_id, "-t", "task_new", "--title", "Custom Action", "-d", "task_browser_automation_launch_browser"])
+    res_exp = runner.invoke(
+        roadmap_group,
+        [
+            "expand",
+            m_id,
+            "-t",
+            "task_new",
+            "--title",
+            "Custom Action",
+            "-d",
+            "task_browser_automation_launch_browser",
+        ],
+    )
     assert res_exp.exit_code == 0
     assert "Successfully expanded milestone" in res_exp.output
 
@@ -176,6 +200,7 @@ def test_cli_roadmap_commands(temp_workspace) -> None:
 
 def test_agent_runtime_roadmap_goals(temp_workspace) -> None:
     import os
+
     os.environ["GRANDPA_HOME"] = str(temp_workspace)
 
     p_path = temp_workspace / "TestProj"
@@ -183,6 +208,7 @@ def test_agent_runtime_roadmap_goals(temp_workspace) -> None:
     tracker.save_state(tracker.load_state())
 
     from grandpa.agent.development import MultiProjectRegistry
+
     registry = MultiProjectRegistry()
     registry.register_project("TestProj", str(p_path))
 
@@ -211,7 +237,7 @@ def test_roadmap_migration_full(temp_workspace) -> None:
         project_name="TestProj",
         project_path=str(temp_workspace),
         tasks=[],
-        roadmap=Roadmap()
+        roadmap=Roadmap(),
     )
 
     # 1. Add legacy placeholder milestone and task
@@ -251,6 +277,7 @@ def test_roadmap_migration_full(temp_workspace) -> None:
 
     # Check requirement 2: Preview makes no changes
     import copy
+
     state_before = copy.deepcopy(state)
     simulated_state, changes = migrate_legacy_roadmap(copy.deepcopy(state))
     # State before and after simulated migration should be unchanged
@@ -280,7 +307,10 @@ def test_roadmap_migration_full(temp_workspace) -> None:
     assert any(t.task_id == "tsk_user_custom_action" for t in migrated_state.tasks)
 
     # Archived data recorded in history
-    assert any(h.get("action") == "migrate_archive_legacy" for h in migrated_state.roadmap.planning_history)
+    assert any(
+        h.get("action") == "migrate_archive_legacy"
+        for h in migrated_state.roadmap.planning_history
+    )
 
     # Check requirement 8: Project Engineer rejects legacy roadmap
     planner_legacy = EngineeringPlanner(state_before)

@@ -33,7 +33,10 @@ def test_burnin_report_preserves_pending_without_blocking() -> None:
 
 
 def test_burnin_planner_workflow_scenarios_use_execution_route() -> None:
-    scenarios = {scenario.name: scenario for scenario in burnin._scenario_pack(timeout_seconds=30)}
+    scenarios = {
+        scenario.name: scenario
+        for scenario in burnin._scenario_pack(timeout_seconds=30)
+    }
 
     assert scenarios["desktop diagnostics"].runner == "local_action_execute"
     assert scenarios["start coding workspace"].runner == "local_action_execute"

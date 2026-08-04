@@ -1,15 +1,25 @@
+from contextlib import contextmanager
 from datetime import datetime
 
 from rich.align import Align
 from rich.console import Console, Group, RenderableType
-from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
 from grandpa.cli.slash_commands import command_groups
 
-ACCENT = "#ffc448"       # border + GRANDPA logo
+ACCENT = "#ffc448"  # border + GRANDPA logo
 TEXT_ACCENT = "#6244c5"  # inside blue text replacement
+DEFAULT_USERNAME = "Username"
+ASSISTANT_NAME = "Grandpa"
+
+CHAT_STARTUP_TEXT = (
+    "Chat Assistant\nType your message and press Enter.\nType exit or quit to leave."
+)
+
+VOICE_STARTUP_TEXT = 'Voice Assistant\nSay "stop listening" to exit.'
+
+FAREWELL_TEXT = "Goodbye! I’ll be here when you need me."
 
 GRANDPA_LOGO = r"""
   ██████╗ ██████╗  █████╗ ███╗   ██╗██████╗ ██████╗  █████╗
@@ -24,6 +34,7 @@ GRANDPA_LOGO = r"""
 LEFT_INDENT = "  "
 TWO_COLUMN_MIN_WIDTH = 108
 SECTION_RULE = "────────────────"
+
 
 def _greeting() -> str:
     hour = datetime.now().hour
@@ -42,7 +53,9 @@ def _logo() -> str:
 
 
 def _indent(text: str) -> str:
-    return "\n".join(f"{LEFT_INDENT}{line}" if line else "" for line in text.splitlines())
+    return "\n".join(
+        f"{LEFT_INDENT}{line}" if line else "" for line in text.splitlines()
+    )
 
 
 def _section(title: str, body: str) -> Text:
@@ -55,15 +68,13 @@ def _section(title: str, body: str) -> Text:
 
 def _build_left_panel(engine: str, model: str, agent: str) -> RenderableType:
     return Group(
-        Align.center(
-            Text.from_markup(
-                f"[bold {ACCENT}]{_logo()}[/bold {ACCENT}]"
-            )
-        )
+        Align.center(Text.from_markup(f"[bold {ACCENT}]{_logo()}[/bold {ACCENT}]"))
     )
+
 
 def _build_right_panel() -> RenderableType:
     return Text("")
+
 
 def render_chat_home(
     console: Console,
@@ -71,29 +82,23 @@ def render_chat_home(
     model: str,
     agent: str,
 ) -> None:
-    table = Table.grid(expand=True)
-    if console.width < TWO_COLUMN_MIN_WIDTH:
-        table.add_column()
-        table.add_row(_build_left_panel(engine, model, agent))
-        table.add_row("")
-        table.add_row(_build_right_panel())
-    else:
-        table.add_column(ratio=2)
-        table.add_column(ratio=3)
-        table.add_row(
-            _build_left_panel(engine, model, agent),
-            _build_right_panel(),
-        )
+    """Render the legacy chat home without the former full-screen panel."""
+    console.print()
+    render_logo_borderless(console)
+    console.print()
+    console.print(CHAT_STARTUP_TEXT)
 
-    console.print(
-        Panel(
-            table,
-            border_style=ACCENT,
-            padding=(3, 2),
-            subtitle="",
-            subtitle_align="center",
-        )
-    )
+
+def render_logo(console: Console) -> None:
+    """Render the canonical Grandpa logo without a surrounding panel."""
+
+    console.print(Text(_logo(), style=f"bold {ACCENT}"))
+
+
+def render_logo_borderless(console: Console) -> None:
+    """Backward-compatible alias for the canonical logo renderer."""
+
+    render_logo(console)
 
 
 def render_help(console: Console) -> None:
@@ -104,7 +109,10 @@ def render_help(console: Console) -> None:
     top_grid.add_column(ratio=1)
     top_grid.add_row(
         _command_group("Core", [command.name for command in groups["Core"]]),
-        _command_group("Memory & Productivity", [command.name for command in groups["Memory & Productivity"]]),
+        _command_group(
+            "Memory & Productivity",
+            [command.name for command in groups["Memory & Productivity"]],
+        ),
         _command_group("Computer", [command.name for command in groups["Computer"]]),
     )
 
@@ -115,7 +123,9 @@ def render_help(console: Console) -> None:
     bottom_grid.add_row(
         _command_group("Developer", [command.name for command in groups["Developer"]]),
         _command_group("Personal", [command.name for command in groups["Personal"]]),
-        _command_group("Automation", [command.name for command in groups["Automation"]]),
+        _command_group(
+            "Automation", [command.name for command in groups["Automation"]]
+        ),
     )
 
     examples = (
@@ -172,7 +182,10 @@ def help_commands_text() -> str:
     ]
     for category, commands in groups.items():
         lines.extend(("", category))
-        lines.extend(f"{command.name:<13} {descriptions.get(command.name, command.description)}" for command in commands)
+        lines.extend(
+            f"{command.name:<13} {descriptions.get(command.name, command.description)}"
+            for command in commands
+        )
     return "\n".join(lines)
 
 
@@ -224,14 +237,122 @@ def _command_group(title: str, commands: list[str]) -> str:
     return "\n".join(lines)
 
 
-def render_user_message(console: Console, content: str) -> None:
+def resolve_username(config=None) -> str:
+    """Resolve a safe terminal display name from the active config."""
+
+    configured = getattr(getattr(config, "user", None), "username", "")
+    normalized = " ".join(str(configured or "").split()).strip()
+    return normalized[:40] or DEFAULT_USERNAME
+
+
+def user_prompt(username: str = DEFAULT_USERNAME) -> str:
+    """Return the shared interactive user prompt."""
+
+    normalized = " ".join(str(username).split()).strip()[:40]
+    return f"{normalized or DEFAULT_USERNAME} > "
+
+
+def render_user_message(
+    console: Console,
+    content: str,
+    *,
+    username: str = DEFAULT_USERNAME,
+) -> None:
     """Render submitted user input into the permanent chat transcript."""
 
-    console.print(f"[bold {TEXT_ACCENT}]>[/bold {TEXT_ACCENT}] {content}")
+    normalized = " ".join(str(username).split()).strip()[:40] or DEFAULT_USERNAME
+    label = Text(f"{normalized} >", style=f"bold {TEXT_ACCENT}")
+    console.print(Text.assemble(label, " ", content))
+
+
+def render_assistant_prefix(console: Console) -> None:
+    """Render the stable Grandpa response prefix."""
+
+    console.print(Text(f"{ASSISTANT_NAME} >", style=f"bold {ACCENT}"), end=" ")
 
 
 def render_assistant_response(console: Console, content) -> None:
-    """Render AI response without title."""
+    """Render a prefixed Grandpa response."""
 
-    console.print(f"[bold {ACCENT}]<[/bold {ACCENT}] ", end="")
+    render_assistant_prefix(console)
     console.print(content)
+
+
+def render_status_message(console: Console, content) -> None:
+    """Render an informational status or system message without assistant prefix."""
+
+    if isinstance(content, str):
+        console.print(f"[dim]{content}[/dim]")
+    elif hasattr(content, "style"):
+        content.style = "dim"
+        console.print(content)
+    else:
+        console.print(content)
+
+
+def enable_vt_mode() -> bool:
+    """Enable Virtual Terminal Processing on Windows to support ANSI escape sequences."""
+    import sys
+
+    if sys.platform != "win32":
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.windll.kernel32
+        hOut = kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
+        if hOut == -1 or hOut is None:
+            return False
+
+        dwMode = wintypes.DWORD()
+        if not kernel32.GetConsoleMode(hOut, ctypes.byref(dwMode)):
+            return False
+
+        # ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+        dwMode.value |= 0x0004
+        if not kernel32.SetConsoleMode(hOut, dwMode):
+            return False
+        return True
+    except Exception:
+        return False
+
+
+@contextmanager
+def alternate_screen(enabled: bool = True):
+    """Enter and exit terminal alternate screen buffer using VT100/ANSI escape sequences."""
+    if not enabled:
+        yield
+        return
+
+    # Check if stdout and stderr are TTYs
+    is_tty = False
+    try:
+        import sys
+
+        is_tty = sys.stdout.isatty() and sys.stderr.isatty()
+    except Exception:
+        pass
+
+    if is_tty:
+        # Enable VT mode on Windows to support ANSI sequences
+        import sys
+
+        if sys.platform == "win32":
+            enable_vt_mode()
+
+        # Enter alternate screen buffer and move cursor to home
+        sys.stdout.write("\x1b[?1049h\x1b[H")
+        sys.stdout.flush()
+        try:
+            yield
+        finally:
+            # Exit alternate screen buffer, restore cursor shape/visibility, and reset styles
+            try:
+                sys.stdout.write("\x1b[?1049l\x1b[?25h\x1b[0m")
+                sys.stdout.flush()
+            except Exception:
+                pass
+    else:
+        # Fallback to standard terminal output
+        yield

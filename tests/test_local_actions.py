@@ -128,7 +128,11 @@ def test_browser_click_requires_confirmation():
 @pytest.mark.parametrize(
     ("command", "target", "message_part"),
     [
-        ("fill search with python", "form_fill|search=python", "filling a browser field"),
+        (
+            "fill search with python",
+            "form_fill|search=python",
+            "filling a browser field",
+        ),
         ("download this file", "download|visible selection", "browser download"),
     ],
 )

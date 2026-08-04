@@ -37,7 +37,9 @@ def test_sanitize_prompt_injection() -> None:
 
 
 def test_source_verification_official() -> None:
-    verification = verify_source("https://fastapi.tiangolo.com/tutorial/", subject="fastapi")
+    verification = verify_source(
+        "https://fastapi.tiangolo.com/tutorial/", subject="fastapi"
+    )
     assert verification.is_official is True
     assert verification.confidence == "High"
     assert verification.trust_score >= 0.8
@@ -45,15 +47,29 @@ def test_source_verification_official() -> None:
 
 
 def test_source_verification_third_party() -> None:
-    verification = verify_source("https://some-random-blog.com/fastapi-guide", subject="fastapi")
+    verification = verify_source(
+        "https://some-random-blog.com/fastapi-guide", subject="fastapi"
+    )
     assert verification.is_official is False
     assert verification.confidence in ("Medium", "Low")
 
 
 def test_search_result_ranking() -> None:
     results = [
-        SearchEngineResult(title="Blog", url="https://randomblog.com/fastapi", snippet="Blog guide", domain="randomblog.com", ranking=1),
-        SearchEngineResult(title="FastAPI Official", url="https://fastapi.tiangolo.com", snippet="Official docs", domain="fastapi.tiangolo.com", ranking=2),
+        SearchEngineResult(
+            title="Blog",
+            url="https://randomblog.com/fastapi",
+            snippet="Blog guide",
+            domain="randomblog.com",
+            ranking=1,
+        ),
+        SearchEngineResult(
+            title="FastAPI Official",
+            url="https://fastapi.tiangolo.com",
+            snippet="Official docs",
+            domain="fastapi.tiangolo.com",
+            ranking=2,
+        ),
     ]
     ranked = rank_search_results(results, subject="fastapi")
     assert len(ranked) == 2
@@ -111,7 +127,9 @@ def test_content_extraction_installation() -> None:
     page = read_current_browser_page(html_content=html)
     extracted = extract_section_content(page, target_section="installation")
     assert extracted.section_type == "installation"
-    assert "pip install fastapi" in extracted.text or any("pip install" in cb.code for cb in extracted.code_snippets)
+    assert "pip install fastapi" in extracted.text or any(
+        "pip install" in cb.code for cb in extracted.code_snippets
+    )
 
 
 def test_link_resolver_official() -> None:
@@ -133,13 +151,18 @@ def test_link_resolver_official() -> None:
 
 def from_nav(text: str, url: str):
     from grandpa.browser_intelligence.models import NavItem
+
     return NavItem(text=text, url=url)
 
 
 def test_session_memory() -> None:
     memory = BrowserSessionMemory()
-    memory.record_visit("FastAPI Docs", "https://fastapi.tiangolo.com", "fastapi.tiangolo.com")
-    memory.record_verification("FastAPI Docs", "https://fastapi.tiangolo.com", True, 0.95)
+    memory.record_visit(
+        "FastAPI Docs", "https://fastapi.tiangolo.com", "fastapi.tiangolo.com"
+    )
+    memory.record_verification(
+        "FastAPI Docs", "https://fastapi.tiangolo.com", True, 0.95
+    )
 
     last = memory.get_last_active_tab()
     assert last is not None
@@ -185,11 +208,21 @@ def test_planner_decomposition_browser_intelligence() -> None:
     decomposer = DeterministicDecomposer()
     limits = PlannerLimits()
 
-    steps = decomposer.decompose(Goal(text="research FastAPI", normalized="research fastapi", session_id="s1"), limits)
+    steps = decomposer.decompose(
+        Goal(text="research FastAPI", normalized="research fastapi", session_id="s1"),
+        limits,
+    )
     assert steps is not None
     assert steps[0].action == "browser_research"
 
-    steps = decomposer.decompose(Goal(text="compare Raspberry Pi 5 and Jetson Nano", normalized="compare raspberry pi 5 and jetson nano", session_id="s1"), limits)
+    steps = decomposer.decompose(
+        Goal(
+            text="compare Raspberry Pi 5 and Jetson Nano",
+            normalized="compare raspberry pi 5 and jetson nano",
+            session_id="s1",
+        ),
+        limits,
+    )
     assert steps is not None
     assert steps[0].action == "browser_compare"
 
@@ -219,7 +252,9 @@ def test_voice_command_parsing_and_execution() -> None:
 
 
 def test_lookalike_domain_rejected() -> None:
-    verification = verify_source("https://fastapi-tiangolo.example.com", subject="fastapi")
+    verification = verify_source(
+        "https://fastapi-tiangolo.example.com", subject="fastapi"
+    )
     assert verification.is_official is False
     assert verification.confidence in ("Medium", "Low")
 
@@ -228,13 +263,17 @@ def test_source_verification_empty_url() -> None:
     verification = verify_source("", subject="fastapi")
     assert verification.is_official is False
     assert verification.trust_score == 0.0
-    assert "Cannot verify the current source because no verified browser URL is available" in verification.reasoning
+    assert (
+        "Cannot verify the current source because no verified browser URL is available"
+        in verification.reasoning
+    )
 
 
 def test_ide_window_rejection() -> None:
     from grandpa.browser_control import (
         _browser_from_title,
     )
+
     assert _browser_from_title("Grandpa - Antigravity IDE") is None
     assert _browser_from_title("powershell") is None
     assert _browser_from_title("cmd.exe") is None
@@ -244,7 +283,11 @@ def test_fastapi_multi_step_goal_decomposition() -> None:
     decomposer = DeterministicDecomposer()
     limits = PlannerLimits()
     steps = decomposer.decompose(
-        Goal(text="Open official FastAPI docs and summarize the installation section", normalized="open official fastapi docs and summarize the installation section", session_id="s1"),
+        Goal(
+            text="Open official FastAPI docs and summarize the installation section",
+            normalized="open official fastapi docs and summarize the installation section",
+            session_id="s1",
+        ),
         limits,
     )
     assert steps is not None
@@ -261,7 +304,12 @@ def test_extraction_failure_semantics() -> None:
     assert extracted.status == "unavailable"
     assert "No browser page content was available" in extracted.text
 
-    page_with_text = PageContent(title="Some Page", url="https://example.com", domain="example.com", paragraphs=("Unrelated text",))
+    page_with_text = PageContent(
+        title="Some Page",
+        url="https://example.com",
+        domain="example.com",
+        paragraphs=("Unrelated text",),
+    )
     extracted2 = extract_section_content(page_with_text, target_section="pricing")
     assert extracted2.status in ("not_found", "partial_success")
 
@@ -270,15 +318,24 @@ def test_summarization_source_guard() -> None:
     summarizer = LocalPageSummarizer()
     page = PageContent(title="", url="", domain="", visible_text="")
     summary = summarizer.summarize_page(page, summary_type="short")
-    assert "Insufficient page content" in summary or "No active browser page content" in summary
+    assert (
+        "Insufficient page content" in summary
+        or "No active browser page content" in summary
+    )
 
 
 def test_cli_browser_subcommands_unique() -> None:
     runner = click.testing.CliRunner()
     res = runner.invoke(browser, ["--help"])
     assert res.exit_code == 0
-    lines = [line.strip().split()[0] for line in res.output.splitlines() if line.startswith("  ")]
-    assert len(lines) == len(set(lines)), f"Duplicate subcommands found in CLI help: {lines}"
+    lines = [
+        line.strip().split()[0]
+        for line in res.output.splitlines()
+        if line.startswith("  ")
+    ]
+    assert len(lines) == len(set(lines)), (
+        f"Duplicate subcommands found in CLI help: {lines}"
+    )
 
 
 def test_provider_metadata_in_page_content() -> None:
@@ -325,6 +382,7 @@ def test_github_profile_page_extraction() -> None:
 
 def test_secret_field_exclusion() -> None:
     from grandpa.browser_control import _safe_inputs
+
     raw_inputs = [
         {"type": "password", "label": "Password"},
         {"type": "hidden", "label": "secret_token"},
@@ -339,13 +397,38 @@ def test_secret_field_exclusion() -> None:
 def test_fastapi_uia_node_structure_extraction() -> None:
     elements = (
         {"role": "heading", "text": "FastAPI ¶", "level": 1, "order": 0},
-        {"role": "paragraph", "text": "FastAPI framework, high performance, easy to learn, fast to code, ready for production", "level": 0, "order": 1},
+        {
+            "role": "paragraph",
+            "text": "FastAPI framework, high performance, easy to learn, fast to code, ready for production",
+            "level": 0,
+            "order": 1,
+        },
         {"role": "heading", "text": "Installation ¶", "level": 2, "order": 2},
-        {"role": "paragraph", "text": "FastAPI requires Python 3.8+ and standard dependencies.", "level": 0, "order": 3},
-        {"role": "list_item", "text": "• Includes pydantic for data validation", "level": 0, "order": 4},
-        {"role": "code_block", "text": "pip install fastapi[standard]", "level": 0, "order": 5},
+        {
+            "role": "paragraph",
+            "text": "FastAPI requires Python 3.8+ and standard dependencies.",
+            "level": 0,
+            "order": 3,
+        },
+        {
+            "role": "list_item",
+            "text": "• Includes pydantic for data validation",
+            "level": 0,
+            "order": 4,
+        },
+        {
+            "role": "code_block",
+            "text": "pip install fastapi[standard]",
+            "level": 0,
+            "order": 5,
+        },
         {"role": "heading", "text": "Example ¶", "level": 2, "order": 6},
-        {"role": "code_block", "text": "from fastapi import FastAPI\napp = FastAPI()", "level": 0, "order": 7},
+        {
+            "role": "code_block",
+            "text": "from fastapi import FastAPI\napp = FastAPI()",
+            "level": 0,
+            "order": 7,
+        },
     )
     page = PageContent(
         title="FastAPI - FastAPI",
@@ -363,6 +446,7 @@ def test_fastapi_uia_node_structure_extraction() -> None:
 
 def test_heading_only_returns_not_success() -> None:
     from grandpa.browser_intelligence.models import HeadingItem
+
     page = PageContent(
         title="Some Page",
         url="https://example.com",
@@ -376,6 +460,7 @@ def test_heading_only_returns_not_success() -> None:
 
 def test_pilcrow_heading_normalization() -> None:
     from grandpa.browser_intelligence.content_extractor import _normalize_heading
+
     assert _normalize_heading("Installation ¶") == "installation"
     assert _normalize_heading("Getting Started #") == "getting started"
 
@@ -383,7 +468,12 @@ def test_pilcrow_heading_normalization() -> None:
 def test_next_equal_heading_boundary() -> None:
     elements = (
         {"role": "heading", "text": "Installation ¶", "level": 2, "order": 0},
-        {"role": "paragraph", "text": "Install FastAPI via pip command.", "level": 0, "order": 1},
+        {
+            "role": "paragraph",
+            "text": "Install FastAPI via pip command.",
+            "level": 0,
+            "order": 1,
+        },
         {"role": "heading", "text": "License ¶", "level": 2, "order": 2},
         {"role": "paragraph", "text": "MIT License terms.", "level": 0, "order": 3},
     )
@@ -401,10 +491,25 @@ def test_sidebar_toc_vs_main_content_heading_disambiguation() -> None:
         {"role": "link", "text": "Create it", "level": 0, "order": 2},
         {"role": "link", "text": "Run it", "level": 0, "order": 3},
         {"role": "heading", "text": "Installation ¶", "level": 2, "order": 4},
-        {"role": "paragraph", "text": "FastAPI is a modern web framework for Python 3.8+.", "level": 0, "order": 5},
-        {"role": "code_block", "text": "pip install fastapi[standard]", "level": 0, "order": 6},
+        {
+            "role": "paragraph",
+            "text": "FastAPI is a modern web framework for Python 3.8+.",
+            "level": 0,
+            "order": 5,
+        },
+        {
+            "role": "code_block",
+            "text": "pip install fastapi[standard]",
+            "level": 0,
+            "order": 6,
+        },
     )
-    page = PageContent(title="FastAPI", url="https://fastapi.tiangolo.com", domain="fastapi.tiangolo.com", elements=elements)
+    page = PageContent(
+        title="FastAPI",
+        url="https://fastapi.tiangolo.com",
+        domain="fastapi.tiangolo.com",
+        elements=elements,
+    )
     extracted = extract_section_content(page, target_section="installation")
     assert extracted.status == "success"
     assert "pip install fastapi[standard]" in extracted.text
@@ -414,6 +519,7 @@ def test_sidebar_toc_vs_main_content_heading_disambiguation() -> None:
 
 def test_summarize_rejects_chrome_controls() -> None:
     from grandpa.browser_intelligence.summarizer import heuristic_summarize
+
     chrome_text = "FastAPI - Google Chrome\nOpen tab in split view\nNew tab\n\nFastAPI is a modern high-performance web framework for Python.\nIt provides automatic OpenAPI docs."
     summary = heuristic_summarize(chrome_text, summary_type="short")
     assert "Google Chrome" not in summary

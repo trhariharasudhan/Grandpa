@@ -71,7 +71,9 @@ class VisionSession:
         else:
             self.last_error = result.error
         payload = result.to_dict()
-        model_prompt = (prompt or DEFAULT_VISION_PROMPT).strip() or DEFAULT_VISION_PROMPT
+        model_prompt = (
+            prompt or DEFAULT_VISION_PROMPT
+        ).strip() or DEFAULT_VISION_PROMPT
         payload["model_analysis"] = (
             analyze_image_with_local_model(data, filename, mime_type, model_prompt)
             if result.success
@@ -84,7 +86,9 @@ class VisionSession:
         )
         return payload
 
-    def extract_ocr_from_image_bytes(self, data: bytes, filename: str | None, mime_type: str | None) -> dict[str, Any]:
+    def extract_ocr_from_image_bytes(
+        self, data: bytes, filename: str | None, mime_type: str | None
+    ) -> dict[str, Any]:
         analysis = self._analyzer.analyze(data, filename, mime_type)
         normalized_mime = (mime_type or "").split(";")[0].strip().lower()
         if not analysis.success:

@@ -9,7 +9,9 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path("D:/Grandpa")
-BLOCKED_COMMAND_PATTERNS = re.compile(r"\b(rm|del|format|shutdown|restart|reg\s+delete|git\s+reset\s+--hard)\b", re.I)
+BLOCKED_COMMAND_PATTERNS = re.compile(
+    r"\b(rm|del|format|shutdown|restart|reg\s+delete|git\s+reset\s+--hard)\b", re.I
+)
 ALLOWLIST_PREFIXES = (
     ("git", "status"),
     ("git", "diff"),
@@ -31,42 +33,92 @@ def classify_command(command: str) -> dict[str, Any]:
     clean = command.strip()
     parts = clean.split()
     if not parts:
-        return {"risk": "LOW", "allowed": False, "approval_required": False, "reason": "empty command"}
+        return {
+            "risk": "LOW",
+            "allowed": False,
+            "approval_required": False,
+            "reason": "empty command",
+        }
     if BLOCKED_COMMAND_PATTERNS.search(clean):
-        return {"risk": "BLOCKED", "allowed": False, "approval_required": False, "reason": "destructive command pattern"}
+        return {
+            "risk": "BLOCKED",
+            "allowed": False,
+            "approval_required": False,
+            "reason": "destructive command pattern",
+        }
     if any(tuple(parts[: len(prefix)]) == prefix for prefix in ALLOWLIST_PREFIXES):
-        return {"risk": "LOW", "allowed": True, "approval_required": False, "reason": "developer allowlist"}
-    return {"risk": "MEDIUM", "allowed": False, "approval_required": True, "reason": "command needs explicit approval"}
+        return {
+            "risk": "LOW",
+            "allowed": True,
+            "approval_required": False,
+            "reason": "developer allowlist",
+        }
+    return {
+        "risk": "MEDIUM",
+        "allowed": False,
+        "approval_required": True,
+        "reason": "command needs explicit approval",
+    }
 
 
 def terminal_plan(command: str, *, dry_run: bool = True) -> DeveloperResult:
     policy = classify_command(command)
     if policy["risk"] == "BLOCKED":
-        return DeveloperResult("blocked", "I blocked this developer command for safety.", {"command": command, "policy": policy})
+        return DeveloperResult(
+            "blocked",
+            "I blocked this developer command for safety.",
+            {"command": command, "policy": policy},
+        )
     if dry_run or policy["approval_required"]:
         return DeveloperResult(
             "requires_confirmation" if policy["approval_required"] else "handled",
             "Prepared developer command dry-run.",
             {"command": command, "policy": policy, "dry_run": True},
         )
-    return DeveloperResult("requires_confirmation", "Execution requires explicit approval.", {"command": command, "policy": policy})
+    return DeveloperResult(
+        "requires_confirmation",
+        "Execution requires explicit approval.",
+        {"command": command, "policy": policy},
+    )
 
 
 def git_summary(repo: Path | str = REPO_ROOT) -> DeveloperResult:
     repo = Path(repo)
     if not (repo / ".git").exists():
-        return DeveloperResult("unsupported", "This folder is not a Git repository.", {"repo": str(repo)})
+        return DeveloperResult(
+            "unsupported", "This folder is not a Git repository.", {"repo": str(repo)}
+        )
     try:
-        status = subprocess.run(["git", "status", "--short"], cwd=repo, capture_output=True, text=True, timeout=10, check=False)
-        branch = subprocess.run(["git", "branch", "--show-current"], cwd=repo, capture_output=True, text=True, timeout=10, check=False)
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
     except Exception as exc:
-        return DeveloperResult("error", f"Git diagnostics failed: {exc}", {"repo": str(repo)})
+        return DeveloperResult(
+            "error", f"Git diagnostics failed: {exc}", {"repo": str(repo)}
+        )
     lines = [line for line in status.stdout.splitlines() if line.strip()]
     suggestions = _commit_suggestions(lines)
     return DeveloperResult(
         "handled",
         f"Git branch {branch.stdout.strip() or 'unknown'} has {len(lines)} changed item(s).",
-        {"branch": branch.stdout.strip(), "changed": lines, "commit_suggestions": suggestions},
+        {
+            "branch": branch.stdout.strip(),
+            "changed": lines,
+            "commit_suggestions": suggestions,
+        },
     )
 
 
@@ -91,13 +143,27 @@ def api_test_plan(method: str, url: str, *, body: str = "") -> DeveloperResult:
     return DeveloperResult(
         "handled",
         f"Prepared local API test plan for {method.upper()} {url}.",
-        {"method": method.upper(), "url": url, "body_preview": body[:300], "dry_run": True, "approval_required": False},
+        {
+            "method": method.upper(),
+            "url": url,
+            "body_preview": body[:300],
+            "dry_run": True,
+            "approval_required": False,
+        },
     )
 
 
 def analyze_log_text(text: str) -> DeveloperResult:
-    error_lines = [line for line in text.splitlines() if re.search(r"\b(error|failed|exception|traceback)\b", line, re.I)]
-    warning_lines = [line for line in text.splitlines() if re.search(r"\b(warn|warning|deprecated)\b", line, re.I)]
+    error_lines = [
+        line
+        for line in text.splitlines()
+        if re.search(r"\b(error|failed|exception|traceback)\b", line, re.I)
+    ]
+    warning_lines = [
+        line
+        for line in text.splitlines()
+        if re.search(r"\b(warn|warning|deprecated)\b", line, re.I)
+    ]
     return DeveloperResult(
         "handled",
         f"Log analysis found {len(error_lines)} error line(s) and {len(warning_lines)} warning line(s).",
@@ -114,7 +180,11 @@ def diagnostics() -> dict[str, Any]:
         "project": project.data,
         "allowlist_prefixes": [" ".join(prefix) for prefix in ALLOWLIST_PREFIXES],
         "templates": ["bug investigation", "api smoke test", "release checklist"],
-        "safety": {"dangerous_shell_blocked": True, "risky_execution_requires_approval": True, "dry_run_default": True},
+        "safety": {
+            "dangerous_shell_blocked": True,
+            "risky_execution_requires_approval": True,
+            "dry_run_default": True,
+        },
     }
 
 

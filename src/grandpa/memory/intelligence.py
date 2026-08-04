@@ -19,7 +19,17 @@ from typing import Any
 from grandpa.memory_context import SENSITIVE_PATTERN, MemoryStore
 
 TOPIC_KEYWORDS: dict[str, set[str]] = {
-    "Development": {"python", "fastapi", "code", "coding", "vscode", "vs code", "git", "api", "project"},
+    "Development": {
+        "python",
+        "fastapi",
+        "code",
+        "coding",
+        "vscode",
+        "vs code",
+        "git",
+        "api",
+        "project",
+    },
     "AI": {"ai", "assistant", "ollama", "model", "llm", "local ai", "grandpa"},
     "Personal": {"my", "prefer", "like", "name", "family", "friend"},
     "Devices": {"windows", "desktop", "pc", "chrome", "edge", "device"},
@@ -127,8 +137,12 @@ class MemoryIntelligenceStore:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_metadata_topic ON memory_metadata(topic)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_preferences_subject ON memory_preferences(subject)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_metadata_topic ON memory_metadata(topic)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memory_preferences_subject ON memory_preferences(subject)"
+            )
 
     def sync(self) -> None:
         memories = self.store.list_memories(limit=1000)
@@ -146,7 +160,9 @@ class MemoryIntelligenceStore:
                 ).fetchone()
                 use_count = int(existing["use_count"]) if existing else 0
                 last_used = existing["last_used"] if existing else None
-                promoted = int(existing["promoted"]) if existing else int(importance >= 0.78)
+                promoted = (
+                    int(existing["promoted"]) if existing else int(importance >= 0.78)
+                )
                 conn.execute(
                     """
                     INSERT INTO memory_metadata(
@@ -196,14 +212,20 @@ class MemoryIntelligenceStore:
                         ),
                     )
 
-    def enriched_memories(self, *, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+    def enriched_memories(
+        self, *, query: str = "", limit: int = 100
+    ) -> list[dict[str, Any]]:
         self.sync()
         memories = self.store.list_memories(limit=1000)
         metadata = self._metadata()
         enriched: list[EnrichedMemory] = []
         for item in memories:
             meta = metadata.get(int(item["id"]), {})
-            relevance = calculate_memory_relevance(item, query) if query else float(meta.get("importance_score", 0.0))
+            relevance = (
+                calculate_memory_relevance(item, query)
+                if query
+                else float(meta.get("importance_score", 0.0))
+            )
             use_boost = min(0.15, int(meta.get("use_count", 0)) * 0.03)
             enriched.append(
                 EnrichedMemory(
@@ -212,7 +234,12 @@ class MemoryIntelligenceStore:
                     key=str(item["key"]),
                     value=str(item["value"]),
                     tags=tuple(meta.get("tags", _tags_for_memory(item))),
-                    importance_score=round(float(meta.get("importance_score", score_memory_importance(item))), 4),
+                    importance_score=round(
+                        float(
+                            meta.get("importance_score", score_memory_importance(item))
+                        ),
+                        4,
+                    ),
                     relevance_score=round(min(1.0, relevance + use_boost), 4),
                     confidence=round(float(meta.get("confidence", 0.7)), 4),
                     created_at=float(item["created_at"]),
@@ -224,7 +251,14 @@ class MemoryIntelligenceStore:
                     topic=str(meta.get("topic", _topic_for_memory(item))),
                 )
             )
-        enriched.sort(key=lambda item: (item.relevance_score, item.importance_score, item.updated_at), reverse=True)
+        enriched.sort(
+            key=lambda item: (
+                item.relevance_score,
+                item.importance_score,
+                item.updated_at,
+            ),
+            reverse=True,
+        )
         selected = enriched[: max(1, limit)]
         if query:
             self._mark_used([item.memory_id for item in selected[:5]])
@@ -293,9 +327,15 @@ def score_memory_importance(memory: dict[str, Any]) -> float:
     key = str(memory.get("key", "")).lower()
     if category in {"project", "preferences", "apps_tools", "work_context"}:
         score += 0.25
-    if any(term in text for term in ("prefer", "preferred", "use ", "project", "working", "grandpa")):
+    if any(
+        term in text
+        for term in ("prefer", "preferred", "use ", "project", "working", "grandpa")
+    ):
         score += 0.22
-    if any(term in text for term in ("python", "fastapi", "vs code", "vscode", "windows", "local ai")):
+    if any(
+        term in text
+        for term in ("python", "fastapi", "vs code", "vscode", "windows", "local ai")
+    ):
         score += 0.13
     if key in {"project", "preferred_browser"} or key.startswith("uses_"):
         score += 0.1
@@ -311,14 +351,28 @@ def calculate_memory_relevance(memory: dict[str, Any], query: str) -> float:
         return 0.0
     overlap = len(memory_tokens & query_tokens) / max(1, len(query_tokens))
     topic_boost = 0.15 if _topic_for_memory(memory).lower() in query.lower() else 0.0
-    category_boost = 0.12 if str(memory.get("category", "")).replace("_", " ") in query.lower() else 0.0
+    category_boost = (
+        0.12
+        if str(memory.get("category", "")).replace("_", " ") in query.lower()
+        else 0.0
+    )
     semantic_boost = _semantic_category_boost(memory, query)
     importance = score_memory_importance(memory) * 0.35
-    return round(min(1.0, overlap * 0.55 + topic_boost + category_boost + semantic_boost + importance), 4)
+    return round(
+        min(
+            1.0,
+            overlap * 0.55 + topic_boost + category_boost + semantic_boost + importance,
+        ),
+        4,
+    )
 
 
 def detect_user_preference(memory: dict[str, Any] | str) -> dict[str, Any] | None:
-    item = {"value": memory, "category": "", "key": ""} if isinstance(memory, str) else memory
+    item = (
+        {"value": memory, "category": "", "key": ""}
+        if isinstance(memory, str)
+        else memory
+    )
     text = _memory_text(item)
     if _is_sensitive(text):
         return None
@@ -330,7 +384,11 @@ def detect_user_preference(memory: dict[str, Any] | str) -> dict[str, Any] | Non
     if category == "apps_tools" or key.startswith("uses_"):
         return {"subject": "tool", "value": value, "confidence": 0.84}
     if category == "preferences":
-        return {"subject": key.replace("_", " ") or "preference", "value": value, "confidence": 0.82}
+        return {
+            "subject": key.replace("_", " ") or "preference",
+            "value": value,
+            "confidence": 0.82,
+        }
     for pattern, subject_template, value_template in PREFERENCE_PATTERNS:
         match = pattern.search(text)
         if not match:
@@ -340,7 +398,9 @@ def detect_user_preference(memory: dict[str, Any] | str) -> dict[str, Any] | Non
         if "{subject}" in subject:
             subject = subject.format(subject=_clean_value(match.group(1)))
         if "{value}" in pref_value:
-            pref_value = pref_value.format(value=_clean_value(match.group(match.lastindex or 1)))
+            pref_value = pref_value.format(
+                value=_clean_value(match.group(match.lastindex or 1))
+            )
         return {"subject": subject, "value": pref_value, "confidence": 0.74}
     return None
 
@@ -348,7 +408,9 @@ def detect_user_preference(memory: dict[str, Any] | str) -> dict[str, Any] | Non
 def build_relationship_graph(store: MemoryStore | None = None) -> dict[str, Any]:
     intelligence = MemoryIntelligenceStore(store)
     memories = intelligence.enriched_memories(limit=500)
-    nodes: dict[str, dict[str, Any]] = {"User": {"id": "User", "type": "person", "weight": 1.0}}
+    nodes: dict[str, dict[str, Any]] = {
+        "User": {"id": "User", "type": "person", "weight": 1.0}
+    }
     edges: list[dict[str, Any]] = []
     seen_edges: set[tuple[str, str, str]] = set()
     for memory in memories:
@@ -361,11 +423,21 @@ def build_relationship_graph(store: MemoryStore | None = None) -> dict[str, Any]
                     nodes[label] = {
                         "id": label,
                         "type": node_type,
-                        "weight": max(nodes.get(label, {}).get("weight", 0.0), memory["importance_score"]),
+                        "weight": max(
+                            nodes.get(label, {}).get("weight", 0.0),
+                            memory["importance_score"],
+                        ),
                     }
                     edge = ("User", label, "remembers")
                     if edge not in seen_edges:
-                        edges.append({"source": edge[0], "target": edge[1], "relation": edge[2], "weight": memory["importance_score"]})
+                        edges.append(
+                            {
+                                "source": edge[0],
+                                "target": edge[1],
+                                "relation": edge[2],
+                                "weight": memory["importance_score"],
+                            }
+                        )
                         seen_edges.add(edge)
     return {"nodes": list(nodes.values()), "edges": edges, "local_only": True}
 
@@ -381,10 +453,16 @@ def cluster_memory_topics(store: MemoryStore | None = None) -> dict[str, Any]:
             {
                 "name": name,
                 "count": len(items),
-                "average_importance": round(sum(float(item["importance_score"]) for item in items) / max(1, len(items)), 4),
+                "average_importance": round(
+                    sum(float(item["importance_score"]) for item in items)
+                    / max(1, len(items)),
+                    4,
+                ),
                 "top_memories": items[:5],
             }
-            for name, items in sorted(topics.items(), key=lambda pair: len(pair[1]), reverse=True)
+            for name, items in sorted(
+                topics.items(), key=lambda pair: len(pair[1]), reverse=True
+            )
         ],
         "local_only": True,
     }
@@ -409,11 +487,15 @@ def summarize_memory_profile(store: MemoryStore | None = None) -> dict[str, Any]
     }
 
 
-def promote_long_term_memory(memory_id: int, *, store: MemoryStore | None = None) -> dict[str, Any]:
+def promote_long_term_memory(
+    memory_id: int, *, store: MemoryStore | None = None
+) -> dict[str, Any]:
     intelligence = MemoryIntelligenceStore(store)
     intelligence.sync()
     with intelligence._connect() as conn:
-        row = conn.execute("SELECT memory_id FROM memory_metadata WHERE memory_id = ?", (memory_id,)).fetchone()
+        row = conn.execute(
+            "SELECT memory_id FROM memory_metadata WHERE memory_id = ?", (memory_id,)
+        ).fetchone()
         if not row:
             return {"ok": False, "message": "Memory not found.", "memory_id": memory_id}
         conn.execute(
@@ -423,7 +505,9 @@ def promote_long_term_memory(memory_id: int, *, store: MemoryStore | None = None
     return {"ok": True, "message": "Memory promoted.", "memory_id": memory_id}
 
 
-def ranked_memory_context(query: str, *, limit: int = 5, store: MemoryStore | None = None) -> dict[str, Any]:
+def ranked_memory_context(
+    query: str, *, limit: int = 5, store: MemoryStore | None = None
+) -> dict[str, Any]:
     intelligence = MemoryIntelligenceStore(store)
     memories = intelligence.enriched_memories(query=query, limit=limit)
     return {
@@ -489,29 +573,41 @@ def _confidence_for_memory(memory: dict[str, Any], importance: float) -> float:
     return round(min(0.98, 0.55 + importance * 0.38), 4)
 
 
-def _profile_summary(memories: list[dict[str, Any]], preferences: list[dict[str, Any]], topics: list[dict[str, Any]]) -> str:
+def _profile_summary(
+    memories: list[dict[str, Any]],
+    preferences: list[dict[str, Any]],
+    topics: list[dict[str, Any]],
+) -> str:
     if not memories:
         return "Grandpa has no personal memories yet."
     topic_names = ", ".join(item["name"] for item in topics[:3]) or "general context"
-    pref_text = ", ".join(f"{item['subject']}: {item['value']}" for item in preferences[:3]) or "no clear preferences yet"
+    pref_text = (
+        ", ".join(f"{item['subject']}: {item['value']}" for item in preferences[:3])
+        or "no clear preferences yet"
+    )
     return f"Grandpa has {len(memories)} local memories. Strong topics: {topic_names}. Preferences: {pref_text}."
 
 
 def _recommendations(profile: dict[str, Any]) -> list[str]:
     recommendations: list[str] = []
     if profile.get("memory_count", 0) == 0:
-        recommendations.append('Teach Grandpa with commands like "remember my project is Grandpa".')
+        recommendations.append(
+            'Teach Grandpa with commands like "remember my project is Grandpa".'
+        )
     if profile.get("preference_count", 0) == 0:
-        recommendations.append("Add preferences such as preferred editor, browser, and coding tools.")
+        recommendations.append(
+            "Add preferences such as preferred editor, browser, and coding tools."
+        )
     if not profile.get("promoted_memories"):
-        recommendations.append("Important memories will be promoted automatically as they become useful.")
+        recommendations.append(
+            "Important memories will be promoted automatically as they become useful."
+        )
     return recommendations
 
 
 def _memory_text(memory: dict[str, Any]) -> str:
     return " ".join(
-        str(memory.get(part, ""))
-        for part in ("category", "key", "value", "topic")
+        str(memory.get(part, "")) for part in ("category", "key", "value", "topic")
     ).lower()
 
 
@@ -544,7 +640,11 @@ def _semantic_category_boost(memory: dict[str, Any], query: str) -> float:
         or "vscode" in text
     ):
         return 0.24
-    if category == "preferences" and query_tokens & {"prefer", "preferred", "preference"}:
+    if category == "preferences" and query_tokens & {
+        "prefer",
+        "preferred",
+        "preference",
+    }:
         return 0.18
     return 0.0
 
@@ -558,5 +658,10 @@ def _clean_value(text: str) -> str:
 
 
 def _entity_label(keyword: str) -> str:
-    mapping = {"vscode": "VS Code", "vs code": "VS Code", "fastapi": "FastAPI", "grandpa": "Grandpa"}
+    mapping = {
+        "vscode": "VS Code",
+        "vs code": "VS Code",
+        "fastapi": "FastAPI",
+        "grandpa": "Grandpa",
+    }
     return mapping.get(keyword, keyword.title())

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -14,6 +15,7 @@ from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
     EngineModelNotFoundError,
+    EngineModelPullError,
 )
 from grandpa.engine.ollama import OllamaEngine, normalize_ollama_host
 
@@ -188,7 +190,9 @@ class TestOllamaPullModel:
             respx.post("http://testhost:11434/api/pull").mock(
                 return_value=httpx.Response(500, text="internal error")
             )
-            with pytest.raises(RuntimeError, match="Ollama pull failed with 500"):
+            with pytest.raises(
+                EngineModelPullError, match="Ollama pull failed with 500"
+            ):
                 engine.pull_model("qwen2.5:3b")
 
 
@@ -196,7 +200,9 @@ class TestOllamaHealth:
     def test_host_normalization(self) -> None:
         assert normalize_ollama_host("") == "http://127.0.0.1:11434"
         assert normalize_ollama_host("127.0.0.1:11434/") == "http://127.0.0.1:11434"
-        assert normalize_ollama_host("http://localhost:11434/") == "http://localhost:11434"
+        assert (
+            normalize_ollama_host("http://localhost:11434/") == "http://localhost:11434"
+        )
 
     def test_health_true(self, engine: OllamaEngine) -> None:
         with respx.mock:
@@ -231,6 +237,82 @@ class TestOllamaStream:
             ):
                 tokens.append(tok)
         assert "Hello" in tokens
+
+    @pytest.mark.asyncio
+    async def test_stream_ignores_malformed_chunks(self, engine: OllamaEngine) -> None:
+        body = "\n".join(
+            (
+                "not-json",
+                json.dumps({"message": {"content": "Visible"}, "done": True}),
+            )
+        )
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(200, text=body)
+            )
+            tokens = [
+                token
+                async for token in engine.stream(
+                    [Message(role=Role.USER, content="Hi")],
+                    model="qwen3:8b",
+                )
+            ]
+
+        assert tokens == ["Visible"]
+
+    @pytest.mark.asyncio
+    async def test_stream_model_not_found_is_typed(self, engine: OllamaEngine) -> None:
+        with respx.mock:
+            respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(404, text="model missing not found")
+            )
+            with pytest.raises(EngineModelNotFoundError):
+                async for _token in engine.stream(
+                    [Message(role=Role.USER, content="Hi")],
+                    model="missing:latest",
+                ):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_stream_connection_loss_is_typed_and_closes_response(
+        self,
+        engine: OllamaEngine,
+    ) -> None:
+        closed = False
+
+        class BrokenResponse:
+            is_success = True
+
+            def raise_for_status(self):
+                return None
+
+            def iter_lines(self):
+                yield json.dumps({"message": {"content": "Partial"}, "done": False})
+                raise httpx.ReadError(
+                    "connection lost",
+                    request=httpx.Request("POST", "http://testhost:11434/api/chat"),
+                )
+
+        class ResponseContext:
+            def __enter__(self):
+                return BrokenResponse()
+
+            def __exit__(self, *_exc):
+                nonlocal closed
+                closed = True
+
+        engine._client.stream = MagicMock(return_value=ResponseContext())
+        tokens: list[str] = []
+
+        with pytest.raises(EngineConnectionError, match="interrupted"):
+            async for token in engine.stream(
+                [Message(role=Role.USER, content="Hi")],
+                model="qwen3:8b",
+            ):
+                tokens.append(token)
+
+        assert tokens == ["Partial"]
+        assert closed is True
 
     @pytest.mark.asyncio
     async def test_stream_suppresses_tagged_reasoning(

@@ -79,7 +79,10 @@ def list_monitors() -> DesktopContextResult:
             return DesktopContextResult(
                 True,
                 f"Detected {len(monitors)} monitor(s).",
-                {"monitors": [monitor.to_dict() for monitor in monitors], "count": len(monitors)},
+                {
+                    "monitors": [monitor.to_dict() for monitor in monitors],
+                    "count": len(monitors),
+                },
             )
 
     fallback = _list_primary_monitor_pyautogui()
@@ -89,12 +92,18 @@ def list_monitors() -> DesktopContextResult:
             "Detected the primary monitor.",
             {"monitors": [fallback.to_dict()], "count": 1, "fallback": "pyautogui"},
         )
-    return DesktopContextResult(False, "Monitor detection is not supported in this environment.", {"monitors": [], "count": 0})
+    return DesktopContextResult(
+        False,
+        "Monitor detection is not supported in this environment.",
+        {"monitors": [], "count": 0},
+    )
 
 
 def get_active_process() -> DesktopContextResult:
     if sys.platform != "win32":
-        return DesktopContextResult(False, "Active process detection is only supported on Windows desktop.", {})
+        return DesktopContextResult(
+            False, "Active process detection is only supported on Windows desktop.", {}
+        )
     try:
         import ctypes
 
@@ -104,16 +113,26 @@ def get_active_process() -> DesktopContextResult:
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
         title = _window_title(hwnd)
         info = _process_info_from_pid(int(pid.value), title)
-        return DesktopContextResult(True, f"Active process: {info.name or 'unknown'}.", {"process": info.to_dict()})
+        return DesktopContextResult(
+            True,
+            f"Active process: {info.name or 'unknown'}.",
+            {"process": info.to_dict()},
+        )
     except Exception as exc:
-        return DesktopContextResult(False, "I could not read the active process.", {"error": exc.__class__.__name__})
+        return DesktopContextResult(
+            False,
+            "I could not read the active process.",
+            {"error": exc.__class__.__name__},
+        )
 
 
 def list_processes(limit: int = 50) -> DesktopContextResult:
     try:
         import psutil  # type: ignore
     except Exception:
-        return DesktopContextResult(False, "Process listing needs psutil installed.", {"processes": []})
+        return DesktopContextResult(
+            False, "Process listing needs psutil installed.", {"processes": []}
+        )
     processes: list[dict[str, Any]] = []
     for proc in psutil.process_iter(["pid", "name", "exe"]):
         try:
@@ -132,7 +151,11 @@ def list_processes(limit: int = 50) -> DesktopContextResult:
             continue
         if len(processes) >= max(1, min(limit, 200)):
             break
-    return DesktopContextResult(True, f"Found {len(processes)} running process(es).", {"processes": processes, "count": len(processes)})
+    return DesktopContextResult(
+        True,
+        f"Found {len(processes)} running process(es).",
+        {"processes": processes, "count": len(processes)},
+    )
 
 
 def inspect_clipboard_text(text: str) -> dict[str, Any]:
@@ -142,16 +165,31 @@ def inspect_clipboard_text(text: str) -> dict[str, Any]:
     if text.strip():
         if re.match(r"^https?://", text.strip(), re.I):
             content_type = "url"
-        elif re.match(r"^[a-z]:[\\/]", text.strip(), re.I) or text.strip().startswith(("~/", "~\\")):
+        elif re.match(r"^[a-z]:[\\/]", text.strip(), re.I) or text.strip().startswith(
+            ("~/", "~\\")
+        ):
             content_type = "path"
         elif re.search(r"[\w.+-]+@[\w.-]+\.[a-z]{2,}", text, re.I):
             content_type = "email"
-        elif any(token in lowered for token in ("def ", "class ", "function ", "import ", "const ", "=>")):
+        elif any(
+            token in lowered
+            for token in ("def ", "class ", "function ", "import ", "const ", "=>")
+        ):
             content_type = "code"
         else:
             content_type = "plain_text"
-    sensitive = bool(re.search(r"(password|secret|token|api[_ -]?key|bearer\s+[a-z0-9._-]+|sk-[a-z0-9])", lowered, re.I))
-    digest = hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:16] if text else ""
+    sensitive = bool(
+        re.search(
+            r"(password|secret|token|api[_ -]?key|bearer\s+[a-z0-9._-]+|sk-[a-z0-9])",
+            lowered,
+            re.I,
+        )
+    )
+    digest = (
+        hashlib.sha256(text.encode("utf-8", errors="ignore")).hexdigest()[:16]
+        if text
+        else ""
+    )
     return {
         "content_type": content_type,
         "characters": len(text),
@@ -205,7 +243,11 @@ def record_clipboard_metadata(text: str, *, source: str) -> dict[str, Any]:
 def read_clipboard_history(limit: int = 20) -> DesktopContextResult:
     path = get_clipboard_history_db_path()
     if not path.exists():
-        return DesktopContextResult(True, "Clipboard history is empty.", {"items": [], "count": 0, "metadata_only": True})
+        return DesktopContextResult(
+            True,
+            "Clipboard history is empty.",
+            {"items": [], "count": 0, "metadata_only": True},
+        )
     safe_limit = max(1, min(int(limit or 20), 100))
     try:
         with sqlite3.connect(path, timeout=10) as conn:
@@ -220,7 +262,11 @@ def read_clipboard_history(limit: int = 20) -> DesktopContextResult:
                 (safe_limit,),
             ).fetchall()
     except sqlite3.Error as exc:
-        return DesktopContextResult(False, "Clipboard history database is unavailable.", {"error": exc.__class__.__name__})
+        return DesktopContextResult(
+            False,
+            "Clipboard history database is unavailable.",
+            {"error": exc.__class__.__name__},
+        )
     items = [
         {
             "timestamp": float(row["timestamp"]),
@@ -234,7 +280,11 @@ def read_clipboard_history(limit: int = 20) -> DesktopContextResult:
         }
         for row in rows
     ]
-    return DesktopContextResult(True, f"Loaded {len(items)} clipboard metadata item(s).", {"items": items, "count": len(items), "metadata_only": True})
+    return DesktopContextResult(
+        True,
+        f"Loaded {len(items)} clipboard metadata item(s).",
+        {"items": items, "count": len(items), "metadata_only": True},
+    )
 
 
 def active_window_is_protected() -> bool:
@@ -290,10 +340,23 @@ def pc_control_diagnostics() -> dict[str, Any]:
     except Exception:
         pyperclip_available = False
     return {
-        "monitors": {"supported": monitors.supported, "count": monitors.evidence.get("count", 0)},
-        "active_process": {"supported": active.supported, "process": active.evidence.get("process")},
-        "processes": {"supported": processes.supported, "count": processes.evidence.get("count", 0)},
-        "automation": {"pyautogui": pyautogui_available, "failsafe": True, "visible_screen_only": True},
+        "monitors": {
+            "supported": monitors.supported,
+            "count": monitors.evidence.get("count", 0),
+        },
+        "active_process": {
+            "supported": active.supported,
+            "process": active.evidence.get("process"),
+        },
+        "processes": {
+            "supported": processes.supported,
+            "count": processes.evidence.get("count", 0),
+        },
+        "automation": {
+            "pyautogui": pyautogui_available,
+            "failsafe": True,
+            "visible_screen_only": True,
+        },
         "clipboard": {
             "pyperclip": pyperclip_available,
             "history_db": str(clipboard_db),
@@ -338,8 +401,12 @@ def _list_monitors_win32() -> list[MonitorInfo]:
             wintypes.LPARAM,
         )
 
-        primary_left = user32.GetSystemMetrics(76) if hasattr(user32, "GetSystemMetrics") else 0
-        primary_top = user32.GetSystemMetrics(77) if hasattr(user32, "GetSystemMetrics") else 0
+        primary_left = (
+            user32.GetSystemMetrics(76) if hasattr(user32, "GetSystemMetrics") else 0
+        )
+        primary_top = (
+            user32.GetSystemMetrics(77) if hasattr(user32, "GetSystemMetrics") else 0
+        )
 
         def callback(_monitor: int, _hdc: int, rect: Any, _data: int) -> int:
             box = rect.contents
@@ -391,7 +458,12 @@ def _process_info_from_pid(pid: int, title: str) -> ProcessInfo:
         import psutil  # type: ignore
 
         proc = psutil.Process(pid)
-        return ProcessInfo(pid=pid, name=proc.name(), title=title, executable=_safe_executable(proc.exe()))
+        return ProcessInfo(
+            pid=pid,
+            name=proc.name(),
+            title=title,
+            executable=_safe_executable(proc.exe()),
+        )
     except Exception:
         return ProcessInfo(pid=pid, name="", title=title, executable="")
 

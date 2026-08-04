@@ -78,7 +78,9 @@ class AgentGoalStore:
     """SQLite store for persistent autonomous goals and events."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or os.getenv("GRANDPA_AGENT_GOALS_DB") or DEFAULT_GOAL_DB)
+        self.db_path = Path(
+            db_path or os.getenv("GRANDPA_AGENT_GOALS_DB") or DEFAULT_GOAL_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -123,8 +125,12 @@ class AgentGoalStore:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_goals_status ON agent_goals(status)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_agent_goal_events_goal ON agent_goal_events(goal_id, timestamp)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_goals_status ON agent_goals(status)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_agent_goal_events_goal ON agent_goal_events(goal_id, timestamp)"
+            )
 
     def save(self, goal: AgentGoal) -> AgentGoal:
         goal.updated_at = time.time()
@@ -173,7 +179,9 @@ class AgentGoalStore:
 
     def get(self, goal_id: str) -> AgentGoal | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM agent_goals WHERE goal_id = ?", (goal_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM agent_goals WHERE goal_id = ?", (goal_id,)
+            ).fetchone()
         return _goal_from_row(row) if row else None
 
     def list(self, limit: int = 50) -> list[AgentGoal]:
@@ -184,7 +192,14 @@ class AgentGoalStore:
             ).fetchall()
         return [_goal_from_row(row) for row in rows]
 
-    def add_event(self, goal_id: str, phase: str, status: str, message: str, data: dict[str, Any] | None = None) -> None:
+    def add_event(
+        self,
+        goal_id: str,
+        phase: str,
+        status: str,
+        message: str,
+        data: dict[str, Any] | None = None,
+    ) -> None:
         with self._connect() as conn:
             conn.execute(
                 """
@@ -215,8 +230,12 @@ class AgentGoalStore:
 
     def diagnostics(self) -> dict[str, Any]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT status, COUNT(*) AS count FROM agent_goals GROUP BY status").fetchall()
-            total = conn.execute("SELECT COUNT(*) AS count FROM agent_goals").fetchone()["count"]
+            rows = conn.execute(
+                "SELECT status, COUNT(*) AS count FROM agent_goals GROUP BY status"
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) AS count FROM agent_goals"
+            ).fetchone()["count"]
         return {
             "status": "ready",
             "goal_count": total,
@@ -227,7 +246,13 @@ class AgentGoalStore:
         }
 
 
-def create_goal(user_request: str, *, priority: str = "normal", execute: bool = True, store: AgentGoalStore | None = None) -> AgentGoal:
+def create_goal(
+    user_request: str,
+    *,
+    priority: str = "normal",
+    execute: bool = True,
+    store: AgentGoalStore | None = None,
+) -> AgentGoal:
     store = store or AgentGoalStore()
     request = user_request.strip()
     if not request:
@@ -239,13 +264,17 @@ def create_goal(user_request: str, *, priority: str = "normal", execute: bool = 
         priority=priority or "normal",
     )
     store.save(goal)
-    store.add_event(goal.goal_id, "queued", "queued", "Goal queued.", {"request": request})
+    store.add_event(
+        goal.goal_id, "queued", "queued", "Goal queued.", {"request": request}
+    )
     if execute:
         return continue_goal(goal.goal_id, store=store) or goal
     return goal
 
 
-def continue_goal(goal_id: str, *, store: AgentGoalStore | None = None) -> AgentGoal | None:
+def continue_goal(
+    goal_id: str, *, store: AgentGoalStore | None = None
+) -> AgentGoal | None:
     store = store or AgentGoalStore()
     goal = store.get(goal_id)
     if goal is None or goal.status in {"completed", "failed", "cancelled"}:
@@ -259,7 +288,9 @@ def continue_goal(goal_id: str, *, store: AgentGoalStore | None = None) -> Agent
     return goal
 
 
-def cancel_goal(goal_id: str, *, store: AgentGoalStore | None = None) -> AgentGoal | None:
+def cancel_goal(
+    goal_id: str, *, store: AgentGoalStore | None = None
+) -> AgentGoal | None:
     store = store or AgentGoalStore()
     goal = store.get(goal_id)
     if goal is None:
@@ -274,18 +305,24 @@ def cancel_goal(goal_id: str, *, store: AgentGoalStore | None = None) -> AgentGo
     return goal
 
 
-def list_goals(limit: int = 50, *, store: AgentGoalStore | None = None) -> list[dict[str, Any]]:
+def list_goals(
+    limit: int = 50, *, store: AgentGoalStore | None = None
+) -> list[dict[str, Any]]:
     store = store or AgentGoalStore()
     return [goal.to_dict() for goal in store.list(limit)]
 
 
-def get_goal(goal_id: str, *, store: AgentGoalStore | None = None) -> dict[str, Any] | None:
+def get_goal(
+    goal_id: str, *, store: AgentGoalStore | None = None
+) -> dict[str, Any] | None:
     store = store or AgentGoalStore()
     goal = store.get(goal_id)
     return goal.to_dict() if goal else None
 
 
-def goal_events(goal_id: str, *, store: AgentGoalStore | None = None) -> list[dict[str, Any]]:
+def goal_events(
+    goal_id: str, *, store: AgentGoalStore | None = None
+) -> list[dict[str, Any]]:
     store = store or AgentGoalStore()
     return store.events(goal_id)
 
@@ -316,31 +353,64 @@ def _observe(goal: AgentGoal, store: AgentGoalStore) -> None:
     try:
         from grandpa.memory.intelligence import ranked_memory_context
 
-        observations.append({"type": "memory", "data": ranked_memory_context(goal.user_request, limit=3)})
+        observations.append(
+            {
+                "type": "memory",
+                "data": ranked_memory_context(goal.user_request, limit=3),
+            }
+        )
     except Exception as exc:
-        observations.append({"type": "memory", "status": "unavailable", "error": exc.__class__.__name__})
+        observations.append(
+            {"type": "memory", "status": "unavailable", "error": exc.__class__.__name__}
+        )
     try:
         from grandpa.browser.agent import browser_agent_diagnostics
 
         observations.append({"type": "browser", "data": browser_agent_diagnostics()})
     except Exception as exc:
-        observations.append({"type": "browser", "status": "unavailable", "error": exc.__class__.__name__})
+        observations.append(
+            {
+                "type": "browser",
+                "status": "unavailable",
+                "error": exc.__class__.__name__,
+            }
+        )
     try:
         from grandpa.pc_control import run_local_action
 
-        desktop = run_local_action({"action_type": "desktop_summary", "target": "desktop", "dry_run": True})
+        desktop = run_local_action(
+            {"action_type": "desktop_summary", "target": "desktop", "dry_run": True}
+        )
         observations.append({"type": "desktop", "data": desktop.to_dict()})
     except Exception as exc:
-        observations.append({"type": "desktop", "status": "unavailable", "error": exc.__class__.__name__})
+        observations.append(
+            {
+                "type": "desktop",
+                "status": "unavailable",
+                "error": exc.__class__.__name__,
+            }
+        )
     try:
         from grandpa.smart_automation import diagnostics
 
         observations.append({"type": "workflow", "data": diagnostics()})
     except Exception as exc:
-        observations.append({"type": "workflow", "status": "unavailable", "error": exc.__class__.__name__})
+        observations.append(
+            {
+                "type": "workflow",
+                "status": "unavailable",
+                "error": exc.__class__.__name__,
+            }
+        )
     goal.observations = observations
     store.save(goal)
-    store.add_event(goal.goal_id, "observing", "observing", "Context observed.", {"observations": len(observations)})
+    store.add_event(
+        goal.goal_id,
+        "observing",
+        "observing",
+        "Context observed.",
+        {"observations": len(observations)},
+    )
 
 
 def _plan(goal: AgentGoal, store: AgentGoalStore) -> PlannerAnalysis:
@@ -355,7 +425,13 @@ def _plan(goal: AgentGoal, store: AgentGoalStore) -> PlannerAnalysis:
         if step.approval_required
     ]
     store.save(goal)
-    store.add_event(goal.goal_id, "planning", "planning", "Execution plan created.", {"steps": len(goal.steps)})
+    store.add_event(
+        goal.goal_id,
+        "planning",
+        "planning",
+        "Execution plan created.",
+        {"steps": len(goal.steps)},
+    )
     return analysis
 
 
@@ -363,7 +439,9 @@ def _act(goal: AgentGoal, analysis: PlannerAnalysis, store: AgentGoalStore) -> N
     if analysis.estimated_risk == "BLOCKED" or not analysis.steps:
         goal.status = "failed"
         goal.current_phase = "failed"
-        goal.result_summary = analysis.unsupported_reason or "No safe local plan is available."
+        goal.result_summary = (
+            analysis.unsupported_reason or "No safe local plan is available."
+        )
         store.save(goal)
         store.add_event(goal.goal_id, "act", "failed", goal.result_summary)
         return
@@ -375,11 +453,22 @@ def _act(goal: AgentGoal, analysis: PlannerAnalysis, store: AgentGoalStore) -> N
         if step.approval_required:
             goal.status = "waiting_approval"
             goal.current_phase = "waiting_approval"
-            approval = {"step_id": step.id, "skill": step.skill, "risk_level": step.risk_level, "status": "pending"}
+            approval = {
+                "step_id": step.id,
+                "skill": step.skill,
+                "risk_level": step.risk_level,
+                "status": "pending",
+            }
             if approval not in goal.approvals_needed:
                 goal.approvals_needed.append(approval)
             store.save(goal)
-            store.add_event(goal.goal_id, "act", "waiting_approval", f"Approval required for {step.skill}.", approval)
+            store.add_event(
+                goal.goal_id,
+                "act",
+                "waiting_approval",
+                f"Approval required for {step.skill}.",
+                approval,
+            )
             return
         result = execute_skill(
             step.skill,
@@ -391,18 +480,38 @@ def _act(goal: AgentGoal, analysis: PlannerAnalysis, store: AgentGoalStore) -> N
                 dry_run=True,
             ),
         )
-        action = {"step_id": step.id, "skill": step.skill, "status": result.status, "ok": result.ok, "message": result.message}
+        action = {
+            "step_id": step.id,
+            "skill": step.skill,
+            "status": result.status,
+            "ok": result.ok,
+            "message": result.message,
+        }
         actions.append(action)
         store.add_event(goal.goal_id, "act", result.status, result.message, action)
         if not result.ok and result.status not in {"unsupported", "approval_required"}:
             retry = execute_skill(
                 step.skill,
                 step.params,
-                SkillExecutionContext(workflow_id=goal.goal_id, user_request=goal.user_request, source="autonomous-agent-v2-retry", dry_run=True),
+                SkillExecutionContext(
+                    workflow_id=goal.goal_id,
+                    user_request=goal.user_request,
+                    source="autonomous-agent-v2-retry",
+                    dry_run=True,
+                ),
             )
-            retry_action = {"step_id": step.id, "skill": step.skill, "status": retry.status, "ok": retry.ok, "message": retry.message, "retry": True}
+            retry_action = {
+                "step_id": step.id,
+                "skill": step.skill,
+                "status": retry.status,
+                "ok": retry.ok,
+                "message": retry.message,
+                "retry": True,
+            }
             actions.append(retry_action)
-            store.add_event(goal.goal_id, "act", retry.status, retry.message, retry_action)
+            store.add_event(
+                goal.goal_id, "act", retry.status, retry.message, retry_action
+            )
             if not retry.ok and analysis.goal_class != "diagnostics":
                 goal.status = "failed"
                 goal.current_phase = "failed"
@@ -429,16 +538,27 @@ def _reflect(goal: AgentGoal, store: AgentGoalStore) -> None:
     goal.current_phase = goal.status
     goal.completed_at = time.time()
     store.save(goal)
-    store.add_event(goal.goal_id, "reflecting", goal.status, goal.result_summary, {"memory_updates": len(goal.memory_updates)})
+    store.add_event(
+        goal.goal_id,
+        "reflecting",
+        goal.status,
+        goal.result_summary,
+        {"memory_updates": len(goal.memory_updates)},
+    )
     _notify(goal)
 
 
-def _summary_for_goal(goal: AgentGoal, completed: list[dict[str, Any]], failed: list[dict[str, Any]]) -> str:
+def _summary_for_goal(
+    goal: AgentGoal, completed: list[dict[str, Any]], failed: list[dict[str, Any]]
+) -> str:
     if failed and "readiness" in goal.user_request.lower():
         return f"Grandpa readiness check completed with {len(failed)} issue(s) and {len(completed)} healthy step(s)."
     if failed:
         return f"Goal finished with {len(failed)} issue(s) after {len(completed)} completed step(s)."
-    if "readiness" in goal.user_request.lower() or "diagnostic" in goal.user_request.lower():
+    if (
+        "readiness" in goal.user_request.lower()
+        or "diagnostic" in goal.user_request.lower()
+    ):
         return f"Grandpa readiness check completed with {len(completed)} safe diagnostic step(s)."
     if "research" in goal.user_request.lower():
         return f"Research plan prepared with {len(completed)} safe browser/planner step(s)."
@@ -465,7 +585,9 @@ def _notify(goal: AgentGoal) -> None:
     try:
         from grandpa.memory_context import record_activity
 
-        record_activity("agent_goal", goal.status, goal.goal_id, goal.result_summary, goal.status)
+        record_activity(
+            "agent_goal", goal.status, goal.goal_id, goal.result_summary, goal.status
+        )
     except Exception:
         return
 

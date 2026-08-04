@@ -30,9 +30,7 @@ def test_ollama_pull_success() -> None:
 def test_ollama_pull_connection_error() -> None:
     console = Console(file=io.StringIO())
     with mock.patch("httpx.stream", side_effect=httpx.ConnectError("refused")):
-        assert not ollama_pull(
-            "http://localhost:11434", "qwen3.5:2b", console
-        )
+        assert not ollama_pull("http://localhost:11434", "qwen3.5:2b", console)
 
 
 def test_pull_cli_only_accepts_ollama() -> None:

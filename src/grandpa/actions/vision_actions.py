@@ -24,6 +24,10 @@ def try_handle(command: str):
         status="handled",
         kind="screen",
         target=target,
-        message="Checking visual targeting diagnostics." if visual else "Checking screen-awareness diagnostics.",
-        tts_text="Checking visual diagnostics." if visual else "Checking screen diagnostics.",
+        message="Checking visual targeting diagnostics."
+        if visual
+        else "Checking screen-awareness diagnostics.",
+        tts_text="Checking visual diagnostics."
+        if visual
+        else "Checking screen diagnostics.",
     )

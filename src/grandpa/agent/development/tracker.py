@@ -17,6 +17,7 @@ class ProjectStateTracker:
         self.state_file = self.project_path / ".grandpa" / "development_state.json"
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         from grandpa.agent.development.checkpoint import CheckpointManager
+
         self.checkpoint_manager = CheckpointManager(project_path)
 
     def load_state(self) -> ProjectState:
@@ -46,9 +47,13 @@ class ProjectStateTracker:
 
     def save_state(self, state: ProjectState) -> None:
         """Save the current project state back to disk."""
-        self.state_file.write_text(json.dumps(state.to_dict(), indent=2), encoding="utf-8")
+        self.state_file.write_text(
+            json.dumps(state.to_dict(), indent=2), encoding="utf-8"
+        )
 
-    def add_task(self, title: str, priority: str = "medium", dependencies: list[str] = None) -> Task:
+    def add_task(
+        self, title: str, priority: str = "medium", dependencies: list[str] = None
+    ) -> Task:
         """Add a new task to the Task Registry."""
         state = self.load_state()
         task_id = f"tsk_{len(state.tasks) + 1:03d}"
@@ -59,7 +64,7 @@ class ProjectStateTracker:
             status="pending",
             priority=priority,
             dependencies=dependencies or [],
-            completion_state=False
+            completion_state=False,
         )
         state.tasks.append(task)
         self.save_state(state)

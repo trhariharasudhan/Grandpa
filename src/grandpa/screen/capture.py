@@ -44,9 +44,7 @@ class ScreenCapture:
         active_window: bool = False,
         region: tuple[int, int, int, int] | None = None,
     ) -> ScreenshotResult:
-        selected_sources = sum(
-            (monitor is not None, active_window, region is not None)
-        )
+        selected_sources = sum((monitor is not None, active_window, region is not None))
         if selected_sources > 1:
             raise ScreenCaptureError(
                 "Choose one capture source: monitor, active window, or region."

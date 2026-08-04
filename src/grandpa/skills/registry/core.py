@@ -132,7 +132,9 @@ def registry_diagnostics() -> dict[str, Any]:
         "skill_count": len(skills),
         "categories": list_categories(),
         "approval_required_count": sum(1 for item in skills if item.approval_required),
-        "loaded_skills": [item.to_dict() for item in sorted(skills, key=lambda item: item.name)],
+        "loaded_skills": [
+            item.to_dict() for item in sorted(skills, key=lambda item: item.name)
+        ],
         "history": history,
         "runtime_ready": True,
     }

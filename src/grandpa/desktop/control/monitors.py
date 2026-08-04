@@ -21,22 +21,37 @@ class MonitorControlService:
         if action == "monitor_info" and request.target:
             target = str(request.target).lower().strip()
             monitors = [
-                monitor for monitor in monitors
-                if target in {str(monitor.get("id", "")).lower(), "primary" if monitor.get("primary") else ""}
+                monitor
+                for monitor in monitors
+                if target
+                in {
+                    str(monitor.get("id", "")).lower(),
+                    "primary" if monitor.get("primary") else "",
+                }
             ]
         ok = result.supported and (action == "list_monitors" or bool(monitors))
-        message = result.message if action == "list_monitors" else (
-            f"Found monitor {request.target}." if monitors else f"I could not find monitor {request.target}."
+        message = (
+            result.message
+            if action == "list_monitors"
+            else (
+                f"Found monitor {request.target}."
+                if monitors
+                else f"I could not find monitor {request.target}."
+            )
         )
         return LocalActionResponse(
             ok=ok,
             action_id=None,
-            status="completed" if ok else ("unsupported" if not result.supported else "failed"),
+            status="completed"
+            if ok
+            else ("unsupported" if not result.supported else "failed"),
             message=message,
             approval_required=False,
             risk_level="LOW",
             evidence={**result.evidence, "monitors": monitors},
-            error=None if ok else ("unsupported" if not result.supported else "monitor_not_found"),
+            error=None
+            if ok
+            else ("unsupported" if not result.supported else "monitor_not_found"),
         )
 
     def diagnostics(self) -> dict[str, Any]:
@@ -53,7 +68,11 @@ class MonitorControlService:
                 "supported": result.supported,
             }
         except Exception as exc:
-            return {"service": self.name, "ready": False, "error": exc.__class__.__name__}
+            return {
+                "service": self.name,
+                "ready": False,
+                "error": exc.__class__.__name__,
+            }
 
 
 __all__ = ["MonitorControlService"]

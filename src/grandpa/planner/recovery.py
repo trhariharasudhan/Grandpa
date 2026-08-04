@@ -33,13 +33,17 @@ class RecoveryManager:
         if used >= plan.limits.max_recoveries:
             return None
         attempts = sum(bool(item.recovery) for item in step.attempts)
-        if attempts >= min(step.recovery_policy.max_recoveries, plan.limits.max_recoveries):
+        if attempts >= min(
+            step.recovery_policy.max_recoveries, plan.limits.max_recoveries
+        ):
             return None
         for strategy in step.recovery_policy.strategies:
             if strategy == "refocus":
                 target = executor.automation_service.target_window
                 if target is not None:
-                    check = executor.automation_service.window_targets.focus_and_verify(target)
+                    check = executor.automation_service.window_targets.focus_and_verify(
+                        target
+                    )
                     if check.ok:
                         plan.metadata["recoveries"] = used + 1
                         return "refocus"

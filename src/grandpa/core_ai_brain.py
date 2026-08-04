@@ -168,7 +168,9 @@ class BrainStore:
         except sqlite3.Error:
             self.disabled = True
             return
-        self._learn_habits(analysis.effective_text, kind=kind, target=target, status=status)
+        self._learn_habits(
+            analysis.effective_text, kind=kind, target=target, status=status
+        )
 
     def _learn_habits(
         self,
@@ -183,7 +185,9 @@ class BrainStore:
         lowered = text.lower()
         habits: list[tuple[str, str, str]] = []
         if kind in {"app", "window"} and target:
-            habits.append(("preferred_app", _habit_key(target), _friendly_target(target)))
+            habits.append(
+                ("preferred_app", _habit_key(target), _friendly_target(target))
+            )
         if kind in {"url", "browser"} and target:
             site = _site_from_target(target)
             if site:
@@ -219,12 +223,16 @@ class BrainStore:
             self.disabled = True
 
     def habit_score(self, text: str) -> float:
-        tokens = {token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1}
+        tokens = {
+            token for token in re.findall(r"[a-z0-9]+", text.lower()) if len(token) > 1
+        }
         if not tokens:
             return 0.0
         score = 0.0
         for habit in self.habits(limit=50):
-            habit_tokens = set(re.findall(r"[a-z0-9]+", f"{habit['key']} {habit['label']}".lower()))
+            habit_tokens = set(
+                re.findall(r"[a-z0-9]+", f"{habit['key']} {habit['label']}".lower())
+            )
             if tokens & habit_tokens:
                 score += min(0.12, 0.03 * int(habit["count"]))
         return min(score, 0.3)
@@ -266,7 +274,9 @@ def analyze_user_text(text: str, *, store: BrainStore | None = None) -> BrainAna
     )
 
 
-def resolve_follow_up(text: str, *, store: BrainStore | None = None) -> tuple[str, float, str]:
+def resolve_follow_up(
+    text: str, *, store: BrainStore | None = None
+) -> tuple[str, float, str]:
     store = store or BrainStore()
     lower = text.lower().strip(" ?!.")
     last = store.last_action()
@@ -314,16 +324,31 @@ def detect_tone(text: str) -> Tone:
     lower = text.lower()
     if any(word in lower for word in ("urgent", "asap", "quick", "immediately", "now")):
         return "urgent"
-    if any(word in lower for word in ("confused", "don't understand", "what happened", "why", "enna", "epdi")):
+    if any(
+        word in lower
+        for word in (
+            "confused",
+            "don't understand",
+            "what happened",
+            "why",
+            "enna",
+            "epdi",
+        )
+    ):
         return "confused"
-    if any(word in lower for word in ("annoying", "frustrated", "not working", "broken", "again?", "dei")):
+    if any(
+        word in lower
+        for word in ("annoying", "frustrated", "not working", "broken", "again?", "dei")
+    ):
         return "frustrated"
     if any(word in lower for word in ("da", "bro", "haha", "lol", "seri", "okay")):
         return "casual"
     return "neutral"
 
 
-def build_brain_context(analysis: BrainAnalysis, *, store: BrainStore | None = None) -> str:
+def build_brain_context(
+    analysis: BrainAnalysis, *, store: BrainStore | None = None
+) -> str:
     store = store or BrainStore()
     habits = store.habits(limit=5)
     lines = [
@@ -333,16 +358,24 @@ def build_brain_context(analysis: BrainAnalysis, *, store: BrainStore | None = N
         f"- Follow-up confidence: {analysis.confidence:.0%}. Do not invent context when confidence is low.",
     ]
     if analysis.follow_up_resolved:
-        lines.append(f"- Resolved follow-up: {analysis.original_text!r} -> {analysis.effective_text!r}.")
+        lines.append(
+            f"- Resolved follow-up: {analysis.original_text!r} -> {analysis.effective_text!r}."
+        )
     if habits:
         lines.append("- Learned local habits:")
         for habit in habits:
-            lines.append(f"  - {habit['habit_type']}: {habit['label']} used {habit['count']} times")
+            lines.append(
+                f"  - {habit['habit_type']}: {habit['label']} used {habit['count']} times"
+            )
     lines.append("- Keep responses concise, practical, safe, and Grandpa-branded.")
-    return "\n".join(lines)
+    from grandpa.core.runtime_context import get_runtime_context_prompt
+
+    return "\n".join(lines) + get_runtime_context_prompt()
 
 
-def process_user_message(text: str, *, store: BrainStore | None = None) -> BrainAnalysis:
+def process_user_message(
+    text: str, *, store: BrainStore | None = None
+) -> BrainAnalysis:
     analysis = analyze_user_text(text, store=store)
     (store or BrainStore()).record_turn(analysis=analysis)
     return analysis

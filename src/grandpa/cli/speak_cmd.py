@@ -10,7 +10,9 @@ from grandpa.voice.speech_output import SpeechOutputEngine
 
 @click.command("speak")
 @click.argument("text")
-@click.option("--dry-run", is_flag=True, help="Validate speech output without speaking.")
+@click.option(
+    "--dry-run", is_flag=True, help="Validate speech output without speaking."
+)
 def speak(text: str, dry_run: bool) -> None:
     """Speak TEXT aloud using the best available local TTS backend."""
 

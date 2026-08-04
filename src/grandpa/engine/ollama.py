@@ -16,6 +16,7 @@ from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
     EngineModelNotFoundError,
+    EngineModelPullError,
     InferenceEngine,
     estimate_prompt_tokens,
     messages_to_dicts,
@@ -100,7 +101,7 @@ def _visible_stream_delta(content: str, state: dict[str, bool]) -> str:
         if start is None:
             visible += text
             break
-        visible += text[:start[0]]
+        visible += text[: start[0]]
         text = text[start[1] :]
         lower = text.lower()
         end = _first_reasoning_end(lower)
@@ -140,6 +141,7 @@ class OllamaEngine(InferenceEngine):
     """Ollama backend via its native HTTP API."""
 
     engine_id = "ollama"
+    supports_streaming = True
 
     _DEFAULT_HOST = _DEFAULT_OLLAMA_HOST
 
@@ -320,6 +322,8 @@ class OllamaEngine(InferenceEngine):
             payload["think"] = kwargs["think"]
         try:
             with self._client.stream("POST", "/api/chat", json=payload) as resp:
+                if not resp.is_success:
+                    resp.read()
                 resp.raise_for_status()
                 stream_state = {"in_reasoning": False}
                 for line in resp.iter_lines():
@@ -328,13 +332,13 @@ class OllamaEngine(InferenceEngine):
                     try:
                         chunk = json.loads(line)
                     except json.JSONDecodeError:
+                        logger.warning("Ignoring malformed Ollama stream chunk")
                         continue
                     content = _visible_stream_delta(
                         chunk.get("message", {}).get("content", ""),
                         stream_state,
                     )
                     if content:
-                        print("DEBUG:", repr(content))
                         yield content
                     if chunk.get("done", False):
                         reported_prompt = chunk.get("prompt_eval_count", 0)
@@ -351,9 +355,26 @@ class OllamaEngine(InferenceEngine):
                             "total_tokens": full_prompt + comp,
                         }
                         break
-        except (httpx.ConnectError, httpx.TimeoutException) as exc:
+        except httpx.RequestError as exc:
             raise EngineConnectionError(
-                f"Ollama not reachable at {self._host}"
+                f"Ollama stream was interrupted at {self._host}"
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            body = exc.response.text[:500] if exc.response else ""
+            if _is_model_not_found_error(exc.response.status_code, body):
+                raise EngineModelNotFoundError(
+                    model,
+                    f"Ollama model {model!r} is not installed.",
+                ) from exc
+            if _is_model_load_error(body):
+                raise EngineModelLoadError(
+                    model,
+                    _format_model_load_error(model, body),
+                    low_memory=_is_low_memory_error(body),
+                ) from exc
+            raise RuntimeError(
+                f"Ollama returned {exc.response.status_code}: "
+                f"{_extract_ollama_error(body)}"
             ) from exc
 
     async def stream_full(
@@ -528,10 +549,17 @@ class OllamaEngine(InferenceEngine):
             ) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500] if exc.response else ""
-            raise RuntimeError(
-                f"Ollama pull failed with {exc.response.status_code}: {body}"
+            raise EngineModelPullError(
+                model, f"Ollama pull failed with {exc.response.status_code}: {body}"
             ) from exc
-        data = resp.json() if resp.content else {}
+        try:
+            data = resp.json() if resp.content else {}
+        except ValueError as exc:
+            raise EngineModelPullError(
+                model, "Ollama returned an invalid pull response."
+            ) from exc
+        if data.get("error"):
+            raise EngineModelPullError(model, str(data["error"]))
         return {"model": model, "status": data.get("status", "success")}
 
     def health(self) -> bool:

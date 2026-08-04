@@ -28,7 +28,9 @@ def test_create_user_skill_uses_safe_template(monkeypatch, tmp_path) -> None:
     assert skill["name"] == "start coding session"
     assert skill["trigger_phrases"] == ["start coding session"]
     assert skill["workflow_steps"]
-    assert all(step["schema_version"] == "skill_graph_v2" for step in skill["workflow_steps"])
+    assert all(
+        step["schema_version"] == "skill_graph_v2" for step in skill["workflow_steps"]
+    )
 
 
 def test_validator_rejects_shell_like_skills() -> None:
@@ -75,7 +77,9 @@ def test_user_skill_api_routes(monkeypatch, tmp_path) -> None:
     app.include_router(user_skills_router)
     client = TestClient(app)
 
-    created = client.post("/v1/user-skills/create", json={"name": "start coding session"})
+    created = client.post(
+        "/v1/user-skills/create", json={"name": "start coding session"}
+    )
     assert created.status_code == 200
     skill_id = created.json()["skill"]["skill_id"]
 
@@ -98,7 +102,9 @@ def test_user_skill_api_routes(monkeypatch, tmp_path) -> None:
 def test_local_action_creates_and_runs_user_skill(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("GRANDPA_USER_SKILLS_DB", str(tmp_path / "user_skills.db"))
 
-    created = handle_local_action("Create a skill called start coding session", execute=False)
+    created = handle_local_action(
+        "Create a skill called start coding session", execute=False
+    )
     assert created.status == "handled"
     assert "Saved user skill" in created.message
 

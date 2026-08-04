@@ -19,7 +19,9 @@ class ContinuationEngine:
     def __init__(self, project_path: str, project_name: str = "Grandpa") -> None:
         self.project_path = Path(project_path).resolve()
         self.project_name = project_name
-        self.tracker = ProjectStateTracker(str(self.project_path), project_name=self.project_name)
+        self.tracker = ProjectStateTracker(
+            str(self.project_path), project_name=self.project_name
+        )
         self.checkpoint_manager = CheckpointManager(str(self.project_path))
 
     def inspect_repository(self) -> Tuple[str, str]:
@@ -32,7 +34,7 @@ class ContinuationEngine:
                 cwd=str(self.project_path),
                 capture_output=True,
                 text=True,
-                check=True
+                check=True,
             )
             branch = res_branch.stdout.strip()
         except Exception:
@@ -44,7 +46,7 @@ class ContinuationEngine:
             res_compile = subprocess.run(
                 ["python", "-m", "compileall", "-q", str(self.project_path)],
                 cwd=str(self.project_path),
-                capture_output=True
+                capture_output=True,
             )
             if res_compile.returncode != 0:
                 health = "unhealthy"
@@ -56,6 +58,7 @@ class ContinuationEngine:
     def identify_next_task(self, state: ProjectState) -> Optional[Task]:
         """Resolve next pending task based on priority and dependency chain."""
         from grandpa.agent.development.roadmap_generator import is_legacy_roadmap
+
         if is_legacy_roadmap(state):
             return None
         completed_ids = {t.task_id for t in state.tasks if t.completion_state}
@@ -123,7 +126,8 @@ class ContinuationEngine:
             svc = MemoryService.get_instance()
             last_milestone = (
                 state.roadmap.completed_milestones[-1]
-                if state.roadmap.completed_milestones else None
+                if state.roadmap.completed_milestones
+                else None
             )
             next_task_title = next_task.title if next_task else None
 
@@ -145,8 +149,10 @@ class ContinuationEngine:
                     "last_completed_milestone": last_milestone,
                     "next_milestone": state.next_milestone,
                     "project_health": state.repository_health,
-                    "continuation_history": [f"Resumed at {time.strftime('%Y-%m-%d %H:%M:%S')}"]
-                }
+                    "continuation_history": [
+                        f"Resumed at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    ],
+                },
             )
         except Exception:
             pass

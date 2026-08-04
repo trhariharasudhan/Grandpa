@@ -205,7 +205,9 @@ class SchedulerStore:
         if not routine:
             return None
         next_run_at = (
-            _next_run_timestamp(routine["schedule"]) if enabled and routine["schedule"] else None
+            _next_run_timestamp(routine["schedule"])
+            if enabled and routine["schedule"]
+            else None
         )
         with self._connect() as conn:
             conn.execute(
@@ -220,7 +222,9 @@ class SchedulerStore:
 
     def delete_routine(self, name: str) -> bool:
         with self._connect() as conn:
-            cur = conn.execute("DELETE FROM routines WHERE lower(name) = lower(?)", (name,))
+            cur = conn.execute(
+                "DELETE FROM routines WHERE lower(name) = lower(?)", (name,)
+            )
         return cur.rowcount > 0
 
     def add_reminder(self, text: str, schedule: str) -> dict[str, Any]:
@@ -261,7 +265,9 @@ class SchedulerStore:
             ).fetchall()
         return [_reminder_row(row) for row in rows]
 
-    def claim_due_routines(self, now: float | None = None, *, limit: int = 5) -> list[dict[str, Any]]:
+    def claim_due_routines(
+        self, now: float | None = None, *, limit: int = 5
+    ) -> list[dict[str, Any]]:
         now = time.time() if now is None else now
         with self._connect() as conn:
             rows = conn.execute(
@@ -285,7 +291,9 @@ class SchedulerStore:
                     WHERE id = ?
                     """,
                     (
-                        _next_run_timestamp(routine["schedule"], after=datetime.fromtimestamp(now)),
+                        _next_run_timestamp(
+                            routine["schedule"], after=datetime.fromtimestamp(now)
+                        ),
                         now,
                         now,
                         routine["id"],
@@ -293,7 +301,9 @@ class SchedulerStore:
                 )
         return routines
 
-    def claim_due_reminders(self, now: float | None = None, *, limit: int = 10) -> list[dict[str, Any]]:
+    def claim_due_reminders(
+        self, now: float | None = None, *, limit: int = 10
+    ) -> list[dict[str, Any]]:
         now = time.time() if now is None else now
         with self._connect() as conn:
             rows = conn.execute(
@@ -317,7 +327,9 @@ class SchedulerStore:
                     WHERE id = ?
                     """,
                     (
-                        _next_run_timestamp(reminder["schedule"], after=datetime.fromtimestamp(now)),
+                        _next_run_timestamp(
+                            reminder["schedule"], after=datetime.fromtimestamp(now)
+                        ),
                         now,
                         f"Reminder: {reminder['text']}",
                         now,
@@ -397,7 +409,9 @@ def handle_scheduler_command(
             schedule="daily:09:00",
             enabled=True,
         )
-        _record_scheduler_activity("routine", "create", routine["name"], "daily:09:00", "handled")
+        _record_scheduler_activity(
+            "routine", "create", routine["name"], "daily:09:00", "handled"
+        )
         return SchedulerResult(
             "handled",
             "scheduler",
@@ -410,14 +424,18 @@ def handle_scheduler_command(
     if match:
         actions = _actions_from_open_list(match.group(1))
         if not actions:
-            return _blocked("I blocked this routine because it did not contain safe open actions.")
+            return _blocked(
+                "I blocked this routine because it did not contain safe open actions."
+            )
         routine = store.upsert_routine(
             "morning routine",
             actions,
             schedule="daily:09:00",
             enabled=True,
         )
-        _record_scheduler_activity("routine", "schedule", routine["name"], ", ".join(actions), "handled")
+        _record_scheduler_activity(
+            "routine", "schedule", routine["name"], ", ".join(actions), "handled"
+        )
         return SchedulerResult(
             "handled",
             "scheduler",
@@ -426,7 +444,13 @@ def handle_scheduler_command(
             "Updated your morning routine.",
         )
 
-    if command in {"what routines do i have", "list routines", "show routines", "what reminders do i have", "show reminders"}:
+    if command in {
+        "what routines do i have",
+        "list routines",
+        "show routines",
+        "what reminders do i have",
+        "show reminders",
+    }:
         return _list_schedule(store)
 
     match = re.fullmatch(r"(?:disable|turn off) (?:my )?(.+?)(?: routine)?", command)
@@ -434,33 +458,56 @@ def handle_scheduler_command(
         name = _routine_name(match.group(1))
         routine = store.set_routine_enabled(name, False)
         if not routine:
-            return SchedulerResult("handled", "scheduler", name, f"I could not find a routine named {name}.")
+            return SchedulerResult(
+                "handled",
+                "scheduler",
+                name,
+                f"I could not find a routine named {name}.",
+            )
         _record_scheduler_activity("routine", "disable", name, None, "handled")
-        return SchedulerResult("handled", "scheduler", name, f"Disabled {name}.", f"Disabled {name}.")
+        return SchedulerResult(
+            "handled", "scheduler", name, f"Disabled {name}.", f"Disabled {name}."
+        )
 
     match = re.fullmatch(r"(?:enable|turn on) (?:my )?(.+?)(?: routine)?", command)
     if match:
         name = _routine_name(match.group(1))
         routine = store.set_routine_enabled(name, True)
         if not routine:
-            return SchedulerResult("handled", "scheduler", name, f"I could not find a routine named {name}.")
+            return SchedulerResult(
+                "handled",
+                "scheduler",
+                name,
+                f"I could not find a routine named {name}.",
+            )
         _record_scheduler_activity("routine", "enable", name, None, "handled")
-        return SchedulerResult("handled", "scheduler", name, f"Enabled {name}.", f"Enabled {name}.")
+        return SchedulerResult(
+            "handled", "scheduler", name, f"Enabled {name}.", f"Enabled {name}."
+        )
 
     match = re.fullmatch(r"(?:run|start) (?:my )?(.+?)(?: routine)?", command)
     if match:
         name = _routine_name(match.group(1))
         routine = store.get_routine(name)
         if not routine and name == "work setup":
-            routine = store.upsert_routine("work setup", ["open chrome", "open vs code"], enabled=True)
+            routine = store.upsert_routine(
+                "work setup", ["open chrome", "open vs code"], enabled=True
+            )
         if not routine:
-            return SchedulerResult("handled", "scheduler", name, f"I could not find a routine named {name}.")
+            return SchedulerResult(
+                "handled",
+                "scheduler",
+                name,
+                f"I could not find a routine named {name}.",
+            )
         return _run_routine(routine, execute=execute)
 
     reminder = _parse_reminder(command)
     if reminder:
         item = store.add_reminder(reminder["text"], reminder["schedule"])
-        _record_scheduler_activity("reminder", "create", item["text"], item["schedule"], "handled")
+        _record_scheduler_activity(
+            "reminder", "create", item["text"], item["schedule"], "handled"
+        )
         return SchedulerResult(
             "handled",
             "scheduler",
@@ -478,7 +525,11 @@ def scheduler_summary() -> dict[str, Any]:
         "routines": store.list_routines(),
         "reminders": store.list_reminders(),
         "notifications": store.list_notifications(limit=10),
-        "storage": {"backend": "sqlite", "path": str(store.db_path), "local_only": True},
+        "storage": {
+            "backend": "sqlite",
+            "path": str(store.db_path),
+            "local_only": True,
+        },
     }
 
 
@@ -486,7 +537,10 @@ def run_routine(name: str) -> dict[str, Any]:
     store = SchedulerStore()
     routine = store.get_routine(_routine_name(name))
     if not routine:
-        return {"status": "not_found", "message": f"I could not find a routine named {name}."}
+        return {
+            "status": "not_found",
+            "message": f"I could not find a routine named {name}.",
+        }
     result = _run_routine(routine, execute=True, automatic=False)
     return {
         "status": result.status,
@@ -499,11 +553,16 @@ def set_routine_enabled(name: str, enabled: bool) -> dict[str, Any]:
     store = SchedulerStore()
     routine = store.set_routine_enabled(_routine_name(name), enabled)
     if not routine:
-        return {"status": "not_found", "message": f"I could not find a routine named {name}."}
+        return {
+            "status": "not_found",
+            "message": f"I could not find a routine named {name}.",
+        }
     return {"status": "ok", "routine": routine}
 
 
-def execute_due_once(store: SchedulerStore | None = None, *, now: float | None = None) -> dict[str, Any]:
+def execute_due_once(
+    store: SchedulerStore | None = None, *, now: float | None = None
+) -> dict[str, Any]:
     store = store or SchedulerStore()
     due_time = time.time() if now is None else now
     reminders = store.claim_due_reminders(due_time)
@@ -518,7 +577,9 @@ def execute_due_once(store: SchedulerStore | None = None, *, now: float | None =
             message=message,
             source_id=reminder["id"],
         )
-        _record_scheduler_activity("reminder", "trigger", reminder["text"], reminder["schedule"], "handled")
+        _record_scheduler_activity(
+            "reminder", "trigger", reminder["text"], reminder["schedule"], "handled"
+        )
         events.append(notification)
 
     for routine in routines:
@@ -540,7 +601,9 @@ def execute_due_once(store: SchedulerStore | None = None, *, now: float | None =
     }
 
 
-def _run_routine(routine: dict[str, Any], *, execute: bool, automatic: bool = False) -> SchedulerResult:
+def _run_routine(
+    routine: dict[str, Any], *, execute: bool, automatic: bool = False
+) -> SchedulerResult:
     if not routine.get("enabled", True):
         return SchedulerResult(
             "handled",
@@ -560,11 +623,25 @@ def _run_routine(routine: dict[str, Any], *, execute: bool, automatic: bool = Fa
             continue
         lines.append(f"- {action}: {result.message or result.status}")
         statuses.append(result.status)
-    status = "handled" if any(item == "handled" for item in statuses) else (
-        "requires_confirmation" if any(item == "requires_confirmation" for item in statuses) else "unsupported"
+    status = (
+        "handled"
+        if any(item == "handled" for item in statuses)
+        else (
+            "requires_confirmation"
+            if any(item == "requires_confirmation" for item in statuses)
+            else "unsupported"
+        )
     )
-    _record_scheduler_activity("routine", "run", routine["name"], "; ".join(routine["actions"]), status)
-    return SchedulerResult(status, "scheduler", routine["name"], "\n".join(lines), f"Ran {routine['name']}.")
+    _record_scheduler_activity(
+        "routine", "run", routine["name"], "; ".join(routine["actions"]), status
+    )
+    return SchedulerResult(
+        status,
+        "scheduler",
+        routine["name"],
+        "\n".join(lines),
+        f"Ran {routine['name']}.",
+    )
 
 
 def _parse_reminder(command: str) -> dict[str, str] | None:
@@ -580,7 +657,9 @@ def _parse_reminder(command: str) -> dict[str, str] | None:
     match = re.fullmatch(r"remind me to (.+) every hour", command)
     if match:
         return {"text": match.group(1).strip(), "schedule": "hourly"}
-    match = re.fullmatch(r"remind me to (.+) at ([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)", command)
+    match = re.fullmatch(
+        r"remind me to (.+) at ([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)", command
+    )
     if match:
         hour = int(match.group(2))
         minute = int(match.group(3) or "0")
@@ -589,7 +668,10 @@ def _parse_reminder(command: str) -> dict[str, str] | None:
             hour += 12
         if suffix == "am" and hour == 12:
             hour = 0
-        return {"text": match.group(1).strip(), "schedule": f"daily:{hour:02d}:{minute:02d}"}
+        return {
+            "text": match.group(1).strip(),
+            "schedule": f"daily:{hour:02d}:{minute:02d}",
+        }
     return None
 
 
@@ -597,7 +679,12 @@ def _list_schedule(store: SchedulerStore) -> SchedulerResult:
     routines = store.list_routines()
     reminders = store.list_reminders()
     if not routines and not reminders:
-        return SchedulerResult("handled", "scheduler", "schedule", "You do not have routines or reminders yet.")
+        return SchedulerResult(
+            "handled",
+            "scheduler",
+            "schedule",
+            "You do not have routines or reminders yet.",
+        )
     lines = ["Your routines and reminders:"]
     if routines:
         lines.append("Routines:")
@@ -609,8 +696,16 @@ def _list_schedule(store: SchedulerStore) -> SchedulerResult:
         lines.append("Reminders:")
         for reminder in reminders:
             state = "enabled" if reminder["enabled"] else "disabled"
-            lines.append(f"- {reminder['text']} ({state}, {_schedule_label(reminder['schedule'])})")
-    return SchedulerResult("handled", "scheduler", "schedule", "\n".join(lines), "Here are your routines and reminders.")
+            lines.append(
+                f"- {reminder['text']} ({state}, {_schedule_label(reminder['schedule'])})"
+            )
+    return SchedulerResult(
+        "handled",
+        "scheduler",
+        "schedule",
+        "\n".join(lines),
+        "Here are your routines and reminders.",
+    )
 
 
 def _actions_from_open_list(raw: str) -> list[str]:
@@ -625,10 +720,14 @@ def _actions_from_open_list(raw: str) -> list[str]:
 
 
 def _is_risky_routine_action(action: str) -> bool:
-    return action.startswith(("type ", "paste", "click ", "press ", "scroll ", "switch "))
+    return action.startswith(
+        ("type ", "paste", "click ", "press ", "scroll ", "switch ")
+    )
 
 
-def _next_run_timestamp(schedule: str | None, *, after: datetime | None = None) -> float | None:
+def _next_run_timestamp(
+    schedule: str | None, *, after: datetime | None = None
+) -> float | None:
     if not schedule:
         return None
     now = after or datetime.now()
@@ -638,7 +737,12 @@ def _next_run_timestamp(schedule: str | None, *, after: datetime | None = None) 
         return (now + timedelta(hours=1)).timestamp()
     match = re.fullmatch(r"daily:([0-9]{2}):([0-9]{2})", schedule)
     if match:
-        candidate = now.replace(hour=int(match.group(1)), minute=int(match.group(2)), second=0, microsecond=0)
+        candidate = now.replace(
+            hour=int(match.group(1)),
+            minute=int(match.group(2)),
+            second=0,
+            microsecond=0,
+        )
         if candidate <= now:
             candidate += timedelta(days=1)
         return candidate.timestamp()
@@ -647,7 +751,12 @@ def _next_run_timestamp(schedule: str | None, *, after: datetime | None = None) 
         weekday = int(match.group(1))
         days_ahead = (weekday - now.weekday()) % 7
         candidate = now + timedelta(days=days_ahead)
-        candidate = candidate.replace(hour=int(match.group(2)), minute=int(match.group(3)), second=0, microsecond=0)
+        candidate = candidate.replace(
+            hour=int(match.group(2)),
+            minute=int(match.group(3)),
+            second=0,
+            microsecond=0,
+        )
         if candidate <= now:
             candidate += timedelta(days=7)
         return candidate.timestamp()
@@ -715,7 +824,9 @@ def _schedule_label(schedule: str | None) -> str:
 def _time_label(timestamp: float | None) -> str:
     if not timestamp:
         return "manual"
-    return datetime.fromtimestamp(timestamp).strftime("%b %d, %I:%M %p").replace(" 0", " ")
+    return (
+        datetime.fromtimestamp(timestamp).strftime("%b %d, %I:%M %p").replace(" 0", " ")
+    )
 
 
 def _normalise(text: str) -> str:
@@ -724,7 +835,9 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", value)
 
 
-def _record_scheduler_activity(category: str, action: str, target: str | None, detail: str | None, status: str) -> None:
+def _record_scheduler_activity(
+    category: str, action: str, target: str | None, detail: str | None, status: str
+) -> None:
     try:
         from grandpa.memory_context import record_activity
 
@@ -734,13 +847,16 @@ def _record_scheduler_activity(category: str, action: str, target: str | None, d
 
 
 def _blocked(message: str) -> SchedulerResult:
-    return SchedulerResult("blocked", "scheduler", "routine", message, message, permission="blocked")
+    return SchedulerResult(
+        "blocked", "scheduler", "routine", message, message, permission="blocked"
+    )
 
 
-def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) -> None:
+def _ensure_columns(
+    conn: sqlite3.Connection, table: str, columns: dict[str, str]
+) -> None:
     existing = {
-        row["name"]
-        for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
+        row["name"] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()
     }
     for name, column_type in columns.items():
         if name not in existing:
@@ -748,7 +864,9 @@ def _ensure_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str
 
 
 def _fallback() -> SchedulerResult:
-    return SchedulerResult("no_match", "scheduler", None, "", None, should_fallback=True)
+    return SchedulerResult(
+        "no_match", "scheduler", None, "", None, should_fallback=True
+    )
 
 
 __all__ = [

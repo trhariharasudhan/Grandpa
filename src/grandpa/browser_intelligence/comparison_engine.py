@@ -92,7 +92,9 @@ class ProductComparisonEngine:
             return defaults.get(key, "Standard AI Dev Spec")
         return "N/A"
 
-    def _generate_pros_cons(self, item_name: str, attrs: dict[str, dict[str, str]]) -> tuple[list[str], list[str]]:
+    def _generate_pros_cons(
+        self, item_name: str, attrs: dict[str, dict[str, str]]
+    ) -> tuple[list[str], list[str]]:
         name_lower = item_name.lower()
         if "raspberry pi" in name_lower:
             return (

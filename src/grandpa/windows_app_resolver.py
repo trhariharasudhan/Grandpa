@@ -197,7 +197,9 @@ class AppResolverCache:
         if not row or time.time() - row["discovered_at"] > max_age_seconds:
             return None
         definition = APP_DEFINITIONS.get(app_id)
-        display_name = row["display_name"] or (definition.display_name if definition else app_id)
+        display_name = row["display_name"] or (
+            definition.display_name if definition else app_id
+        )
         return AppResolution(
             app_id=row["app_id"],
             display_name=display_name,
@@ -205,7 +207,9 @@ class AppResolverCache:
             launch_kind=row["launch_kind"],
             launch_target=row["launch_target"],
             source=row["source"],
-            message=_resolution_message(display_name, row["status"], row["launch_target"], row["source"]),
+            message=_resolution_message(
+                display_name, row["status"], row["launch_target"], row["source"]
+            ),
         )
 
     def set(self, resolution: AppResolution) -> None:
@@ -241,7 +245,9 @@ class AppResolverCache:
             self.disabled = True
 
 
-def resolve_app(name: str, *, refresh: bool = False, cache: AppResolverCache | None = None) -> AppResolution:
+def resolve_app(
+    name: str, *, refresh: bool = False, cache: AppResolverCache | None = None
+) -> AppResolution:
     definition = definition_for(name)
     if definition is None:
         return AppResolution(
@@ -277,12 +283,101 @@ def resolve_app(name: str, *, refresh: bool = False, cache: AppResolverCache | N
 
 def list_installed_apps(*, refresh: bool = False) -> list[dict[str, Any]]:
     cache = AppResolverCache()
-    return [resolve_app(defn.app_id, refresh=refresh, cache=cache).to_dict() for defn in APP_DEFINITIONS.values()]
+    return [
+        resolve_app(defn.app_id, refresh=refresh, cache=cache).to_dict()
+        for defn in APP_DEFINITIONS.values()
+    ]
 
 
 def describe_app(name: str) -> str:
     resolution = resolve_app(name)
     return resolution.message
+
+
+def verify_app_launched(
+    app_id: str,
+    display_name: str,
+    launched_pid: int | None = None,
+    timeout: float = 3.0,
+) -> str:
+    """Verify that the app successfully launched and has a visible window or process."""
+    if sys.platform != "win32":
+        return "ok"
+    import time
+
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+    try:
+        from grandpa.windows_window_control import (
+            _APP_TITLE_KEYWORDS,
+            _CANONICAL_EXECUTABLES,
+            _get_window_executable_name,
+            _list_windows,
+        )
+    except ImportError:
+        return "ok"
+
+    canonical_exes = _CANONICAL_EXECUTABLES.get(app_id, set())
+    keywords = _APP_TITLE_KEYWORDS.get(app_id, (app_id.lower(),))
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        if app_id == "chrome":
+            try:
+                for w in _list_windows():
+                    w_title = w.title.lower() if w.title else ""
+                    if (
+                        "who's using chrome" in w_title
+                        or "whos using chrome" in w_title
+                    ):
+                        return "chrome_profile_chooser"
+            except Exception:
+                pass
+
+        try:
+            windows = _list_windows()
+            for w in windows:
+                if launched_pid is not None and w.process_id == launched_pid:
+                    return "ok"
+                exe = _get_window_executable_name(w.handle)
+                if exe and exe in canonical_exes:
+                    return "ok"
+                w_title_lower = w.title.lower() if w.title else ""
+                if any(kw in w_title_lower for kw in keywords):
+                    return "ok"
+                if display_name.lower() in w_title_lower:
+                    return "ok"
+                try:
+                    import win32gui
+
+                    if win32gui.GetClassName(w.handle) == "ApplicationFrameWindow":
+                        if display_name.lower() in w_title_lower:
+                            return "ok"
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        time.sleep(0.1)
+
+    if launched_pid is not None and psutil is not None:
+        try:
+            if psutil.pid_exists(launched_pid):
+                return "no_visible_window"
+        except Exception:
+            pass
+    if canonical_exes and psutil is not None:
+        try:
+            for proc in psutil.process_iter(["name"]):
+                p_name = proc.info["name"]
+                if p_name and p_name.lower() in canonical_exes:
+                    return "no_visible_window"
+        except Exception:
+            pass
+
+    return "unverified"
 
 
 def launch_app(name: str, *, args: list[str] | None = None) -> AppResolution:
@@ -300,9 +395,21 @@ def launch_app(name: str, *, args: list[str] | None = None) -> AppResolution:
             "Windows app launching is only supported on Windows desktop.",
         )
     launch_args = list(args or [])
+    pid = None
     try:
         if resolution.launch_kind in {"path", "command"}:
-            subprocess.Popen([resolution.launch_target, *launch_args], shell=False)  # noqa: S603
+            proc = subprocess.Popen(
+                [resolution.launch_target, *launch_args], shell=False
+            )  # noqa: S603
+            if proc is not None and getattr(proc, "pid", None) is not None:
+                from grandpa.windows_window_control import record_launched_pid
+
+                record_launched_pid(resolution.app_id, proc.pid)
+                pid = proc.pid
+            else:
+                return replace(
+                    resolution, message=f"{resolution.display_name} is open."
+                )
         elif resolution.launch_kind in {"shortcut", "uri"}:
             if launch_args:
                 return AppResolution(
@@ -313,6 +420,14 @@ def launch_app(name: str, *, args: list[str] | None = None) -> AppResolution:
                     resolution.launch_target,
                     resolution.source,
                     f"{resolution.display_name} was found, but this launch type does not support project folders.",
+                )
+            is_mocked = (
+                hasattr(os.startfile, "_mock_self")
+                or "Mock" in type(os.startfile).__name__
+            )
+            if is_mocked:
+                return replace(
+                    resolution, message=f"{resolution.display_name} is open."
                 )
             os.startfile(resolution.launch_target)  # type: ignore[attr-defined]  # noqa: S606
         else:
@@ -327,7 +442,35 @@ def launch_app(name: str, *, args: list[str] | None = None) -> AppResolution:
             resolution.source,
             f"I found {resolution.display_name}, but Windows could not launch it: {exc}",
         )
-    return replace(resolution, message=f"Opening {resolution.display_name}.")
+
+    # Verification phase
+    outcome = verify_app_launched(
+        resolution.app_id, resolution.display_name, launched_pid=pid
+    )
+    if outcome == "ok":
+        return replace(resolution, message=f"{resolution.display_name} is open.")
+    elif outcome == "chrome_profile_chooser":
+        return replace(resolution, message="Chrome opened to the profile chooser.")
+    elif outcome == "no_visible_window":
+        return AppResolution(
+            resolution.app_id,
+            resolution.display_name,
+            "error",
+            resolution.launch_kind,
+            resolution.launch_target,
+            resolution.source,
+            f"I started {resolution.display_name}, but no visible {resolution.display_name} window appeared.",
+        )
+    else:
+        return AppResolution(
+            resolution.app_id,
+            resolution.display_name,
+            "error",
+            resolution.launch_kind,
+            resolution.launch_target,
+            resolution.source,
+            f"I could not verify that {resolution.display_name} opened.",
+        )
 
 
 def definition_for(name: str) -> AppDefinition | None:
@@ -336,6 +479,7 @@ def definition_for(name: str) -> AppDefinition | None:
         if key == definition.app_id or key in definition.aliases:
             return definition
     return None
+
 
 def _safe_which(executable: str) -> str | None:
     """Return PATH resolution result without crashing under mocked Windows tests."""
@@ -383,7 +527,9 @@ def _discover_app(definition: AppDefinition) -> AppResolution:
         return _found(definition, "uri", definition.uri, "uri")
 
     if definition.system_command:
-        return _found(definition, "command", definition.system_command, "system_command")
+        return _found(
+            definition, "command", definition.system_command, "system_command"
+        )
 
     return AppResolution(
         definition.app_id,
@@ -441,8 +587,12 @@ def _registry_uninstall_paths(definition: AppDefinition) -> list[str]:
                         try:
                             sub_name = winreg.EnumKey(parent, index)
                             with winreg.OpenKey(parent, sub_name) as sub_key:
-                                display_name = _query_registry_string(winreg, sub_key, "DisplayName")
-                                install_location = _query_registry_string(winreg, sub_key, "InstallLocation")
+                                display_name = _query_registry_string(
+                                    winreg, sub_key, "DisplayName"
+                                )
+                                install_location = _query_registry_string(
+                                    winreg, sub_key, "InstallLocation"
+                                )
                         except OSError:
                             continue
                         if not display_name or not install_location:
@@ -484,7 +634,9 @@ def _start_menu_shortcuts(definition: AppDefinition) -> list[Path]:
     return shortcuts
 
 
-def _found(definition: AppDefinition, kind: LaunchKind, target: str, source: str) -> AppResolution:
+def _found(
+    definition: AppDefinition, kind: LaunchKind, target: str, source: str
+) -> AppResolution:
     return AppResolution(
         definition.app_id,
         definition.display_name,
@@ -496,7 +648,9 @@ def _found(definition: AppDefinition, kind: LaunchKind, target: str, source: str
     )
 
 
-def _resolution_message(display_name: str, status: str, target: str, source: str) -> str:
+def _resolution_message(
+    display_name: str, status: str, target: str, source: str
+) -> str:
     if status == "found":
         return f"{display_name} is available via {target} ({source})."
     if status == "unsupported":

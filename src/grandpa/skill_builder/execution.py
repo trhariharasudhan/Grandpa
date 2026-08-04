@@ -13,7 +13,12 @@ from grandpa.skills.runtime import (
 )
 
 
-def run_user_skill(skill_id_or_name: str, *, params: dict[str, Any] | None = None, source: str = "user_skill") -> dict[str, Any]:
+def run_user_skill(
+    skill_id_or_name: str,
+    *,
+    params: dict[str, Any] | None = None,
+    source: str = "user_skill",
+) -> dict[str, Any]:
     store = UserSkillStore()
     skill = store.get(skill_id_or_name)
     results: list[dict[str, Any]] = []
@@ -32,7 +37,9 @@ def run_user_skill(skill_id_or_name: str, *, params: dict[str, Any] | None = Non
                 ok = False
                 status = "blocked"
                 message = f"Blocked user skill step {index}: {step.get('title') or step.get('skill')}."
-                results.append({"step": step, "ok": False, "status": "blocked", "message": message})
+                results.append(
+                    {"step": step, "ok": False, "status": "blocked", "message": message}
+                )
                 break
             skill_name = str(step.get("skill") or "")
             context = SkillExecutionContext(
@@ -64,7 +71,9 @@ def run_user_skill(skill_id_or_name: str, *, params: dict[str, Any] | None = Non
         ok = False
         status = "failed"
         message = "User skill execution failed safely."
-        results.append({"ok": False, "status": "failed", "error": exc.__class__.__name__})
+        results.append(
+            {"ok": False, "status": "failed", "error": exc.__class__.__name__}
+        )
     store.record_usage(skill["skill_id"], success=ok and status == "completed")
     return {
         "ok": ok,
@@ -89,8 +98,17 @@ def register_user_skills() -> dict[str, Any]:
                 description=skill["description"],
                 category="user",
                 risk_level=_max_risk(skill["workflow_steps"]),
-                approval_required=any(step.get("approval_required") for step in skill["workflow_steps"]),
-                parameters=(SkillParameter("dry_run", "Plan without executing where supported", required=False, type="boolean"),),
+                approval_required=any(
+                    step.get("approval_required") for step in skill["workflow_steps"]
+                ),
+                parameters=(
+                    SkillParameter(
+                        "dry_run",
+                        "Plan without executing where supported",
+                        required=False,
+                        type="boolean",
+                    ),
+                ),
                 dry_run_supported=True,
                 executor=_make_executor(skill["skill_id"]),
                 aliases=tuple(skill["trigger_phrases"]),
@@ -109,7 +127,11 @@ def runtime_skill_name(skill: dict[str, Any]) -> str:
 
 def _make_executor(skill_id: str):
     def _execute(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
-        result = run_user_skill(skill_id, params={**params, "user_request": context.user_request}, source="runtime_skill")
+        result = run_user_skill(
+            skill_id,
+            params={**params, "user_request": context.user_request},
+            source="runtime_skill",
+        )
         return SkillResult(
             ok=bool(result["ok"]),
             status=result["status"],

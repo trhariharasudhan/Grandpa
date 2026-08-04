@@ -28,9 +28,7 @@ class TestDoctorOptionalLabels:
         result = runner.invoke(cli, ["doctor", "--json"])
         data = json.loads(result.output)
         optional_checks = [
-            c
-            for c in data
-            if c["status"] in {"info", "skipped", "not_configured"}
+            c for c in data if c["status"] in {"info", "skipped", "not_configured"}
         ]
         assert optional_checks
         assert all(c["status"] not in {"fail", "failure"} for c in optional_checks)

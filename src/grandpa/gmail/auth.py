@@ -90,7 +90,9 @@ class GmailAuthManager:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         if not creds or not creds.valid:
-            flow = InstalledAppFlow.from_client_secrets_file(str(self.client_secret_path), scopes)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                str(self.client_secret_path), scopes
+            )
             creds = flow.run_local_server(port=0)
         self._write_token(json.loads(creds.to_json()))
         return self.status()
@@ -101,13 +103,17 @@ class GmailAuthManager:
         from google.oauth2.credentials import Credentials
 
         if not self.token_path.exists():
-            raise GmailNotConfiguredError("Gmail is not connected. Run `grandpa gmail setup`.")
+            raise GmailNotConfiguredError(
+                "Gmail is not connected. Run `grandpa gmail setup`."
+            )
         creds = Credentials.from_authorized_user_file(str(self.token_path), scopes)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
             self._write_token(json.loads(creds.to_json()))
         if not creds.valid:
-            raise GmailNotConfiguredError("Gmail authentication expired. Run `grandpa gmail setup` again.")
+            raise GmailNotConfiguredError(
+                "Gmail authentication expired. Run `grandpa gmail setup` again."
+            )
         return creds
 
     def _write_token(self, payload: dict) -> None:
@@ -128,7 +134,11 @@ class GmailAuthManager:
     @staticmethod
     def _ensure_dependencies() -> None:
         missing = []
-        for module in ("googleapiclient.discovery", "google_auth_oauthlib.flow", "google.oauth2.credentials"):
+        for module in (
+            "googleapiclient.discovery",
+            "google_auth_oauthlib.flow",
+            "google.oauth2.credentials",
+        ):
             try:
                 __import__(module)
             except ModuleNotFoundError as exc:

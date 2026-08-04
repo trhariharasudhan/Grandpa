@@ -12,7 +12,9 @@ from grandpa.voice.speech_output import SpeechOutputEngine
 
 @click.command("voice-operator")
 @click.option("--dry-run", is_flag=True, help="Resolve actions without executing them.")
-@click.option("--duration", type=float, default=None, help="Recording duration in seconds.")
+@click.option(
+    "--duration", type=float, default=None, help="Recording duration in seconds."
+)
 @click.option("--device", type=int, default=None, help="Input device index.")
 @click.option("--device-name", default=None, help="Input device name or partial name.")
 @click.option("--typed", is_flag=True, help="Use typed commands only.")
@@ -32,8 +34,15 @@ def voice_operator(
     selected_duration = _duration_from_option_or_env(duration)
     selected_device = _device_from_option_or_env(device)
     if selected_device is not None and selected_device < 0:
-        raise click.ClickException("Invalid microphone device index. Run `grandpa voice devices` to list devices.")
-    typed_only = typed or os.environ.get("GRANDPA_VOICE_TYPED", "").strip().lower() in {"1", "true", "yes", "on"}
+        raise click.ClickException(
+            "Invalid microphone device index. Run `grandpa voice devices` to list devices."
+        )
+    typed_only = typed or os.environ.get("GRANDPA_VOICE_TYPED", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     speech_output = SpeechOutputEngine(enabled=not no_tts)
     raise SystemExit(
         run_voice_operator_loop(

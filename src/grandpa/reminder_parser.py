@@ -54,10 +54,9 @@ def default_reminder_timezone() -> tzinfo:
 
     try:
         config = load_config()
-        timezone_name = (
-            getattr(getattr(config, "proactive", None), "timezone", "")
-            or getattr(getattr(config, "digest", None), "timezone", "")
-        )
+        timezone_name = getattr(
+            getattr(config, "proactive", None), "timezone", ""
+        ) or getattr(getattr(config, "digest", None), "timezone", "")
         if timezone_name:
             return ZoneInfo(timezone_name)
     except (OSError, ZoneInfoNotFoundError, ValueError):
@@ -122,8 +121,14 @@ def _parse_relative(clean: str, now: datetime) -> ParsedReminder | None:
     message = _require_message(match.group(3))
     if amount <= 0:
         raise ReminderParseError("Reminder delay must be greater than zero.")
-    delta = timedelta(hours=amount) if unit.startswith(("hour", "hr")) else timedelta(minutes=amount)
-    return ParsedReminder(message=message, due_at=now + delta, matched_expression=match.group(0))
+    delta = (
+        timedelta(hours=amount)
+        if unit.startswith(("hour", "hr"))
+        else timedelta(minutes=amount)
+    )
+    return ParsedReminder(
+        message=message, due_at=now + delta, matched_expression=match.group(0)
+    )
 
 
 def _parse_relative_message_first(clean: str, now: datetime) -> ParsedReminder | None:
@@ -139,8 +144,14 @@ def _parse_relative_message_first(clean: str, now: datetime) -> ParsedReminder |
     unit = match.group(3).lower()
     if amount <= 0:
         raise ReminderParseError("Reminder delay must be greater than zero.")
-    delta = timedelta(hours=amount) if unit.startswith(("hour", "hr")) else timedelta(minutes=amount)
-    return ParsedReminder(message=message, due_at=now + delta, matched_expression=match.group(0))
+    delta = (
+        timedelta(hours=amount)
+        if unit.startswith(("hour", "hr"))
+        else timedelta(minutes=amount)
+    )
+    return ParsedReminder(
+        message=message, due_at=now + delta, matched_expression=match.group(0)
+    )
 
 
 def _parse_today_tomorrow(clean: str, now: datetime) -> ParsedReminder | None:
@@ -153,9 +164,13 @@ def _parse_today_tomorrow(clean: str, now: datetime) -> ParsedReminder | None:
     day_word = match.group(1).lower()
     parsed_time = _parse_clock_time(match.group(2))
     message = _require_message(match.group(3))
-    base_day = now.date() + (timedelta(days=1) if day_word == "tomorrow" else timedelta())
+    base_day = now.date() + (
+        timedelta(days=1) if day_word == "tomorrow" else timedelta()
+    )
     due = datetime.combine(base_day, parsed_time, tzinfo=now.tzinfo)
-    return ParsedReminder(message=message, due_at=due, matched_expression=match.group(0))
+    return ParsedReminder(
+        message=message, due_at=due, matched_expression=match.group(0)
+    )
 
 
 def _parse_month_date(clean: str, now: datetime) -> ParsedReminder | None:
@@ -175,10 +190,14 @@ def _parse_month_date(clean: str, now: datetime) -> ParsedReminder | None:
     parsed_time = _parse_clock_time(match.group(4))
     message = _require_message(match.group(5))
     try:
-        due = datetime(year, month, day, parsed_time.hour, parsed_time.minute, tzinfo=now.tzinfo)
+        due = datetime(
+            year, month, day, parsed_time.hour, parsed_time.minute, tzinfo=now.tzinfo
+        )
     except ValueError as exc:
         raise ReminderParseError(f"Invalid reminder date: {exc}") from exc
-    return ParsedReminder(message=message, due_at=due, matched_expression=match.group(0))
+    return ParsedReminder(
+        message=message, due_at=due, matched_expression=match.group(0)
+    )
 
 
 def _parse_iso(clean: str, now: datetime) -> ParsedReminder | None:
@@ -196,7 +215,9 @@ def _parse_iso(clean: str, now: datetime) -> ParsedReminder | None:
     except ValueError:
         return None
     message = _require_message(match.group(2))
-    return ParsedReminder(message=message, due_at=due, matched_expression=match.group(0))
+    return ParsedReminder(
+        message=message, due_at=due, matched_expression=match.group(0)
+    )
 
 
 def _parse_iso_datetime(raw: str) -> datetime:
@@ -221,7 +242,9 @@ def _parse_clock_time(raw: str):
         raise ReminderParseError("Reminder minutes must be between 00 and 59.")
     if meridiem:
         if hour < 1 or hour > 12:
-            raise ReminderParseError("12-hour reminder times must use hours 1 through 12.")
+            raise ReminderParseError(
+                "12-hour reminder times must use hours 1 through 12."
+            )
         if meridiem == "am":
             hour = 0 if hour == 12 else hour
         else:

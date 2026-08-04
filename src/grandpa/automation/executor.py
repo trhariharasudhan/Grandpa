@@ -88,20 +88,27 @@ class AutomationExecutor:
     ) -> tuple[Point | None, Any | None]:
         if "x" in action.args and "y" in action.args:
             return Point(int(action.args["x"]), int(action.args["y"])), None
-        if action.kind not in {
-            "move",
-            "click",
-            "double_click",
-            "right_click",
-            "middle_click",
-        } or not action.target:
+        if (
+            action.kind
+            not in {
+                "move",
+                "click",
+                "double_click",
+                "right_click",
+                "middle_click",
+            }
+            or not action.target
+        ):
             return None, None
         matches = self.locator.locate(action.target, limit=2)
         if not matches:
             raise LocatorResolutionError(
                 f'I could not find "{action.target}" on the visible screen.'
             )
-        if len(matches) > 1 and abs(matches[0].confidence - matches[1].confidence) < 0.05:
+        if (
+            len(matches) > 1
+            and abs(matches[0].confidence - matches[1].confidence) < 0.05
+        ):
             raise LocatorResolutionError(
                 f'I found multiple possible matches for "{action.target}". Please be more specific.',
                 status="ambiguous",
@@ -192,7 +199,7 @@ def _elapsed_ms(started: float) -> float:
 
 
 def _display_label(value: str) -> str:
-    return str(value).strip().strip('"\'')
+    return str(value).strip().strip("\"'")
 
 
 __all__ = ["AutomationExecutor", "LocatorResolutionError"]

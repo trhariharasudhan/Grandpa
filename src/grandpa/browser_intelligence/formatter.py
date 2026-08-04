@@ -31,7 +31,9 @@ def format_page_analysis_cli(analysis: dict[str, Any]) -> str:
         lines.append("\n**Top Search Results:**")
         for sr in analysis["search_results"][:5]:
             off = " [OFFICIAL]" if sr.get("is_official") else ""
-            lines.append(f"  #{sr.get('ranking')} {sr.get('title')}{off} ({sr.get('domain')}) - Trust: {sr.get('trust_score')}")
+            lines.append(
+                f"  #{sr.get('ranking')} {sr.get('title')}{off} ({sr.get('domain')}) - Trust: {sr.get('trust_score')}"
+            )
     return "\n".join(lines)
 
 
@@ -48,7 +50,8 @@ def format_extracted_content_cli(extracted: ExtractedContent) -> str:
         f"📑 **Extracted Section: {extracted.section_type.title()}**",
         f"- **Status**: {badge}",
         f"- **Message**: {extracted.message}",
-        f"- **Source**: {extracted.topic_or_target}" + (f" ({extracted.source_domain})" if extracted.source_domain else ""),
+        f"- **Source**: {extracted.topic_or_target}"
+        + (f" ({extracted.source_domain})" if extracted.source_domain else ""),
     ]
     if extracted.source_url:
         lines.append(f"- **URL**: {extracted.source_url}")
@@ -64,16 +67,18 @@ def format_extracted_content_cli(extracted: ExtractedContent) -> str:
 def format_verification_cli(verification: SourceVerificationResult) -> str:
     """Format verification result for CLI output."""
     badge = "✅ OFFICIAL" if verification.is_official else "ℹ️ COMMUNITY/THIRD-PARTY"
-    return "\n".join([
-        "🔍 **Source Verification**",
-        f"- **URL**: {verification.url}",
-        f"- **Domain**: {verification.domain}",
-        f"- **Status**: {badge}",
-        f"- **Confidence**: {verification.confidence}",
-        f"- **Trust Score**: {verification.trust_score}",
-        f"- **Official Score**: {verification.official_score}",
-        f"- **Reasoning**: {verification.reasoning}",
-    ])
+    return "\n".join(
+        [
+            "🔍 **Source Verification**",
+            f"- **URL**: {verification.url}",
+            f"- **Domain**: {verification.domain}",
+            f"- **Status**: {badge}",
+            f"- **Confidence**: {verification.confidence}",
+            f"- **Trust Score**: {verification.trust_score}",
+            f"- **Official Score**: {verification.official_score}",
+            f"- **Reasoning**: {verification.reasoning}",
+        ]
+    )
 
 
 def format_comparison_cli(comparison: ComparisonResult) -> str:
@@ -89,15 +94,17 @@ def format_comparison_cli(comparison: ComparisonResult) -> str:
         val_b = values.get(comparison.item_b, "N/A")
         lines.append(f"| **{feat}** | {val_a} | {val_b} |")
 
-    lines.extend([
-        "",
-        f"**Pros of {comparison.item_a}:** " + ", ".join(comparison.pros_a),
-        f"**Cons of {comparison.item_a}:** " + ", ".join(comparison.cons_a),
-        f"**Pros of {comparison.item_b}:** " + ", ".join(comparison.pros_b),
-        f"**Cons of {comparison.item_b}:** " + ", ".join(comparison.cons_b),
-        "",
-        f"**Summary:** {comparison.summary}",
-    ])
+    lines.extend(
+        [
+            "",
+            f"**Pros of {comparison.item_a}:** " + ", ".join(comparison.pros_a),
+            f"**Cons of {comparison.item_a}:** " + ", ".join(comparison.cons_a),
+            f"**Pros of {comparison.item_b}:** " + ", ".join(comparison.pros_b),
+            f"**Cons of {comparison.item_b}:** " + ", ".join(comparison.cons_b),
+            "",
+            f"**Summary:** {comparison.summary}",
+        ]
+    )
     return "\n".join(lines)
 
 

@@ -1,16 +1,8 @@
-"""Bare-`Grandpa` first-run guard.
-
-When the user types ``Grandpa`` with no subcommand, route them to the
-chat command if a config exists, otherwise into the init wizard with
-the ``--from-bare-Grandpa`` flag (which lets init suppress the
-launch-chat prompt and auto-confirm downstream questions).
-"""
+"""Bare-``grandpa`` interactive terminal routing."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-
-from grandpa.core import config as _cfg
 
 if TYPE_CHECKING:
     import click
@@ -27,9 +19,6 @@ def check_and_route(ctx: click.Context) -> None:
 
     # Late imports to avoid circular import with cli/__init__.py.
     from grandpa.cli.chat_cmd import chat as chat_cmd
-    from grandpa.cli.init_cmd import init as init_cmd
 
-    if _cfg.DEFAULT_CONFIG_PATH.exists():
-        ctx.invoke(chat_cmd)
-    else:
-        ctx.invoke(init_cmd, from_bare_Grandpa=True)
+    fullscreen = ctx.obj.get("fullscreen")
+    ctx.invoke(chat_cmd, tui_mode=True, fullscreen=fullscreen)

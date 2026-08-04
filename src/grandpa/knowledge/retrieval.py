@@ -73,7 +73,9 @@ def semantic_search_documents(
     knowledge_store = store or KnowledgeStore()
     query_embedding = (embedder or KnowledgeEmbedder()).embed(query)
     tag_clean = tag.strip().lower()
-    documents = {doc.document_id: doc for doc in knowledge_store.list_documents(limit=1000)}
+    documents = {
+        doc.document_id: doc for doc in knowledge_store.list_documents(limit=1000)
+    }
     chunk_scores: list[dict[str, Any]] = []
     for row in knowledge_store.all_embeddings():
         doc = documents.get(row["document_id"])
@@ -83,7 +85,9 @@ def semantic_search_documents(
             continue
         if project_only and "project" not in {item.lower() for item in doc.tags}:
             continue
-        score = cosine_similarity(query_embedding.vector, decode_vector(row["embedding"]))
+        score = cosine_similarity(
+            query_embedding.vector, decode_vector(row["embedding"])
+        )
         if score <= 0:
             continue
         chunk = _chunk_by_id(doc, row["chunk_id"])
@@ -97,12 +101,15 @@ def semantic_search_documents(
                 "embedding_model": row["embedding_model"],
                 "embedding_version": row["embedding_version"],
                 "embedding_backend": row["backend"],
-                "true_semantic": bool(row["true_semantic"]) and query_embedding.true_semantic,
+                "true_semantic": bool(row["true_semantic"])
+                and query_embedding.true_semantic,
                 "ranking_explanation": {
                     "semantic_score": round(score, 4),
                     "keyword_score": 0.0,
                     "recency_score": 0.0,
-                    "mode": "semantic" if row["true_semantic"] and query_embedding.true_semantic else "deterministic_fallback",
+                    "mode": "semantic"
+                    if row["true_semantic"] and query_embedding.true_semantic
+                    else "deterministic_fallback",
                 },
             }
         )
@@ -111,7 +118,9 @@ def semantic_search_documents(
         "query": query,
         "results": chunk_scores[:limit],
         "semantic_search": bool(query_embedding.true_semantic),
-        "semantic_mode": "ollama" if query_embedding.true_semantic else "deterministic_fallback",
+        "semantic_mode": "ollama"
+        if query_embedding.true_semantic
+        else "deterministic_fallback",
         "embedding_model": query_embedding.model,
         "embedding_version": query_embedding.version,
         "truthful_note": (
@@ -133,8 +142,17 @@ def hybrid_search_documents(
     store: KnowledgeStore | None = None,
 ) -> dict[str, Any]:
     knowledge_store = store or KnowledgeStore()
-    keyword_results = search_documents(query, tag=tag, title=title, project_only=project_only, limit=100, store=knowledge_store)
-    semantic = semantic_search_documents(query, tag=tag, project_only=project_only, limit=100, store=knowledge_store)
+    keyword_results = search_documents(
+        query,
+        tag=tag,
+        title=title,
+        project_only=project_only,
+        limit=100,
+        store=knowledge_store,
+    )
+    semantic = semantic_search_documents(
+        query, tag=tag, project_only=project_only, limit=100, store=knowledge_store
+    )
     by_doc: dict[str, dict[str, Any]] = {}
     now = time.time()
     for item in keyword_results:
@@ -150,14 +168,23 @@ def hybrid_search_documents(
         current = by_doc.setdefault(
             doc_id,
             {
-                **{key: value for key, value in item.items() if key not in {"chunk", "ranking_explanation"}},
+                **{
+                    key: value
+                    for key, value in item.items()
+                    if key not in {"chunk", "ranking_explanation"}
+                },
                 "keyword_score": 0.0,
                 "semantic_score": 0.0,
-                "recency_score": _recency_score(float(item.get("updated_at", now)), now),
+                "recency_score": _recency_score(
+                    float(item.get("updated_at", now)), now
+                ),
                 "matched_chunks": [],
             },
         )
-        current["semantic_score"] = max(float(current.get("semantic_score", 0.0)), float(item.get("semantic_score", 0.0)))
+        current["semantic_score"] = max(
+            float(current.get("semantic_score", 0.0)),
+            float(item.get("semantic_score", 0.0)),
+        )
         chunks = current.setdefault("retrieved_chunks", [])
         chunks.append(item.get("chunk", {}))
         current["true_semantic"] = bool(item.get("true_semantic", False))
@@ -189,24 +216,37 @@ def hybrid_search_documents(
     }
 
 
-def recent_documents(*, limit: int = 10, store: KnowledgeStore | None = None) -> list[dict[str, Any]]:
-    return [doc.to_dict(include_content=False) for doc in (store or KnowledgeStore()).list_documents(limit=limit)]
+def recent_documents(
+    *, limit: int = 10, store: KnowledgeStore | None = None
+) -> list[dict[str, Any]]:
+    return [
+        doc.to_dict(include_content=False)
+        for doc in (store or KnowledgeStore()).list_documents(limit=limit)
+    ]
 
 
-def project_documents(*, limit: int = 20, store: KnowledgeStore | None = None) -> list[dict[str, Any]]:
+def project_documents(
+    *, limit: int = 20, store: KnowledgeStore | None = None
+) -> list[dict[str, Any]]:
     return search_documents(project_only=True, limit=limit, store=store)
 
 
-def related_documents(document_id: str, *, limit: int = 8, store: KnowledgeStore | None = None) -> dict[str, Any]:
+def related_documents(
+    document_id: str, *, limit: int = 8, store: KnowledgeStore | None = None
+) -> dict[str, Any]:
     knowledge_store = store or KnowledgeStore()
     document = knowledge_store.get_document(document_id)
     if not document:
         raise KeyError(document_id)
     query = " ".join([document.title, *document.tags, document.content[:500]])
-    results = hybrid_search_documents(query, limit=limit + 1, store=knowledge_store)["results"]
+    results = hybrid_search_documents(query, limit=limit + 1, store=knowledge_store)[
+        "results"
+    ]
     return {
         "document_id": document_id,
-        "results": [item for item in results if item["document_id"] != document_id][:limit],
+        "results": [item for item in results if item["document_id"] != document_id][
+            :limit
+        ],
         "local_only": True,
     }
 

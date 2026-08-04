@@ -5,7 +5,17 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-DANGEROUS_EXTENSIONS = {".bat", ".cmd", ".com", ".exe", ".js", ".msi", ".ps1", ".scr", ".vbs"}
+DANGEROUS_EXTENSIONS = {
+    ".bat",
+    ".cmd",
+    ".com",
+    ".exe",
+    ".js",
+    ".msi",
+    ".ps1",
+    ".scr",
+    ".vbs",
+}
 INCOMPLETE_EXTENSIONS = {".crdownload", ".part", ".tmp"}
 
 
@@ -38,13 +48,18 @@ class DownloadsSafetyPolicy:
         raise DownloadsSafetyError("Blocked destination outside approved user folders.")
 
     def is_safe_to_open(self, path: Path) -> bool:
-        return path.suffix.casefold() not in DANGEROUS_EXTENSIONS and not self.is_incomplete(path)
+        return (
+            path.suffix.casefold() not in DANGEROUS_EXTENSIONS
+            and not self.is_incomplete(path)
+        )
 
     def is_incomplete(self, path: Path) -> bool:
         return path.suffix.casefold() in INCOMPLETE_EXTENSIONS
 
     def requires_confirmation(self, action: str, *, count: int = 1) -> bool:
-        return action in {"delete", "organize", "archive"} or (action == "move" and count > 1)
+        return action in {"delete", "organize", "archive"} or (
+            action == "move" and count > 1
+        )
 
     def destination_without_overwrite(self, destination: Path) -> Path:
         if not destination.exists():

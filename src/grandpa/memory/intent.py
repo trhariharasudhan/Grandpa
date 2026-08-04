@@ -45,7 +45,9 @@ class MemoryIntentRouter:
         (r"language|lang", "response_language"),
     ]
 
-    def parse(self, text: str, current_project: str | None = None) -> MemoryIntentResult | None:
+    def parse(
+        self, text: str, current_project: str | None = None
+    ) -> MemoryIntentResult | None:
         raw = text.strip()
         tlower = raw.lower()
 
@@ -53,7 +55,17 @@ class MemoryIntentRouter:
             return None
 
         # 1. Do Not Remember / Session Toggle Off
-        if any(p in tlower for p in ["do not remember this", "don't remember this", "don't remember this conversation", "do not remember this conversation", "memory off", "disable memory"]):
+        if any(
+            p in tlower
+            for p in [
+                "do not remember this",
+                "don't remember this",
+                "don't remember this conversation",
+                "do not remember this conversation",
+                "memory off",
+                "disable memory",
+            ]
+        ):
             return MemoryIntentResult(
                 intent=MemoryIntent.DO_NOT_REMEMBER,
                 scope="session",
@@ -83,8 +95,16 @@ class MemoryIntentRouter:
             )
 
         # 4. Resume / Continue Workflow / Continue Task
-        resume_match = re.search(r"(?:continue|resume)\s+(?:where\s+we\s+stopped|the\s+last\s+(?:grandpa\s+)?task|the\s+(?:grandpa\s+)?project|last\s+task|last\s+successful\s+workflow|last\s+failed\s+plan)", tlower)
-        if resume_match or tlower in ["continue", "resume", "continue last task", "resume last failed plan"]:
+        resume_match = re.search(
+            r"(?:continue|resume)\s+(?:where\s+we\s+stopped|the\s+last\s+(?:grandpa\s+)?task|the\s+(?:grandpa\s+)?project|last\s+task|last\s+successful\s+workflow|last\s+failed\s+plan)",
+            tlower,
+        )
+        if resume_match or tlower in [
+            "continue",
+            "resume",
+            "continue last task",
+            "resume last failed plan",
+        ]:
             target_proj = current_project or "Grandpa"
             is_failed = "failed" in tlower
             return MemoryIntentResult(
@@ -93,7 +113,9 @@ class MemoryIntentRouter:
                 project_name=target_proj,
                 confidence=0.95,
                 original_text=raw,
-                action_type="resume_failed_plan" if is_failed else "resume_project_task",
+                action_type="resume_failed_plan"
+                if is_failed
+                else "resume_project_task",
             )
 
         # 5. Show Preferences / Project Status
@@ -106,8 +128,17 @@ class MemoryIntentRouter:
                 action_type="show_preferences",
             )
 
-        if any(p in tlower for p in ["what do you remember about", "show project status", "show last plan status"]):
-            proj_name = self._extract_project_name(tlower) or current_project or "Grandpa"
+        if any(
+            p in tlower
+            for p in [
+                "what do you remember about",
+                "show project status",
+                "show last plan status",
+            ]
+        ):
+            proj_name = (
+                self._extract_project_name(tlower) or current_project or "Grandpa"
+            )
             return MemoryIntentResult(
                 intent=MemoryIntent.SHOW,
                 scope="project",
@@ -118,7 +149,9 @@ class MemoryIntentRouter:
             )
 
         # 6. Forget / Delete Memory
-        forget_match = re.search(r"(?:forget|delete\s+memory(?:\s+for)?)\s+(.+)", tlower)
+        forget_match = re.search(
+            r"(?:forget|delete\s+memory(?:\s+for)?)\s+(.+)", tlower
+        )
         if forget_match:
             target = forget_match.group(1).strip()
             # Check preference target
@@ -186,7 +219,12 @@ class MemoryIntentRouter:
             )
 
         # General Recall
-        if tlower.startswith("what is my preferred") or tlower.startswith("what's my preferred") or tlower.startswith("what is my default") or tlower.startswith("what's my default"):
+        if (
+            tlower.startswith("what is my preferred")
+            or tlower.startswith("what's my preferred")
+            or tlower.startswith("what is my default")
+            or tlower.startswith("what's my default")
+        ):
             pref_key = self._match_preference_key(tlower)
             return MemoryIntentResult(
                 intent=MemoryIntent.RECALL,
@@ -198,7 +236,9 @@ class MemoryIntentRouter:
             )
 
         # 8. Remember / Save Instructions
-        rem_match = re.search(r"(?:remember|save)(?:\s+that|\s+my|\s+this)?\s+(.+)", tlower)
+        rem_match = re.search(
+            r"(?:remember|save)(?:\s+that|\s+my|\s+this)?\s+(.+)", tlower
+        )
         if rem_match:
             body = rem_match.group(1).strip()
 
@@ -286,7 +326,9 @@ class MemoryIntentRouter:
 
         return "general", body
 
-    def _parse_project_info(self, body: str, raw: str) -> tuple[str | None, str | None, str | None]:
+    def _parse_project_info(
+        self, body: str, raw: str
+    ) -> tuple[str | None, str | None, str | None]:
         # Path match e.g. D:\Grandpa or C:\Projects\...
         path_match = re.search(r"([a-zA-Z]:\\[^\s]+)", raw)
         proj_path = path_match.group(1) if path_match else None

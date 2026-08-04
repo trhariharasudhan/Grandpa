@@ -22,9 +22,16 @@ def test_project_scanner_detects_common_project_types(tmp_path) -> None:
     project = tmp_path / "demo"
     project.mkdir()
     (project / ".git").mkdir()
-    (project / "pyproject.toml").write_text('[project]\nname = "demo"\ndependencies = ["fastapi"]\n', encoding="utf-8")
-    (project / "package.json").write_text(json.dumps({"dependencies": {"react": "^19.0.0"}}), encoding="utf-8")
-    (project / "Cargo.toml").write_text("[package]\nname='demo'\nversion='0.1.0'\n[dependencies]\nserde='1'\n", encoding="utf-8")
+    (project / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\ndependencies = ["fastapi"]\n', encoding="utf-8"
+    )
+    (project / "package.json").write_text(
+        json.dumps({"dependencies": {"react": "^19.0.0"}}), encoding="utf-8"
+    )
+    (project / "Cargo.toml").write_text(
+        "[package]\nname='demo'\nversion='0.1.0'\n[dependencies]\nserde='1'\n",
+        encoding="utf-8",
+    )
     detected = detect_project(project)
 
     assert detected["is_project"] is True
@@ -41,8 +48,13 @@ def test_scan_projects_is_read_only(tmp_path) -> None:
 
 
 def test_dependency_analysis_reads_manifests(tmp_path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\ndependencies = ["fastapi", "pydantic"]\n', encoding="utf-8")
-    (tmp_path / "package.json").write_text(json.dumps({"devDependencies": {"eslint": "^9.0.0"}}), encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\ndependencies = ["fastapi", "pydantic"]\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "package.json").write_text(
+        json.dumps({"devDependencies": {"eslint": "^9.0.0"}}), encoding="utf-8"
+    )
 
     result = analyze_dependencies(tmp_path)
 
@@ -52,11 +64,15 @@ def test_dependency_analysis_reads_manifests(tmp_path) -> None:
 
 
 def test_repository_analysis_counts_modules_and_tests(tmp_path) -> None:
-    (tmp_path / "pyproject.toml").write_text('[project]\nname = "demo"\n', encoding="utf-8")
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\n', encoding="utf-8"
+    )
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "app.py").write_text("print('hi')\n", encoding="utf-8")
     (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "test_app.py").write_text("def test_ok(): assert True\n", encoding="utf-8")
+    (tmp_path / "tests" / "test_app.py").write_text(
+        "def test_ok(): assert True\n", encoding="utf-8"
+    )
 
     result = analyze_repository(tmp_path)
 

@@ -164,15 +164,11 @@ class HttpRequestTool(BaseTool):
                 if redirect_error:
                     return ToolResult(
                         tool_name="http_request",
-                        content=(
-                            "SSRF protection blocked redirect: "
-                            f"{redirect_error}"
-                        ),
+                        content=(f"SSRF protection blocked redirect: {redirect_error}"),
                         success=False,
                     )
                 if response.status_code == 303 or (
-                    response.status_code in {301, 302}
-                    and current_method == "POST"
+                    response.status_code in {301, 302} and current_method == "POST"
                 ):
                     current_method = "GET"
                     current_body = None

@@ -61,14 +61,20 @@ class GmailAutomation:
             if action.action == "status":
                 status = self.auth.status()
                 result_status = "handled" if status.ready else "not_configured"
-                return GmailResult(result_status, status.message, action, account=status.account)
+                return GmailResult(
+                    result_status, status.message, action, account=status.account
+                )
             if action.action == "setup":
                 status = self.auth.setup()
                 result_status = "handled" if status.ready else "not_configured"
-                return GmailResult(result_status, status.message, action, account=status.account)
+                return GmailResult(
+                    result_status, status.message, action, account=status.account
+                )
             if action.action == "disconnect":
                 removed = self.auth.disconnect()
-                message = "Gmail disconnected." if removed else "Gmail was not connected."
+                message = (
+                    "Gmail disconnected." if removed else "Gmail was not connected."
+                )
                 return GmailResult("handled", message, action)
             if action.args.get("permanent_delete_blocked"):
                 return GmailResult(
@@ -90,32 +96,76 @@ class GmailAutomation:
         except GmailApiError as exc:
             return GmailResult("error", str(exc), action, error=str(exc))
         except Exception as exc:
-            return GmailResult("error", f"Gmail action failed: {exc}", action, error=str(exc))
+            return GmailResult(
+                "error", f"Gmail action failed: {exc}", action, error=str(exc)
+            )
 
     def _execute_connected(self, action: GmailAction) -> GmailResult:
         account = _client_account(self.client)
         if action.action in {"list", "search"}:
             messages = tuple(self.client.list_messages(action.query, limit=10))  # type: ignore[attr-defined]
             if action.args.get("count_only"):
-                return GmailResult("handled", f"Unread emails: {len(messages)}", action, messages, account=account)
-            return GmailResult("handled", format_message_cards(messages), action, messages, account=account)
+                return GmailResult(
+                    "handled",
+                    f"Unread emails: {len(messages)}",
+                    action,
+                    messages,
+                    account=account,
+                )
+            return GmailResult(
+                "handled",
+                format_message_cards(messages),
+                action,
+                messages,
+                account=account,
+            )
         if action.action == "read":
             message = self._selected_message(action)
-            return GmailResult("handled", format_full_message(message, safety=self.safety), action, (message,), account=account)
+            return GmailResult(
+                "handled",
+                format_full_message(message, safety=self.safety),
+                action,
+                (message,),
+                account=account,
+            )
         if action.action == "summarize":
             messages = self._messages_for_summary(action)
-            return GmailResult("handled", format_summary(messages, safety=self.safety), action, messages, account=account)
+            return GmailResult(
+                "handled",
+                format_summary(messages, safety=self.safety),
+                action,
+                messages,
+                account=account,
+            )
         if action.action == "labels":
             labels = tuple(self.client.labels())  # type: ignore[attr-defined]
-            text = "Gmail labels:\n" + "\n".join(f"- {label}" for label in labels) if labels else "No Gmail labels found."
+            text = (
+                "Gmail labels:\n" + "\n".join(f"- {label}" for label in labels)
+                if labels
+                else "No Gmail labels found."
+            )
             return GmailResult("handled", text, action, account=account)
         if action.action == "draft":
-            draft_id = self.client.create_draft(to=action.recipient, subject=action.subject, body=action.body)  # type: ignore[attr-defined]
-            preview = format_draft_preview(recipient=action.recipient, subject=action.subject, body=action.body)
-            return GmailResult("handled", f"{preview}\n\nDraft saved.", action, account=account, error=draft_id)
+            draft_id = self.client.create_draft(
+                to=action.recipient, subject=action.subject, body=action.body
+            )  # type: ignore[attr-defined]
+            preview = format_draft_preview(
+                recipient=action.recipient, subject=action.subject, body=action.body
+            )
+            return GmailResult(
+                "handled",
+                f"{preview}\n\nDraft saved.",
+                action,
+                account=account,
+                error=draft_id,
+            )
         if action.action == "send":
-            sent_id = self.client.send_draft(action.selector if action.selector != "draft" else "")  # type: ignore[attr-defined]
-            return GmailResult("handled", "Email sent.", action, account=account, error=sent_id)
+            sent_id = self.client.send_draft(
+                action.selector if action.selector != "draft" else ""
+            )  # type: ignore[attr-defined]
+            return GmailResult(
+                "handled", "Email sent.", action, account=account, error=sent_id
+            )
         if action.action in {"reply", "forward"}:
             method = getattr(self.client, action.action, None)
             if callable(method):
@@ -124,21 +174,59 @@ class GmailAutomation:
             return GmailResult("handled", message, action, account=account)
         if action.action == "archive":
             messages = self._messages_for_write(action)
-            count = self.client.archive(tuple(message.message_id for message in messages))  # type: ignore[attr-defined]
-            return GmailResult("handled", f"Archived {count} email{'s' if count != 1 else ''}.", action, messages, account=account)
+            count = self.client.archive(
+                tuple(message.message_id for message in messages)
+            )  # type: ignore[attr-defined]
+            return GmailResult(
+                "handled",
+                f"Archived {count} email{'s' if count != 1 else ''}.",
+                action,
+                messages,
+                account=account,
+            )
         if action.action == "label":
             if action.args.get("create"):
-                return GmailResult("handled", f'Label "{action.label}" is ready.', action, account=account)
+                return GmailResult(
+                    "handled",
+                    f'Label "{action.label}" is ready.',
+                    action,
+                    account=account,
+                )
             messages = self._messages_for_write(action)
-            count = self.client.add_label(tuple(message.message_id for message in messages), action.label)  # type: ignore[attr-defined]
-            return GmailResult("handled", f'Labeled {count} email{"s" if count != 1 else ""} as {action.label}.', action, messages, account=account)
+            count = self.client.add_label(
+                tuple(message.message_id for message in messages), action.label
+            )  # type: ignore[attr-defined]
+            return GmailResult(
+                "handled",
+                f"Labeled {count} email{'s' if count != 1 else ''} as {action.label}.",
+                action,
+                messages,
+                account=account,
+            )
         if action.action == "trash":
             messages = self._messages_for_write(action)
             count = self.client.trash(tuple(message.message_id for message in messages))  # type: ignore[attr-defined]
-            return GmailResult("handled", f"Moved {count} email{'s' if count != 1 else ''} to Trash.", action, messages, account=account)
-        return GmailResult("unsupported", "That Gmail action is not supported yet.", action, account=account)
+            return GmailResult(
+                "handled",
+                f"Moved {count} email{'s' if count != 1 else ''} to Trash.",
+                action,
+                messages,
+                account=account,
+            )
+        return GmailResult(
+            "unsupported",
+            "That Gmail action is not supported yet.",
+            action,
+            account=account,
+        )
 
-    def _needs_confirmation(self, action: GmailAction, *, confirmed: bool, confirm: ConfirmationCallback | None) -> bool:
+    def _needs_confirmation(
+        self,
+        action: GmailAction,
+        *,
+        confirmed: bool,
+        confirm: ConfirmationCallback | None,
+    ) -> bool:
         if not self.safety.requires_confirmation(action.action, bulk=action.bulk):
             return False
         if confirmed:
@@ -174,7 +262,9 @@ def handle_gmail_command(
     confirm: ConfirmationCallback | None = None,
     auth: GmailAuthManager | None = None,
 ) -> GmailResult:
-    return GmailAutomation(client=client, auth=auth).handle(text, confirmed=confirmed, confirm=confirm)
+    return GmailAutomation(client=client, auth=auth).handle(
+        text, confirmed=confirmed, confirm=confirm
+    )
 
 
 def _client_account(client: object) -> str:
@@ -190,9 +280,17 @@ def _confirmation_message(action: GmailAction) -> str:
     if action.action == "trash":
         return "Move this email to Trash? [y/N]"
     if action.action == "archive":
-        return "Archive these emails? [y/N]" if action.bulk else "Archive this email? [y/N]"
+        return (
+            "Archive these emails? [y/N]"
+            if action.bulk
+            else "Archive this email? [y/N]"
+        )
     if action.action == "label":
-        return f'Apply label "{action.label}" to these emails? [y/N]' if action.bulk else f'Apply label "{action.label}"? [y/N]'
+        return (
+            f'Apply label "{action.label}" to these emails? [y/N]'
+            if action.bulk
+            else f'Apply label "{action.label}"? [y/N]'
+        )
     if action.action == "reply":
         return "Reply to this email? [y/N]"
     if action.action == "forward":

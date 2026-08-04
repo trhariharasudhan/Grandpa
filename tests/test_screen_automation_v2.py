@@ -55,7 +55,12 @@ class FakeWindowTargets:
         label = target.target if isinstance(target, WindowIdentity) else str(target)
         self.calls.append((label, dry_run))
         expected = WindowIdentity(10, "Untitled - Notepad", 100, "notepad.exe", label)
-        actual = WindowIdentity(10 if self.ok else 20, self.actual_title, 100 if self.ok else 200, "notepad.exe" if self.ok else "WindowsTerminal.exe")
+        actual = WindowIdentity(
+            10 if self.ok else 20,
+            self.actual_title,
+            100 if self.ok else 200,
+            "notepad.exe" if self.ok else "WindowsTerminal.exe",
+        )
         return WindowVerification(
             self.ok,
             (
@@ -276,9 +281,7 @@ def test_card_like_typing_requires_confirmation() -> None:
 
 
 def test_mouse_payload_preserves_click_variant_without_executing() -> None:
-    payload = mouse_payload(
-        AutomationAction("right_click", args={"x": 10, "y": 20})
-    )
+    payload = mouse_payload(AutomationAction("right_click", args={"x": 10, "y": 20}))
     assert payload["action_type"] == "mouse_click"
     assert payload["args"]["button"] == "right"
     assert payload["args"]["clicks"] == 1
@@ -364,7 +367,9 @@ def test_service_accepts_explicit_yes_on_next_turn() -> None:
         locator=FakeLocator(element("Save")),
         highlighter=HighlightOverlay(lambda _item, _duration: None),
     )
-    service = ScreenAutomationService(executor=executor, window_targets=FakeWindowTargets())
+    service = ScreenAutomationService(
+        executor=executor, window_targets=FakeWindowTargets()
+    )
 
     pending = service.handle("click Save", target_window="Notepad")
     completed = service.handle("yes")
@@ -381,7 +386,9 @@ def test_yes_without_pending_does_not_match_automation() -> None:
 
 def test_automation_log_does_not_include_typed_text(caplog) -> None:
     executor = AutomationExecutor(runner=lambda _payload: FakeResponse())
-    service = ScreenAutomationService(executor=executor, window_targets=FakeWindowTargets())
+    service = ScreenAutomationService(
+        executor=executor, window_targets=FakeWindowTargets()
+    )
 
     with caplog.at_level(logging.INFO, logger="grandpa.automation.service"):
         result = service.handle("type private message", target_window="Notepad")
@@ -469,7 +476,9 @@ def test_explicit_target_is_verified_before_typing() -> None:
     calls: list[dict] = []
     targets = FakeWindowTargets()
     service = ScreenAutomationService(
-        executor=AutomationExecutor(runner=lambda payload: calls.append(payload) or FakeResponse()),
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
         window_targets=targets,
     )
 
@@ -484,7 +493,9 @@ def test_explicit_target_is_verified_before_typing() -> None:
 def test_press_enter_and_coordinate_move_use_existing_pc_control_payloads() -> None:
     calls: list[dict] = []
     service = ScreenAutomationService(
-        executor=AutomationExecutor(runner=lambda payload: calls.append(payload) or FakeResponse()),
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
         window_targets=FakeWindowTargets(),
     )
 
@@ -504,7 +515,9 @@ def test_focus_failure_and_terminal_focus_prevent_typing() -> None:
     calls: list[dict] = []
     targets = FakeWindowTargets(ok=False, actual_title="Windows Terminal")
     service = ScreenAutomationService(
-        executor=AutomationExecutor(runner=lambda payload: calls.append(payload) or FakeResponse()),
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
         window_targets=targets,
     )
 
@@ -540,7 +553,9 @@ def test_pinned_target_is_session_local() -> None:
     calls: list[dict] = []
     targets = FakeWindowTargets()
     service = ScreenAutomationService(
-        executor=AutomationExecutor(runner=lambda payload: calls.append(payload) or FakeResponse()),
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
         window_targets=targets,
     )
 
@@ -551,7 +566,9 @@ def test_pinned_target_is_session_local() -> None:
     assert service.handle("press enter").status == "blocked"
 
     fresh = ScreenAutomationService(
-        executor=AutomationExecutor(runner=lambda payload: calls.append(payload) or FakeResponse()),
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
         window_targets=targets,
     )
     assert fresh.handle("type leaked").status == "blocked"
@@ -703,7 +720,9 @@ def test_window_ambiguity_is_isolated_per_session() -> None:
     class AmbiguousTargets:
         def focus_and_verify(self, target, *, dry_run: bool = False):
             if isinstance(target, str):
-                return WindowVerification(False, "Multiple windows.", candidates=(choice,))
+                return WindowVerification(
+                    False, "Multiple windows.", candidates=(choice,)
+                )
             return WindowVerification(True, "Focused.", target, target)
 
     first_session = ScreenAutomationService(window_targets=AmbiguousTargets())
@@ -901,12 +920,8 @@ def test_pending_dialog_state_is_session_local() -> None:
 
 
 def test_window_controller_dialog_choices_verify_expected_outcomes() -> None:
-    window = WindowIdentity(
-        10, "Untitled - Notepad", 101, "notepad.exe", "notepad"
-    )
-    unsaved = DialogIdentity(
-        20, "Notepad", 101, 10, "notepad_unsaved"
-    )
+    window = WindowIdentity(10, "Untitled - Notepad", 101, "notepad.exe", "notepad")
+    unsaved = DialogIdentity(20, "Notepad", 101, 10, "notepad_unsaved")
     save_as = DialogIdentity(30, "Save As", 101, 10, "save_as")
     invoked: list[str] = []
 
@@ -917,9 +932,7 @@ def test_window_controller_dialog_choices_verify_expected_outcomes() -> None:
         dialog_detect_func=lambda _window: None,
         exists_func=lambda _handle: False,
     )
-    discarded = discard_controller.respond_to_dialog(
-        window, unsaved, "discard"
-    )
+    discarded = discard_controller.respond_to_dialog(window, unsaved, "discard")
 
     assert discarded.status == "closed"
     assert invoked == ["discard"]
@@ -936,12 +949,8 @@ def test_window_controller_dialog_choices_verify_expected_outcomes() -> None:
 
 
 def test_window_controller_rejects_dialog_from_wrong_process_or_owner() -> None:
-    window = WindowIdentity(
-        10, "Untitled - Notepad", 101, "notepad.exe", "notepad"
-    )
-    wrong = DialogIdentity(
-        20, "Notepad", 999, 77, "notepad_unsaved"
-    )
+    window = WindowIdentity(10, "Untitled - Notepad", 101, "notepad.exe", "notepad")
+    wrong = DialogIdentity(20, "Notepad", 999, 77, "notepad_unsaved")
     invoked: list[str] = []
     controller = WindowTargetController(
         dialog_choice_func=lambda _dialog, _window, choice: (
@@ -956,7 +965,9 @@ def test_window_controller_rejects_dialog_from_wrong_process_or_owner() -> None:
     assert invoked == []
 
 
-def test_dialog_discard_verifies_document_removed_while_notepad_window_remains() -> None:
+def test_dialog_discard_verifies_document_removed_while_notepad_window_remains() -> (
+    None
+):
     window = WindowIdentity(
         10,
         "Second - Notepad",
@@ -1009,14 +1020,14 @@ def test_chat_retains_target_within_one_session() -> None:
 
     calls: list[dict] = []
     service = ScreenAutomationService(
-        executor=AutomationExecutor(runner=lambda payload: calls.append(payload) or FakeResponse()),
+        executor=AutomationExecutor(
+            runner=lambda payload: calls.append(payload) or FakeResponse()
+        ),
         window_targets=FakeWindowTargets(),
     )
 
     assert "pinned target" in (
-        _handle_natural_assistant_intent(
-            "Focus Notepad", automation_service=service
-        )
+        _handle_natural_assistant_intent("Focus Notepad", automation_service=service)
         or ""
     )
     assert "Text typed" in (
@@ -1035,9 +1046,11 @@ def test_voice_retains_target_within_one_session() -> None:
     )
 
     calls: list[dict] = []
+
     def runner(payload):
         calls.append(payload)
         return FakeResponse()
+
     service = ScreenAutomationService(
         executor=AutomationExecutor(runner=runner),
         window_targets=FakeWindowTargets(),

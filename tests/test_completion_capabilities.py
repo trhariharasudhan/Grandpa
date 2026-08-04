@@ -21,9 +21,7 @@ def _make_docx(path: Path, text: str) -> None:
     xml = (
         '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
         '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-        "<w:body><w:p><w:r><w:t>"
-        + text
-        + "</w:t></w:r></w:p></w:body></w:document>"
+        "<w:body><w:p><w:r><w:t>" + text + "</w:t></w:r></w:p></w:body></w:document>"
     )
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr("word/document.xml", xml)
@@ -104,9 +102,15 @@ def test_office_productivity_helpers(tmp_path):
     assert analysis.data["numeric_stats"]["Amount"]["sum"] == 30
     assert office_productivity.suggest_formulas(["Date", "Amount"])
     assert office_productivity.create_presentation_outline("Grandpa").data["outline"]
-    assert office_productivity.generate_report("Weekly Report", "Grandpa improved automation.").data["report"]
+    assert office_productivity.generate_report(
+        "Weekly Report", "Grandpa improved automation."
+    ).data["report"]
     assert office_productivity.review_resume("Python developer").data["suggestions"]
-    assert office_productivity.draft_email("project update").data["draft"].startswith("Subject:")
+    assert (
+        office_productivity.draft_email("project update")
+        .data["draft"]
+        .startswith("Subject:")
+    )
 
 
 def test_smart_automation_workflow_simulation(tmp_path):
@@ -116,7 +120,9 @@ def test_smart_automation_workflow_simulation(tmp_path):
         store=store,
     )
     assert created.status == "handled"
-    simulated = smart_automation.simulate_workflow(created.data["workflow"]["name"], store=store)
+    simulated = smart_automation.simulate_workflow(
+        created.data["workflow"]["name"], store=store
+    )
     assert simulated.status == "handled"
     assert simulated.data["dry_run"] is True
     assert smart_automation.diagnostics(store)["workflow_count"] == 1
@@ -135,8 +141,14 @@ def test_security_sensitive_memory_policy_and_redaction(tmp_path):
     store = security_safety.SecurityStore(tmp_path / "security.db")
     store.store_sensitive("api_key", "secret-value", "1234")
     assert store.load_sensitive("api_key", "1234") == "secret-value"
-    assert security_safety.redact_sensitive({"api_key": "secret-value"})["api_key"] == "[redacted]"
-    assert security_safety.suspicious_action_score("delete passwords")["suspicious"] is True
+    assert (
+        security_safety.redact_sensitive({"api_key": "secret-value"})["api_key"]
+        == "[redacted]"
+    )
+    assert (
+        security_safety.suspicious_action_score("delete passwords")["suspicious"]
+        is True
+    )
     assert security_safety.set_admin_pin("1234", store=store).status == "handled"
     assert security_safety.verify_admin_pin("1234", store=store)
     assert security_safety.diagnostics(store)["health"]["score"] >= 70
@@ -152,5 +164,7 @@ def test_completion_diagnostics_routes():
     assert client.get("/v1/automation/diagnostics").status_code == 200
     assert client.get("/v1/developer/diagnostics").status_code == 200
     assert client.get("/v1/security/diagnostics").status_code == 200
-    response = client.post("/v1/security/suspicious-action", json={"text": "shutdown computer"})
+    response = client.post(
+        "/v1/security/suspicious-action", json={"text": "shutdown computer"}
+    )
     assert response.json()["suspicious"] is True

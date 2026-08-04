@@ -31,7 +31,9 @@ def test_register_duplicate_skill_is_blocked():
         category="system",
         risk_level="LOW",
         approval_required=False,
-        executor=lambda params, context: SkillResult(ok=True, status="completed", message="ok"),
+        executor=lambda params, context: SkillResult(
+            ok=True, status="completed", message="ok"
+        ),
     )
     register_skill(skill)
 
@@ -60,7 +62,9 @@ def test_default_skills_register_and_execute_pc_summary(monkeypatch):
     assert skill.name == "desktop.summary"
     assert "desktop" in {item["name"] for item in list_categories()}
 
-    result = execute_skill("desktop.summary", context=SkillExecutionContext(source="test", dry_run=True))
+    result = execute_skill(
+        "desktop.summary", context=SkillExecutionContext(source="test", dry_run=True)
+    )
     assert result.ok is True
     assert result.message == "Desktop summary ready."
     assert result.data["evidence"]["monitors"] == 1
@@ -85,7 +89,9 @@ def test_approval_required_skill_does_not_execute_without_approval():
         )
     )
 
-    result = execute_skill("desktop.type_test", context=SkillExecutionContext(source="test"))
+    result = execute_skill(
+        "desktop.type_test", context=SkillExecutionContext(source="test")
+    )
     assert result.status == "approval_required"
     assert result.approval_required is True
     assert called is False
@@ -124,6 +130,8 @@ def test_skills_api_lists_gets_executes_and_categorizes(monkeypatch):
     assert detail.status_code == 200
     assert detail.json()["name"] == "desktop.summary"
 
-    executed = client.post("/v1/skills/execute", json={"name": "desktop.summary", "source": "test"})
+    executed = client.post(
+        "/v1/skills/execute", json={"name": "desktop.summary", "source": "test"}
+    )
     assert executed.status_code == 200
     assert executed.json()["ok"] is True

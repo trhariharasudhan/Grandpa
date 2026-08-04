@@ -9,7 +9,11 @@ class PlanScheduler:
     def next_step(self, plan: ExecutionPlan) -> PlanStep | None:
         by_id = {step.step_id: step for step in plan.steps}
         for step in sorted(plan.steps, key=lambda item: item.order):
-            if step.status not in {StepStatus.PENDING, StepStatus.READY, StepStatus.RETRYING}:
+            if step.status not in {
+                StepStatus.PENDING,
+                StepStatus.READY,
+                StepStatus.RETRYING,
+            }:
                 continue
             if all(
                 dependency.step_id in by_id

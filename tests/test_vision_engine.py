@@ -49,7 +49,9 @@ def _metadata() -> VisionCaptureMetadata:
 
 
 def _graph(*nodes: VisionNode) -> ElementGraph:
-    return ElementGraph(tuple(nodes), _metadata(), uia_available=True, ocr_available=True)
+    return ElementGraph(
+        tuple(nodes), _metadata(), uia_available=True, ocr_available=True
+    )
 
 
 def test_ocr_graph_preserves_reading_groups_and_offsets() -> None:
@@ -61,9 +63,7 @@ def test_ocr_graph_preserves_reading_groups_and_offsets() -> None:
         ),
     )
 
-    graph = ElementGraphBuilder().build(
-        capture=_metadata(), ocr=ocr, uia_nodes=()
-    )
+    graph = ElementGraphBuilder().build(capture=_metadata(), ocr=ocr, uia_nodes=())
 
     line = graph.node("ocr:line:1:1:1")
     paragraph = graph.node("ocr:paragraph:1:1")
@@ -87,9 +87,7 @@ def test_graph_merges_uia_and_ocr_agreement() -> None:
         blocks=(OcrBlock("Login", 0.93, (10, 20, 80, 30)),),
     )
 
-    graph = ElementGraphBuilder().build(
-        capture=_metadata(), ocr=ocr, uia_nodes=(uia,)
-    )
+    graph = ElementGraphBuilder().build(capture=_metadata(), ocr=ocr, uia_nodes=(uia,))
 
     assert graph.node("uia:1").source == "uia+ocr"
 
@@ -194,9 +192,7 @@ def test_highlight_is_read_only() -> None:
     )
     service = VisualActionService(
         engine=engine,
-        highlighter=HighlightOverlay(
-            lambda item, _duration: highlighted.append(item)
-        ),
+        highlighter=HighlightOverlay(lambda item, _duration: highlighted.append(item)),
     )
 
     result = service.highlight("Save")
@@ -283,9 +279,7 @@ def test_vision_describe_does_not_report_active_root_as_dialog() -> None:
 
 def test_vision_selected_returns_only_visible_selected_nodes() -> None:
     selected = VisionNode("selected", "text", name="Chosen", selected=True)
-    hidden = VisionNode(
-        "hidden", "text", name="Hidden", selected=True, visible=False
-    )
+    hidden = VisionNode("hidden", "text", name="Hidden", selected=True, visible=False)
     engine = VisionEngine()
     engine.inspect = lambda **_kwargs: VisionResult(  # type: ignore[method-assign]
         "handled", "", _graph(selected, hidden)
@@ -298,7 +292,15 @@ def test_vision_cli_help_lists_read_only_debug_commands() -> None:
     result = CliRunner().invoke(vision, ["--help"])
 
     assert result.exit_code == 0
-    for command in ("inspect", "describe", "graph", "screenshot", "find", "buttons", "controls"):
+    for command in (
+        "inspect",
+        "describe",
+        "graph",
+        "screenshot",
+        "find",
+        "buttons",
+        "controls",
+    ):
         assert command in result.output
 
 

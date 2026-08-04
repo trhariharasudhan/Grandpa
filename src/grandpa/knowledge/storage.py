@@ -43,7 +43,9 @@ class KnowledgeStore:
     """Local SQLite knowledge document store."""
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self.db_path = Path(db_path or os.environ.get("GRANDPA_KNOWLEDGE_DB") or DEFAULT_KNOWLEDGE_DB)
+        self.db_path = Path(
+            db_path or os.environ.get("GRANDPA_KNOWLEDGE_DB") or DEFAULT_KNOWLEDGE_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -70,9 +72,15 @@ class KnowledgeStore:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_title ON knowledge_documents(title)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_source ON knowledge_documents(source)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_knowledge_updated ON knowledge_documents(updated_at)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_knowledge_title ON knowledge_documents(title)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_knowledge_source ON knowledge_documents(source)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_knowledge_updated ON knowledge_documents(updated_at)"
+            )
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS knowledge_embeddings (
@@ -107,7 +115,9 @@ class KnowledgeStore:
     ) -> KnowledgeDocument:
         now = time.time()
         existing = self.find_by_source(source)
-        doc_id = document_id or (existing["document_id"] if existing else "knw_" + uuid.uuid4().hex[:12])
+        doc_id = document_id or (
+            existing["document_id"] if existing else "knw_" + uuid.uuid4().hex[:12]
+        )
         created = float(existing["created_at"]) if existing else now
         document = KnowledgeDocument(
             document_id=doc_id,
@@ -183,7 +193,9 @@ class KnowledgeStore:
 
     def count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) AS count FROM knowledge_documents").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM knowledge_documents"
+            ).fetchone()
         return int(row["count"] if row else 0)
 
     def tags(self) -> list[str]:
@@ -242,17 +254,23 @@ class KnowledgeStore:
 
     def all_embeddings(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM knowledge_embeddings ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM knowledge_embeddings ORDER BY created_at DESC"
+            ).fetchall()
         return [_embedding_row(row) for row in rows]
 
     def embedding_count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) AS count FROM knowledge_embeddings").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM knowledge_embeddings"
+            ).fetchone()
         return int(row["count"] if row else 0)
 
     def embedding_status(self) -> dict[str, Any]:
         with self._connect() as conn:
-            total = conn.execute("SELECT COUNT(*) AS count FROM knowledge_embeddings").fetchone()["count"]
+            total = conn.execute(
+                "SELECT COUNT(*) AS count FROM knowledge_embeddings"
+            ).fetchone()["count"]
             semantic = conn.execute(
                 "SELECT COUNT(*) AS count FROM knowledge_embeddings WHERE true_semantic = 1"
             ).fetchone()["count"]
@@ -326,4 +344,9 @@ def _embedding_model_row(row: sqlite3.Row) -> dict[str, Any]:
     }
 
 
-__all__ = ["DEFAULT_KNOWLEDGE_DB", "DEFAULT_KNOWLEDGE_DIR", "KnowledgeDocument", "KnowledgeStore"]
+__all__ = [
+    "DEFAULT_KNOWLEDGE_DB",
+    "DEFAULT_KNOWLEDGE_DIR",
+    "KnowledgeDocument",
+    "KnowledgeStore",
+]

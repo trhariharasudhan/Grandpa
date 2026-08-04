@@ -11,7 +11,9 @@ from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
-PermissionDecision = Literal["allowed", "requires_confirmation", "blocked", "unsupported"]
+PermissionDecision = Literal[
+    "allowed", "requires_confirmation", "blocked", "unsupported"
+]
 
 DEFAULT_APPROVAL_DB = DEFAULT_CONFIG_DIR / "local_action_approvals.db"
 PENDING_TTL_SECONDS = 120
@@ -64,8 +66,7 @@ class LocalActionApprovalStore:
                 "ON pending_actions(status, expires_at)"
             )
             conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_audit_created "
-                "ON audit_log(created_at)"
+                "CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at)"
             )
 
     def create_pending(
@@ -91,7 +92,16 @@ class LocalActionApprovalStore:
                 )
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')
                 """,
-                (action_id, now, expires_at, source_text, kind, target, message, tts_text),
+                (
+                    action_id,
+                    now,
+                    expires_at,
+                    source_text,
+                    kind,
+                    target,
+                    message,
+                    tts_text,
+                ),
             )
         self.audit(
             action_id=action_id,

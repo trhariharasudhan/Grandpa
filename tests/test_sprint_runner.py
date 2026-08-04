@@ -29,8 +29,13 @@ def test_sprint_runner_preview_and_lifecycle(temp_project) -> None:
     state.active_branch = "main"
     state.repository_health = "healthy"
     from grandpa.agent.development.models import Milestone
+
     state.roadmap.current_milestone = "ms_core"
-    state.roadmap.milestones = {"ms_core": Milestone(milestone_id="ms_core", title="Core Milestone", status="in_progress")}
+    state.roadmap.milestones = {
+        "ms_core": Milestone(
+            milestone_id="ms_core", title="Core Milestone", status="in_progress"
+        )
+    }
     state.roadmap.roadmap_schema_version = 2
 
     task_init = Task(

@@ -106,7 +106,9 @@ class WindowsCommandPipeline:
 
         screen = handle_screen_command(text)
         if not screen.should_fallback:
-            message = screen.spoken_text if spoken and screen.spoken_text else screen.message
+            message = (
+                screen.spoken_text if spoken and screen.spoken_text else screen.message
+            )
             return CommandExecutionResult(
                 _canonical_status(screen.status),
                 message,

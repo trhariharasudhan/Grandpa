@@ -103,11 +103,17 @@ def parse_voice_operator_command(
     raw_command = str(text).strip()
     command = normalize_voice_operator_transcript(text)
     if not command:
-        return VoiceOperatorIntent("none", status="unsupported", message="I did not hear a command.")
+        return VoiceOperatorIntent(
+            "none", status="unsupported", message="I did not hear a command."
+        )
     if command in {"stop listening", "exit", "quit"}:
-        return VoiceOperatorIntent("exit", status="exit", message="Voice Operator Mode stopped.")
+        return VoiceOperatorIntent(
+            "exit", status="exit", message="Voice Operator Mode stopped."
+        )
     if any(re.search(pattern, command) for pattern in DANGEROUS_PATTERNS):
-        return VoiceOperatorIntent("blocked", status="blocked", message="I blocked that command for safety.")
+        return VoiceOperatorIntent(
+            "blocked", status="blocked", message="I blocked that command for safety."
+        )
 
     from grandpa.automation import AutomationPlanner
 
@@ -175,7 +181,11 @@ def parse_voice_operator_command(
 
     web_search_action = WebSearchParser().parse(command)
     if web_search_action is not None:
-        target = web_search_action.query.text if web_search_action.query else web_search_action.action
+        target = (
+            web_search_action.query.text
+            if web_search_action.query
+            else web_search_action.action
+        )
         return VoiceOperatorIntent(
             "web_search",
             web_search_action.action,
@@ -218,7 +228,9 @@ def parse_voice_operator_command(
         return VoiceOperatorIntent(
             "calendar",
             calendar_action.action,
-            calendar_action.query or calendar_action.date_range or calendar_action.title,
+            calendar_action.query
+            or calendar_action.date_range
+            or calendar_action.title,
             {"command": command},
             calendar_action.action in {"create", "update", "delete"},
             message="Handling Calendar command.",
@@ -233,30 +245,70 @@ def parse_voice_operator_command(
             gmail_action.action,
             gmail_action.query or gmail_action.selector or gmail_action.recipient,
             {"command": command},
-            gmail_action.action in {"send", "reply", "forward", "archive", "label", "trash"},
+            gmail_action.action
+            in {"send", "reply", "forward", "archive", "label", "trash"},
             message="Handling Gmail command.",
         )
 
     # Browser Intelligence Voice Commands
-    if command in {"what page is this", "what page is this?", "where am i", "current page", "what browser page is this"}:
-        return VoiceOperatorIntent("browser_intelligence", "page", message="Checking active browser page.")
-    if command in {"summarize this page", "summarize page", "summarize this webpage", "summarize current page"}:
-        return VoiceOperatorIntent("browser_intelligence", "summarize", message="Summarizing current browser page.")
-    match = re.fullmatch(r"(?:read|extract)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:steps|section)?", command)
+    if command in {
+        "what page is this",
+        "what page is this?",
+        "where am i",
+        "current page",
+        "what browser page is this",
+    }:
+        return VoiceOperatorIntent(
+            "browser_intelligence", "page", message="Checking active browser page."
+        )
+    if command in {
+        "summarize this page",
+        "summarize page",
+        "summarize this webpage",
+        "summarize current page",
+    }:
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "summarize",
+            message="Summarizing current browser page.",
+        )
+    match = re.fullmatch(
+        r"(?:read|extract)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:steps|section)?",
+        command,
+    )
     if match:
         sec = match.group(1)
-        return VoiceOperatorIntent("browser_intelligence", "extract", sec, {"section": sec}, message=f"Reading {sec} steps.")
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "extract",
+            sec,
+            {"section": sec},
+            message=f"Reading {sec} steps.",
+        )
     match = re.fullmatch(r"open\s+official\s+(.+)", command)
     if match:
         tgt = match.group(1).strip()
-        return VoiceOperatorIntent("browser_intelligence", "open_official", tgt, {"target": tgt}, message=f"Opening official {tgt}.")
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "open_official",
+            tgt,
+            {"target": tgt},
+            message=f"Opening official {tgt}.",
+        )
     match = re.fullmatch(r"compare\s+(.+?)\s+(?:vs|and|with)\s+(.+)", command)
     if match:
         item_a, item_b = match.group(1).strip(), match.group(2).strip()
-        return VoiceOperatorIntent("browser_intelligence", "compare", f"{item_a} vs {item_b}", {"item_a": item_a, "item_b": item_b}, message=f"Comparing {item_a} and {item_b}.")
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "compare",
+            f"{item_a} vs {item_b}",
+            {"item_a": item_a, "item_b": item_b},
+            message=f"Comparing {item_a} and {item_b}.",
+        )
 
     # Memory Integration Voice Commands
     from grandpa.memory.service import MemoryService
+
     memory_route = MemoryService.get_instance().parse_and_route_intent(command)
     if memory_route is not None:
         return VoiceOperatorIntent(
@@ -292,12 +344,18 @@ def parse_voice_operator_command(
         )
 
     if command in {"scan my apps", "scan apps", "scan installed apps"}:
-        return VoiceOperatorIntent("app_inventory", "scan", message="Scanning installed apps.")
+        return VoiceOperatorIntent(
+            "app_inventory", "scan", message="Scanning installed apps."
+        )
     if command in {"what apps do i have", "list apps", "show apps", "list my apps"}:
-        return VoiceOperatorIntent("app_inventory", "list", message="Listing installed apps.")
+        return VoiceOperatorIntent(
+            "app_inventory", "list", message="Listing installed apps."
+        )
     if command.startswith("find app "):
         name = command[len("find app ") :].strip()
-        return VoiceOperatorIntent("app_inventory", "find", name, message=f"Finding {name}.")
+        return VoiceOperatorIntent(
+            "app_inventory", "find", name, message=f"Finding {name}."
+        )
 
     from grandpa.desktop.automation import DesktopParser
 
@@ -314,37 +372,96 @@ def parse_voice_operator_command(
 
     app = _match_app(command, prefixes=("open ",))
     if app:
-        return VoiceOperatorIntent("local_action", "open_app", app, message=f"Opening {app}.")
+        return VoiceOperatorIntent(
+            "local_action", "open_app", app, message=f"Opening {app}."
+        )
 
     app = _match_app(command, prefixes=("switch to ", "focus "))
     if app:
-        return VoiceOperatorIntent("local_action", "focus_window", app, message=f"Focusing {app}.")
+        return VoiceOperatorIntent(
+            "local_action", "focus_window", app, message=f"Focusing {app}."
+        )
 
     window_action = _parse_window_action(command)
     if window_action:
-        return VoiceOperatorIntent("local_action", window_action, "active", message=_window_message(window_action))
+        return VoiceOperatorIntent(
+            "local_action",
+            window_action,
+            "active",
+            message=_window_message(window_action),
+        )
 
     # Browser Intelligence Voice Commands
-    if command in {"what page is this", "what page is this?", "where am i", "current page", "what browser page is this"}:
-        return VoiceOperatorIntent("browser_intelligence", "page", message="Checking active browser page.")
-    if command in {"summarize this page", "summarize page", "summarize this webpage", "summarize current page"}:
-        return VoiceOperatorIntent("browser_intelligence", "summarize", message="Summarizing current browser page.")
-    match = re.fullmatch(r"(?:read|extract)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:steps|section)?", command)
+    if command in {
+        "what page is this",
+        "what page is this?",
+        "where am i",
+        "current page",
+        "what browser page is this",
+    }:
+        return VoiceOperatorIntent(
+            "browser_intelligence", "page", message="Checking active browser page."
+        )
+    if command in {
+        "summarize this page",
+        "summarize page",
+        "summarize this webpage",
+        "summarize current page",
+    }:
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "summarize",
+            message="Summarizing current browser page.",
+        )
+    match = re.fullmatch(
+        r"(?:read|extract)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:steps|section)?",
+        command,
+    )
     if match:
         sec = match.group(1)
-        return VoiceOperatorIntent("browser_intelligence", "extract", sec, {"section": sec}, message=f"Reading {sec} steps.")
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "extract",
+            sec,
+            {"section": sec},
+            message=f"Reading {sec} steps.",
+        )
     match = re.fullmatch(r"open\s+official\s+(.+)", command)
     if match:
         tgt = match.group(1).strip()
-        return VoiceOperatorIntent("browser_intelligence", "open_official", tgt, {"target": tgt}, message=f"Opening official {tgt}.")
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "open_official",
+            tgt,
+            {"target": tgt},
+            message=f"Opening official {tgt}.",
+        )
     match = re.fullmatch(r"compare\s+(.+?)\s+(?:vs|and|with)\s+(.+)", command)
     if match:
         item_a, item_b = match.group(1).strip(), match.group(2).strip()
-        return VoiceOperatorIntent("browser_intelligence", "compare", f"{item_a} vs {item_b}", {"item_a": item_a, "item_b": item_b}, message=f"Comparing {item_a} and {item_b}.")
+        return VoiceOperatorIntent(
+            "browser_intelligence",
+            "compare",
+            f"{item_a} vs {item_b}",
+            {"item_a": item_a, "item_b": item_b},
+            message=f"Comparing {item_a} and {item_b}.",
+        )
 
-    if command in {"screenshot", "take screenshot", "capture screen", "capture screenshot"}:
-        return VoiceOperatorIntent("screen", "screenshot", message="Capturing the screen.")
-    if command in {"what is on my screen", "what's on my screen", "read my screen", "describe my screen"}:
+    if command in {
+        "screenshot",
+        "take screenshot",
+        "capture screen",
+        "capture screenshot",
+    }:
+        return VoiceOperatorIntent(
+            "screen", "screenshot", message="Capturing the screen."
+        )
+    if command in {
+        "what is on my screen",
+        "what's on my screen",
+        "read my screen",
+        "describe my screen",
+    }:
         return VoiceOperatorIntent("screen", "read", message="Reading the screen.")
 
     if _looks_like_file_operator_command(command):
@@ -364,12 +481,16 @@ def parse_voice_operator_command(
     if command.startswith("open "):
         target = command[len("open ") :].strip()
         if target:
-            return VoiceOperatorIntent("local_action", "open_app", target, message=f"Opening {target}.")
+            return VoiceOperatorIntent(
+                "local_action", "open_app", target, message=f"Opening {target}."
+            )
 
     if command.startswith("type "):
         value = text.strip()[len("type ") :].strip()
         if not value:
-            return VoiceOperatorIntent("none", status="unsupported", message="Tell me what text to type.")
+            return VoiceOperatorIntent(
+                "none", status="unsupported", message="Tell me what text to type."
+            )
         return VoiceOperatorIntent(
             "local_action",
             "keyboard_type",
@@ -462,7 +583,9 @@ def execute_voice_operator_intent(
                 else AutomationExecutor(runner=action_runner)
             )
         )
-        result = service.handle(_automation_command_from_intent(intent), dry_run=dry_run)
+        result = service.handle(
+            _automation_command_from_intent(intent), dry_run=dry_run
+        )
         status: OperatorStatus = (
             "handled"
             if result.status in {"handled", "needs_confirmation"}
@@ -486,94 +609,170 @@ def execute_voice_operator_intent(
     if intent.kind == "web_search":
         from grandpa.web_search import handle_web_search_command
 
-        result = handle_web_search_command(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status in {"handled", "not_configured"} else _coerce_status(result.status)
+        result = handle_web_search_command(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled"
+            if result.status in {"handled", "not_configured"}
+            else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "web_search", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "web_search",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
         )
     if intent.kind == "downloads":
         from grandpa.downloads import handle_downloads_command
 
-        result = handle_downloads_command(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        result = handle_downloads_command(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled"
+            if result.status in {"handled", "needs_confirmation"}
+            else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "downloads", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "downloads",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
             requires_confirmation=result.requires_confirmation,
         )
     if intent.kind == "notes":
         from grandpa.notes import handle_notes_command
 
-        result = handle_notes_command(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        result = handle_notes_command(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled"
+            if result.status in {"handled", "needs_confirmation"}
+            else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "notes", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "notes",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
             requires_confirmation=result.requires_confirmation,
         )
     if intent.kind == "calendar":
         from grandpa.calendar import handle_calendar_command
 
-        result = handle_calendar_command(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        result = handle_calendar_command(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled"
+            if result.status in {"handled", "needs_confirmation"}
+            else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "calendar", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "calendar",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
             requires_confirmation=result.requires_confirmation,
         )
     if intent.kind == "gmail":
         from grandpa.gmail import handle_gmail_command
 
-        result = handle_gmail_command(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation"} else _coerce_status(result.status)
+        result = handle_gmail_command(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled"
+            if result.status in {"handled", "needs_confirmation"}
+            else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "gmail", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "gmail",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
             requires_confirmation=result.requires_confirmation,
         )
     if intent.kind == "browser_awareness":
         from grandpa.browser_awareness import handle_browser_awareness_command
 
-        result = handle_browser_awareness_command(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status == "handled" else _coerce_status(result.status)
+        result = handle_browser_awareness_command(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled" if result.status == "handled" else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "browser_awareness", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "browser_awareness",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
         )
     if intent.kind == "browser_automation":
         from grandpa.browser import handle_browser_command
 
-        result = handle_browser_command(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status == "handled" else _coerce_status(result.status)
+        result = handle_browser_command(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled" if result.status == "handled" else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "browser_automation", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "browser_automation",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
         )
     if intent.kind == "file_automation":
         from grandpa.files import handle_file_automation
 
-        result = handle_file_automation(str((intent.args or {}).get("command") or intent.target))
-        status: OperatorStatus = "handled" if result.status in {"handled", "needs_confirmation", "ambiguous"} else _coerce_status(result.status)
+        result = handle_file_automation(
+            str((intent.args or {}).get("command") or intent.target)
+        )
+        status: OperatorStatus = (
+            "handled"
+            if result.status in {"handled", "needs_confirmation", "ambiguous"}
+            else _coerce_status(result.status)
+        )
         return VoiceOperatorResult(
             status,
             result.message,
             result.message,
-            {"action_type": "file_automation", "target": intent.target, "args": intent.args or {}},
+            {
+                "action_type": "file_automation",
+                "target": intent.target,
+                "args": intent.args or {},
+            },
             requires_confirmation=result.requires_confirmation,
         )
     if intent.kind == "browser_intelligence":
@@ -589,7 +788,9 @@ def execute_voice_operator_intent(
         page = read_current_browser_page()
         if intent.action == "page":
             msg = f"You are currently on {page.title} at domain {page.domain}."
-            return VoiceOperatorResult("handled", msg, msg, {"title": page.title, "domain": page.domain})
+            return VoiceOperatorResult(
+                "handled", msg, msg, {"title": page.title, "domain": page.domain}
+            )
 
         if intent.action == "summarize":
             summarizer = LocalPageSummarizer()
@@ -601,7 +802,9 @@ def execute_voice_operator_intent(
             sec = str((intent.args or {}).get("section") or "installation")
             extracted = extract_section_content(page, target_section=sec)
             spoken = format_voice_summary(extracted.text)
-            return VoiceOperatorResult("handled", extracted.text, spoken, extracted.to_dict())
+            return VoiceOperatorResult(
+                "handled", extracted.text, spoken, extracted.to_dict()
+            )
 
         if intent.action == "open_official":
             target = str((intent.args or {}).get("target") or intent.target)
@@ -616,16 +819,22 @@ def execute_voice_operator_intent(
             engine = ProductComparisonEngine()
             comparison = engine.compare_items(item_a, item_b)
             spoken = format_voice_summary(comparison.summary)
-            return VoiceOperatorResult("handled", comparison.summary, spoken, comparison.to_dict())
+            return VoiceOperatorResult(
+                "handled", comparison.summary, spoken, comparison.to_dict()
+            )
 
     if intent.kind == "memory":
         from grandpa.cli.chat_cmd import _handle_natural_memory_intent
+
         cmd_text = str((intent.args or {}).get("command") or intent.target)
         msg = _handle_natural_memory_intent(cmd_text)
         if msg:
             from grandpa.browser_intelligence import format_voice_summary
+
             spoken = format_voice_summary(msg)
-            return VoiceOperatorResult("handled", msg, spoken, {"kind": "memory", "command": cmd_text})
+            return VoiceOperatorResult(
+                "handled", msg, spoken, {"kind": "memory", "command": cmd_text}
+            )
         return VoiceOperatorResult("handled", intent.message, intent.message)
     if intent.kind == "screen":
         return _execute_screen_intent(intent, screen_reader=screen_reader)
@@ -640,7 +849,11 @@ def execute_voice_operator_intent(
         "require_approval": intent.requires_confirmation,
     }
     response = action_runner(payload)
-    status: OperatorStatus = "handled" if getattr(response, "ok", False) else _coerce_status(getattr(response, "status", "error"))
+    status: OperatorStatus = (
+        "handled"
+        if getattr(response, "ok", False)
+        else _coerce_status(getattr(response, "status", "error"))
+    )
     message = str(getattr(response, "message", intent.message))
     return VoiceOperatorResult(
         status=status,
@@ -666,7 +879,9 @@ def run_voice_operator_loop(
     debug: bool = False,
 ) -> int:
     output_func("Voice Operator Mode started")
-    output_func("Press Enter to record, or type a command. Say 'stop listening' to exit.")
+    output_func(
+        "Press Enter to record, or type a command. Say 'stop listening' to exit."
+    )
     use_voice = sys.stdin.isatty() if prefer_voice is None else prefer_voice
     listener = listen_func or (
         lambda: _listen_once(
@@ -700,7 +915,9 @@ def run_voice_operator_loop(
                         text = listener()
                     except VoiceRecognitionError as exc:
                         output_func(str(exc))
-                        output_func("You can press Enter to try again, or type a command.")
+                        output_func(
+                            "You can press Enter to try again, or type a command."
+                        )
                         continue
                     except (VoiceDependencyError, MicrophoneUnavailableError) as exc:
                         output_func(str(exc))
@@ -713,7 +930,9 @@ def run_voice_operator_loop(
                         use_voice = False
                         text = input_func("> ")
                 if not text.strip():
-                    output_func("No command heard. Press Enter to record, or type a command.")
+                    output_func(
+                        "No command heard. Press Enter to record, or type a command."
+                    )
                     continue
             else:
                 text = input_func("> ")
@@ -738,6 +957,7 @@ def run_voice_operator_loop(
         # Unified assistant routing
         from grandpa.agent.context import classify_intent
         from grandpa.agent.models import AgentIntent
+
         intent_type = classify_intent(normalized_text)
 
         if intent_type in (
@@ -750,11 +970,16 @@ def run_voice_operator_loop(
             AgentIntent.PLANNER,
         ):
             from grandpa.agent.runtime import AgentRuntime
+
             runtime = AgentRuntime()
             res = runtime.run(normalized_text)
             output_func(res.message)
             _speak_best_effort(speaker, res.message, dry_run=dry_run)
-            if intent_type == AgentIntent.STOP_CANCEL or normalized_text in ("stop listening", "exit", "quit"):
+            if intent_type == AgentIntent.STOP_CANCEL or normalized_text in (
+                "stop listening",
+                "exit",
+                "quit",
+            ):
                 return 0
             continue
 
@@ -833,8 +1058,16 @@ def _execute_app_inventory_intent(intent: VoiceOperatorIntent) -> VoiceOperatorR
         return VoiceOperatorResult("handled", message, message)
     if intent.action == "find":
         result = find_app(intent.target)
-        return VoiceOperatorResult("handled" if result.status == "found" else "unsupported", result.message, result.message)
-    return VoiceOperatorResult("unsupported", "I don't know that app inventory command yet.", "I don't know that app inventory command yet.")
+        return VoiceOperatorResult(
+            "handled" if result.status == "found" else "unsupported",
+            result.message,
+            result.message,
+        )
+    return VoiceOperatorResult(
+        "unsupported",
+        "I don't know that app inventory command yet.",
+        "I don't know that app inventory command yet.",
+    )
 
 
 def _listen_once(
@@ -850,11 +1083,17 @@ def _listen_once(
         listen_for_jarvis_command,
     )
 
-    recorder = SoundDeviceMicrophoneRecorder(duration_seconds=duration_seconds, device=device, device_name=device_name)
+    recorder = SoundDeviceMicrophoneRecorder(
+        duration_seconds=duration_seconds, device=device, device_name=device_name
+    )
     try:
         return listen_for_jarvis_command(recorder=recorder).transcript
     finally:
-        if warning_output and recorder.last_diagnostics and recorder.last_diagnostics.warning:
+        if (
+            warning_output
+            and recorder.last_diagnostics
+            and recorder.last_diagnostics.warning
+        ):
             warning_output(f"Audio warning: {recorder.last_diagnostics.warning}")
         if debug_output and recorder.last_diagnostics:
             diagnostics = recorder.last_diagnostics
@@ -868,7 +1107,9 @@ def _listen_once(
             debug_output(f"Audio captured frames: {diagnostics.captured_frame_count}")
 
 
-def _speak_best_effort(speech_output: SpeechOutputEngine, text: str, *, dry_run: bool) -> None:
+def _speak_best_effort(
+    speech_output: SpeechOutputEngine, text: str, *, dry_run: bool
+) -> None:
     try:
         speech_output.speak(text, interrupt=True, dry_run=dry_run)
     except VoiceOutputUnavailableError:
@@ -961,7 +1202,9 @@ def normalize_voice_operator_transcript(text: str) -> str:
 
 def _normalize_app_phrase(value: str) -> str:
     result = value
-    for phrase, replacement in sorted(APP_PHRASE_ALIASES.items(), key=lambda item: len(item[0]), reverse=True):
+    for phrase, replacement in sorted(
+        APP_PHRASE_ALIASES.items(), key=lambda item: len(item[0]), reverse=True
+    ):
         result = re.sub(rf"\b{re.escape(phrase)}\b", replacement, result)
     return re.sub(r"\s+", " ", result).strip()
 

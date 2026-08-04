@@ -55,7 +55,9 @@ def test_jarvis_uses_pc_control_for_execution(monkeypatch, tmp_path: Path) -> No
         calls.append(payload)
         return Response()
 
-    monkeypatch.setattr("grandpa.cli.jarvis_cmd.run_local_action", fake_run_local_action)
+    monkeypatch.setattr(
+        "grandpa.cli.jarvis_cmd.run_local_action", fake_run_local_action
+    )
 
     result = CliRunner().invoke(
         cli,
@@ -97,7 +99,9 @@ def test_jarvis_no_direct_shell_execution(monkeypatch, tmp_path: Path) -> None:
     assert "blocked" in result.output.lower()
 
 
-def test_jarvis_voice_recognized_text_routes_to_pc_control(monkeypatch, tmp_path: Path) -> None:
+def test_jarvis_voice_recognized_text_routes_to_pc_control(
+    monkeypatch, tmp_path: Path
+) -> None:
     project = tmp_path / "Grandpa"
     project.mkdir()
     (project / ".git").mkdir()
@@ -158,7 +162,9 @@ def test_jarvis_voice_dry_run_does_not_execute(monkeypatch, tmp_path: Path) -> N
 def test_jarvis_voice_dependency_missing_is_friendly(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.cli.jarvis_cmd.listen_for_jarvis_command",
-        lambda: (_ for _ in ()).throw(VoiceDependencyError("Install local voice dependencies.")),
+        lambda: (_ for _ in ()).throw(
+            VoiceDependencyError("Install local voice dependencies.")
+        ),
     )
 
     result = CliRunner().invoke(cli, ["jarvis", "--voice"])
@@ -181,10 +187,14 @@ def test_jarvis_voice_microphone_unavailable_is_friendly(monkeypatch) -> None:
     assert "No usable microphone was detected." in result.output
 
 
-def test_jarvis_voice_recognition_error_is_friendly_without_traceback(monkeypatch) -> None:
+def test_jarvis_voice_recognition_error_is_friendly_without_traceback(
+    monkeypatch,
+) -> None:
     monkeypatch.setattr(
         "grandpa.cli.jarvis_cmd.listen_for_jarvis_command",
-        lambda: (_ for _ in ()).throw(VoiceRecognitionError(detail="float16 unsupported")),
+        lambda: (_ for _ in ()).throw(
+            VoiceRecognitionError(detail="float16 unsupported")
+        ),
     )
 
     result = CliRunner().invoke(cli, ["jarvis", "--voice", "--dry-run"])

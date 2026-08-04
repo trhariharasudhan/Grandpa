@@ -28,7 +28,9 @@ class SharedAgentContext:
         return asdict(self)
 
 
-def build_shared_context(user_request: str, *, task_id: str | None = None) -> SharedAgentContext:
+def build_shared_context(
+    user_request: str, *, task_id: str | None = None
+) -> SharedAgentContext:
     """Build local-only context for a multi-agent collaboration run."""
 
     context = SharedAgentContext(
@@ -85,7 +87,9 @@ def _browser_context() -> dict[str, Any]:
 def _desktop_context() -> dict[str, Any]:
     from grandpa.pc_control import run_local_action
 
-    result = run_local_action({"action_type": "desktop_summary", "target": "desktop", "dry_run": True})
+    result = run_local_action(
+        {"action_type": "desktop_summary", "target": "desktop", "dry_run": True}
+    )
     return {
         "available": True,
         "status": result.status,

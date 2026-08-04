@@ -38,8 +38,14 @@ def resolve_target_link(
             }
 
     # 2. Direct search result request on search engine pages ("first official result", "official docs", etc.)
-    if "official" in target_clean or "result" in target_clean or "first" in target_clean:
-        search_results = extract_search_results_from_page(page, search_subject=goal_target)
+    if (
+        "official" in target_clean
+        or "result" in target_clean
+        or "first" in target_clean
+    ):
+        search_results = extract_search_results_from_page(
+            page, search_subject=goal_target
+        )
         if search_results:
             if "official" in target_clean:
                 official_results = [r for r in search_results if r.is_official]
@@ -66,7 +72,9 @@ def resolve_target_link(
         if not nav.text or not nav.url:
             continue
         nav_lower = nav.text.lower()
-        if target_clean in nav_lower or any(word in nav_lower for word in target_clean.split() if len(word) > 3):
+        if target_clean in nav_lower or any(
+            word in nav_lower for word in target_clean.split() if len(word) > 3
+        ):
             return {
                 "type": "url",
                 "target": nav.url,
@@ -77,7 +85,9 @@ def resolve_target_link(
 
     # 4. Match buttons
     for btn in page.buttons:
-        if target_clean in btn.lower() or any(word in btn.lower() for word in target_clean.split() if len(word) > 3):
+        if target_clean in btn.lower() or any(
+            word in btn.lower() for word in target_clean.split() if len(word) > 3
+        ):
             return {
                 "type": "button",
                 "target": btn,
@@ -88,7 +98,11 @@ def resolve_target_link(
 
     # 5. Match headings (for scrolling target)
     for heading in page.headings:
-        if target_clean in heading.text.lower() or any(word in heading.text.lower() for word in target_clean.split() if len(word) > 3):
+        if target_clean in heading.text.lower() or any(
+            word in heading.text.lower()
+            for word in target_clean.split()
+            if len(word) > 3
+        ):
             return {
                 "type": "heading",
                 "target": heading.text,

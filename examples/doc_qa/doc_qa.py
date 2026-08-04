@@ -19,8 +19,7 @@ import sys
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Index documents and answer questions "
-            "with memory-augmented citations."
+            "Index documents and answer questions with memory-augmented citations."
         ),
     )
     parser.add_argument(
@@ -59,8 +58,7 @@ def main() -> None:
         from grandpa import Grandpa
     except ImportError:
         print(
-            "Error: grandpa is not installed. "
-            "Install it with:  uv sync --extra dev",
+            "Error: grandpa is not installed. Install it with:  uv sync --extra dev",
             file=sys.stderr,
         )
         sys.exit(1)

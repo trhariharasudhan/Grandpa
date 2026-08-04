@@ -59,15 +59,15 @@ def _run_step(step: ValidationStep) -> ValidationResult:
         except subprocess.TimeoutExpired:
             _terminate_process_tree(process)
             status = "fail" if step.required else "warn"
-            return ValidationResult(step.name, status, f"Timed out after {step.timeout}s")
+            return ValidationResult(
+                step.name, status, f"Timed out after {step.timeout}s"
+            )
     except FileNotFoundError as exc:
         status = "fail" if step.required else "warn"
         return ValidationResult(step.name, status, f"Command not found: {exc}")
 
     output = "\n".join(
-        part.strip()
-        for part in (stdout or "", stderr or "")
-        if part.strip()
+        part.strip() for part in (stdout or "", stderr or "") if part.strip()
     )
     if process.returncode != 0:
         status = "fail" if step.required else "warn"
@@ -121,7 +121,9 @@ def _console_safe(text: str) -> str:
 
 def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
     steps = [
-        ValidationStep("doctor dashboard", ["uv", "run", "grandpa", "doctor"], timeout=240),
+        ValidationStep(
+            "doctor dashboard", ["uv", "run", "grandpa", "doctor"], timeout=240
+        ),
         ValidationStep(
             "normal AI question",
             [

@@ -40,7 +40,10 @@ class _Daemon:
 
 def test_missing_tray_dependency_produces_install_guidance(monkeypatch) -> None:
     monkeypatch.setattr("grandpa.tray.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.tray.importlib.util.find_spec", lambda name: None if name == "pystray" else object())
+    monkeypatch.setattr(
+        "grandpa.tray.importlib.util.find_spec",
+        lambda name: None if name == "pystray" else object(),
+    )
 
     with pytest.raises(TrayDependencyError, match="uv sync --extra tray"):
         validate_tray_environment()
@@ -90,7 +93,9 @@ def test_single_instance_dead_pid_lock_recovers(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("content", ["", "not-a-pid\n", "-4\n", "0\n"])
-def test_single_instance_invalid_pid_lock_recovers(tmp_path: Path, content: str) -> None:
+def test_single_instance_invalid_pid_lock_recovers(
+    tmp_path: Path, content: str
+) -> None:
     lock = tmp_path / "tray.lock"
     lock.write_text(content, encoding="ascii")
     guard = TraySingleInstance(lock, pid_alive=lambda _pid: True)
@@ -101,7 +106,9 @@ def test_single_instance_invalid_pid_lock_recovers(tmp_path: Path, content: str)
     assert not lock.exists()
 
 
-def test_single_instance_unremovable_stale_lock_is_actionable(tmp_path: Path, monkeypatch) -> None:
+def test_single_instance_unremovable_stale_lock_is_actionable(
+    tmp_path: Path, monkeypatch
+) -> None:
     lock = tmp_path / "tray.lock"
     lock.write_text("stale\n", encoding="ascii")
     guard = TraySingleInstance(lock, pid_alive=lambda _pid: False)
@@ -134,27 +141,37 @@ def test_release_removes_only_owned_lock(tmp_path: Path) -> None:
     assert lock.read_text(encoding="ascii") == "999\nreplacement-token\n"
 
 
-def test_startup_failure_after_lock_acquisition_releases_lock(monkeypatch, tmp_path: Path) -> None:
+def test_startup_failure_after_lock_acquisition_releases_lock(
+    monkeypatch, tmp_path: Path
+) -> None:
     lock = tmp_path / "tray.lock"
     monkeypatch.setattr("grandpa.tray.validate_tray_environment", lambda: None)
     monkeypatch.setattr("grandpa.tray.create_placeholder_icon", lambda: object())
-    monkeypatch.setattr("grandpa.tray.build_menu", lambda _pystray, _controller: object())
+    monkeypatch.setattr(
+        "grandpa.tray.build_menu", lambda _pystray, _controller: object()
+    )
 
     class FailingIcon:
         def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
             raise RuntimeError("startup failed")
 
     with pytest.raises(RuntimeError, match="startup failed"):
-        run_tray_app(lock_path=lock, pystray_module=types.SimpleNamespace(Icon=FailingIcon))
+        run_tray_app(
+            lock_path=lock, pystray_module=types.SimpleNamespace(Icon=FailingIcon)
+        )
 
     assert not lock.exists()
 
 
-def test_keyboard_interrupt_after_lock_acquisition_releases_lock(monkeypatch, tmp_path: Path) -> None:
+def test_keyboard_interrupt_after_lock_acquisition_releases_lock(
+    monkeypatch, tmp_path: Path
+) -> None:
     lock = tmp_path / "tray.lock"
     monkeypatch.setattr("grandpa.tray.validate_tray_environment", lambda: None)
     monkeypatch.setattr("grandpa.tray.create_placeholder_icon", lambda: object())
-    monkeypatch.setattr("grandpa.tray.build_menu", lambda _pystray, _controller: object())
+    monkeypatch.setattr(
+        "grandpa.tray.build_menu", lambda _pystray, _controller: object()
+    )
 
     class InterruptingIcon:
         def __init__(self, *args, **kwargs):  # noqa: ANN002, ANN003
@@ -164,7 +181,9 @@ def test_keyboard_interrupt_after_lock_acquisition_releases_lock(monkeypatch, tm
             raise KeyboardInterrupt
 
     with pytest.raises(KeyboardInterrupt):
-        run_tray_app(lock_path=lock, pystray_module=types.SimpleNamespace(Icon=InterruptingIcon))
+        run_tray_app(
+            lock_path=lock, pystray_module=types.SimpleNamespace(Icon=InterruptingIcon)
+        )
 
     assert not lock.exists()
 
@@ -173,7 +192,10 @@ def test_simultaneous_acquisition_has_one_winner(tmp_path: Path) -> None:
     lock = tmp_path / "tray.lock"
     winners = 0
     errors = 0
-    guards = [TraySingleInstance(lock, pid_alive=lambda _pid: True), TraySingleInstance(lock, pid_alive=lambda _pid: True)]
+    guards = [
+        TraySingleInstance(lock, pid_alive=lambda _pid: True),
+        TraySingleInstance(lock, pid_alive=lambda _pid: True),
+    ]
 
     for guard in guards:
         context = pytest.raises(TrayAlreadyRunningError) if winners else nullcontext()
@@ -224,7 +246,9 @@ def test_run_tray_app_calls_fake_icon_run_once(monkeypatch, tmp_path: Path) -> N
 
 def test_start_calls_existing_start_lifecycle_once() -> None:
     daemon = _Daemon()
-    controller = GrandpaTrayController(daemon_module=daemon, startup_module=types.SimpleNamespace())
+    controller = GrandpaTrayController(
+        daemon_module=daemon, startup_module=types.SimpleNamespace()
+    )
 
     result = controller.start()
 
@@ -234,7 +258,9 @@ def test_start_calls_existing_start_lifecycle_once() -> None:
 
 def test_stop_calls_existing_stop_lifecycle_once() -> None:
     daemon = _Daemon(pid=123)
-    controller = GrandpaTrayController(daemon_module=daemon, startup_module=types.SimpleNamespace())
+    controller = GrandpaTrayController(
+        daemon_module=daemon, startup_module=types.SimpleNamespace()
+    )
 
     result = controller.stop()
 
@@ -244,7 +270,9 @@ def test_stop_calls_existing_stop_lifecycle_once() -> None:
 
 def test_restart_performs_stop_then_start_when_running() -> None:
     daemon = _Daemon(pid=123)
-    controller = GrandpaTrayController(daemon_module=daemon, startup_module=types.SimpleNamespace())
+    controller = GrandpaTrayController(
+        daemon_module=daemon, startup_module=types.SimpleNamespace()
+    )
 
     result = controller.restart()
 
@@ -255,7 +283,9 @@ def test_restart_performs_stop_then_start_when_running() -> None:
 
 def test_open_uses_configured_backend_url(monkeypatch) -> None:
     opened: list[str] = []
-    config = types.SimpleNamespace(server=types.SimpleNamespace(host="0.0.0.0", port=8123))
+    config = types.SimpleNamespace(
+        server=types.SimpleNamespace(host="0.0.0.0", port=8123)
+    )
     monkeypatch.setattr("grandpa.tray.load_config", lambda: config)
     controller = GrandpaTrayController(
         opener=lambda url: opened.append(url) or True,
@@ -271,7 +301,9 @@ def test_open_uses_configured_backend_url(monkeypatch) -> None:
 
 def test_reminders_opens_routines_view(monkeypatch) -> None:
     opened: list[str] = []
-    config = types.SimpleNamespace(server=types.SimpleNamespace(host="127.0.0.1", port=8000))
+    config = types.SimpleNamespace(
+        server=types.SimpleNamespace(host="127.0.0.1", port=8000)
+    )
     monkeypatch.setattr("grandpa.tray.load_config", lambda: config)
     controller = GrandpaTrayController(
         opener=lambda url: opened.append(url) or True,
@@ -288,7 +320,9 @@ def test_reminders_opens_routines_view(monkeypatch) -> None:
 def test_exit_tray_does_not_stop_grandpa() -> None:
     daemon = _Daemon(pid=123)
     icon = MagicMock()
-    controller = GrandpaTrayController(daemon_module=daemon, startup_module=types.SimpleNamespace())
+    controller = GrandpaTrayController(
+        daemon_module=daemon, startup_module=types.SimpleNamespace()
+    )
 
     result = controller.exit_tray(icon)
 
@@ -299,8 +333,16 @@ def test_exit_tray_does_not_stop_grandpa() -> None:
 
 def test_startup_enable_disable_delegates_to_startup_manager() -> None:
     startup = types.SimpleNamespace(
-        enable_startup=MagicMock(return_value=types.SimpleNamespace(ok=True, status="enabled", message="enabled")),
-        disable_startup=MagicMock(return_value=types.SimpleNamespace(ok=True, status="disabled", message="disabled")),
+        enable_startup=MagicMock(
+            return_value=types.SimpleNamespace(
+                ok=True, status="enabled", message="enabled"
+            )
+        ),
+        disable_startup=MagicMock(
+            return_value=types.SimpleNamespace(
+                ok=True, status="disabled", message="disabled"
+            )
+        ),
     )
     controller = GrandpaTrayController(daemon_module=_Daemon(), startup_module=startup)
 
@@ -310,12 +352,19 @@ def test_startup_enable_disable_delegates_to_startup_manager() -> None:
     startup.disable_startup.assert_called_once_with()
 
 
-def test_unrelated_errors_are_not_mislabeled_as_missing_dependency(monkeypatch, tmp_path: Path) -> None:
+def test_unrelated_errors_are_not_mislabeled_as_missing_dependency(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.setattr("grandpa.tray.validate_tray_environment", lambda: None)
-    monkeypatch.setattr("grandpa.tray.TraySingleInstance", MagicMock(side_effect=RuntimeError("boom")))
+    monkeypatch.setattr(
+        "grandpa.tray.TraySingleInstance", MagicMock(side_effect=RuntimeError("boom"))
+    )
 
     with pytest.raises(RuntimeError, match="boom"):
-        run_tray_app(lock_path=tmp_path / "tray.lock", pystray_module=types.SimpleNamespace(Icon=MagicMock()))
+        run_tray_app(
+            lock_path=tmp_path / "tray.lock",
+            pystray_module=types.SimpleNamespace(Icon=MagicMock()),
+        )
 
 
 def test_menu_construction_includes_required_actions() -> None:
@@ -346,13 +395,21 @@ def test_build_menu_uses_all_required_actions() -> None:
         return (label, action)
 
     fake_pystray = types.SimpleNamespace(Menu=FakeMenu, MenuItem=fake_item)
-    build_menu(fake_pystray, GrandpaTrayController(daemon_module=_Daemon(), startup_module=types.SimpleNamespace()))
+    build_menu(
+        fake_pystray,
+        GrandpaTrayController(
+            daemon_module=_Daemon(), startup_module=types.SimpleNamespace()
+        ),
+    )
 
     assert labels == menu_action_labels()
 
 
 def test_cli_missing_dependency_guidance(monkeypatch) -> None:
-    monkeypatch.setattr("grandpa.cli.tray_cmd.run_tray_app", MagicMock(side_effect=TrayDependencyError(TRAY_INSTALL_HINT)))
+    monkeypatch.setattr(
+        "grandpa.cli.tray_cmd.run_tray_app",
+        MagicMock(side_effect=TrayDependencyError(TRAY_INSTALL_HINT)),
+    )
 
     result = CliRunner().invoke(tray)
 
@@ -361,7 +418,10 @@ def test_cli_missing_dependency_guidance(monkeypatch) -> None:
 
 
 def test_cli_unsupported_platform_message(monkeypatch) -> None:
-    monkeypatch.setattr("grandpa.cli.tray_cmd.run_tray_app", MagicMock(side_effect=TrayUnsupportedError("unsupported")))
+    monkeypatch.setattr(
+        "grandpa.cli.tray_cmd.run_tray_app",
+        MagicMock(side_effect=TrayUnsupportedError("unsupported")),
+    )
 
     result = CliRunner().invoke(tray)
 

@@ -105,11 +105,17 @@ def test_checkpoints(temp_workspace) -> None:
     assert loaded.state.project_name == "Grandpa"
 
     # 3. Validate checkpoint
-    assert tracker.checkpoint_manager.validate_checkpoint(loaded, loaded.active_branch, loaded.repository_health)
+    assert tracker.checkpoint_manager.validate_checkpoint(
+        loaded, loaded.active_branch, loaded.repository_health
+    )
     # branch mismatch
-    assert not tracker.checkpoint_manager.validate_checkpoint(loaded, "other-branch", loaded.repository_health)
+    assert not tracker.checkpoint_manager.validate_checkpoint(
+        loaded, "other-branch", loaded.repository_health
+    )
     # health mismatch
-    assert not tracker.checkpoint_manager.validate_checkpoint(loaded, loaded.active_branch, "unhealthy")
+    assert not tracker.checkpoint_manager.validate_checkpoint(
+        loaded, loaded.active_branch, "unhealthy"
+    )
 
 
 def test_continuation_engine_and_memory(temp_workspace, setup_memory) -> None:
@@ -171,6 +177,7 @@ def test_cli_commands(temp_workspace, setup_memory) -> None:
 
     # We monkeypatch the _get_project_path inside click tests
     import grandpa.cli.project_cmd
+
     original_path_getter = grandpa.cli.project_cmd._get_project_path
     grandpa.cli.project_cmd._get_project_path = lambda: str(temp_workspace)
 

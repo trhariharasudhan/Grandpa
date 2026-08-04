@@ -168,6 +168,7 @@ class AgentRuntime:
         # Load registry
         from grandpa.agent.context import classify_intent
         from grandpa.agent.development.registry import MultiProjectRegistry
+
         intent = classify_intent(goal_text)
 
         if intent == AgentIntent.GREETING:
@@ -184,6 +185,7 @@ class AgentRuntime:
 
         elif intent == AgentIntent.TIME_QUERY:
             import datetime
+
             now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             msg = f"The current local time is {now_str}."
             goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
@@ -213,12 +215,17 @@ class AgentRuntime:
             active_p = registry.get_active_project()
             p_path = active_p.project_path if active_p else "D:\\Grandpa"
             from grandpa.agent.development.sprint import SprintRunner
+
             runner = SprintRunner(p_path)
 
             if "preview" in lowered or "what is on the sprint plan" in lowered:
                 sprint, msg = runner.preview_sprint()
                 if sprint:
-                    msg = f"Sprint Preview:\nProject: {sprint.project_name}\nTask ID: {sprint.task_id}\nSteps:\n" + "\n".join(sprint.sprint_plan) + f"\n{msg}"
+                    msg = (
+                        f"Sprint Preview:\nProject: {sprint.project_name}\nTask ID: {sprint.task_id}\nSteps:\n"
+                        + "\n".join(sprint.sprint_plan)
+                        + f"\n{msg}"
+                    )
                 else:
                     msg = f"Failed to preview sprint: {msg}"
             elif "start" in lowered or "begin" in lowered:
@@ -253,7 +260,10 @@ class AgentRuntime:
                                 DiagnosticCommand,
                                 run_catalog_command,
                             )
-                            cmd = DiagnosticCommand(args=args, cwd=str(runner.project_path))
+
+                            cmd = DiagnosticCommand(
+                                args=args, cwd=str(runner.project_path)
+                            )
                             res = run_catalog_command(cmd)
                             if res.exit_code != 0:
                                 failures.append(cmd_str)
@@ -305,14 +315,16 @@ class AgentRuntime:
             "plan project",
             "expand milestone",
             "generate tasks",
-            "what should i build next"
+            "what should i build next",
         )
         if any(tr in lowered for tr in mp_triggers):
             is_mp_goal = True
 
         if is_mp_goal:
             if "switch to" in lowered:
-                target_name = goal_text.replace("Switch to", "").replace("switch to", "").strip()
+                target_name = (
+                    goal_text.replace("Switch to", "").replace("switch to", "").strip()
+                )
                 try:
                     pinfo = registry.switch_project(target_name)
                     msg = f"Switched active project context to '{pinfo.project_name}'."
@@ -347,6 +359,7 @@ class AgentRuntime:
                     project_path = str(Path.cwd())
 
             from grandpa.agent.development.engine import ContinuationEngine
+
             engine = ContinuationEngine(project_path, project_name=project_name)
 
             if "continue" in lowered or "what should i work on next" in lowered:
@@ -371,14 +384,24 @@ class AgentRuntime:
                 }
 
                 steps = [
-                    AgentStep(id="step_1", description="Load project memory", tool="memory"),
-                    AgentStep(id="step_2", description="Inspect repository", tool="automation"),
-                    AgentStep(id="step_3", description="Identify next task and run", tool="planner"),
+                    AgentStep(
+                        id="step_1", description="Load project memory", tool="memory"
+                    ),
+                    AgentStep(
+                        id="step_2", description="Inspect repository", tool="automation"
+                    ),
+                    AgentStep(
+                        id="step_3",
+                        description="Identify next task and run",
+                        tool="planner",
+                    ),
                 ]
                 plan = AgentPlan(plan_id=str(uuid.uuid4()), goal=goal, steps=steps)
 
                 return AgentResult(
-                    state=AgentExecutionState.IDLE if dry_run else AgentExecutionState.COMPLETED,
+                    state=AgentExecutionState.IDLE
+                    if dry_run
+                    else AgentExecutionState.COMPLETED,
                     goal=goal,
                     context=context,
                     plan=plan,
@@ -404,7 +427,11 @@ class AgentRuntime:
                 if active:
                     state = engine.tracker.load_state()
                     next_task = engine.identify_next_task(state)
-                    next_task_str = f"[{next_task.task_id}] {next_task.title}" if next_task else "None"
+                    next_task_str = (
+                        f"[{next_task.task_id}] {next_task.title}"
+                        if next_task
+                        else "None"
+                    )
                     msg = (
                         f"Project Context for '{active.project_name}':\n"
                         f"Path: {active.project_path}\n"
@@ -462,7 +489,10 @@ class AgentRuntime:
                 state = engine.tracker.load_state()
                 active_task = None
                 for t in state.tasks:
-                    if t.status in ("in_progress", "pending") and not t.completion_state:
+                    if (
+                        t.status in ("in_progress", "pending")
+                        and not t.completion_state
+                    ):
                         active_task = t
                         break
                 if active_task:
@@ -501,11 +531,11 @@ class AgentRuntime:
             elif "plan next milestone" in lowered or "show engineering plan" in lowered:
                 state = engine.tracker.load_state()
                 from grandpa.agent.development.planner import EngineeringPlanner
+
                 planner = EngineeringPlanner(state)
                 milestone, task, reason = planner.analyze_milestone_and_task()
                 msg = (
-                    f"Recommended Milestone: {milestone or 'None'}\n"
-                    f"Reasoning: {reason}"
+                    f"Recommended Milestone: {milestone or 'None'}\nReasoning: {reason}"
                 )
                 if task:
                     msg += f"\nNext Task  : [{task.task_id}] {task.title}"
@@ -522,6 +552,7 @@ class AgentRuntime:
             elif "generate work package" in lowered:
                 state = engine.tracker.load_state()
                 from grandpa.agent.development.planner import EngineeringPlanner
+
                 planner = EngineeringPlanner(state)
                 wp = planner.generate_work_package()
                 msg = planner.format_work_package_text(wp)
@@ -538,6 +569,7 @@ class AgentRuntime:
             elif "create roadmap" in lowered or "plan project" in lowered:
                 state = engine.tracker.load_state()
                 from grandpa.agent.development.roadmap_generator import RoadmapGenerator
+
                 generator = RoadmapGenerator(state)
                 generator.generate_roadmap("General development", [])
                 engine.tracker.save_state(state)
@@ -555,6 +587,7 @@ class AgentRuntime:
             elif "expand milestone" in lowered or "generate tasks" in lowered:
                 state = engine.tracker.load_state()
                 from grandpa.agent.development.roadmap_generator import RoadmapGenerator
+
                 generator = RoadmapGenerator(state)
                 m_id = "ms_core"
                 if m_id in state.roadmap.milestones:
@@ -565,7 +598,7 @@ class AgentRuntime:
                             "priority": "medium",
                             "dependencies": ["tsk_init"],
                             "description": "Implement core functional features.",
-                            "explanation": "Core functions are required for milestone success."
+                            "explanation": "Core functions are required for milestone success.",
                         }
                     ]
                     try:
@@ -575,7 +608,9 @@ class AgentRuntime:
                     except Exception as exc:
                         msg = f"Milestone expansion skipped: {exc}"
                 else:
-                    msg = "Milestone 'ms_core' not found. Please create a roadmap first."
+                    msg = (
+                        "Milestone 'ms_core' not found. Please create a roadmap first."
+                    )
 
                 goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
                 context = build_context(goal)
@@ -590,6 +625,7 @@ class AgentRuntime:
             elif "what should i build next" in lowered:
                 state = engine.tracker.load_state()
                 from grandpa.agent.development.planner import EngineeringPlanner
+
                 planner = EngineeringPlanner(state)
                 milestone, task, reason = planner.analyze_milestone_and_task()
                 msg = "Recommendation: "
@@ -667,16 +703,22 @@ class AgentRuntime:
             msg = "Execution failed during step processing."
 
         # Auto-remember project updates if successful continue command
-        if state == AgentExecutionState.COMPLETED and context.intent == AgentIntent.PROJECT_CONTINUE:
+        if (
+            state == AgentExecutionState.COMPLETED
+            and context.intent == AgentIntent.PROJECT_CONTINUE
+        ):
             try:
                 MemoryService.get_instance().remember_project_result(
                     project_name="Grandpa",
                     goal=goal_text,
                     status="completed",
-                    latest_feature=context.project_memory.get("latest_feature") or "Memory Integration V1",
+                    latest_feature=context.project_memory.get("latest_feature")
+                    or "Memory Integration V1",
                     latest_commit=context.project_memory.get("latest_commit"),
-                    next_task=context.project_memory.get("next_task") or "Grandpa Agent Runtime V1",
-                    project_path=context.project_memory.get("project_path") or "D:\\Grandpa",
+                    next_task=context.project_memory.get("next_task")
+                    or "Grandpa Agent Runtime V1",
+                    project_path=context.project_memory.get("project_path")
+                    or "D:\\Grandpa",
                 )
             except Exception:
                 pass
@@ -713,7 +755,9 @@ class AgentRuntime:
         # User preferences if accessed
         prefs = result.context.preferences
         if prefs:
-            lines.append(f"- Preferences: Browser={prefs.get('default_browser') or 'Chrome'}, Shell={prefs.get('preferred_shell') or 'PowerShell'}")
+            lines.append(
+                f"- Preferences: Browser={prefs.get('default_browser') or 'Chrome'}, Shell={prefs.get('preferred_shell') or 'PowerShell'}"
+            )
         lines.append("")
 
         # Plan
@@ -751,12 +795,17 @@ class AgentRuntime:
         lines.append("Next Actions:")
         if result.state == AgentExecutionState.COMPLETED:
             if result.context.intent == AgentIntent.PROJECT_CONTINUE:
-                ntask = result.context.project_memory.get("next_task") or "Memory Integration V1"
+                ntask = (
+                    result.context.project_memory.get("next_task")
+                    or "Memory Integration V1"
+                )
                 lines.append(f"- Recommended next action: proceed with task '{ntask}'")
             else:
                 lines.append("- Goal completed. No next actions recommended.")
         elif result.state == AgentExecutionState.FAILED:
-            lines.append("- Bounded recovery failed. Check logs and retry with manual steps.")
+            lines.append(
+                "- Bounded recovery failed. Check logs and retry with manual steps."
+            )
         else:
             lines.append("- Proceed with plan execution.")
 
@@ -796,7 +845,9 @@ class AgentRuntime:
             summary=summary,
         )
 
-    def diagnose(self, goal: str, workspace_root: str, db_path: str = "") -> PatchProposal | str:
+    def diagnose(
+        self, goal: str, workspace_root: str, db_path: str = ""
+    ) -> PatchProposal | str:
         """Run allowed diagnostics, parse failure logs, find files, and queue a PatchProposal."""
         ws_ctx = resolve_and_verify_workspace(workspace_root)
         if not ws_ctx.is_safe:
@@ -806,7 +857,12 @@ class AgentRuntime:
         goal_lower = goal.lower()
         if "status" in goal_lower or "inspect" in goal_lower or "check" in goal_lower:
             goal_intent = "repository_inspection"
-        elif "diagnose" in goal_lower or "failing" in goal_lower or "find" in goal_lower or "fix" in goal_lower:
+        elif (
+            "diagnose" in goal_lower
+            or "failing" in goal_lower
+            or "find" in goal_lower
+            or "fix" in goal_lower
+        ):
             goal_intent = "failure_diagnosis"
         elif "apply" in goal_lower:
             goal_intent = "patch_apply"
@@ -837,6 +893,7 @@ class AgentRuntime:
         # Run pytest (find test file from goal or run all tests in workspace if not specified)
         test_file = "tests/test_agent_runtime.py"
         import re
+
         # Try to locate test path from the goal text
         pytest_match = re.search(r"tests/[^\s']+\.py", goal)
         if pytest_match:
@@ -877,7 +934,9 @@ class AgentRuntime:
             if abs_test.exists():
                 try:
                     test_content = abs_test.read_text(encoding="utf-8")
-                    import_matches = re.findall(r"(?:from|import)\s+([\w\.]+)", test_content)
+                    import_matches = re.findall(
+                        r"(?:from|import)\s+([\w\.]+)", test_content
+                    )
                     for mod in import_matches:
                         mod_file = mod.replace(".", "/") + ".py"
                         if (Path(ws_ctx.root_path) / mod_file).exists():
@@ -900,42 +959,50 @@ class AgentRuntime:
             if Path(abs_file).exists():
                 file_text = Path(abs_file).read_text(encoding="utf-8")
                 if "retur 42" in file_text:
-                    changes.append({
-                        "path": abs_file,
-                        "diff": (
-                            "--- a/" + target_file.replace("\\", "/") + "\n"
-                            "+++ b/" + target_file.replace("\\", "/") + "\n"
-                            "@@ -1,3 +1,3 @@\n"
-                            " def my_func():\n"
-                            "-    retur 42\n"
-                            "+    return 42\n"
-                        )
-                    })
+                    changes.append(
+                        {
+                            "path": abs_file,
+                            "diff": (
+                                "--- a/" + target_file.replace("\\", "/") + "\n"
+                                "+++ b/" + target_file.replace("\\", "/") + "\n"
+                                "@@ -1,3 +1,3 @@\n"
+                                " def my_func():\n"
+                                "-    retur 42\n"
+                                "+    return 42\n"
+                            ),
+                        }
+                    )
                 elif "preferred_browser = 'Firefox'" in file_text:
-                    changes.append({
-                        "path": abs_file,
-                        "diff": (
-                            "--- a/" + target_file.replace("\\", "/") + "\n"
-                            "+++ b/" + target_file.replace("\\", "/") + "\n"
-                            "@@ -1,2 +1,2 @@\n"
-                            "-preferred_browser = 'Firefox'\n"
-                            "+preferred_browser = 'Chrome'\n"
-                        )
-                    })
+                    changes.append(
+                        {
+                            "path": abs_file,
+                            "diff": (
+                                "--- a/" + target_file.replace("\\", "/") + "\n"
+                                "+++ b/" + target_file.replace("\\", "/") + "\n"
+                                "@@ -1,2 +1,2 @@\n"
+                                "-preferred_browser = 'Firefox'\n"
+                                "+preferred_browser = 'Chrome'\n"
+                            ),
+                        }
+                    )
                 elif "return a - b" in file_text:
-                    changes.append({
-                        "path": abs_file,
-                        "diff": (
-                            "--- a/" + target_file.replace("\\", "/") + "\n"
-                            "+++ b/" + target_file.replace("\\", "/") + "\n"
-                            "@@ -1,2 +1,2 @@\n"
-                            " def add(a, b):\n"
-                            "-    return a - b\n"
-                            "+    return a + b\n"
-                        )
-                    })
+                    changes.append(
+                        {
+                            "path": abs_file,
+                            "diff": (
+                                "--- a/" + target_file.replace("\\", "/") + "\n"
+                                "+++ b/" + target_file.replace("\\", "/") + "\n"
+                                "@@ -1,2 +1,2 @@\n"
+                                " def add(a, b):\n"
+                                "-    return a - b\n"
+                                "+    return a + b\n"
+                            ),
+                        }
+                    )
                 else:
-                    return "analysis_completed\npatch_unavailable\nmanual_review_required"
+                    return (
+                        "analysis_completed\npatch_unavailable\nmanual_review_required"
+                    )
             else:
                 return "analysis_completed\npatch_unavailable\nmanual_review_required"
         else:
@@ -961,7 +1028,9 @@ class AgentRuntime:
 
         return proposal
 
-    def apply_patch(self, proposal_id: str, workspace_root: str, db_path: str = "") -> ExecutionReport:
+    def apply_patch(
+        self, proposal_id: str, workspace_root: str, db_path: str = ""
+    ) -> ExecutionReport:
         """Verify, apply, and validate the patch proposal in the workspace."""
         ws_ctx = resolve_and_verify_workspace(workspace_root)
         if not ws_ctx.is_safe:
@@ -1017,6 +1086,7 @@ class AgentRuntime:
         # Run focused pytest
         test_file = "tests/test_agent_runtime.py"
         import re
+
         pytest_match = re.search(r"tests/[^\s']+\.py", proposal.goal)
         if pytest_match:
             test_file = pytest_match.group(0)
@@ -1024,7 +1094,9 @@ class AgentRuntime:
             for change in proposal.file_changes:
                 # If there's a test file affected, use it
                 if "test_" in change.path:
-                    test_file = str(Path(change.path).relative_to(Path(ws_ctx.root_path)))
+                    test_file = str(
+                        Path(change.path).relative_to(Path(ws_ctx.root_path))
+                    )
                     break
 
         val_res = run_focused_tests(test_file, ws_ctx.root_path)
@@ -1055,6 +1127,7 @@ class AgentRuntime:
 
         # Safe backup cleanup on success
         from grandpa.agent.execution.patch_applier import remove_backups
+
         remove_backups(app_res.backups_created)
 
         # Save structured memory outcome

@@ -8,6 +8,7 @@ from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
     EngineModelNotFoundError,
+    EngineModelPullError,
     InferenceEngine,
     messages_to_dicts,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "EngineConnectionError",
     "EngineModelLoadError",
     "EngineModelNotFoundError",
+    "EngineModelPullError",
     "InferenceEngine",
     "discover_engines",
     "discover_models",

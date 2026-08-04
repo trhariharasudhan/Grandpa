@@ -90,6 +90,69 @@ _APP_ALLOWLIST: dict[str, tuple[str, str]] = {
     "task manager": ("task_manager", "Task Manager"),
 }
 
+_EXACT_SPEECH_CORRECTIONS = {
+    "calc-you-later": "calculator",
+    "note pad": "notepad",
+    "visual studio coat": "vscode",
+}
+
+
+def resolve_fuzzy_app(target: str) -> tuple[str | None, float, str | None]:
+    target = target.lower().strip()
+
+    # Check exact allowlist
+    if target in _APP_ALLOWLIST:
+        app_id, label = _APP_ALLOWLIST[target]
+        return app_id, 1.0, label
+
+    # Check exact speech corrections
+    if target in _EXACT_SPEECH_CORRECTIONS:
+        app_id = _EXACT_SPEECH_CORRECTIONS[target]
+        for k, (aid, lbl) in _APP_ALLOWLIST.items():
+            if aid == app_id:
+                return app_id, 1.0, lbl
+
+    # Check exact inventory match
+    try:
+        from grandpa.apps.inventory import find_app
+
+        res = find_app(target)
+        if res.status == "found" and res.score >= 1.0:
+            record = res.matches[0]
+            return record.canonical_key, 1.0, record.display_name
+    except Exception:
+        pass
+
+    # Run SequenceMatcher fuzzy check across all keys in _APP_ALLOWLIST
+    from difflib import SequenceMatcher
+
+    best_ratio = 0.0
+    best_app_id = None
+    best_label = None
+
+    for candidate_key, (app_id, label) in _APP_ALLOWLIST.items():
+        ratio = SequenceMatcher(None, target, candidate_key).ratio()
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_app_id = app_id
+            best_label = label
+
+    # Check fuzzy inventory match
+    try:
+        from grandpa.apps.inventory import find_app
+
+        res = find_app(target)
+        if res.status in {"found", "ambiguous"} and res.score > best_ratio:
+            record = res.matches[0]
+            best_ratio = res.score
+            best_app_id = record.canonical_key
+            best_label = record.display_name
+    except Exception:
+        pass
+
+    return best_app_id, best_ratio, best_label
+
+
 _URL_ALLOWLIST: dict[str, tuple[str, str]] = {
     "youtube": ("https://www.youtube.com", "YouTube"),
     "gmail": ("https://mail.google.com", "Gmail"),
@@ -145,6 +208,23 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
     if not command:
         return LocalActionResult(status="no_match")
 
+    cancel_phrases = {
+        "stop reasoning",
+        "stop thinking",
+        "cancel that",
+        "cancel current action",
+        "cancel current task",
+        "never mind",
+    }
+    if command in cancel_phrases:
+        return LocalActionResult(
+            status="handled",
+            kind="session_control",
+            target=command,
+            message="Acknowledged. Action cancelled.",
+            tts_text="Acknowledged.",
+        )
+
     confirmation_result = _handle_confirmation_command(command)
     if confirmation_result.status != "no_match":
         return confirmation_result
@@ -188,6 +268,10 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
 
     result = _parse_safe_action(command)
     if result.status == "no_match":
+        return result
+
+    if result.status == "pending_confirmation":
+        _log_attempt(command, result)
         return result
 
     result = _with_permission(command, result)
@@ -274,7 +358,9 @@ def _route_with_intent_router(command: str) -> LocalActionResult | None:
 
         return route_local_intent(command)
     except Exception:
-        logger.debug("Intent router failed; using legacy local action parser.", exc_info=True)
+        logger.debug(
+            "Intent router failed; using legacy local action parser.", exc_info=True
+        )
         return None
 
 
@@ -381,7 +467,11 @@ def _handle_confirmation_command(command: str) -> LocalActionResult:
 
 
 def _with_permission(command: str, result: LocalActionResult) -> LocalActionResult:
-    permission = result.permission if result.permission == "requires_confirmation" else classify_permission(command, result)
+    permission = (
+        result.permission
+        if result.permission == "requires_confirmation"
+        else classify_permission(command, result)
+    )
     if permission == "allowed":
         return LocalActionResult(
             status=result.status,
@@ -558,10 +648,69 @@ def _is_known_safe_folder(path: str) -> bool:
 
 
 def _normalise(text: str) -> str:
-    text = text.strip().lower()
-    text = re.sub(r"[?!.\s]+$", "", text)
-    text = re.sub(r"\s+", " ", text)
-    return text
+    cmd = text.strip().lower()
+    cmd = re.sub(r"[?!.,\s]+$", "", cmd)
+    cmd = re.sub(r"\s+", " ", cmd)
+
+    # Map switch to / switch / focus on -> focus
+    cmd = re.sub(r"\bswitch\s+to\b", "focus", cmd)
+    cmd = re.sub(r"\bswitch\b", "focus", cmd)
+    cmd = re.sub(r"\bfocus\s+on\b", "focus", cmd)
+
+    # Strip leading fillers
+    fillers = [
+        r"^please\s+",
+        r"^can\s+you\s+",
+        r"^could\s+you\s+",
+        r"^would\s+you\s+",
+        r"^okay\s*",
+        r"^ok\s*",
+        r"^hey\s+grandpa\s+",
+        r"^grandpa\s+",
+    ]
+    for pattern in fillers:
+        cmd = re.sub(pattern, "", cmd).strip()
+
+    # Normalize trailing UI suffixes and map bring to front
+    match = re.match(
+        r"^(focus|minimize|maximize|restore|close|open|launch|start|show|bring\s+to\s+front|bring\s+to\s+foreground)\s+(.+)$",
+        cmd,
+    )
+    if match:
+        action = match.group(1)
+        target = match.group(2).strip()
+        # Strip articles
+        target = re.sub(r"^(the|my|a|an)\s+", "", target).strip()
+        # Strip trailing UI suffixes
+        suffixes = [
+            r"\s+screen$",
+            r"\s+window$",
+            r"\s+app$",
+            r"\s+application$",
+            r"\s+program$",
+        ]
+        for pattern in suffixes:
+            target = re.sub(pattern, "", target).strip()
+        if action in {"bring to front", "bring to foreground"}:
+            action = "focus"
+        cmd = f"{action} {target}"
+
+    bring_match = re.match(r"^bring\s+(.+?)\s+to\s+(?:front|foreground)$", cmd)
+    if bring_match:
+        target = bring_match.group(1).strip()
+        target = re.sub(r"^(the|my|a|an)\s+", "", target).strip()
+        suffixes = [
+            r"\s+screen$",
+            r"\s+window$",
+            r"\s+app$",
+            r"\s+application$",
+            r"\s+program$",
+        ]
+        for pattern in suffixes:
+            target = re.sub(pattern, "", target).strip()
+        cmd = f"focus {target}"
+
+    return cmd
 
 
 def _is_dangerous(command: str) -> bool:
@@ -571,6 +720,23 @@ def _is_dangerous(command: str) -> bool:
 
 
 def _parse_safe_action(command: str) -> LocalActionResult:
+    # Parse Chrome Profile Selection command
+    profile_match = re.search(
+        r"(?:select|click|choose|open chrome using|use)(?:\s+my|\s+the)?\s+([a-zA-Z0-9\s]+?)(?:\s+chrome)?\s+profile",
+        command,
+    )
+    if profile_match:
+        profile_name = profile_match.group(1).strip()
+        # Capitalize words to look like a canonical profile name (e.g. Hari Hara Sudhan)
+        profile_name = " ".join(w.capitalize() for w in profile_name.split())
+        return LocalActionResult(
+            status="handled",
+            kind="chrome_profile",
+            target=profile_name,
+            message=f"Selecting Chrome profile {profile_name}.",
+            tts_text=f"Selecting Chrome profile {profile_name}.",
+        )
+
     action_result = _route_with_action_modules(command)
     if action_result is not None:
         return action_result
@@ -683,14 +849,24 @@ def _parse_safe_action(command: str) -> LocalActionResult:
             tts_text="Opening that folder.",
         )
 
-    if open_target in _APP_ALLOWLIST:
-        app_id, label = _APP_ALLOWLIST[open_target]
+    app_id, confidence, label = resolve_fuzzy_app(open_target)
+    if confidence >= 1.0:
         return LocalActionResult(
             status="handled",
             kind="app",
             target=app_id,
             message=f"Opening {label}.",
             tts_text=f"Opening {label}.",
+        )
+    elif confidence >= 0.8:
+        return LocalActionResult(
+            status="pending_confirmation",
+            kind="app",
+            target=app_id,
+            message=f"Did you mean {label}?",
+            tts_text=f"Did you mean {label}?",
+            permission="pending",
+            pending_action={"command": f"open {app_id}", "canonical_name": label},
         )
 
     if open_target.startswith(("http://", "https://")):
@@ -734,12 +910,27 @@ def _parse_desktop_operator_action(command: str) -> LocalActionResult:
                 "Desktop operator is ready with "
                 f"{diagnostics.get('profile_count', 0)} app profile(s), bounded retries, and approval-gated risky actions."
             )
-            return LocalActionResult(status="handled", kind="pc_control", target="desktop_operator|diagnostics", message=message, tts_text=message)
+            return LocalActionResult(
+                status="handled",
+                kind="pc_control",
+                target="desktop_operator|diagnostics",
+                message=message,
+                tts_text=message,
+            )
         if command == "detect active app and suggest actions":
             actions = active_app_actions()
-            suggestions = ", ".join(actions.get("suggested_actions") or []) or "no app-specific suggestions"
+            suggestions = (
+                ", ".join(actions.get("suggested_actions") or [])
+                or "no app-specific suggestions"
+            )
             message = f"Active app: {actions.get('active_app', 'unknown')}. Suggested actions: {suggestions}."
-            return LocalActionResult(status="handled", kind="pc_control", target="desktop_operator|active_app", message=message, tts_text=message)
+            return LocalActionResult(
+                status="handled",
+                kind="pc_control",
+                target="desktop_operator|active_app",
+                message=message,
+                tts_text=message,
+            )
 
         plan = build_ui_navigation_plan(command)
         task = plan.get("task", {})
@@ -756,8 +947,21 @@ def _parse_desktop_operator_action(command: str) -> LocalActionResult:
                 pending_action={"operator_task": task},
             )
         if task.get("status") == "blocked":
-            return LocalActionResult(status="blocked", kind="blocked", target=target, message=summary, tts_text=summary, permission="blocked")
-        return LocalActionResult(status="handled", kind="pc_control", target=target, message=summary, tts_text=summary)
+            return LocalActionResult(
+                status="blocked",
+                kind="blocked",
+                target=target,
+                message=summary,
+                tts_text=summary,
+                permission="blocked",
+            )
+        return LocalActionResult(
+            status="handled",
+            kind="pc_control",
+            target=target,
+            message=summary,
+            tts_text=summary,
+        )
     except Exception as exc:
         logger.debug("Desktop operator routing failed: %s", exc, exc_info=True)
         return LocalActionResult(
@@ -784,9 +988,18 @@ def _parse_user_skill_action(command: str) -> LocalActionResult:
             else:
                 names = ", ".join(skill["name"] for skill in skills[:8])
                 message = f"Custom skills: {names}."
-            return LocalActionResult(status="handled", kind="pc_control", target="user_skills|list", message=message, tts_text=message)
+            return LocalActionResult(
+                status="handled",
+                kind="pc_control",
+                target="user_skills|list",
+                message=message,
+                tts_text=message,
+            )
 
-        if re.match(r"^(create a skill called|remember this workflow|save this automation)", command):
+        if re.match(
+            r"^(create a skill called|remember this workflow|save this automation)",
+            command,
+        ):
             created = create_user_skill({"request": command})
             skill = created["skill"]
             message = f"Saved user skill '{skill['name']}' with {len(skill['workflow_steps'])} declarative step(s)."
@@ -799,16 +1012,31 @@ def _parse_user_skill_action(command: str) -> LocalActionResult:
             )
 
         for skill in list_user_skills(limit=500)["skills"]:
-            triggers = {str(item).strip().lower() for item in skill.get("trigger_phrases", [])}
-            if command in triggers or command == str(skill.get("name", "")).strip().lower():
-                result = run_user_skill(skill["skill_id"], params={"user_request": command})
+            triggers = {
+                str(item).strip().lower() for item in skill.get("trigger_phrases", [])
+            }
+            if (
+                command in triggers
+                or command == str(skill.get("name", "")).strip().lower()
+            ):
+                result = run_user_skill(
+                    skill["skill_id"], params={"user_request": command}
+                )
                 return LocalActionResult(
-                    status="handled" if result["ok"] else ("requires_confirmation" if result["status"] == "approval_required" else "error"),
+                    status="handled"
+                    if result["ok"]
+                    else (
+                        "requires_confirmation"
+                        if result["status"] == "approval_required"
+                        else "error"
+                    ),
                     kind="pc_control",
                     target=f"user_skill|{skill['skill_id']}",
                     message=result["message"],
                     tts_text=result["message"],
-                    permission="requires_confirmation" if result["status"] == "approval_required" else None,
+                    permission="requires_confirmation"
+                    if result["status"] == "approval_required"
+                    else None,
                 )
     except Exception as exc:
         logger.debug("User skill routing failed: %s", exc, exc_info=True)
@@ -1011,23 +1239,7 @@ def _parse_window_action(command: str) -> LocalActionResult:
             tts_text="Checking open windows.",
         )
 
-    match = re.fullmatch(
-        r"(focus|minimize|maximize|restore|close) "
-        r"(notepad|chrome|edge|vs code|vscode|visual studio code|calculator|"
-        r"file explorer|explorer|settings|control panel|task manager)",
-        command,
-    )
-    if match:
-        action = match.group(1)
-        target = _window_app_id(match.group(2))
-        return LocalActionResult(
-            status="handled",
-            kind="window",
-            target=f"{action}|{target}",
-            message=_window_pending_message(action, target),
-            tts_text=_window_tts(action, target),
-        )
-
+    # First check for active window actions
     match = re.fullmatch(r"(minimize|maximize|restore|close) active window", command)
     if match:
         action = match.group(1)
@@ -1038,6 +1250,37 @@ def _parse_window_action(command: str) -> LocalActionResult:
             message=_window_pending_message(action, "active"),
             tts_text=_window_tts(action, "active"),
         )
+
+    # General window target action
+    match = re.fullmatch(r"(focus|minimize|maximize|restore|close)\s+(.+)", command)
+    if match:
+        action = match.group(1)
+        raw_target = match.group(2).strip()
+        if raw_target != "active" and raw_target != "active window":
+            app_id, confidence, label = resolve_fuzzy_app(raw_target)
+            if confidence >= 1.0:
+                return LocalActionResult(
+                    status="handled",
+                    kind="window",
+                    target=f"{action}|{app_id}",
+                    message=_window_pending_message(action, app_id),
+                    tts_text=_window_tts(action, app_id),
+                )
+            elif confidence >= 0.8:
+                return LocalActionResult(
+                    status="pending_confirmation",
+                    kind="window",
+                    target=f"{action}|{app_id}",
+                    message=f"Did you mean {label}?",
+                    tts_text=f"Did you mean {label}?",
+                    permission="pending",
+                    pending_action={
+                        "command": f"{action} {app_id}",
+                        "canonical_name": label,
+                    },
+                )
+            else:
+                return LocalActionResult(status="no_match")
 
     return LocalActionResult(status="no_match")
 
@@ -1101,9 +1344,15 @@ def _parse_screen_action(command: str) -> LocalActionResult:
         return LocalActionResult(
             status="handled",
             kind="screen",
-            target="visual_diagnostics" if "visual" in command else "screen_diagnostics",
-            message="Checking visual targeting diagnostics." if "visual" in command else "Checking screen-awareness diagnostics.",
-            tts_text="Checking visual diagnostics." if "visual" in command else "Checking screen diagnostics.",
+            target="visual_diagnostics"
+            if "visual" in command
+            else "screen_diagnostics",
+            message="Checking visual targeting diagnostics."
+            if "visual" in command
+            else "Checking screen-awareness diagnostics.",
+            tts_text="Checking visual diagnostics."
+            if "visual" in command
+            else "Checking screen diagnostics.",
         )
 
     if command in {
@@ -1147,7 +1396,11 @@ def _parse_screen_action(command: str) -> LocalActionResult:
 
 
 def _parse_browser_action(command: str) -> LocalActionResult:
-    if command in {"what page am i on", "what webpage am i on", "what browser page am i on"}:
+    if command in {
+        "what page am i on",
+        "what webpage am i on",
+        "what browser page am i on",
+    }:
         return LocalActionResult(
             status="handled",
             kind="browser",
@@ -1156,7 +1409,11 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text="Checking the active browser page.",
         )
 
-    if command in {"what tabs are open", "what browser tabs are open", "list browser tabs"}:
+    if command in {
+        "what tabs are open",
+        "what browser tabs are open",
+        "list browser tabs",
+    }:
         return LocalActionResult(
             status="handled",
             kind="browser",
@@ -1174,7 +1431,14 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text="Checking browser diagnostics.",
         )
 
-    if command in {"play video", "pause video", "play youtube", "pause youtube", "mute video", "unmute video"}:
+    if command in {
+        "play video",
+        "pause video",
+        "play youtube",
+        "pause youtube",
+        "mute video",
+        "unmute video",
+    }:
         action = command.replace("youtube", "video")
         return LocalActionResult(
             status="handled",
@@ -1196,7 +1460,11 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text=f"Fill {field}.",
         )
 
-    if command in {"download this file", "download selected file", "download this page file"}:
+    if command in {
+        "download this file",
+        "download selected file",
+        "download this page file",
+    }:
         return LocalActionResult(
             status="handled",
             kind="browser",
@@ -1231,7 +1499,11 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text="Summarizing the visible webpage.",
         )
 
-    if command in {"read the visible headings", "read visible headings", "what headings are visible"}:
+    if command in {
+        "read the visible headings",
+        "read visible headings",
+        "what headings are visible",
+    }:
         return LocalActionResult(
             status="handled",
             kind="browser",
@@ -1240,7 +1512,12 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text="Reading visible browser headings.",
         )
 
-    if command in {"show links on this page", "show page links", "what links are visible", "read visible links"}:
+    if command in {
+        "show links on this page",
+        "show page links",
+        "what links are visible",
+        "read visible links",
+    }:
         return LocalActionResult(
             status="handled",
             kind="browser",
@@ -1249,7 +1526,12 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text="Reading visible browser links.",
         )
 
-    if command in {"what buttons are visible", "what buttons are visible?", "show visible buttons", "read visible buttons"}:
+    if command in {
+        "what buttons are visible",
+        "what buttons are visible?",
+        "show visible buttons",
+        "read visible buttons",
+    }:
         return LocalActionResult(
             status="handled",
             kind="browser",
@@ -1258,7 +1540,11 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text="Reading visible browser buttons.",
         )
 
-    if command in {"focus the search box", "focus search box", "focus the browser search box"}:
+    if command in {
+        "focus the search box",
+        "focus search box",
+        "focus the browser search box",
+    }:
         return LocalActionResult(
             status="handled",
             kind="browser",
@@ -1330,9 +1616,8 @@ def _parse_browser_action(command: str) -> LocalActionResult:
     match = re.fullmatch(r"open youtube and search for (.+)", command)
     if match:
         query = match.group(1).strip()
-        url = (
-            "https://www.youtube.com/results?search_query="
-            + urllib.parse.quote_plus(query)
+        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(
+            query
         )
         return LocalActionResult(
             status="handled",
@@ -1345,9 +1630,8 @@ def _parse_browser_action(command: str) -> LocalActionResult:
     match = re.fullmatch(r"open youtube and search (.+)", command)
     if match:
         query = match.group(1).strip()
-        url = (
-            "https://www.youtube.com/results?search_query="
-            + urllib.parse.quote_plus(query)
+        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(
+            query
         )
         return LocalActionResult(
             status="handled",
@@ -1370,7 +1654,7 @@ def _parse_browser_action(command: str) -> LocalActionResult:
 
 
 def _strip_open_prefix(command: str) -> str | None:
-    for prefix in ("open ", "launch ", "start "):
+    for prefix in ("open my ", "open ", "launch ", "start ", "show my ", "show "):
         if command.startswith(prefix):
             return command[len(prefix) :].strip()
     return None
@@ -1561,7 +1845,11 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         action_type, _, target = result.target.partition("|")
         response = run_local_action({"action_type": action_type, "target": target})
         return LocalActionResult(
-            status="handled" if response.ok else response.status if response.status in {"blocked", "unsupported"} else "error",
+            status="handled"
+            if response.ok
+            else response.status
+            if response.status in {"blocked", "unsupported"}
+            else "error",
             kind="pc_control",
             target=result.target,
             message=response.message,
@@ -1583,13 +1871,23 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
             f"- Actions taken: {len(goal.actions_taken)}",
         ]
         if goal.approvals_needed:
-            lines.append(f"- Approval needed: {', '.join(item.get('step_id', '') for item in goal.approvals_needed)}")
+            lines.append(
+                f"- Approval needed: {', '.join(item.get('step_id', '') for item in goal.approvals_needed)}"
+            )
         if goal.result_summary:
             lines.append(goal.result_summary)
         else:
-            lines.append(str(analysis.get("reasoning_summary", "Grandpa prepared a safe local goal plan.")))
+            lines.append(
+                str(
+                    analysis.get(
+                        "reasoning_summary", "Grandpa prepared a safe local goal plan."
+                    )
+                )
+            )
         return LocalActionResult(
-            status="handled" if goal.status not in {"failed", "cancelled"} else "unsupported",
+            status="handled"
+            if goal.status not in {"failed", "cancelled"}
+            else "unsupported",
             kind="agent_plan",
             target=goal.goal_id,
             message="\n".join(lines),
@@ -1606,8 +1904,8 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
                 status="handled",
                 kind="app",
                 target=launched.launch_target,
-                message=f"Opening {launched.display_name}.",
-                tts_text=f"Opening {launched.display_name}.",
+                message=f"{launched.display_name} opened.",
+                tts_text=f"{launched.display_name} opened.",
             )
         status = "unsupported" if launched.status == "unsupported" else "error"
         return LocalActionResult(
@@ -1616,6 +1914,19 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
             target=result.target,
             message=launched.message,
             tts_text=launched.message,
+        )
+
+    if result.kind == "chrome_profile":
+        msg = run_chrome_profile_selection(result.target)
+        status = "handled" if "selected" in msg or "opened" in msg else "error"
+        if "Which Chrome profile do you mean" in msg:
+            status = "ambiguous"
+        return LocalActionResult(
+            status=status,
+            kind="chrome_profile",
+            target=result.target,
+            message=msg,
+            tts_text=msg,
         )
 
     if result.kind == "folder":
@@ -1681,8 +1992,15 @@ def _execute_runtime_skill(result: LocalActionResult) -> LocalActionResult | Non
         params = {"target": target}
     elif result.kind == "browser" and result.target == "diagnostics|browser":
         skill_name = "browser.diagnostics"
-    elif result.kind == "screen" and result.target in {"screen_diagnostics", "visual_diagnostics"}:
-        skill_name = "vision.visual_diagnostics" if result.target == "visual_diagnostics" else "vision.screen_diagnostics"
+    elif result.kind == "screen" and result.target in {
+        "screen_diagnostics",
+        "visual_diagnostics",
+    }:
+        skill_name = (
+            "vision.visual_diagnostics"
+            if result.target == "visual_diagnostics"
+            else "vision.screen_diagnostics"
+        )
 
     if not skill_name:
         return None
@@ -1705,11 +2023,21 @@ def _execute_runtime_skill(result: LocalActionResult) -> LocalActionResult | Non
             ),
         )
     except Exception:
-        logger.debug("Runtime skill delegation failed for %s", skill_name, exc_info=True)
+        logger.debug(
+            "Runtime skill delegation failed for %s", skill_name, exc_info=True
+        )
         return None
 
-    status: ActionStatus = "handled" if skill_result.ok else (
-        "unsupported" if skill_result.status == "unsupported" else "blocked" if skill_result.status == "blocked" else "error"
+    status: ActionStatus = (
+        "handled"
+        if skill_result.ok
+        else (
+            "unsupported"
+            if skill_result.status == "unsupported"
+            else "blocked"
+            if skill_result.status == "blocked"
+            else "error"
+        )
     )
     return LocalActionResult(
         status=status,
@@ -1752,6 +2080,117 @@ def _log_attempt(command: str, result: LocalActionResult) -> None:
         )
     except Exception:
         logger.debug("Failed to record local action activity", exc_info=True)
+
+
+def run_chrome_profile_selection(profile_name: str) -> str:
+    """Detect and select the requested Chrome profile from the 'Who's using Chrome?' screen."""
+    if sys.platform != "win32":
+        return "Chrome profile selection is only supported on Windows."
+
+    import time
+    from difflib import SequenceMatcher
+
+    from grandpa.windows_window_control import _list_windows, control_window
+
+    # 1. Find the Chrome profile chooser window
+    chooser_window = None
+    for w in _list_windows():
+        w_title = w.title.lower() if w.title else ""
+        if "who's using chrome" in w_title or "whos using chrome" in w_title:
+            chooser_window = w
+            break
+
+    if not chooser_window:
+        return "I could not find the Chrome profile chooser window."
+
+    # 2. Focus it
+    try:
+        control_window("focus", chooser_window.title)
+    except Exception:
+        pass
+
+    # Give a tiny fraction of a second to settle
+    time.sleep(0.2)
+
+    # 3. Build vision graph
+    try:
+        from grandpa.vision.service import VisionEngine
+
+        engine = VisionEngine()
+        inspect_res = engine.inspect(active_window=True)
+        graph = inspect_res.graph
+    except Exception as exc:
+        return f"Could not inspect the screen to find Chrome profiles: {exc}"
+
+    if not graph or not graph.nodes:
+        return "No visible elements were found in the Chrome window."
+
+    # 4. Find matching profile cards
+    matches = []
+    seen_labels = set()
+    for node in graph.nodes:
+        if not node.visible:
+            continue
+        label = node.label.strip()
+        if not label:
+            continue
+        if label.lower() in {
+            "who's using chrome?",
+            "browse as guest",
+            "guest",
+            "add",
+            "close",
+            "minimize",
+            "maximize",
+            "add profile",
+            "customize your chrome profile",
+            "who's using chrome",
+        }:
+            continue
+
+        ratio = SequenceMatcher(None, profile_name.lower(), label.lower()).ratio()
+        if ratio >= 0.85 or profile_name.lower() in label.lower():
+            if label not in seen_labels:
+                seen_labels.add(label)
+                matches.append((node, ratio, label))
+
+    if not matches:
+        return f"I could not find a Chrome profile named {profile_name}."
+
+    if len(matches) > 1:
+        # Check if they are distinct names
+        return "Which Chrome profile do you mean?"
+
+    # 5. Click the single matching profile card
+    node, ratio, matched_label = matches[0]
+    x, y = node.bounds.center
+
+    try:
+        from grandpa.automation.service import get_automation_service
+
+        service = get_automation_service()
+        service.handle(f"click at {x} {y}", target_window=chooser_window.title)
+    except Exception as exc:
+        return f"Failed to automate click on the profile card: {exc}"
+
+    # 6. Verify selection success by waiting for chooser to close or browser window to open
+    start_time = time.time()
+    while time.time() - start_time < 5.0:
+        # Check if chooser disappeared
+        chooser_exists = False
+        browser_exists = False
+        for w in _list_windows():
+            w_title = w.title.lower() if w.title else ""
+            if "who's using chrome" in w_title or "whos using chrome" in w_title:
+                chooser_exists = True
+            elif "chrome" in w_title or "google chrome" in w_title:
+                browser_exists = True
+
+        if not chooser_exists or browser_exists:
+            return f"Chrome profile {matched_label} selected."
+        time.sleep(0.2)
+
+    return "I found the profile card, but clicking it did not open Chrome."
 
 
 __all__ = [

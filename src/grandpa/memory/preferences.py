@@ -43,7 +43,9 @@ class PreferenceMemory:
         raw_key = key.replace("pref_", "").lower()
         return self.DEFAULT_PREFERENCES.get(raw_key, default)
 
-    def set_preference(self, key: str, value: str, metadata: dict[str, Any] | None = None) -> MemoryItem:
+    def set_preference(
+        self, key: str, value: str, metadata: dict[str, Any] | None = None
+    ) -> MemoryItem:
         """Set or update a user preference."""
         raw_key = key.replace("pref_", "").lower()
         pref_key = f"pref_{raw_key}"

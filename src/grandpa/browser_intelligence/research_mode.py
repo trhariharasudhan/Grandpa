@@ -59,7 +59,9 @@ class WebResearchEngine:
                 ranked = rank_search_results(list(results), subject=topic)
             else:
                 # Mock/Fallback search result for topic
-                verification = verify_source(page.url or "https://fastapi.tiangolo.com", subject=topic)
+                verification = verify_source(
+                    page.url or "https://fastapi.tiangolo.com", subject=topic
+                )
                 ranked = [
                     SearchEngineResult(
                         title=f"{topic} Documentation",
@@ -87,7 +89,9 @@ class WebResearchEngine:
             sources_visited.append(res.url)
 
             # Record in session memory
-            self.session_memory.record_visit(title=res.title, url=res.url, domain=res.domain)
+            self.session_memory.record_visit(
+                title=res.title, url=res.url, domain=res.domain
+            )
             self.session_memory.record_verification(
                 title=res.title,
                 url=res.url,
@@ -108,7 +112,9 @@ class WebResearchEngine:
             extracted_sections.append(extracted)
 
             if res.snippet and res.snippet not in key_findings:
-                key_findings.append(f"[{verification.confidence} Confidence] {res.title}: {res.snippet}")
+                key_findings.append(
+                    f"[{verification.confidence} Confidence] {res.title}: {res.snippet}"
+                )
 
         # 3. Summarize findings
         combined_text = "\n\n".join([e.text for e in extracted_sections])

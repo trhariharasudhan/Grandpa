@@ -22,12 +22,16 @@ def temp_store():
 def test_memory_store_init_and_schema(temp_store: MemoryStore) -> None:
     assert temp_store.db_path.exists()
     with temp_store._connect() as conn:
-        ver = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()["version"]
+        ver = conn.execute("SELECT version FROM schema_version LIMIT 1").fetchone()[
+            "version"
+        ]
         assert ver == 1
 
 
 def test_memory_store_crud(temp_store: MemoryStore) -> None:
-    item = MemoryItem(key="user_name", content="Hari Hara Sudhan", category="preference")
+    item = MemoryItem(
+        key="user_name", content="Hari Hara Sudhan", category="preference"
+    )
     inserted = temp_store.insert(item)
     assert inserted.key == "user_name"
     assert inserted.content == "Hari Hara Sudhan"
@@ -56,7 +60,9 @@ def test_memory_store_crud(temp_store: MemoryStore) -> None:
 
 def test_persistence_across_process_restart(temp_store: MemoryStore) -> None:
     db_path = temp_store.db_path
-    item = MemoryItem(key="persistent_key", content="Durable memory content", category="knowledge")
+    item = MemoryItem(
+        key="persistent_key", content="Durable memory content", category="knowledge"
+    )
     temp_store.insert(item)
 
     # Simulate process restart by creating new MemoryStore instance with same DB path
@@ -68,7 +74,11 @@ def test_persistence_across_process_restart(temp_store: MemoryStore) -> None:
 
 def test_category_filtering_and_list(temp_store: MemoryStore) -> None:
     temp_store.insert(MemoryItem(key="pref1", content="Val1", category="preference"))
-    temp_store.insert(MemoryItem(key="proj1", content="Val2", category="project", project_name="Grandpa"))
+    temp_store.insert(
+        MemoryItem(
+            key="proj1", content="Val2", category="project", project_name="Grandpa"
+        )
+    )
     temp_store.insert(MemoryItem(key="know1", content="Val3", category="knowledge"))
 
     prefs = temp_store.list_all(category="preference")
@@ -84,12 +94,18 @@ def test_category_filtering_and_list(temp_store: MemoryStore) -> None:
 
 
 def test_sensitive_content_rejection(temp_store: MemoryStore) -> None:
-    sensitive_item = MemoryItem(key="my_secret_token", content="Bearer eyJhbGciOiJIUzI1NiI...", category="knowledge")
+    sensitive_item = MemoryItem(
+        key="my_secret_token",
+        content="Bearer eyJhbGciOiJIUzI1NiI...",
+        category="knowledge",
+    )
     with pytest.raises(ValueError, match="sensitive"):
         temp_store.insert(sensitive_item)
 
     # Rejection during update
-    valid_item = temp_store.insert(MemoryItem(key="safe_key", content="Safe text", category="knowledge"))
+    valid_item = temp_store.insert(
+        MemoryItem(key="safe_key", content="Safe text", category="knowledge")
+    )
     with pytest.raises(ValueError, match="sensitive"):
         temp_store.update(valid_item.id, content="my_password_is_123")
 

@@ -106,6 +106,7 @@ class TestRuntimeEnvironmentChecks:
 
         assert "Python executable" in names
         assert "Grandpa executable" in names
+        assert "Grandpa executables on PATH" in names
         assert "Active virtual environment" in names
         assert "Project root" in names
 
@@ -136,15 +137,25 @@ class TestRuntimeEnvironmentChecks:
             "C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python311\\Scripts\\grandpa.exe",
         ]
         with (
-            patch("grandpa.cli.doctor_cmd._grandpa_executable_candidates", return_value=candidates),
-            patch("grandpa.cli.doctor_cmd._project_root", return_value=Path("D:/Grandpa")),
+            patch(
+                "grandpa.cli.doctor_cmd._grandpa_executable_candidates",
+                return_value=candidates,
+            ),
+            patch(
+                "grandpa.cli.doctor_cmd._project_root", return_value=Path("D:/Grandpa")
+            ),
         ):
             results = _check_runtime_environment()
 
-        duplicate = next(result for result in results if result.name == "Grandpa executable duplicates")
+        duplicate = next(
+            result
+            for result in results
+            if result.name == "Grandpa executable duplicates"
+        )
         assert duplicate.status == "warn"
         assert "2 executables" in duplicate.message
         assert "uv run grandpa" in str(duplicate.details)
+        assert "pip uninstall grandpa" in str(duplicate.details)
 
 
 class TestCheckConfigMissing:
@@ -193,9 +204,7 @@ class TestCheckEngineProbing:
         assert "Engine: custom-local" in names
         # Ollama should be ready; an explicitly configured custom runtime warns.
         ollama_result = next(r for r in results if r.name == "Engine: ollama")
-        custom_result = next(
-            r for r in results if r.name == "Engine: custom-local"
-        )
+        custom_result = next(r for r in results if r.name == "Engine: custom-local")
         assert ollama_result.status == "ok"
         assert custom_result.status == "warn"
 

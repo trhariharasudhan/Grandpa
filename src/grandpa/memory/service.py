@@ -60,7 +60,9 @@ class MemoryService:
             pass
         return True
 
-    def set_session_memory_enabled(self, enabled: bool, session_id: str | None = None) -> None:
+    def set_session_memory_enabled(
+        self, enabled: bool, session_id: str | None = None
+    ) -> None:
         """Enable or disable memory retrieval for a specific session."""
         sid = session_id or "default"
         self._session_enabled_flags[sid] = enabled
@@ -114,7 +116,9 @@ class MemoryService:
             raise ValueError("Memory content cannot be empty.")
 
         if not key:
-            slug = re.sub(r"[^a-zA-Z0-9]+", "_", content.strip().lower()[:40]).strip("_")
+            slug = re.sub(r"[^a-zA-Z0-9]+", "_", content.strip().lower()[:40]).strip(
+                "_"
+            )
             key = slug or f"mem_{int(confidence * 1000)}"
 
         if category == "session":
@@ -139,7 +143,9 @@ class MemoryService:
         project_name: str | None = None,
     ) -> MemoryItem:
         """Store explicit user memory instruction."""
-        return self.remember(content=text, category=category, key=key, project_name=project_name)
+        return self.remember(
+            content=text, category=category, key=key, project_name=project_name
+        )
 
     def remember_preference(self, key: str, value: str) -> MemoryItem:
         """Store user preference."""
@@ -241,9 +247,9 @@ class MemoryService:
         limit: int = 50,
     ) -> list[MemoryItem]:
         """List memory items."""
-        return self.store.list_all(category=category, project_name=project_name, limit=limit)
-
-
+        return self.store.list_all(
+            category=category, project_name=project_name, limit=limit
+        )
 
     def get_context_summary(
         self,
@@ -266,11 +272,15 @@ class MemoryService:
     def clear(self, category: str | None = None, confirm: bool = False) -> int:
         """Clear memory items (requires confirm=True)."""
         if not confirm:
-            raise PermissionError("Confirmation (confirm=True) is required to clear memories.")
+            raise PermissionError(
+                "Confirmation (confirm=True) is required to clear memories."
+            )
         if category == "session" or category is None:
             self.short_term.clear()
         return self.store.clear(category=category)
 
-    def explain_retrieval(self, query: str, project_name: str | None = None) -> dict[str, Any]:
+    def explain_retrieval(
+        self, query: str, project_name: str | None = None
+    ) -> dict[str, Any]:
         """Return diagnostic explanation of memory matching for a query."""
         return self.retrieval.explain_retrieval(query, project_name=project_name)

@@ -42,7 +42,12 @@ def analyze_repository(path: str | Path | None = None) -> dict[str, Any]:
         language_bytes[language] += size
         rel = file.relative_to(root)
         parts = {part.lower() for part in rel.parts}
-        if "tests" in parts or file.name.startswith("test_") or file.name.endswith(".test.ts") or file.name.endswith(".spec.ts"):
+        if (
+            "tests" in parts
+            or file.name.startswith("test_")
+            or file.name.endswith(".test.ts")
+            or file.name.endswith(".spec.ts")
+        ):
             test_count += 1
         if file.suffix.lower() in {".py", ".ts", ".tsx", ".js", ".rs", ".dart"}:
             module_count += 1
@@ -82,7 +87,9 @@ def _dependency_count(root: Path) -> int:
         from grandpa.coding.dependency_analysis import analyze_dependencies
 
         data = analyze_dependencies(root)
-        return sum(len(item.get("dependencies", [])) for item in data.get("manifests", []))
+        return sum(
+            len(item.get("dependencies", [])) for item in data.get("manifests", [])
+        )
     except Exception:
         return 0
 

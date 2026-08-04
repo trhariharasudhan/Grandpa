@@ -18,7 +18,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
-OperatorStatus = Literal["planned", "running", "waiting_approval", "completed", "failed", "blocked"]
+OperatorStatus = Literal[
+    "planned", "running", "waiting_approval", "completed", "failed", "blocked"
+]
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 
 DEFAULT_OPERATOR_DB = Path("runtime") / "desktop" / "operator.db"
@@ -97,7 +99,11 @@ APP_PROFILES: dict[str, AppProfile] = {
         known_windows=("Visual Studio Code", "VS Code"),
         common_actions=("open terminal", "open extensions", "search files", "run task"),
         visual_anchors=("Terminal", "Explorer", "Search", "Extensions", "Problems"),
-        safe_shortcuts={"open terminal": "ctrl+`", "command palette": "ctrl+shift+p", "search files": "ctrl+p"},
+        safe_shortcuts={
+            "open terminal": "ctrl+`",
+            "command palette": "ctrl+shift+p",
+            "search files": "ctrl+p",
+        },
         blocked_actions=("delete project", "run unknown script", "commit secrets"),
         approval_required_actions=("type command", "run terminal command"),
     ),
@@ -106,18 +112,36 @@ APP_PROFILES: dict[str, AppProfile] = {
         known_windows=("Google Chrome", "Chrome"),
         common_actions=("search", "new tab", "summarize page", "scroll"),
         visual_anchors=("Address and search bar", "Back", "Reload", "Search"),
-        safe_shortcuts={"new tab": "ctrl+t", "focus address bar": "ctrl+l", "reload": "ctrl+r"},
+        safe_shortcuts={
+            "new tab": "ctrl+t",
+            "focus address bar": "ctrl+l",
+            "reload": "ctrl+r",
+        },
         blocked_actions=("read password", "submit payment", "purchase"),
-        approval_required_actions=("click button", "fill form", "download file", "send message"),
+        approval_required_actions=(
+            "click button",
+            "fill form",
+            "download file",
+            "send message",
+        ),
     ),
     "edge": AppProfile(
         app_name="Microsoft Edge",
         known_windows=("Microsoft Edge", "Edge"),
         common_actions=("search", "new tab", "summarize page", "scroll"),
         visual_anchors=("Address and search bar", "Back", "Reload", "Search"),
-        safe_shortcuts={"new tab": "ctrl+t", "focus address bar": "ctrl+l", "reload": "ctrl+r"},
+        safe_shortcuts={
+            "new tab": "ctrl+t",
+            "focus address bar": "ctrl+l",
+            "reload": "ctrl+r",
+        },
         blocked_actions=("read password", "submit payment", "purchase"),
-        approval_required_actions=("click button", "fill form", "download file", "send message"),
+        approval_required_actions=(
+            "click button",
+            "fill form",
+            "download file",
+            "send message",
+        ),
     ),
     "explorer": AppProfile(
         app_name="File Explorer",
@@ -151,7 +175,9 @@ APP_PROFILES: dict[str, AppProfile] = {
 
 class OperatorTaskStore:
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or os.getenv("GRANDPA_DESKTOP_OPERATOR_DB") or DEFAULT_OPERATOR_DB)
+        self.db_path = Path(
+            db_path or os.getenv("GRANDPA_DESKTOP_OPERATOR_DB") or DEFAULT_OPERATOR_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -178,7 +204,9 @@ class OperatorTaskStore:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_operator_tasks_updated ON operator_tasks(updated_at DESC)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_operator_tasks_updated ON operator_tasks(updated_at DESC)"
+            )
 
     def save(self, task: OperatorTask) -> OperatorTask:
         with self._connect() as conn:
@@ -223,8 +251,12 @@ class OperatorTaskStore:
 
     def diagnostics(self) -> dict[str, Any]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT status, COUNT(*) AS count FROM operator_tasks GROUP BY status").fetchall()
-            total = conn.execute("SELECT COUNT(*) AS count FROM operator_tasks").fetchone()["count"]
+            rows = conn.execute(
+                "SELECT status, COUNT(*) AS count FROM operator_tasks GROUP BY status"
+            ).fetchall()
+            total = conn.execute(
+                "SELECT COUNT(*) AS count FROM operator_tasks"
+            ).fetchone()["count"]
         return {
             "db_path": str(self.db_path),
             "task_count": int(total),
@@ -250,11 +282,14 @@ def analyze_desktop_task(user_request: str) -> dict[str, Any]:
         "risk_level": risk,
         "approval_required": risk in {"MEDIUM", "HIGH"},
         "confidence": _confidence(text, app, intent),
-        "supported": app in APP_PROFILES or intent in {"summarize_desktop", "active_app_actions"},
+        "supported": app in APP_PROFILES
+        or intent in {"summarize_desktop", "active_app_actions"},
     }
 
 
-def build_ui_navigation_plan(user_request: str, *, persist: bool = True) -> dict[str, Any]:
+def build_ui_navigation_plan(
+    user_request: str, *, persist: bool = True
+) -> dict[str, Any]:
     """Build a deterministic operator plan for a supported desktop task."""
     analysis = analyze_desktop_task(user_request)
     steps = _steps_for_analysis(analysis)
@@ -275,21 +310,32 @@ def build_ui_navigation_plan(user_request: str, *, persist: bool = True) -> dict
         app=analysis.get("app") or "desktop",
         status=status,
         steps=tuple(steps),
-        visual_targets=tuple(step.visual_target for step in steps if step.visual_target),
+        visual_targets=tuple(
+            step.visual_target for step in steps if step.visual_target
+        ),
         approvals=tuple(approvals),
         result_summary=summary,
     )
     if persist:
         OperatorTaskStore().save(task)
-    return {"analysis": analysis, "task": task.to_dict(), "plan": [step.to_dict() for step in steps]}
+    return {
+        "analysis": analysis,
+        "task": task.to_dict(),
+        "plan": [step.to_dict() for step in steps],
+    }
 
 
-def execute_visual_step(step: dict[str, Any], *, dry_run: bool = True) -> dict[str, Any]:
+def execute_visual_step(
+    step: dict[str, Any], *, dry_run: bool = True
+) -> dict[str, Any]:
     """Execute one bounded visual/desktop step through PC control if safe."""
     target = step.get("visual_target") or {}
     confidence = float(target.get("confidence", step.get("confidence", 1.0)) or 0.0)
     risk = str(step.get("risk_level", "LOW")).upper()
-    approval_required = bool(step.get("approval_required")) or risk in {"MEDIUM", "HIGH"}
+    approval_required = bool(step.get("approval_required")) or risk in {
+        "MEDIUM",
+        "HIGH",
+    }
     if confidence and confidence < MIN_VISUAL_CONFIDENCE:
         return {
             "ok": False,
@@ -341,21 +387,27 @@ def execute_visual_step(step: dict[str, Any], *, dry_run: bool = True) -> dict[s
         }
 
 
-def verify_action_result(step: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+def verify_action_result(
+    step: dict[str, Any], result: dict[str, Any]
+) -> dict[str, Any]:
     """Refresh desktop context and verify a step's outcome conservatively."""
     observation = _desktop_observation()
     ok = bool(result.get("ok")) and result.get("status") in {"completed", "dry_run"}
     return {
         "ok": ok,
         "status": "verified" if ok else "unverified",
-        "message": "Step result verified conservatively." if ok else "Step result could not be verified from current desktop context.",
+        "message": "Step result verified conservatively."
+        if ok
+        else "Step result could not be verified from current desktop context.",
         "step": step,
         "result": result,
         "observation": observation,
     }
 
 
-def recover_failed_action(step: dict[str, Any], result: dict[str, Any], *, retry_count: int = 0) -> dict[str, Any]:
+def recover_failed_action(
+    step: dict[str, Any], result: dict[str, Any], *, retry_count: int = 0
+) -> dict[str, Any]:
     """Return a bounded recovery plan for failed visual actions."""
     if retry_count >= MAX_RETRIES:
         return {
@@ -380,8 +432,14 @@ def recover_failed_action(step: dict[str, Any], result: dict[str, Any], *, retry
     }
 
 
-def summarize_operator_task(analysis: dict[str, Any], steps: list[OperatorStep] | tuple[OperatorStep, ...]) -> str:
-    app_name = analysis.get("profile", {}).get("app_name") if isinstance(analysis.get("profile"), dict) else analysis.get("app")
+def summarize_operator_task(
+    analysis: dict[str, Any], steps: list[OperatorStep] | tuple[OperatorStep, ...]
+) -> str:
+    app_name = (
+        analysis.get("profile", {}).get("app_name")
+        if isinstance(analysis.get("profile"), dict)
+        else analysis.get("app")
+    )
     if not steps:
         return "No supported desktop operator steps were found."
     approval_count = sum(1 for step in steps if step.approval_required)
@@ -416,22 +474,34 @@ def operator_diagnostics() -> dict[str, Any]:
 
 
 def list_app_profiles() -> dict[str, Any]:
-    return {"profiles": [profile.to_dict() for profile in APP_PROFILES.values()], "count": len(APP_PROFILES)}
+    return {
+        "profiles": [profile.to_dict() for profile in APP_PROFILES.values()],
+        "count": len(APP_PROFILES),
+    }
 
 
 def list_operator_tasks(limit: int = 50) -> dict[str, Any]:
-    return {"tasks": OperatorTaskStore().list(limit=limit), **OperatorTaskStore().diagnostics()}
+    return {
+        "tasks": OperatorTaskStore().list(limit=limit),
+        **OperatorTaskStore().diagnostics(),
+    }
 
 
 def active_app_actions() -> dict[str, Any]:
     observation = _desktop_observation()
-    app = _detect_app(f"{observation.get('app_name', '')} {observation.get('window_title', '')}")
+    app = _detect_app(
+        f"{observation.get('app_name', '')} {observation.get('window_title', '')}"
+    )
     profile = APP_PROFILES.get(app)
     return {
-        "active_app": profile.app_name if profile else observation.get("app_name") or "unknown",
+        "active_app": profile.app_name
+        if profile
+        else observation.get("app_name") or "unknown",
         "window_title": observation.get("window_title", ""),
         "supported": bool(profile),
-        "suggested_actions": list(profile.common_actions) if profile else ["summarize current desktop state", "screen diagnostics"],
+        "suggested_actions": list(profile.common_actions)
+        if profile
+        else ["summarize current desktop state", "screen diagnostics"],
         "profile": profile.to_dict() if profile else None,
         "observation": observation,
     }
@@ -442,15 +512,32 @@ def _steps_for_analysis(analysis: dict[str, Any]) -> list[OperatorStep]:
     app = analysis["app"]
     if intent == "summarize_desktop":
         return [
-            OperatorStep("observe_desktop", "Summarize current desktop state", "observe", risk_level="LOW"),
+            OperatorStep(
+                "observe_desktop",
+                "Summarize current desktop state",
+                "observe",
+                risk_level="LOW",
+            ),
         ]
     if intent == "active_app_actions":
         return [
-            OperatorStep("detect_active_app", "Detect active app and suggest safe actions", "observe", risk_level="LOW"),
+            OperatorStep(
+                "detect_active_app",
+                "Detect active app and suggest safe actions",
+                "observe",
+                risk_level="LOW",
+            ),
         ]
     if intent == "open_vscode_terminal":
         return [
-            OperatorStep("focus_vscode", "Focus VS Code", "focus_window", "vscode", risk_level="MEDIUM", approval_required=True),
+            OperatorStep(
+                "focus_vscode",
+                "Focus VS Code",
+                "focus_window",
+                "vscode",
+                risk_level="MEDIUM",
+                approval_required=True,
+            ),
             OperatorStep(
                 "open_terminal_shortcut",
                 "Open integrated terminal with VS Code shortcut",
@@ -464,13 +551,26 @@ def _steps_for_analysis(analysis: dict[str, Any]) -> list[OperatorStep]:
         ]
     if intent == "open_explorer_downloads":
         return [
-            OperatorStep("open_downloads", "Open Downloads folder in File Explorer", "open_app", "explorer", {"path": "downloads"}, risk_level="LOW"),
+            OperatorStep(
+                "open_downloads",
+                "Open Downloads folder in File Explorer",
+                "open_app",
+                "explorer",
+                {"path": "downloads"},
+                risk_level="LOW",
+            ),
         ]
     if intent == "search_browser":
         query = analysis.get("query") or "search"
         browser = "chrome" if app not in {"edge"} else "edge"
         return [
-            OperatorStep("open_browser", f"Open {browser.title()}", "open_app", browser, risk_level="LOW"),
+            OperatorStep(
+                "open_browser",
+                f"Open {browser.title()}",
+                "open_app",
+                browser,
+                risk_level="LOW",
+            ),
             OperatorStep(
                 "focus_address_bar",
                 "Focus browser address bar",
@@ -481,12 +581,30 @@ def _steps_for_analysis(analysis: dict[str, Any]) -> list[OperatorStep]:
                 approval_required=True,
                 visual_target={"label": "Address and search bar", "confidence": 0.76},
             ),
-            OperatorStep("type_search", f"Type search query: {query}", "keyboard_type", str(query), {"text": query}, risk_level="MEDIUM", approval_required=True),
+            OperatorStep(
+                "type_search",
+                f"Type search query: {query}",
+                "keyboard_type",
+                str(query),
+                {"text": query},
+                risk_level="MEDIUM",
+                approval_required=True,
+            ),
         ]
     if intent == "create_notepad_note":
         return [
-            OperatorStep("open_notepad", "Open Notepad", "open_app", "notepad", risk_level="LOW"),
-            OperatorStep("type_note", "Type note text into Notepad", "keyboard_type", "", {"text": analysis.get("note_text", "")}, risk_level="MEDIUM", approval_required=True),
+            OperatorStep(
+                "open_notepad", "Open Notepad", "open_app", "notepad", risk_level="LOW"
+            ),
+            OperatorStep(
+                "type_note",
+                "Type note text into Notepad",
+                "keyboard_type",
+                "",
+                {"text": analysis.get("note_text", "")},
+                risk_level="MEDIUM",
+                approval_required=True,
+            ),
         ]
     return [
         OperatorStep(
@@ -512,7 +630,11 @@ def _desktop_observation() -> dict[str, Any]:
             "message": context.message,
         }
     except Exception as exc:
-        return {"supported": False, "message": "Desktop observation unavailable.", "error": exc.__class__.__name__}
+        return {
+            "supported": False,
+            "message": "Desktop observation unavailable.",
+            "error": exc.__class__.__name__,
+        }
 
 
 def _detect_app(text: str) -> str:
@@ -532,23 +654,35 @@ def _detect_app(text: str) -> str:
 
 
 def _detect_intent(text: str) -> str:
-    if "terminal" in text and re.search(r"\b(vs\s*code|vscode|visual studio code)\b", text):
+    if "terminal" in text and re.search(
+        r"\b(vs\s*code|vscode|visual studio code)\b", text
+    ):
         return "open_vscode_terminal"
-    if "downloads" in text and ("explorer" in text or "folder" in text or "open" in text):
+    if "downloads" in text and (
+        "explorer" in text or "folder" in text or "open" in text
+    ):
         return "open_explorer_downloads"
     if "search" in text and ("chrome" in text or "edge" in text or "browser" in text):
         return "search_browser"
-    if ("create" in text or "write" in text or "type" in text) and ("note" in text or "notepad" in text):
+    if ("create" in text or "write" in text or "type" in text) and (
+        "note" in text or "notepad" in text
+    ):
         return "create_notepad_note"
     if "detect active app" in text or "suggest actions" in text or "active app" in text:
         return "active_app_actions"
-    if "desktop state" in text or "current desktop" in text or "desktop summary" in text:
+    if (
+        "desktop state" in text
+        or "current desktop" in text
+        or "desktop summary" in text
+    ):
         return "summarize_desktop"
     return "unsupported"
 
 
 def _estimate_risk(text: str, intent: str, app: str) -> RiskLevel:
-    if re.search(r"\b(delete|format|wipe|password|payment|purchase|checkout|registry)\b", text):
+    if re.search(
+        r"\b(delete|format|wipe|password|payment|purchase|checkout|registry)\b", text
+    ):
         return "BLOCKED"
     if intent in {"open_vscode_terminal", "search_browser", "create_notepad_note"}:
         return "MEDIUM"
@@ -578,14 +712,20 @@ def _extract_search_query(original: str, text: str) -> str:
         flags=re.IGNORECASE,
     )
     cleaned = re.sub(r"^search\s+(for\s+)?", "", cleaned.strip(), flags=re.IGNORECASE)
-    cleaned = re.sub(r"\s+in\s+(chrome|edge|browser)$", "", cleaned.strip(), flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"\s+in\s+(chrome|edge|browser)$", "", cleaned.strip(), flags=re.IGNORECASE
+    )
     return cleaned.strip() or original.strip()
 
 
 def _extract_note_text(original: str, text: str) -> str:
     if "note" not in text and "notepad" not in text:
         return ""
-    match = re.search(r"\b(?:called|with|saying|that says)\s+(.+)$", original.strip(), flags=re.IGNORECASE)
+    match = re.search(
+        r"\b(?:called|with|saying|that says)\s+(.+)$",
+        original.strip(),
+        flags=re.IGNORECASE,
+    )
     if match:
         return match.group(1).strip()
     return ""

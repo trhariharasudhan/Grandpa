@@ -31,7 +31,7 @@ def run_focused_tests(test_path: str, workspace_root: str) -> ValidationResult:
     # Look for: "=== 14 passed, 1 warning in 24.95s ===" or similar
     summary_match = re.search(
         r"===\s+(?:(\d+)\s+failed)?(?:,\s+)?(?:(\d+)\s+passed)?(?:,\s+)?(?:(\d+)\s+skipped)?(?:,\s+)?(?:(\d+)\s+warning[s]?)?\s+in\s+[\d\.]+s\s+===",
-        full_output
+        full_output,
     )
     if summary_match:
         failed = int(summary_match.group(1)) if summary_match.group(1) else 0

@@ -15,7 +15,10 @@ class WindowControlService:
     def execute_alias(self, request: Any, action: str):
         from grandpa.pc_control import LocalActionRequest
 
-        return self.execute(LocalActionRequest(f"{action}_window", request.target, request.args), f"{action}_window")
+        return self.execute(
+            LocalActionRequest(f"{action}_window", request.target, request.args),
+            f"{action}_window",
+        )
 
     def execute(self, request: Any, action: str):
         from grandpa.pc_control import LocalActionResponse
@@ -39,7 +42,10 @@ class WindowControlService:
             message=result.message,
             approval_required=False,
             risk_level="LOW" if action == "list_windows" else "MEDIUM",
-            evidence={"window_status": result.status, "windows": [w.title for w in getattr(result, "windows", ())]},
+            evidence={
+                "window_status": result.status,
+                "windows": [w.title for w in getattr(result, "windows", ())],
+            },
             error=None if ok else result.status,
         )
 

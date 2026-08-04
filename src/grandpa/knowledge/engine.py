@@ -73,7 +73,9 @@ class KnowledgeEngine:
             "local_only": True,
         }
 
-    def import_file(self, path: str | Path, *, tags: list[str] | None = None) -> dict[str, Any]:
+    def import_file(
+        self, path: str | Path, *, tags: list[str] | None = None
+    ) -> dict[str, Any]:
         content, metadata = read_supported_file(path)
         return self.import_document(
             source=str(Path(path)),
@@ -83,7 +85,9 @@ class KnowledgeEngine:
             metadata=metadata,
         )
 
-    def import_project_docs(self, root: str | Path = "docs", *, limit: int = 100) -> dict[str, Any]:
+    def import_project_docs(
+        self, root: str | Path = "docs", *, limit: int = 100
+    ) -> dict[str, Any]:
         root_path = Path(root)
         if not root_path.is_absolute():
             root_path = Path(__file__).resolve().parents[3] / root_path
@@ -93,12 +97,27 @@ class KnowledgeEngine:
             if not path.is_file() or path.suffix.lower() not in SUPPORTED_EXTENSIONS:
                 continue
             try:
-                imported.append(self.import_file(path, tags=["project", "docs"])["document"])
+                imported.append(
+                    self.import_file(path, tags=["project", "docs"])["document"]
+                )
             except Exception as exc:
                 skipped.append({"path": str(path), "error": exc.__class__.__name__})
-        return {"status": "completed", "imported": imported, "skipped": skipped, "count": len(imported)}
+        return {
+            "status": "completed",
+            "imported": imported,
+            "skipped": skipped,
+            "count": len(imported),
+        }
 
-    def search(self, query: str = "", *, tag: str = "", title: str = "", project_only: bool = False, limit: int = 20) -> dict[str, Any]:
+    def search(
+        self,
+        query: str = "",
+        *,
+        tag: str = "",
+        title: str = "",
+        project_only: bool = False,
+        limit: int = 20,
+    ) -> dict[str, Any]:
         if query.strip():
             self.ensure_embeddings()
             return hybrid_search_documents(
@@ -114,33 +133,60 @@ class KnowledgeEngine:
             "tag": tag,
             "title": title,
             "project_only": project_only,
-            "results": search_documents(query, tag=tag, title=title, project_only=project_only, limit=limit, store=self.store),
+            "results": search_documents(
+                query,
+                tag=tag,
+                title=title,
+                project_only=project_only,
+                limit=limit,
+                store=self.store,
+            ),
             "semantic_search": False,
             "retrieval": "keyword_title_tag_recency",
             "truthful_note": "No query was provided, so semantic ranking was not used.",
             "local_only": True,
         }
 
-    def semantic_search(self, query: str, *, tag: str = "", project_only: bool = False, limit: int = 10) -> dict[str, Any]:
+    def semantic_search(
+        self, query: str, *, tag: str = "", project_only: bool = False, limit: int = 10
+    ) -> dict[str, Any]:
         self.ensure_embeddings()
-        return semantic_search_documents(query, tag=tag, project_only=project_only, limit=limit, store=self.store)
+        return semantic_search_documents(
+            query, tag=tag, project_only=project_only, limit=limit, store=self.store
+        )
 
     def related(self, document_id: str, *, limit: int = 8) -> dict[str, Any]:
         self.ensure_embeddings()
         return related_documents(document_id, limit=limit, store=self.store)
 
-    def context(self, query: str, *, limit: int = 5, project_only: bool = False) -> dict[str, Any]:
+    def context(
+        self, query: str, *, limit: int = 5, project_only: bool = False
+    ) -> dict[str, Any]:
         search = self.search(query, project_only=project_only, limit=limit)
         chunks: list[dict[str, Any]] = []
         for item in search.get("results", []):
-            chunks.extend(item.get("retrieved_chunks") or item.get("matched_chunks") or [])
+            chunks.extend(
+                item.get("retrieved_chunks") or item.get("matched_chunks") or []
+            )
         doc_ids = []
         documents = []
         for item in search.get("results", []):
             if item["document_id"] in doc_ids:
                 continue
             doc_ids.append(item["document_id"])
-            documents.append({key: item.get(key) for key in ("document_id", "title", "source", "tags", "score", "ranking_explanation")})
+            documents.append(
+                {
+                    key: item.get(key)
+                    for key in (
+                        "document_id",
+                        "title",
+                        "source",
+                        "tags",
+                        "score",
+                        "ranking_explanation",
+                    )
+                }
+            )
         return {
             "query": query,
             "chunks": chunks[:limit],
@@ -153,7 +199,12 @@ class KnowledgeEngine:
         }
 
     def documents(self, *, limit: int = 100) -> dict[str, Any]:
-        return {"documents": [doc.to_dict(include_content=False) for doc in self.store.list_documents(limit=limit)]}
+        return {
+            "documents": [
+                doc.to_dict(include_content=False)
+                for doc in self.store.list_documents(limit=limit)
+            ]
+        }
 
     def get_document(self, document_id: str) -> dict[str, Any] | None:
         document = self.store.get_document(document_id)
@@ -163,9 +214,14 @@ class KnowledgeEngine:
         return {"documents": recent_documents(limit=limit, store=self.store)}
 
     def projects(self, *, limit: int = 20) -> dict[str, Any]:
-        return {"documents": project_documents(limit=limit, store=self.store), "summary": summarize_project(store=self.store)}
+        return {
+            "documents": project_documents(limit=limit, store=self.store),
+            "summary": summarize_project(store=self.store),
+        }
 
-    def summary(self, *, document_id: str = "", topic: str = "", project: bool = False) -> dict[str, Any]:
+    def summary(
+        self, *, document_id: str = "", topic: str = "", project: bool = False
+    ) -> dict[str, Any]:
         if document_id:
             document = self.store.get_document(document_id)
             if not document:
@@ -226,7 +282,10 @@ class KnowledgeEngine:
         return {"created": created, "status": self.embedding_status()}
 
     def _ensure_document_embeddings(self, document: KnowledgeDocument) -> None:
-        existing = {row["chunk_id"] for row in self.store.embeddings_for_document(document.document_id)}
+        existing = {
+            row["chunk_id"]
+            for row in self.store.embeddings_for_document(document.document_id)
+        }
         embedder = KnowledgeEmbedder()
         for chunk in document.chunks:
             chunk_id = f"chunk_{chunk.get('index', 0)}"

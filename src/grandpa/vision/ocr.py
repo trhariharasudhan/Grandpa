@@ -8,7 +8,9 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
-OCR_UNAVAILABLE_MESSAGE = "OCR is not available. Install OCR dependencies to extract text."
+OCR_UNAVAILABLE_MESSAGE = (
+    "OCR is not available. Install OCR dependencies to extract text."
+)
 
 
 def ocr_status() -> dict[str, Any]:

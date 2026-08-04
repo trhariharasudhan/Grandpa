@@ -25,7 +25,11 @@ def handle_executive_goal(
             return planner.resume(confirmed=True).message
         if decision in {"no", "cancel", "stop"}:
             return planner.cancel().message
-        return current.confirmation.message if current.confirmation else "Confirmation is required."
+        return (
+            current.confirmation.message
+            if current.confirmation
+            else "Confirmation is required."
+        )
     if current is not None and current.status == PlanStatus.WAITING_FOR_CLARIFICATION:
         return planner.clarify(text).message
     steps = DeterministicDecomposer().decompose(

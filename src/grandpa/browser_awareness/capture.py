@@ -25,7 +25,10 @@ def _snapshot_from_visible_context() -> BrowserPageSnapshot:
     if not context.supported:
         return BrowserPageSnapshot(supported=False, message=context.message)
     recent = BrowserContextStore().recent(limit=8)
-    tabs = tuple(str(item.get("title") or item.get("url") or item.get("action") or "") for item in recent)
+    tabs = tuple(
+        str(item.get("title") or item.get("url") or item.get("action") or "")
+        for item in recent
+    )
     return BrowserPageSnapshot(
         supported=True,
         title=str(context.title or ""),
@@ -54,7 +57,9 @@ def _sanitize_links(links: tuple[Any, ...]) -> tuple[dict[str, str], ...]:
     sanitized: list[dict[str, str]] = []
     for link in links[:50]:
         if isinstance(link, dict):
-            text = sanitize_link_text(str(link.get("text") or link.get("label") or link.get("href") or ""))
+            text = sanitize_link_text(
+                str(link.get("text") or link.get("label") or link.get("href") or "")
+            )
             href = str(link.get("href") or link.get("url") or "")
             sanitized.append({"text": text, "href": href})
         elif isinstance(link, str):

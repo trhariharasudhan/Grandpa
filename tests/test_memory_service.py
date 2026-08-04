@@ -22,9 +22,13 @@ def setup_temp_memory_service():
         MemoryService.reset_instance()
 
 
-def test_memory_service_remember_recall_search(setup_temp_memory_service: MemoryService) -> None:
+def test_memory_service_remember_recall_search(
+    setup_temp_memory_service: MemoryService,
+) -> None:
     svc = setup_temp_memory_service
-    item = svc.remember("Browser Intelligence V1 completed", category="knowledge", key="bi_v1_status")
+    item = svc.remember(
+        "Browser Intelligence V1 completed", category="knowledge", key="bi_v1_status"
+    )
     assert item.key == "bi_v1_status"
     assert item.content == "Browser Intelligence V1 completed"
 
@@ -37,9 +41,13 @@ def test_memory_service_remember_recall_search(setup_temp_memory_service: Memory
     assert results[0].key == "bi_v1_status"
 
 
-def test_short_term_memory_session_isolation(setup_temp_memory_service: MemoryService) -> None:
+def test_short_term_memory_session_isolation(
+    setup_temp_memory_service: MemoryService,
+) -> None:
     svc = setup_temp_memory_service
-    s_item = svc.remember("Transient user request in session", category="session", key="s_req_1")
+    s_item = svc.remember(
+        "Transient user request in session", category="session", key="s_req_1"
+    )
     assert s_item.category == "session"
 
     # Short term memory should exist in session buffer
@@ -90,7 +98,9 @@ def test_project_memory(setup_temp_memory_service: MemoryService) -> None:
 
 def test_retrieval_context_formatting(setup_temp_memory_service: MemoryService) -> None:
     svc = setup_temp_memory_service
-    svc.remember("Python 3.11 is required for Grandpa", category="knowledge", key="py_ver")
+    svc.remember(
+        "Python 3.11 is required for Grandpa", category="knowledge", key="py_ver"
+    )
 
     context = svc.retrieval.get_context_summary(query="Python")
     assert "[MEMORY CONTEXT]" in context
@@ -119,7 +129,9 @@ def test_cli_memory_commands(setup_temp_memory_service: MemoryService) -> None:
     runner = click.testing.CliRunner()
 
     # 1. remember
-    res = runner.invoke(memory, ["remember", "Browser Intelligence V1 completed", "-k", "bi_v1"])
+    res = runner.invoke(
+        memory, ["remember", "Browser Intelligence V1 completed", "-k", "bi_v1"]
+    )
     assert res.exit_code == 0
     assert "Memory stored successfully!" in res.output
 
@@ -139,7 +151,9 @@ def test_cli_memory_commands(setup_temp_memory_service: MemoryService) -> None:
     assert "Browser Intelligence V1 completed" in res.output
 
     # 5. update
-    res = runner.invoke(memory, ["update", "bi_v1", "Browser Intelligence V1 stabilized"])
+    res = runner.invoke(
+        memory, ["update", "bi_v1", "Browser Intelligence V1 stabilized"]
+    )
     assert res.exit_code == 0
     assert "updated successfully" in res.output
 
@@ -148,7 +162,9 @@ def test_cli_memory_commands(setup_temp_memory_service: MemoryService) -> None:
     assert res.exit_code == 0
     assert "preferred_shell" in res.output
 
-    res = runner.invoke(memory, ["preferences", "--set", "response_language", "English"])
+    res = runner.invoke(
+        memory, ["preferences", "--set", "response_language", "English"]
+    )
     assert res.exit_code == 0
 
     # 7. projects

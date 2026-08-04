@@ -42,30 +42,51 @@ def test_old_raw_workflow_still_loads_and_safe_step_converts(tmp_path):
 
 def test_planner_workflow_creates_skill_graph_steps(tmp_path):
     store = smart_automation.WorkflowStore(tmp_path / "workflows.db")
-    created = smart_automation.create_workflow_from_text("start my coding workspace", store=store)
+    created = smart_automation.create_workflow_from_text(
+        "start my coding workspace", store=store
+    )
 
     assert created.status == "handled"
     steps = created.data["workflow"]["steps"]
-    assert {step["schema_version"] for step in steps} == {smart_automation.SKILL_GRAPH_V2}
-    assert [step["skill"] for step in steps] == ["desktop.summary", "automation.workflow_status"]
+    assert {step["schema_version"] for step in steps} == {
+        smart_automation.SKILL_GRAPH_V2
+    }
+    assert [step["skill"] for step in steps] == [
+        "desktop.summary",
+        "automation.workflow_status",
+    ]
 
-    simulated = smart_automation.simulate_workflow(created.data["workflow"]["name"], store=store)
+    simulated = smart_automation.simulate_workflow(
+        created.data["workflow"]["name"], store=store
+    )
     assert simulated.data["dry_run"] is True
-    assert all(item["execution_source"] == "skill_runtime" for item in simulated.data["simulation"])
+    assert all(
+        item["execution_source"] == "skill_runtime"
+        for item in simulated.data["simulation"]
+    )
 
 
 def test_skill_execution_failure_marks_step_failed_truthfully(tmp_path, monkeypatch):
     import grandpa.skills.registry as registry
 
     def fail_skill(*_args, **_kwargs):
-        return SkillResult(ok=False, status="failed", message="Injected failure.", error="Injected")
+        return SkillResult(
+            ok=False, status="failed", message="Injected failure.", error="Injected"
+        )
 
     monkeypatch.setattr(registry, "execute_skill", fail_skill)
     store = smart_automation.WorkflowStore(tmp_path / "workflows.db")
     store.save(
         "diagnostics",
         {"type": "manual", "value": "run_on_request"},
-        [{"schema_version": smart_automation.SKILL_GRAPH_V2, "skill": "desktop.summary", "params": {}, "action": "desktop summary"}],
+        [
+            {
+                "schema_version": smart_automation.SKILL_GRAPH_V2,
+                "skill": "desktop.summary",
+                "params": {},
+                "action": "desktop summary",
+            }
+        ],
     )
 
     simulated = smart_automation.simulate_workflow("diagnostics", store=store)
@@ -100,7 +121,11 @@ def test_approval_required_skill_pauses_workflow(tmp_path):
 def test_workflow_schema_diagnostics_counts_skill_and_legacy(tmp_path):
     store = smart_automation.WorkflowStore(tmp_path / "workflows.db")
     smart_automation.create_workflow_from_text("start my coding workspace", store=store)
-    store.save("legacy", {"type": "manual", "value": "run_on_request"}, [{"action": "open chrome"}])
+    store.save(
+        "legacy",
+        {"type": "manual", "value": "run_on_request"},
+        [{"action": "open chrome"}],
+    )
 
     info = smart_automation.diagnostics(store)
     assert info["schema_versions"][smart_automation.SKILL_GRAPH_V2] >= 2

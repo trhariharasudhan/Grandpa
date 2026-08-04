@@ -56,7 +56,9 @@ class SuiteResult:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run Grandpa pytest health suites.")
     parser.add_argument("--full", action="store_true", help="Run full pytest tests.")
-    parser.add_argument("--release", action="store_true", help="Run release-marked tests.")
+    parser.add_argument(
+        "--release", action="store_true", help="Run release-marked tests."
+    )
     parser.add_argument(
         "--release-only",
         action="store_true",
@@ -163,7 +165,11 @@ def _parse_counts(output: str) -> dict[str, int]:
         "errors": 0,
         "warnings": 0,
     }
-    summary_lines = [line for line in output.splitlines() if " in " in line and any(k in line for k in counts)]
+    summary_lines = [
+        line
+        for line in output.splitlines()
+        if " in " in line and any(k in line for k in counts)
+    ]
     if not summary_lines:
         return counts
     summary = summary_lines[-1]

@@ -28,7 +28,9 @@ class BrowserParser:
         if target is None:
             return None
         raw_target = raw[len(command) - len(target) :].strip()
-        if re.match(r"^[a-z][a-z0-9+.-]*:", target) or re.match(r"^[a-z0-9.-]+\.[a-z]{2,}(?:/.*)?$", target):
+        if re.match(r"^[a-z][a-z0-9+.-]*:", target) or re.match(
+            r"^[a-z0-9.-]+\.[a-z]{2,}(?:/.*)?$", target
+        ):
             return BrowserAction("open_url", target=raw_target, url=raw_target)
         site = site_url(target)
         if site is None:
@@ -41,11 +43,19 @@ class BrowserParser:
             prefix = f"search {provider} for "
             if command.startswith(prefix):
                 query = raw[len(prefix) :].strip()
-                return BrowserAction("search", provider=provider, query=query) if query else None
+                return (
+                    BrowserAction("search", provider=provider, query=query)
+                    if query
+                    else None
+                )
             prefix = f"{provider} "
             if command.startswith(prefix):
                 query = raw[len(prefix) :].strip()
-                return BrowserAction("search", provider=provider, query=query) if query else None
+                return (
+                    BrowserAction("search", provider=provider, query=query)
+                    if query
+                    else None
+                )
         return None
 
     def _parse_navigation(self, command: str) -> BrowserAction | None:

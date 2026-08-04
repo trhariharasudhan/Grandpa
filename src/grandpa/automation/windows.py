@@ -132,12 +132,8 @@ class WindowTargetController:
         self._exists = exists_func or window_handle_exists
         self._document_exists = document_exists_func or window_document_exists
         self._ready = ready_func or window_identity_ready
-        self._control_sequence = (
-            control_sequence_func or invoke_window_control_sequence
-        )
-        self._control_available = (
-            control_available_func or window_controls_available
-        )
+        self._control_sequence = control_sequence_func or invoke_window_control_sequence
+        self._control_available = control_available_func or window_controls_available
         self._control_text = control_text_func or read_window_control_texts
         self._sleep = sleep_func
         self.timeout = timeout
@@ -227,7 +223,9 @@ class WindowTargetController:
                 expected,
             )
         if dry_run:
-            return WindowVerification(True, f"Target window resolved: {expected.title}.", expected)
+            return WindowVerification(
+                True, f"Target window resolved: {expected.title}.", expected
+            )
 
         try:
             self._focus(expected.handle)
@@ -328,7 +326,10 @@ class WindowTargetController:
         dialog: DialogIdentity,
         choice: str,
     ) -> WindowCloseResult:
-        if dialog.process_id != expected.process_id or dialog.owner_handle != expected.handle:
+        if (
+            dialog.process_id != expected.process_id
+            or dialog.owner_handle != expected.handle
+        ):
             return WindowCloseResult(
                 "failed",
                 "The pending dialog no longer belongs to the selected window. Nothing was clicked.",
@@ -359,7 +360,9 @@ class WindowTargetController:
                 )
             if choice == "save":
                 if not target_exists:
-                    return WindowCloseResult("closed", "Saved and closed Notepad.", expected)
+                    return WindowCloseResult(
+                        "closed", "Saved and closed Notepad.", expected
+                    )
                 if current is not None and current.kind == "save_as":
                     return WindowCloseResult(
                         "save_as_pending",
@@ -394,7 +397,10 @@ class WindowTargetController:
                 "The pending dialog is not a verified Save As dialog.",
                 expected,
             )
-        if dialog.process_id != expected.process_id or dialog.owner_handle != expected.handle:
+        if (
+            dialog.process_id != expected.process_id
+            or dialog.owner_handle != expected.handle
+        ):
             return WindowCloseResult(
                 "failed",
                 "The Save As dialog no longer belongs to the selected window.",
@@ -409,7 +415,9 @@ class WindowTargetController:
         deadline = time.monotonic() + self.timeout
         while time.monotonic() < deadline:
             if not self._target_exists(expected):
-                return WindowCloseResult("closed", "Saved and closed Notepad.", expected)
+                return WindowCloseResult(
+                    "closed", "Saved and closed Notepad.", expected
+                )
             current = self._dialog_detect(expected)
             if current is not None and current.kind == "overwrite_confirmation":
                 if not allow_overwrite:
@@ -790,7 +798,9 @@ def _process_name(process_id: int) -> str:
         try:
             size = ctypes.c_ulong(32768)
             buffer = ctypes.create_unicode_buffer(size.value)
-            if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+            if kernel32.QueryFullProcessImageNameW(
+                handle, 0, buffer, ctypes.byref(size)
+            ):
                 return Path(buffer.value).name
         finally:
             kernel32.CloseHandle(handle)

@@ -62,6 +62,12 @@ from grandpa.voice.text_to_speech import list_system_voices
     is_flag=True,
     help="Show voice dependencies and active Python environment, then exit.",
 )
+@click.option(
+    "--screen-reader",
+    is_flag=True,
+    default=False,
+    help="Enable screen-reader friendly output.",
+)
 @click.pass_context
 def voice(
     ctx: click.Context,
@@ -76,6 +82,7 @@ def voice(
     list_microphones: bool,
     list_voices: bool,
     diagnose: bool,
+    screen_reader: bool,
 ) -> None:
     """Start Grandpa's offline-first voice assistant or run voice diagnostics."""
 
@@ -113,6 +120,9 @@ def voice(
             wake_phrases=config.wake_phrases,
             wake_response_enabled=config.wake_response_enabled,
             output=click.echo,
+            quiet=ctx.obj.get("quiet", False) if ctx.obj else False,
+            verbose=ctx.obj.get("verbose", False) if ctx.obj else False,
+            screen_reader=screen_reader,
         )
         raise SystemExit(session.run())
     except VoiceError as exc:

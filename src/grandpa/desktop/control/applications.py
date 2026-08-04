@@ -59,7 +59,9 @@ class ApplicationControlService:
             return LocalActionResponse(
                 ok=False,
                 action_id=None,
-                status="unsupported" if resolution.status == "unsupported" else "failed",
+                status="unsupported"
+                if resolution.status == "unsupported"
+                else "failed",
                 message=resolution.message,
                 approval_required=False,
                 risk_level="LOW",
@@ -67,7 +69,9 @@ class ApplicationControlService:
                 error=resolution.status,
             )
         if action == "detect_app":
-            return LocalActionResponse(True, None, "completed", resolution.message, False, "LOW", evidence)
+            return LocalActionResponse(
+                True, None, "completed", resolution.message, False, "LOW", evidence
+            )
 
         notepad_before = ()
         if app_id == "notepad":
@@ -198,7 +202,9 @@ class ApplicationControlService:
             return LocalActionResponse(
                 ok=ok,
                 action_id=None,
-                status="completed" if ok else ("unsupported" if result.status == "missing" else "blocked"),
+                status="completed"
+                if ok
+                else ("unsupported" if result.status == "missing" else "blocked"),
                 message=result.message,
                 approval_required=False,
                 risk_level="LOW" if ok else "BLOCKED",

@@ -64,7 +64,9 @@ class DownloadsAutomation:
     ) -> DownloadResult:
         try:
             items = self._items_for_action(action)
-            if self._needs_confirmation(action, items, confirmed=confirmed, confirm=confirm):
+            if self._needs_confirmation(
+                action, items, confirmed=confirmed, confirm=confirm
+            ):
                 return DownloadResult(
                     "needs_confirmation",
                     format_operation_plan(action.action, items),
@@ -76,47 +78,93 @@ class DownloadsAutomation:
         except DownloadsSafetyError as exc:
             return DownloadResult("blocked", str(exc), action, error=str(exc))
         except PermissionError as exc:
-            return DownloadResult("error", f"Downloads permission denied: {exc}", action, error=str(exc))
+            return DownloadResult(
+                "error", f"Downloads permission denied: {exc}", action, error=str(exc)
+            )
         except Exception as exc:
-            return DownloadResult("error", f"Downloads action failed: {exc}", action, error=str(exc))
+            return DownloadResult(
+                "error", f"Downloads action failed: {exc}", action, error=str(exc)
+            )
 
-    def _execute(self, action: DownloadAction, items: tuple[DownloadItem, ...]) -> DownloadResult:
+    def _execute(
+        self, action: DownloadAction, items: tuple[DownloadItem, ...]
+    ) -> DownloadResult:
         if action.action in {"recent", "today", "large", "incomplete", "search"}:
             return DownloadResult("handled", format_download_list(items), action, items)
         if action.action == "duplicates":
-            return DownloadResult("handled", format_duplicate_groups(items), action, items)
+            return DownloadResult(
+                "handled", format_duplicate_groups(items), action, items
+            )
         if action.action == "info":
             if not items:
                 return DownloadResult("error", "No matching download found.", action)
-            return DownloadResult("handled", format_download_info(items[0]), action, (items[0],))
+            return DownloadResult(
+                "handled", format_download_info(items[0]), action, (items[0],)
+            )
         if action.action == "open":
             if not items:
                 return DownloadResult("error", "No matching download found.", action)
             item = items[0]
             if not item.safe_to_open:
-                return DownloadResult("blocked", f"I will not open potentially unsafe download: {item.name}", action, (item,))
+                return DownloadResult(
+                    "blocked",
+                    f"I will not open potentially unsafe download: {item.name}",
+                    action,
+                    (item,),
+                )
             self.opener(item.path)
-            return DownloadResult("handled", f"Opened download: {item.name}", action, (item,))
+            return DownloadResult(
+                "handled", f"Opened download: {item.name}", action, (item,)
+            )
         if action.action == "open_folder":
             if not items:
                 return DownloadResult("error", "No matching download found.", action)
             self.opener(items[0].path.parent)
-            return DownloadResult("handled", f"Opened containing folder for: {items[0].name}", action, (items[0],))
+            return DownloadResult(
+                "handled",
+                f"Opened containing folder for: {items[0].name}",
+                action,
+                (items[0],),
+            )
         if action.action == "move":
-            moved = self.organizer.move_items(items, destination_for_name(action.destination))
-            return DownloadResult("handled", f"Moved {len(moved)} download{'s' if len(moved) != 1 else ''}.", action, items)
+            moved = self.organizer.move_items(
+                items, destination_for_name(action.destination)
+            )
+            return DownloadResult(
+                "handled",
+                f"Moved {len(moved)} download{'s' if len(moved) != 1 else ''}.",
+                action,
+                items,
+            )
         if action.action == "organize":
             root = self._primary_root()
             moved = self.organizer.organize_items(root, items)
-            return DownloadResult("handled", f"Organized {len(moved)} download{'s' if len(moved) != 1 else ''}.", action, items)
+            return DownloadResult(
+                "handled",
+                f"Organized {len(moved)} download{'s' if len(moved) != 1 else ''}.",
+                action,
+                items,
+            )
         if action.action == "archive":
             moved = self.organizer.archive_items(self._primary_root(), items)
-            return DownloadResult("handled", f"Archived {len(moved)} download{'s' if len(moved) != 1 else ''}.", action, items)
+            return DownloadResult(
+                "handled",
+                f"Archived {len(moved)} download{'s' if len(moved) != 1 else ''}.",
+                action,
+                items,
+            )
         if action.action == "delete":
             for item in items:
                 self.safety.ensure_allowed_root(item.path).unlink(missing_ok=True)
-            return DownloadResult("handled", f"Deleted {len(items)} download{'s' if len(items) != 1 else ''}.", action, items)
-        return DownloadResult("unsupported", "That Downloads action is not supported yet.", action, items)
+            return DownloadResult(
+                "handled",
+                f"Deleted {len(items)} download{'s' if len(items) != 1 else ''}.",
+                action,
+                items,
+            )
+        return DownloadResult(
+            "unsupported", "That Downloads action is not supported yet.", action, items
+        )
 
     def _items_for_action(self, action: DownloadAction) -> tuple[DownloadItem, ...]:
         if action.action == "recent":
@@ -182,14 +230,18 @@ def handle_downloads_command(
     confirm: ConfirmationCallback | None = None,
     opener: OpenCallback | None = None,
 ) -> DownloadResult:
-    return DownloadsAutomation(scanner=scanner, opener=opener).handle(text, confirmed=confirmed, confirm=confirm)
+    return DownloadsAutomation(scanner=scanner, opener=opener).handle(
+        text, confirmed=confirmed, confirm=confirm
+    )
 
 
 def _open_path(path: Path) -> None:
     if os.name == "nt":
         os.startfile(path)  # type: ignore[attr-defined]
         return
-    raise DownloadsSafetyError("Opening downloads is only supported on Windows in this build.")
+    raise DownloadsSafetyError(
+        "Opening downloads is only supported on Windows in this build."
+    )
 
 
 __all__ = ["DownloadsAutomation", "handle_downloads_command"]

@@ -60,17 +60,29 @@ class CalendarAutomation:
             if action.action == "status":
                 status = self.auth.status()
                 result_status = "handled" if status.ready else "not_configured"
-                return CalendarResult(result_status, status.message, action, account=status.account)
+                return CalendarResult(
+                    result_status, status.message, action, account=status.account
+                )
             if action.action == "setup":
                 status = self.auth.setup()
                 result_status = "handled" if status.ready else "not_configured"
-                return CalendarResult(result_status, status.message, action, account=status.account)
+                return CalendarResult(
+                    result_status, status.message, action, account=status.account
+                )
             if action.action == "disconnect":
                 removed = self.auth.disconnect()
-                message = "Google Calendar disconnected." if removed else "Google Calendar was not connected."
+                message = (
+                    "Google Calendar disconnected."
+                    if removed
+                    else "Google Calendar was not connected."
+                )
                 return CalendarResult("handled", message, action)
             if action.args.get("auto_accept_blocked"):
-                return CalendarResult("blocked", "Grandpa will not auto-accept calendar invitations.", action)
+                return CalendarResult(
+                    "blocked",
+                    "Grandpa will not auto-accept calendar invitations.",
+                    action,
+                )
             if self._needs_confirmation(action, confirmed=confirmed, confirm=confirm):
                 return CalendarResult(
                     "needs_confirmation",
@@ -85,19 +97,37 @@ class CalendarAutomation:
         except CalendarApiError as exc:
             return CalendarResult("error", str(exc), action, error=str(exc))
         except Exception as exc:
-            return CalendarResult("error", f"Calendar action failed: {exc}", action, error=str(exc))
+            return CalendarResult(
+                "error", f"Calendar action failed: {exc}", action, error=str(exc)
+            )
 
     def _execute_connected(self, action: CalendarAction) -> CalendarResult:
         account = _client_account(self.client)
         if action.action in {"list", "upcoming"}:
-            events = tuple(self.client.list_events(action.date_range or action.action, query=action.query, limit=10))  # type: ignore[attr-defined]
-            return CalendarResult("handled", format_event_list(events), action, events, account=account)
+            events = tuple(
+                self.client.list_events(
+                    action.date_range or action.action, query=action.query, limit=10
+                )
+            )  # type: ignore[attr-defined]
+            return CalendarResult(
+                "handled", format_event_list(events), action, events, account=account
+            )
         if action.action == "search":
             events = tuple(self.client.search_events(action.query, limit=10))  # type: ignore[attr-defined]
-            return CalendarResult("handled", format_event_list(events, empty_message="No matching calendar events found."), action, events, account=account)
+            return CalendarResult(
+                "handled",
+                format_event_list(
+                    events, empty_message="No matching calendar events found."
+                ),
+                action,
+                events,
+                account=account,
+            )
         if action.action == "freebusy":
             slots = tuple(self.client.freebusy(action.date_range or "this afternoon"))  # type: ignore[attr-defined]
-            return CalendarResult("handled", format_freebusy(slots), action, account=account)
+            return CalendarResult(
+                "handled", format_freebusy(slots), action, account=account
+            )
         if action.action == "create":
             event_id = self.client.create_event(  # type: ignore[attr-defined]
                 title=action.title,
@@ -105,8 +135,18 @@ class CalendarAutomation:
                 duration_minutes=action.duration_minutes,
                 timezone=action.timezone,
             )
-            preview = format_event_preview(title=action.title, start_text=action.start_text, duration_minutes=action.duration_minutes)
-            return CalendarResult("handled", f"{preview}\n\nCalendar event created.", action, account=account, error=event_id)
+            preview = format_event_preview(
+                title=action.title,
+                start_text=action.start_text,
+                duration_minutes=action.duration_minutes,
+            )
+            return CalendarResult(
+                "handled",
+                f"{preview}\n\nCalendar event created.",
+                action,
+                account=account,
+                error=event_id,
+            )
         if action.action == "update":
             event = self._event_for_write(action)
             event_id = self.client.update_event(  # type: ignore[attr-defined]
@@ -115,15 +155,37 @@ class CalendarAutomation:
                 start_text=action.start_text,
                 duration_minutes=action.duration_minutes,
             )
-            return CalendarResult("handled", "Calendar event updated.", action, (event,), account=account, error=event_id)
+            return CalendarResult(
+                "handled",
+                "Calendar event updated.",
+                action,
+                (event,),
+                account=account,
+                error=event_id,
+            )
         if action.action == "delete":
             event = self._event_for_write(action)
             self.client.delete_event(event.event_id)  # type: ignore[attr-defined]
-            return CalendarResult("handled", "Calendar event deleted.", action, (event,), account=account)
-        return CalendarResult("unsupported", "That Calendar action is not supported yet.", action, account=account)
+            return CalendarResult(
+                "handled", "Calendar event deleted.", action, (event,), account=account
+            )
+        return CalendarResult(
+            "unsupported",
+            "That Calendar action is not supported yet.",
+            action,
+            account=account,
+        )
 
-    def _needs_confirmation(self, action: CalendarAction, *, confirmed: bool, confirm: ConfirmationCallback | None) -> bool:
-        if not self.safety.requires_confirmation(action.action, recurring=bool(action.args.get("recurring"))):
+    def _needs_confirmation(
+        self,
+        action: CalendarAction,
+        *,
+        confirmed: bool,
+        confirm: ConfirmationCallback | None,
+    ) -> bool:
+        if not self.safety.requires_confirmation(
+            action.action, recurring=bool(action.args.get("recurring"))
+        ):
             return False
         if confirmed:
             return False
@@ -132,12 +194,18 @@ class CalendarAutomation:
         return True
 
     def _event_for_write(self, action: CalendarAction):
-        events = tuple(self.client.search_events(action.query or action.title or "meeting", limit=1))  # type: ignore[attr-defined]
+        events = tuple(
+            self.client.search_events(
+                action.query or action.title or "meeting", limit=1
+            )
+        )  # type: ignore[attr-defined]
         if not events:
             raise CalendarApiError("No matching calendar event found.")
         event = events[0]
         if event.recurring and not action.args.get("recurring_confirmed"):
-            raise CalendarApiError("This appears to be a recurring event. Please confirm the exact event before modifying it.")
+            raise CalendarApiError(
+                "This appears to be a recurring event. Please confirm the exact event before modifying it."
+            )
         return event
 
 
@@ -149,7 +217,9 @@ def handle_calendar_command(
     confirm: ConfirmationCallback | None = None,
     auth: CalendarAuthManager | None = None,
 ) -> CalendarResult:
-    return CalendarAutomation(client=client, auth=auth).handle(text, confirmed=confirmed, confirm=confirm)
+    return CalendarAutomation(client=client, auth=auth).handle(
+        text, confirmed=confirmed, confirm=confirm
+    )
 
 
 def _client_account(client: object) -> str:

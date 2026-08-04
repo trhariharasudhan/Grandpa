@@ -60,7 +60,11 @@ class VoiceRuntime:
     def start(self) -> dict[str, Any]:
         with self._lock:
             self.conversation.start()
-        return {"status": "started", "session": self.conversation.to_dict(), "voice": self.status()}
+        return {
+            "status": "started",
+            "session": self.conversation.to_dict(),
+            "voice": self.status(),
+        }
 
     def stop(self) -> dict[str, Any]:
         self.speech_output.stop()
@@ -71,9 +75,16 @@ class VoiceRuntime:
     def status(self) -> dict[str, Any]:
         speech_input = self.speech_input.diagnostics()
         speech_output = self.speech_output.diagnostics()
-        stt_available = bool(speech_input.get("browser_transcript_supported") or speech_input.get("local_whisper_available"))
+        stt_available = bool(
+            speech_input.get("browser_transcript_supported")
+            or speech_input.get("local_whisper_available")
+        )
         tts_available = speech_output.get("status") == "ready"
-        mode = "browser_transcript" if speech_input.get("browser_transcript_supported") else "unavailable"
+        mode = (
+            "browser_transcript"
+            if speech_input.get("browser_transcript_supported")
+            else "unavailable"
+        )
         if speech_input.get("local_whisper_available"):
             mode = "local_audio"
         setup_message = "" if stt_available else VOICE_DEPENDENCY_MESSAGE
@@ -84,7 +95,9 @@ class VoiceRuntime:
             "microphone_available": "unknown",
             "mode": mode,
             "setup_message": setup_message,
-            "message": "Voice push-to-talk is ready." if stt_available else setup_message,
+            "message": "Voice push-to-talk is ready."
+            if stt_available
+            else setup_message,
             "status": "active" if self.conversation.active else "idle",
             "session": self.conversation.to_dict(),
             "wake_word": self.wake_detector.diagnostics(),
@@ -95,14 +108,20 @@ class VoiceRuntime:
             "high_risk_voice_block": True,
         }
 
-    def speak(self, text: str, *, interrupt: bool = False, dry_run: bool = False) -> dict[str, Any]:
+    def speak(
+        self, text: str, *, interrupt: bool = False, dry_run: bool = False
+    ) -> dict[str, Any]:
         self.conversation.set_state("speaking")
         try:
-            result = self.speech_output.speak(text, interrupt=interrupt, dry_run=dry_run)
+            result = self.speech_output.speak(
+                text, interrupt=interrupt, dry_run=dry_run
+            )
         except VoiceError as exc:
             self.conversation.set_state("idle")
             return _voice_error_response(exc, self.conversation, speech_output=True)
-        self.conversation.add_message("assistant", result.spoken_text or text, {"speech_output": result.to_dict()})
+        self.conversation.add_message(
+            "assistant", result.spoken_text or text, {"speech_output": result.to_dict()}
+        )
         self.conversation.set_state("idle")
         return result.to_dict()
 
@@ -140,14 +159,18 @@ class VoiceRuntime:
             )
         except VoiceError as exc:
             self._last_latency_ms = _elapsed_ms(started)
-            return _voice_error_response(exc, self.conversation, latency_ms=self._last_latency_ms)
+            return _voice_error_response(
+                exc, self.conversation, latency_ms=self._last_latency_ms
+            )
         transcript = input_result.transcript.strip()
         self._last_latency_ms = _elapsed_ms(started)
         if not transcript:
             return {
                 "ok": False,
                 "status": "recognition_failed",
-                "message": MICROPHONE_UNAVAILABLE_MESSAGE if not audio_base64 and text is None else "I could not understand the audio.\nPlease try speaking again.",
+                "message": MICROPHONE_UNAVAILABLE_MESSAGE
+                if not audio_base64 and text is None
+                else "I could not understand the audio.\nPlease try speaking again.",
                 "transcript": "",
                 "confidence": input_result.confidence,
                 "speech_input": input_result.to_dict(),
@@ -189,11 +212,17 @@ class VoiceRuntime:
         except VoiceError as exc:
             self.conversation.set_state("idle")
             self._last_latency_ms = _elapsed_ms(started)
-            return _voice_error_response(exc, self.conversation, latency_ms=self._last_latency_ms)
+            return _voice_error_response(
+                exc, self.conversation, latency_ms=self._last_latency_ms
+            )
         transcript = input_result.transcript.strip()
         wake_match = self.wake_detector.detect(transcript)
 
-        if require_wake_word and self.wake_detector.config.enabled and not wake_match.matched:
+        if (
+            require_wake_word
+            and self.wake_detector.config.enabled
+            and not wake_match.matched
+        ):
             self.conversation.set_state("idle")
             self._last_latency_ms = _elapsed_ms(started)
             return {
@@ -221,12 +250,20 @@ class VoiceRuntime:
                 "latency_ms": self._last_latency_ms,
             }
 
-        self.conversation.add_message("user", command_text, {"transcript": transcript, "wake_word": wake_match.to_dict()})
+        self.conversation.add_message(
+            "user",
+            command_text,
+            {"transcript": transcript, "wake_word": wake_match.to_dict()},
+        )
         self.conversation.current_task = command_text
 
         if _is_high_risk_voice(command_text):
             response = "I cannot run high-risk PC actions from voice alone. Please use the approval flow."
-            self.conversation.add_message("assistant", response, {"risk_level": "HIGH", "blocked_from_voice": True})
+            self.conversation.add_message(
+                "assistant",
+                response,
+                {"risk_level": "HIGH", "blocked_from_voice": True},
+            )
             self.conversation.set_state("idle")
             self._last_latency_ms = _elapsed_ms(started)
             return {
@@ -252,9 +289,13 @@ class VoiceRuntime:
         if speak_response:
             self.conversation.set_state("speaking")
             try:
-                response["speech_output"] = self.speech_output.speak(message, interrupt=True, dry_run=False).to_dict()
+                response["speech_output"] = self.speech_output.speak(
+                    message, interrupt=True, dry_run=False
+                ).to_dict()
             except VoiceError as exc:
-                response["speech_output"] = _voice_error_response(exc, self.conversation, speech_output=True)
+                response["speech_output"] = _voice_error_response(
+                    exc, self.conversation, speech_output=True
+                )
         self.conversation.set_state("idle")
         self._last_latency_ms = _elapsed_ms(started)
         return {
@@ -265,7 +306,9 @@ class VoiceRuntime:
             "action_status": response.get("status", "handled"),
             "execution_status": response.get(
                 "execution_status",
-                "success" if response.get("status", "handled") == "handled" else response.get("status"),
+                "success"
+                if response.get("status", "handled") == "handled"
+                else response.get("status"),
             ),
             "transcript": transcript,
             "command_text": command_text,
@@ -341,7 +384,8 @@ def _route_voice_request(
                 "message": result.tts_text or result.message,
                 "kind": result.kind,
                 "target": result.target,
-                "approval_required": result.status == "requires_confirmation" or result.permission == "requires_confirmation",
+                "approval_required": result.status == "requires_confirmation"
+                or result.permission == "requires_confirmation",
                 "risk_level": _risk_from_permission(result.permission),
                 "planner": planner,
                 "knowledge_context": knowledge,
@@ -416,8 +460,12 @@ def _safe_memory_context(command_text: str) -> dict[str, Any] | None:
         context = ranked_memory_context(command_text, limit=3)
         matches = context.get("matches", []) if isinstance(context, dict) else []
         return {
-            "available": bool(context.get("available")) if isinstance(context, dict) else False,
-            "confidence": float(context.get("confidence", 0.0)) if isinstance(context, dict) else 0.0,
+            "available": bool(context.get("available"))
+            if isinstance(context, dict)
+            else False,
+            "confidence": float(context.get("confidence", 0.0))
+            if isinstance(context, dict)
+            else 0.0,
             "count": len(matches),
             "items": matches,
         }

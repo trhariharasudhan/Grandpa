@@ -80,7 +80,9 @@ def test_retrieve_no_results(tmp_path: Path):
 
 def test_retrieve_punctuation_query_is_safe(tmp_path: Path):
     backend = _make_backend(tmp_path)
-    backend.store("Python is a programming language used by Grandpa.", source="notes.md")
+    backend.store(
+        "Python is a programming language used by Grandpa.", source="notes.md"
+    )
     results = backend.retrieve("What is Python?", top_k=3)
     assert len(results) >= 1
     assert "Python" in results[0].content

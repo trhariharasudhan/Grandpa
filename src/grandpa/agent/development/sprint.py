@@ -78,7 +78,9 @@ class SprintRunner:
 
     def save_sprint(self, sprint: Sprint) -> None:
         """Save the sprint state back to disk."""
-        self.sprint_file.write_text(json.dumps(sprint.to_dict(), indent=2), encoding="utf-8")
+        self.sprint_file.write_text(
+            json.dumps(sprint.to_dict(), indent=2), encoding="utf-8"
+        )
 
     def _parse_validation_command(self, cmd_str: str) -> List[str]:
         """Map generic command strings to safe allowlisted lists."""
@@ -96,6 +98,7 @@ class SprintRunner:
         state = self.tracker.load_state()
 
         from grandpa.agent.development.roadmap_generator import is_legacy_roadmap
+
         if is_legacy_roadmap(state):
             return None, "Legacy roadmap detected. Run `grandpa roadmap migrate` first."
 
@@ -137,7 +140,10 @@ class SprintRunner:
                 return None, msg
 
         if sprint.status in ("completed", "cancelled"):
-            return sprint, f"Sprint is already in a terminal state: {sprint.status.upper()}."
+            return (
+                sprint,
+                f"Sprint is already in a terminal state: {sprint.status.upper()}.",
+            )
 
         if sprint.status == "paused":
             sprint.status = "running"
@@ -145,7 +151,10 @@ class SprintRunner:
             return self.run_sprint_loop(sprint)
 
         if not auto_approve and sprint.approval_state != "approved":
-            return sprint, "Sprint requires approval. Run 'grandpa sprint start --approve' or set approval."
+            return (
+                sprint,
+                "Sprint requires approval. Run 'grandpa sprint start --approve' or set approval.",
+            )
 
         sprint.approval_state = "approved"
         sprint.status = "running"
@@ -187,15 +196,23 @@ class SprintRunner:
         if not sprint:
             return None, "No active sprint found."
         if sprint.status in ("completed", "cancelled"):
-            return sprint, f"Sprint is already in a terminal state: {sprint.status.upper()}."
+            return (
+                sprint,
+                f"Sprint is already in a terminal state: {sprint.status.upper()}.",
+            )
 
         sprint.status = "cancelled"
         self.save_sprint(sprint)
 
         if sprint.checkpoint_id:
-            success, msg = self.tracker.checkpoint_manager.restore_checkpoint(sprint.checkpoint_id)
+            success, msg = self.tracker.checkpoint_manager.restore_checkpoint(
+                sprint.checkpoint_id
+            )
             if success:
-                return sprint, f"Sprint cancelled. Restored checkpoint '{sprint.checkpoint_id}' successfully."
+                return (
+                    sprint,
+                    f"Sprint cancelled. Restored checkpoint '{sprint.checkpoint_id}' successfully.",
+                )
             return sprint, f"Sprint cancelled but failed to restore checkpoint: {msg}"
 
         return sprint, "Sprint cancelled successfully."
@@ -224,7 +241,10 @@ class SprintRunner:
 
         sprint = self.load_sprint()
         if sprint.status != "running":
-            return sprint, f"Sprint execution stopped: state is {sprint.status.upper()}."
+            return (
+                sprint,
+                f"Sprint execution stopped: state is {sprint.status.upper()}.",
+            )
 
         if sprint.current_step_idx == 1:
             sprint.current_step_idx = 2
@@ -232,7 +252,10 @@ class SprintRunner:
 
         sprint = self.load_sprint()
         if sprint.status != "running":
-            return sprint, f"Sprint execution stopped: state is {sprint.status.upper()}."
+            return (
+                sprint,
+                f"Sprint execution stopped: state is {sprint.status.upper()}.",
+            )
 
         if sprint.current_step_idx == 2:
             failures = []
@@ -243,7 +266,9 @@ class SprintRunner:
                 cmd = DiagnosticCommand(args=args, cwd=str(self.project_path))
                 res = run_catalog_command(cmd)
                 if res.exit_code != 0:
-                    failures.append(f"Command '{cmd_str}' failed with code {res.exit_code}.")
+                    failures.append(
+                        f"Command '{cmd_str}' failed with code {res.exit_code}."
+                    )
 
             if failures:
                 sprint.retries_left -= 1
@@ -251,10 +276,15 @@ class SprintRunner:
                     sprint.status = "paused"
                     sprint.execution_result = f"Validation failures: {failures}. Retries left: {sprint.retries_left}."
                     self.save_sprint(sprint)
-                    return sprint, "Sprint paused due to validation failures. Run 'resume' to retry."
+                    return (
+                        sprint,
+                        "Sprint paused due to validation failures. Run 'resume' to retry.",
+                    )
                 else:
                     sprint.status = "completed"
-                    sprint.execution_result = f"Failed. Validation failures: {failures}."
+                    sprint.execution_result = (
+                        f"Failed. Validation failures: {failures}."
+                    )
                     self.save_sprint(sprint)
                     self.tracker.update_task_status(task.task_id, "blocked")
                     return sprint, f"Sprint finished with failures: {failures}."
@@ -276,6 +306,7 @@ class SprintRunner:
 
             try:
                 from grandpa.memory.service import MemoryService
+
                 svc = MemoryService.get_instance()
                 svc.remember(
                     content=f"Sprint completed for task {sprint.task_id} in project {self.project_name}.",
@@ -283,7 +314,9 @@ class SprintRunner:
                     project_name=self.project_name,
                     key=f"sprint_{sprint.task_id}_completed",
                 )
-                svc.preferences.set_preference("last_sprint_task_completed", sprint.task_id)
+                svc.preferences.set_preference(
+                    "last_sprint_task_completed", sprint.task_id
+                )
             except Exception:
                 pass
 

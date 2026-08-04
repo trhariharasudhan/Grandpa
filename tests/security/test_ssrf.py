@@ -188,9 +188,7 @@ class TestCheckSsrf:
         assert "private IP" in result
 
     def test_python_impl_blocks_ipv4_mapped_metadata(self):
-        result = _check_ssrf_python(
-            "http://[::ffff:169.254.169.254]/latest/meta-data/"
-        )
+        result = _check_ssrf_python("http://[::ffff:169.254.169.254]/latest/meta-data/")
         assert result is not None
 
     def test_blocks_ipv4_mapped_alibaba_metadata(self):

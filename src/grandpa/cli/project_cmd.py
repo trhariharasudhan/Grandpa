@@ -42,7 +42,9 @@ def create_project_cmd(name: str, path: str, desc: str) -> None:
     try:
         registry = MultiProjectRegistry()
         pinfo = registry.create_project(name, path, desc)
-        click.echo(f"Created and registered project '{pinfo.project_name}' [{pinfo.project_id}] at {pinfo.project_path}.")
+        click.echo(
+            f"Created and registered project '{pinfo.project_name}' [{pinfo.project_id}] at {pinfo.project_path}."
+        )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -56,7 +58,9 @@ def register_project_cmd(name: str, path: str, desc: str) -> None:
     try:
         registry = MultiProjectRegistry()
         pinfo = registry.register_project(name, path, desc)
-        click.echo(f"Registered project '{pinfo.project_name}' [{pinfo.project_id}] at {pinfo.project_path}.")
+        click.echo(
+            f"Registered project '{pinfo.project_name}' [{pinfo.project_id}] at {pinfo.project_path}."
+        )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -75,7 +79,9 @@ def list_cmd() -> None:
         click.echo("Registered Projects:")
         for p in projects:
             active_marker = "*" if p.project_id == active_id else " "
-            click.echo(f"{active_marker} {p.project_name} [{p.project_id}] - {p.project_path} ({p.repository_health})")
+            click.echo(
+                f"{active_marker} {p.project_name} [{p.project_id}] - {p.project_path} ({p.repository_health})"
+            )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -87,7 +93,9 @@ def switch_cmd(identifier: str) -> None:
     try:
         registry = MultiProjectRegistry()
         pinfo = registry.switch_project(identifier)
-        click.echo(f"Switched active project context to '{pinfo.project_name}' [{pinfo.project_id}].")
+        click.echo(
+            f"Switched active project context to '{pinfo.project_name}' [{pinfo.project_id}]."
+        )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -140,10 +148,16 @@ def context_cmd() -> None:
         click.echo(f"Next Milestone    : {state.next_milestone or 'None'}")
 
         next_task = engine.identify_next_task(state)
-        next_task_str = f"[{next_task.task_id}] {next_task.title}" if next_task else "None"
+        next_task_str = (
+            f"[{next_task.task_id}] {next_task.title}" if next_task else "None"
+        )
         click.echo(f"Next Task         : {next_task_str}")
-        click.echo(f"Completed Tasks   : {len([t for t in state.tasks if t.completion_state])}")
-        click.echo(f"Pending Tasks     : {len([t for t in state.tasks if not t.completion_state])}")
+        click.echo(
+            f"Completed Tasks   : {len([t for t in state.tasks if t.completion_state])}"
+        )
+        click.echo(
+            f"Pending Tasks     : {len([t for t in state.tasks if not t.completion_state])}"
+        )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -163,6 +177,7 @@ def plan_cmd() -> None:
         tracker.save_state(state)
 
         from grandpa.agent.development.planner import EngineeringPlanner
+
         planner = EngineeringPlanner(state)
         milestone, task, reason = planner.analyze_milestone_and_task()
 
@@ -190,8 +205,11 @@ def next_task_cmd() -> None:
 
         from grandpa.agent.development.planner import EngineeringPlanner
         from grandpa.agent.development.roadmap_generator import is_legacy_roadmap
+
         if is_legacy_roadmap(state):
-            click.echo("Legacy roadmap detected. Run `grandpa roadmap migrate --preview`.")
+            click.echo(
+                "Legacy roadmap detected. Run `grandpa roadmap migrate --preview`."
+            )
             return
 
         planner = EngineeringPlanner(state)
@@ -220,6 +238,7 @@ def work_package_cmd() -> None:
         tracker.save_state(state)
 
         from grandpa.agent.development.planner import EngineeringPlanner
+
         planner = EngineeringPlanner(state)
         wp = planner.generate_work_package()
         click.echo(planner.format_work_package_text(wp))
@@ -274,8 +293,12 @@ def status_cmd() -> None:
     click.echo(f"Repository Health : {state.repository_health.upper()}")
     click.echo(f"Current Milestone : {state.current_milestone or 'None'}")
     click.echo(f"Next Milestone    : {state.next_milestone or 'None'}")
-    click.echo(f"Completed Tasks   : {len([t for t in state.tasks if t.completion_state])}")
-    click.echo(f"Pending Tasks     : {len([t for t in state.tasks if not t.completion_state])}")
+    click.echo(
+        f"Completed Tasks   : {len([t for t in state.tasks if t.completion_state])}"
+    )
+    click.echo(
+        f"Pending Tasks     : {len([t for t in state.tasks if not t.completion_state])}"
+    )
 
 
 @project_group.command("roadmap")
@@ -323,6 +346,7 @@ def next_cmd() -> None:
     engine.tracker.save_state(state)
 
     from grandpa.agent.development.roadmap_generator import is_legacy_roadmap
+
     if is_legacy_roadmap(state):
         click.echo("Legacy roadmap detected. Run `grandpa roadmap migrate --preview`.")
         return
@@ -343,7 +367,9 @@ def checkpoint_group() -> None:
 
 
 @checkpoint_group.command("save")
-@click.option("--id", "checkpoint_id", default=None, help="Custom checkpoint identifier.")
+@click.option(
+    "--id", "checkpoint_id", default=None, help="Custom checkpoint identifier."
+)
 def checkpoint_save(checkpoint_id: str | None) -> None:
     """Save a snapshot checkpoint of the current project state."""
     path = _get_project_path()
@@ -371,7 +397,9 @@ def checkpoint_load(checkpoint_id: str) -> None:
     branch, health = engine.inspect_repository()
 
     checkpoint = tracker.checkpoint_manager.load_checkpoint(checkpoint_id)
-    is_valid = tracker.checkpoint_manager.validate_checkpoint(checkpoint, branch, health)
+    is_valid = tracker.checkpoint_manager.validate_checkpoint(
+        checkpoint, branch, health
+    )
     if not is_valid:
         click.echo(
             f"Warning: Checkpoint branch ({checkpoint.active_branch}) or health ({checkpoint.repository_health}) "

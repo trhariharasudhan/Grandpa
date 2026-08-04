@@ -27,14 +27,23 @@ def _scan_apps() -> None:
 
 @apps.command("list")
 @click.option("--limit", type=click.IntRange(1, 500), default=25, show_default=True)
-@click.option("--all", "include_all", is_flag=True, help="Include technical and low-confidence entries.")
-@click.option("--source", default=None, help="Filter by discovery source, for example start_menu.")
+@click.option(
+    "--all",
+    "include_all",
+    is_flag=True,
+    help="Include technical and low-confidence entries.",
+)
+@click.option(
+    "--source", default=None, help="Filter by discovery source, for example start_menu."
+)
 def list_cmd(limit: int, include_all: bool, source: str | None) -> None:
     manager = ApplicationManager()
     records = manager.list(include_all=include_all, source=source)
     if not records:
         if manager.cache_needs_refresh():
-            click.echo("The application cache is missing or outdated. Run `grandpa apps refresh`.")
+            click.echo(
+                "The application cache is missing or outdated. Run `grandpa apps refresh`."
+            )
         else:
             click.echo("No matching user-facing applications found.")
         return
@@ -46,7 +55,9 @@ def list_cmd(limit: int, include_all: bool, source: str | None) -> None:
         click.echo(f"{index}. {record.display_name}{source_label}")
     if len(records) > len(shown):
         click.echo("")
-        click.echo(f"Use `grandpa apps list --limit {min(len(records), max(limit * 2, 50))}` to show more.")
+        click.echo(
+            f"Use `grandpa apps list --limit {min(len(records), max(limit * 2, 50))}` to show more."
+        )
     click.echo("Use `grandpa apps search <name>` to find an application.")
 
 
@@ -77,14 +88,18 @@ def refresh() -> None:
 
 
 @apps.command("running")
-@click.option("--all-processes", is_flag=True, help="Show raw processes for diagnostics.")
+@click.option(
+    "--all-processes", is_flag=True, help="Show raw processes for diagnostics."
+)
 @click.option("--limit", type=click.IntRange(1, 500), default=50, show_default=True)
 def running(all_processes: bool, limit: int) -> None:
     """List currently running applications/processes."""
 
     records = list_running_apps(limit=limit, include_all_processes=all_processes)
     if not records:
-        click.echo("No running applications detected, or process inspection is unavailable.")
+        click.echo(
+            "No running applications detected, or process inspection is unavailable."
+        )
         return
     click.echo("Running applications:" if not all_processes else "Running processes:")
     for record in records:

@@ -16,7 +16,9 @@ def test_resolve_app_from_common_path(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "ProgramFilesX86"))
     monkeypatch.setenv("LocalAppData", str(tmp_path / "LocalAppData"))
 
-    result = resolve_app("chrome", refresh=True, cache=AppResolverCache(tmp_path / "apps.db"))
+    result = resolve_app(
+        "chrome", refresh=True, cache=AppResolverCache(tmp_path / "apps.db")
+    )
 
     assert result.status == "found"
     assert result.launch_kind == "path"
@@ -81,7 +83,9 @@ def test_resolve_app_from_registry_app_paths(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setenv("ProgramFiles(x86)", str(tmp_path / "missing86"))
     monkeypatch.setenv("LocalAppData", str(tmp_path / "missing_local"))
 
-    result = resolve_app("chrome", refresh=True, cache=AppResolverCache(tmp_path / "apps.db"))
+    result = resolve_app(
+        "chrome", refresh=True, cache=AppResolverCache(tmp_path / "apps.db")
+    )
 
     assert result.status == "found"
     assert result.source == "registry_app_paths"
@@ -93,7 +97,15 @@ def test_launch_missing_app_returns_clear_error(monkeypatch) -> None:
     monkeypatch.setattr(
         windows_app_resolver,
         "resolve_app",
-        lambda name: AppResolution("chrome", "Chrome", "missing", "missing", "", "not_found", "I could not find Chrome."),
+        lambda name: AppResolution(
+            "chrome",
+            "Chrome",
+            "missing",
+            "missing",
+            "",
+            "not_found",
+            "I could not find Chrome.",
+        ),
     )
 
     result = windows_app_resolver.launch_app("chrome")
@@ -102,7 +114,9 @@ def test_launch_missing_app_returns_clear_error(monkeypatch) -> None:
     assert "could not find Chrome" in result.message
 
 
-def test_launch_vscode_with_project_argument_uses_popen_without_shell(monkeypatch, tmp_path: Path) -> None:
+def test_launch_vscode_with_project_argument_uses_popen_without_shell(
+    monkeypatch, tmp_path: Path
+) -> None:
     code = tmp_path / "Code.exe"
     code.write_text("fake", encoding="utf-8")
     project = tmp_path / "Grandpa"
@@ -112,7 +126,9 @@ def test_launch_vscode_with_project_argument_uses_popen_without_shell(monkeypatc
     monkeypatch.setattr(
         windows_app_resolver,
         "resolve_app",
-        lambda name: AppResolution("vscode", "VS Code", "found", "path", str(code), "test", "found"),
+        lambda name: AppResolution(
+            "vscode", "VS Code", "found", "path", str(code), "test", "found"
+        ),
     )
     monkeypatch.setattr(
         windows_app_resolver.subprocess,
@@ -131,7 +147,9 @@ def test_local_action_open_app_uses_resolver(monkeypatch) -> None:
     monkeypatch.setattr(
         windows_app_resolver,
         "launch_app",
-        lambda name: AppResolution(name, "Chrome", "found", "path", "C:/Chrome/chrome.exe", "test", "found"),
+        lambda name: AppResolution(
+            name, "Chrome", "found", "path", "C:/Chrome/chrome.exe", "test", "found"
+        ),
     )
 
     result = local_actions.handle_local_action("open chrome")

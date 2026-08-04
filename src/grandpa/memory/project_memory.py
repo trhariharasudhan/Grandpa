@@ -52,7 +52,9 @@ class ProjectMemory:
         item = self.store.get_by_key(key)
         if not item:
             # Fallback to search by project name
-            items = self.store.list_all(category="project", project_name=project_name, limit=1)
+            items = self.store.list_all(
+                category="project", project_name=project_name, limit=1
+            )
             return items[0] if items else None
         return item
 
@@ -62,7 +64,9 @@ class ProjectMemory:
         projects: dict[str, dict[str, Any]] = {}
         for item in items:
             pname = item.project_name or item.metadata.get("project_name") or "unknown"
-            if pname not in projects or item.updated_at > projects[pname].get("updated_at", 0):
+            if pname not in projects or item.updated_at > projects[pname].get(
+                "updated_at", 0
+            ):
                 projects[pname] = {
                     "project_name": pname,
                     "key": item.key,
@@ -75,6 +79,10 @@ class ProjectMemory:
                 }
         return list(projects.values())
 
-    def search_project(self, query: str, project_name: str | None = None, limit: int = 10) -> list[MemoryItem]:
+    def search_project(
+        self, query: str, project_name: str | None = None, limit: int = 10
+    ) -> list[MemoryItem]:
         """Search memory within project scope."""
-        return self.store.search(query, category="project", project_name=project_name, limit=limit)
+        return self.store.search(
+            query, category="project", project_name=project_name, limit=limit
+        )

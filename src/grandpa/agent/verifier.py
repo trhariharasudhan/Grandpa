@@ -42,7 +42,9 @@ class StepVerifier:
             # Verify vision inspection found components
             if not step_result:
                 failures.append("Vision inspection did not detect any UI elements.")
-            details["ui_elements_count"] = len(step_result) if isinstance(step_result, list) else 1
+            details["ui_elements_count"] = (
+                len(step_result) if isinstance(step_result, list) else 1
+            )
         elif tool == "planner":
             # Verify planner created a runnable plan
             if not step_result:

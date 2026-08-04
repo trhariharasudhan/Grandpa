@@ -83,19 +83,25 @@ def test_open_latest_safe_file_and_block_executable(tmp_path: Path) -> None:
     opened: list[Path] = []
     _file(tmp_path / "safe.pdf")
     scanner = DownloadsScanner((tmp_path,))
-    result = DownloadsAutomation(scanner=scanner, opener=opened.append).handle("open latest download")
+    result = DownloadsAutomation(scanner=scanner, opener=opened.append).handle(
+        "open latest download"
+    )
 
     assert result.status == "handled"
     assert opened == [tmp_path / "safe.pdf"]
 
     _file(tmp_path / "setup.exe")
-    blocked = DownloadsAutomation(scanner=scanner, opener=opened.append).handle("open latest download")
+    blocked = DownloadsAutomation(scanner=scanner, opener=opened.append).handle(
+        "open latest download"
+    )
 
     assert blocked.status == "blocked"
     assert "unsafe" in blocked.message
 
 
-def test_move_archive_organize_and_delete_require_confirmation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_move_archive_organize_and_delete_require_confirmation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     home = tmp_path / "home"
     downloads = home / "Downloads"
     monkeypatch.setattr(Path, "home", lambda: home)
@@ -146,7 +152,9 @@ def test_path_traversal_and_external_destination_are_blocked(tmp_path: Path) -> 
         safety.safe_destination(tmp_path / "Other")
 
 
-def test_downloads_slash_command_routes_through_safe_facade(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_downloads_slash_command_routes_through_safe_facade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
 
     def fake_handle(text: str):
@@ -167,7 +175,9 @@ def test_downloads_slash_command_is_registered_for_picker() -> None:
     assert "/downloads recent" in command.subcommands
 
 
-def test_voice_assistant_routes_downloads_without_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_voice_assistant_routes_downloads_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "grandpa.downloads.handle_downloads_command",
         lambda _text: SimpleNamespace(
@@ -186,7 +196,9 @@ def test_voice_assistant_routes_downloads_without_llm(monkeypatch: pytest.Monkey
     assert response.text == "Downloads listed."
 
 
-def test_voice_operator_routes_downloads_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_voice_operator_routes_downloads_commands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     intent = parse_voice_operator_command("show recent downloads")
     assert intent.kind == "downloads"
 
@@ -208,7 +220,9 @@ def test_voice_operator_routes_downloads_commands(monkeypatch: pytest.MonkeyPatc
 def test_handle_downloads_command_uses_temp_scanner_only(tmp_path: Path) -> None:
     _file(tmp_path / "invoice.pdf")
 
-    result = handle_downloads_command("find downloaded invoice", scanner=DownloadsScanner((tmp_path,)))
+    result = handle_downloads_command(
+        "find downloaded invoice", scanner=DownloadsScanner((tmp_path,))
+    )
 
     assert result.status == "handled"
     assert "invoice.pdf" in result.message

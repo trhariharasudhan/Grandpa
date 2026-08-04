@@ -120,11 +120,15 @@ def test_float16_failure_retries_with_safe_compute_type():
     with patch(
         "grandpa.speech.faster_whisper.WhisperModel",
         side_effect=[
-            ValueError("Requested float16 compute type, but the target device or backend do not support efficient float16 computation."),
+            ValueError(
+                "Requested float16 compute type, but the target device or backend do not support efficient float16 computation."
+            ),
             mock_model,
         ],
     ) as whisper_model:
-        backend = FasterWhisperBackend(model_size="base", device="cuda", compute_type="float16")
+        backend = FasterWhisperBackend(
+            model_size="base", device="cuda", compute_type="float16"
+        )
 
         assert backend._ensure_model() is mock_model
         assert backend._compute_type == "int8"

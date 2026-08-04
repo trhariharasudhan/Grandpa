@@ -22,6 +22,7 @@ class SlashCommand:
     preview: tuple[str, ...] = ()
     examples: tuple[str, ...] = ()
     note: str = ""
+    routing: str = "local"
 
     @property
     def display_label(self) -> str:
@@ -67,6 +68,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/mode learning",
         ),
         note="Mode switching is a safe placeholder for now.",
+        routing="help",
     ),
     SlashCommand(
         "/settings",
@@ -77,9 +79,30 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         preview=("/settings", "/mode", "/model"),
         examples=("show my settings", "what is my default model"),
         note="Settings changes are not wired into chat yet.",
+        routing="help",
+    ),
+    SlashCommand(
+        "/engine",
+        "Inference engine",
+        "Core",
+        subcommands=("/engine", "/engine ollama"),
+        note="Engine changes apply to the current interactive session.",
     ),
     SlashCommand("/model", "Model picker", "Core"),
     SlashCommand("/history", "Chat history", "Core"),
+    SlashCommand(
+        "/profile",
+        "Local profile",
+        "Core",
+        subcommands=("/profile", "/profile edit", "/profile reset"),
+        examples=("show my local profile", "change my display name"),
+        note="Profile settings stay on this computer.",
+    ),
+    SlashCommand("/whoami", "Local identity and mode", "Core"),
+    SlashCommand("/compact", "Compact context", "Core"),
+    SlashCommand("/config", "Active configuration", "Core"),
+    SlashCommand("/permissions", "Safety permissions", "Core"),
+    SlashCommand("/doctor", "Readiness check", "Core"),
     SlashCommand("/clear", "Clear chat", "Core"),
     SlashCommand("/quit", "Exit chat", "Core"),
     SlashCommand("/exit", "Exit chat", "Core"),
@@ -117,7 +140,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/gmail summarize <selector>",
             "/gmail labels",
         ),
-        examples=("show unread emails", "read latest email from Arjun", "summarize emails from today"),
+        examples=(
+            "show unread emails",
+            "read latest email from Arjun",
+            "summarize emails from today",
+        ),
         note="Gmail uses local OAuth tokens and never asks for your Google password.",
     ),
     SlashCommand(
@@ -137,7 +164,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/calendar update <details>",
             "/calendar delete <details>",
         ),
-        examples=("what is on my calendar today", "show free time this afternoon", "create a meeting tomorrow at 3 PM"),
+        examples=(
+            "what is on my calendar today",
+            "show free time this afternoon",
+            "create a meeting tomorrow at 3 PM",
+        ),
         note="Calendar writes require confirmation and use local OAuth tokens.",
     ),
     SlashCommand(
@@ -158,7 +189,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/notes restore",
             "/notes pin",
         ),
-        examples=("create a note called Grandpa Ideas", "search notes for browser automation", "append this to my project note"),
+        examples=(
+            "create a note called Grandpa Ideas",
+            "search notes for browser automation",
+            "append this to my project note",
+        ),
         note="Notes are local Markdown files under Grandpa's notes directory.",
     ),
     SlashCommand(
@@ -169,15 +204,17 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/tasks list", "/tasks add <task>", "/tasks done <id>"),
         examples=("show my tasks", "plan my day", "what should I do next"),
         note="Task planning is a safe placeholder here and does not execute actions.",
+        routing="help",
     ),
     SlashCommand(
         "/desktop",
         "Desktop control",
         "Computer",
-        status="Available with safety confirmations",
+        status="Available via natural commands / Help only",
         subcommands=("/desktop status", "/desktop apps", "/desktop windows"),
         examples=("open Chrome", "type hello in Notepad", "press enter"),
         note="Desktop actions use Grandpa's local permission and confirmation layer.",
+        routing="help",
     ),
     SlashCommand(
         "/apps",
@@ -193,7 +230,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/apps running",
             "/apps open <name>",
         ),
-        examples=("open Visual Studio Code", "list installed applications", "search applications for Blender"),
+        examples=(
+            "open Visual Studio Code",
+            "list installed applications",
+            "search applications for Blender",
+        ),
         note="Apps are launched only from Grandpa's local application index or existing safe app resolver.",
     ),
     SlashCommand(
@@ -202,7 +243,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         "Computer",
         status="Planned / Partially available",
         subcommands=("/browser open <url>", "/browser search <query>", "/browser tabs"),
-        examples=("search YouTube for Python", "open the browser", "summarize this page"),
+        examples=(
+            "search YouTube for Python",
+            "open the browser",
+            "summarize this page",
+        ),
         note="Browser actions must stay local and permission-aware.",
     ),
     SlashCommand(
@@ -218,7 +263,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/search sources",
             "/search clear-cache",
         ),
-        examples=("search the web for FastAPI tutorials", "find recent AI news", "search official Python docs for asyncio"),
+        examples=(
+            "search the web for FastAPI tutorials",
+            "find recent AI news",
+            "search official Python docs for asyncio",
+        ),
         note="Web search uses configured provider APIs and treats results as untrusted.",
     ),
     SlashCommand(
@@ -249,7 +298,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/downloads duplicates",
             "/downloads info <selector>",
         ),
-        examples=("show recent downloads", "find downloaded PDF", "organize my Downloads folder"),
+        examples=(
+            "show recent downloads",
+            "find downloaded PDF",
+            "organize my Downloads folder",
+        ),
         note="Deletes and bulk operations require confirmation. Executables are never opened automatically.",
     ),
     SlashCommand(
@@ -260,14 +313,17 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/system status", "/system diagnostics", "/system health"),
         examples=("show system status", "check disk space"),
         note="No shutdown, restart, or destructive system action is enabled here.",
+        routing="help",
     ),
     SlashCommand(
         "/coding",
         "Coding",
         "Developer",
+        status="Help only / conversational support",
         subcommands=("/coding status", "/coding help", "/coding diagnostics"),
         examples=("review this code", "explain this error", "run the tests"),
         note="Coding actions should keep repository changes reviewable.",
+        routing="help",
     ),
     SlashCommand(
         "/git",
@@ -277,6 +333,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/git status", "/git diff", "/git commit"),
         examples=("show git status", "summarize my changes"),
         note="Git commit and push actions require explicit user approval.",
+        routing="help",
     ),
     SlashCommand(
         "/github",
@@ -287,15 +344,17 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/github status", "/github prs", "/github issues"),
         examples=("show my open pull requests", "summarize issue 12"),
         note="GitHub actions require authenticated local tooling or a configured connector.",
+        routing="help",
     ),
     SlashCommand(
         "/voice",
         "Voice",
         "Personal",
-        status="Available for safe foundations",
+        status="Help only / dedicated voice command available",
         subcommands=("/voice status", "/voice wake-word", "/voice loop"),
         examples=("what is my voice status", "start push to talk"),
         note="No always-on microphone starts from this chat command.",
+        routing="help",
     ),
     SlashCommand(
         "/order",
@@ -305,6 +364,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/order food", "/order grocery", "/order status"),
         examples=("order biryani", "reorder groceries"),
         note="Ordering is a future feature. Grandpa will not place real orders from this command.",
+        routing="help",
     ),
     SlashCommand(
         "/automation",
@@ -312,8 +372,12 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         "Automation",
         status="Planned / Permission-gated",
         subcommands=("/automation status", "/automation help", "/automation workflows"),
-        examples=("create a workflow for my morning setup", "show automation diagnostics"),
+        examples=(
+            "create a workflow for my morning setup",
+            "show automation diagnostics",
+        ),
         note="Automation must remain explicit, local, and confirmation-gated.",
+        routing="help",
     ),
 )
 
@@ -321,7 +385,9 @@ COMMAND_BY_NAME = {command.name: command for command in SLASH_COMMANDS}
 
 
 def command_groups() -> dict[str, list[SlashCommand]]:
-    groups: dict[str, list[SlashCommand]] = {category: [] for category in CATEGORY_ORDER}
+    groups: dict[str, list[SlashCommand]] = {
+        category: [] for category in CATEGORY_ORDER
+    }
     for command in SLASH_COMMANDS:
         groups.setdefault(command.category, []).append(command)
     return groups
@@ -333,6 +399,34 @@ def top_level_commands() -> list[SlashCommand]:
 
 def command_names() -> list[str]:
     return [command.name for command in SLASH_COMMANDS]
+
+
+def validate_command_registry() -> list[str]:
+    """Return deterministic metadata consistency errors for slash commands."""
+
+    errors: list[str] = []
+    names = command_names()
+    if len(names) != len(set(names)):
+        errors.append("slash command names must be unique")
+    for command in SLASH_COMMANDS:
+        if command.category not in CATEGORY_ORDER:
+            errors.append(f"{command.name} has unknown category {command.category!r}")
+        if command.routing not in {"local", "help"}:
+            errors.append(f"{command.name} has unknown routing {command.routing!r}")
+        if command.routing == "help" and not any(
+            marker in command.status.casefold()
+            for marker in ("help", "planned", "not configured")
+        ):
+            errors.append(f"{command.name} help-only routing is not labeled")
+        for preview in (*command.subcommands, *command.preview):
+            if (
+                preview.startswith("/")
+                and preview.split(maxsplit=1)[0] not in COMMAND_BY_NAME
+            ):
+                errors.append(
+                    f"{command.name} preview references unknown command {preview!r}"
+                )
+    return errors
 
 
 def get_command(name: str) -> SlashCommand | None:

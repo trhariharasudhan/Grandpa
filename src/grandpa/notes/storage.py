@@ -18,7 +18,11 @@ DEFAULT_NOTES_DIR = DEFAULT_CONFIG_DIR / "notes"
 class NotesStore:
     """Store one UTF-8 Markdown file per note with JSON front matter."""
 
-    def __init__(self, root: Path | str = DEFAULT_NOTES_DIR, safety: NotesSafetyPolicy | None = None) -> None:
+    def __init__(
+        self,
+        root: Path | str = DEFAULT_NOTES_DIR,
+        safety: NotesSafetyPolicy | None = None,
+    ) -> None:
         self.root = Path(root)
         self.safety = safety or NotesSafetyPolicy()
 
@@ -35,23 +39,45 @@ class NotesStore:
         except Exception as exc:
             return "error", f"Notes storage unavailable: {exc}"
 
-    def create(self, title: str, content: str = "", *, tags: tuple[str, ...] = (), category: str = "general") -> Note:
+    def create(
+        self,
+        title: str,
+        content: str = "",
+        *,
+        tags: tuple[str, ...] = (),
+        category: str = "general",
+    ) -> Note:
         title = self.safety.sanitize_title(title)
         if self.safety.contains_secret(content):
-            raise NotesSafetyError("I blocked saving that note because it looks like it contains a secret.")
+            raise NotesSafetyError(
+                "I blocked saving that note because it looks like it contains a secret."
+            )
         slug = self._unique_slug(self.safety.slugify(title))
-        note = Note(note_id=uuid4().hex, title=title, slug=slug, content=content.strip(), tags=tags, category=category or "general")
+        note = Note(
+            note_id=uuid4().hex,
+            title=title,
+            slug=slug,
+            content=content.strip(),
+            tags=tags,
+            category=category or "general",
+        )
         self._write(note)
         return note
 
     def append(self, title_or_query: str, content: str) -> Note:
         if self.safety.contains_secret(content):
-            raise NotesSafetyError("I blocked appending that text because it looks like it contains a secret.")
+            raise NotesSafetyError(
+                "I blocked appending that text because it looks like it contains a secret."
+            )
         note = self.find_one(title_or_query)
         if note is None:
             note = self.create(title_or_query, "")
         separator = "\n\n" if note.content else ""
-        updated = _replace(note, content=f"{note.content}{separator}{content.strip()}", updated_at=_now())
+        updated = _replace(
+            note,
+            content=f"{note.content}{separator}{content.strip()}",
+            updated_at=_now(),
+        )
         self._write(updated)
         return updated
 
@@ -84,13 +110,23 @@ class NotesStore:
         return updated
 
     def list(self, *, include_archived: bool = False) -> tuple[Note, ...]:
-        notes = tuple(sorted(self._read_all(), key=lambda note: (not note.pinned, note.updated_at), reverse=False))
+        notes = tuple(
+            sorted(
+                self._read_all(),
+                key=lambda note: (not note.pinned, note.updated_at),
+                reverse=False,
+            )
+        )
         if include_archived:
             return notes
         return tuple(note for note in notes if not note.archived)
 
     def recent(self, *, limit: int = 10) -> tuple[Note, ...]:
-        notes = sorted((note for note in self._read_all() if not note.archived), key=lambda note: note.updated_at, reverse=True)
+        notes = sorted(
+            (note for note in self._read_all() if not note.archived),
+            key=lambda note: note.updated_at,
+            reverse=True,
+        )
         return tuple(notes[:limit])
 
     def search(self, query: str, *, include_archived: bool = False) -> tuple[Note, ...]:
@@ -101,7 +137,9 @@ class NotesStore:
         for note in self._read_all():
             if note.archived and not include_archived:
                 continue
-            haystack = " ".join((note.title, note.content, note.category, " ".join(note.tags))).casefold()
+            haystack = " ".join(
+                (note.title, note.content, note.category, " ".join(note.tags))
+            ).casefold()
             if needle in haystack:
                 results.append(note)
         return tuple(sorted(results, key=lambda note: note.updated_at, reverse=True))
@@ -123,7 +161,11 @@ class NotesStore:
 
     def _read_all(self) -> list[Note]:
         self.root.mkdir(parents=True, exist_ok=True)
-        return [note for path in self.root.glob("*.md") if (note := self._read(path)) is not None]
+        return [
+            note
+            for path in self.root.glob("*.md")
+            if (note := self._read(path)) is not None
+        ]
 
     def _read(self, path: Path) -> Note | None:
         self.safety.ensure_inside_root(self.root, path)
@@ -154,7 +196,14 @@ class NotesStore:
         path = self._path_for_slug(note.slug)
         metadata = asdict(note)
         content = metadata.pop("content", "")
-        path.write_text("---\n" + json.dumps(metadata, indent=2, sort_keys=True) + "\n---\n\n" + content.strip() + "\n", encoding="utf-8")
+        path.write_text(
+            "---\n"
+            + json.dumps(metadata, indent=2, sort_keys=True)
+            + "\n---\n\n"
+            + content.strip()
+            + "\n",
+            encoding="utf-8",
+        )
 
     def _path_for_slug(self, slug: str) -> Path:
         safe_slug = self.safety.slugify(slug)

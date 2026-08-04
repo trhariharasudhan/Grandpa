@@ -39,14 +39,18 @@ def page_cmd() -> None:
     click.echo(f"Paragraphs : {len(page.paragraphs)}")
 
 
-@browser.command(name="analyze", help="Analyze current browser page elements and search results.")
+@browser.command(
+    name="analyze", help="Analyze current browser page elements and search results."
+)
 def analyze_cmd() -> None:
     page = read_current_browser_page()
     analysis = analyze_page_structure(page)
     click.echo(format_page_analysis_cli(analysis))
 
 
-@browser.command(name="extract", help="Extract targeted section (installation, specs, code, etc.).")
+@browser.command(
+    name="extract", help="Extract targeted section (installation, specs, code, etc.)."
+)
 @click.argument("section", default="installation")
 def extract_cmd(section: str) -> None:
     page = read_current_browser_page()
@@ -54,7 +58,10 @@ def extract_cmd(section: str) -> None:
     click.echo(format_extracted_content_cli(extracted))
 
 
-@browser.command(name="verify", help="Verify domain trust and official status for current page or URL.")
+@browser.command(
+    name="verify",
+    help="Verify domain trust and official status for current page or URL.",
+)
 @click.argument("url", required=False)
 @click.option("--subject", "-s", default="", help="Target subject/technology name.")
 def verify_cmd(url: str | None, subject: str) -> None:
@@ -69,8 +76,16 @@ def verify_cmd(url: str | None, subject: str) -> None:
     click.echo(format_verification_cli(result))
 
 
-@browser.command(name="summarize", help="Summarize current page using local model or heuristics.")
-@click.option("--type", "-t", "summary_type", default="short", help="Summary type: short, detailed, bullet, technical, installation, requirements, research.")
+@browser.command(
+    name="summarize", help="Summarize current page using local model or heuristics."
+)
+@click.option(
+    "--type",
+    "-t",
+    "summary_type",
+    default="short",
+    help="Summary type: short, detailed, bullet, technical, installation, requirements, research.",
+)
 def summarize_cmd(summary_type: str) -> None:
     page = read_current_browser_page()
     summarizer = LocalPageSummarizer()
@@ -79,7 +94,9 @@ def summarize_cmd(summary_type: str) -> None:
     click.echo(summary)
 
 
-@browser.command(name="compare", help="Compare two products, documentation, or specifications.")
+@browser.command(
+    name="compare", help="Compare two products, documentation, or specifications."
+)
 @click.argument("item_a", default="Raspberry Pi 5")
 @click.argument("item_b", default="Jetson Nano")
 def compare_cmd(item_a: str, item_b: str) -> None:
@@ -88,7 +105,9 @@ def compare_cmd(item_a: str, item_b: str) -> None:
     click.echo(format_comparison_cli(comparison))
 
 
-@browser.command(name="research", help="Perform bounded multi-page web research on a topic.")
+@browser.command(
+    name="research", help="Perform bounded multi-page web research on a topic."
+)
 @click.argument("topic", default="FastAPI")
 @click.option("--max-sources", default=5, help="Maximum search sources to inspect.")
 @click.option("--max-pages", default=3, help="Maximum pages to read.")
@@ -122,7 +141,9 @@ def context_cmd() -> None:
     click.echo(f"  Total Verified: {len(ctx.get('verified_pages', []))}")
 
 
-@browser.command(name="debug", help="Display Browser Intelligence diagnostics and provider state.")
+@browser.command(
+    name="debug", help="Display Browser Intelligence diagnostics and provider state."
+)
 def debug_cmd() -> None:
     page = read_current_browser_page()
     from grandpa.browser_control import get_visible_browser_context
@@ -138,5 +159,9 @@ def debug_cmd() -> None:
     click.echo(f"  Content Source    : {page.acquisition_source}")
     click.echo(f"  Heading Count     : {len(page.headings)}")
     click.echo(f"  Paragraph Count   : {len(page.paragraphs)}")
-    click.echo(f"  Cache State       : {'valid' if page.status != 'unavailable' else 'empty'}")
-    click.echo(f"  Stale Context     : {'false' if page.status != 'unavailable' else 'true'}")
+    click.echo(
+        f"  Cache State       : {'valid' if page.status != 'unavailable' else 'empty'}"
+    )
+    click.echo(
+        f"  Stale Context     : {'false' if page.status != 'unavailable' else 'true'}"
+    )

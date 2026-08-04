@@ -107,7 +107,9 @@ class ScreenAutomationService:
                     "No input was sent.",
                     action,
                 )
-            target_label = target.label if isinstance(target, WindowIdentity) else target
+            target_label = (
+                target.label if isinstance(target, WindowIdentity) else target
+            )
             action = replace(action, args={**action.args, "window": target_label})
             verification = self.window_targets.focus_and_verify(target, dry_run=dry_run)
             if not verification.ok:
@@ -122,7 +124,9 @@ class ScreenAutomationService:
             preview = self._preview(action)
             if preview is not None:
                 if verification_message := _verification_message(verification):
-                    return replace(preview, message=f"{verification_message}\n{preview.message}")
+                    return replace(
+                        preview, message=f"{verification_message}\n{preview.message}"
+                    )
                 return preview
             pending = self.confirmations.create(action)
             self._last_confirmation_token = pending.token
@@ -220,9 +224,7 @@ class ScreenAutomationService:
                     "The verified overwrite dialog is no longer available.",
                     action,
                 )
-            result = self.window_targets.respond_to_dialog(
-                window, dialog, "overwrite"
-            )
+            result = self.window_targets.respond_to_dialog(window, dialog, "overwrite")
             return self._save_as_result(window, dialog, path, result)
         if action.kind == "save_as_overwrite":
             window = action.args.get("window_identity")
@@ -254,9 +256,7 @@ class ScreenAutomationService:
             verification = self.window_targets.close_and_verify(window)
             close_status = str(getattr(verification, "status", ""))
             dialog = getattr(verification, "dialog", None)
-            if close_status == "dialog_pending" and isinstance(
-                dialog, DialogIdentity
-            ):
+            if close_status == "dialog_pending" and isinstance(dialog, DialogIdentity):
                 self._pending_dialog = (window, dialog)
                 return AutomationResult(
                     "dialog_pending",
@@ -316,12 +316,16 @@ class ScreenAutomationService:
         return AutomationResult("handled", "Automation action cancelled.")
 
     def _preview(self, action: AutomationAction) -> AutomationResult | None:
-        if action.kind not in {
-            "click",
-            "double_click",
-            "right_click",
-            "middle_click",
-        } or not action.target:
+        if (
+            action.kind
+            not in {
+                "click",
+                "double_click",
+                "right_click",
+                "middle_click",
+            }
+            or not action.target
+        ):
             return None
         located = self.executor.execute(AutomationAction("highlight", action.target))
         if located.status != "handled":
@@ -333,10 +337,14 @@ class ScreenAutomationService:
                 data=located.data,
             )
         matches = list(located.data.get("matches", []))
-        if len(matches) > 1 and abs(
-            float(matches[0].get("confidence", 0))
-            - float(matches[1].get("confidence", 0))
-        ) < 0.05:
+        if (
+            len(matches) > 1
+            and abs(
+                float(matches[0].get("confidence", 0))
+                - float(matches[1].get("confidence", 0))
+            )
+            < 0.05
+        ):
             return AutomationResult(
                 "ambiguous",
                 f'I found multiple possible matches for "{action.target}". Please be more specific.',
@@ -359,15 +367,23 @@ class ScreenAutomationService:
     def _focus_target(
         self, action: AutomationAction, *, dry_run: bool = False
     ) -> AutomationResult:
-        verification = self.window_targets.focus_and_verify(action.target, dry_run=dry_run)
+        verification = self.window_targets.focus_and_verify(
+            action.target, dry_run=dry_run
+        )
         if not verification.ok:
             if verification.candidates:
                 return self._ambiguity_result(action, verification.candidates)
             return AutomationResult("blocked", verification.message, action)
         self._clear_window_choices()
         self._target_window = verification.expected
-        message = verification.message if dry_run else f"Focused and pinned target: {action.target}."
-        return AutomationResult("handled", message, action, data={"window": action.target})
+        message = (
+            verification.message
+            if dry_run
+            else f"Focused and pinned target: {action.target}."
+        )
+        return AutomationResult(
+            "handled", message, action, data={"window": action.target}
+        )
 
     def _prepare_close(
         self,
@@ -420,9 +436,7 @@ class ScreenAutomationService:
             data=_window_data(window),
         )
 
-    def _handle_dialog_response(
-        self, decision: str
-    ) -> AutomationResult | None:
+    def _handle_dialog_response(self, decision: str) -> AutomationResult | None:
         if self._pending_dialog is None:
             return None
         window, dialog = self._pending_dialog
@@ -444,9 +458,7 @@ class ScreenAutomationService:
         result = self.window_targets.respond_to_dialog(window, dialog, choice)
         status = str(getattr(result, "status", "failed"))
         next_dialog = getattr(result, "dialog", None)
-        if status == "save_as_pending" and isinstance(
-            next_dialog, DialogIdentity
-        ):
+        if status == "save_as_pending" and isinstance(next_dialog, DialogIdentity):
             self._pending_dialog = (window, next_dialog)
             return AutomationResult(
                 "dialog_pending",
@@ -567,9 +579,7 @@ class ScreenAutomationService:
                     "saved_path": path,
                 },
             )
-        if status == "overwrite_pending" and isinstance(
-            next_dialog, DialogIdentity
-        ):
+        if status == "overwrite_pending" and isinstance(next_dialog, DialogIdentity):
             self._pending_dialog = (window, next_dialog)
             action = AutomationAction(
                 "overwrite_dialog",
@@ -586,7 +596,9 @@ class ScreenAutomationService:
             self._last_confirmation_token = pending.token
             return AutomationResult(
                 "needs_confirmation",
-                str(getattr(result, "message", "Overwrite the existing file? Yes / No")),
+                str(
+                    getattr(result, "message", "Overwrite the existing file? Yes / No")
+                ),
                 action,
                 confirmation_token=pending.token,
                 data=_dialog_data(window, next_dialog),
@@ -594,7 +606,9 @@ class ScreenAutomationService:
         self._pending_dialog = None
         return AutomationResult(
             "failed",
-            str(getattr(result, "message", "The Save As action could not be verified.")),
+            str(
+                getattr(result, "message", "The Save As action could not be verified.")
+            ),
             AutomationAction("close", window.target),
             data={
                 **_dialog_data(window, dialog),
@@ -631,9 +645,7 @@ class ScreenAutomationService:
         selected = None
         if index is not None:
             if index < 0 or index >= len(self._window_choices):
-                return self._ambiguity_result(
-                    self._choice_action, self._window_choices
-                )
+                return self._ambiguity_result(self._choice_action, self._window_choices)
             selected = self._window_choices[index]
         else:
             candidate_text = re.sub(
@@ -653,9 +665,7 @@ class ScreenAutomationService:
         self._clear_window_choices()
         if action.kind == "close":
             return self._prepare_close(action, dry_run=dry_run, selected=selected)
-        verification = self.window_targets.focus_and_verify(
-            selected, dry_run=dry_run
-        )
+        verification = self.window_targets.focus_and_verify(selected, dry_run=dry_run)
         if not verification.ok:
             return AutomationResult("target_lost", verification.message, action)
         self._target_window = verification.expected or selected
@@ -682,7 +692,9 @@ class ScreenAutomationService:
         self._window_choices = ()
         self._choice_action = None
 
-    def _execute(self, action: AutomationAction, *, dry_run: bool = False) -> AutomationResult:
+    def _execute(
+        self, action: AutomationAction, *, dry_run: bool = False
+    ) -> AutomationResult:
         result = self.executor.execute(action, dry_run=dry_run)
         point = result.element.bounds.center if result.element is not None else None
         x = point.x if point is not None else action.args.get("x")
@@ -690,7 +702,9 @@ class ScreenAutomationService:
         logger.info(
             "screen_automation action=%s target=%s coordinates=%s,%s window=%s status=%s duration_ms=%s",
             action.kind,
-            "[redacted]" if action.kind == "type" or action.sensitive else action.target,
+            "[redacted]"
+            if action.kind == "type" or action.sensitive
+            else action.target,
             x,
             y,
             result.data.get("window", ""),
@@ -781,7 +795,7 @@ def _verification_message(verification: object) -> str:
 
 
 def _quoted_label(value: str) -> str:
-    return str(value).strip().strip('"\'')
+    return str(value).strip().strip("\"'")
 
 
 def _window_data(window: WindowIdentity) -> dict[str, object]:
@@ -796,9 +810,7 @@ def _window_data(window: WindowIdentity) -> dict[str, object]:
     return data
 
 
-def _dialog_data(
-    window: WindowIdentity, dialog: DialogIdentity
-) -> dict[str, object]:
+def _dialog_data(window: WindowIdentity, dialog: DialogIdentity) -> dict[str, object]:
     return {
         **_window_data(window),
         "dialog": {

@@ -122,7 +122,9 @@ def run_burnin(
         results.append(_run_scenario(scenario))
 
     if not skip_workflow_stress:
-        results.extend(_run_workflow_stress(workflow_iterations, timeout_seconds=timeout_seconds))
+        results.extend(
+            _run_workflow_stress(workflow_iterations, timeout_seconds=timeout_seconds)
+        )
 
     results.extend(_run_memory_validation())
     results.extend(_run_voice_validation())
@@ -139,21 +141,45 @@ def _scenario_pack(*, timeout_seconds: int) -> list[BurnInScenario]:
         ("desktop summary", "desktop", "desktop summary", "local_action"),
         ("list monitors", "desktop", "list monitors", "local_action"),
         ("clipboard history", "desktop", "clipboard history", "local_action"),
-        ("desktop diagnostics", "desktop", "desktop diagnostics", "local_action_execute"),
+        (
+            "desktop diagnostics",
+            "desktop",
+            "desktop diagnostics",
+            "local_action_execute",
+        ),
         ("browser diagnostics", "browser", "browser diagnostics"),
         ("open browser dry run", "browser", "open chrome", False),
         ("search workflow planning", "browser", "search Google for Python tutorials"),
         ("visual targeting diagnostics", "vision", "visual targeting diagnostics"),
         ("screen diagnostics", "vision", "screen diagnostics"),
-        ("start coding workspace", "automation", "start my coding workspace", "local_action_execute"),
-        ("organize downloads", "automation", "organize my downloads folder", "local_action_execute"),
-        ("planner research", "planner", "research Python tutorials and summarize them", "local_action_execute"),
+        (
+            "start coding workspace",
+            "automation",
+            "start my coding workspace",
+            "local_action_execute",
+        ),
+        (
+            "organize downloads",
+            "automation",
+            "organize my downloads folder",
+            "local_action_execute",
+        ),
+        (
+            "planner research",
+            "planner",
+            "research Python tutorials and summarize them",
+            "local_action_execute",
+        ),
     ]
     scenarios: list[BurnInScenario] = []
     for item in commands:
         name, category, command = item[:3]
         route = item[3] if len(item) > 3 else "local_action"
-        runner = route if isinstance(route, str) else ("local_action_execute" if route else "local_action")
+        runner = (
+            route
+            if isinstance(route, str)
+            else ("local_action_execute" if route else "local_action")
+        )
         scenarios.append(
             BurnInScenario(
                 name=name,
@@ -175,7 +201,12 @@ def _run_scenario(scenario: BurnInScenario) -> BurnInResult:
 
             execute = scenario.runner == "local_action_execute"
             result = handle_local_action(scenario.command, execute=execute)
-            status = "pass" if result.status in {"handled", "requires_confirmation", "blocked", "unsupported"} else "warn"
+            status = (
+                "pass"
+                if result.status
+                in {"handled", "requires_confirmation", "blocked", "unsupported"}
+                else "warn"
+            )
             if result.status == "unsupported" and scenario.required:
                 status = "warn"
             return BurnInResult(
@@ -200,10 +231,20 @@ def _run_scenario(scenario: BurnInScenario) -> BurnInResult:
             f"{exc.__class__.__name__}: {_safe_text(str(exc))}",
             required=scenario.required,
         )
-    return BurnInResult(scenario.name, scenario.category, "pending", _elapsed(start), "No runner available.", scenario.required, measured=False)
+    return BurnInResult(
+        scenario.name,
+        scenario.category,
+        "pending",
+        _elapsed(start),
+        "No runner available.",
+        scenario.required,
+        measured=False,
+    )
 
 
-def _run_workflow_stress(iterations: int, *, timeout_seconds: int) -> list[BurnInResult]:
+def _run_workflow_stress(
+    iterations: int, *, timeout_seconds: int
+) -> list[BurnInResult]:
     results: list[BurnInResult] = []
     commands = [
         "start my coding workspace",
@@ -225,7 +266,12 @@ def _run_workflow_stress(iterations: int, *, timeout_seconds: int) -> list[BurnI
             statuses[result.status] = statuses.get(result.status, 0) + 1
             if result.status == "requires_confirmation":
                 approval_required += 1
-            if result.status not in {"handled", "requires_confirmation", "blocked", "unsupported"}:
+            if result.status not in {
+                "handled",
+                "requires_confirmation",
+                "blocked",
+                "unsupported",
+            }:
                 failures += 1
         status = "pass" if failures == 0 else "warn"
         results.append(
@@ -235,11 +281,23 @@ def _run_workflow_stress(iterations: int, *, timeout_seconds: int) -> list[BurnI
                 status,
                 _elapsed(start),
                 f"{iterations} dry-run workflow/action executions completed; {approval_required} approval-gated; {failures} suspicious states.",
-                metrics={"iterations": iterations, "statuses": statuses, "approval_required": approval_required},
+                metrics={
+                    "iterations": iterations,
+                    "statuses": statuses,
+                    "approval_required": approval_required,
+                },
             )
         )
     except Exception as exc:
-        results.append(BurnInResult("workflow stress executions", "workflow", "fail", _elapsed(start), f"{exc.__class__.__name__}: {exc}"))
+        results.append(
+            BurnInResult(
+                "workflow stress executions",
+                "workflow",
+                "fail",
+                _elapsed(start),
+                f"{exc.__class__.__name__}: {exc}",
+            )
+        )
 
     # Pause/resume/approval loops are persisted-runtime checks here; no risky action is executed.
     results.append(
@@ -262,8 +320,12 @@ def _run_memory_validation() -> list[BurnInResult]:
         from grandpa.memory_context import MemoryStore, search_personal_memory
 
         store = MemoryStore()
-        store.remember("note", "burn_in_validation_marker", "local-only", source="burnin")
-        recall = search_personal_memory("what is the burn-in validation marker?", limit=3)
+        store.remember(
+            "note", "burn_in_validation_marker", "local-only", source="burnin"
+        )
+        recall = search_personal_memory(
+            "what is the burn-in validation marker?", limit=3
+        )
         integrity = _sqlite_integrity(db_path) if db_path.exists() else "not_created"
         ok = bool(recall.get("results")) if isinstance(recall, dict) else False
         status = "pass" if ok and integrity in {"ok", "not_created"} else "warn"
@@ -274,11 +336,23 @@ def _run_memory_validation() -> list[BurnInResult]:
                 status,
                 _elapsed(start),
                 f"Memory write/recall completed; SQLite integrity: {integrity}.",
-                metrics={"db_path": str(db_path), "sqlite_integrity": integrity, "recall_preview": _safe_text(str(recall))[:160]},
+                metrics={
+                    "db_path": str(db_path),
+                    "sqlite_integrity": integrity,
+                    "recall_preview": _safe_text(str(recall))[:160],
+                },
             )
         ]
     except Exception as exc:
-        return [BurnInResult("memory persistence and recall", "memory", "warn", _elapsed(start), f"{exc.__class__.__name__}: {exc}")]
+        return [
+            BurnInResult(
+                "memory persistence and recall",
+                "memory",
+                "warn",
+                _elapsed(start),
+                f"{exc.__class__.__name__}: {exc}",
+            )
+        ]
 
 
 def _run_voice_validation() -> list[BurnInResult]:
@@ -304,7 +378,14 @@ def _run_voice_validation() -> list[BurnInResult]:
 
 def _run_performance_metrics(*, timeout_seconds: int) -> list[BurnInResult]:
     results: list[BurnInResult] = []
-    results.append(_measure_command("doctor startup latency", "performance", ["uv", "run", "grandpa", "--help"], timeout_seconds=timeout_seconds))
+    results.append(
+        _measure_command(
+            "doctor startup latency",
+            "performance",
+            ["uv", "run", "grandpa", "--help"],
+            timeout_seconds=timeout_seconds,
+        )
+    )
     results.append(
         _measure_command(
             "planner response latency",
@@ -348,15 +429,41 @@ def _measure_command(
             env={**os.environ, "GRANDPA_HOME": str(ROOT / "runtime" / "burnin-home")},
         )
     except subprocess.TimeoutExpired:
-        return BurnInResult(name, category, "fail" if required else "warn", _elapsed(start), f"Timed out after {timeout_seconds}s.")
+        return BurnInResult(
+            name,
+            category,
+            "fail" if required else "warn",
+            _elapsed(start),
+            f"Timed out after {timeout_seconds}s.",
+        )
     except FileNotFoundError as exc:
-        return BurnInResult(name, category, "fail" if required else "pending", _elapsed(start), f"Command not found: {exc}", required=required, measured=False)
+        return BurnInResult(
+            name,
+            category,
+            "fail" if required else "pending",
+            _elapsed(start),
+            f"Command not found: {exc}",
+            required=required,
+            measured=False,
+        )
     status = "pass" if completed.returncode == 0 else ("fail" if required else "warn")
-    output = "\n".join(part.strip() for part in (completed.stdout, completed.stderr) if part.strip())
-    return BurnInResult(name, category, status, _elapsed(start), _tail(output) or "completed", required=required, metrics={"exit_code": completed.returncode, "command": " ".join(command)})
+    output = "\n".join(
+        part.strip() for part in (completed.stdout, completed.stderr) if part.strip()
+    )
+    return BurnInResult(
+        name,
+        category,
+        status,
+        _elapsed(start),
+        _tail(output) or "completed",
+        required=required,
+        metrics={"exit_code": completed.returncode, "command": " ".join(command)},
+    )
 
 
-def _build_report(results: list[BurnInResult], started: str, finished: str, duration: float) -> dict[str, Any]:
+def _build_report(
+    results: list[BurnInResult], started: str, finished: str, duration: float
+) -> dict[str, Any]:
     summary = {
         "passed": sum(1 for r in results if r.status == "pass"),
         "warnings": sum(1 for r in results if r.status == "warn"),
@@ -368,7 +475,11 @@ def _build_report(results: list[BurnInResult], started: str, finished: str, dura
     success_rate = _rate(sum(1 for r in measured if r.status == "pass"), len(measured))
     score = _stability_score(results)
     blockers = [asdict(r) for r in results if r.status == "fail" and r.required]
-    warnings = [asdict(r) for r in results if r.status in {"warn", "pending", "skipped_optional"}]
+    warnings = [
+        asdict(r)
+        for r in results
+        if r.status in {"warn", "pending", "skipped_optional"}
+    ]
     pending = [r for r in results if r.status == "pending"]
     if blockers or score < 80:
         overall = "NEEDS_ATTENTION"
@@ -417,7 +528,9 @@ def _write_reports(report: dict[str, Any]) -> None:
         lines.append(f"- {key}: {value}")
     lines.extend(["", "## Results", ""])
     for item in report["results"]:
-        lines.append(f"- **{item['status'].upper()}** `{item['category']}` {item['name']}: {item['summary']}")
+        lines.append(
+            f"- **{item['status'].upper()}** `{item['category']}` {item['name']}: {item['summary']}"
+        )
     BURNIN_MD.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -438,7 +551,9 @@ def _memory_snapshot() -> dict[str, Any]:
         memory = process.memory_info()
         return {
             "process_rss_mb": round(memory.rss / (1024 * 1024), 2),
-            "system_available_mb": round(psutil.virtual_memory().available / (1024 * 1024), 2),
+            "system_available_mb": round(
+                psutil.virtual_memory().available / (1024 * 1024), 2
+            ),
         }
     except Exception:
         return {"available": False, "reason": "psutil unavailable"}
@@ -451,7 +566,9 @@ def _category_scores(results: list[BurnInResult]) -> dict[str, dict[str, Any]]:
         items = [r for r in results if r.category == category]
         measured = [r for r in items if r.measured and r.status != "pending"]
         scores[category] = {
-            "score": _rate(sum(1 for r in measured if r.status == "pass"), len(measured)),
+            "score": _rate(
+                sum(1 for r in measured if r.status == "pass"), len(measured)
+            ),
             "passed": sum(1 for r in items if r.status == "pass"),
             "warnings": sum(1 for r in items if r.status == "warn"),
             "failed": sum(1 for r in items if r.status == "fail"),
@@ -479,7 +596,9 @@ def _stability_score(results: list[BurnInResult]) -> int:
     return max(0, min(100, score))
 
 
-def _recommendation(blockers: list[dict[str, Any]], warnings: list[dict[str, Any]]) -> str:
+def _recommendation(
+    blockers: list[dict[str, Any]], warnings: list[dict[str, Any]]
+) -> str:
     if blockers:
         return "Fix required burn-in blockers before production release."
     pending = [w for w in warnings if w.get("status") == "pending"]
@@ -514,7 +633,9 @@ def _tail(text: str, max_chars: int = 500) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run Grandpa daily-use burn-in validation.")
+    parser = argparse.ArgumentParser(
+        description="Run Grandpa daily-use burn-in validation."
+    )
     parser.add_argument("--workflow-iterations", type=int, default=25)
     parser.add_argument("--skip-workflow-stress", action="store_true")
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
@@ -525,7 +646,9 @@ def main(argv: list[str] | None = None) -> int:
         timeout_seconds=args.timeout,
     )
     print(f"Burn-in status: {report['overall_status']}")
-    print(f"Score: {report['score']}; blockers: {len(report['blockers'])}; warnings: {len(report['warnings'])}")
+    print(
+        f"Score: {report['score']}; blockers: {len(report['blockers'])}; warnings: {len(report['warnings'])}"
+    )
     print(f"JSON: {report['report_path']}")
     print(f"Markdown: {report['markdown_path']}")
     return 0 if report["pass"] else 1

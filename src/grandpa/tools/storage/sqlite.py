@@ -204,7 +204,9 @@ class SQLiteMemory(MemoryBackend):
             ).fetchone()
             if row is None:
                 return False
-            self._conn.execute("DELETE FROM documents_fts WHERE rowid = ?", (row["rowid"],))
+            self._conn.execute(
+                "DELETE FROM documents_fts WHERE rowid = ?", (row["rowid"],)
+            )
             self._conn.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
         return True
 

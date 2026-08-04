@@ -86,7 +86,8 @@ class VisualActionService:
             and best.confidence - matches[1].confidence < 0.06
         ):
             choices = ", ".join(
-                f"{index}. {item.node.label}" for index, item in enumerate(matches[:4], 1)
+                f"{index}. {item.node.label}"
+                for index, item in enumerate(matches[:4], 1)
             )
             return VisionResult(
                 "ambiguous",

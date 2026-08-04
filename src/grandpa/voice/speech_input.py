@@ -127,14 +127,20 @@ class SpeechInputEngine:
         from grandpa.speech.faster_whisper import select_compute_type
 
         config = self._speech_config()
-        engine = "faster_whisper" if importlib.util.find_spec("faster_whisper") is not None else "push_to_talk_transcript"
+        engine = (
+            "faster_whisper"
+            if importlib.util.find_spec("faster_whisper") is not None
+            else "push_to_talk_transcript"
+        )
         device = getattr(config, "device", "auto")
         return {
             "engine": engine,
             "model": getattr(config, "model", "base"),
             "ready": engine == "faster_whisper",
             "device": device,
-            "compute_type": select_compute_type(device, getattr(config, "compute_type", "auto")),
+            "compute_type": select_compute_type(
+                device, getattr(config, "compute_type", "auto")
+            ),
             "supported_audio_formats": sorted(SUPPORTED_LOCAL_AUDIO_FORMATS),
         }
 
@@ -165,7 +171,9 @@ class SpeechInputEngine:
 
         try:
             backend = self._get_backend()
-            result = backend.transcribe(audio_bytes, format=normalized_format, language=language)
+            result = backend.transcribe(
+                audio_bytes, format=normalized_format, language=language
+            )
         except ModuleNotFoundError as exc:
             if exc.name == "faster_whisper":
                 raise VoiceDependencyError(
@@ -248,7 +256,9 @@ class SpeechInputEngine:
         override = _SpeechConfigOverride()
         override.model = self.model or getattr(config, "model", "base")
         override.device = self.device or getattr(config, "device", "auto")
-        override.compute_type = self.compute_type or getattr(config, "compute_type", "auto")
+        override.compute_type = self.compute_type or getattr(
+            config, "compute_type", "auto"
+        )
         return override
 
 

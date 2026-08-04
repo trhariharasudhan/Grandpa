@@ -93,15 +93,21 @@ class AutomationPlanner:
                     "max_attempts": 6,
                 },
             )
-        match = re.fullmatch(r"move (?:the )?mouse(?: to)?[ ,]+(-?\d+)[ ,]+(-?\d+)", command)
+        match = re.fullmatch(
+            r"move (?:the )?mouse(?: to)?[ ,]+(-?\d+)[ ,]+(-?\d+)", command
+        )
         if match:
-            return AutomationAction("move", args={"x": int(match.group(1)), "y": int(match.group(2))})
+            return AutomationAction(
+                "move", args={"x": int(match.group(1)), "y": int(match.group(2))}
+            )
         match = re.fullmatch(r"move (?:the )?mouse to (.+)", command)
         if match:
             return AutomationAction("move", _clean_element_target(match.group(1)))
         if command in {"move mouse", "move the mouse"}:
             return AutomationAction("move", args={"relative_x": 20, "relative_y": 0})
-        match = re.fullmatch(r"(double click|right click|middle click|click)(?: (?:the )?(.+))?", command)
+        match = re.fullmatch(
+            r"(double click|right click|middle click|click)(?: (?:the )?(.+))?", command
+        )
         if match:
             kind = match.group(1).replace(" ", "_")
             target = _clean_element_target(match.group(2) or "")
@@ -145,7 +151,11 @@ class AutomationPlanner:
         if shortcut is not None:
             label, keys = shortcut
             return AutomationAction("press", label, {"keys": keys})
-        key = command.removeprefix("press ").strip() if command.startswith("press ") else ""
+        key = (
+            command.removeprefix("press ").strip()
+            if command.startswith("press ")
+            else ""
+        )
         if key in _KEYS:
             return AutomationAction("press", key, {"keys": _KEYS[key]})
         return None
@@ -169,14 +179,24 @@ class AutomationPlanner:
 
 def apply_safety_policy(action: AutomationAction, command: str) -> AutomationAction:
     text = f"{command} {action.target}".casefold()
-    sensitive = any(term in text for term in _SENSITIVE_TERMS) or _contains_sensitive_value(text)
+    sensitive = any(
+        term in text for term in _SENSITIVE_TERMS
+    ) or _contains_sensitive_value(text)
     # Text after "type" is literal input, not a second automation command.
     # Credential/payment-field protections still apply through `sensitive`.
     destructive = action.kind != "type" and any(
         term in text for term in _DESTRUCTIVE_TERMS
     )
-    interactive_click = action.kind in {"click", "double_click", "right_click", "middle_click", "drag"}
-    risky_enter = action.kind == "press" and action.args.get("keys") == ["enter"] and destructive
+    interactive_click = action.kind in {
+        "click",
+        "double_click",
+        "right_click",
+        "middle_click",
+        "drag",
+    }
+    risky_enter = (
+        action.kind == "press" and action.args.get("keys") == ["enter"] and destructive
+    )
     needs_confirmation = interactive_click or sensitive or destructive or risky_enter
     reason = ""
     if sensitive:

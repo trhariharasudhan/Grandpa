@@ -96,7 +96,9 @@ def extract_search_results_from_page(
         ranking = 1
         for p in page.paragraphs:
             # Look for lines formatted like: Title - https://domain.com/path - Snippet
-            match = re.search(r"^(.*?)\s*[-–—|]\s*(https?://[^\s]+)(?:\s*[-–—|]\s*(.*))?$", p)
+            match = re.search(
+                r"^(.*?)\s*[-–—|]\s*(https?://[^\s]+)(?:\s*[-–—|]\s*(.*))?$", p
+            )
             if match:
                 title = match.group(1).strip()
                 url = match.group(2).strip()

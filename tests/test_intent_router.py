@@ -81,7 +81,9 @@ def test_router_api_analyzes_and_reports_diagnostics():
     app.include_router(intent_router)
     client = TestClient(app)
 
-    analyzed = client.post("/v1/router/analyze", json={"request": "browser diagnostics"})
+    analyzed = client.post(
+        "/v1/router/analyze", json={"request": "browser diagnostics"}
+    )
     assert analyzed.status_code == 200
     assert analyzed.json()["skill_name"] == "browser.diagnostics"
 

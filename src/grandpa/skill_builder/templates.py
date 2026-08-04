@@ -35,7 +35,9 @@ def template_steps_for_name(name: str) -> list[dict[str, Any]]:
     if "browser" in text or "research" in text:
         return [
             _step("browser.agent_diagnostics", "Check browser agent"),
-            _step("browser.search_plan", "Prepare browser search plan", {"query": name}),
+            _step(
+                "browser.search_plan", "Prepare browser search plan", {"query": name}
+            ),
         ]
     if "desktop" in text or "pc" in text:
         return [
@@ -45,7 +47,9 @@ def template_steps_for_name(name: str) -> list[dict[str, Any]]:
     return [_step("planner.diagnostics", "Check Grandpa planner")]
 
 
-def _step(skill: str, title: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+def _step(
+    skill: str, title: str, params: dict[str, Any] | None = None
+) -> dict[str, Any]:
     return {
         "schema_version": "skill_graph_v2",
         "skill": skill,

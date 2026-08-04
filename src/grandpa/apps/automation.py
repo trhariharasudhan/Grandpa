@@ -25,7 +25,9 @@ class ApplicationManager:
     def scan(self) -> list[ApplicationInfo]:
         return scan_app_inventory(store_path=self.store_path)
 
-    def list(self, *, include_all: bool = False, source: str | None = None) -> list[ApplicationInfo]:
+    def list(
+        self, *, include_all: bool = False, source: str | None = None
+    ) -> list[ApplicationInfo]:
         apps = load_app_registry(store_path=self.store_path)
         if not include_all:
             apps = [
@@ -34,7 +36,11 @@ class ApplicationManager:
                 if app.is_user_facing and app.is_launchable and app.confidence >= 0.7
             ]
         if source:
-            apps = [app for app in apps if app.source == source or app.source.startswith(f"{source}:")]
+            apps = [
+                app
+                for app in apps
+                if app.source == source or app.source.startswith(f"{source}:")
+            ]
         return apps
 
     def cache_needs_refresh(self) -> bool:

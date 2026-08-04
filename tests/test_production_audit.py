@@ -30,7 +30,13 @@ def test_production_audit_report_preserves_hardware_pending(tmp_path, monkeypatc
     report = audit._build_report(
         [
             audit.AuditCheck("Agent", "Planner", "validated", "ok"),
-            audit.AuditCheck("Voice", "Mic", "unvalidated", "No mic observed.", hardware_dependent=True),
+            audit.AuditCheck(
+                "Voice",
+                "Mic",
+                "unvalidated",
+                "No mic observed.",
+                hardware_dependent=True,
+            ),
         ],
         "2026-01-01T00:00:00+00:00",
         "2026-01-01T00:00:01+00:00",
@@ -38,11 +44,15 @@ def test_production_audit_report_preserves_hardware_pending(tmp_path, monkeypatc
     )
     audit._write_reports(report)
 
-    loaded = json.loads((tmp_path / "production-audit.json").read_text(encoding="utf-8"))
+    loaded = json.loads(
+        (tmp_path / "production-audit.json").read_text(encoding="utf-8")
+    )
     assert loaded["overall_status"] == "READY_WITH_HARDWARE_PENDING"
     assert loaded["summary"]["unvalidated"] == 1
     assert "hardware" in loaded["recommendation"].lower()
-    assert "Grandpa Production Audit" in (tmp_path / "production-audit.md").read_text(encoding="utf-8")
+    assert "Grandpa Production Audit" in (tmp_path / "production-audit.md").read_text(
+        encoding="utf-8"
+    )
 
 
 def test_production_audit_api_reads_latest_report(tmp_path, monkeypatch):
@@ -58,7 +68,14 @@ def test_production_audit_api_reads_latest_report(tmp_path, monkeypatch):
                 "core_score": 100,
                 "readiness_verdict": "Core ready.",
                 "recommendation": "Validate hardware.",
-                "summary": {"validated": 1, "partially_validated": 0, "unvalidated": 1, "blocked": 0, "hardware_dependent": 1, "total": 2},
+                "summary": {
+                    "validated": 1,
+                    "partially_validated": 0,
+                    "unvalidated": 1,
+                    "blocked": 0,
+                    "hardware_dependent": 1,
+                    "total": 2,
+                },
                 "feature_matrix": [],
             }
         ),

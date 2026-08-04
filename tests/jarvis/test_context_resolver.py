@@ -32,7 +32,9 @@ def test_protected_folder_skipping(tmp_path: Path) -> None:
 def test_grandpa_project_name_variants(tmp_path: Path) -> None:
     project = tmp_path / "Grandpa"
     project.mkdir()
-    (project / "pyproject.toml").write_text("[project]\nname='grandpa'\n", encoding="utf-8")
+    (project / "pyproject.toml").write_text(
+        "[project]\nname='grandpa'\n", encoding="utf-8"
+    )
 
     resolver = SafeContextResolver([tmp_path])
 

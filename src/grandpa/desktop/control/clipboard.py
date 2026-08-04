@@ -25,17 +25,29 @@ class ClipboardControlService:
         if action == "clipboard_read":
             text = pyperclip.paste()
             metadata = record_clipboard_metadata(text, source="read")
-            return LocalActionResponse(True, None, "completed", "Clipboard read.", False, "LOW", {"clipboard_text": text, **metadata})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Clipboard read.",
+                False,
+                "LOW",
+                {"clipboard_text": text, **metadata},
+            )
         if action == "clipboard_write":
             text = str(request.args.get("content", request.target))
             pyperclip.copy(text)
             metadata = record_clipboard_metadata(text, source="write")
-            return LocalActionResponse(True, None, "completed", "Clipboard updated.", False, "LOW", metadata)
+            return LocalActionResponse(
+                True, None, "completed", "Clipboard updated.", False, "LOW", metadata
+            )
         if action == "clipboard_inspect":
             text = pyperclip.paste()
             metadata = inspect_clipboard_text(text)
             record_clipboard_metadata(text, source="inspect")
-            return LocalActionResponse(True, None, "completed", "Clipboard inspected.", False, "LOW", metadata)
+            return LocalActionResponse(
+                True, None, "completed", "Clipboard inspected.", False, "LOW", metadata
+            )
         if action == "clipboard_history":
             result = read_clipboard_history(int(request.args.get("limit", 20)))
             return LocalActionResponse(
@@ -50,7 +62,15 @@ class ClipboardControlService:
             )
         pyperclip.copy("")
         metadata = record_clipboard_metadata("", source="clear")
-        return LocalActionResponse(True, None, "completed", "Clipboard cleared.", False, "LOW", {"cleared": True, **metadata})
+        return LocalActionResponse(
+            True,
+            None,
+            "completed",
+            "Clipboard cleared.",
+            False,
+            "LOW",
+            {"cleared": True, **metadata},
+        )
 
     def diagnostics(self) -> dict[str, Any]:
         try:
@@ -69,7 +89,10 @@ class ClipboardControlService:
                 "clipboard_inspect": "LOW",
                 "clipboard_history": "LOW",
             },
-            "dependencies": {"pyperclip": pyperclip_available, "metadata_only_history": True},
+            "dependencies": {
+                "pyperclip": pyperclip_available,
+                "metadata_only_history": True,
+            },
             "safety": {"audit_content_redacted": True, "history_metadata_only": True},
         }
 

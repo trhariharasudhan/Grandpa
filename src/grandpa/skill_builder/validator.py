@@ -56,14 +56,23 @@ def validate_workflow_steps(raw_steps: Any) -> list[dict[str, Any]]:
         if not skill:
             raise SkillValidationError(f"workflow step {index + 1} needs a skill name.")
         if _contains_blocked_word(skill):
-            raise SkillValidationError(f"workflow step {index + 1} uses a blocked skill name.")
+            raise SkillValidationError(
+                f"workflow step {index + 1} uses a blocked skill name."
+            )
         params = raw.get("params") or {}
         if not isinstance(params, dict):
-            raise SkillValidationError(f"workflow step {index + 1} params must be an object.")
+            raise SkillValidationError(
+                f"workflow step {index + 1} params must be an object."
+            )
         risk = str(raw.get("risk_level") or "LOW").upper()
         if risk not in ALLOWED_RISK_LEVELS:
-            raise SkillValidationError(f"workflow step {index + 1} has an invalid risk level.")
-        approval_required = bool(raw.get("approval_required")) or risk in {"MEDIUM", "HIGH"}
+            raise SkillValidationError(
+                f"workflow step {index + 1} has an invalid risk level."
+            )
+        approval_required = bool(raw.get("approval_required")) or risk in {
+            "MEDIUM",
+            "HIGH",
+        }
         if risk == "BLOCKED":
             approval_required = True
         steps.append(
@@ -74,7 +83,9 @@ def validate_workflow_steps(raw_steps: Any) -> list[dict[str, Any]]:
                 "params": _redact_params(params),
                 "risk_level": risk,
                 "approval_required": approval_required,
-                "dependencies": raw.get("dependencies") if isinstance(raw.get("dependencies"), list) else [],
+                "dependencies": raw.get("dependencies")
+                if isinstance(raw.get("dependencies"), list)
+                else [],
             }
         )
     return steps
@@ -114,18 +125,29 @@ def _validate_triggers(raw: Any) -> list[str]:
 
 def _contains_blocked_word(value: str) -> bool:
     text = value.lower()
-    return any(re.search(rf"\b{re.escape(word)}\b", text) for word in BLOCKED_SKILL_WORDS)
+    return any(
+        re.search(rf"\b{re.escape(word)}\b", text) for word in BLOCKED_SKILL_WORDS
+    )
 
 
 def _redact_params(params: dict[str, Any]) -> dict[str, Any]:
     redacted: dict[str, Any] = {}
     for key, value in params.items():
         clean_key = str(key)
-        if re.search(r"password|token|secret|api[_-]?key|credential", clean_key, flags=re.IGNORECASE):
+        if re.search(
+            r"password|token|secret|api[_-]?key|credential",
+            clean_key,
+            flags=re.IGNORECASE,
+        ):
             redacted[clean_key] = "[redacted]"
         else:
             redacted[clean_key] = value
     return redacted
 
 
-__all__ = ["ALLOWED_RISK_LEVELS", "SkillValidationError", "validate_skill_definition", "validate_workflow_steps"]
+__all__ = [
+    "ALLOWED_RISK_LEVELS",
+    "SkillValidationError",
+    "validate_skill_definition",
+    "validate_workflow_steps",
+]

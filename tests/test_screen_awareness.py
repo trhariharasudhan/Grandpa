@@ -66,7 +66,9 @@ def test_navigation_suggestions_include_popup_and_buttons():
     popup = screen_awareness.classify_popup_or_error("Error failed Retry Cancel")
     elements = screen_awareness.detect_ui_elements("Retry\nCancel")
 
-    suggestions = screen_awareness.build_navigation_suggestions(elements, popup, "Chrome")
+    suggestions = screen_awareness.build_navigation_suggestions(
+        elements, popup, "Chrome"
+    )
 
     assert any("error" in suggestion.lower() for suggestion in suggestions)
     assert any("Retry" in suggestion for suggestion in suggestions)
@@ -113,8 +115,14 @@ def test_describe_screen_builds_structured_context(monkeypatch, tmp_path):
             lines=("Application Error", "Retry", "Cancel", "Search"),
         ),
     )
-    monkeypatch.setattr(screen_awareness, "get_visible_windows", lambda: [{"title": "Example Error - Chrome"}])
-    monkeypatch.setattr(screen_awareness, "_record_visual_context", lambda context: None)
+    monkeypatch.setattr(
+        screen_awareness,
+        "get_visible_windows",
+        lambda: [{"title": "Example Error - Chrome"}],
+    )
+    monkeypatch.setattr(
+        screen_awareness, "_record_visual_context", lambda context: None
+    )
 
     context = screen_awareness.describe_screen()
 
@@ -134,9 +142,25 @@ def test_screen_diagnostics_route(monkeypatch):
         lambda: {
             "platform": "win32",
             "supported": True,
-            "active_window": {"supported": True, "title": "Demo", "app_name": "Chrome", "message": ""},
-            "screenshot": {"supported": True, "backends": ["Pillow ImageGrab"], "last_path": ""},
-            "ocr": {"available": False, "backend": "unavailable", "text": "", "confidence": 0, "lines": [], "message": ""},
+            "active_window": {
+                "supported": True,
+                "title": "Demo",
+                "app_name": "Chrome",
+                "message": "",
+            },
+            "screenshot": {
+                "supported": True,
+                "backends": ["Pillow ImageGrab"],
+                "last_path": "",
+            },
+            "ocr": {
+                "available": False,
+                "backend": "unavailable",
+                "text": "",
+                "confidence": 0,
+                "lines": [],
+                "message": "",
+            },
             "visible_window_count": 1,
             "local_only": True,
         },

@@ -6,7 +6,11 @@ from grandpa.calendar.models import CalendarEventSummary
 from grandpa.calendar.safety import CalendarSafetyPolicy
 
 
-def format_event_list(events: tuple[CalendarEventSummary, ...], *, empty_message: str = "No calendar events found.") -> str:
+def format_event_list(
+    events: tuple[CalendarEventSummary, ...],
+    *,
+    empty_message: str = "No calendar events found.",
+) -> str:
     if not events:
         return empty_message
     lines = []
@@ -17,7 +21,9 @@ def format_event_list(events: tuple[CalendarEventSummary, ...], *, empty_message
     return "\n\n".join(lines)
 
 
-def format_event_detail(event: CalendarEventSummary, *, safety: CalendarSafetyPolicy | None = None) -> str:
+def format_event_detail(
+    event: CalendarEventSummary, *, safety: CalendarSafetyPolicy | None = None
+) -> str:
     policy = safety or CalendarSafetyPolicy()
     lines = [
         f"Title: {policy.sanitize_text(event.title, limit=300) or '(untitled event)'}",
@@ -27,7 +33,13 @@ def format_event_detail(event: CalendarEventSummary, *, safety: CalendarSafetyPo
     if event.location:
         lines.append(f"Location: {policy.sanitize_text(event.location, limit=300)}")
     if event.attendees:
-        lines.append("Attendees: " + ", ".join(policy.sanitize_text(attendee, limit=120) for attendee in event.attendees))
+        lines.append(
+            "Attendees: "
+            + ", ".join(
+                policy.sanitize_text(attendee, limit=120)
+                for attendee in event.attendees
+            )
+        )
     if event.description:
         lines.append("\nDescription:\n" + policy.sanitize_text(event.description))
     return "\n".join(lines)
@@ -49,4 +61,9 @@ def _format_when(event: CalendarEventSummary) -> str:
     return event.start or event.end or "Time unknown"
 
 
-__all__ = ["format_event_detail", "format_event_list", "format_event_preview", "format_freebusy"]
+__all__ = [
+    "format_event_detail",
+    "format_event_list",
+    "format_event_preview",
+    "format_freebusy",
+]

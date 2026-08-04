@@ -38,7 +38,12 @@ class AgentExecutor:
                 reason="Accessing user preference or context database.",
                 requires_confirmation=False,
             )
-        elif "research" in tool_name or "summarize" in desc or "extract" in desc or "page" in desc:
+        elif (
+            "research" in tool_name
+            or "summarize" in desc
+            or "extract" in desc
+            or "page" in desc
+        ):
             return ToolSelection(
                 tool_name="BrowserIntelligence",
                 reason="Web scraping, document extraction or summarization.",
@@ -50,7 +55,12 @@ class AgentExecutor:
                 reason="Screen elements detection and coordinate resolution.",
                 requires_confirmation=False,
             )
-        elif "automation" in tool_name or "click" in desc or "type" in desc or "press" in desc:
+        elif (
+            "automation" in tool_name
+            or "click" in desc
+            or "type" in desc
+            or "press" in desc
+        ):
             return ToolSelection(
                 tool_name="ScreenAutomationService",
                 reason="Keyboard, mouse, and desktop UI interaction.",
@@ -77,15 +87,29 @@ class AgentExecutor:
         script = str(step.args.get("python_code", "")).lower()
 
         # Check for dangerous patterns
-        if any(w in desc or w in cmd for w in ("delete", "remove", "overwrite", "rm ", "del ")):
+        if any(
+            w in desc or w in cmd
+            for w in ("delete", "remove", "overwrite", "rm ", "del ")
+        ):
             return True, "File deletion or overwrite operation detected."
-        if any(w in desc or w in cmd for w in ("git push", "git commit", "git reset", "git rebase")):
+        if any(
+            w in desc or w in cmd
+            for w in ("git push", "git commit", "git reset", "git rebase")
+        ):
             return True, "Git history modification or commit/push detected."
-        if any(w in desc for w in ("send email", "send mail", "submit form", "purchase", "buy")):
+        if any(
+            w in desc
+            for w in ("send email", "send mail", "submit form", "purchase", "buy")
+        ):
             return True, "Form submission, transaction, or email dispatch detected."
-        if any(w in desc or w in cmd for w in ("change setting", "update setting", "registry")):
+        if any(
+            w in desc or w in cmd
+            for w in ("change setting", "update setting", "registry")
+        ):
             return True, "System setting modification detected."
-        if any(w in desc or w in cmd for w in ("shell", "powershell", "cmd", "bash", "sh")):
+        if any(
+            w in desc or w in cmd for w in ("shell", "powershell", "cmd", "bash", "sh")
+        ):
             return True, "Raw shell command execution detected."
         if script or "execute python" in desc:
             return True, "Arbitrary Python code execution detected."
@@ -109,7 +133,9 @@ class AgentExecutor:
             # Request confirmation
             confirmed = False
             if self.confirm_callback:
-                confirmed = self.confirm_callback(f"Authorize action: {step.description}?")
+                confirmed = self.confirm_callback(
+                    f"Authorize action: {step.description}?"
+                )
 
             if not confirmed:
                 step.status = StepStatus.FAILED
@@ -170,6 +196,7 @@ class AgentExecutor:
                 return plan
             except Exception:
                 from grandpa.planner.models import ExecutionPlan, PlanStatus, utc_now
+
                 return ExecutionPlan(
                     plan_id="mock_plan_id",
                     session_id=context.goal.session_id,
@@ -183,6 +210,7 @@ class AgentExecutor:
         elif tool_name == "BrowserIntelligence":
             # Simulate or fetch browser page
             from grandpa.browser_intelligence import read_current_browser_page
+
             try:
                 page = read_current_browser_page()
                 return f"Page loaded: {page.title} ({page.url})"

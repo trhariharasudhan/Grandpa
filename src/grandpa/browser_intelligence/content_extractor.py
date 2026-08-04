@@ -11,10 +11,31 @@ from grandpa.browser_intelligence.models import (
 from grandpa.browser_intelligence.page_reader import sanitize_untrusted_text
 
 SECTION_KEYWORDS = {
-    "installation": ("installation", "install", "getting started", "setup", "quick start", "pip install"),
-    "requirements": ("requirements", "prerequisites", "dependencies", "system requirements", "compatibility"),
+    "installation": (
+        "installation",
+        "install",
+        "getting started",
+        "setup",
+        "quick start",
+        "pip install",
+    ),
+    "requirements": (
+        "requirements",
+        "prerequisites",
+        "dependencies",
+        "system requirements",
+        "compatibility",
+    ),
     "pricing": ("pricing", "plans", "cost", "price", "billing", "free tier"),
-    "specs": ("specifications", "specs", "technical specifications", "hardware", "features", "cpu", "ram"),
+    "specs": (
+        "specifications",
+        "specs",
+        "technical specifications",
+        "hardware",
+        "features",
+        "cpu",
+        "ram",
+    ),
     "faq": ("faq", "frequently asked questions", "q&a", "questions"),
     "documentation": ("documentation", "overview", "guide", "manual", "api reference"),
     "code": ("example", "code snippet", "usage", "quickstart", "code"),
@@ -33,7 +54,13 @@ def extract_section_content(
     """Extract targeted section from page content based on target_section topic/type."""
     target_clean = _normalize_heading(target_section)
 
-    if not page.title and not page.domain and not page.visible_text and not page.paragraphs and not page.elements:
+    if (
+        not page.title
+        and not page.domain
+        and not page.visible_text
+        and not page.paragraphs
+        and not page.elements
+    ):
         return ExtractedContent(
             topic_or_target="N/A",
             section_type=target_clean,
@@ -80,14 +107,20 @@ def extract_section_content(
             # Sort candidates by score descending
             candidate_indices.sort(key=lambda c: c[0], reverse=True)
             _, match_idx, matched_level = candidate_indices[0]
-            clean_h = str(page.elements[match_idx].get("text", "")).replace("¶", "").strip()
+            clean_h = (
+                str(page.elements[match_idx].get("text", "")).replace("¶", "").strip()
+            )
             matched_headings.append(clean_h)
 
         if match_idx != -1:
             for idx in range(match_idx + 1, len(page.elements)):
                 el = page.elements[idx]
                 role = str(el.get("role", "text"))
-                text = sanitize_untrusted_text(str(el.get("text", ""))).replace("¶", "").strip()
+                text = (
+                    sanitize_untrusted_text(str(el.get("text", "")))
+                    .replace("¶", "")
+                    .strip()
+                )
                 norm = _normalize_heading(text)
 
                 if not text:
@@ -101,14 +134,20 @@ def extract_section_content(
                 if any(h in text for h in matched_headings):
                     continue
 
-                if role == "code_block" or "pip install" in text.lower() or "python" in text.lower():
+                if (
+                    role == "code_block"
+                    or "pip install" in text.lower()
+                    or "python" in text.lower()
+                ):
                     if text not in [c.code for c in matched_code]:
                         matched_code.append(CodeBlockItem(language="bash", code=text))
                 elif role in ("paragraph", "list_item", "text"):
                     if text not in matched_paragraphs and len(text) > 2:
                         matched_paragraphs.append(text)
                         if len(text) > 10 and text not in key_points:
-                            key_points.append(text[:120] + ("..." if len(text) > 120 else ""))
+                            key_points.append(
+                                text[:120] + ("..." if len(text) > 120 else "")
+                            )
 
     # 2. Fallback to headings / paragraphs if elements not populated or matched_paragraphs empty
     if not matched_paragraphs and not matched_code:
@@ -124,7 +163,10 @@ def extract_section_content(
             plower = clean_p.lower()
             if not clean_p:
                 continue
-            if any(_normalize_heading(h) == _normalize_heading(clean_p) for h in matched_headings):
+            if any(
+                _normalize_heading(h) == _normalize_heading(clean_p)
+                for h in matched_headings
+            ):
                 continue
             if any(kw in plower for kw in keywords) or matched_headings:
                 if clean_p not in matched_paragraphs:
@@ -133,7 +175,13 @@ def extract_section_content(
         for cb in page.code_blocks:
             cb_code_clean = sanitize_untrusted_text(cb.code).strip()
             if cb_code_clean and cb_code_clean not in [c.code for c in matched_code]:
-                matched_code.append(CodeBlockItem(language=cb.language, code=cb_code_clean, context_heading=cb.context_heading))
+                matched_code.append(
+                    CodeBlockItem(
+                        language=cb.language,
+                        code=cb_code_clean,
+                        context_heading=cb.context_heading,
+                    )
+                )
 
     # Combine extracted text
     combined_text_parts = []
@@ -142,18 +190,27 @@ def extract_section_content(
     if matched_paragraphs:
         combined_text_parts.append("\n\n".join(matched_paragraphs))
     if matched_code:
-        combined_text_parts.append("Code Snippets:\n" + "\n\n".join([f"```\n{c.code}\n```" for c in matched_code]))
+        combined_text_parts.append(
+            "Code Snippets:\n"
+            + "\n\n".join([f"```\n{c.code}\n```" for c in matched_code])
+        )
 
     extracted_text = "\n\n".join(combined_text_parts).strip()
 
-    body_text_only = "\n\n".join(matched_paragraphs + [c.code for c in matched_code]).strip()
+    body_text_only = "\n\n".join(
+        matched_paragraphs + [c.code for c in matched_code]
+    ).strip()
     body_words = len(body_text_only.split())
-    has_substantive_body = body_words >= 5 or len(matched_code) > 0 or len(matched_paragraphs) > 0
+    has_substantive_body = (
+        body_words >= 5 or len(matched_code) > 0 or len(matched_paragraphs) > 0
+    )
 
     if not matched_headings and not has_substantive_body:
         status = "not_found"
         message = f"Section '{target_clean}' was not found on the page."
-        extracted_text = f"Section '{target_clean}' was not found on {page.title or page.domain}."
+        extracted_text = (
+            f"Section '{target_clean}' was not found on {page.title or page.domain}."
+        )
     elif matched_headings and not has_substantive_body:
         status = "partial_success"
         message = f"Found section heading '{', '.join(matched_headings)}', but no substantive body content was available."

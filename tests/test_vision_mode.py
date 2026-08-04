@@ -110,7 +110,10 @@ def test_rejects_unsupported_image_type(vision_client: TestClient) -> None:
     payload = response.json()
     assert response.status_code == 200
     assert payload["success"] is False
-    assert payload["error"] == "Unsupported image type. Upload a PNG, JPG, JPEG, or WEBP image."
+    assert (
+        payload["error"]
+        == "Unsupported image type. Upload a PNG, JPG, JPEG, or WEBP image."
+    )
 
 
 def test_rejects_empty_image(vision_client: TestClient) -> None:
@@ -146,7 +149,11 @@ def test_status_shows_last_image_metadata(vision_client: TestClient) -> None:
     status = vision_client.get("/v1/vision/status").json()
 
     assert status["last_image_name"] == "sample.png"
-    assert status["last_image_size"] == {"bytes": len(_image_bytes()), "width": 2, "height": 3}
+    assert status["last_image_size"] == {
+        "bytes": len(_image_bytes()),
+        "width": 2,
+        "height": 3,
+    }
     assert status["last_format"] == "png"
     assert status["last_analysis"] == PLACEHOLDER_ANALYSIS
     assert status["last_error"] is None
@@ -163,11 +170,15 @@ def test_status_shows_last_image_metadata(vision_client: TestClient) -> None:
     assert status["webcam_enabled"] is False
 
 
-def test_no_real_vision_model_or_live_capture_is_used(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_no_real_vision_model_or_live_capture_is_used(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     _mock_local_model_unavailable(monkeypatch)
     session = VisionSession()
 
-    result = session.analyze_image_bytes(_image_bytes("WEBP"), "sample.webp", "image/webp")
+    result = session.analyze_image_bytes(
+        _image_bytes("WEBP"), "sample.webp", "image/webp"
+    )
     status = session.status()
 
     assert result["analysis"] == PLACEHOLDER_ANALYSIS
@@ -179,10 +190,14 @@ def test_no_real_vision_model_or_live_capture_is_used(monkeypatch: pytest.Monkey
     assert status["webcam_enabled"] is False
 
 
-def test_ocr_endpoint_with_valid_image_and_mocked_ocr(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ocr_endpoint_with_valid_image_and_mocked_ocr(
+    vision_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import grandpa.vision.ocr as ocr
 
-    monkeypatch.setattr(ocr.util, "find_spec", lambda name: object() if name == "pytesseract" else None)
+    monkeypatch.setattr(
+        ocr.util, "find_spec", lambda name: object() if name == "pytesseract" else None
+    )
 
     class FakeTesseract:
         @staticmethod
@@ -211,7 +226,9 @@ def test_ocr_endpoint_with_valid_image_and_mocked_ocr(vision_client: TestClient,
     }
 
 
-def test_ocr_unavailable_path(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ocr_unavailable_path(
+    vision_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import grandpa.vision.ocr as ocr
 
     monkeypatch.setattr(ocr.util, "find_spec", lambda _name: None)
@@ -226,7 +243,10 @@ def test_ocr_unavailable_path(vision_client: TestClient, monkeypatch: pytest.Mon
     assert payload["ok"] is True
     assert payload["ocr"]["available"] is False
     assert payload["ocr"]["engine"] == "none"
-    assert payload["ocr"]["text"] == "OCR is not available. Install OCR dependencies to extract text."
+    assert (
+        payload["ocr"]["text"]
+        == "OCR is not available. Install OCR dependencies to extract text."
+    )
 
 
 def test_ocr_rejects_invalid_image(vision_client: TestClient) -> None:
@@ -255,7 +275,9 @@ def test_ocr_rejects_empty_upload(vision_client: TestClient) -> None:
     assert payload["ocr"]["error"] == "Empty image file."
 
 
-def test_model_analysis_success_with_mocked_ollama(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_model_analysis_success_with_mocked_ollama(
+    vision_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import grandpa.vision.session as vision_session
 
     captured = {}
@@ -295,7 +317,9 @@ def test_model_analysis_success_with_mocked_ollama(vision_client: TestClient, mo
     }
 
 
-def test_model_analysis_uses_default_prompt(vision_client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_model_analysis_uses_default_prompt(
+    vision_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     import grandpa.vision.session as vision_session
     from grandpa.vision.local_model import DEFAULT_VISION_PROMPT
 
@@ -315,7 +339,10 @@ def test_model_analysis_uses_default_prompt(vision_client: TestClient, monkeypat
     assert response.status_code == 200
     assert captured["prompt"] == DEFAULT_VISION_PROMPT
     assert response.json()["model_analysis"]["error"] is None
-    assert DEFAULT_VISION_PROMPT == "Describe this image clearly and mention any visible text."
+    assert (
+        DEFAULT_VISION_PROMPT
+        == "Describe this image clearly and mention any visible text."
+    )
 
 
 def test_local_model_ollama_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -338,7 +365,9 @@ def test_local_model_ollama_unavailable(monkeypatch: pytest.MonkeyPatch) -> None
 
     monkeypatch.setattr(local_model.httpx, "Client", UnavailableClient)
 
-    result = local_model.analyze_image_with_local_model(_image_bytes(), "sample.png", "image/png", None)
+    result = local_model.analyze_image_with_local_model(
+        _image_bytes(), "sample.png", "image/png", None
+    )
 
     assert result == {
         "available": False,
@@ -382,7 +411,9 @@ def test_local_model_missing_model_guidance(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.delenv("GRANDPA_EYES_MODEL", raising=False)
     monkeypatch.delenv("OLLAMA_VISION_MODEL", raising=False)
 
-    result = local_model.analyze_image_with_local_model(_image_bytes(), "sample.png", "image/png", None)
+    result = local_model.analyze_image_with_local_model(
+        _image_bytes(), "sample.png", "image/png", None
+    )
 
     assert result == {
         "available": False,

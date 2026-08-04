@@ -116,7 +116,8 @@ class OllamaEmbedder:
         elif arr.shape[0] != self._dim:
             logger.warning(
                 "OllamaEmbedder.embed: dim drift (expected %d, got %d)",
-                self._dim, arr.shape[0],
+                self._dim,
+                arr.shape[0],
             )
             return None
         return arr.tobytes()

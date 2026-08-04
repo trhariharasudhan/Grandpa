@@ -29,7 +29,9 @@ def test_voice_operator_command_typed_fallback_action(monkeypatch) -> None:
 
     monkeypatch.setattr("grandpa.voice.operator.run_local_action", fake_runner)
 
-    result = CliRunner().invoke(cli, ["voice-operator", "--dry-run"], input="open notepad\nquit\n")
+    result = CliRunner().invoke(
+        cli, ["voice-operator", "--dry-run"], input="open notepad\nquit\n"
+    )
 
     assert result.exit_code == 0
     assert calls[0]["action_type"] == "open_app"
@@ -43,7 +45,9 @@ def test_voice_operator_typed_mode_does_not_call_microphone(monkeypatch) -> None
         captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr("grandpa.cli.voice_operator_cmd.run_voice_operator_loop", fake_loop)
+    monkeypatch.setattr(
+        "grandpa.cli.voice_operator_cmd.run_voice_operator_loop", fake_loop
+    )
 
     result = CliRunner().invoke(cli, ["voice-operator", "--typed"])
 
@@ -58,7 +62,9 @@ def test_voice_operator_duration_option_is_parsed(monkeypatch) -> None:
         captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr("grandpa.cli.voice_operator_cmd.run_voice_operator_loop", fake_loop)
+    monkeypatch.setattr(
+        "grandpa.cli.voice_operator_cmd.run_voice_operator_loop", fake_loop
+    )
 
     result = CliRunner().invoke(cli, ["voice-operator", "--duration", "7"])
 
@@ -73,7 +79,9 @@ def test_voice_operator_debug_option_is_parsed(monkeypatch) -> None:
         captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr("grandpa.cli.voice_operator_cmd.run_voice_operator_loop", fake_loop)
+    monkeypatch.setattr(
+        "grandpa.cli.voice_operator_cmd.run_voice_operator_loop", fake_loop
+    )
 
     result = CliRunner().invoke(cli, ["voice-operator", "--debug"])
 
@@ -93,9 +101,13 @@ def test_speak_command_invokes_tts(monkeypatch) -> None:
 
     def fake_speak(self, text, *, interrupt=False, dry_run=False):
         calls.append((text, interrupt, dry_run))
-        return SpeechOutputResult("completed", "mock_tts", "Speech output spoken.", text)
+        return SpeechOutputResult(
+            "completed", "mock_tts", "Speech output spoken.", text
+        )
 
-    monkeypatch.setattr("grandpa.voice.speech_output.SpeechOutputEngine.speak", fake_speak)
+    monkeypatch.setattr(
+        "grandpa.voice.speech_output.SpeechOutputEngine.speak", fake_speak
+    )
 
     result = CliRunner().invoke(cli, ["speak", "Hello world"])
 
@@ -106,9 +118,16 @@ def test_speak_command_invokes_tts(monkeypatch) -> None:
 
 def test_speak_command_print_only_fallback(monkeypatch) -> None:
     def fake_speak(self, text, *, interrupt=False, dry_run=False):
-        return SpeechOutputResult("fallback", "print_only", "No TTS backend available; printed response only.", text)
+        return SpeechOutputResult(
+            "fallback",
+            "print_only",
+            "No TTS backend available; printed response only.",
+            text,
+        )
 
-    monkeypatch.setattr("grandpa.voice.speech_output.SpeechOutputEngine.speak", fake_speak)
+    monkeypatch.setattr(
+        "grandpa.voice.speech_output.SpeechOutputEngine.speak", fake_speak
+    )
 
     result = CliRunner().invoke(cli, ["speak", "Hello world"])
 
@@ -122,9 +141,13 @@ def test_voice_test_speaks_grandpa_phrase(monkeypatch) -> None:
 
     def fake_speak(self, text, *, interrupt=False, dry_run=False):
         calls.append(text)
-        return SpeechOutputResult("completed", "mock_tts", "Speech output spoken.", text)
+        return SpeechOutputResult(
+            "completed", "mock_tts", "Speech output spoken.", text
+        )
 
-    monkeypatch.setattr("grandpa.voice.speech_output.SpeechOutputEngine.speak", fake_speak)
+    monkeypatch.setattr(
+        "grandpa.voice.speech_output.SpeechOutputEngine.speak", fake_speak
+    )
 
     result = CliRunner().invoke(cli, ["voice", "test"])
 

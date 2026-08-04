@@ -80,7 +80,9 @@ def test_approval_required_step_does_not_execute_without_confirmation() -> None:
 
 
 def test_retry_limit_is_bounded() -> None:
-    result = recover_failed_action({"step_id": "click"}, {"status": "failed"}, retry_count=2)
+    result = recover_failed_action(
+        {"step_id": "click"}, {"status": "failed"}, retry_count=2
+    )
 
     assert result["retry_allowed"] is False
     assert result["status"] == "failed"
@@ -107,7 +109,10 @@ def test_operator_api_routes(monkeypatch, tmp_path) -> None:
     assert diagnostics.status_code == 200
     assert diagnostics.json()["ready"] is True
 
-    plan = client.post("/v1/desktop/operator/plan", json={"request": "summarize current desktop state", "persist": False})
+    plan = client.post(
+        "/v1/desktop/operator/plan",
+        json={"request": "summarize current desktop state", "persist": False},
+    )
     assert plan.status_code == 200
     assert plan.json()["task"]["status"] == "planned"
 
@@ -123,6 +128,9 @@ def test_operator_skills_registered(monkeypatch, tmp_path) -> None:
     assert get_skill("desktop.operator_diagnostics") is not None
     assert get_skill("desktop.operator_plan") is not None
 
-    result = execute_skill("desktop.operator_plan", {"request": "summarize current desktop state", "persist": False})
+    result = execute_skill(
+        "desktop.operator_plan",
+        {"request": "summarize current desktop state", "persist": False},
+    )
     assert result.ok is True
     assert result.data["task"]["status"] == "planned"

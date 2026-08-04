@@ -281,7 +281,9 @@ def model_to_dict(value: Any) -> Any:
 _PLAN_TRANSITIONS = {
     PlanStatus.CREATED: frozenset({PlanStatus.VALIDATING, PlanStatus.CANCELLED}),
     PlanStatus.VALIDATING: frozenset({PlanStatus.READY, PlanStatus.FAILED}),
-    PlanStatus.READY: frozenset({PlanStatus.RUNNING, PlanStatus.PAUSED, PlanStatus.CANCELLED}),
+    PlanStatus.READY: frozenset(
+        {PlanStatus.RUNNING, PlanStatus.PAUSED, PlanStatus.CANCELLED}
+    ),
     PlanStatus.RUNNING: frozenset(
         {
             PlanStatus.WAITING_FOR_CONFIRMATION,
@@ -326,9 +328,16 @@ _STEP_TRANSITIONS = {
         }
     ),
     StepStatus.VERIFYING: frozenset(
-        {StepStatus.COMPLETED, StepStatus.RETRYING, StepStatus.FAILED, StepStatus.BLOCKED}
+        {
+            StepStatus.COMPLETED,
+            StepStatus.RETRYING,
+            StepStatus.FAILED,
+            StepStatus.BLOCKED,
+        }
     ),
-    StepStatus.RETRYING: frozenset({StepStatus.READY, StepStatus.RUNNING, StepStatus.FAILED}),
+    StepStatus.RETRYING: frozenset(
+        {StepStatus.READY, StepStatus.RUNNING, StepStatus.FAILED}
+    ),
     StepStatus.WAITING_FOR_CONFIRMATION: frozenset(
         {StepStatus.READY, StepStatus.RUNNING, StepStatus.CANCELLED}
     ),

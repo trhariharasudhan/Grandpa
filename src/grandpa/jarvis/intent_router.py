@@ -108,7 +108,9 @@ def _parse_open_project(command: str) -> ProjectOpenIntent | None:
             app_name = _normalise_app_name(match.group(2).strip())
             if app_name is None:
                 return None
-            return ProjectOpenIntent(_clean_project_name(match.group(1)), app_name, 0.95)
+            return ProjectOpenIntent(
+                _clean_project_name(match.group(1)), app_name, 0.95
+            )
     return _parse_noisy_open_project(command)
 
 
@@ -155,7 +157,9 @@ def _normalise_app_name(value: str) -> str | None:
         return "vscode"
     if "this will be your goal" in text and ("open" in text or _has_project_hint(text)):
         return "vscode"
-    if "code" in text and ("studio" in text or "editor" in text or _has_project_hint(text)):
+    if "code" in text and (
+        "studio" in text or "editor" in text or _has_project_hint(text)
+    ):
         return "vscode"
     return None
 

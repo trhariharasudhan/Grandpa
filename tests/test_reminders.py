@@ -27,7 +27,13 @@ class FakeNotifier:
         if self.raises:
             raise self.raises
         self.sent.append(reminder.id)
-        return NotificationResult(self.ok, "sent" if self.ok else "failed", "fake", backend="fake", warning=None)
+        return NotificationResult(
+            self.ok,
+            "sent" if self.ok else "failed",
+            "fake",
+            backend="fake",
+            warning=None,
+        )
 
 
 def _store(tmp_path) -> ReminderStore:
@@ -105,7 +111,9 @@ def test_triggered_reminder_does_not_trigger_again_after_restart(tmp_path):
 
     restarted_notifier = FakeNotifier()
     restarted_store = ReminderStore(tmp_path / "reminders.db")
-    result = ReminderSchedulerService(restarted_store, notifier=restarted_notifier, now_fn=lambda: _at(30)).tick()
+    result = ReminderSchedulerService(
+        restarted_store, notifier=restarted_notifier, now_fn=lambda: _at(30)
+    ).tick()
 
     assert result["triggered"] == []
     assert restarted_notifier.sent == []
@@ -144,7 +152,9 @@ def test_stale_overdue_reminder_marked_failed_without_notification(tmp_path):
 def test_notification_failure_marks_failed_without_crashing(tmp_path):
     store = _store(tmp_path)
     reminder = store.create("notify failure", _at(-30))
-    service = ReminderSchedulerService(store, notifier=FakeNotifier(ok=False), now_fn=lambda: _at())
+    service = ReminderSchedulerService(
+        store, notifier=FakeNotifier(ok=False), now_fn=lambda: _at()
+    )
 
     result = service.tick()
 
@@ -155,7 +165,11 @@ def test_notification_failure_marks_failed_without_crashing(tmp_path):
 def test_notification_exception_marks_failed_without_crashing(tmp_path):
     store = _store(tmp_path)
     reminder = store.create("notify exception", _at(-30))
-    service = ReminderSchedulerService(store, notifier=FakeNotifier(raises=RuntimeError("toast failed")), now_fn=lambda: _at())
+    service = ReminderSchedulerService(
+        store,
+        notifier=FakeNotifier(raises=RuntimeError("toast failed")),
+        now_fn=lambda: _at(),
+    )
 
     result = service.tick()
 
@@ -168,7 +182,9 @@ def test_notification_exception_marks_failed_without_crashing(tmp_path):
 
 def test_duplicate_scheduler_start_is_prevented(tmp_path):
     store = _store(tmp_path)
-    service = ReminderSchedulerService(store, notifier=FakeNotifier(), poll_interval_seconds=60)
+    service = ReminderSchedulerService(
+        store, notifier=FakeNotifier(), poll_interval_seconds=60
+    )
 
     first = service.start()
     second = service.start()
@@ -265,7 +281,9 @@ def test_application_startup_starts_and_shutdown_stops_scheduler(monkeypatch):
         def status(self):
             return {"running": self.started and not self.stopped}
 
-    monkeypatch.setattr("grandpa.scheduler_daemon.BackgroundSchedulerDaemon", FakeDaemon)
+    monkeypatch.setattr(
+        "grandpa.scheduler_daemon.BackgroundSchedulerDaemon", FakeDaemon
+    )
     engine = MagicMock()
     engine.health.return_value = True
     engine.list_models.return_value = ["test-model"]
@@ -278,10 +296,14 @@ def test_application_startup_starts_and_shutdown_stops_scheduler(monkeypatch):
     assert FakeDaemon.instances[-1].stopped is True
 
 
-def test_missing_windows_notification_backend_gives_setup_guidance(monkeypatch, tmp_path):
+def test_missing_windows_notification_backend_gives_setup_guidance(
+    monkeypatch, tmp_path
+):
     reminder = _store(tmp_path).create("notify me", _at())
     monkeypatch.setattr("grandpa.reminders.platform.system", lambda: "Windows")
-    monkeypatch.setattr("grandpa.reminders.importlib.util.find_spec", lambda _name: None)
+    monkeypatch.setattr(
+        "grandpa.reminders.importlib.util.find_spec", lambda _name: None
+    )
 
     result = WindowsToastNotifier().notify(reminder)
 

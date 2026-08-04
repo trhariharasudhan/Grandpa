@@ -51,16 +51,28 @@ class NotesAutomation:
     ) -> NotesResult:
         try:
             if self._needs_confirmation(action, confirmed=confirmed, confirm=confirm):
-                return NotesResult("needs_confirmation", _confirmation_message(action), action, requires_confirmation=True)
+                return NotesResult(
+                    "needs_confirmation",
+                    _confirmation_message(action),
+                    action,
+                    requires_confirmation=True,
+                )
             return self._execute(action)
         except NotesSafetyError as exc:
             return NotesResult("blocked", str(exc), action, error=str(exc))
         except NotesStorageError as exc:
             return NotesResult("error", str(exc), action, error=str(exc))
         except PermissionError as exc:
-            return NotesResult("error", f"Notes storage permission denied: {exc}", action, error=str(exc))
+            return NotesResult(
+                "error",
+                f"Notes storage permission denied: {exc}",
+                action,
+                error=str(exc),
+            )
         except Exception as exc:
-            return NotesResult("error", f"Notes action failed: {exc}", action, error=str(exc))
+            return NotesResult(
+                "error", f"Notes action failed: {exc}", action, error=str(exc)
+            )
 
     def _execute(self, action: NotesAction) -> NotesResult:
         if action.action == "list":
@@ -68,42 +80,78 @@ class NotesAutomation:
             return NotesResult("handled", format_note_list(notes), action, notes)
         if action.action == "recent":
             notes = self.store.recent()
-            return NotesResult("handled", format_note_list(notes, empty_message="No recent notes found."), action, notes)
+            return NotesResult(
+                "handled",
+                format_note_list(notes, empty_message="No recent notes found."),
+                action,
+                notes,
+            )
         if action.action == "search":
             notes = self.store.search(action.query)
-            return NotesResult("handled", format_search_results(notes, action.query), action, notes)
+            return NotesResult(
+                "handled", format_search_results(notes, action.query), action, notes
+            )
         if action.action == "open":
             note = self.store.find_one(action.query or action.title)
             if note is None:
                 return NotesResult("error", "Note not found.", action)
             return NotesResult("handled", format_note_detail(note), action, (note,))
         if action.action == "create":
-            note = self.store.create(action.title or "Quick Note", action.content, tags=action.tags, category=action.category or "general")
-            return NotesResult("handled", f'Note created: "{note.title}".', action, (note,))
+            note = self.store.create(
+                action.title or "Quick Note",
+                action.content,
+                tags=action.tags,
+                category=action.category or "general",
+            )
+            return NotesResult(
+                "handled", f'Note created: "{note.title}".', action, (note,)
+            )
         if action.action == "append":
             note = self.store.append(action.title, action.content)
-            return NotesResult("handled", f'Note updated: "{note.title}".', action, (note,))
+            return NotesResult(
+                "handled", f'Note updated: "{note.title}".', action, (note,)
+            )
         if action.action == "rename":
             note = self.store.rename(action.query or action.title, action.new_title)
-            return NotesResult("handled", f'Note renamed to "{note.title}".', action, (note,))
+            return NotesResult(
+                "handled", f'Note renamed to "{note.title}".', action, (note,)
+            )
         if action.action == "delete":
             note = self.store.delete(action.query or action.title)
-            return NotesResult("handled", f'Note deleted: "{note.title}".', action, (note,))
+            return NotesResult(
+                "handled", f'Note deleted: "{note.title}".', action, (note,)
+            )
         if action.action == "archive":
             note = self.store.archive(action.query or action.title, archived=True)
-            return NotesResult("handled", f'Note archived: "{note.title}".', action, (note,))
+            return NotesResult(
+                "handled", f'Note archived: "{note.title}".', action, (note,)
+            )
         if action.action == "restore":
             note = self.store.archive(action.query or action.title, archived=False)
-            return NotesResult("handled", f'Note restored: "{note.title}".', action, (note,))
+            return NotesResult(
+                "handled", f'Note restored: "{note.title}".', action, (note,)
+            )
         if action.action == "pin":
             note = self.store.pin(action.query or action.title, pinned=True)
-            return NotesResult("handled", f'Note pinned: "{note.title}".', action, (note,))
+            return NotesResult(
+                "handled", f'Note pinned: "{note.title}".', action, (note,)
+            )
         if action.action == "unpin":
             note = self.store.pin(action.query or action.title, pinned=False)
-            return NotesResult("handled", f'Note unpinned: "{note.title}".', action, (note,))
-        return NotesResult("unsupported", "That notes action is not supported yet.", action)
+            return NotesResult(
+                "handled", f'Note unpinned: "{note.title}".', action, (note,)
+            )
+        return NotesResult(
+            "unsupported", "That notes action is not supported yet.", action
+        )
 
-    def _needs_confirmation(self, action: NotesAction, *, confirmed: bool, confirm: ConfirmationCallback | None) -> bool:
+    def _needs_confirmation(
+        self,
+        action: NotesAction,
+        *,
+        confirmed: bool,
+        confirm: ConfirmationCallback | None,
+    ) -> bool:
         if not self.safety.requires_confirmation(action.action):
             return False
         if confirmed:
@@ -120,7 +168,9 @@ def handle_notes_command(
     confirmed: bool = False,
     confirm: ConfirmationCallback | None = None,
 ) -> NotesResult:
-    return NotesAutomation(store=store).handle(text, confirmed=confirmed, confirm=confirm)
+    return NotesAutomation(store=store).handle(
+        text, confirmed=confirmed, confirm=confirm
+    )
 
 
 def _confirmation_message(action: NotesAction) -> str:

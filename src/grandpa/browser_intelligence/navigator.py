@@ -94,7 +94,9 @@ class SmartNavigator:
             "message": f"Resolved target '{goal_target}'.",
         }
 
-    def scroll_until_heading(self, heading_name: str, max_attempts: int = 5) -> dict[str, Any]:
+    def scroll_until_heading(
+        self, heading_name: str, max_attempts: int = 5
+    ) -> dict[str, Any]:
         """Scroll visible page until specified heading is reached."""
         for attempt in range(1, max_attempts + 1):
             page = read_current_browser_page()

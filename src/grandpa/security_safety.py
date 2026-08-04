@@ -17,8 +17,13 @@ from typing import Any
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
 DEFAULT_SECURITY_DB = DEFAULT_CONFIG_DIR / "security_safety.db"
-SENSITIVE_PATTERN = re.compile(r"\b(password|secret|token|api[_ -]?key|credential|private key)\b", re.I)
-SUSPICIOUS_PATTERN = re.compile(r"\b(delete|format|wipe|shutdown|restart|payment|purchase|password|credential|registry|powershell)\b", re.I)
+SENSITIVE_PATTERN = re.compile(
+    r"\b(password|secret|token|api[_ -]?key|credential|private key)\b", re.I
+)
+SUSPICIOUS_PATTERN = re.compile(
+    r"\b(delete|format|wipe|shutdown|restart|payment|purchase|password|credential|registry|powershell)\b",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -72,7 +77,9 @@ class SecurityStore:
                 """
             )
 
-    def record_event(self, event_type: str, severity: str, detail: dict[str, Any]) -> None:
+    def record_event(
+        self, event_type: str, severity: str, detail: dict[str, Any]
+    ) -> None:
         redacted = redact_sensitive(detail)
         with self._connect() as conn:
             conn.execute(
@@ -128,39 +135,77 @@ class SecurityStore:
                     ciphertext = excluded.ciphertext,
                     salt = excluded.salt
                 """,
-                (key, now, now, base64.b64encode(encrypted).decode("ascii"), base64.b64encode(salt).decode("ascii")),
+                (
+                    key,
+                    now,
+                    now,
+                    base64.b64encode(encrypted).decode("ascii"),
+                    base64.b64encode(salt).decode("ascii"),
+                ),
             )
-        self.record_event("sensitive_memory_store", "info", {"key": key, "value": "[encrypted]"})
+        self.record_event(
+            "sensitive_memory_store", "info", {"key": key, "value": "[encrypted]"}
+        )
 
     def load_sensitive(self, key: str, passphrase: str) -> str | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT ciphertext, salt FROM sensitive_memory WHERE key=?", (key,)).fetchone()
+            row = conn.execute(
+                "SELECT ciphertext, salt FROM sensitive_memory WHERE key=?", (key,)
+            ).fetchone()
         if not row:
             return None
         salt = base64.b64decode(row["salt"])
         raw = base64.b64decode(row["ciphertext"])
-        return _xor_cipher(raw, _derive_key(passphrase, salt)).decode("utf-8", errors="replace")
+        return _xor_cipher(raw, _derive_key(passphrase, salt)).decode(
+            "utf-8", errors="replace"
+        )
 
 
 def default_policies() -> dict[str, Any]:
     return {
-        "automation": {"medium_requires_approval": True, "high_blocked": True, "max_chain_steps": 20},
-        "browser": {"forms_require_approval": True, "payments_blocked": True, "localhost_snapshots_only": True},
-        "file": {"delete_requires_approval": True, "protected_paths_blocked": True, "bulk_requires_approval": True},
+        "automation": {
+            "medium_requires_approval": True,
+            "high_blocked": True,
+            "max_chain_steps": 20,
+        },
+        "browser": {
+            "forms_require_approval": True,
+            "payments_blocked": True,
+            "localhost_snapshots_only": True,
+        },
+        "file": {
+            "delete_requires_approval": True,
+            "protected_paths_blocked": True,
+            "bulk_requires_approval": True,
+        },
         "admin": {"enabled": False, "pin_hash": None, "lock_sensitive_actions": True},
     }
 
 
 def suspicious_action_score(text: str) -> dict[str, Any]:
-    matches = sorted(set(match.group(0).lower() for match in SUSPICIOUS_PATTERN.finditer(text)))
+    matches = sorted(
+        set(match.group(0).lower() for match in SUSPICIOUS_PATTERN.finditer(text))
+    )
     score = min(1.0, len(matches) * 0.22)
     severity = "critical" if score >= 0.75 else "warning" if score >= 0.35 else "info"
-    return {"score": round(score, 3), "severity": severity, "matches": matches, "suspicious": bool(matches)}
+    return {
+        "score": round(score, 3),
+        "severity": severity,
+        "matches": matches,
+        "suspicious": bool(matches),
+    }
 
 
 def redact_sensitive(value: Any) -> Any:
     if isinstance(value, dict):
-        return {key: ("[redacted]" if SENSITIVE_PATTERN.search(str(key)) else redact_sensitive(item)) for key, item in value.items()}
+        return {
+            key: (
+                "[redacted]"
+                if SENSITIVE_PATTERN.search(str(key))
+                else redact_sensitive(item)
+            )
+            for key, item in value.items()
+        }
     if isinstance(value, list):
         return [redact_sensitive(item) for item in value]
     if isinstance(value, str) and SENSITIVE_PATTERN.search(value):
@@ -175,10 +220,16 @@ def set_admin_pin(pin: str, *, store: SecurityStore | None = None) -> SecurityRe
     salt = os.urandom(16)
     digest = hashlib.pbkdf2_hmac("sha256", pin.encode("utf-8"), salt, 100_000)
     policies = store.policies()
-    policies["admin"] = {"enabled": True, "pin_hash": base64.b64encode(salt + digest).decode("ascii"), "lock_sensitive_actions": True}
+    policies["admin"] = {
+        "enabled": True,
+        "pin_hash": base64.b64encode(salt + digest).decode("ascii"),
+        "lock_sensitive_actions": True,
+    }
     store.set_policy("admin", policies["admin"])
     store.record_event("admin_pin_set", "info", {"pin": "[redacted]"})
-    return SecurityResult("handled", "Admin protection is enabled.", {"admin_enabled": True})
+    return SecurityResult(
+        "handled", "Admin protection is enabled.", {"admin_enabled": True}
+    )
 
 
 def verify_admin_pin(pin: str, *, store: SecurityStore | None = None) -> bool:
@@ -204,7 +255,10 @@ def security_health_score(store: SecurityStore | None = None) -> dict[str, Any]:
         score += 8
     if policies.get("automation", {}).get("high_blocked"):
         score += 7
-    return {"score": min(100, score), "label": "STRONG" if score >= 85 else "GOOD" if score >= 70 else "NEEDS SETUP"}
+    return {
+        "score": min(100, score),
+        "label": "STRONG" if score >= 85 else "GOOD" if score >= 70 else "NEEDS SETUP",
+    }
 
 
 def export_audit_plan() -> SecurityResult:
@@ -225,7 +279,11 @@ def diagnostics(store: SecurityStore | None = None) -> dict[str, Any]:
         "suspicious_detection": True,
         "encrypted_sensitive_memory": True,
         "audit_export_requires_approval": True,
-        "storage": {"backend": "sqlite", "path": str(store.db_path), "local_only": True},
+        "storage": {
+            "backend": "sqlite",
+            "path": str(store.db_path),
+            "local_only": True,
+        },
     }
 
 

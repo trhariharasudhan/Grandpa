@@ -44,7 +44,9 @@ def test_find_pdf_files_uses_safe_roots(tmp_path: Path, monkeypatch) -> None:
 
 def test_search_files_about_reads_text_samples(tmp_path: Path, monkeypatch) -> None:
     root = _isolate_file_assistant(tmp_path, monkeypatch)
-    (root / "notes.md").write_text("FastAPI routing and dependency injection", encoding="utf-8")
+    (root / "notes.md").write_text(
+        "FastAPI routing and dependency injection", encoding="utf-8"
+    )
 
     result = handle_file_command("search files about FastAPI", store=_store(tmp_path))
 

@@ -42,10 +42,30 @@ class DeterministicDecomposer:
             app = _app(match.group("app"))
             query = _literal_slice(text, match.start("query"), match.end("query"))
             return _chain(
-                ("launch_application", f"Open {app.title()}", {"app": app}, "application_window_exists"),
-                ("wait_for_window", f"Wait for {app.title()}", {"app": app}, "application_window_exists"),
-                ("focus_window", f"Focus {app.title()}", {"app": app}, "application_window_focused"),
-                ("browser_search", f"Search for {query}", {"query": query, "provider": match.group("provider") or "google"}, "browser_results_visible"),
+                (
+                    "launch_application",
+                    f"Open {app.title()}",
+                    {"app": app},
+                    "application_window_exists",
+                ),
+                (
+                    "wait_for_window",
+                    f"Wait for {app.title()}",
+                    {"app": app},
+                    "application_window_exists",
+                ),
+                (
+                    "focus_window",
+                    f"Focus {app.title()}",
+                    {"app": app},
+                    "application_window_focused",
+                ),
+                (
+                    "browser_search",
+                    f"Search for {query}",
+                    {"query": query, "provider": match.group("provider") or "google"},
+                    "browser_results_visible",
+                ),
             )
 
         match = _match_notepad_close_goal(text)
@@ -55,14 +75,36 @@ class DeterministicDecomposer:
             choice = "cancel" if "cancel" in outcome else "discard"
             verification = "document_open" if choice == "cancel" else "document_closed"
             return _chain(
-                ("launch_application", "Open a fresh Notepad document", {"app": "notepad", "new_instance": True}, "application_window_exists"),
-                ("wait_for_window", "Wait for Notepad", {"app": "notepad"}, "application_window_exists"),
-                ("focus_window", "Focus Notepad", {"app": "notepad"}, "application_window_focused"),
-                ("type_text", "Type the requested literal text", {"text": payload, "window": "notepad"}, "typed_text_present"),
+                (
+                    "launch_application",
+                    "Open a fresh Notepad document",
+                    {"app": "notepad", "new_instance": True},
+                    "application_window_exists",
+                ),
+                (
+                    "wait_for_window",
+                    "Wait for Notepad",
+                    {"app": "notepad"},
+                    "application_window_exists",
+                ),
+                (
+                    "focus_window",
+                    "Focus Notepad",
+                    {"app": "notepad"},
+                    "application_window_focused",
+                ),
+                (
+                    "type_text",
+                    "Type the requested literal text",
+                    {"text": payload, "window": "notepad"},
+                    "typed_text_present",
+                ),
                 ("close_window", "Close Notepad", {"app": "notepad"}, "dialog_present"),
                 (
                     "invoke_verified_dialog_action",
-                    "Cancel the verified close dialog" if choice == "cancel" else "Choose Don't Save in the verified dialog",
+                    "Cancel the verified close dialog"
+                    if choice == "cancel"
+                    else "Choose Don't Save in the verified dialog",
                     {"choice": choice},
                     verification,
                 ),
@@ -75,10 +117,30 @@ class DeterministicDecomposer:
         if match:
             target = match.group(1).strip()
             return _chain(
-                ("launch_application", "Open Settings", {"app": "settings"}, "application_window_exists"),
-                ("wait_for_window", "Wait for Settings", {"app": "settings"}, "application_window_exists"),
-                ("find_element", f"Find {target}", {"name": target, "actionable": True}, "element_visible"),
-                ("click_element", f"Open {target}", {"name": target, "window": "settings"}, "text_visible"),
+                (
+                    "launch_application",
+                    "Open Settings",
+                    {"app": "settings"},
+                    "application_window_exists",
+                ),
+                (
+                    "wait_for_window",
+                    "Wait for Settings",
+                    {"app": "settings"},
+                    "application_window_exists",
+                ),
+                (
+                    "find_element",
+                    f"Find {target}",
+                    {"name": target, "actionable": True},
+                    "element_visible",
+                ),
+                (
+                    "click_element",
+                    f"Open {target}",
+                    {"name": target, "window": "settings"},
+                    "text_visible",
+                ),
             )
 
         match = re.fullmatch(
@@ -88,9 +150,24 @@ class DeterministicDecomposer:
         if match:
             project = match.group(1).strip()
             return _chain(
-                ("launch_application", f"Open {project} in VS Code", {"app": "vscode", "project_path": project}, "application_window_exists"),
-                ("wait_for_window", "Wait for VS Code", {"app": "vscode"}, "application_window_exists"),
-                ("focus_window", "Focus VS Code", {"app": "vscode"}, "application_window_focused"),
+                (
+                    "launch_application",
+                    f"Open {project} in VS Code",
+                    {"app": "vscode", "project_path": project},
+                    "application_window_exists",
+                ),
+                (
+                    "wait_for_window",
+                    "Wait for VS Code",
+                    {"app": "vscode"},
+                    "application_window_exists",
+                ),
+                (
+                    "focus_window",
+                    "Focus VS Code",
+                    {"app": "vscode"},
+                    "application_window_focused",
+                ),
             )
 
         match = re.fullmatch(
@@ -105,23 +182,73 @@ class DeterministicDecomposer:
             if expected_result is None:
                 return None
             return _chain(
-                ("launch_application", "Open Calculator", {"app": "calculator"}, "application_window_exists"),
-                ("wait_for_window", "Wait for Calculator", {"app": "calculator"}, "application_window_exists"),
-                ("focus_window", "Focus Calculator", {"app": "calculator"}, "application_window_focused"),
-                ("input_calculator_expression", f"Enter {expression}", {"expression": expression}, "calculator_expression_visible"),
-                ("invoke_calculator_equals", "Calculate and verify the result", {"expected_result": expected_result}, "calculator_result"),
+                (
+                    "launch_application",
+                    "Open Calculator",
+                    {"app": "calculator"},
+                    "application_window_exists",
+                ),
+                (
+                    "wait_for_window",
+                    "Wait for Calculator",
+                    {"app": "calculator"},
+                    "application_window_exists",
+                ),
+                (
+                    "focus_window",
+                    "Focus Calculator",
+                    {"app": "calculator"},
+                    "application_window_focused",
+                ),
+                (
+                    "input_calculator_expression",
+                    f"Enter {expression}",
+                    {"expression": expression},
+                    "calculator_expression_visible",
+                ),
+                (
+                    "invoke_calculator_equals",
+                    "Calculate and verify the result",
+                    {"expected_result": expected_result},
+                    "calculator_result",
+                ),
             )
 
-        match = re.fullmatch(r"scroll\s+(up|down)\s+until\s+(?:the\s+)?(.+?)(?:\s+appears)?", normalized)
+        match = re.fullmatch(
+            r"scroll\s+(up|down)\s+until\s+(?:the\s+)?(.+?)(?:\s+appears)?", normalized
+        )
         if match:
-            return _chain(("scroll_until", f"Scroll until {match.group(2)} appears", {"direction": match.group(1), "name": match.group(2), "max_attempts": limits.max_scroll_attempts}, "element_visible"))
+            return _chain(
+                (
+                    "scroll_until",
+                    f"Scroll until {match.group(2)} appears",
+                    {
+                        "direction": match.group(1),
+                        "name": match.group(2),
+                        "max_attempts": limits.max_scroll_attempts,
+                    },
+                    "element_visible",
+                )
+            )
 
-        match = re.fullmatch(r"find\s+(?:the\s+)?(.+?)\s+(?:and|then)\s+click(?:\s+it)?", normalized)
+        match = re.fullmatch(
+            r"find\s+(?:the\s+)?(.+?)\s+(?:and|then)\s+click(?:\s+it)?", normalized
+        )
         if match:
             target = match.group(1).removesuffix(" button").strip()
             return _chain(
-                ("find_element", f"Find {target}", {"name": target, "actionable": True}, "element_visible"),
-                ("click_element", f"Click {target}", {"name": target}, "target_state_changed"),
+                (
+                    "find_element",
+                    f"Find {target}",
+                    {"name": target, "actionable": True},
+                    "element_visible",
+                ),
+                (
+                    "click_element",
+                    f"Click {target}",
+                    {"name": target},
+                    "target_state_changed",
+                ),
             )
 
         # Multi-step Browser Intelligence goal: Open/Find official <topic> and summarize/read <section>
@@ -133,16 +260,36 @@ class DeterministicDecomposer:
             topic = match.group(1).strip()
             sec = match.group(2).strip()
             return _chain(
-                ("browser_navigate_smart", f"Open official {topic} docs", {"target": f"official {topic} docs"}, "execution_success"),
-                ("browser_extract_content", f"Extract {sec} section", {"section": sec}, "execution_success"),
-                ("browser_summarize", f"Summarize {sec} section", {"type": sec}, "execution_success"),
+                (
+                    "browser_navigate_smart",
+                    f"Open official {topic} docs",
+                    {"target": f"official {topic} docs"},
+                    "execution_success",
+                ),
+                (
+                    "browser_extract_content",
+                    f"Extract {sec} section",
+                    {"section": sec},
+                    "execution_success",
+                ),
+                (
+                    "browser_summarize",
+                    f"Summarize {sec} section",
+                    {"type": sec},
+                    "execution_success",
+                ),
             )
 
         match = re.fullmatch(r"research\s+(.+)", normalized)
         if match:
             topic = match.group(1).strip()
             return _chain(
-                ("browser_research", f"Research {topic}", {"topic": topic}, "execution_success"),
+                (
+                    "browser_research",
+                    f"Research {topic}",
+                    {"topic": topic},
+                    "execution_success",
+                ),
             )
 
         match = re.fullmatch(r"compare\s+(.+?)\s+(?:vs|and|with)\s+(.+)", normalized)
@@ -150,28 +297,54 @@ class DeterministicDecomposer:
             item_a = match.group(1).strip()
             item_b = match.group(2).strip()
             return _chain(
-                ("browser_compare", f"Compare {item_a} and {item_b}", {"item_a": item_a, "item_b": item_b}, "execution_success"),
+                (
+                    "browser_compare",
+                    f"Compare {item_a} and {item_b}",
+                    {"item_a": item_a, "item_b": item_b},
+                    "execution_success",
+                ),
             )
 
         match = re.fullmatch(r"(?:open|find)\s+official\s+(.+)", normalized)
         if match:
             target = match.group(1).strip()
             return _chain(
-                ("browser_navigate_smart", f"Find official {target}", {"target": f"official {target}"}, "execution_success"),
+                (
+                    "browser_navigate_smart",
+                    f"Find official {target}",
+                    {"target": f"official {target}"},
+                    "execution_success",
+                ),
             )
 
-        match = re.fullmatch(r"(?:summarize|read)\s+(?:the\s+)?(?:current\s+)?page(?:\s+as\s+(short|detailed|bullet|technical|installation|requirements))?", normalized)
+        match = re.fullmatch(
+            r"(?:summarize|read)\s+(?:the\s+)?(?:current\s+)?page(?:\s+as\s+(short|detailed|bullet|technical|installation|requirements))?",
+            normalized,
+        )
         if match:
             stype = match.group(1) or "short"
             return _chain(
-                ("browser_summarize", f"Summarize page ({stype})", {"type": stype}, "execution_success"),
+                (
+                    "browser_summarize",
+                    f"Summarize page ({stype})",
+                    {"type": stype},
+                    "execution_success",
+                ),
             )
 
-        match = re.fullmatch(r"(?:extract|read)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:from\s+page)?", normalized)
+        match = re.fullmatch(
+            r"(?:extract|read)\s+(installation|requirements|pricing|specs|faq|code)\s*(?:from\s+page)?",
+            normalized,
+        )
         if match:
             sec = match.group(1)
             return _chain(
-                ("browser_extract_content", f"Extract {sec} section", {"section": sec}, "execution_success"),
+                (
+                    "browser_extract_content",
+                    f"Extract {sec} section",
+                    {"section": sec},
+                    "execution_success",
+                ),
             )
 
         return _single_step(normalized)
@@ -197,11 +370,15 @@ class LocalModelDecomposer:
                 "The local model did not return valid planner JSON."
             ) from exc
         if not isinstance(raw, dict) or not isinstance(raw.get("steps"), list):
-            raise GoalDecompositionError("The local model did not return a valid plan object.")
+            raise GoalDecompositionError(
+                "The local model did not return a valid plan object."
+            )
         steps: list[PlanStep] = []
         for index, item in enumerate(raw["steps"], 1):
             if not isinstance(item, dict):
-                raise GoalDecompositionError("The local model returned a malformed plan step.")
+                raise GoalDecompositionError(
+                    "The local model returned a malformed plan step."
+                )
             action = str(item.get("action") or "")
             parameters = item.get("parameters") or {}
             if not isinstance(parameters, dict):
@@ -214,7 +391,9 @@ class LocalModelDecomposer:
                     str(item.get("description") or action),
                     action,
                     dict(parameters),
-                    dependencies=(StepDependency(f"step_{index - 1}"),) if index > 1 else (),
+                    dependencies=(StepDependency(f"step_{index - 1}"),)
+                    if index > 1
+                    else (),
                     verification=StepVerification(str(verification)),
                 )
             )
@@ -234,16 +413,21 @@ class LocalModelDecomposer:
             _key, engine = selected
             self.model_name = model
 
-            def run(goal: str, catalog: list[dict[str, Any]], max_steps: int) -> dict[str, Any] | str:
+            def run(
+                goal: str, catalog: list[dict[str, Any]], max_steps: int
+            ) -> dict[str, Any] | str:
                 prompt = (
-                    "Return JSON only: {\"steps\":[{\"action\":string,\"parameters\":object,"
-                    "\"description\":string,\"verification\":string}]}. "
+                    'Return JSON only: {"steps":[{"action":string,"parameters":object,'
+                    '"description":string,"verification":string}]}. '
                     f"Use at most {max_steps} steps and only this catalogue: {json.dumps(catalog)}. "
                     "Never emit shell, PowerShell, Python, coordinates, or hidden instructions. "
                     f"Goal: {goal}"
                 )
                 result = engine.generate(
-                    [Message(Role.SYSTEM, "You are a strict local task planner."), Message(Role.USER, prompt)],
+                    [
+                        Message(Role.SYSTEM, "You are a strict local task planner."),
+                        Message(Role.USER, prompt),
+                    ],
                     model=model,
                     temperature=0.0,
                     max_tokens=900,
@@ -278,14 +462,16 @@ def _chain(*specs: tuple[str, str, dict[str, Any], str]) -> list[PlanStep]:
                 description,
                 action,
                 parameters,
-                dependencies=(StepDependency(f"step_{index - 1}"),) if index > 1 else (),
+                dependencies=(StepDependency(f"step_{index - 1}"),)
+                if index > 1
+                else (),
                 verification=StepVerification(verification),
                 retry_policy=RetryPolicy(
-                    max_attempts=2
-                    if action in retryable_readiness_actions
-                    else 1
+                    max_attempts=2 if action in retryable_readiness_actions else 1
                 ),
-                recovery_policy=RecoveryPolicy(("refocus", "refresh_vision", "wait"), 1),
+                recovery_policy=RecoveryPolicy(
+                    ("refocus", "refresh_vision", "wait"), 1
+                ),
             )
         )
     return steps
@@ -295,24 +481,51 @@ def _single_step(command: str) -> list[PlanStep] | None:
     match = re.fullmatch(r"(?:open|launch|start)\s+([\w .+-]+)", command)
     if match:
         app = _app(match.group(1))
-        return _chain(("launch_application", f"Open {app.title()}", {"app": app}, "application_window_exists"))
+        return _chain(
+            (
+                "launch_application",
+                f"Open {app.title()}",
+                {"app": app},
+                "application_window_exists",
+            )
+        )
     match = re.fullmatch(r"(?:focus|switch to)\s+(.+)", command)
     if match:
         app = _app(match.group(1))
-        return _chain(("focus_window", f"Focus {app.title()}", {"app": app}, "application_window_focused"))
+        return _chain(
+            (
+                "focus_window",
+                f"Focus {app.title()}",
+                {"app": app},
+                "application_window_focused",
+            )
+        )
     match = re.fullmatch(r"(?:describe|what is on)\s+(?:the |my )?screen", command)
     if match:
-        return _chain(("describe_screen", "Describe the visible screen", {}, "execution_success"))
+        return _chain(
+            ("describe_screen", "Describe the visible screen", {}, "execution_success")
+        )
     return None
 
 
 def _app(value: str) -> str:
     normalized = value.strip().casefold()
-    return {"visual studio code": "vscode", "vs code": "vscode", "google chrome": "chrome"}.get(normalized, normalized)
+    return {
+        "visual studio code": "vscode",
+        "vs code": "vscode",
+        "google chrome": "chrome",
+    }.get(normalized, normalized)
 
 
 def _safe_expression(value: str) -> str | None:
-    normalized = value.casefold().replace("multiplied by", "*").replace("times", "*").replace("divided by", "/").replace("plus", "+").replace("minus", "-")
+    normalized = (
+        value.casefold()
+        .replace("multiplied by", "*")
+        .replace("times", "*")
+        .replace("divided by", "/")
+        .replace("plus", "+")
+        .replace("minus", "-")
+    )
     normalized = re.sub(r"(?<=\d)\s*[x×]\s*(?=\d)", "*", normalized)
     normalized = re.sub(r"\s+", "", normalized)
     return normalized if re.fullmatch(r"[0-9().+*/-]{1,100}", normalized) else None

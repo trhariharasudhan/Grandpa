@@ -256,7 +256,9 @@ def read_current_browser_page(
         headings = tuple(HeadingItem(level=h[0], text=h[1]) for h in parser.headings)
         paragraphs = tuple(parser.paragraphs)
         buttons = tuple(parser.buttons)
-        nav_sections = tuple(NavItem(text=link[0], url=link[1]) for link in parser.links[:15])
+        nav_sections = tuple(
+            NavItem(text=link[0], url=link[1]) for link in parser.links[:15]
+        )
         forms = tuple(
             FormItem(
                 name=f.get("name", ""),
@@ -271,7 +273,9 @@ def read_current_browser_page(
             for t in parser.tables
         )
         lists = tuple(tuple(lst) for lst in parser.lists)
-        code_blocks = tuple(CodeBlockItem(language=cb[0], code=cb[1]) for cb in parser.code_blocks)
+        code_blocks = tuple(
+            CodeBlockItem(language=cb[0], code=cb[1]) for cb in parser.code_blocks
+        )
 
         visible_text = sanitize_untrusted_text(
             "\n".join(
@@ -325,7 +329,10 @@ def read_current_browser_page(
     headings = tuple(HeadingItem(level=2, text=h) for h in ctx.headings if h)
     buttons = tuple(b for b in ctx.buttons if b)
     nav_sections = tuple(
-        NavItem(text=lk.get("text", lk.get("name", "")), url=lk.get("url", lk.get("href", "")))
+        NavItem(
+            text=lk.get("text", lk.get("name", "")),
+            url=lk.get("url", lk.get("href", "")),
+        )
         for lk in ctx.links
     )
     forms = tuple(
@@ -342,10 +349,16 @@ def read_current_browser_page(
     paragraphs = tuple([p.strip() for p in visible_text.split("\n\n") if p.strip()])
 
     from grandpa.browser_intelligence.models import CodeBlockItem
+
     code_blocks_list: list[CodeBlockItem] = []
     for el in ctx.elements:
-        if el.get("role") == "code_block" or "pip install" in str(el.get("text", "")).lower():
-            code_blocks_list.append(CodeBlockItem(language="bash", code=str(el.get("text", ""))))
+        if (
+            el.get("role") == "code_block"
+            or "pip install" in str(el.get("text", "")).lower()
+        ):
+            code_blocks_list.append(
+                CodeBlockItem(language="bash", code=str(el.get("text", "")))
+            )
 
     return PageContent(
         title=title,

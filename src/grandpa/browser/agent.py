@@ -22,7 +22,9 @@ from grandpa.browser_control import execute_browser_action, get_visible_browser_
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_BROWSER_AGENT_DB = ROOT / "runtime" / "browser" / "browser_agent.db"
 
-BrowserTaskStatus = Literal["planned", "completed", "requires_approval", "blocked", "unsupported"]
+BrowserTaskStatus = Literal[
+    "planned", "completed", "requires_approval", "blocked", "unsupported"
+]
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 
 _PASSWORD_PAYMENT_RE = re.compile(
@@ -57,7 +59,11 @@ class BrowserAgentStore:
     """SQLite store for browser-agent workflow history."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or os.environ.get("GRANDPA_BROWSER_AGENT_DB") or DEFAULT_BROWSER_AGENT_DB)
+        self.db_path = Path(
+            db_path
+            or os.environ.get("GRANDPA_BROWSER_AGENT_DB")
+            or DEFAULT_BROWSER_AGENT_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -148,7 +154,9 @@ class BrowserAgentStore:
 
     def count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) AS count FROM browser_agent_tasks").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM browser_agent_tasks"
+            ).fetchone()
         return int(row["count"] if row else 0)
 
 
@@ -205,7 +213,9 @@ def analyze_browser_task(goal: str) -> dict[str, Any]:
     }
 
 
-def plan_browser_workflow(goal: str, *, store: BrowserAgentStore | None = None) -> dict[str, Any]:
+def plan_browser_workflow(
+    goal: str, *, store: BrowserAgentStore | None = None
+) -> dict[str, Any]:
     """Create and persist a safe browser-agent task plan."""
 
     analysis = analyze_browser_task(goal)
@@ -215,7 +225,13 @@ def plan_browser_workflow(goal: str, *, store: BrowserAgentStore | None = None) 
     approval = bool(analysis["approval_required"])
     if risk == "BLOCKED":
         status: BrowserTaskStatus = "blocked"
-        steps = [_step("blocked", "Blocked sensitive browser automation request.", risk="BLOCKED")]
+        steps = [
+            _step(
+                "blocked",
+                "Blocked sensitive browser automation request.",
+                risk="BLOCKED",
+            )
+        ]
         summary = "I blocked this browser task for safety."
     else:
         steps = _steps_for_intent(str(analysis["intent"]), goal)
@@ -241,8 +257,22 @@ def plan_browser_workflow(goal: str, *, store: BrowserAgentStore | None = None) 
 def summarize_current_page(*, store: BrowserAgentStore | None = None) -> dict[str, Any]:
     result = execute_browser_action("summary", "visible")
     status = "completed" if result.status == "handled" else result.status
-    task = _record_result("summarize this webpage", result.message, status, result.risk_level, False, "browser.page_summary", store)
-    return {"status": status, "message": result.message, "summary": result.message, "task": task.to_dict(), "context": result.context.to_dict() if result.context else {}}
+    task = _record_result(
+        "summarize this webpage",
+        result.message,
+        status,
+        result.risk_level,
+        False,
+        "browser.page_summary",
+        store,
+    )
+    return {
+        "status": status,
+        "message": result.message,
+        "summary": result.message,
+        "task": task.to_dict(),
+        "context": result.context.to_dict() if result.context else {},
+    }
 
 
 def extract_visible_links(*, store: BrowserAgentStore | None = None) -> dict[str, Any]:
@@ -250,55 +280,121 @@ def extract_visible_links(*, store: BrowserAgentStore | None = None) -> dict[str
     links = list(context.links)
     result = execute_browser_action("links", "visible")
     status = "completed" if result.status == "handled" else result.status
-    task = _record_result("show links on this page", result.message, status, result.risk_level, False, "browser.visible_links", store)
-    return {"status": status, "message": result.message, "links": links, "task": task.to_dict(), "context": context.to_dict()}
+    task = _record_result(
+        "show links on this page",
+        result.message,
+        status,
+        result.risk_level,
+        False,
+        "browser.visible_links",
+        store,
+    )
+    return {
+        "status": status,
+        "message": result.message,
+        "links": links,
+        "task": task.to_dict(),
+        "context": context.to_dict(),
+    }
 
 
-def extract_visible_buttons(*, store: BrowserAgentStore | None = None) -> dict[str, Any]:
+def extract_visible_buttons(
+    *, store: BrowserAgentStore | None = None
+) -> dict[str, Any]:
     context = get_visible_browser_context()
     buttons = list(context.buttons)
     result = execute_browser_action("buttons", "visible")
     status = "completed" if result.status == "handled" else result.status
-    task = _record_result("what buttons are visible?", result.message, status, result.risk_level, False, "browser.visible_buttons", store)
-    return {"status": status, "message": result.message, "buttons": buttons, "task": task.to_dict(), "context": context.to_dict()}
+    task = _record_result(
+        "what buttons are visible?",
+        result.message,
+        status,
+        result.risk_level,
+        False,
+        "browser.visible_buttons",
+        store,
+    )
+    return {
+        "status": status,
+        "message": result.message,
+        "buttons": buttons,
+        "task": task.to_dict(),
+        "context": context.to_dict(),
+    }
 
 
-def search_web_plan(query: str, *, store: BrowserAgentStore | None = None) -> dict[str, Any]:
+def search_web_plan(
+    query: str, *, store: BrowserAgentStore | None = None
+) -> dict[str, Any]:
     clean = query.strip()
     if not clean:
         clean = "search"
     goal = f"search {clean}"
     plan = plan_browser_workflow(goal, store=store)
     task = plan["task"]
-    return {"status": "planned", "message": f"Prepared a safe browser search plan for {clean}.", "query": clean, "task": task}
+    return {
+        "status": "planned",
+        "message": f"Prepared a safe browser search plan for {clean}.",
+        "query": clean,
+        "task": task,
+    }
 
 
-def fill_form_plan(field: str, value: str = "", *, store: BrowserAgentStore | None = None) -> dict[str, Any]:
+def fill_form_plan(
+    field: str, value: str = "", *, store: BrowserAgentStore | None = None
+) -> dict[str, Any]:
     text = f"{field} {value}".strip()
     if _PASSWORD_PAYMENT_RE.search(text):
         plan = plan_browser_workflow(f"fill form {text}", store=store)
-        return {"status": "blocked", "message": "I blocked this form plan because it looks sensitive.", "task": plan["task"]}
+        return {
+            "status": "blocked",
+            "message": "I blocked this form plan because it looks sensitive.",
+            "task": plan["task"],
+        }
     plan = plan_browser_workflow(f"fill this search box with {text}", store=store)
-    return {"status": "requires_approval", "message": "Prepared a form-fill plan. Approval is required before changing a visible page.", "task": plan["task"]}
+    return {
+        "status": "requires_approval",
+        "message": "Prepared a form-fill plan. Approval is required before changing a visible page.",
+        "task": plan["task"],
+    }
 
 
-def download_plan(target: str, *, store: BrowserAgentStore | None = None) -> dict[str, Any]:
+def download_plan(
+    target: str, *, store: BrowserAgentStore | None = None
+) -> dict[str, Any]:
     if _PASSWORD_PAYMENT_RE.search(target):
         plan = plan_browser_workflow(f"download {target}", store=store)
-        return {"status": "blocked", "message": "I blocked this download plan for safety.", "task": plan["task"]}
+        return {
+            "status": "blocked",
+            "message": "I blocked this download plan for safety.",
+            "task": plan["task"],
+        }
     plan = plan_browser_workflow(f"download {target or 'this file'}", store=store)
-    return {"status": "requires_approval", "message": "Prepared a download plan. Approval is required before downloading.", "task": plan["task"]}
+    return {
+        "status": "requires_approval",
+        "message": "Prepared a download plan. Approval is required before downloading.",
+        "task": plan["task"],
+    }
 
 
-def list_browser_tasks(limit: int = 30, *, store: BrowserAgentStore | None = None) -> dict[str, Any]:
-    return {"tasks": (store or BrowserAgentStore()).list(limit=limit), "local_only": True}
+def list_browser_tasks(
+    limit: int = 30, *, store: BrowserAgentStore | None = None
+) -> dict[str, Any]:
+    return {
+        "tasks": (store or BrowserAgentStore()).list(limit=limit),
+        "local_only": True,
+    }
 
 
-def get_browser_task(task_id: str, *, store: BrowserAgentStore | None = None) -> dict[str, Any] | None:
+def get_browser_task(
+    task_id: str, *, store: BrowserAgentStore | None = None
+) -> dict[str, Any] | None:
     return (store or BrowserAgentStore()).get(task_id)
 
 
-def browser_agent_diagnostics(*, store: BrowserAgentStore | None = None) -> dict[str, Any]:
+def browser_agent_diagnostics(
+    *, store: BrowserAgentStore | None = None
+) -> dict[str, Any]:
     context = get_visible_browser_context()
     agent_store = store or BrowserAgentStore()
     return {
@@ -358,26 +454,81 @@ def _record_result(
 
 def _steps_for_intent(intent: str, goal: str) -> list[dict[str, Any]]:
     if intent == "summary":
-        return [_step("browser.page_summary", "Read and summarize the current visible page context.")]
+        return [
+            _step(
+                "browser.page_summary",
+                "Read and summarize the current visible page context.",
+            )
+        ]
     if intent == "links":
-        return [_step("browser.visible_links", "Extract links from the current visible page context.")]
+        return [
+            _step(
+                "browser.visible_links",
+                "Extract links from the current visible page context.",
+            )
+        ]
     if intent == "buttons":
-        return [_step("browser.visible_buttons", "Extract buttons from the current visible page context.")]
+        return [
+            _step(
+                "browser.visible_buttons",
+                "Extract buttons from the current visible page context.",
+            )
+        ]
     if intent == "search":
         skill = "browser.search_plan"
         if "youtube" in _clean(goal):
-            return [_step(skill, "Prepare a visible YouTube search workflow.", params={"site": "youtube", "query": _extract_query(goal)})]
-        return [_step(skill, "Prepare a safe web search workflow.", params={"query": _extract_query(goal)})]
+            return [
+                _step(
+                    skill,
+                    "Prepare a visible YouTube search workflow.",
+                    params={"site": "youtube", "query": _extract_query(goal)},
+                )
+            ]
+        return [
+            _step(
+                skill,
+                "Prepare a safe web search workflow.",
+                params={"query": _extract_query(goal)},
+            )
+        ]
     if intent == "form_fill":
-        return [_step("browser.form_fill_plan", "Plan a visible form fill without submitting.", risk="MEDIUM", approval=True)]
+        return [
+            _step(
+                "browser.form_fill_plan",
+                "Plan a visible form fill without submitting.",
+                risk="MEDIUM",
+                approval=True,
+            )
+        ]
     if intent == "download":
-        return [_step("browser.download_plan", "Plan a visible download after approval.", risk="MEDIUM", approval=True)]
+        return [
+            _step(
+                "browser.download_plan",
+                "Plan a visible download after approval.",
+                risk="MEDIUM",
+                approval=True,
+            )
+        ]
     if intent == "message":
-        return [_step("browser.message_plan", "Plan messaging action; sending requires approval.", risk="MEDIUM", approval=True)]
+        return [
+            _step(
+                "browser.message_plan",
+                "Plan messaging action; sending requires approval.",
+                risk="MEDIUM",
+                approval=True,
+            )
+        ]
     return [_step("browser.agent_diagnostics", "Inspect browser agent readiness.")]
 
 
-def _step(skill: str, title: str, *, params: dict[str, Any] | None = None, risk: str = "LOW", approval: bool = False) -> dict[str, Any]:
+def _step(
+    skill: str,
+    title: str,
+    *,
+    params: dict[str, Any] | None = None,
+    risk: str = "LOW",
+    approval: bool = False,
+) -> dict[str, Any]:
     return {
         "id": "step_" + uuid.uuid4().hex[:6],
         "title": title,
@@ -412,7 +563,12 @@ def _row_to_task(row: sqlite3.Row) -> BrowserTask:
 
 
 def _extract_query(goal: str) -> str:
-    clean = re.sub(r"\b(open|search|google|youtube|for|and|summarize|summarise|research)\b", " ", goal, flags=re.IGNORECASE)
+    clean = re.sub(
+        r"\b(open|search|google|youtube|for|and|summarize|summarise|research)\b",
+        " ",
+        goal,
+        flags=re.IGNORECASE,
+    )
     clean = _clean(clean)
     return clean or goal.strip()
 
@@ -438,7 +594,12 @@ def _status(value: str) -> BrowserTaskStatus:
     if value == "handled":
         return "completed"
     clean = str(value)
-    return clean if clean in {"planned", "completed", "requires_approval", "blocked", "unsupported"} else "unsupported"  # type: ignore[return-value]
+    return (
+        clean
+        if clean
+        in {"planned", "completed", "requires_approval", "blocked", "unsupported"}
+        else "unsupported"
+    )  # type: ignore[return-value]
 
 
 def _iso(timestamp: float) -> str:

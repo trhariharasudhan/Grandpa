@@ -142,7 +142,9 @@ class UiAutomationExtractor:
                 visible=visible,
                 focused=bool(_safe_property(element, "CurrentHasKeyboardFocus", False)),
                 selected=_safe_bool_property(element, 30079),
-                value=str(_safe_property(element, "CurrentItemStatus", "") or "").strip(),
+                value=str(
+                    _safe_property(element, "CurrentItemStatus", "") or ""
+                ).strip(),
                 automation_id=str(
                     _safe_property(element, "CurrentAutomationId", "") or ""
                 ).strip(),

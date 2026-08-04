@@ -31,7 +31,9 @@ def test_public_sdk_exports_still_resolve_lazily() -> None:
 
 
 def test_core_dependencies_do_not_install_deprecated_pynvml() -> None:
-    project = tomllib.loads((Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8"))
+    project = tomllib.loads(
+        (Path(__file__).parents[1] / "pyproject.toml").read_text(encoding="utf-8")
+    )
     dependencies = project["project"]["dependencies"]
 
     assert not any(item.casefold().startswith("pynvml") for item in dependencies)

@@ -149,6 +149,9 @@ def handle_project_command(
         r"(?:stop|restart) (?:the )?(.+?)(?: server| project)?", normalized
     )
     if match:
+        if "project" not in normalized and "server" not in normalized:
+            match = None
+    if match:
         action = normalized.split()[0]
         try:
             project = manager.resolve(match.group(1))

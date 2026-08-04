@@ -41,7 +41,9 @@ def test_forget_matching_memory(tmp_path):
 def test_remember_that_learning_ai_automation(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
 
-    result = handle_memory_command("remember that I am learning AI automation", store=store)
+    result = handle_memory_command(
+        "remember that I am learning AI automation", store=store
+    )
 
     assert result.status == "handled"
     assert "I am learning AI automation" in result.message
@@ -134,7 +136,9 @@ def test_semantic_low_confidence_does_not_invent_memory(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my project is Grandpa", store=store)
 
-    result = handle_memory_command("what reminder do I have for my dentist?", store=store)
+    result = handle_memory_command(
+        "what reminder do I have for my dentist?", store=store
+    )
 
     assert result.status == "handled"
     assert "not confident" in result.message or "do not have" in result.message

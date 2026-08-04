@@ -54,7 +54,9 @@ def sprint_preview() -> None:
 
 
 @sprint_group.command("start")
-@click.option("--approve", is_flag=True, default=False, help="Approve files write execution.")
+@click.option(
+    "--approve", is_flag=True, default=False, help="Approve files write execution."
+)
 def sprint_start(approve: bool) -> None:
     """Start or resume the current sprint."""
     try:
@@ -74,7 +76,9 @@ def sprint_start(approve: bool) -> None:
             click.echo("Sprint Plan Proposed:")
             for step in sprint.sprint_plan:
                 click.echo(f"  {step}")
-            if not click.confirm("\nDo you approve executing these tasks and validation checks?"):
+            if not click.confirm(
+                "\nDo you approve executing these tasks and validation checks?"
+            ):
                 click.echo("Sprint start cancelled (approval denied).")
                 return
             sprint.approval_state = "approved"
@@ -176,6 +180,7 @@ def sprint_validate() -> None:
                 DiagnosticCommand,
                 run_catalog_command,
             )
+
             cmd = DiagnosticCommand(args=args, cwd=str(runner.project_path))
             res = run_catalog_command(cmd)
             click.echo(f"  Command '{cmd_str}' -> Exit Code: {res.exit_code}")
@@ -219,8 +224,12 @@ def sprint_report() -> None:
 
 
 @sprint_group.command("checkpoint")
-@click.option("--save", "save_id", default=None, help="Save active state snapshot with ID.")
-@click.option("--restore", "restore_id", default=None, help="Restore state snapshot with ID.")
+@click.option(
+    "--save", "save_id", default=None, help="Save active state snapshot with ID."
+)
+@click.option(
+    "--restore", "restore_id", default=None, help="Restore state snapshot with ID."
+)
 def sprint_checkpoint(save_id: str | None, restore_id: str | None) -> None:
     """Manage sprint checkpoints manually."""
     try:
@@ -230,7 +239,9 @@ def sprint_checkpoint(save_id: str | None, restore_id: str | None) -> None:
             runner.tracker.checkpoint_manager.save_checkpoint(save_id)
             click.echo(f"Checkpoint '{save_id}' saved successfully.")
         elif restore_id:
-            success, msg = runner.tracker.checkpoint_manager.restore_checkpoint(restore_id)
+            success, msg = runner.tracker.checkpoint_manager.restore_checkpoint(
+                restore_id
+            )
             if success:
                 click.echo(f"Checkpoint '{restore_id}' restored successfully.")
             else:

@@ -35,7 +35,15 @@ def is_command_allowed(args: list[str]) -> bool:
             if arg.startswith("-") and arg not in ("-v", "-s", "-q"):
                 return False
             # Check for path safety, preventing traversal/semicolon/chaining
-            if ";" in arg or "|" in arg or "&" in arg or "`" in arg or "$" in arg or ">" in arg or "<" in arg:
+            if (
+                ";" in arg
+                or "|" in arg
+                or "&" in arg
+                or "`" in arg
+                or "$" in arg
+                or ">" in arg
+                or "<" in arg
+            ):
                 return False
         return True
 
@@ -84,8 +92,12 @@ def run_catalog_command(cmd: DiagnosticCommand) -> DiagnosticResult:
         )
     except subprocess.TimeoutExpired as exc:
         duration = time.time() - start_time
-        stdout = exc.stdout.decode("utf-8", errors="replace")[:5000] if exc.stdout else ""
-        stderr = exc.stderr.decode("utf-8", errors="replace")[:5000] if exc.stderr else ""
+        stdout = (
+            exc.stdout.decode("utf-8", errors="replace")[:5000] if exc.stdout else ""
+        )
+        stderr = (
+            exc.stderr.decode("utf-8", errors="replace")[:5000] if exc.stderr else ""
+        )
         return DiagnosticResult(
             command=cmd.args,
             exit_code=-1,

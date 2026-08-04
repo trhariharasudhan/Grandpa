@@ -14,7 +14,18 @@ KIND_EXTENSIONS = {
     "image": {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff"},
     "video": {".mp4", ".mov", ".mkv", ".avi", ".webm"},
     "audio": {".mp3", ".wav", ".m4a", ".flac", ".ogg"},
-    "document": {".doc", ".docx", ".txt", ".rtf", ".md", ".xls", ".xlsx", ".ppt", ".pptx", ".csv"},
+    "document": {
+        ".doc",
+        ".docx",
+        ".txt",
+        ".rtf",
+        ".md",
+        ".xls",
+        ".xlsx",
+        ".ppt",
+        ".pptx",
+        ".csv",
+    },
     "archive": {".zip", ".rar", ".7z", ".tar", ".gz"},
     "installer": {".exe", ".msi"},
 }
@@ -23,8 +34,14 @@ KIND_EXTENSIONS = {
 class DownloadsScanner:
     """Non-recursive scanner for configured Downloads roots."""
 
-    def __init__(self, roots: tuple[Path, ...] | None = None, safety: DownloadsSafetyPolicy | None = None) -> None:
-        self.roots = tuple(Path(root).expanduser() for root in (roots or default_download_roots()))
+    def __init__(
+        self,
+        roots: tuple[Path, ...] | None = None,
+        safety: DownloadsSafetyPolicy | None = None,
+    ) -> None:
+        self.roots = tuple(
+            Path(root).expanduser() for root in (roots or default_download_roots())
+        )
         self.safety = safety or DownloadsSafetyPolicy(self.roots)
 
     def status(self) -> tuple[str, str]:
@@ -34,7 +51,10 @@ class DownloadsScanner:
                 if not root.exists():
                     return "missing", f"Downloads folder missing: {root}"
                 if not root.is_dir():
-                    return "missing", f"Configured Downloads path is not a folder: {root}"
+                    return (
+                        "missing",
+                        f"Configured Downloads path is not a folder: {root}",
+                    )
                 next(root.iterdir(), None)
             return "ready", "Downloads directory ready."
         except PermissionError as exc:
@@ -51,14 +71,26 @@ class DownloadsScanner:
             for path in root_path.iterdir():
                 if path.is_file():
                     items.append(self._item(path))
-        return tuple(sorted(items, key=lambda item: item.path.stat().st_mtime if item.path.exists() else 0, reverse=True))
+        return tuple(
+            sorted(
+                items,
+                key=lambda item: item.path.stat().st_mtime if item.path.exists() else 0,
+                reverse=True,
+            )
+        )
 
     def recent(self, *, limit: int = 10) -> tuple[DownloadItem, ...]:
         return self.scan()[:limit]
 
     def today(self) -> tuple[DownloadItem, ...]:
-        start = datetime.now(timezone.utc).astimezone().replace(hour=0, minute=0, second=0, microsecond=0)
-        return tuple(item for item in self.scan() if _modified_datetime(item.path) >= start)
+        start = (
+            datetime.now(timezone.utc)
+            .astimezone()
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+        )
+        return tuple(
+            item for item in self.scan() if _modified_datetime(item.path) >= start
+        )
 
     def large(self, *, min_bytes: int = 100 * 1024 * 1024) -> tuple[DownloadItem, ...]:
         return tuple(item for item in self.scan() if item.size_bytes >= min_bytes)
@@ -74,14 +106,20 @@ class DownloadsScanner:
             return self.by_kind("pdf")
         if needle in {"image", "images", "pictures"}:
             return self.by_kind("image")
-        return tuple(item for item in self.scan() if needle in item.name.casefold() or needle in item.kind)
+        return tuple(
+            item
+            for item in self.scan()
+            if needle in item.name.casefold() or needle in item.kind
+        )
 
     def by_kind(self, kind: str) -> tuple[DownloadItem, ...]:
         return tuple(item for item in self.scan() if item.kind == kind)
 
     def older_than(self, days: int) -> tuple[DownloadItem, ...]:
         cutoff = datetime.now(timezone.utc).astimezone() - timedelta(days=days)
-        return tuple(item for item in self.scan() if _modified_datetime(item.path) < cutoff)
+        return tuple(
+            item for item in self.scan() if _modified_datetime(item.path) < cutoff
+        )
 
     def duplicates(self) -> tuple[DownloadItem, ...]:
         groups: dict[tuple[int, str], list[DownloadItem]] = {}
@@ -93,7 +131,9 @@ class DownloadsScanner:
         duplicates = []
         for digest, items in groups.items():
             if len(items) > 1:
-                duplicates.extend(_with_duplicate_group(item, str(digest[1])[:12]) for item in items)
+                duplicates.extend(
+                    _with_duplicate_group(item, str(digest[1])[:12]) for item in items
+                )
         return tuple(duplicates)
 
     def latest(self) -> DownloadItem | None:
@@ -106,7 +146,9 @@ class DownloadsScanner:
             path=path,
             name=path.name,
             size_bytes=stat.st_size,
-            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).astimezone().isoformat(),
+            modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+            .astimezone()
+            .isoformat(),
             kind=classify_file(path),
             safe_to_open=self.safety.is_safe_to_open(path),
             incomplete=self.safety.is_incomplete(path),

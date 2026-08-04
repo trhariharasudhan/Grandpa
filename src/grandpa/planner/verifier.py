@@ -54,8 +54,10 @@ class StepVerifier:
                     status="target_lost",
                 )
             if strategy == "application_window_focused":
-                check = self.executor.automation_service.window_targets.verify_foreground(
-                    window
+                check = (
+                    self.executor.automation_service.window_targets.verify_foreground(
+                        window
+                    )
                 )
                 if not check.ok:
                     return _failed(result, check.message, status="target_lost")
@@ -107,9 +109,7 @@ class StepVerifier:
             return _failed(result, "The original document could not be verified open.")
         if strategy in {"typed_text_present", "calculator_expression_visible"}:
             expected = str(
-                step.parameters.get("text")
-                or step.parameters.get("expression")
-                or ""
+                step.parameters.get("text") or step.parameters.get("expression") or ""
             )
             visible = (
                 self._calculator_visible_text()
@@ -182,7 +182,9 @@ class StepVerifier:
         return service.window_targets.resolve(app)
 
     def _window_ready(self, window) -> bool:
-        check = getattr(self.executor.automation_service.window_targets, "is_ready", None)
+        check = getattr(
+            self.executor.automation_service.window_targets, "is_ready", None
+        )
         return bool(check(window)) if callable(check) else True
 
     def _calculator_visible_text(self) -> str:
@@ -199,9 +201,7 @@ class StepVerifier:
                 return observed
         return self.executor.vision_engine.read().message
 
-    def _verify_browser_results(
-        self, step: PlanStep, result: StepResult
-    ) -> StepResult:
+    def _verify_browser_results(self, step: PlanStep, result: StepResult) -> StepResult:
         query = str(step.parameters.get("query") or "")
         requested_url = str(result.data.get("url") or "")
         deadline = time.monotonic() + min(max(step.timeout_seconds, 0.1), 6.0)
@@ -306,7 +306,9 @@ def _search_url_matches(query: str, url: str) -> bool:
         parsed = urlparse(url)
         values = parse_qs(parsed.query)
         observed = " ".join(
-            values.get("q", []) + values.get("query", []) + values.get("search_query", [])
+            values.get("q", [])
+            + values.get("query", [])
+            + values.get("search_query", [])
         )
         return _query_matches_text(query, unquote_plus(observed))
     except (TypeError, ValueError):
@@ -336,7 +338,9 @@ def _verified(
     )
 
 
-def _failed(result: StepResult, message: str, *, status: str = "verification_failed") -> StepResult:
+def _failed(
+    result: StepResult, message: str, *, status: str = "verification_failed"
+) -> StepResult:
     return StepResult(
         status,
         message,

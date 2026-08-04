@@ -19,7 +19,9 @@ def list_skills() -> dict[str, Any]:
 
     ensure_default_skills_registered()
     diagnostics = registry_diagnostics()
-    manifest_skills = [{"name": key, "source": "manifest"} for key in sorted(SkillRegistry.keys())]
+    manifest_skills = [
+        {"name": key, "source": "manifest"} for key in sorted(SkillRegistry.keys())
+    ]
     runtime_skills = [item.to_dict() for item in list_runtime_skills()]
     return {"skills": runtime_skills + manifest_skills, "runtime": diagnostics}
 
@@ -75,12 +77,18 @@ def diagnostics() -> dict[str, Any]:
 
 def health() -> dict[str, Any]:
     payload = diagnostics()
-    runtime = payload.get("runtime", {}) if isinstance(payload.get("runtime"), dict) else payload
+    runtime = (
+        payload.get("runtime", {})
+        if isinstance(payload.get("runtime"), dict)
+        else payload
+    )
     return {
         "name": "skills",
         "ready": summarize_ready(runtime),
         "status": runtime.get("status", payload.get("status", "ready")),
-        "dependencies": {"registry": "ready" if summarize_ready(runtime) else "unavailable"},
+        "dependencies": {
+            "registry": "ready" if summarize_ready(runtime) else "unavailable"
+        },
     }
 
 
@@ -88,6 +96,8 @@ def readiness() -> dict[str, Any]:
     payload = diagnostics()
     return {
         "ready": health()["ready"],
-        "skill_count": len(payload.get("skills", [])) if isinstance(payload.get("skills"), list) else 0,
+        "skill_count": len(payload.get("skills", []))
+        if isinstance(payload.get("skills"), list)
+        else 0,
         "runtime": payload.get("runtime", {}),
     }

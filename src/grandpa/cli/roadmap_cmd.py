@@ -38,10 +38,21 @@ def roadmap_group() -> None:
 
 @roadmap_group.command("create")
 @click.argument("description")
-@click.option("--goal", "-g", "goals", multiple=True, help="Goals associated with the roadmap.")
-@click.option("--merge", is_flag=True, default=False, help="Merge into the existing roadmap.")
-@click.option("--replace", is_flag=True, default=False, help="Replace the current roadmap completely.")
-def roadmap_create(description: str, goals: list[str], merge: bool, replace: bool) -> None:
+@click.option(
+    "--goal", "-g", "goals", multiple=True, help="Goals associated with the roadmap."
+)
+@click.option(
+    "--merge", is_flag=True, default=False, help="Merge into the existing roadmap."
+)
+@click.option(
+    "--replace",
+    is_flag=True,
+    default=False,
+    help="Replace the current roadmap completely.",
+)
+def roadmap_create(
+    description: str, goals: list[str], merge: bool, replace: bool
+) -> None:
     """Create a project roadmap based on description and goals."""
     try:
         path = _get_project_path()
@@ -49,7 +60,9 @@ def roadmap_create(description: str, goals: list[str], merge: bool, replace: boo
         state = tracker.load_state()
 
         if replace:
-            if not click.confirm("Are you sure you want to replace the current roadmap?"):
+            if not click.confirm(
+                "Are you sure you want to replace the current roadmap?"
+            ):
                 click.echo("Operation cancelled.")
                 return
             state.roadmap.milestones = {}
@@ -81,7 +94,9 @@ def roadmap_show() -> None:
         click.echo(f"Project: {state.project_name}")
         click.echo("Milestones:")
         for mid, m in state.roadmap.milestones.items():
-            click.echo(f"  - ({mid}) {m.title} (Status: {m.status.upper()}, Priority: {m.priority.upper()})")
+            click.echo(
+                f"  - ({mid}) {m.title} (Status: {m.status.upper()}, Priority: {m.priority.upper()})"
+            )
             click.echo(f"    Description: {m.description}")
             if getattr(m, "rationale", None):
                 click.echo(f"    Rationale: {m.rationale}")
@@ -96,9 +111,13 @@ def roadmap_show() -> None:
         for hist in state.roadmap.planning_history:
             action = hist.get("action", "")
             if action == "generate_roadmap":
-                click.echo(f"  - Generated roadmap: {hist.get('description')} with goals {hist.get('goals')}")
+                click.echo(
+                    f"  - Generated roadmap: {hist.get('description')} with goals {hist.get('goals')}"
+                )
             elif action == "expand_milestone":
-                click.echo(f"  - Expanded milestone '{hist.get('milestone_id')}': task '{hist.get('task_id')}' - {hist.get('explanation')}")
+                click.echo(
+                    f"  - Expanded milestone '{hist.get('milestone_id')}': task '{hist.get('task_id')}' - {hist.get('explanation')}"
+                )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -117,7 +136,9 @@ def roadmap_milestones() -> None:
 
         click.echo("Milestones:")
         for mid, m in state.roadmap.milestones.items():
-            click.echo(f"({mid}) {m.title} - Status: {m.status.upper()} (Priority: {m.priority.upper()})")
+            click.echo(
+                f"({mid}) {m.title} - Status: {m.status.upper()} (Priority: {m.priority.upper()})"
+            )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -137,7 +158,9 @@ def roadmap_tasks() -> None:
         click.echo("Task Registry Graph:")
         for t in state.tasks:
             milestone_str = f"Milestone: {t.milestone}" if t.milestone else "Global"
-            click.echo(f"({t.task_id}) {t.title} - Status: {t.status.upper()} (Priority: {t.priority.upper()}, {milestone_str})")
+            click.echo(
+                f"({t.task_id}) {t.title} - Status: {t.status.upper()} (Priority: {t.priority.upper()}, {milestone_str})"
+            )
             if getattr(t, "rationale", None):
                 click.echo(f"  Rationale: {t.rationale}")
             if getattr(t, "affected_areas", None) and t.affected_areas:
@@ -156,12 +179,20 @@ def roadmap_tasks() -> None:
 
 @roadmap_group.command("expand")
 @click.argument("milestone_id")
-@click.option("--task-id", "-t", required=True, help="Task ID to expand milestone with.")
+@click.option(
+    "--task-id", "-t", required=True, help="Task ID to expand milestone with."
+)
 @click.option("--title", required=True, help="Task title.")
-@click.option("--dep", "-d", "dependencies", multiple=True, help="Dependencies (task IDs).")
+@click.option(
+    "--dep", "-d", "dependencies", multiple=True, help="Dependencies (task IDs)."
+)
 @click.option("--priority", "-p", default="medium", help="Priority (high/medium/low).")
 @click.option("--desc", default="", help="Task description.")
-@click.option("--explanation", default="Required for milestone implementation.", help="Why this task exists.")
+@click.option(
+    "--explanation",
+    default="Required for milestone implementation.",
+    help="Why this task exists.",
+)
 def roadmap_expand(
     milestone_id: str,
     task_id: str,
@@ -192,7 +223,9 @@ def roadmap_expand(
         generator.expand_milestone(milestone_id, tasks_data)
         tracker.save_state(state)
 
-        click.echo(f"Successfully expanded milestone '{milestone_id}' with task '{task_id}'.")
+        click.echo(
+            f"Successfully expanded milestone '{milestone_id}' with task '{task_id}'."
+        )
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
 
@@ -247,7 +280,9 @@ def roadmap_archive() -> None:
             {
                 "action": "archive_roadmap",
                 "timestamp": time.time(),
-                "archived_milestones": {mid: m.to_dict() for mid, m in state.roadmap.milestones.items()},
+                "archived_milestones": {
+                    mid: m.to_dict() for mid, m in state.roadmap.milestones.items()
+                },
                 "archived_tasks": [t.to_dict() for t in state.tasks],
             }
         )
@@ -305,7 +340,9 @@ def roadmap_validate() -> None:
 
         is_valid, errors = validate_roadmap(state)
         if is_valid:
-            click.echo("Roadmap is valid. No circular dependencies, orphan tasks, or invalid references detected.")
+            click.echo(
+                "Roadmap is valid. No circular dependencies, orphan tasks, or invalid references detected."
+            )
         else:
             click.echo("Roadmap validation failed with errors:")
             for err in errors:
@@ -316,8 +353,19 @@ def roadmap_validate() -> None:
 
 
 @roadmap_group.command("migrate")
-@click.option("--preview", is_flag=True, default=False, help="Preview the migration changes without modifying state.")
-@click.option("--apply", "apply_flag", is_flag=True, default=False, help="Apply the migration updates.")
+@click.option(
+    "--preview",
+    is_flag=True,
+    default=False,
+    help="Preview the migration changes without modifying state.",
+)
+@click.option(
+    "--apply",
+    "apply_flag",
+    is_flag=True,
+    default=False,
+    help="Apply the migration updates.",
+)
 def roadmap_migrate(preview: bool, apply_flag: bool) -> None:
     """Migrate legacy generic roadmap template items to goal-aware representations."""
     try:
@@ -331,10 +379,13 @@ def roadmap_migrate(preview: bool, apply_flag: bool) -> None:
         )
 
         if not is_legacy_roadmap(state):
-            click.echo("Active project roadmap is already up-to-date. No migration required.")
+            click.echo(
+                "Active project roadmap is already up-to-date. No migration required."
+            )
             return
 
         import copy
+
         simulated_state = copy.deepcopy(state)
         _, changes = migrate_legacy_roadmap(simulated_state)
 
@@ -352,11 +403,15 @@ def roadmap_migrate(preview: bool, apply_flag: bool) -> None:
                 click.echo(f"  + Task: {t}")
 
             if not apply_flag:
-                click.echo("\nRun 'grandpa roadmap migrate --apply' to perform the migration.")
+                click.echo(
+                    "\nRun 'grandpa roadmap migrate --apply' to perform the migration."
+                )
             return
 
         if apply_flag:
-            if not click.confirm("Are you sure you want to apply the roadmap migration?"):
+            if not click.confirm(
+                "Are you sure you want to apply the roadmap migration?"
+            ):
                 click.echo("Operation cancelled.")
                 return
 

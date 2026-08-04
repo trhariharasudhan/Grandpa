@@ -22,7 +22,10 @@ class FakeEngine:
 
     def generate(self, messages: list[Message], *, model: str, **kwargs):
         self.calls.append(model)
-        return {"content": f"used {model}", "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}
+        return {
+            "content": f"used {model}",
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+        }
 
 
 def _client(engine: FakeEngine | None = None) -> TestClient:

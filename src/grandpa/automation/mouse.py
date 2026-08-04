@@ -7,7 +7,9 @@ from typing import Any
 from grandpa.automation.models import AutomationAction, Point
 
 
-def mouse_payload(action: AutomationAction, point: Point | None = None) -> dict[str, Any]:
+def mouse_payload(
+    action: AutomationAction, point: Point | None = None
+) -> dict[str, Any]:
     args = dict(action.args)
     if point is not None:
         args.update({"x": point.x, "y": point.y})

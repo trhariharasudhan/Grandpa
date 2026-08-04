@@ -98,6 +98,48 @@ def _grandpa_executable_candidates() -> list[str]:
     return unique
 
 
+def _active_grandpa_executable(candidates: list[str]) -> str:
+    """Return the current launcher path when it can be identified safely."""
+
+    invoked = Path(sys.argv[0]).expanduser()
+    if invoked.name.casefold() in {"grandpa", "grandpa.exe"}:
+        try:
+            if invoked.exists():
+                return str(invoked.resolve())
+        except OSError:
+            pass
+    executable_dir = Path(sys.executable).resolve().parent
+    for candidate in candidates:
+        try:
+            if Path(candidate).resolve().parent == executable_dir:
+                return candidate
+        except OSError:
+            continue
+    return candidates[0] if candidates else "Not found on PATH"
+
+
+def _duplicate_launcher_guidance(candidates: list[str], preferred: str) -> str:
+    lines = [
+        *candidates,
+        f"Prefer: {preferred}",
+        "Use `uv run grandpa ...` to force the project environment.",
+    ]
+    for candidate in candidates:
+        candidate_path = Path(candidate)
+        if candidate.casefold() == preferred.casefold():
+            continue
+        scripts_dir = candidate_path.parent
+        python = scripts_dir.parent / "python.exe"
+        if python.exists():
+            lines.append(
+                f'Review the other install with: "{python}" -m pip show grandpa'
+            )
+            lines.append(
+                f'If confirmed stale, remove it with: "{python}" -m pip uninstall grandpa'
+            )
+    return "\n".join(lines)
+
+
 def _check_runtime_environment() -> list[CheckResult]:
     project_root = _project_root()
     package_root = Path(__file__).resolve().parents[1]
@@ -113,8 +155,16 @@ def _check_runtime_environment() -> list[CheckResult]:
     ]
 
     candidates = _grandpa_executable_candidates()
-    active = candidates[0] if candidates else "Not found on PATH"
+    active = _active_grandpa_executable(candidates)
     checks.append(CheckResult("Grandpa executable", "ok", active))
+    checks.append(
+        CheckResult(
+            "Grandpa executables on PATH",
+            "info",
+            f"{len(candidates)} found",
+            details="\n".join(candidates) if candidates else "None found",
+        )
+    )
 
     if len(candidates) > 1:
         preferred = None
@@ -130,12 +180,7 @@ def _check_runtime_environment() -> list[CheckResult]:
                 "Grandpa executable duplicates",
                 "warn",
                 f"{len(candidates)} executables found on PATH",
-                details=(
-                    "\n".join(candidates)
-                    + "\nPrefer: "
-                    + preferred
-                    + "\nUse `uv run grandpa ...` to force the project environment."
-                ),
+                details=_duplicate_launcher_guidance(candidates, preferred),
             )
         )
     else:

@@ -109,40 +109,137 @@ def classify_goal(goal_text: str, project_evidence: ProjectTypeEvidence) -> str:
     lowered = goal_text.lower().strip()
 
     # Priority order checks
-    if any(k in lowered for k in ("auth", "login", "register", "password", "hash", "token", "jwt", "bcrypt")):
+    if any(
+        k in lowered
+        for k in (
+            "auth",
+            "login",
+            "register",
+            "password",
+            "hash",
+            "token",
+            "jwt",
+            "bcrypt",
+        )
+    ):
         return "authentication"
-    if any(k in lowered for k in ("playwright", "selenium", "webdriver", "browser", "page", "navigate", "puppeteer")):
+    if any(
+        k in lowered
+        for k in (
+            "playwright",
+            "selenium",
+            "webdriver",
+            "browser",
+            "page",
+            "navigate",
+            "puppeteer",
+        )
+    ):
         return "browser_automation"
-    if any(k in lowered for k in ("desktop", "win32", "pywinauto", "uiautomation", "mouse", "keyboard", "click")):
+    if any(
+        k in lowered
+        for k in (
+            "desktop",
+            "win32",
+            "pywinauto",
+            "uiautomation",
+            "mouse",
+            "keyboard",
+            "click",
+        )
+    ):
         return "desktop_automation"
     if any(k in lowered for k in ("voice", "speak", "speech", "audio", "jarvis")):
         return "voice_assistant"
-    if any(k in lowered for k in ("test", "pytest", "unittest", "assert", "coverage", "lint", "ruff")):
+    if any(
+        k in lowered
+        for k in ("test", "pytest", "unittest", "assert", "coverage", "lint", "ruff")
+    ):
         return "testing_quality"
-    if any(k in lowered for k in ("docker", "k8s", "kubernetes", "deploy", "cloud", "ci", "cd", "workflow", "github-actions")):
+    if any(
+        k in lowered
+        for k in (
+            "docker",
+            "k8s",
+            "kubernetes",
+            "deploy",
+            "cloud",
+            "ci",
+            "cd",
+            "workflow",
+            "github-actions",
+        )
+    ):
         return "deployment"
-    if any(k in lowered for k in ("doc", "docs", "guide", "readme", "markdown", "walkthrough", "comments")):
+    if any(
+        k in lowered
+        for k in (
+            "doc",
+            "docs",
+            "guide",
+            "readme",
+            "markdown",
+            "walkthrough",
+            "comments",
+        )
+    ):
         return "documentation"
     if any(k in lowered for k in ("fix", "bug", "error", "fail", "issue", "resolve")):
         return "bug_fix"
     if any(k in lowered for k in ("refactor", "clean", "rewrite", "restructure")):
         return "refactor"
-    if any(k in lowered for k in ("research", "investigate", "explore", "look", "audit")):
+    if any(
+        k in lowered for k in ("research", "investigate", "explore", "look", "audit")
+    ):
         return "research"
-    if any(k in lowered for k in ("db", "sqlite", "postgres", "mysql", "save", "load", "persist", "retrieve")):
+    if any(
+        k in lowered
+        for k in (
+            "db",
+            "sqlite",
+            "postgres",
+            "mysql",
+            "save",
+            "load",
+            "persist",
+            "retrieve",
+        )
+    ):
         # Distinguish database feature vs generic memory system
         if "sql" in lowered or "schema" in lowered or "migration" in lowered:
             return "database_feature"
         return "memory_system"
-    if any(k in lowered for k in ("fastapi", "api", "endpoint", "endpoints", "rest", "graphql", "route")):
+    if any(
+        k in lowered
+        for k in ("fastapi", "api", "endpoint", "endpoints", "rest", "graphql", "route")
+    ):
         return "backend_api"
-    if any(k in lowered for k in ("react", "vue", "vite", "flutter", "html", "css", "ui", "screen", "view", "component", "pages", "interface")):
+    if any(
+        k in lowered
+        for k in (
+            "react",
+            "vue",
+            "vite",
+            "flutter",
+            "html",
+            "css",
+            "ui",
+            "screen",
+            "view",
+            "component",
+            "pages",
+            "interface",
+        )
+    ):
         return "frontend_ui"
 
     # Stack-based fallback
     if "fastapi" in project_evidence.detected_stack:
         return "backend_api"
-    if "react" in project_evidence.detected_stack or "vite" in project_evidence.detected_stack:
+    if (
+        "react" in project_evidence.detected_stack
+        or "vite" in project_evidence.detected_stack
+    ):
         return "frontend_ui"
 
     return "unknown"
@@ -159,7 +256,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Base schema storage is needed for all login validation steps.",
                 "priority": "high",
                 "dependencies": [],
-                "acceptance_criteria": ["Database schema is defined", "Migrations can be run"],
+                "acceptance_criteria": [
+                    "Database schema is defined",
+                    "Migrations can be run",
+                ],
                 "validation_strategy": ["Verify migrations run successfully"],
             },
             {
@@ -169,7 +269,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Passwords must never be stored in plain text.",
                 "priority": "high",
                 "dependencies": ["user_model"],
-                "acceptance_criteria": ["Hashing helper functions exist", "Salted hash verification succeeds"],
+                "acceptance_criteria": [
+                    "Hashing helper functions exist",
+                    "Salted hash verification succeeds",
+                ],
                 "validation_strategy": ["Run password hashing unit tests"],
             },
             {
@@ -179,7 +282,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Stateless verification requires cryptographically signed claims.",
                 "priority": "medium",
                 "dependencies": ["password_hash"],
-                "acceptance_criteria": ["Token generator and verifier functions are implemented", "Expiration works"],
+                "acceptance_criteria": [
+                    "Token generator and verifier functions are implemented",
+                    "Expiration works",
+                ],
                 "validation_strategy": ["Verify token validation suite passes"],
             },
             {
@@ -189,7 +295,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Users need active route controllers to authenticate.",
                 "priority": "high",
                 "dependencies": ["token_strategy"],
-                "acceptance_criteria": ["POST /register works", "POST /login returns valid tokens"],
+                "acceptance_criteria": [
+                    "POST /register works",
+                    "POST /login returns valid tokens",
+                ],
                 "validation_strategy": ["Verify end-to-end routing integration"],
             },
             {
@@ -199,7 +308,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Access control layers secure private resources.",
                 "priority": "medium",
                 "dependencies": ["auth_routes"],
-                "acceptance_criteria": ["Guarded endpoints return 401 on missing tokens", "Valid tokens grant access"],
+                "acceptance_criteria": [
+                    "Guarded endpoints return 401 on missing tokens",
+                    "Valid tokens grant access",
+                ],
                 "validation_strategy": ["Verify guard authentication intercepts"],
             },
         ],
@@ -214,7 +326,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "dependencies": [],
                 "affected_areas": ["models/user.py"],
                 "expected_artifacts": ["models/user.py"],
-                "acceptance_criteria": ["User table has unique username field", "Password hash field exists"],
+                "acceptance_criteria": [
+                    "User table has unique username field",
+                    "Password hash field exists",
+                ],
                 "validation_commands": ["pytest tests/test_user_model.py"],
                 "risk_level": "low",
             },
@@ -228,11 +343,14 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "dependencies": ["tsk_auth_schema"],
                 "affected_areas": ["security/hashing.py"],
                 "expected_artifacts": ["security/hashing.py"],
-                "acceptance_criteria": ["verify_password returns True on correct password", "Returns False on wrong password"],
+                "acceptance_criteria": [
+                    "verify_password returns True on correct password",
+                    "Returns False on wrong password",
+                ],
                 "validation_commands": ["pytest tests/test_hashing.py"],
                 "risk_level": "low",
             },
-        ]
+        ],
     },
     "browser_automation": {
         "milestones": [
@@ -243,7 +361,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Automation actions require a running and responsive browser instance.",
                 "priority": "high",
                 "dependencies": [],
-                "acceptance_criteria": ["Browser launches successfully", "Context session is initialized"],
+                "acceptance_criteria": [
+                    "Browser launches successfully",
+                    "Context session is initialized",
+                ],
                 "validation_strategy": ["Verify launch logs and session connections"],
             },
             {
@@ -253,7 +374,9 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Locating interactive elements requires parsing page hierarchies.",
                 "priority": "medium",
                 "dependencies": ["browser_session"],
-                "acceptance_criteria": ["Extracts page text and button elements correctly"],
+                "acceptance_criteria": [
+                    "Extracts page text and button elements correctly"
+                ],
                 "validation_strategy": ["Run parser integration tests"],
             },
         ],
@@ -268,11 +391,14 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "dependencies": [],
                 "affected_areas": ["browser/launcher.py"],
                 "expected_artifacts": ["browser/launcher.py"],
-                "acceptance_criteria": ["Launcher opens browser in headless mode", "Handles cleanup"],
+                "acceptance_criteria": [
+                    "Launcher opens browser in headless mode",
+                    "Handles cleanup",
+                ],
                 "validation_commands": ["pytest tests/test_launcher.py"],
                 "risk_level": "medium",
             }
-        ]
+        ],
     },
     "desktop_automation": {
         "milestones": [
@@ -283,7 +409,10 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "rationale": "Automating windows requires finding window handle controllers.",
                 "priority": "high",
                 "dependencies": [],
-                "acceptance_criteria": ["Active windows list can be queried", "Finds target window"],
+                "acceptance_criteria": [
+                    "Active windows list can be queried",
+                    "Finds target window",
+                ],
                 "validation_strategy": ["Verify window hook tests"],
             }
         ],
@@ -298,11 +427,13 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "dependencies": [],
                 "affected_areas": ["desktop/hook.py"],
                 "expected_artifacts": ["desktop/hook.py"],
-                "acceptance_criteria": ["Successfully attaches to Notepad or Explorer window handles"],
+                "acceptance_criteria": [
+                    "Successfully attaches to Notepad or Explorer window handles"
+                ],
                 "validation_commands": ["pytest tests/test_hook.py"],
                 "risk_level": "high",
             }
-        ]
+        ],
     },
     "backend_api": {
         "milestones": [
@@ -332,7 +463,7 @@ RECIPES: Dict[str, Dict[str, Any]] = {
                 "validation_commands": ["pytest tests/test_routes.py"],
                 "risk_level": "low",
             }
-        ]
+        ],
     },
 }
 
@@ -352,7 +483,10 @@ def _get_recipe(goal_type: str) -> Dict[str, Any]:
                 "rationale": "Initial configuration sets up package structures correctly.",
                 "priority": "high",
                 "dependencies": [],
-                "acceptance_criteria": ["Requirements files are updated", "Configuration loads"],
+                "acceptance_criteria": [
+                    "Requirements files are updated",
+                    "Configuration loads",
+                ],
                 "validation_strategy": ["Run config verification unit tests"],
             },
             {
@@ -362,9 +496,12 @@ def _get_recipe(goal_type: str) -> Dict[str, Any]:
                 "rationale": "The functional capabilities are the target output of the goal.",
                 "priority": "high",
                 "dependencies": [f"milestone_init_{goal_type}"],
-                "acceptance_criteria": ["Code compiles", "Baseline methods operate without errors"],
+                "acceptance_criteria": [
+                    "Code compiles",
+                    "Baseline methods operate without errors",
+                ],
                 "validation_strategy": ["Verify compileall and test suite runs"],
-            }
+            },
         ],
         "tasks": [
             {
@@ -394,8 +531,8 @@ def _get_recipe(goal_type: str) -> Dict[str, Any]:
                 "acceptance_criteria": ["Baseline method calls work"],
                 "validation_commands": ["pytest tests/test_core.py"],
                 "risk_level": "medium",
-            }
-        ]
+            },
+        ],
     }
 
 
@@ -406,7 +543,10 @@ class RoadmapGenerator:
         self.state = state
 
     def generate_roadmap(
-        self, description: str, goals: List[str], existing_milestones: Optional[List[str]] = None
+        self,
+        description: str,
+        goals: List[str],
+        existing_milestones: Optional[List[str]] = None,
     ) -> Roadmap:
         """Derive a genuinely goal-aware, project-aware roadmap based on description, evidence, and recipes."""
         evidence = detect_project_type(self.state.project_path)
@@ -471,7 +611,10 @@ class RoadmapGenerator:
             mid = f"ms_{gtype}_{tdata['milestone']}"
 
             # Map dependencies
-            deps = [f"task_{gtype}_{d.replace('tsk_', '')}" for d in tdata.get("dependencies", [])]
+            deps = [
+                f"task_{gtype}_{d.replace('tsk_', '')}"
+                for d in tdata.get("dependencies", [])
+            ]
 
             # Adjust validation command tool
             vcmds = []
@@ -503,7 +646,9 @@ class RoadmapGenerator:
 
         return roadmap
 
-    def expand_milestone(self, milestone_id: str, tasks_data: List[Dict[str, Any]]) -> None:
+    def expand_milestone(
+        self, milestone_id: str, tasks_data: List[Dict[str, Any]]
+    ) -> None:
         """Generate tasks and task dependencies inside a milestone, explaining why they exist."""
         if milestone_id not in self.state.roadmap.milestones:
             raise KeyError(f"Milestone '{milestone_id}' does not exist.")
@@ -540,7 +685,9 @@ class RoadmapGenerator:
                     "action": "expand_milestone",
                     "milestone_id": milestone_id,
                     "task_id": t_id,
-                    "explanation": tdata.get("explanation", "Required for milestone delivery."),
+                    "explanation": tdata.get(
+                        "explanation", "Required for milestone delivery."
+                    ),
                 }
             )
 
@@ -567,17 +714,23 @@ def validate_roadmap(state: ProjectState) -> Tuple[bool, List[str]]:
         if t.task_id in t.dependencies:
             errors.append(f"Task '{t.task_id}' depends on itself.")
         if t.milestone and t.milestone not in ms_set:
-            errors.append(f"Task '{t.task_id}' is orphan: references non-existent milestone '{t.milestone}'.")
+            errors.append(
+                f"Task '{t.task_id}' is orphan: references non-existent milestone '{t.milestone}'."
+            )
         for dep in t.dependencies:
             if dep not in tsk_set:
-                errors.append(f"Task '{t.task_id}' references non-existent dependency '{dep}'.")
+                errors.append(
+                    f"Task '{t.task_id}' references non-existent dependency '{dep}'."
+                )
 
     for mid, m in state.roadmap.milestones.items():
         if mid in m.dependencies:
             errors.append(f"Milestone '{mid}' depends on itself.")
         for dep in m.dependencies:
             if dep not in ms_set:
-                errors.append(f"Milestone '{mid}' references non-existent dependency '{dep}'.")
+                errors.append(
+                    f"Milestone '{mid}' references non-existent dependency '{dep}'."
+                )
 
     # 3. Circular dependency detection for milestones
     ms_graph = {mid: m.dependencies for mid, m in state.roadmap.milestones.items()}
@@ -652,7 +805,11 @@ def migrate_legacy_roadmap(state: ProjectState) -> Tuple[ProjectState, Dict[str,
     # 1. Archive legacy placeholder items
     archive_m = {}
     for mid in list(state.roadmap.milestones.keys()):
-        if mid == "ms_core" or state.roadmap.milestones[mid].title == "Core Infrastructure Implementation":
+        if (
+            mid == "ms_core"
+            or state.roadmap.milestones[mid].title
+            == "Core Infrastructure Implementation"
+        ):
             archive_m[mid] = state.roadmap.milestones[mid]
             changes["archived_milestones"].append(mid)
             del state.roadmap.milestones[mid]
@@ -668,12 +825,14 @@ def migrate_legacy_roadmap(state: ProjectState) -> Tuple[ProjectState, Dict[str,
     state.tasks = new_tasks
 
     # Record archived data in history
-    state.roadmap.planning_history.append({
-        "action": "migrate_archive_legacy",
-        "timestamp": time.time(),
-        "archived_milestones": {mid: m.to_dict() for mid, m in archive_m.items()},
-        "archived_tasks": [t.to_dict() for t in archive_t],
-    })
+    state.roadmap.planning_history.append(
+        {
+            "action": "migrate_archive_legacy",
+            "timestamp": time.time(),
+            "archived_milestones": {mid: m.to_dict() for mid, m in archive_m.items()},
+            "archived_tasks": [t.to_dict() for t in archive_t],
+        }
+    )
 
     # 2. Seed verified Grandpa history milestones
     completed_milestone_list = [
@@ -701,7 +860,7 @@ def migrate_legacy_roadmap(state: ProjectState) -> Tuple[ProjectState, Dict[str,
             description=f"Completed {title} implementation.",
             status="completed",
             priority="medium",
-            dependencies=[f"ms_completed_{idx-1}"] if idx > 1 else [],
+            dependencies=[f"ms_completed_{idx - 1}"] if idx > 1 else [],
             rationale="Verified historical project progress.",
             acceptance_criteria=["Verified by project completion logs"],
             validation_strategy=["Verify all existing test cases pass"],
@@ -721,7 +880,10 @@ def migrate_legacy_roadmap(state: ProjectState) -> Tuple[ProjectState, Dict[str,
         priority="high",
         dependencies=[f"ms_completed_{len(completed_milestone_list)}"],
         rationale="Upgrade project engineer planning outputs to use the migrated roadmap.",
-        acceptance_criteria=["Roadmap validate runs cleanly", "Real CLI commands return new roadmap tasks"],
+        acceptance_criteria=[
+            "Roadmap validate runs cleanly",
+            "Real CLI commands return new roadmap tasks",
+        ],
         validation_strategy=["pytest tests/test_self_planning_engine.py"],
     )
     state.roadmap.milestones[active_mid] = m_active
@@ -745,7 +907,10 @@ def migrate_legacy_roadmap(state: ProjectState) -> Tuple[ProjectState, Dict[str,
         rationale="Verifies migration success.",
         affected_areas=["src/grandpa/agent/development/"],
         expected_artifacts=["tests/test_self_planning_engine.py"],
-        acceptance_criteria=["work-package CLI command executes cleanly", "All tests pass"],
+        acceptance_criteria=[
+            "work-package CLI command executes cleanly",
+            "All tests pass",
+        ],
         validation_commands=["uv run pytest tests/test_self_planning_engine.py"],
         risk_level="low",
     )
@@ -762,7 +927,10 @@ def migrate_legacy_roadmap(state: ProjectState) -> Tuple[ProjectState, Dict[str,
         priority="medium",
         dependencies=[active_mid],
         rationale="Enables autonomous execution of work packages.",
-        acceptance_criteria=["Sprint runner CLI operates", "Sprint tasks run without human input"],
+        acceptance_criteria=[
+            "Sprint runner CLI operates",
+            "Sprint tasks run without human input",
+        ],
         validation_strategy=["pytest tests/test_sprint_runner.py"],
     )
     state.roadmap.milestones[runner_mid] = m_runner

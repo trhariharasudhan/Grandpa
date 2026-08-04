@@ -90,22 +90,34 @@ def test_application_service_verifies_new_notepad_document(monkeypatch):
 
 
 def test_pc_control_facade_still_detects_app(monkeypatch, tmp_path):
-    monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl"))
-    monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db"))
+    monkeypatch.setenv(
+        "GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl")
+    )
+    monkeypatch.setenv(
+        "GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db")
+    )
     monkeypatch.setattr(
         "grandpa.windows_app_resolver.resolve_app",
-        lambda _app: AppResolution("chrome", "Chrome", "found", "path", "chrome.exe", "test", "Found Chrome."),
+        lambda _app: AppResolution(
+            "chrome", "Chrome", "found", "path", "chrome.exe", "test", "Found Chrome."
+        ),
     )
 
-    result = pc_control.run_local_action({"action_type": "detect_app", "target": "chrome"})
+    result = pc_control.run_local_action(
+        {"action_type": "detect_app", "target": "chrome"}
+    )
 
     assert result.ok is True
     assert result.evidence["app_id"] == "chrome"
 
 
 def test_power_actions_still_require_approval(tmp_path, monkeypatch):
-    monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl"))
-    monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db"))
+    monkeypatch.setenv(
+        "GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl")
+    )
+    monkeypatch.setenv(
+        "GRANDPA_PC_CONTROL_DB", str(tmp_path / "pc_control_approvals.db")
+    )
 
     result = pc_control.run_local_action({"action_type": "system_shutdown"})
 

@@ -33,9 +33,17 @@ def load_builtin_agents() -> None:
         except ImportError as exc:
             logger.debug("Optional agent %s unavailable: %s", module, exc)
     from grandpa.core.registry import AgentRegistry
+
     if AgentRegistry.contains("native_react") and not AgentRegistry.contains("react"):
         AgentRegistry.register_value("react", AgentRegistry.get("native_react"))
     _builtins_loaded = True
 
 
-__all__ = ["AgentContext", "AgentResult", "AgentRegistry", "BaseAgent", "ToolUsingAgent", "load_builtin_agents"]
+__all__ = [
+    "AgentContext",
+    "AgentResult",
+    "AgentRegistry",
+    "BaseAgent",
+    "ToolUsingAgent",
+    "load_builtin_agents",
+]

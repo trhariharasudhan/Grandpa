@@ -45,7 +45,9 @@ class PatchApprovalManager:
             tier=TIER_MEDIUM,
         )
 
-    def is_fabricated(self, proposal_id: str, file_changes: list[PatchFileChange] | list[dict]) -> bool:
+    def is_fabricated(
+        self, proposal_id: str, file_changes: list[PatchFileChange] | list[dict]
+    ) -> bool:
         """Check if proposal ID or diff contains placeholder tags."""
         if proposal_id in ("41bde562", "4d97007a"):
             return True
@@ -58,6 +60,7 @@ class PatchApprovalManager:
     def get_proposal(self, proposal_id: str) -> PatchProposal | None:
         """Retrieve and deserialize a queued PatchProposal from the database, invalidating placeholder proposals."""
         from grandpa.tools.approval_store import PendingAction
+
         cursor = self.store._conn.execute(
             "SELECT id, action_type, description, payload, permission_key, "
             "tier, status, created_at, expires_at, notification_sent, decision_at "
@@ -111,7 +114,9 @@ class PatchApprovalManager:
             evidence_ids=p.get("evidence_ids", []),
             inspected_file_hashes=p.get("inspected_file_hashes", {}),
             source_excerpts=p.get("source_excerpts", {}),
-            changed_line_ranges={k: tuple(v) for k, v in p.get("changed_line_ranges", {}).items()},
+            changed_line_ranges={
+                k: tuple(v) for k, v in p.get("changed_line_ranges", {}).items()
+            },
         )
 
     def approve_proposal(self, proposal_id: str) -> None:
@@ -126,7 +131,10 @@ class PatchApprovalManager:
         else:
             # Fallback search
             for act in self.store.list_pending():
-                if act.permission_key == f"patch_proposal:{proposal_id}" or act.id == proposal_id:
+                if (
+                    act.permission_key == f"patch_proposal:{proposal_id}"
+                    or act.id == proposal_id
+                ):
                     self.store.update_status(act.id, STATUS_APPROVED)
                     break
 
@@ -138,7 +146,10 @@ class PatchApprovalManager:
         else:
             # Fallback search
             for act in self.store.list_pending():
-                if act.permission_key == f"patch_proposal:{proposal_id}" or act.id == proposal_id:
+                if (
+                    act.permission_key == f"patch_proposal:{proposal_id}"
+                    or act.id == proposal_id
+                ):
                     self.store.update_status(act.id, STATUS_DENIED)
                     break
 
@@ -154,7 +165,10 @@ class PatchApprovalManager:
         else:
             # Fallback search
             for act in self.store.list_approved():
-                if act.permission_key == f"patch_proposal:{proposal_id}" or act.id == proposal_id:
+                if (
+                    act.permission_key == f"patch_proposal:{proposal_id}"
+                    or act.id == proposal_id
+                ):
                     self.store.update_status(act.id, STATUS_EXECUTED)
                     break
 

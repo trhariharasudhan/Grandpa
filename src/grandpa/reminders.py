@@ -43,7 +43,9 @@ class Reminder:
             "due_at": self.due_at.isoformat(),
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
-            "triggered_at": self.triggered_at.isoformat() if self.triggered_at else None,
+            "triggered_at": self.triggered_at.isoformat()
+            if self.triggered_at
+            else None,
             "status": self.status,
             "source": self.source,
             "failure_reason": self.failure_reason,
@@ -92,12 +94,22 @@ class WindowsToastNotifier:
         try:
             from winotify import Notification  # type: ignore[import-not-found]
 
-            toast = Notification(app_id="Grandpa", title="Grandpa Reminder", msg=reminder.message)
+            toast = Notification(
+                app_id="Grandpa", title="Grandpa Reminder", msg=reminder.message
+            )
             toast.show()
-            return NotificationResult(True, "sent", "Windows notification sent.", backend="winotify")
+            return NotificationResult(
+                True, "sent", "Windows notification sent.", backend="winotify"
+            )
         except Exception as exc:
             logger.warning("Windows reminder notification failed: %s", exc)
-            return NotificationResult(False, "failed", "Windows notification failed.", backend="winotify", warning=str(exc))
+            return NotificationResult(
+                False,
+                "failed",
+                "Windows notification failed.",
+                backend="winotify",
+                warning=str(exc),
+            )
 
 
 class ReminderStore:
@@ -128,7 +140,9 @@ class ReminderStore:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_reminders_status_due ON reminders(status, due_at)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_reminders_status_due ON reminders(status, due_at)"
+            )
 
     def create(
         self,
@@ -166,7 +180,9 @@ class ReminderStore:
                     reminder.message,
                     reminder.due_at.isoformat(),
                     reminder.created_at.isoformat(),
-                    reminder.updated_at.isoformat() if reminder.updated_at else reminder.created_at.isoformat(),
+                    reminder.updated_at.isoformat()
+                    if reminder.updated_at
+                    else reminder.created_at.isoformat(),
                     reminder.status,
                     json.dumps(reminder.source, sort_keys=True),
                 ),
@@ -175,7 +191,9 @@ class ReminderStore:
 
     def get(self, reminder_id: str) -> Reminder | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM reminders WHERE id = ?", (reminder_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM reminders WHERE id = ?", (reminder_id,)
+            ).fetchone()
         return _row_to_reminder(row) if row else None
 
     def list(self, *, status: ReminderStatus | None = None) -> list[Reminder]:
@@ -186,7 +204,9 @@ class ReminderStore:
                     (status,),
                 ).fetchall()
             else:
-                rows = conn.execute("SELECT * FROM reminders ORDER BY due_at ASC").fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM reminders ORDER BY due_at ASC"
+                ).fetchall()
         return [_row_to_reminder(row) for row in rows]
 
     def delete(self, *, statuses: list[ReminderStatus] | None = None) -> int:
@@ -203,7 +223,9 @@ class ReminderStore:
                 )
         return int(cursor.rowcount)
 
-    def cancel(self, reminder_id: str, *, now: datetime | None = None) -> Reminder | None:
+    def cancel(
+        self, reminder_id: str, *, now: datetime | None = None
+    ) -> Reminder | None:
         reminder = self.get(reminder_id)
         if reminder is None:
             return None
@@ -212,11 +234,17 @@ class ReminderStore:
         self._set_status(reminder_id, "cancelled", now=now)
         return self.get(reminder_id)
 
-    def mark_triggered(self, reminder_id: str, *, now: datetime | None = None) -> Reminder | None:
-        self._set_status(reminder_id, "triggered", now=now, triggered_at=now or datetime.now(UTC))
+    def mark_triggered(
+        self, reminder_id: str, *, now: datetime | None = None
+    ) -> Reminder | None:
+        self._set_status(
+            reminder_id, "triggered", now=now, triggered_at=now or datetime.now(UTC)
+        )
         return self.get(reminder_id)
 
-    def mark_failed(self, reminder_id: str, reason: str, *, now: datetime | None = None) -> Reminder | None:
+    def mark_failed(
+        self, reminder_id: str, reason: str, *, now: datetime | None = None
+    ) -> Reminder | None:
         self._set_status(reminder_id, "failed", now=now, failure_reason=reason[:1000])
         return self.get(reminder_id)
 
@@ -255,7 +283,9 @@ class ReminderStore:
                 (
                     status,
                     updated.isoformat(),
-                    _coerce_aware_datetime(triggered_at).isoformat() if triggered_at else None,
+                    _coerce_aware_datetime(triggered_at).isoformat()
+                    if triggered_at
+                    else None,
                     failure_reason,
                     reminder_id,
                 ),
@@ -287,7 +317,9 @@ class ReminderSchedulerService:
             if self._thread and self._thread.is_alive():
                 return False
             self._stop.clear()
-            self._thread = threading.Thread(target=self._run, daemon=True, name="grandpa-reminder-scheduler")
+            self._thread = threading.Thread(
+                target=self._run, daemon=True, name="grandpa-reminder-scheduler"
+            )
             self._thread.start()
             return True
 
@@ -298,7 +330,9 @@ class ReminderSchedulerService:
 
     def status(self) -> dict[str, Any]:
         return {
-            "running": bool(self._thread and self._thread.is_alive() and not self._stop.is_set()),
+            "running": bool(
+                self._thread and self._thread.is_alive() and not self._stop.is_set()
+            ),
             "poll_interval_seconds": self.poll_interval_seconds,
             "last_tick": self._last_tick,
         }
@@ -311,7 +345,11 @@ class ReminderSchedulerService:
         for reminder in due:
             age = now - reminder.due_at
             if age > OVERDUE_GRACE_PERIOD:
-                self.store.mark_failed(reminder.id, "Reminder was missed after restart and is older than 10 minutes.", now=now)
+                self.store.mark_failed(
+                    reminder.id,
+                    "Reminder was missed after restart and is older than 10 minutes.",
+                    now=now,
+                )
                 failed.append(reminder.id)
                 continue
             try:
@@ -320,13 +358,20 @@ class ReminderSchedulerService:
                     self.store.mark_triggered(reminder.id, now=now)
                     triggered.append(reminder.id)
                 else:
-                    self.store.mark_failed(reminder.id, result.warning or result.message, now=now)
+                    self.store.mark_failed(
+                        reminder.id, result.warning or result.message, now=now
+                    )
                     failed.append(reminder.id)
             except Exception as exc:  # pragma: no cover - defensive guard
                 logger.exception("Reminder notification failed")
                 self.store.mark_failed(reminder.id, str(exc), now=now)
                 failed.append(reminder.id)
-        self._last_tick = {"status": "ok", "checked_at": now.isoformat(), "triggered": triggered, "failed": failed}
+        self._last_tick = {
+            "status": "ok",
+            "checked_at": now.isoformat(),
+            "triggered": triggered,
+            "failed": failed,
+        }
         return self._last_tick
 
     def _run(self) -> None:
@@ -360,10 +405,14 @@ def _row_to_reminder(row: sqlite3.Row) -> Reminder:
         message=row["message"],
         due_at=_coerce_aware_datetime(row["due_at"]),
         created_at=_coerce_aware_datetime(row["created_at"]),
-        updated_at=_coerce_aware_datetime(row["updated_at"]) if row["updated_at"] else None,
+        updated_at=_coerce_aware_datetime(row["updated_at"])
+        if row["updated_at"]
+        else None,
         status=row["status"],
         source=json.loads(row["source_json"] or "{}"),
-        triggered_at=_coerce_aware_datetime(row["triggered_at"]) if row["triggered_at"] else None,
+        triggered_at=_coerce_aware_datetime(row["triggered_at"])
+        if row["triggered_at"]
+        else None,
         failure_reason=row["failure_reason"],
     )
 

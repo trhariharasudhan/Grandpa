@@ -31,7 +31,9 @@ def plan(ctx: click.Context, session_id: str) -> None:
 
 @plan.command("create")
 @click.argument("goal")
-@click.option("--local-model", is_flag=True, help="Allow bounded local Ollama decomposition.")
+@click.option(
+    "--local-model", is_flag=True, help="Allow bounded local Ollama decomposition."
+)
 @click.pass_context
 def create_plan(ctx: click.Context, goal: str, local_model: bool) -> None:
     """Create and validate a plan without executing it."""
@@ -44,7 +46,9 @@ def create_plan(ctx: click.Context, goal: str, local_model: bool) -> None:
 
 @plan.command("preview")
 @click.argument("goal")
-@click.option("--local-model", is_flag=True, help="Allow bounded local Ollama decomposition.")
+@click.option(
+    "--local-model", is_flag=True, help="Allow bounded local Ollama decomposition."
+)
 @click.pass_context
 def preview(ctx: click.Context, goal: str, local_model: bool) -> None:
     """Preview and validate a plan without executing it."""
@@ -58,7 +62,9 @@ def preview(ctx: click.Context, goal: str, local_model: bool) -> None:
 @plan.command("execute")
 @click.argument("goal")
 @click.option("--dry-run", is_flag=True, help="Evaluate without performing actions.")
-@click.option("--local-model", is_flag=True, help="Allow bounded local Ollama decomposition.")
+@click.option(
+    "--local-model", is_flag=True, help="Allow bounded local Ollama decomposition."
+)
 @click.option("--debug", is_flag=True, help="Show sanitized planner diagnostics.")
 @click.pass_context
 def execute(
@@ -112,7 +118,11 @@ def show(ctx: click.Context) -> None:
     """Show the current sanitized plan."""
 
     current = _planner(ctx).current()
-    click.echo(format_plan(current) if current is not None else "No plan exists for this session.")
+    click.echo(
+        format_plan(current)
+        if current is not None
+        else "No plan exists for this session."
+    )
 
 
 @plan.command("pause")
@@ -157,7 +167,9 @@ def list_plans(ctx: click.Context) -> None:
         click.echo("No saved plans found.")
         return
     for item in plans:
-        click.echo(f"{item.plan_id}  {item.session_id}  {item.status.value}  {item.original_goal}")
+        click.echo(
+            f"{item.plan_id}  {item.session_id}  {item.status.value}  {item.original_goal}"
+        )
 
 
 @plan.command("dump")
@@ -173,7 +185,9 @@ def dump(ctx: click.Context, output: Path | None) -> None:
     path = output or root / f"{current.plan_id}.json"
     path = path.expanduser().resolve()
     if root.resolve() not in path.parents:
-        raise click.ClickException("Plan dumps must stay inside Grandpa's plan export directory.")
+        raise click.ClickException(
+            "Plan dumps must stay inside Grandpa's plan export directory."
+        )
     path.write_text(format_dump(current), encoding="utf-8")
     click.echo(f"Plan saved: {path}")
 

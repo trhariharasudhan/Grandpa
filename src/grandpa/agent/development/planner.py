@@ -16,6 +16,7 @@ class EngineeringPlanner:
     def analyze_milestone_and_task(self) -> Tuple[Optional[str], Optional[Task], str]:
         """Prioritizes next action: legacy check > blockers > current milestone > dependencies > planned roadmap."""
         from grandpa.agent.development.roadmap_generator import is_legacy_roadmap
+
         if is_legacy_roadmap(self.state):
             reason = "Legacy roadmap detected. Run `grandpa roadmap migrate --preview`."
             return None, None, reason
@@ -63,12 +64,22 @@ class EngineeringPlanner:
             for pm in planned:
                 if pm not in self.state.roadmap.completed_milestones:
                     # Let's see if there are tasks for this milestone
-                    ms_tasks = [t for t in self.state.tasks if t.milestone == pm and not t.completion_state]
+                    ms_tasks = [
+                        t
+                        for t in self.state.tasks
+                        if t.milestone == pm and not t.completion_state
+                    ]
                     if ms_tasks:
                         # Recommend first task whose deps are satisfied
-                        ready_ms_tasks = [t for t in ms_tasks if all(dep in completed_ids for dep in t.dependencies)]
+                        ready_ms_tasks = [
+                            t
+                            for t in ms_tasks
+                            if all(dep in completed_ids for dep in t.dependencies)
+                        ]
                         if ready_ms_tasks:
-                            ready_ms_tasks.sort(key=lambda t: priority_map.get(t.priority, 1))
+                            ready_ms_tasks.sort(
+                                key=lambda t: priority_map.get(t.priority, 1)
+                            )
                             reason = f"Activating planned milestone '{pm}' with ready task '{ready_ms_tasks[0].task_id}'."
                             return pm, ready_ms_tasks[0], reason
                     else:
@@ -108,7 +119,9 @@ class EngineeringPlanner:
         if task and getattr(task, "risk_level", None):
             risk_level = task.risk_level.upper()
 
-        if milestone in self.state.roadmap.blocked_milestones or (task and task.status == "blocked"):
+        if milestone in self.state.roadmap.blocked_milestones or (
+            task and task.status == "blocked"
+        ):
             risk_level = "HIGH"
         elif task and len(task.dependencies) > 1:
             risk_level = "MEDIUM"
@@ -194,7 +207,9 @@ class EngineeringPlanner:
         lines.append("Tasks:")
         task = wp["recommended_task"]
         if task:
-            lines.append(f"1. ({task.task_id}) {task.title} (Priority: {task.priority.upper()}, Status: {task.status})")
+            lines.append(
+                f"1. ({task.task_id}) {task.title} (Priority: {task.priority.upper()}, Status: {task.status})"
+            )
             for idx, step in enumerate(wp["task_breakdown"], 2):
                 lines.append(f"{idx}. {step}")
         else:

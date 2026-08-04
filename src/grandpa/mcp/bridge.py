@@ -34,7 +34,11 @@ def list_tools() -> list[dict[str, Any]]:
                         }
                         for parameter in skill.parameters
                     },
-                    "required": [parameter.name for parameter in skill.parameters if parameter.required],
+                    "required": [
+                        parameter.name
+                        for parameter in skill.parameters
+                        if parameter.required
+                    ],
                 },
                 "local_only": True,
             }
@@ -42,7 +46,9 @@ def list_tools() -> list[dict[str, Any]]:
     return tools
 
 
-def execute_tool(name: str, arguments: dict[str, Any] | None = None, *, source: str = "mcp-local") -> dict[str, Any]:
+def execute_tool(
+    name: str, arguments: dict[str, Any] | None = None, *, source: str = "mcp-local"
+) -> dict[str, Any]:
     """Execute a runtime skill through an MCP-style tool call."""
     ensure_default_skills_registered()
     result = execute_skill(

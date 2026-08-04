@@ -127,7 +127,9 @@ class BrowserContextStore:
     """SQLite-backed local browser activity memory."""
 
     def __init__(self, db_path: Path | str | None = None) -> None:
-        self.db_path = Path(db_path or os.environ.get("GRANDPA_BROWSER_DB") or DEFAULT_BROWSER_DB)
+        self.db_path = Path(
+            db_path or os.environ.get("GRANDPA_BROWSER_DB") or DEFAULT_BROWSER_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -187,6 +189,7 @@ class BrowserContextStore:
             ).fetchall()
         return [{key: row[key] for key in row.keys()} for row in rows]
 
+
 def get_visible_browser_context() -> BrowserContext:
     """Return context for the active visible Chrome/Edge window."""
 
@@ -207,12 +210,38 @@ def get_visible_browser_context() -> BrowserContext:
     page_title = _strip_browser_suffix(title)
     uia_url = _get_address_bar_url_for_hwnd(hwnd)
     dom = _load_visible_dom_context(hwnd)
-    final_url = uia_url or dom.get("url") or os.environ.get("GRANDPA_BROWSER_ACTIVE_URL") or None
+    final_url = (
+        uia_url
+        or dom.get("url")
+        or os.environ.get("GRANDPA_BROWSER_ACTIVE_URL")
+        or None
+    )
 
     pname = _get_process_name_for_hwnd(hwnd) if hwnd else ""
-    acq_source = str(dom.get("acquisition_source") or ("accessibility_tree" if (dom.get("headings") or dom.get("paragraphs")) else ("uia_text" if dom.get("visible_text") else "unavailable")))
-    confidence = str(dom.get("confidence") or ("High" if acq_source in ("full_dom", "accessibility_tree") else ("Medium" if acq_source == "uia_text" else "Low")))
-    status = str(dom.get("status") or ("success" if acq_source in ("full_dom", "accessibility_tree") else ("partial_success" if dom.get("visible_text") else "unavailable")))
+    acq_source = str(
+        dom.get("acquisition_source")
+        or (
+            "accessibility_tree"
+            if (dom.get("headings") or dom.get("paragraphs"))
+            else ("uia_text" if dom.get("visible_text") else "unavailable")
+        )
+    )
+    confidence = str(
+        dom.get("confidence")
+        or (
+            "High"
+            if acq_source in ("full_dom", "accessibility_tree")
+            else ("Medium" if acq_source == "uia_text" else "Low")
+        )
+    )
+    status = str(
+        dom.get("status")
+        or (
+            "success"
+            if acq_source in ("full_dom", "accessibility_tree")
+            else ("partial_success" if dom.get("visible_text") else "unavailable")
+        )
+    )
 
     context = BrowserContext(
         supported=True,
@@ -249,25 +278,38 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
     if action == "context":
         context = get_visible_browser_context()
         if not context.supported:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         details = [f"You are on {context.title or 'an active browser page'}."]
         if context.url:
             details.append(f"URL: {context.url}")
         details.append(f"Browser: {context.browser}.")
-        return BrowserActionResult("handled", action, target, " ".join(details), context=context)
+        return BrowserActionResult(
+            "handled", action, target, " ".join(details), context=context
+        )
 
     if action == "tabs":
         context = get_visible_browser_context()
         recent = BrowserContextStore().recent(limit=8)
         if not context.supported and not recent:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         lines = ["Recent visible browser activity:"]
         if context.supported:
             lines.append(f"- Active: {context.title or context.active_window_title}")
         for item in recent[:6]:
-            label = item.get("title") or item.get("query") or item.get("url") or item["action"]
+            label = (
+                item.get("title")
+                or item.get("query")
+                or item.get("url")
+                or item["action"]
+            )
             lines.append(f"- {label}")
-        return BrowserActionResult("handled", action, target, "\n".join(lines), context=context)
+        return BrowserActionResult(
+            "handled", action, target, "\n".join(lines), context=context
+        )
 
     if action == "diagnostics":
         context = get_visible_browser_context()
@@ -300,7 +342,9 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
     if action == "headings":
         context = get_visible_browser_context()
         if not context.supported:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         if not context.headings:
             return BrowserActionResult(
                 "unsupported",
@@ -310,12 +354,16 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
                 context=context,
             )
         headings = "\n".join(f"- {heading}" for heading in context.headings[:10])
-        return BrowserActionResult("handled", action, target, f"Visible headings:\n{headings}", context=context)
+        return BrowserActionResult(
+            "handled", action, target, f"Visible headings:\n{headings}", context=context
+        )
 
     if action == "links":
         context = get_visible_browser_context()
         if not context.supported:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         if not context.links:
             return BrowserActionResult(
                 "unsupported",
@@ -329,12 +377,20 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
             text = link.get("text") or link.get("href") or "Untitled link"
             href = link.get("href") or ""
             lines.append(f"- {text}" + (f" ({href})" if href else ""))
-        return BrowserActionResult("handled", action, target, "Visible links:\n" + "\n".join(lines), context=context)
+        return BrowserActionResult(
+            "handled",
+            action,
+            target,
+            "Visible links:\n" + "\n".join(lines),
+            context=context,
+        )
 
     if action == "buttons":
         context = get_visible_browser_context()
         if not context.supported:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         if not context.buttons:
             return BrowserActionResult(
                 "unsupported",
@@ -344,14 +400,21 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
                 context=context,
             )
         buttons = "\n".join(f"- {button}" for button in context.buttons[:12])
-        return BrowserActionResult("handled", action, target, f"Visible buttons:\n{buttons}", context=context)
+        return BrowserActionResult(
+            "handled", action, target, f"Visible buttons:\n{buttons}", context=context
+        )
 
     if action == "summary":
         context = get_visible_browser_context()
         if not context.supported:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         text = context.visible_text.strip()
-        if not text or context.acquisition_source not in ("full_dom", "accessibility_tree"):
+        if not text or context.acquisition_source not in (
+            "full_dom",
+            "accessibility_tree",
+        ):
             return BrowserActionResult(
                 "unsupported",
                 action,
@@ -365,15 +428,25 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
     if action == "media":
         context = get_visible_browser_context()
         if not context.supported:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         return _browser_media_action(target, context)
 
     if action == "form_fill":
         if _looks_high_risk(target):
-            return BrowserActionResult("blocked", action, target, "I blocked this form action for safety.", risk_level="BLOCKED")
+            return BrowserActionResult(
+                "blocked",
+                action,
+                target,
+                "I blocked this form action for safety.",
+                risk_level="BLOCKED",
+            )
         context = get_visible_browser_context()
         if not context.supported:
-            return BrowserActionResult("unsupported", action, target, context.message, context=context)
+            return BrowserActionResult(
+                "unsupported", action, target, context.message, context=context
+            )
         return BrowserActionResult(
             "requires_confirmation",
             action,
@@ -385,7 +458,13 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
 
     if action == "download":
         if _looks_high_risk(target):
-            return BrowserActionResult("blocked", action, target, "I blocked this download action for safety.", risk_level="BLOCKED")
+            return BrowserActionResult(
+                "blocked",
+                action,
+                target,
+                "I blocked this download action for safety.",
+                risk_level="BLOCKED",
+            )
         context = get_visible_browser_context()
         return BrowserActionResult(
             "requires_confirmation",
@@ -399,30 +478,52 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
     if action == "task":
         store = BrowserContextStore()
         store.record("task", query=target, status="handled")
-        return BrowserActionResult("handled", action, target, f"Browser task noted: {target}.")
+        return BrowserActionResult(
+            "handled", action, target, f"Browser task noted: {target}."
+        )
 
     if action == "open" or action == "navigate":
-        url = target if (target.startswith("http://") or target.startswith("https://")) else f"https://{target}" if target else "about:blank"
+        url = (
+            target
+            if (target.startswith("http://") or target.startswith("https://"))
+            else f"https://{target}"
+            if target
+            else "about:blank"
+        )
         webbrowser.open(url)
         BrowserContextStore().record("navigate", url=url, status="handled")
-        return BrowserActionResult("handled", action, target, f"Navigated browser to {url}.")
+        return BrowserActionResult(
+            "handled", action, target, f"Navigated browser to {url}."
+        )
 
     if action == "new_tab":
         webbrowser.open_new_tab(target or "about:blank")
-        BrowserContextStore().record("new_tab", url=target or "about:blank", status="handled")
-        return BrowserActionResult("handled", action, target, "Opening a new browser tab.")
+        BrowserContextStore().record(
+            "new_tab", url=target or "about:blank", status="handled"
+        )
+        return BrowserActionResult(
+            "handled", action, target, "Opening a new browser tab."
+        )
 
     if action == "search":
         url = _search_url(target)
         webbrowser.open(url)
         BrowserContextStore().record("search", url=url, query=target, status="handled")
-        return BrowserActionResult("handled", action, target, f"Searching Google for {target}.")
+        return BrowserActionResult(
+            "handled", action, target, f"Searching Google for {target}."
+        )
 
     if action == "youtube_search":
-        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(target)
+        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote_plus(
+            target
+        )
         webbrowser.open(url)
-        BrowserContextStore().record("youtube_search", url=url, query=target, status="handled")
-        return BrowserActionResult("handled", action, target, f"Opening YouTube and searching for {target}.")
+        BrowserContextStore().record(
+            "youtube_search", url=url, query=target, status="handled"
+        )
+        return BrowserActionResult(
+            "handled", action, target, f"Opening YouTube and searching for {target}."
+        )
 
     if action in {"back", "forward", "reload", "focus_search", "click"}:
         if action == "click" and _looks_high_risk(target):
@@ -441,10 +542,14 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
             risk_level="MEDIUM",
         )
 
-    return BrowserActionResult("unsupported", action, target, "That browser action is not supported yet.")
+    return BrowserActionResult(
+        "unsupported", action, target, "That browser action is not supported yet."
+    )
 
 
-def extract_dom_snapshot(html: str, *, title: str = "", url: str = "") -> BrowserContext:
+def extract_dom_snapshot(
+    html: str, *, title: str = "", url: str = ""
+) -> BrowserContext:
     parser = _VisibleDomParser()
     parser.feed(html)
     return BrowserContext(
@@ -506,7 +611,11 @@ def _is_valid_url_address(val: str) -> bool:
     if " " in val:
         return False
 
-    target_url = val if (val.startswith("http://") or val.startswith("https://")) else "https://" + val
+    target_url = (
+        val
+        if (val.startswith("http://") or val.startswith("https://"))
+        else "https://" + val
+    )
     try:
         parsed = urllib.parse.urlparse(target_url)
         if not parsed.scheme or parsed.scheme not in ("http", "https"):
@@ -526,7 +635,10 @@ def _is_valid_url_address(val: str) -> bool:
 def _is_live_desktop_enabled() -> bool:
     if os.environ.get("GRANDPA_DISABLE_LIVE_DESKTOP") == "1":
         return False
-    if "PYTEST_CURRENT_TEST" in os.environ and os.environ.get("GRANDPA_ENABLE_LIVE_DESKTOP") != "1":
+    if (
+        "PYTEST_CURRENT_TEST" in os.environ
+        and os.environ.get("GRANDPA_ENABLE_LIVE_DESKTOP") != "1"
+    ):
         return False
     return True
 
@@ -551,7 +663,12 @@ def _get_address_bar_url_for_hwnd(hwnd: int) -> str:
         for i in range(edits.Length):
             ed_elem = edits.GetElement(i)
             try:
-                val = str(ed_elem.GetCurrentPropertyValue(UIAutomationClient.UIA_ValueValuePropertyId) or "").strip()
+                val = str(
+                    ed_elem.GetCurrentPropertyValue(
+                        UIAutomationClient.UIA_ValueValuePropertyId
+                    )
+                    or ""
+                ).strip()
                 if val and _is_valid_url_address(val):
                     if not val.startswith("http://") and not val.startswith("https://"):
                         val = "https://" + val
@@ -594,7 +711,11 @@ def _find_visible_browser_window() -> tuple[int, str, str] | None:
             fg_title = _get_window_title(fg_hwnd)
             fg_pname = _get_process_name_for_hwnd(fg_hwnd)
             if fg_pname in allowed:
-                bname = "Chrome" if fg_pname == "chrome.exe" else ("Firefox" if fg_pname == "firefox.exe" else "Microsoft Edge")
+                bname = (
+                    "Chrome"
+                    if fg_pname == "chrome.exe"
+                    else ("Firefox" if fg_pname == "firefox.exe" else "Microsoft Edge")
+                )
                 return (fg_hwnd, bname, fg_title)
 
         # 3. Foreground window is terminal/IDE -> enumerate desktop windows for visible Chrome/Edge if live desktop enabled
@@ -611,7 +732,11 @@ def _find_visible_browser_window() -> tuple[int, str, str] | None:
                 wtitle = _get_window_title(int(hwnd))
                 pname = _get_process_name_for_hwnd(int(hwnd))
                 if pname in allowed and wtitle and not wtitle.startswith("DevTools"):
-                    bname = "Chrome" if pname == "chrome.exe" else ("Firefox" if pname == "firefox.exe" else "Microsoft Edge")
+                    bname = (
+                        "Chrome"
+                        if pname == "chrome.exe"
+                        else ("Firefox" if pname == "firefox.exe" else "Microsoft Edge")
+                    )
                     match = (int(hwnd), bname, wtitle)
                     return False
             return True
@@ -624,7 +749,9 @@ def _find_visible_browser_window() -> tuple[int, str, str] | None:
         pass
 
     # 4. Environment context payload override (for tests/mocks)
-    if os.environ.get("GRANDPA_BROWSER_CONTEXT_JSON") or os.environ.get("GRANDPA_BROWSER_CONTEXT_FILE"):
+    if os.environ.get("GRANDPA_BROWSER_CONTEXT_JSON") or os.environ.get(
+        "GRANDPA_BROWSER_CONTEXT_FILE"
+    ):
         return (0, "Chrome", "Browser Page")
 
     return None
@@ -729,13 +856,20 @@ def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
                 UIAutomationClient.UIA_ControlTypePropertyId,
                 UIAutomationClient.UIA_HyperlinkControlTypeId,
             )
-            link_elems = target_elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_link)
+            link_elems = target_elem.FindAll(
+                UIAutomationClient.TreeScope_Subtree, cond_link
+            )
             for i in range(min(50, link_elems.Length)):
                 le = link_elems.GetElement(i)
                 try:
                     name = str(le.CurrentName or "").strip()
                     if name and not _is_browser_chrome_node(name):
-                        links.append({"text": _redact_sensitive_visible_text(name)[:160], "href": ""})
+                        links.append(
+                            {
+                                "text": _redact_sensitive_visible_text(name)[:160],
+                                "href": "",
+                            }
+                        )
                 except Exception:
                     pass
         except Exception:
@@ -744,7 +878,9 @@ def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
         # 3. Extract Text & Custom controls under target_elem
         try:
             cond_true = uia.CreateTrueCondition()
-            all_elems = target_elem.FindAll(UIAutomationClient.TreeScope_Subtree, cond_true)
+            all_elems = target_elem.FindAll(
+                UIAutomationClient.TreeScope_Subtree, cond_true
+            )
             max_count = min(350, all_elems.Length)
             for i in range(max_count):
                 el_node = all_elems.GetElement(i)
@@ -760,36 +896,64 @@ def _extract_uia_dom_context(hwnd: int) -> dict[str, Any]:
                         role = "link"
                     elif ctype == UIAutomationClient.UIA_ButtonControlTypeId:
                         role = "button"
-                    elif ctype == UIAutomationClient.UIA_ListItemControlTypeId or clean_txt.startswith("•") or clean_txt.startswith("-"):
+                    elif (
+                        ctype == UIAutomationClient.UIA_ListItemControlTypeId
+                        or clean_txt.startswith("•")
+                        or clean_txt.startswith("-")
+                    ):
                         role = "list_item"
-                    elif "pip install" in clean_txt.lower() or "python" in clean_txt.lower() or clean_txt.startswith("$"):
+                    elif (
+                        "pip install" in clean_txt.lower()
+                        or "python" in clean_txt.lower()
+                        or clean_txt.startswith("$")
+                    ):
                         role = "code_block"
-                    elif len(clean_txt) < 80 and not clean_txt.endswith(".") and not clean_txt.startswith("<"):
+                    elif (
+                        len(clean_txt) < 80
+                        and not clean_txt.endswith(".")
+                        and not clean_txt.startswith("<")
+                    ):
                         role = "heading"
 
                     all_text_chunks.append(clean_txt)
                     if role == "heading" and clean_txt not in headings:
                         headings.append(clean_txt)
-                    elif role in ("paragraph", "text") and (len(clean_txt) >= 30 or clean_txt.endswith(".")):
+                    elif role in ("paragraph", "text") and (
+                        len(clean_txt) >= 30 or clean_txt.endswith(".")
+                    ):
                         if clean_txt not in paragraphs:
                             paragraphs.append(clean_txt)
 
-                    elements.append({
-                        "role": role,
-                        "text": clean_txt,
-                        "level": 2 if role == "heading" else 0,
-                        "order": len(elements),
-                        "scope": scope,
-                    })
+                    elements.append(
+                        {
+                            "role": role,
+                            "text": clean_txt,
+                            "level": 2 if role == "heading" else 0,
+                            "order": len(elements),
+                            "scope": scope,
+                        }
+                    )
                 except Exception:
                     pass
         except Exception:
             pass
 
         visible_text = "\n\n".join(all_text_chunks[:60])
-        acquisition_source = "accessibility_tree" if (headings or paragraphs or links) else ("uia_text" if visible_text else "unavailable")
-        confidence = "High" if acquisition_source == "accessibility_tree" else ("Medium" if acquisition_source == "uia_text" else "Low")
-        status = "success" if acquisition_source in ("accessibility_tree", "full_dom") else ("partial_success" if visible_text else "unavailable")
+        acquisition_source = (
+            "accessibility_tree"
+            if (headings or paragraphs or links)
+            else ("uia_text" if visible_text else "unavailable")
+        )
+        confidence = (
+            "High"
+            if acquisition_source == "accessibility_tree"
+            else ("Medium" if acquisition_source == "uia_text" else "Low")
+        )
+        status = (
+            "success"
+            if acquisition_source in ("accessibility_tree", "full_dom")
+            else ("partial_success" if visible_text else "unavailable")
+        )
 
         return {
             "headings": headings[:30],
@@ -835,7 +999,9 @@ def _load_visible_dom_context(hwnd: int = 0) -> dict[str, Any]:
 
     if hwnd:
         uia_context = _extract_uia_dom_context(hwnd)
-        if uia_context and (uia_context.get("headings") or uia_context.get("visible_text")):
+        if uia_context and (
+            uia_context.get("headings") or uia_context.get("visible_text")
+        ):
             return uia_context
 
     return {}
@@ -844,7 +1010,11 @@ def _load_visible_dom_context(hwnd: int = 0) -> dict[str, Any]:
 def _sanitize_dom_context(data: dict[str, Any]) -> dict[str, Any]:
     visible_text = str(data.get("visible_text") or data.get("text") or "")
     if data.get("html") and not visible_text:
-        snapshot = extract_dom_snapshot(str(data["html"]), title=str(data.get("title") or ""), url=str(data.get("url") or ""))
+        snapshot = extract_dom_snapshot(
+            str(data["html"]),
+            title=str(data.get("title") or ""),
+            url=str(data.get("url") or ""),
+        )
         return snapshot.to_dict()
     return {
         "title": str(data.get("title") or "")[:300],
@@ -864,7 +1034,11 @@ def _sanitize_dom_context(data: dict[str, Any]) -> dict[str, Any]:
 def _safe_strings(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
-    return [_redact_sensitive_visible_text(str(item))[:160] for item in value[:25] if str(item).strip()]
+    return [
+        _redact_sensitive_visible_text(str(item))[:160]
+        for item in value[:25]
+        if str(item).strip()
+    ]
 
 
 def _safe_links(value: Any) -> list[dict[str, str]]:
@@ -893,7 +1067,9 @@ def _safe_inputs(value: Any) -> list[dict[str, str]]:
         input_type = str(item.get("type") or "").lower()
         if input_type in {"password", "hidden"}:
             continue
-        raw_label = str(item.get("label") or item.get("name") or item.get("placeholder") or "")
+        raw_label = str(
+            item.get("label") or item.get("name") or item.get("placeholder") or ""
+        )
         if _looks_high_risk(raw_label):
             continue
         label = _redact_sensitive_visible_text(raw_label)[:160]
@@ -914,8 +1090,12 @@ def _safe_media(value: Any) -> list[dict[str, Any]]:
                 "paused": bool(item.get("paused", False)),
                 "muted": bool(item.get("muted", False)),
                 "duration": float(item.get("duration") or 0),
-                "current_time": float(item.get("current_time") or item.get("currentTime") or 0),
-                "label": _redact_sensitive_visible_text(str(item.get("label") or ""))[:160],
+                "current_time": float(
+                    item.get("current_time") or item.get("currentTime") or 0
+                ),
+                "label": _redact_sensitive_visible_text(str(item.get("label") or ""))[
+                    :160
+                ],
             }
         )
     return media
@@ -928,7 +1108,9 @@ def _safe_forms(value: Any) -> list[dict[str, Any]]:
     for item in value[:10]:
         if not isinstance(item, dict):
             continue
-        label = _redact_sensitive_visible_text(str(item.get("label") or item.get("name") or "form"))[:160]
+        label = _redact_sensitive_visible_text(
+            str(item.get("label") or item.get("name") or "form")
+        )[:160]
         fields = []
         for field in item.get("fields") or []:
             if not isinstance(field, dict):
@@ -936,11 +1118,21 @@ def _safe_forms(value: Any) -> list[dict[str, Any]]:
             raw = f"{field.get('type', '')} {field.get('label', '')}"
             if _looks_high_risk(raw):
                 continue
-            fields.append({
-                "label": _redact_sensitive_visible_text(str(field.get("label") or ""))[:120],
-                "type": str(field.get("type") or "text")[:40],
-            })
-        forms.append({"label": label, "fields": fields[:20], "submit_count": int(item.get("submit_count") or 0)})
+            fields.append(
+                {
+                    "label": _redact_sensitive_visible_text(
+                        str(field.get("label") or "")
+                    )[:120],
+                    "type": str(field.get("type") or "text")[:40],
+                }
+            )
+        forms.append(
+            {
+                "label": label,
+                "fields": fields[:20],
+                "submit_count": int(item.get("submit_count") or 0),
+            }
+        )
     return forms
 
 
@@ -951,18 +1143,22 @@ def _safe_elements(value: Any) -> list[dict[str, Any]]:
     for item in value[:80]:
         if not isinstance(item, dict):
             continue
-        text = _redact_sensitive_visible_text(str(item.get("text") or item.get("label") or ""))[:160]
+        text = _redact_sensitive_visible_text(
+            str(item.get("text") or item.get("label") or "")
+        )[:160]
         role = str(item.get("role") or "")[:40].lower()
         if role not in _SAFE_ELEMENT_ROLES and role not in {"media", "form", "tab"}:
             role = "element"
         if _looks_high_risk(text):
             continue
-        elements.append({
-            "id": str(item.get("id") or "")[:80],
-            "role": role,
-            "text": text,
-            "visible": bool(item.get("visible", True)),
-        })
+        elements.append(
+            {
+                "id": str(item.get("id") or "")[:80],
+                "role": role,
+                "text": text,
+                "visible": bool(item.get("visible", True)),
+            }
+        )
     return elements
 
 
@@ -983,14 +1179,15 @@ def _browser_media_action(target: str, context: BrowserContext) -> BrowserAction
     if not context.media:
         message = "I do not see visible media controls in the current browser context."
     else:
-        message = "Visible-page media controls require a browser adapter and are unavailable."
+        message = (
+            "Visible-page media controls require a browser adapter and are unavailable."
+        )
     return BrowserActionResult("unsupported", "media", target, message, context=context)
 
 
 def _redact_sensitive_visible_text(text: str) -> str:
     redacted = " ".join(
-        "[redacted]" if _looks_high_risk(part) else part
-        for part in text.split()
+        "[redacted]" if _looks_high_risk(part) else part for part in text.split()
     )
     import re
 
@@ -1010,7 +1207,9 @@ def _search_url(query: str) -> str:
 
 def _summarize_visible_text(text: str) -> str:
     cleaned = _clean_text(text)
-    sentences = [part.strip() for part in cleaned.replace("\n", " ").split(".") if part.strip()]
+    sentences = [
+        part.strip() for part in cleaned.replace("\n", " ").split(".") if part.strip()
+    ]
     if not sentences:
         return "The visible page text is available, but it is too sparse to summarize."
     summary = ". ".join(sentences[:3])
@@ -1040,10 +1239,15 @@ class _VisibleDomParser(html.parser.HTMLParser):
         if tag == "input":
             input_type = attr_map.get("type", "text").lower()
             if input_type not in {"password", "hidden"}:
-                self.inputs.append({
-                    "label": attr_map.get("aria-label") or attr_map.get("placeholder") or attr_map.get("name") or "",
-                    "type": input_type,
-                })
+                self.inputs.append(
+                    {
+                        "label": attr_map.get("aria-label")
+                        or attr_map.get("placeholder")
+                        or attr_map.get("name")
+                        or "",
+                        "type": input_type,
+                    }
+                )
         if tag == "a":
             self.current_href = attr_map.get("href", "")
         self.stack.append(tag)
@@ -1057,7 +1261,9 @@ class _VisibleDomParser(html.parser.HTMLParser):
             elif tag == "button" and len(self.buttons) < 25:
                 self.buttons.append(text[:160])
             elif tag == "a" and len(self.links) < 25:
-                self.links.append({"text": text[:160], "href": self.current_href[:1000]})
+                self.links.append(
+                    {"text": text[:160], "href": self.current_href[:1000]}
+                )
             self.text_chunks.append(text)
         if self.stack:
             self.stack.pop()

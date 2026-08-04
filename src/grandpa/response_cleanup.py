@@ -97,7 +97,7 @@ def clean_error_message(
     message = str(text).strip()
     if not message:
         return fallback
-    if "\n" in message or "Traceback" in message or "File \"" in message:
+    if "\n" in message or "Traceback" in message or 'File "' in message:
         return fallback
     message = clean_assistant_response(message, fallback=fallback, max_chars=240)
     if len(message) > 240:
@@ -137,8 +137,10 @@ def _drop_reasoning_lines(text: str) -> str:
             pattern.search(stripped) for pattern in _ALWAYS_REASONING_LINE_PATTERNS
         ):
             continue
-        if reasoning_heavy and stripped and any(
-            pattern.search(stripped) for pattern in _REASONING_LINE_PATTERNS
+        if (
+            reasoning_heavy
+            and stripped
+            and any(pattern.search(stripped) for pattern in _REASONING_LINE_PATTERNS)
         ):
             continue
         kept.append(line)

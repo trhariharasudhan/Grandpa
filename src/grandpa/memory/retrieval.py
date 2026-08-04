@@ -36,11 +36,19 @@ class MemoryRetrievalEngine:
         candidates: list[MemoryItem] = []
 
         if query.strip():
-            candidates.extend(self.store.search(query, category=category, project_name=project_name, limit=15))
+            candidates.extend(
+                self.store.search(
+                    query, category=category, project_name=project_name, limit=15
+                )
+            )
 
         # Always include project memory candidates if project_name is active
         if project_name:
-            candidates.extend(self.store.list_all(category="project", project_name=project_name, limit=5))
+            candidates.extend(
+                self.store.list_all(
+                    category="project", project_name=project_name, limit=5
+                )
+            )
 
         # Always include user preference candidates if query mentions preferences or shell/browser
         if any(w in query.lower() for w in ["pref", "shell", "browser", "mic", "lang"]):
@@ -58,7 +66,9 @@ class MemoryRetrievalEngine:
                 seen_keys.add(c.key)
                 unique_candidates.append(c)
 
-        ranked = self.rank_memories(unique_candidates, query=query, project_name=project_name)
+        ranked = self.rank_memories(
+            unique_candidates, query=query, project_name=project_name
+        )
 
         # Truncate by item limit and total character bound
         result: list[MemoryItem] = []
@@ -84,9 +94,13 @@ class MemoryRetrievalEngine:
     ) -> list[MemoryItem]:
         """Retrieve memory items matching query and optional category/project filters."""
         if not query.strip():
-            items = self.store.list_all(category=category, project_name=project_name, limit=limit)
+            items = self.store.list_all(
+                category=category, project_name=project_name, limit=limit
+            )
         else:
-            items = self.store.search(query, category=category, project_name=project_name, limit=limit * 2)
+            items = self.store.search(
+                query, category=category, project_name=project_name, limit=limit * 2
+            )
 
         return self.rank_memories(items, query=query, project_name=project_name)[:limit]
 
@@ -115,7 +129,11 @@ class MemoryRetrievalEngine:
                 score += 10.0
 
             # 2. Current project match
-            if project_name and item.project_name and item.project_name.lower() == project_name.lower():
+            if (
+                project_name
+                and item.project_name
+                and item.project_name.lower() == project_name.lower()
+            ):
                 score += 8.0
 
             # 3. Preference match
@@ -148,7 +166,9 @@ class MemoryRetrievalEngine:
         project_name: str | None = None,
     ) -> dict[str, Any]:
         """Explain why memories were matched and ranked for a query."""
-        relevant = self.retrieve_relevant(query=query, project_name=project_name, limit=5)
+        relevant = self.retrieve_relevant(
+            query=query, project_name=project_name, limit=5
+        )
         explanations: list[dict[str, Any]] = []
 
         for item in relevant:
@@ -159,17 +179,23 @@ class MemoryRetrievalEngine:
                 reasons.append(f"Project scope match ({project_name})")
             if item.category == "preference":
                 reasons.append("User preference match")
-            if any(qt in item.content.lower() for qt in query.lower().split() if len(qt) > 2):
+            if any(
+                qt in item.content.lower()
+                for qt in query.lower().split()
+                if len(qt) > 2
+            ):
                 reasons.append("Keyword content match")
 
-            explanations.append({
-                "id": item.id,
-                "key": item.key,
-                "category": item.category,
-                "project": item.project_name or "N/A",
-                "reasons": reasons or ["Recent context match"],
-                "content_preview": redact_sensitive(item.content[:100]),
-            })
+            explanations.append(
+                {
+                    "id": item.id,
+                    "key": item.key,
+                    "category": item.category,
+                    "project": item.project_name or "N/A",
+                    "reasons": reasons or ["Recent context match"],
+                    "content_preview": redact_sensitive(item.content[:100]),
+                }
+            )
 
         return {
             "query": query,
@@ -186,7 +212,9 @@ class MemoryRetrievalEngine:
         max_words: int = 300,
     ) -> str:
         """Format relevant memory items into a clean, bounded text snippet for context injection."""
-        items = self.retrieve_relevant(query=query, project_name=project_name, category=category, limit=5)
+        items = self.retrieve_relevant(
+            query=query, project_name=project_name, category=category, limit=5
+        )
         if not items:
             return ""
 

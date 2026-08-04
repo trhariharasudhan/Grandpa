@@ -150,9 +150,7 @@ def _run_research(
             trace.print(f"  [dim]↳ Found {n} {label}[/dim]")
         elif etype == "clarify_call":
             q = event.get("question", "") or ""
-            trace.print(
-                f"  [dim]↳ Clarifying:[/dim] [dim italic]{q}[/dim italic]"
-            )
+            trace.print(f"  [dim]↳ Clarifying:[/dim] [dim italic]{q}[/dim italic]")
         # final_answer and clarify_response are handled outside the loop.
 
     agent = ResearchAgent(
@@ -208,8 +206,7 @@ def _run_research(
         src_word = "source" if len(cited) == 1 else "sources"
         trace.print()
         trace.print(
-            f"[dim]Deep Research · {elapsed:.1f}s · "
-            f"{len(cited)} {src_word} cited[/dim]"
+            f"[dim]Deep Research · {elapsed:.1f}s · {len(cited)} {src_word} cited[/dim]"
         )
 
 
@@ -679,6 +676,37 @@ def ask(
     effective_query_text = brain_analysis.effective_text
 
     memory_result = handle_memory_command(effective_query_text)
+
+    from grandpa.core.runtime_context import handle_datetime_intent
+
+    dt_resp = handle_datetime_intent(effective_query_text)
+    if dt_resp:
+        remember_conversation("assistant", dt_resp)
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=dt_resp,
+            kind="local",
+            target=None,
+            status="handled",
+        )
+        if output_json:
+            click.echo(
+                json_mod.dumps(
+                    {
+                        "content": dt_resp,
+                        "local_action": {
+                            "status": "handled",
+                            "kind": "local",
+                            "target": None,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            click.echo(dt_resp)
+        return
+
     if not memory_result.should_fallback:
         remember_conversation("assistant", memory_result.message)
         record_assistant_outcome(
@@ -894,18 +922,70 @@ def ask(
     # Resolve model via smart local router unless --model is explicitly provided
     if model_name is None:
         q = query_text.lower()
-        image_keywords = ["image", "photo", "picture", "screenshot", "vision", "analyze image", "describe image"]
-        coding_keywords = ["code", "python", "javascript", "html", "css", "fastapi", "flask", "bug", "debug", "build", "program", "developer", "api", "backend", "frontend"]
-        reasoning_keywords = ["explain", "why", "how", "physics", "quantum", "black hole", "deeply", "architecture", "design", "reason", "compare"]
+        image_keywords = [
+            "image",
+            "photo",
+            "picture",
+            "screenshot",
+            "vision",
+            "analyze image",
+            "describe image",
+        ]
+        coding_keywords = [
+            "code",
+            "python",
+            "javascript",
+            "html",
+            "css",
+            "fastapi",
+            "flask",
+            "bug",
+            "debug",
+            "build",
+            "program",
+            "developer",
+            "api",
+            "backend",
+            "frontend",
+        ]
+        reasoning_keywords = [
+            "explain",
+            "why",
+            "how",
+            "physics",
+            "quantum",
+            "black hole",
+            "deeply",
+            "architecture",
+            "design",
+            "reason",
+            "compare",
+        ]
+
+        installed = []
+        for ek, model_ids in all_models.items():
+            installed.extend(model_ids)
+
+        default_model = config.intelligence.default_model or "qwen:latest"
 
         if any(k in q for k in image_keywords):
-            model_name = "llava"
+            target = "llava"
         elif any(k in q for k in coding_keywords):
-            model_name = "deepseek-coder:6.7b"
+            target = "deepseek-coder:6.7b"
         elif any(k in q for k in reasoning_keywords):
-            model_name = "qwen2.5:3b"
+            target = "qwen2.5:3b"
         else:
-            model_name = config.intelligence.default_model or "qwen2.5:3b"
+            target = default_model
+
+        if target in installed:
+            model_name = target
+        else:
+            matched = None
+            for m in installed:
+                if target.split(":")[0] in m:
+                    matched = m
+                    break
+            model_name = matched or default_model
 
     if not model_name:
         engine_models = all_models.get(engine_name, [])

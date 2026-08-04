@@ -82,9 +82,7 @@ def test_cli_registers_move_and_press(monkeypatch) -> None:
     runner = CliRunner()
 
     moved = runner.invoke(automation, ["move", "--x", "300", "--y", "300"])
-    pressed = runner.invoke(
-        automation, ["press", "enter", "--window", "Notepad"]
-    )
+    pressed = runner.invoke(automation, ["press", "enter", "--window", "Notepad"])
 
     assert moved.exit_code == 0
     assert pressed.exit_code == 0

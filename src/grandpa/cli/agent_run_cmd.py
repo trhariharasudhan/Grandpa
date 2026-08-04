@@ -41,7 +41,9 @@ def run(goal: str, auto_approve: bool) -> None:
     svc = MemoryService.get_instance()
     # Check if memory retrieval is enabled
     if not svc.session_memory_enabled():
-        console.print("[yellow]Warning: Memory retrieval is disabled for this session.[/yellow]")
+        console.print(
+            "[yellow]Warning: Memory retrieval is disabled for this session.[/yellow]"
+        )
 
     # Setup safety confirmation callback
     def confirm_callback(prompt: str) -> bool:
@@ -128,6 +130,7 @@ def cancel() -> None:
 # Agent Execution V2 Click Commands
 # ---------------------------------------------------------------------------
 
+
 @agent_group.command("inspect")
 @click.argument("goal")
 @click.option("--workspace", default="D:\\Grandpa", help="Workspace root directory.")
@@ -137,6 +140,7 @@ def inspect(goal: str, workspace: str) -> None:
     runtime = AgentRuntime()
     report_res = runtime.inspect_project(goal, workspace)
     from grandpa.agent.execution import generate_sanitized_report
+
     console.print(generate_sanitized_report(report_res))
 
 
@@ -154,6 +158,7 @@ def diagnose(goal: str, workspace: str, db_path: str) -> None:
         raise SystemExit(1)
 
     from grandpa.agent.execution import format_proposal_preview
+
     console.print("[green]Diagnostics complete. Patch proposal generated:[/green]")
     console.print(format_proposal_preview(res))
 
@@ -169,6 +174,7 @@ def patch_preview(db_path: str) -> None:
     """List and preview all pending patch proposals."""
     console = Console()
     from grandpa.agent.execution import PatchApprovalManager, format_proposal_preview
+
     mgr = PatchApprovalManager(db_path=db_path)
     pending = mgr.store.list_pending()
     if not pending:
@@ -188,6 +194,7 @@ def patch_show(proposal_id: str, db_path: str) -> None:
     """Show details of a specific patch proposal."""
     console = Console()
     from grandpa.agent.execution import PatchApprovalManager, format_proposal_preview
+
     mgr = PatchApprovalManager(db_path=db_path)
     prop = mgr.get_proposal(proposal_id)
     if not prop:
@@ -203,6 +210,7 @@ def patch_approve(proposal_id: str, db_path: str) -> None:
     """Approve a patch proposal."""
     console = Console()
     from grandpa.agent.execution import PatchApprovalManager
+
     mgr = PatchApprovalManager(db_path=db_path)
     mgr.approve_proposal(proposal_id)
     console.print(f"[green]Approved patch proposal '{proposal_id}'.[/green]")
@@ -215,6 +223,7 @@ def patch_reject(proposal_id: str, db_path: str) -> None:
     """Reject a patch proposal."""
     console = Console()
     from grandpa.agent.execution import PatchApprovalManager
+
     mgr = PatchApprovalManager(db_path=db_path)
     mgr.reject_proposal(proposal_id)
     console.print(f"[red]Rejected patch proposal '{proposal_id}'.[/red]")
@@ -230,6 +239,7 @@ def patch_apply(proposal_id: str, workspace: str, db_path: str) -> None:
     runtime = AgentRuntime()
     report_res = runtime.apply_patch(proposal_id, workspace, db_path=db_path)
     from grandpa.agent.execution import generate_sanitized_report
+
     console.print(generate_sanitized_report(report_res))
 
 
@@ -284,6 +294,7 @@ def rollback(execution_id: str, workspace: str) -> None:
     # Find any .bak files in the workspace and restore them
     import shutil
     from pathlib import Path
+
     restored = []
 
     for p in Path(workspace).rglob("*.bak"):
@@ -296,6 +307,8 @@ def rollback(execution_id: str, workspace: str) -> None:
             console.print(f"[red]Failed to restore '{orig}': {exc}[/red]")
 
     if restored:
-        console.print(f"[green]Successfully rolled back changes in: {', '.join(restored)}[/green]")
+        console.print(
+            f"[green]Successfully rolled back changes in: {', '.join(restored)}[/green]"
+        )
     else:
         console.print("[yellow]No backups found for rollback.[/yellow]")

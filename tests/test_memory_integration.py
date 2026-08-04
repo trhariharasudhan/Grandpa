@@ -77,7 +77,9 @@ def test_memory_intent_router_patterns() -> None:
 
 
 # 2. Relevance Retrieval & Bounded Limits Tests
-def test_bounded_relevance_retrieval(setup_temp_memory_integration: MemoryService) -> None:
+def test_bounded_relevance_retrieval(
+    setup_temp_memory_integration: MemoryService,
+) -> None:
     svc = setup_temp_memory_integration
 
     # Store 10 items
@@ -92,7 +94,12 @@ def test_bounded_relevance_retrieval(setup_temp_memory_integration: MemoryServic
 def test_ranking_priority(setup_temp_memory_integration: MemoryService) -> None:
     svc = setup_temp_memory_integration
     svc.remember("General knowledge item", category="knowledge", key="gen_item")
-    svc.remember("Grandpa project item", category="project", project_name="Grandpa", key="proj_item")
+    svc.remember(
+        "Grandpa project item",
+        category="project",
+        project_name="Grandpa",
+        key="proj_item",
+    )
     svc.remember("Preferred shell is pwsh", category="preference", key="pref_item")
 
     ranked = svc.retrieval.retrieve_relevant(query="pwsh", project_name="Grandpa")
@@ -102,7 +109,9 @@ def test_ranking_priority(setup_temp_memory_integration: MemoryService) -> None:
 
 
 # 3. Security & Write Policy Tests
-def test_security_sensitive_data_rejection(setup_temp_memory_integration: MemoryService) -> None:
+def test_security_sensitive_data_rejection(
+    setup_temp_memory_integration: MemoryService,
+) -> None:
     svc = setup_temp_memory_integration
 
     with pytest.raises(ValueError, match="sensitive"):
@@ -116,7 +125,9 @@ def test_security_sensitive_data_rejection(setup_temp_memory_integration: Memory
 
 
 # 4. Chat Integration Natural Intent Tests
-def test_chat_natural_memory_intents(setup_temp_memory_integration: MemoryService) -> None:
+def test_chat_natural_memory_intents(
+    setup_temp_memory_integration: MemoryService,
+) -> None:
     svc = setup_temp_memory_integration
 
     # Remember preference
@@ -130,7 +141,12 @@ def test_chat_natural_memory_intents(setup_temp_memory_integration: MemoryServic
     assert "pwsh" in recall_msg
 
     # Remember project feature
-    svc.remember_project_result("Grandpa", goal="Build Memory V1", status="completed", latest_feature="Memory System V1")
+    svc.remember_project_result(
+        "Grandpa",
+        goal="Build Memory V1",
+        status="completed",
+        latest_feature="Memory System V1",
+    )
     feat_msg = _handle_natural_memory_intent("What was the last feature we completed?")
     assert feat_msg is not None
     assert "Memory System V1" in feat_msg
@@ -148,13 +164,17 @@ def test_voice_operator_memory_intent() -> None:
     assert intent.kind == "memory"
     assert intent.action == "remember"
 
-    forget_intent = parse_voice_operator_command("Grandpa, forget my preferred browser.")
+    forget_intent = parse_voice_operator_command(
+        "Grandpa, forget my preferred browser."
+    )
     assert forget_intent.kind == "memory"
     assert forget_intent.action == "forget"
 
 
 # 6. Executive Planner Integration Tests
-def test_planner_project_outcome_recording(setup_temp_memory_integration: MemoryService) -> None:
+def test_planner_project_outcome_recording(
+    setup_temp_memory_integration: MemoryService,
+) -> None:
     svc = setup_temp_memory_integration
     planner = ExecutivePlanner(session_id="test_plan_session")
 
@@ -175,7 +195,9 @@ def test_planner_project_outcome_recording(setup_temp_memory_integration: Memory
 def test_cli_extended_subcommands(setup_temp_memory_integration: MemoryService) -> None:
     svc = setup_temp_memory_integration
     svc.remember("Recent feature update", category="knowledge", key="rec_feat")
-    svc.projects.update_project_info("Grandpa", "Automation assistant", latest_feature="Memory Integration V1")
+    svc.projects.update_project_info(
+        "Grandpa", "Automation assistant", latest_feature="Memory Integration V1"
+    )
 
     runner = click.testing.CliRunner()
 
@@ -213,16 +235,48 @@ def test_cli_extended_subcommands(setup_temp_memory_integration: MemoryService) 
 
 
 # 8. Regression & Validation Tests
-def test_structured_project_field_mapping(setup_temp_memory_integration: MemoryService) -> None:
+def test_structured_project_field_mapping(
+    setup_temp_memory_integration: MemoryService,
+) -> None:
     svc = setup_temp_memory_integration
 
     # Store separate keys
-    svc.remember(content="Grandpa automation", category="project", key="proj_grandpa_summary", project_name="Grandpa")
-    svc.remember(content="Memory V1", category="project", key="latest_feature", project_name="Grandpa")
-    svc.remember(content="D:\\Grandpa", category="project", key="project_path", project_name="Grandpa")
-    svc.remember(content="abc1234", category="project", key="latest_commit", project_name="Grandpa")
-    svc.remember(content="Fix mapping issues", category="project", key="next_task", project_name="Grandpa")
-    svc.remember(content="Failed test run", category="project", key="last_failed_plan", project_name="Grandpa")
+    svc.remember(
+        content="Grandpa automation",
+        category="project",
+        key="proj_grandpa_summary",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="Memory V1",
+        category="project",
+        key="latest_feature",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="D:\\Grandpa",
+        category="project",
+        key="project_path",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="abc1234",
+        category="project",
+        key="latest_commit",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="Fix mapping issues",
+        category="project",
+        key="next_task",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="Failed test run",
+        category="project",
+        key="last_failed_plan",
+        project_name="Grandpa",
+    )
 
     runner = click.testing.CliRunner()
     res = runner.invoke(memory, ["project", "Grandpa"])
@@ -236,7 +290,9 @@ def test_structured_project_field_mapping(setup_temp_memory_integration: MemoryS
     assert "Failed Plan   : Failed test run" in res.output
 
 
-def test_cli_session_memory_persistence(setup_temp_memory_integration: MemoryService) -> None:
+def test_cli_session_memory_persistence(
+    setup_temp_memory_integration: MemoryService,
+) -> None:
     svc = setup_temp_memory_integration
     runner = click.testing.CliRunner()
 
@@ -293,10 +349,30 @@ def test_voice_recall_and_forget(setup_temp_memory_integration: MemoryService) -
 def test_continue_project_context(setup_temp_memory_integration: MemoryService) -> None:
     svc = setup_temp_memory_integration
 
-    svc.remember(content="Memory Integration V1", category="project", key="latest_feature", project_name="Grandpa")
-    svc.remember(content="D:\\Grandpa", category="project", key="project_path", project_name="Grandpa")
-    svc.remember(content="xyz567", category="project", key="latest_commit", project_name="Grandpa")
-    svc.remember(content="Add validation steps", category="project", key="next_task", project_name="Grandpa")
+    svc.remember(
+        content="Memory Integration V1",
+        category="project",
+        key="latest_feature",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="D:\\Grandpa",
+        category="project",
+        key="project_path",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="xyz567",
+        category="project",
+        key="latest_commit",
+        project_name="Grandpa",
+    )
+    svc.remember(
+        content="Add validation steps",
+        category="project",
+        key="next_task",
+        project_name="Grandpa",
+    )
 
     msg = _handle_natural_memory_intent("Continue the Grandpa project")
     assert msg is not None
@@ -307,14 +383,16 @@ def test_continue_project_context(setup_temp_memory_integration: MemoryService) 
     assert "Next Task: Add validation steps." in msg
 
 
-def test_voice_operator_loop_integration(setup_temp_memory_integration: MemoryService) -> None:
+def test_voice_operator_loop_integration(
+    setup_temp_memory_integration: MemoryService,
+) -> None:
 
     commands = [
         "Remember that I prefer Chrome",
         "What is my preferred browser?",
         "Forget my preferred browser",
         "What is my preferred browser?",
-        "stop listening"
+        "stop listening",
     ]
     command_idx = 0
 
@@ -327,6 +405,7 @@ def test_voice_operator_loop_integration(setup_temp_memory_integration: MemorySe
         return cmd
 
     outputs = []
+
     def mock_output(msg: str) -> None:
         outputs.append(msg)
 

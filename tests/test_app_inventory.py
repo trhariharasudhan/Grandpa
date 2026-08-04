@@ -40,14 +40,23 @@ def test_app_inventory_scan_from_fake_start_menu(tmp_path: Path) -> None:
     )
 
     assert any(record.display_name == "Spotify" for record in records)
-    assert any(record.normalized_name == "spotify" for record in list_apps(store_path=store))
+    assert any(
+        record.normalized_name == "spotify" for record in list_apps(store_path=store)
+    )
 
 
 def test_app_find_exact_match(tmp_path: Path) -> None:
     store = tmp_path / "apps.json"
     save_inventory(
         [
-            AppInventoryRecord("Spotify", "spotify", str(tmp_path / "Spotify.lnk"), "test", ("spotify",), 1.0),
+            AppInventoryRecord(
+                "Spotify",
+                "spotify",
+                str(tmp_path / "Spotify.lnk"),
+                "test",
+                ("spotify",),
+                1.0,
+            ),
         ],
         store_path=store,
     )
@@ -62,7 +71,14 @@ def test_app_find_alias_match(tmp_path: Path) -> None:
     store = tmp_path / "apps.json"
     save_inventory(
         [
-            AppInventoryRecord("Visual Studio Code", "visual studio code", str(tmp_path / "Code.exe"), "test", ("vscode", "vs code"), 1.0),
+            AppInventoryRecord(
+                "Visual Studio Code",
+                "visual studio code",
+                str(tmp_path / "Code.exe"),
+                "test",
+                ("vscode", "vs code"),
+                1.0,
+            ),
         ],
         store_path=store,
     )
@@ -77,7 +93,14 @@ def test_app_fuzzy_match_uses_safe_threshold(tmp_path: Path) -> None:
     store = tmp_path / "apps.json"
     save_inventory(
         [
-            AppInventoryRecord("Blender", "blender", str(tmp_path / "blender.exe"), "test", ("blender",), 1.0),
+            AppInventoryRecord(
+                "Blender",
+                "blender",
+                str(tmp_path / "blender.exe"),
+                "test",
+                ("blender",),
+                1.0,
+            ),
         ],
         store_path=store,
     )
@@ -90,8 +113,22 @@ def test_app_ambiguous_match_asks_user(tmp_path: Path) -> None:
     store = tmp_path / "apps.json"
     save_inventory(
         [
-            AppInventoryRecord("Visual Studio", "visual studio", str(tmp_path / "vs.exe"), "test", ("visual studio",), 1.0),
-            AppInventoryRecord("Android Studio", "android studio", str(tmp_path / "studio.exe"), "test", ("android studio",), 1.0),
+            AppInventoryRecord(
+                "Visual Studio",
+                "visual studio",
+                str(tmp_path / "vs.exe"),
+                "test",
+                ("visual studio",),
+                1.0,
+            ),
+            AppInventoryRecord(
+                "Android Studio",
+                "android studio",
+                str(tmp_path / "studio.exe"),
+                "test",
+                ("android studio",),
+                1.0,
+            ),
         ],
         store_path=store,
     )
@@ -105,23 +142,38 @@ def test_app_ambiguous_match_asks_user(tmp_path: Path) -> None:
 def test_cache_uses_applications_payload(tmp_path: Path) -> None:
     store = tmp_path / "apps.json"
     save_inventory(
-        [AppInventoryRecord("Spotify", "spotify", str(tmp_path / "Spotify.lnk"), "test", ("spotify",), 1.0)],
+        [
+            AppInventoryRecord(
+                "Spotify",
+                "spotify",
+                str(tmp_path / "Spotify.lnk"),
+                "test",
+                ("spotify",),
+                1.0,
+            )
+        ],
         store_path=store,
     )
 
     assert '"last_scan"' in store.read_text(encoding="utf-8")
     assert '"applications"' in store.read_text(encoding="utf-8")
-    assert f'"schema_version": {APP_REGISTRY_SCHEMA_VERSION}' in store.read_text(encoding="utf-8")
+    assert f'"schema_version": {APP_REGISTRY_SCHEMA_VERSION}' in store.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_old_cache_schema_is_not_trusted(tmp_path: Path) -> None:
     store = tmp_path / "apps.json"
-    store.write_text('{"applications": [{"name": "noisy", "path": "tool.exe"}]}', encoding="utf-8")
+    store.write_text(
+        '{"applications": [{"name": "noisy", "path": "tool.exe"}]}', encoding="utf-8"
+    )
 
     assert load_app_registry(store_path=store) == []
 
 
-def test_start_menu_entry_outranks_program_files_and_deduplicates(tmp_path: Path) -> None:
+def test_start_menu_entry_outranks_program_files_and_deduplicates(
+    tmp_path: Path,
+) -> None:
     start_menu = tmp_path / "Start Menu"
     start_menu.mkdir()
     shortcut = start_menu / "Visual Studio Code.lnk"
@@ -180,7 +232,9 @@ def test_program_files_scan_is_shallow_and_filters_helpers(tmp_path: Path) -> No
     assert [app.display_name for app in records] == ["Blender"]
 
 
-def test_program_files_scan_respects_candidate_bound(monkeypatch, tmp_path: Path) -> None:
+def test_program_files_scan_respects_candidate_bound(
+    monkeypatch, tmp_path: Path
+) -> None:
     install_root = tmp_path / "Program Files"
     for index in range(4):
         product = install_root / f"Product{index}"
@@ -230,8 +284,12 @@ def test_running_apps_group_browser_children_and_filter_system(monkeypatch) -> N
         AppProcessInfo(3, "RuntimeBroker.exe", ""),
         AppProcessInfo(4, "System Idle Process", ""),
     ]
-    monkeypatch.setattr("grandpa.apps.process_manager._psutil_processes", lambda **_kwargs: processes)
-    monkeypatch.setattr("grandpa.apps.process_manager._visible_window_pids", lambda: {1, 2, 3, 4})
+    monkeypatch.setattr(
+        "grandpa.apps.process_manager._psutil_processes", lambda **_kwargs: processes
+    )
+    monkeypatch.setattr(
+        "grandpa.apps.process_manager._visible_window_pids", lambda: {1, 2, 3, 4}
+    )
 
     apps = list_running_apps()
 
@@ -242,7 +300,9 @@ def test_running_apps_group_browser_children_and_filter_system(monkeypatch) -> N
 
 def test_all_processes_keeps_raw_diagnostic_rows(monkeypatch) -> None:
     processes = [AppProcessInfo(4, "System Idle Process", "System Idle Process")]
-    monkeypatch.setattr("grandpa.apps.process_manager._psutil_processes", lambda **_kwargs: processes)
+    monkeypatch.setattr(
+        "grandpa.apps.process_manager._psutil_processes", lambda **_kwargs: processes
+    )
 
     assert list_running_apps(include_all_processes=True) == processes
 
@@ -252,7 +312,11 @@ def test_running_app_exact_match() -> None:
 
     proc = find_running_app(
         "chrome",
-        processes=[AppProcessInfo(123, "chrome.exe", "Chrome", r"C:\Program Files\Chrome\chrome.exe")],
+        processes=[
+            AppProcessInfo(
+                123, "chrome.exe", "Chrome", r"C:\Program Files\Chrome\chrome.exe"
+            )
+        ],
     )
 
     assert proc is not None
@@ -272,7 +336,9 @@ def test_running_apps_fallback_uses_tasklist(monkeypatch) -> None:
     monkeypatch.setattr(builtins, "__import__", fake_import)
     monkeypatch.setattr(
         "grandpa.apps.process_manager.subprocess.run",
-        lambda *_args, **_kwargs: SimpleNamespace(returncode=0, stdout='"chrome.exe","123","Console","1","100 K"\n'),
+        lambda *_args, **_kwargs: SimpleNamespace(
+            returncode=0, stdout='"chrome.exe","123","Console","1","100 K"\n'
+        ),
     )
 
     apps = list_running_apps()
@@ -293,10 +359,23 @@ def test_dangerous_launch_target_is_rejected(tmp_path: Path) -> None:
 def test_apps_cli_list_and_find(monkeypatch, tmp_path: Path) -> None:
     store = tmp_path / "apps.json"
     save_inventory(
-        [AppInventoryRecord("Spotify", "spotify", str(tmp_path / "Spotify.lnk"), "test", ("spotify",), 1.0)],
+        [
+            AppInventoryRecord(
+                "Spotify",
+                "spotify",
+                str(tmp_path / "Spotify.lnk"),
+                "test",
+                ("spotify",),
+                1.0,
+            )
+        ],
         store_path=store,
     )
-    monkeypatch.setattr(ApplicationManager, "__init__", lambda self, store_path=store: setattr(self, "store_path", store))
+    monkeypatch.setattr(
+        ApplicationManager,
+        "__init__",
+        lambda self, store_path=store: setattr(self, "store_path", store),
+    )
 
     runner = CliRunner()
     list_result = runner.invoke(apps, ["list"])
@@ -308,13 +387,17 @@ def test_apps_cli_list_and_find(monkeypatch, tmp_path: Path) -> None:
     assert "Found Spotify" in find_result.output
 
 
-def test_apps_cli_list_is_limited_and_all_includes_technical(monkeypatch, tmp_path: Path) -> None:
+def test_apps_cli_list_is_limited_and_all_includes_technical(
+    monkeypatch, tmp_path: Path
+) -> None:
     from grandpa.apps.registry import save_app_registry
 
     store = tmp_path / "apps.json"
     save_app_registry(
         [
-            ApplicationInfo("chrome", ("chrome",), "Chrome", "chrome.exe", canonical_key="chrome"),
+            ApplicationInfo(
+                "chrome", ("chrome",), "Chrome", "chrome.exe", canonical_key="chrome"
+            ),
             ApplicationInfo(
                 "testhost",
                 ("testhost",),
@@ -327,7 +410,11 @@ def test_apps_cli_list_is_limited_and_all_includes_technical(monkeypatch, tmp_pa
         ],
         store_path=store,
     )
-    monkeypatch.setattr(ApplicationManager, "__init__", lambda self, store_path=store: setattr(self, "store_path", store))
+    monkeypatch.setattr(
+        ApplicationManager,
+        "__init__",
+        lambda self, store_path=store: setattr(self, "store_path", store),
+    )
     runner = CliRunner()
 
     default = runner.invoke(apps, ["list", "--limit", "1"])

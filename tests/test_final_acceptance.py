@@ -45,6 +45,7 @@ def test_greeting_and_time_queries() -> None:
 # Scenario 3: Remember / recall / forget preferences
 def test_preferences_lifecycle() -> None:
     from grandpa.memory.service import MemoryService
+
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmpdir:
         db_path = Path(tmpdir) / "test_pref.db"
         svc = MemoryService.get_instance(db_path=str(db_path))
@@ -76,7 +77,12 @@ def test_project_roadmap_sprint_lifecycle(temp_workspace) -> None:
     p_path = temp_workspace / "TestProj"
     p_path.mkdir(parents=True, exist_ok=True)
 
-    patcher = patch("grandpa.agent.development.sprint.run_catalog_command", return_value=DiagnosticResult(command=[], exit_code=0, stdout="", stderr="", duration_seconds=0.0))
+    patcher = patch(
+        "grandpa.agent.development.sprint.run_catalog_command",
+        return_value=DiagnosticResult(
+            command=[], exit_code=0, stdout="", stderr="", duration_seconds=0.0
+        ),
+    )
     patcher.start()
 
     # 1. Register project
@@ -141,6 +147,7 @@ def test_automation_intent_routing() -> None:
 # Scenario 12, 13, 14, 15 & 16: Agent repository, diagnosis, patch preview, approved patch, focused validation
 def test_agent_v2_flow_mock(temp_workspace) -> None:
     from grandpa.agent.execution import inspect_repository, resolve_and_verify_workspace
+
     # Verify workspace resolves correctly
     ws_ctx = resolve_and_verify_workspace(str(temp_workspace))
     assert ws_ctx.is_safe
@@ -153,11 +160,15 @@ def test_agent_v2_flow_mock(temp_workspace) -> None:
 # Scenario 17 & 18: Checkpoint save/load & state persistence
 def test_checkpoint_save_and_load(temp_workspace) -> None:
     from grandpa.agent.development.checkpoint import CheckpointManager
+
     mgr = CheckpointManager(str(temp_workspace))
 
     # Setup initial state
-    state = ProjectState(project_name="CheckpointProj", project_path=str(temp_workspace))
+    state = ProjectState(
+        project_name="CheckpointProj", project_path=str(temp_workspace)
+    )
     from grandpa.agent.development.tracker import ProjectStateTracker
+
     tracker = ProjectStateTracker(str(temp_workspace), project_name="CheckpointProj")
     tracker.save_state(state)
 

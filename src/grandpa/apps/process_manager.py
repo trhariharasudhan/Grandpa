@@ -29,7 +29,9 @@ _PROCESS_DISPLAY_NAMES = {
 }
 
 
-def list_running_apps(*, limit: int = 50, include_all_processes: bool = False) -> list[AppProcessInfo]:
+def list_running_apps(
+    *, limit: int = 50, include_all_processes: bool = False
+) -> list[AppProcessInfo]:
     """Return grouped visible applications, or raw processes for diagnostics."""
 
     raw = _psutil_processes(limit=max(limit * 20, 500))
@@ -91,7 +93,9 @@ def _tasklist_processes(*, limit: int) -> list[AppProcessInfo]:
             pid = int(row[1])
         except ValueError:
             pid = 0
-        apps.append(AppProcessInfo(pid=pid, name=name, display_name=_process_display_name(name)))
+        apps.append(
+            AppProcessInfo(pid=pid, name=name, display_name=_process_display_name(name))
+        )
     return apps
 
 
@@ -102,7 +106,11 @@ def _is_user_process(process: AppProcessInfo, visible_pids: set[int]) -> bool:
     if any(token in normalized for token in NOISY_EXECUTABLE_TOKENS):
         return False
     process_stem = process.name.casefold().removesuffix(".exe")
-    if visible_pids and process.pid not in visible_pids and process_stem not in _PROCESS_DISPLAY_NAMES:
+    if (
+        visible_pids
+        and process.pid not in visible_pids
+        and process_stem not in _PROCESS_DISPLAY_NAMES
+    ):
         return False
     return bool(process.display_name)
 
@@ -110,7 +118,9 @@ def _is_user_process(process: AppProcessInfo, visible_pids: set[int]) -> bool:
 def _group_processes(processes: Iterable[AppProcessInfo]) -> list[AppProcessInfo]:
     grouped: dict[str, AppProcessInfo] = {}
     for process in processes:
-        key = canonicalize_app_identity(process.display_name or process.name, process.name)
+        key = canonicalize_app_identity(
+            process.display_name or process.name, process.name
+        )
         if not key:
             continue
         existing = grouped.get(key)
@@ -147,7 +157,9 @@ def _visible_window_pids() -> set[int]:
 
         user32 = ctypes.windll.user32
         pids: set[int] = set()
-        callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+        callback_type = ctypes.WINFUNCTYPE(
+            wintypes.BOOL, wintypes.HWND, wintypes.LPARAM
+        )
 
         @callback_type
         def collect(hwnd, _lparam):
@@ -164,16 +176,23 @@ def _visible_window_pids() -> set[int]:
         return set()
 
 
-def find_running_app(name: str, *, processes: list[AppProcessInfo] | None = None) -> AppProcessInfo | None:
+def find_running_app(
+    name: str, *, processes: list[AppProcessInfo] | None = None
+) -> AppProcessInfo | None:
     query = normalize_app_name(name)
     for proc in processes if processes is not None else list_running_apps():
-        candidates = {normalize_app_name(proc.name), normalize_app_name(proc.display_name)}
+        candidates = {
+            normalize_app_name(proc.name),
+            normalize_app_name(proc.display_name),
+        }
         if query in candidates or any(query in candidate for candidate in candidates):
             return proc
     return None
 
 
-def close_running_app(name: str, *, terminator: Callable[[AppProcessInfo], None] | None = None) -> str:
+def close_running_app(
+    name: str, *, terminator: Callable[[AppProcessInfo], None] | None = None
+) -> str:
     process = find_running_app(name)
     if process is None:
         return f"I could not find a running app named {name}."

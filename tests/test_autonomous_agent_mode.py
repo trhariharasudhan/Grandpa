@@ -47,7 +47,9 @@ def test_browser_research_plan(tmp_path: Path, monkeypatch) -> None:
     assert goal.status == "completed"
     skills = [step["skill"] for step in goal.steps]
     assert "browser.search_plan" in skills
-    assert any(action["skill"] == "browser.search_plan" for action in goal.actions_taken)
+    assert any(
+        action["skill"] == "browser.search_plan" for action in goal.actions_taken
+    )
 
 
 def test_memory_writeback_and_events(tmp_path: Path, monkeypatch) -> None:

@@ -27,7 +27,9 @@ def analyze_dependencies(path: str | Path | None = None) -> dict[str, Any]:
         "path": str(root),
         "manifests": manifests,
         "manifest_count": len(manifests),
-        "dependency_count": sum(len(item.get("dependencies", [])) for item in manifests),
+        "dependency_count": sum(
+            len(item.get("dependencies", [])) for item in manifests
+        ),
         "read_only": True,
     }
 
@@ -56,7 +58,9 @@ def _parse_package_json(path: Path) -> dict[str, Any]:
     data = json.loads(path.read_text(encoding="utf-8"))
     deps = []
     for section in ("dependencies", "devDependencies", "optionalDependencies"):
-        deps.extend(f"{name}@{version}" for name, version in (data.get(section) or {}).items())
+        deps.extend(
+            f"{name}@{version}" for name, version in (data.get(section) or {}).items()
+        )
     return _manifest(path, "node", deps)
 
 

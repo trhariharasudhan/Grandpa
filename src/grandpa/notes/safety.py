@@ -6,7 +6,9 @@ import re
 from pathlib import Path
 
 SECRET_PATTERNS = (
-    re.compile(r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}"),
+    re.compile(
+        r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}"
+    ),
     re.compile(r"\b(?:sk|pk|xoxp|xoxb|ghp|gho|github_pat)_[A-Za-z0-9_\-]{10,}"),
     re.compile(r"\b[A-Za-z0-9_\-]{24,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"),
 )
@@ -31,8 +33,13 @@ class NotesSafetyPolicy:
     def ensure_inside_root(self, root: Path, path: Path) -> Path:
         root_resolved = root.resolve()
         path_resolved = path.resolve()
-        if root_resolved != path_resolved and root_resolved not in path_resolved.parents:
-            raise NotesSafetyError("Blocked unsafe note path outside the notes directory.")
+        if (
+            root_resolved != path_resolved
+            and root_resolved not in path_resolved.parents
+        ):
+            raise NotesSafetyError(
+                "Blocked unsafe note path outside the notes directory."
+            )
         return path_resolved
 
     def requires_confirmation(self, action: str) -> bool:

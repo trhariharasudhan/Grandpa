@@ -8,14 +8,42 @@ from typing import Any
 from grandpa.services.base import safe_call
 
 SERVICE_MODULES: tuple[tuple[str, str, str], ...] = (
-    ("skills", "grandpa.services.skill_service", "Runtime skill registry and execution"),
+    (
+        "skills",
+        "grandpa.services.skill_service",
+        "Runtime skill registry and execution",
+    ),
     ("desktop", "grandpa.services.desktop_service", "Desktop and PC-control services"),
-    ("browser", "grandpa.services.browser_service", "Visible browser context and diagnostics"),
-    ("vision", "grandpa.services.vision_service", "Screen awareness and visual diagnostics"),
-    ("workflows", "grandpa.services.workflow_service", "Automation and workflow runtime"),
-    ("planner", "grandpa.services.planner_service", "Planner, agent runtime, MCP, and intent routing"),
-    ("release_gate", "grandpa.services.release_service", "Production release readiness gate"),
-    ("burnin", "grandpa.services.burnin_service", "Daily-use burn-in validation and stability reports"),
+    (
+        "browser",
+        "grandpa.services.browser_service",
+        "Visible browser context and diagnostics",
+    ),
+    (
+        "vision",
+        "grandpa.services.vision_service",
+        "Screen awareness and visual diagnostics",
+    ),
+    (
+        "workflows",
+        "grandpa.services.workflow_service",
+        "Automation and workflow runtime",
+    ),
+    (
+        "planner",
+        "grandpa.services.planner_service",
+        "Planner, agent runtime, MCP, and intent routing",
+    ),
+    (
+        "release_gate",
+        "grandpa.services.release_service",
+        "Production release readiness gate",
+    ),
+    (
+        "burnin",
+        "grandpa.services.burnin_service",
+        "Daily-use burn-in validation and stability reports",
+    ),
 )
 
 
@@ -24,7 +52,9 @@ def _service_payload(name: str, module_path: str, description: str) -> dict[str,
     health = safe_call(name, module.health)
     readiness = safe_call(name, module.readiness)
     diagnostics = safe_call(name, module.diagnostics)
-    ready = bool(health.get("ready")) and bool(readiness.get("ready", health.get("ready")))
+    ready = bool(health.get("ready")) and bool(
+        readiness.get("ready", health.get("ready"))
+    )
     return {
         "name": name,
         "description": description,

@@ -155,9 +155,7 @@ class InjectionScanner:
                 )
         highest = ThreatLevel.LOW
         for finding in findings:
-            if _THREAT_ORDER.index(finding.threat_level) > _THREAT_ORDER.index(
-                highest
-            ):
+            if _THREAT_ORDER.index(finding.threat_level) > _THREAT_ORDER.index(highest):
                 highest = finding.threat_level
         return InjectionScanResult(
             is_clean=not findings,

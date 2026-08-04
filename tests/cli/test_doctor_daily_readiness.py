@@ -78,7 +78,9 @@ def test_optional_rust_extension_absence_is_informational(monkeypatch) -> None:
     )
 
     results = _check_background_tasks()
-    rust = next(result for result in results if result.name == "Rust extension background task")
+    rust = next(
+        result for result in results if result.name == "Rust extension background task"
+    )
 
     assert rust.status == "info"
     assert rust.message == "Optional / not configured"
@@ -104,7 +106,10 @@ def test_inactive_engines_do_not_increase_warning_count(monkeypatch) -> None:
 
     results = _check_engines()
 
-    assert next(result for result in results if result.name == "Engine: ollama").status == "ok"
+    assert (
+        next(result for result in results if result.name == "Engine: ollama").status
+        == "ok"
+    )
     inactive = next(
         result for result in results if result.name == "Engine: custom-local"
     )
@@ -256,7 +261,9 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
         "_check_web_search_readiness",
         CheckResult("Web search", "ok", "Ready"),
     )
-    patch_check("_check_notifications_ready", CheckResult("Notifications", "ok", "Ready"))
+    patch_check(
+        "_check_notifications_ready", CheckResult("Notifications", "ok", "Ready")
+    )
     patch_check(
         "_check_background_scheduler_ready",
         CheckResult("Background scheduler", "ok", "Ready"),
@@ -279,5 +286,8 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
 def test_readiness_label() -> None:
     assert _readiness_label([CheckResult("a", "ok", "Ready")]) == "READY"
     assert _readiness_label([CheckResult("a", "info", "Not configured")]) == "READY"
-    assert _readiness_label([CheckResult("a", "warn", "Missing/optional")]) == "PARTIALLY READY"
+    assert (
+        _readiness_label([CheckResult("a", "warn", "Missing/optional")])
+        == "PARTIALLY READY"
+    )
     assert _readiness_label([CheckResult("a", "fail", "Failed")]) == "NEEDS SETUP"

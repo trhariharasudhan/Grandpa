@@ -148,7 +148,9 @@ def _terminate_pid(pid: int, *, grace_seconds: float = 10.0) -> None:
 
     if platform.system().lower() == "windows":
         try:
-            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False)
+            subprocess.run(
+                ["taskkill", "/F", "/PID", str(pid)], capture_output=True, check=False
+            )
         except Exception:
             pass
         return

@@ -225,7 +225,9 @@ def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
         )
 
     if suggestions:
-        parts.append("Safe suggestions:\n" + "\n".join(f"- {item}" for item in suggestions[:4]))
+        parts.append(
+            "Safe suggestions:\n" + "\n".join(f"- {item}" for item in suggestions[:4])
+        )
 
     if ocr.text:
         excerpt = ocr.text.strip()
@@ -286,7 +288,9 @@ def extract_ocr_result(path: str) -> OcrResult:
                 try:
                     text = pytesseract.image_to_string(variant, config=config).strip()
                     confidence = _ocr_confidence(pytesseract, variant, config)
-                    if _ocr_score(text, confidence) > _ocr_score(best_text, best_confidence):
+                    if _ocr_score(text, confidence) > _ocr_score(
+                        best_text, best_confidence
+                    ):
                         best_text = text
                         best_confidence = confidence
                         best_lines = tuple(_clean_ocr_lines(text))
@@ -297,7 +301,9 @@ def extract_ocr_result(path: str) -> OcrResult:
             confidence=best_confidence,
             backend="pytesseract",
             lines=best_lines,
-            message="OCR completed locally." if best_text else "OCR ran but no readable text was detected.",
+            message="OCR completed locally."
+            if best_text
+            else "OCR ran but no readable text was detected.",
         )
     except Exception as exc:
         logger.debug("OCR unavailable for %s: %s", path, exc)
@@ -330,7 +336,13 @@ def classify_popup_or_error(text: str, *, window_title: str = "") -> PopupInsigh
             "network_error",
             "warning",
             "Network or connection error",
-            ("network error", "connection failed", "can't reach", "offline", "timed out"),
+            (
+                "network error",
+                "connection failed",
+                "can't reach",
+                "offline",
+                "timed out",
+            ),
             "Check the connection or retry after the service is reachable.",
         ),
         (
@@ -356,7 +368,9 @@ def classify_popup_or_error(text: str, *, window_title: str = "") -> PopupInsigh
         ),
     ]
     for category, severity, title, keywords, action in patterns:
-        evidence = tuple(keyword for keyword in keywords if _contains_phrase(lowered, keyword))
+        evidence = tuple(
+            keyword for keyword in keywords if _contains_phrase(lowered, keyword)
+        )
         if category == "permission" and not (
             "permission" in evidence
             or "access" in evidence
@@ -391,7 +405,15 @@ def detect_ui_elements(text: str) -> list[ScreenElement]:
         "search",
         "download",
     }
-    field_words = ("search", "email", "username", "name", "message", "comment", "filter")
+    field_words = (
+        "search",
+        "email",
+        "username",
+        "name",
+        "message",
+        "comment",
+        "filter",
+    )
     for raw in _clean_ocr_lines(text):
         lowered = raw.lower().strip(" :")
         if not lowered:
@@ -399,7 +421,9 @@ def detect_ui_elements(text: str) -> list[ScreenElement]:
         role = "label"
         hint = "Visible text label."
         confidence = 0.45
-        if lowered in button_words or lowered.startswith(tuple(f"{word} " for word in ("ok", "save", "retry", "continue"))):
+        if lowered in button_words or lowered.startswith(
+            tuple(f"{word} " for word in ("ok", "save", "retry", "continue"))
+        ):
             role = "button"
             hint = "Likely clickable button."
             confidence = 0.72
@@ -415,7 +439,9 @@ def detect_ui_elements(text: str) -> list[ScreenElement]:
         if key in seen:
             continue
         seen.add(key)
-        elements.append(ScreenElement(role=role, text=raw[:120], confidence=confidence, hint=hint))
+        elements.append(
+            ScreenElement(role=role, text=raw[:120], confidence=confidence, hint=hint)
+        )
         if len(elements) >= 30:
             break
     return elements
@@ -429,21 +455,33 @@ def build_navigation_suggestions(
     suggestions: list[str] = []
     if popup.detected:
         if popup.category == "security":
-            suggestions.append("Handle the security prompt manually unless you explicitly approve an action.")
+            suggestions.append(
+                "Handle the security prompt manually unless you explicitly approve an action."
+            )
         elif popup.category == "confirmation":
-            suggestions.append("Ask Grandpa to read the dialog before choosing a confirmation button.")
+            suggestions.append(
+                "Ask Grandpa to read the dialog before choosing a confirmation button."
+            )
         else:
-            suggestions.append("Ask Grandpa to read the visible error before trying another action.")
+            suggestions.append(
+                "Ask Grandpa to read the visible error before trying another action."
+            )
     buttons = [item.text for item in elements if item.role == "button"]
     if buttons:
         suggestions.append("Visible buttons: " + ", ".join(buttons[:6]) + ".")
     fields = [item.text for item in elements if item.role == "field"]
     if fields:
-        suggestions.append("Visible fields may be targetable after confirmation: " + ", ".join(fields[:4]) + ".")
+        suggestions.append(
+            "Visible fields may be targetable after confirmation: "
+            + ", ".join(fields[:4])
+            + "."
+        )
     if app_name:
         suggestions.append(f"Current app context appears to be {app_name}.")
     if not suggestions:
-        suggestions.append("Use a specific visible label, button name, or app name for safer navigation.")
+        suggestions.append(
+            "Use a specific visible label, button name, or app name for safer navigation."
+        )
     return suggestions[:6]
 
 
@@ -464,8 +502,11 @@ def get_visible_windows(limit: int = 12) -> list[dict[str, Any]]:
             items.append(
                 {
                     "title": title,
-                    "app_name": getattr(item, "app_name", "") or getattr(item, "app_id", "") or _app_name_from_title(title),
-                    "process_name": getattr(item, "process_name", "") or getattr(item, "app_id", ""),
+                    "app_name": getattr(item, "app_name", "")
+                    or getattr(item, "app_id", "")
+                    or _app_name_from_title(title),
+                    "process_name": getattr(item, "process_name", "")
+                    or getattr(item, "app_id", ""),
                 }
             )
         return items

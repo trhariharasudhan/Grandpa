@@ -36,7 +36,9 @@ def build_patch_proposal(
 ) -> PatchProposal:
     """Construct a structured PatchProposal matching affected files, original hashes, and diagnostic evidence."""
     if not analysis.evidence_ids:
-        raise ValueError("Cannot build PatchProposal: analysis has no diagnostic evidence.")
+        raise ValueError(
+            "Cannot build PatchProposal: analysis has no diagnostic evidence."
+        )
 
     if not changes:
         raise ValueError("Cannot build PatchProposal: no changes proposed.")
@@ -57,14 +59,25 @@ def build_patch_proposal(
 
         # 2. Reject comment-only and placeholder changes
         if "verified patch change" in diff_text:
-            raise ValueError("Cannot build PatchProposal: proposed patch contains no real changes (empty, comment-only, or placeholder).")
+            raise ValueError(
+                "Cannot build PatchProposal: proposed patch contains no real changes (empty, comment-only, or placeholder)."
+            )
 
-        added_lines = [line[1:].strip() for line in diff_text.splitlines() if line.startswith("+") and not line.startswith("+++")]
+        added_lines = [
+            line[1:].strip()
+            for line in diff_text.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ]
         has_real_adds = any(line and not line.startswith("#") for line in added_lines)
-        has_deletions = any(line.startswith("-") and not line.startswith("---") for line in diff_text.splitlines())
+        has_deletions = any(
+            line.startswith("-") and not line.startswith("---")
+            for line in diff_text.splitlines()
+        )
 
         if not has_real_adds and not has_deletions:
-            raise ValueError("Cannot build PatchProposal: proposed patch contains no real changes (empty, comment-only, or placeholder).")
+            raise ValueError(
+                "Cannot build PatchProposal: proposed patch contains no real changes (empty, comment-only, or placeholder)."
+            )
 
         full_path = str(Path(c["path"]).resolve())
         orig_hash = calculate_file_hash(full_path)
@@ -82,7 +95,10 @@ def build_patch_proposal(
             if line.startswith("@@"):
                 match = re.search(r"@@ -(\d+),?(\d+)? \+(\d+),?(\d+)? @@", line)
                 if match:
-                    line_range = (int(match.group(3)), int(match.group(3)) + int(match.group(4) or 1))
+                    line_range = (
+                        int(match.group(3)),
+                        int(match.group(3)) + int(match.group(4) or 1),
+                    )
                     break
         changed_line_ranges[full_path] = line_range
 

@@ -406,7 +406,11 @@ class MultiAgentTaskStore:
     """SQLite persistence for deterministic multi-agent tasks."""
 
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self.db_path = Path(db_path or os.environ.get("GRANDPA_MULTI_AGENT_DB") or DEFAULT_MULTI_AGENT_DB)
+        self.db_path = Path(
+            db_path
+            or os.environ.get("GRANDPA_MULTI_AGENT_DB")
+            or DEFAULT_MULTI_AGENT_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -504,7 +508,15 @@ class MultiAgentTaskStore:
                 INSERT INTO multi_agent_events(task_id, timestamp, agent_id, phase, status, message, data)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (task_id, time.time(), agent_id, phase, status, message, json.dumps(data or {}, ensure_ascii=True)),
+                (
+                    task_id,
+                    time.time(),
+                    agent_id,
+                    phase,
+                    status,
+                    message,
+                    json.dumps(data or {}, ensure_ascii=True),
+                ),
             )
 
     def list(self, limit: int = 50) -> list[dict[str, Any]]:
@@ -521,7 +533,9 @@ class MultiAgentTaskStore:
 
     def get(self, task_id: str) -> dict[str, Any] | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM multi_agent_tasks WHERE task_id = ?", (task_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM multi_agent_tasks WHERE task_id = ?", (task_id,)
+            ).fetchone()
         return _task_from_row(row).to_dict() if row else None
 
     def events(self, task_id: str, limit: int = 100) -> list[dict[str, Any]]:
@@ -551,11 +565,15 @@ class MultiAgentTaskStore:
 
     def count(self) -> int:
         with self._connect() as conn:
-            row = conn.execute("SELECT COUNT(*) AS count FROM multi_agent_tasks").fetchone()
+            row = conn.execute(
+                "SELECT COUNT(*) AS count FROM multi_agent_tasks"
+            ).fetchone()
         return int(row["count"] if row else 0)
 
 
-def orchestrate_goal(user_request: str, *, store: MultiAgentTaskStore | None = None) -> MultiAgentTask:
+def orchestrate_goal(
+    user_request: str, *, store: MultiAgentTaskStore | None = None
+) -> MultiAgentTask:
     """Run a deterministic multi-agent collaboration and persist the result."""
 
     from grandpa.agents.context import build_shared_context
@@ -579,7 +597,9 @@ def orchestrate_goal(user_request: str, *, store: MultiAgentTaskStore | None = N
     task_store.save(task)
     outputs: list[dict[str, Any]] = []
     for agent in selected_agents:
-        task_store.add_event(task.task_id, agent.agent_id, "execute", "running", "Agent started.")
+        task_store.add_event(
+            task.task_id, agent.agent_id, "execute", "running", "Agent started."
+        )
         try:
             result = agent.executor(context)
             output = {
@@ -599,10 +619,21 @@ def orchestrate_goal(user_request: str, *, store: MultiAgentTaskStore | None = N
                 "message": f"{agent.name} could not complete its local check.",
                 "data": {"error": exc.__class__.__name__},
             }
-        task_store.add_event(task.task_id, agent.agent_id, "execute", output["status"], output["message"], output)
+        task_store.add_event(
+            task.task_id,
+            agent.agent_id,
+            "execute",
+            output["status"],
+            output["message"],
+            output,
+        )
         outputs.append(output)
 
-    final_status = "completed" if all(item.get("ok") for item in outputs) else "completed_with_warnings"
+    final_status = (
+        "completed"
+        if all(item.get("ok") for item in outputs)
+        else "completed_with_warnings"
+    )
     summary = _summarize_outputs(user_request, outputs)
     completed = time.time()
     final_task = MultiAgentTask(
@@ -623,11 +654,15 @@ def orchestrate_goal(user_request: str, *, store: MultiAgentTaskStore | None = N
     return final_task
 
 
-def list_multi_agent_tasks(limit: int = 50, *, store: MultiAgentTaskStore | None = None) -> list[dict[str, Any]]:
+def list_multi_agent_tasks(
+    limit: int = 50, *, store: MultiAgentTaskStore | None = None
+) -> list[dict[str, Any]]:
     return (store or MultiAgentTaskStore()).list(limit=limit)
 
 
-def get_multi_agent_task(task_id: str, *, store: MultiAgentTaskStore | None = None) -> dict[str, Any] | None:
+def get_multi_agent_task(
+    task_id: str, *, store: MultiAgentTaskStore | None = None
+) -> dict[str, Any] | None:
     task_store = store or MultiAgentTaskStore()
     task = task_store.get(task_id)
     if task:
@@ -635,7 +670,9 @@ def get_multi_agent_task(task_id: str, *, store: MultiAgentTaskStore | None = No
     return task
 
 
-def multi_agent_diagnostics(*, store: MultiAgentTaskStore | None = None) -> dict[str, Any]:
+def multi_agent_diagnostics(
+    *, store: MultiAgentTaskStore | None = None
+) -> dict[str, Any]:
     from grandpa.agents.registry import agent_registry_diagnostics
 
     task_store = store or MultiAgentTaskStore()
@@ -669,7 +706,9 @@ def _task_from_row(row: sqlite3.Row) -> MultiAgentTask:
         summary=row["summary"],
         created_at=float(row["created_at"]),
         updated_at=float(row["updated_at"]),
-        completed_at=float(row["completed_at"]) if row["completed_at"] is not None else None,
+        completed_at=float(row["completed_at"])
+        if row["completed_at"] is not None
+        else None,
     )
 
 
@@ -714,7 +753,13 @@ def _safe_memory_writeback(task: MultiAgentTask) -> None:
 
 
 def _looks_sensitive(text: str) -> bool:
-    return bool(re.search(r"\b(password|token|api\s*key|secret|otp|credential|credit\s*card|cvv)\b", text, re.I))
+    return bool(
+        re.search(
+            r"\b(password|token|api\s*key|secret|otp|credential|credit\s*card|cvv)\b",
+            text,
+            re.I,
+        )
+    )
 
 
 __all__ = [

@@ -44,7 +44,9 @@ class VisionAnalysis:
 class VisionAnalyzer:
     """Validate image uploads and return deterministic placeholder analysis."""
 
-    def analyze(self, data: bytes, filename: str | None, mime_type: str | None) -> VisionAnalysis:
+    def analyze(
+        self, data: bytes, filename: str | None, mime_type: str | None
+    ) -> VisionAnalysis:
         safe_filename = (filename or "uploaded-image").strip() or "uploaded-image"
         normalized_mime = (mime_type or "").split(";")[0].strip().lower()
         if not data:
@@ -59,7 +61,11 @@ class VisionAnalyzer:
         try:
             with Image.open(BytesIO(data)) as image:
                 width, height = image.size
-                image_format = (image.format or self._format_from_hint(safe_filename, normalized_mime) or "").lower()
+                image_format = (
+                    image.format
+                    or self._format_from_hint(safe_filename, normalized_mime)
+                    or ""
+                ).lower()
                 image.verify()
         except (UnidentifiedImageError, OSError, ValueError):
             return self._error(safe_filename, "Invalid image file.")

@@ -8,7 +8,7 @@ VOICE_DEPENDENCY_MESSAGE = (
     "Voice mode is not fully installed.\n"
     "Install it with:\n"
     "uv sync --extra voice\n"
-    "or: pip install -e \".[voice]\"\n"
+    'or: pip install -e ".[voice]"\n'
     "For STT-only installs, use: "
     "uv sync --extra speech\n"
     "Then retry the command."
@@ -18,7 +18,9 @@ MICROPHONE_UNAVAILABLE_MESSAGE = (
     "Check Windows microphone permissions and your default input device.\n"
     "Then retry voice mode."
 )
-VOICE_RECOGNITION_MESSAGE = "I could not understand the audio.\nPlease try speaking again."
+VOICE_RECOGNITION_MESSAGE = (
+    "I could not understand the audio.\nPlease try speaking again."
+)
 VOICE_OUTPUT_UNAVAILABLE_MESSAGE = (
     "Voice output is not available.\n"
     "Install or configure a supported text-to-speech backend."
@@ -31,7 +33,9 @@ class VoiceError(Exception):
     status = "voice_error"
     user_message = "Voice mode could not complete that request."
 
-    def __init__(self, message: str | None = None, *, detail: str | None = None) -> None:
+    def __init__(
+        self, message: str | None = None, *, detail: str | None = None
+    ) -> None:
         self.detail = detail
         super().__init__(message or self.user_message)
 

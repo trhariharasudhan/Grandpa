@@ -17,7 +17,11 @@ def summarize_project(path: str | Path | None = None) -> dict[str, Any]:
     architecture = analyze_architecture(root)
     dependencies = analyze_dependencies(root)
     types = ", ".join(repo["project"].get("types", [])) or "unknown"
-    top_language = repo["language_breakdown"][0]["language"] if repo["language_breakdown"] else "unknown"
+    top_language = (
+        repo["language_breakdown"][0]["language"]
+        if repo["language_breakdown"]
+        else "unknown"
+    )
     summary = (
         f"{root.name} is a {types} project. It contains {repo['file_count']} tracked source/document files, "
         f"{repo['module_count']} code module(s), {repo['test_count']} test file(s), and "
@@ -44,10 +48,24 @@ def summarize_module(module_path: str | Path) -> dict[str, Any]:
     if path.is_dir():
         files = [item for item in path.rglob("*") if item.is_file()]
         summary = f"{path.name} is a directory with {len(files)} file(s)."
-        return {"path": str(path), "type": "directory", "file_count": len(files), "summary": summary, "read_only": True}
+        return {
+            "path": str(path),
+            "type": "directory",
+            "file_count": len(files),
+            "summary": summary,
+            "read_only": True,
+        }
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-    summary = f"{path.name} is a {path.suffix or 'plain'} file with {len(lines)} line(s)."
-    return {"path": str(path), "type": "file", "line_count": len(lines), "summary": summary, "read_only": True}
+    summary = (
+        f"{path.name} is a {path.suffix or 'plain'} file with {len(lines)} line(s)."
+    )
+    return {
+        "path": str(path),
+        "type": "file",
+        "line_count": len(lines),
+        "summary": summary,
+        "read_only": True,
+    }
 
 
 __all__ = ["summarize_module", "summarize_project", "summarize_repository"]

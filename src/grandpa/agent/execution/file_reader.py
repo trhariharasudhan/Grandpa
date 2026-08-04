@@ -9,8 +9,18 @@ from grandpa.agent.execution.workspace import is_subpath
 
 # Sensitive files patterns
 SENSITIVE_PATTERNS = [
-    r"\.env$", r"\.env\.", r"key", r"token", r"secret", r"vault", r"auth",
-    r"\.git", r"\.pytest_cache", r"\.ruff_cache", r"\.venv", r"__pycache__"
+    r"\.env$",
+    r"\.env\.",
+    r"key",
+    r"token",
+    r"secret",
+    r"vault",
+    r"auth",
+    r"\.git",
+    r"\.pytest_cache",
+    r"\.ruff_cache",
+    r"\.venv",
+    r"__pycache__",
 ]
 
 
@@ -23,7 +33,9 @@ def is_sensitive_path(path_str: str) -> bool:
     return False
 
 
-def read_file_safe(file_path: str, workspace_root: str, max_lines: int = 200, max_bytes: int = 50000) -> str:
+def read_file_safe(
+    file_path: str, workspace_root: str, max_lines: int = 200, max_bytes: int = 50000
+) -> str:
     """Safely read text file content, returning bounded line strings."""
     try:
         p = Path(file_path).resolve()
@@ -49,7 +61,9 @@ def read_file_safe(file_path: str, workspace_root: str, max_lines: int = 200, ma
     try:
         size = p.stat().st_size
         if size > max_bytes:
-            return f"Error: File size ({size} bytes) exceeds limit of {max_bytes} bytes."
+            return (
+                f"Error: File size ({size} bytes) exceeds limit of {max_bytes} bytes."
+            )
     except OSError as exc:
         return f"Error checking file size: {exc}"
 

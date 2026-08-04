@@ -51,21 +51,31 @@ def duplicates() -> None:
 @downloads.command("organize")
 @click.option("--yes", is_flag=True, help="Confirm organization.")
 def organize(yes: bool) -> None:
-    click.echo(handle_downloads_command("organize my downloads folder", confirmed=yes).message)
+    click.echo(
+        handle_downloads_command("organize my downloads folder", confirmed=yes).message
+    )
 
 
 @downloads.command("delete")
 @click.argument("selector", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm deletion.")
 def delete(selector: tuple[str, ...], yes: bool) -> None:
-    click.echo(handle_downloads_command("downloads delete " + " ".join(selector), confirmed=yes).message)
+    click.echo(
+        handle_downloads_command(
+            "downloads delete " + " ".join(selector), confirmed=yes
+        ).message
+    )
 
 
 @downloads.command("archive")
 @click.argument("selector", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm archive.")
 def archive(selector: tuple[str, ...], yes: bool) -> None:
-    click.echo(handle_downloads_command("downloads archive " + " ".join(selector), confirmed=yes).message)
+    click.echo(
+        handle_downloads_command(
+            "downloads archive " + " ".join(selector), confirmed=yes
+        ).message
+    )
 
 
 @downloads.command("info")

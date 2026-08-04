@@ -26,7 +26,12 @@ class GmailParser:
     def _parse_setup(self, command: str) -> GmailAction | None:
         if command in {"gmail setup", "email setup", "connect gmail", "connect email"}:
             return GmailAction("setup")
-        if command in {"gmail disconnect", "email disconnect", "disconnect gmail", "disconnect email"}:
+        if command in {
+            "gmail disconnect",
+            "email disconnect",
+            "disconnect gmail",
+            "disconnect email",
+        }:
             return GmailAction("disconnect")
         if command in {"gmail status", "email status"}:
             return GmailAction("status")
@@ -37,7 +42,12 @@ class GmailParser:
         return None
 
     def _parse_read(self, command: str) -> GmailAction | None:
-        if command in {"show my unread emails", "show unread emails", "unread emails", "gmail unread"}:
+        if command in {
+            "show my unread emails",
+            "show unread emails",
+            "unread emails",
+            "gmail unread",
+        }:
             return GmailAction("list", query="is:unread")
         if command in {"count unread emails", "how many unread emails do i have"}:
             return GmailAction("search", query="is:unread", args={"count_only": True})
@@ -45,7 +55,11 @@ class GmailParser:
             return GmailAction("list", query="in:inbox")
         if command in {"show latest emails", "latest emails", "show recent emails"}:
             return GmailAction("list", query="")
-        if command in {"show emails from today", "what emails did i receive today", "summarize emails from today"}:
+        if command in {
+            "show emails from today",
+            "what emails did i receive today",
+            "summarize emails from today",
+        }:
             action = "summarize" if command.startswith("summarize") else "list"
             return GmailAction(action, query="newer_than:1d")
         if command in {"show emails from this week", "summarize emails from this week"}:
@@ -80,7 +94,11 @@ class GmailParser:
                 continue
             value = raw[-len(match.group(1)) :].strip()
             action = "read" if pattern.startswith("read") else "search"
-            return GmailAction(action, query=template.format(value=value), selector="latest" if action == "read" else "")
+            return GmailAction(
+                action,
+                query=template.format(value=value),
+                selector="latest" if action == "read" else "",
+            )
         return None
 
     def _parse_draft(self, command: str, raw: str) -> GmailAction | None:
@@ -88,7 +106,9 @@ class GmailParser:
         if match:
             recipient = raw[match.start(1) : match.end(1)]
             subject = raw[match.start(2) : match.end(2)] if match.group(2) else ""
-            return GmailAction("draft", recipient=recipient, subject=subject, body=subject)
+            return GmailAction(
+                "draft", recipient=recipient, subject=subject, body=subject
+            )
         match = re.fullmatch(r"draft a reply saying (.+)", command)
         if match:
             body = raw[match.start(1) : match.end(1)]
@@ -106,12 +126,22 @@ class GmailParser:
             return GmailAction("archive", selector="latest")
         if "newsletters" in command and command.startswith("archive"):
             return GmailAction("archive", query="newsletter", bulk=True)
-        if command in {"delete this email", "move this email to trash", "trash this email"}:
+        if command in {
+            "delete this email",
+            "move this email to trash",
+            "trash this email",
+        }:
             return GmailAction("trash", selector="latest")
-        match = re.fullmatch(r"(?:add label|label these emails as|label all .+ as) (.+)", command)
+        match = re.fullmatch(
+            r"(?:add label|label these emails as|label all .+ as) (.+)", command
+        )
         if match:
             label = raw[match.start(1) : match.end(1)]
-            return GmailAction("label", label=label, bulk="all " in command or "these emails" in command)
+            return GmailAction(
+                "label",
+                label=label,
+                bulk="all " in command or "these emails" in command,
+            )
         match = re.fullmatch(r"remove label (.+)", command)
         if match:
             label = raw[match.start(1) : match.end(1)]

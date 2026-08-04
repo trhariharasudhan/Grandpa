@@ -46,7 +46,9 @@ class ConfirmationManager:
             return self._pending.pop(token, None) is not None
 
     def _purge(self, now: float) -> None:
-        expired = [token for token, item in self._pending.items() if item.expires_at <= now]
+        expired = [
+            token for token, item in self._pending.items() if item.expires_at <= now
+        ]
         for token in expired:
             self._pending.pop(token, None)
 

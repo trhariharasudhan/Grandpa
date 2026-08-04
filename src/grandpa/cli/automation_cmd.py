@@ -36,8 +36,12 @@ def _run(
 
 
 def _execution_options(function):
-    function = click.option("--yes", is_flag=True, help="Confirm the planned action.")(function)
-    return click.option("--dry-run", is_flag=True, help="Plan without sending input.")(function)
+    function = click.option("--yes", is_flag=True, help="Confirm the planned action.")(
+        function
+    )
+    return click.option("--dry-run", is_flag=True, help="Plan without sending input.")(
+        function
+    )
 
 
 @automation.command("click")
@@ -62,7 +66,15 @@ def click_cmd(
 ) -> None:
     if (x is None) != (y is None):
         raise click.UsageError("Use --x and --y together.")
-    verb = "double click" if double_click else "right click" if right_click else "middle click" if middle_click else "click"
+    verb = (
+        "double click"
+        if double_click
+        else "right click"
+        if right_click
+        else "middle click"
+        if middle_click
+        else "click"
+    )
     destination = f"at {x} {y}" if x is not None else " ".join(target).strip()
     if not destination:
         raise click.UsageError("Provide a visible element name or --x/--y coordinates.")
@@ -91,7 +103,9 @@ def move(x: int | None, y: int | None, element: str | None, dry_run: bool) -> No
 @click.argument("text", nargs=-1, required=True)
 @click.option("--window", help="Window that must own the input.")
 @_execution_options
-def type_cmd(text: tuple[str, ...], window: str | None, yes: bool, dry_run: bool) -> None:
+def type_cmd(
+    text: tuple[str, ...], window: str | None, yes: bool, dry_run: bool
+) -> None:
     _run(f"type {' '.join(text)}", dry_run=dry_run, yes=yes, window=window)
 
 
@@ -161,7 +175,9 @@ def session() -> None:
             command = f"focus {command.split(maxsplit=1)[1]}"
         if normalized.startswith("move "):
             parts = command.split()
-            if len(parts) == 3 and all(part.lstrip("-").isdigit() for part in parts[1:]):
+            if len(parts) == 3 and all(
+                part.lstrip("-").isdigit() for part in parts[1:]
+            ):
                 command = f"move mouse to {parts[1]} {parts[2]}"
         _run(command, service=service)
 

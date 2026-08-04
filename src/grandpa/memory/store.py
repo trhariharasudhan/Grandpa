@@ -6,11 +6,13 @@ import json
 import os
 import sqlite3
 import time
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 from grandpa.memory.models import MemoryItem, is_sensitive_content
+from grandpa.memory_recovery import recover_sqlite_database, validate_sqlite_connection
 
 DEFAULT_MEMORY_DB = DEFAULT_CONFIG_DIR / "memory.db"
 CURRENT_SCHEMA_VERSION = 1
@@ -23,15 +25,57 @@ class MemoryStore:
         raw_path = db_path or os.environ.get("GRANDPA_MEMORY_DB") or DEFAULT_MEMORY_DB
         self.db_path = Path(raw_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._closed = False
         self._init_db()
 
-    def _connect(self) -> sqlite3.Connection:
+    def _open_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
 
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        if self._closed:
+            raise RuntimeError("MemoryStore is closed")
+        conn: sqlite3.Connection | None = None
+        try:
+            conn = self._open_connection()
+            validate_sqlite_connection(conn)
+        except sqlite3.DatabaseError:
+            if conn is not None:
+                conn.close()
+            recover_sqlite_database(self.db_path)
+            self._create_schema()
+            conn = self._open_connection()
+        try:
+            yield conn
+        except Exception:
+            conn.rollback()
+            raise
+        else:
+            conn.commit()
+        finally:
+            conn.close()
+
     def _init_db(self) -> None:
-        with self._connect() as conn:
+        if self._has_invalid_header():
+            recover_sqlite_database(self.db_path)
+        try:
+            self._create_schema()
+        except sqlite3.DatabaseError:
+            recover_sqlite_database(self.db_path)
+            self._create_schema()
+
+    def _has_invalid_header(self) -> bool:
+        if not self.db_path.exists() or self.db_path.stat().st_size == 0:
+            return False
+        with self.db_path.open("rb") as handle:
+            return handle.read(16) != b"SQLite format 3\x00"
+
+    def _create_schema(self) -> None:
+        conn = self._open_connection()
+        try:
+            validate_sqlite_connection(conn)
             # Schema versioning table
             conn.execute(
                 """
@@ -43,7 +87,10 @@ class MemoryStore:
             cursor = conn.execute("SELECT version FROM schema_version LIMIT 1")
             row = cursor.fetchone()
             if not row:
-                conn.execute("INSERT INTO schema_version(version) VALUES (?)", (CURRENT_SCHEMA_VERSION,))
+                conn.execute(
+                    "INSERT INTO schema_version(version) VALUES (?)",
+                    (CURRENT_SCHEMA_VERSION,),
+                )
 
             # Memories main table
             conn.execute(
@@ -65,14 +112,22 @@ class MemoryStore:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_name)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_memories_project ON memories(project_name)"
+            )
             conn.execute("CREATE INDEX IF NOT EXISTS idx_memories_key ON memories(key)")
             conn.commit()
+        finally:
+            conn.close()
 
     def insert(self, item: MemoryItem, allow_sensitive: bool = False) -> MemoryItem:
         """Insert or replace a memory item in the store."""
-        if not allow_sensitive and (is_sensitive_content(item.content) or is_sensitive_content(item.key)):
+        if not allow_sensitive and (
+            is_sensitive_content(item.content) or is_sensitive_content(item.key)
+        ):
             raise ValueError(
                 "Refused to store raw sensitive authentication materials (passwords, tokens, keys)."
             )
@@ -133,8 +188,15 @@ class MemoryStore:
         return updated_item
 
     def close(self) -> None:
-        """Close storage connections."""
-        pass
+        """Prevent new connections; active operation handles close themselves."""
+
+        self._closed = True
+
+    def __enter__(self) -> "MemoryStore":
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        self.close()
 
     def get_by_key(self, key: str, include_deleted: bool = False) -> MemoryItem | None:
         """Retrieve a memory item by exact key."""
@@ -154,7 +216,9 @@ class MemoryStore:
             item.access_count += 1
             return item
 
-    def get_by_id(self, item_id: str, include_deleted: bool = False) -> MemoryItem | None:
+    def get_by_id(
+        self, item_id: str, include_deleted: bool = False
+    ) -> MemoryItem | None:
         """Retrieve a memory item by ID or key."""
         with self._connect() as conn:
             query = "SELECT * FROM memories WHERE (id = ? OR key = ?)"
@@ -186,7 +250,9 @@ class MemoryStore:
 
         new_content = content if content is not None else existing.content
         if is_sensitive_content(new_content):
-            raise ValueError("Refused to update memory with raw sensitive auth material.")
+            raise ValueError(
+                "Refused to update memory with raw sensitive auth material."
+            )
 
         new_meta = {**existing.metadata, **(metadata or {})}
         new_cat = category or existing.category
@@ -226,7 +292,9 @@ class MemoryStore:
         """Clear memories, optionally filtered by category."""
         with self._connect() as conn:
             if category:
-                cursor = conn.execute("DELETE FROM memories WHERE category = ?", (category,))
+                cursor = conn.execute(
+                    "DELETE FROM memories WHERE category = ?", (category,)
+                )
             else:
                 cursor = conn.execute("DELETE FROM memories")
             deleted_count = cursor.rowcount

@@ -18,27 +18,57 @@ class FileControlService:
         from grandpa.pc_control import LocalActionResponse
 
         target = self.resolve_path(request.target)
-        destination = self.resolve_path(str(request.args.get("destination", ""))) if request.args.get("destination") else None
+        destination = (
+            self.resolve_path(str(request.args.get("destination", "")))
+            if request.args.get("destination")
+            else None
+        )
         if action == "file_create":
             kind = request.args.get("kind", "file")
             if kind == "folder":
                 target.mkdir(parents=True, exist_ok=False)
             else:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_text(str(request.args.get("content", "")), encoding="utf-8")
-            return LocalActionResponse(True, None, "completed", f"Created {kind}.", False, "LOW", {"path": str(target), "kind": kind})
+                target.write_text(
+                    str(request.args.get("content", "")), encoding="utf-8"
+                )
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                f"Created {kind}.",
+                False,
+                "LOW",
+                {"path": str(target), "kind": kind},
+            )
         if action == "file_rename":
             if destination is None:
                 destination = target.with_name(str(request.args["new_name"]))
             destination.parent.mkdir(parents=True, exist_ok=True)
             target.rename(destination)
-            return LocalActionResponse(True, None, "completed", "Renamed item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Renamed item.",
+                False,
+                "MEDIUM",
+                {"from": str(target), "to": str(destination)},
+            )
         if action == "file_move":
             if destination is None:
                 raise ValueError("destination is required")
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.move(str(target), str(destination))
-            return LocalActionResponse(True, None, "completed", "Moved item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Moved item.",
+                False,
+                "MEDIUM",
+                {"from": str(target), "to": str(destination)},
+            )
         if action == "file_copy":
             if destination is None:
                 raise ValueError("destination is required")
@@ -47,14 +77,38 @@ class FileControlService:
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(target, destination)
-            return LocalActionResponse(True, None, "completed", "Copied item.", False, "MEDIUM", {"from": str(target), "to": str(destination)})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Copied item.",
+                False,
+                "MEDIUM",
+                {"from": str(target), "to": str(destination)},
+            )
         if action == "file_delete":
             if target.is_dir():
                 shutil.rmtree(target)
             else:
                 target.unlink()
-            return LocalActionResponse(True, None, "completed", "Deleted item.", False, "HIGH", {"path": str(target)})
-        return LocalActionResponse(False, None, "blocked", "I blocked this file action for safety.", False, "BLOCKED", error="blocked_by_policy")
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Deleted item.",
+                False,
+                "HIGH",
+                {"path": str(target)},
+            )
+        return LocalActionResponse(
+            False,
+            None,
+            "blocked",
+            "I blocked this file action for safety.",
+            False,
+            "BLOCKED",
+            error="blocked_by_policy",
+        )
 
     def resolve_path(self, path: str) -> Path:
         if not path:
@@ -74,7 +128,10 @@ class FileControlService:
                 "file_delete": "HIGH",
                 "file_permanent_delete": "BLOCKED",
             },
-            "safety": {"protected_path_preflight": True, "delete_requires_approval": True},
+            "safety": {
+                "protected_path_preflight": True,
+                "delete_requires_approval": True,
+            },
         }
 
 

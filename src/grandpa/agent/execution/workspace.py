@@ -37,8 +37,17 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
 
     # 2. Reject sensitive system directories
     system_dirs = {
-        "c:\\windows", "c:\\program files", "c:\\program files (x86)",
-        "/usr/bin", "/bin", "/sbin", "/etc", "/var", "/lib", "/sys", "/proc"
+        "c:\\windows",
+        "c:\\program files",
+        "c:\\program files (x86)",
+        "/usr/bin",
+        "/bin",
+        "/sbin",
+        "/etc",
+        "/var",
+        "/lib",
+        "/sys",
+        "/proc",
     }
     path_lower = str(resolved_path).lower()
     for sys_dir in system_dirs:
@@ -58,9 +67,15 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
     # 4. Reject user profile secrets directories (unless inside temp directory)
     if not is_in_temp:
         user_secret_patterns = [
-            "\\.ssh", "\\.aws", "\\.gemini", "\\.config", "appdata", "local settings"
+            "\\.ssh",
+            "\\.aws",
+            "\\.gemini",
+            "\\.config",
+            "appdata",
+            "local settings",
         ]
         import re
+
         for pattern in user_secret_patterns:
             if re.search(pattern, path_lower):
                 return WorkspaceContext(
@@ -80,6 +95,7 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
     branch = None
     try:
         import subprocess
+
         res = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
             cwd=str(resolved_path),

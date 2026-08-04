@@ -12,7 +12,9 @@ MAX_QUERY_CHARS = 300
 DANGEROUS_SCHEMES = {"file", "ftp", "javascript", "mailto", "powershell", "cmd", "data"}
 LOW_QUALITY_MARKERS = {"content-farm", "coupon", "free-download", "cracked", "warez"}
 SECRET_PATTERNS = (
-    re.compile(r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}"),
+    re.compile(
+        r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}"
+    ),
     re.compile(r"\b(?:sk|pk|xoxp|xoxb|ghp|gho|github_pat)_[A-Za-z0-9_\-]{10,}"),
     re.compile(r"\b[A-Za-z0-9_\-]{24,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"),
 )
@@ -31,7 +33,11 @@ class WebSearchSafetyPolicy:
         text = html.unescape(text)
         for pattern in SECRET_PATTERNS:
             text = pattern.sub("[redacted]", text)
-        text = re.sub(r"(?i)ignore (?:all )?(?:previous|prior) instructions", "[ignored web instruction]", text)
+        text = re.sub(
+            r"(?i)ignore (?:all )?(?:previous|prior) instructions",
+            "[ignored web instruction]",
+            text,
+        )
         text = re.sub(r"\s+", " ", text).strip()
         if len(text) > limit:
             return text[:limit].rstrip() + "..."

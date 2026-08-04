@@ -65,7 +65,6 @@ class AuthMiddleware:
         return path.startswith("/v1/") or path.startswith("/api/")
 
 
-
 def generate_api_key() -> str:
     """Generate a new API key with ``oj_sk_`` prefix."""
     return f"oj_sk_{secrets.token_urlsafe(32)}"

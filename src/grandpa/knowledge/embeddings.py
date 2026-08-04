@@ -41,14 +41,21 @@ class EmbeddingResult:
 class KnowledgeEmbedder:
     """Ollama-first local embedding adapter with deterministic fallback."""
 
-    def __init__(self, *, model: str = DEFAULT_EMBED_MODEL, fallback_dimensions: int = FALLBACK_DIMENSIONS) -> None:
+    def __init__(
+        self,
+        *,
+        model: str = DEFAULT_EMBED_MODEL,
+        fallback_dimensions: int = FALLBACK_DIMENSIONS,
+    ) -> None:
         self.model = model
         self.fallback_dimensions = fallback_dimensions
 
     def status(self) -> dict[str, Any]:
         available = False
         error = ""
-        forced_fallback = os.getenv("GRANDPA_KNOWLEDGE_EMBEDDING_MODE", "").lower() == "fallback"
+        forced_fallback = (
+            os.getenv("GRANDPA_KNOWLEDGE_EMBEDDING_MODE", "").lower() == "fallback"
+        )
         if forced_fallback:
             return {
                 "status": "fallback",
@@ -118,7 +125,9 @@ class KnowledgeEmbedder:
             return None
 
 
-def deterministic_embedding(text: str, *, dimensions: int = FALLBACK_DIMENSIONS) -> list[float]:
+def deterministic_embedding(
+    text: str, *, dimensions: int = FALLBACK_DIMENSIONS
+) -> list[float]:
     """Create a stable lexical fallback vector without external services."""
 
     vector = [0.0] * dimensions

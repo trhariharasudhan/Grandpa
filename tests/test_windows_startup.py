@@ -34,7 +34,9 @@ def test_startup_command_uses_python_module_entrypoint(tmp_path: Path) -> None:
 def test_enable_creates_owned_startup_entry(tmp_path: Path) -> None:
     exe = _python(tmp_path)
 
-    result = enable_startup(startup_dir=tmp_path / "Startup", python_executable=exe, platform="win32")
+    result = enable_startup(
+        startup_dir=tmp_path / "Startup", python_executable=exe, platform="win32"
+    )
 
     assert result.ok is True
     entry = tmp_path / "Startup" / ENTRY_FILENAME
@@ -49,9 +51,13 @@ def test_enable_is_idempotent(tmp_path: Path) -> None:
     exe = _python(tmp_path)
     startup_dir = tmp_path / "Startup"
 
-    first = enable_startup(startup_dir=startup_dir, python_executable=exe, platform="win32")
+    first = enable_startup(
+        startup_dir=startup_dir, python_executable=exe, platform="win32"
+    )
     before = first.entry_path.read_text(encoding="utf-8")  # type: ignore[union-attr]
-    second = enable_startup(startup_dir=startup_dir, python_executable=exe, platform="win32")
+    second = enable_startup(
+        startup_dir=startup_dir, python_executable=exe, platform="win32"
+    )
 
     assert second.ok is True
     assert second.status == "enabled"
@@ -63,7 +69,9 @@ def test_status_detects_enabled_state(tmp_path: Path) -> None:
     startup_dir = tmp_path / "Startup"
     enable_startup(startup_dir=startup_dir, python_executable=exe, platform="win32")
 
-    result = startup_status(startup_dir=startup_dir, python_executable=exe, platform="win32")
+    result = startup_status(
+        startup_dir=startup_dir, python_executable=exe, platform="win32"
+    )
 
     assert result.ok is True
     assert result.status == "enabled"
@@ -97,7 +105,9 @@ def test_stale_executable_is_reported(tmp_path: Path) -> None:
     startup_dir = tmp_path / "Startup"
     enable_startup(startup_dir=startup_dir, python_executable=missing, platform="win32")
 
-    result = startup_status(startup_dir=startup_dir, python_executable=missing, platform="win32")
+    result = startup_status(
+        startup_dir=startup_dir, python_executable=missing, platform="win32"
+    )
 
     assert result.ok is True
     assert result.status == "enabled_stale"
@@ -118,7 +128,9 @@ def test_refuses_to_overwrite_unrelated_startup_file(tmp_path: Path) -> None:
     entry = get_startup_entry_path(startup_dir)
     entry.write_text("echo unrelated", encoding="utf-8")
 
-    result = enable_startup(startup_dir=startup_dir, python_executable=_python(tmp_path), platform="win32")
+    result = enable_startup(
+        startup_dir=startup_dir, python_executable=_python(tmp_path), platform="win32"
+    )
 
     assert result.ok is False
     assert result.status == "blocked"
@@ -133,7 +145,9 @@ def test_permission_error_is_actionable(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(Path, "write_text", fail_write)
 
-    result = enable_startup(startup_dir=tmp_path / "Startup", python_executable=exe, platform="win32")
+    result = enable_startup(
+        startup_dir=tmp_path / "Startup", python_executable=exe, platform="win32"
+    )
 
     assert result.ok is False
     assert result.status == "failed"
@@ -142,7 +156,9 @@ def test_permission_error_is_actionable(monkeypatch, tmp_path: Path) -> None:
 
 def test_cli_status_calls_startup_manager(monkeypatch, tmp_path: Path) -> None:
     exe = _python(tmp_path)
-    result = enable_startup(startup_dir=tmp_path / "Startup", python_executable=exe, platform="win32")
+    result = enable_startup(
+        startup_dir=tmp_path / "Startup", python_executable=exe, platform="win32"
+    )
     monkeypatch.setattr("grandpa.cli.startup_cmd.startup_status", lambda: result)
 
     cli_result = CliRunner().invoke(startup, ["status"])
@@ -153,7 +169,10 @@ def test_cli_status_calls_startup_manager(monkeypatch, tmp_path: Path) -> None:
 
 
 def test_cli_unsupported_exits_cleanly(monkeypatch) -> None:
-    monkeypatch.setattr("grandpa.cli.startup_cmd.startup_status", lambda: startup_status(platform="linux"))
+    monkeypatch.setattr(
+        "grandpa.cli.startup_cmd.startup_status",
+        lambda: startup_status(platform="linux"),
+    )
 
     result = CliRunner().invoke(startup, ["status"])
 

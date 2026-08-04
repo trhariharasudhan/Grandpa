@@ -14,12 +14,7 @@ import pytest
 
 from grandpa.core.config import GrandpaConfig, load_config
 
-PRESETS_DIR = (
-    Path(__file__).resolve().parents[2]
-    / "configs"
-    / "grandpa"
-    / "examples"
-)
+PRESETS_DIR = Path(__file__).resolve().parents[2] / "configs" / "grandpa" / "examples"
 
 
 def _preset_paths() -> list[Path]:
@@ -45,6 +40,4 @@ def test_preset_loads(preset_path: Path) -> None:
     # A preset must at least name an engine and an agent — those are the two
     # slots `Grandpa init` expects to be populated for a working first run.
     assert cfg.engine.default, f"{preset_path.stem}: engine.default is empty"
-    assert cfg.agent.default_agent, (
-        f"{preset_path.stem}: agent.default_agent is empty"
-    )
+    assert cfg.agent.default_agent, f"{preset_path.stem}: agent.default_agent is empty"

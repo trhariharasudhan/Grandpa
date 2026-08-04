@@ -82,7 +82,14 @@ class WorkflowStore:
                 """
             )
 
-    def save(self, name: str, trigger: dict[str, Any], steps: list[dict[str, Any]], *, enabled: bool = True) -> dict[str, Any]:
+    def save(
+        self,
+        name: str,
+        trigger: dict[str, Any],
+        steps: list[dict[str, Any]],
+        *,
+        enabled: bool = True,
+    ) -> dict[str, Any]:
         now = time.time()
         normalized_steps = normalize_workflow_steps(steps)
         with self._connect() as conn:
@@ -96,21 +103,34 @@ class WorkflowStore:
                     steps_json = excluded.steps_json,
                     enabled = excluded.enabled
                 """,
-                (now, now, name, json.dumps(trigger), json.dumps(normalized_steps), 1 if enabled else 0),
+                (
+                    now,
+                    now,
+                    name,
+                    json.dumps(trigger),
+                    json.dumps(normalized_steps),
+                    1 if enabled else 0,
+                ),
             )
         return self.get(name) or {}
 
     def get(self, name: str) -> dict[str, Any] | None:
         with self._connect() as conn:
-            row = conn.execute("SELECT * FROM workflows WHERE lower(name)=lower(?)", (name,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM workflows WHERE lower(name)=lower(?)", (name,)
+            ).fetchone()
         return _workflow_row(row) if row else None
 
     def list(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
-            rows = conn.execute("SELECT * FROM workflows ORDER BY updated_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM workflows ORDER BY updated_at DESC"
+            ).fetchall()
         return [_workflow_row(row) for row in rows]
 
-    def record_history(self, workflow_name: str, status: str, detail: dict[str, Any]) -> None:
+    def record_history(
+        self, workflow_name: str, status: str, detail: dict[str, Any]
+    ) -> None:
         with self._connect() as conn:
             conn.execute(
                 "INSERT INTO workflow_history(created_at, workflow_name, status, detail_json) VALUES (?, ?, ?, ?)",
@@ -134,18 +154,30 @@ class WorkflowStore:
         return result
 
 
-def create_workflow_from_text(text: str, *, store: WorkflowStore | None = None) -> WorkflowResult:
+def create_workflow_from_text(
+    text: str, *, store: WorkflowStore | None = None
+) -> WorkflowResult:
     store = store or WorkflowStore()
     name = _workflow_name(text)
     trigger = _parse_trigger(text)
     steps = _parse_steps(text)
     if len(steps) > MAX_CHAIN_STEPS:
-        return WorkflowResult("blocked", "I blocked this workflow because it has too many chained steps.", {"max_steps": MAX_CHAIN_STEPS})
+        return WorkflowResult(
+            "blocked",
+            "I blocked this workflow because it has too many chained steps.",
+            {"max_steps": MAX_CHAIN_STEPS},
+        )
     workflow = store.save(name, trigger, steps)
-    return WorkflowResult("handled", f"Created workflow '{name}' with {len(steps)} step(s).", {"workflow": workflow})
+    return WorkflowResult(
+        "handled",
+        f"Created workflow '{name}' with {len(steps)} step(s).",
+        {"workflow": workflow},
+    )
 
 
-def simulate_workflow(name: str, *, store: WorkflowStore | None = None) -> WorkflowResult:
+def simulate_workflow(
+    name: str, *, store: WorkflowStore | None = None
+) -> WorkflowResult:
     store = store or WorkflowStore()
     workflow = store.get(name)
     if not workflow:
@@ -153,11 +185,19 @@ def simulate_workflow(name: str, *, store: WorkflowStore | None = None) -> Workf
     simulation = []
     for idx, step in enumerate(workflow["steps"], start=1):
         simulation.append(_simulate_step(name, idx, step))
-    status = "waiting_approval" if any(item["status"] == "approval_required" for item in simulation) else "dry_run"
+    status = (
+        "waiting_approval"
+        if any(item["status"] == "approval_required" for item in simulation)
+        else "dry_run"
+    )
     if any(item["status"] == "failed" for item in simulation):
         status = "failed"
     store.record_history(name, status, {"simulation": simulation})
-    return WorkflowResult("handled", f"Dry-run completed for '{name}'.", {"simulation": simulation, "dry_run": True, "status": status})
+    return WorkflowResult(
+        "handled",
+        f"Dry-run completed for '{name}'.",
+        {"simulation": simulation, "dry_run": True, "status": status},
+    )
 
 
 def automation_templates() -> list[dict[str, Any]]:
@@ -165,20 +205,36 @@ def automation_templates() -> list[dict[str, Any]]:
         {
             "name": "morning_start",
             "trigger": {"type": "time", "value": "09:00"},
-            "steps": normalize_workflow_steps([{"action": "open chrome"}, {"action": "open vs code"}]),
+            "steps": normalize_workflow_steps(
+                [{"action": "open chrome"}, {"action": "open vs code"}]
+            ),
         },
         {
             "name": "browser_research",
             "trigger": {"type": "browser_context", "value": "research"},
             "steps": [
                 _skill_step("browser.diagnostics", title="Check browser adapter"),
-                {"schema_version": RAW_ACTION_V1, "action": "summarize this webpage", "condition": None, "retries": 0, "delay_seconds": 0},
+                {
+                    "schema_version": RAW_ACTION_V1,
+                    "action": "summarize this webpage",
+                    "condition": None,
+                    "retries": 0,
+                    "delay_seconds": 0,
+                },
             ],
         },
         {
             "name": "hourly_stretch",
             "trigger": {"type": "time", "value": "hourly"},
-            "steps": [{"schema_version": RAW_ACTION_V1, "action": "remind me to stretch", "condition": None, "retries": 0, "delay_seconds": 0}],
+            "steps": [
+                {
+                    "schema_version": RAW_ACTION_V1,
+                    "action": "remind me to stretch",
+                    "condition": None,
+                    "retries": 0,
+                    "delay_seconds": 0,
+                }
+            ],
         },
     ]
 
@@ -205,8 +261,16 @@ def diagnostics(store: WorkflowStore | None = None) -> dict[str, Any]:
             "dry_run": True,
             "n8n_webhook_optional": True,
         },
-        "safety": {"approval_gated_risky_actions": True, "max_chain_steps": MAX_CHAIN_STEPS, "local_only_default": True},
-        "storage": {"backend": "sqlite", "path": str(store.db_path), "local_only": True},
+        "safety": {
+            "approval_gated_risky_actions": True,
+            "max_chain_steps": MAX_CHAIN_STEPS,
+            "local_only_default": True,
+        },
+        "storage": {
+            "backend": "sqlite",
+            "path": str(store.db_path),
+            "local_only": True,
+        },
     }
 
 
@@ -236,13 +300,35 @@ def _parse_steps(text: str) -> list[dict[str, Any]]:
             continue
         if clean.lower().startswith(("create workflow", "workflow", "when ")):
             continue
-        steps.append({"schema_version": RAW_ACTION_V1, "action": clean, "condition": None, "retries": 0, "delay_seconds": 0})
-    return normalize_workflow_steps(steps or [{"schema_version": RAW_ACTION_V1, "action": text.strip(), "condition": None, "retries": 0, "delay_seconds": 0}])
+        steps.append(
+            {
+                "schema_version": RAW_ACTION_V1,
+                "action": clean,
+                "condition": None,
+                "retries": 0,
+                "delay_seconds": 0,
+            }
+        )
+    return normalize_workflow_steps(
+        steps
+        or [
+            {
+                "schema_version": RAW_ACTION_V1,
+                "action": text.strip(),
+                "condition": None,
+                "retries": 0,
+                "delay_seconds": 0,
+            }
+        ]
+    )
 
 
 def _step_risk(step: dict[str, Any]) -> str:
     action = str(step.get("action", "")).lower()
-    if any(word in action for word in ("delete", "format", "shutdown", "restart", "password", "payment")):
+    if any(
+        word in action
+        for word in ("delete", "format", "shutdown", "restart", "password", "payment")
+    ):
         return "BLOCKED"
     if any(word in action for word in ("type", "click", "paste", "download", "send")):
         return "MEDIUM"
@@ -250,7 +336,9 @@ def _step_risk(step: dict[str, Any]) -> str:
 
 
 def _workflow_name(text: str) -> str:
-    match = re.search(r"(?:workflow|routine) (?:called|named) ([a-z0-9 _-]+)", text, re.I)
+    match = re.search(
+        r"(?:workflow|routine) (?:called|named) ([a-z0-9 _-]+)", text, re.I
+    )
     if match:
         return re.sub(r"\s+", "_", match.group(1).strip().lower())[:80]
     return re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")[:50] or "workflow"
@@ -284,14 +372,20 @@ def normalize_workflow_steps(steps: list[Any]) -> list[dict[str, Any]]:
 
 def normalize_workflow_step(step: Any) -> dict[str, Any]:
     if isinstance(step, str):
-        return _convert_raw_step({"action": step, "condition": None, "retries": 0, "delay_seconds": 0})
+        return _convert_raw_step(
+            {"action": step, "condition": None, "retries": 0, "delay_seconds": 0}
+        )
     if not isinstance(step, dict):
-        return _convert_raw_step({"action": str(step), "condition": None, "retries": 0, "delay_seconds": 0})
+        return _convert_raw_step(
+            {"action": str(step), "condition": None, "retries": 0, "delay_seconds": 0}
+        )
     if step.get("schema_version") == SKILL_GRAPH_V2 and step.get("skill"):
         normalized = dict(step)
         normalized.setdefault("params", {})
         normalized.setdefault("risk_level", _step_risk(normalized))
-        normalized.setdefault("approval_required", normalized["risk_level"] in {"MEDIUM", "HIGH"})
+        normalized.setdefault(
+            "approval_required", normalized["risk_level"] in {"MEDIUM", "HIGH"}
+        )
         normalized.setdefault("dependencies", [])
         normalized.setdefault("execution_source", "skill_runtime")
         normalized.setdefault("action", normalized.get("title") or normalized["skill"])
@@ -340,7 +434,11 @@ def _parse_planner_steps(text: str) -> list[dict[str, Any]]:
     except Exception:
         return []
     analysis = analyze_request(text)
-    if not analysis.workflow_suitable or not analysis.steps or analysis.estimated_risk == "BLOCKED":
+    if (
+        not analysis.workflow_suitable
+        or not analysis.steps
+        or analysis.estimated_risk == "BLOCKED"
+    ):
         return []
     return [
         _skill_step(
@@ -379,7 +477,9 @@ def _convert_raw_step(step: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("retries", 0)
     normalized.setdefault("delay_seconds", 0)
     normalized.setdefault("risk_level", _step_risk(normalized))
-    normalized.setdefault("approval_required", normalized["risk_level"] in {"MEDIUM", "HIGH"})
+    normalized.setdefault(
+        "approval_required", normalized["risk_level"] in {"MEDIUM", "HIGH"}
+    )
     normalized.setdefault("execution_source", "legacy")
     return normalized
 
@@ -419,16 +519,21 @@ def _skill_step(
     return step
 
 
-def _simulate_step(workflow_name: str, idx: int, step: dict[str, Any]) -> dict[str, Any]:
+def _simulate_step(
+    workflow_name: str, idx: int, step: dict[str, Any]
+) -> dict[str, Any]:
     schema = str(step.get("schema_version") or RAW_ACTION_V1)
     risk = _step_risk(step)
     item: dict[str, Any] = {
         "step": idx,
         "action": step.get("action") or step.get("skill") or "",
         "risk": risk,
-        "approval_required": bool(step.get("approval_required") or risk in {"MEDIUM", "HIGH"}),
+        "approval_required": bool(
+            step.get("approval_required") or risk in {"MEDIUM", "HIGH"}
+        ),
         "schema_version": schema,
-        "execution_source": step.get("execution_source") or ("skill_runtime" if schema == SKILL_GRAPH_V2 else "legacy"),
+        "execution_source": step.get("execution_source")
+        or ("skill_runtime" if schema == SKILL_GRAPH_V2 else "legacy"),
     }
     if schema == SKILL_GRAPH_V2 and step.get("skill"):
         item["skill"] = step["skill"]
@@ -457,20 +562,38 @@ def _simulate_step(workflow_name: str, idx: int, step: dict[str, Any]) -> dict[s
                     "status": result.status,
                     "would_run": result.ok,
                     "message": result.message,
-                    "approval_required": result.approval_required or item["approval_required"],
+                    "approval_required": result.approval_required
+                    or item["approval_required"],
                 }
             )
         except Exception as exc:
-            item.update({"status": "failed", "would_run": False, "message": "Skill-backed workflow step failed safely.", "error": exc.__class__.__name__})
+            item.update(
+                {
+                    "status": "failed",
+                    "would_run": False,
+                    "message": "Skill-backed workflow step failed safely.",
+                    "error": exc.__class__.__name__,
+                }
+            )
         return item
-    item.update({"status": "blocked" if risk == "BLOCKED" else "legacy_dry_run", "would_run": risk != "BLOCKED"})
+    item.update(
+        {
+            "status": "blocked" if risk == "BLOCKED" else "legacy_dry_run",
+            "would_run": risk != "BLOCKED",
+        }
+    )
     return item
 
 
 def _params_summary(params: dict[str, Any]) -> str:
     if not params:
         return "{}"
-    safe = {key: "[redacted]" if any(token in key.lower() for token in ("secret", "token", "password", "key")) else value for key, value in params.items()}
+    safe = {
+        key: "[redacted]"
+        if any(token in key.lower() for token in ("secret", "token", "password", "key"))
+        else value
+        for key, value in params.items()
+    }
     text = json.dumps(safe, sort_keys=True)
     return text[:160] + ("..." if len(text) > 160 else "")
 

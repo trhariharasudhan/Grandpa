@@ -166,7 +166,9 @@ def search(
 
     row_num = 1
     for item in v1_results:
-        preview = redact_sensitive(item.content[:200]) + ("..." if len(item.content) > 200 else "")
+        preview = redact_sensitive(item.content[:200]) + (
+            "..." if len(item.content) > 200 else ""
+        )
         table.add_row(
             str(row_num),
             f"V1: {item.category}",
@@ -176,7 +178,9 @@ def search(
         row_num += 1
 
     for r in results:
-        preview = redact_sensitive(r.content[:200]) + ("..." if len(r.content) > 200 else "")
+        preview = redact_sensitive(r.content[:200]) + (
+            "..." if len(r.content) > 200 else ""
+        )
         table.add_row(
             str(row_num),
             f"{r.score:.4f}",
@@ -232,15 +236,25 @@ def stats(backend: str | None) -> None:
 
 @memory.command(name="remember")
 @click.argument("text")
-@click.option("--category", "-c", default="knowledge", type=click.Choice(["knowledge", "project", "preference", "session"]), help="Memory category")
+@click.option(
+    "--category",
+    "-c",
+    default="knowledge",
+    type=click.Choice(["knowledge", "project", "preference", "session"]),
+    help="Memory category",
+)
 @click.option("--key", "-k", default=None, help="Custom unique memory key")
 @click.option("--project", "-p", default=None, help="Project name association")
-def remember_cmd(text: str, category: str, key: str | None, project: str | None) -> None:
+def remember_cmd(
+    text: str, category: str, key: str | None, project: str | None
+) -> None:
     """Remember a new memory entry."""
     console = Console()
     svc = MemoryService.get_instance()
     try:
-        item = svc.remember(content=text, category=category, key=key, project_name=project)  # type: ignore[arg-type]
+        item = svc.remember(
+            content=text, category=category, key=key, project_name=project
+        )  # type: ignore[arg-type]
         console.print("[green]Memory stored successfully![/green]")
         console.print(f"  ID       : [cyan]{item.id}[/cyan]")
         console.print(f"  Key      : [cyan]{item.key}[/cyan]")
@@ -274,7 +288,9 @@ def list_cmd(category: str | None, project: str | None, limit: int) -> None:
     table.add_column("Content")
 
     for item in items:
-        preview = redact_sensitive(item.content[:100]) + ("..." if len(item.content) > 100 else "")
+        preview = redact_sensitive(item.content[:100]) + (
+            "..." if len(item.content) > 100 else ""
+        )
         table.add_row(
             item.id,
             item.key,
@@ -322,7 +338,9 @@ def update_cmd(id_or_key: str, text: str) -> None:
         if not updated:
             console.print(f"[yellow]Memory item '{id_or_key}' not found.[/yellow]")
             return
-        console.print(f"[green]Memory item '{updated.key}' updated successfully.[/green]")
+        console.print(
+            f"[green]Memory item '{updated.key}' updated successfully.[/green]"
+        )
     except Exception as exc:
         console.print(f"[red]Error updating memory:[/red] {exc}")
 
@@ -334,7 +352,9 @@ def delete_cmd(id_or_key: str, yes: bool) -> None:
     """Delete a memory item."""
     console = Console()
     if not yes:
-        click.confirm(f"Are you sure you want to delete memory '{id_or_key}'?", abort=True)
+        click.confirm(
+            f"Are you sure you want to delete memory '{id_or_key}'?", abort=True
+        )
 
     svc = MemoryService.get_instance()
     success = svc.delete(id_or_key)
@@ -350,7 +370,9 @@ def delete_cmd(id_or_key: str, yes: bool) -> None:
 def clear_cmd(category: str | None, yes: bool) -> None:
     """Clear memories (requires confirmation)."""
     console = Console()
-    target_desc = f"all memories in category '{category}'" if category else "ALL stored memories"
+    target_desc = (
+        f"all memories in category '{category}'" if category else "ALL stored memories"
+    )
     if not yes:
         click.confirm(f"⚠️  Are you sure you want to clear {target_desc}?", abort=True)
 
@@ -360,7 +382,13 @@ def clear_cmd(category: str | None, yes: bool) -> None:
 
 
 @memory.command(name="preferences")
-@click.option("--set", "set_pair", nargs=2, metavar="KEY VALUE", help="Set preference key and value")
+@click.option(
+    "--set",
+    "set_pair",
+    nargs=2,
+    metavar="KEY VALUE",
+    help="Set preference key and value",
+)
 def preferences_cmd(set_pair: tuple[str, str] | None) -> None:
     """List or set user preferences."""
     console = Console()
@@ -451,7 +479,9 @@ def relevant_cmd(query: str, project: str | None) -> None:
     items = svc.retrieve_relevant(query=query, project_name=project, limit=5)
 
     if not items:
-        console.print(f"[yellow]No relevant memory items found for query '{query}'.[/yellow]")
+        console.print(
+            f"[yellow]No relevant memory items found for query '{query}'.[/yellow]"
+        )
         return
 
     table = Table(title=f"Relevant Memories for '{query}'")
@@ -479,7 +509,8 @@ def project_cmd(name: str) -> None:
         # Fallback to key-prefix search
         all_proj_items = svc.list_memories(category="project", limit=100)
         items = [
-            item for item in all_proj_items
+            item
+            for item in all_proj_items
             if (item.project_name and item.project_name.lower() == name.lower())
             or item.key.startswith(f"proj_{clean_name}")
         ]
@@ -515,15 +546,27 @@ def project_cmd(name: str) -> None:
         # Check explicit keys or suffixes
         if k == "project_path" or k.endswith("_path") or k.endswith("_project_path"):
             path_val = content
-        elif k == "latest_feature" or k.endswith("_latest_feature") or k.endswith("_feature"):
+        elif (
+            k == "latest_feature"
+            or k.endswith("_latest_feature")
+            or k.endswith("_feature")
+        ):
             feature_val = content
-        elif k == "latest_commit" or k.endswith("_latest_commit") or k.endswith("_commit"):
+        elif (
+            k == "latest_commit"
+            or k.endswith("_latest_commit")
+            or k.endswith("_commit")
+        ):
             commit_val = content
         elif k == "next_task" or k.endswith("_next_task"):
             next_task_val = content
         elif k == "last_failed_plan" or k.endswith("_last_failed_plan"):
             failed_plan_val = content
-        elif k == f"proj_{clean_name}_summary" or k == "summary" or k.endswith("_summary"):
+        elif (
+            k == f"proj_{clean_name}_summary"
+            or k == "summary"
+            or k.endswith("_summary")
+        ):
             summary_val = content
         else:
             if summary_val == "N/A":
@@ -567,7 +610,9 @@ def session_cmd(action: str, key: str | None) -> None:
     if action == "status":
         memories = svc.short_term.get_session_memories()
         enabled = svc.session_memory_enabled()
-        console.print(f"⚡ [bold]Session Memory Status:[/bold] {'[green]ENABLED[/green]' if enabled else '[red]DISABLED[/red]'}")
+        console.print(
+            f"⚡ [bold]Session Memory Status:[/bold] {'[green]ENABLED[/green]' if enabled else '[red]DISABLED[/red]'}"
+        )
         console.print(f"  Buffered Items : {len(memories)}")
         for m in memories:
             console.print(f"  - [{m.key}] {redact_sensitive(m.content[:80])}")
@@ -578,13 +623,19 @@ def session_cmd(action: str, key: str | None) -> None:
 
     elif action == "promote":
         if not key:
-            console.print("[yellow]Please specify a key to promote from session memory.[/yellow]")
+            console.print(
+                "[yellow]Please specify a key to promote from session memory.[/yellow]"
+            )
             return
         promoted = svc.short_term.promote(key, svc.store)
         if promoted:
-            console.print(f"[green]Session memory '{key}' promoted to long-term knowledge.[/green]")
+            console.print(
+                f"[green]Session memory '{key}' promoted to long-term knowledge.[/green]"
+            )
         else:
-            console.print(f"[yellow]Key '{key}' not found in current session memory.[/yellow]")
+            console.print(
+                f"[yellow]Key '{key}' not found in current session memory.[/yellow]"
+            )
 
 
 @memory.command(name="disable")

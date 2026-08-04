@@ -23,19 +23,24 @@ from grandpa.skills.runtime import SkillExecutionContext
 
 def _visible_context(monkeypatch) -> None:
     monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "Grandpa Docs - Google Chrome")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title",
+        lambda: "Grandpa Docs - Google Chrome",
+    )
     monkeypatch.setenv(
         "GRANDPA_BROWSER_CONTEXT_JSON",
         json.dumps(
-        {
-            "title": "Grandpa Docs",
-            "url": "https://example.test/docs",
-            "headings": ["Overview", "Install"],
-            "links": [{"text": "Install Guide", "href": "https://example.test/install"}],
-            "buttons": ["Continue"],
-            "inputs": [{"type": "text", "label": "Search"}],
-            "visible_text": "Grandpa is a local assistant. It reads visible page context. It keeps browser work private.",
-        }
+            {
+                "title": "Grandpa Docs",
+                "url": "https://example.test/docs",
+                "headings": ["Overview", "Install"],
+                "links": [
+                    {"text": "Install Guide", "href": "https://example.test/install"}
+                ],
+                "buttons": ["Continue"],
+                "inputs": [{"type": "text", "label": "Search"}],
+                "visible_text": "Grandpa is a local assistant. It reads visible page context. It keeps browser work private.",
+            }
         ),
     )
 
@@ -103,8 +108,14 @@ def test_browser_agent_skills_registered_and_execute(tmp_path, monkeypatch):
     _visible_context(monkeypatch)
     ensure_default_skills_registered()
 
-    summary = execute_skill("browser.page_summary", {}, SkillExecutionContext(source="test"))
-    search = execute_skill("browser.search_plan", {"query": "FastAPI"}, SkillExecutionContext(source="test"))
+    summary = execute_skill(
+        "browser.page_summary", {}, SkillExecutionContext(source="test")
+    )
+    search = execute_skill(
+        "browser.search_plan",
+        {"query": "FastAPI"},
+        SkillExecutionContext(source="test"),
+    )
 
     assert summary.ok is True
     assert summary.status == "completed"
@@ -121,7 +132,9 @@ def test_browser_agent_api_routes(tmp_path, monkeypatch):
     client = TestClient(app)
 
     diagnostics = client.get("/v1/browser/agent/diagnostics")
-    planned = client.post("/v1/browser/agent/plan", json={"goal": "search Python tutorials"})
+    planned = client.post(
+        "/v1/browser/agent/plan", json={"goal": "search Python tutorials"}
+    )
     tasks = client.get("/v1/browser/agent/tasks")
     task_id = planned.json()["task"]["task_id"]
     task = client.get(f"/v1/browser/agent/tasks/{task_id}")

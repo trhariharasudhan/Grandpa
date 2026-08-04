@@ -28,7 +28,9 @@ class FakeSpeechEngine:
         self.transcript = transcript
         self.calls: list[tuple[bytes, str]] = []
 
-    def listen(self, *, audio_bytes: bytes | None = None, audio_format: str = "wav", **_kwargs):
+    def listen(
+        self, *, audio_bytes: bytes | None = None, audio_format: str = "wav", **_kwargs
+    ):
         self.calls.append((audio_bytes or b"", audio_format))
         return SpeechInputResult(
             status="completed",
@@ -87,7 +89,9 @@ def _pcm16_frames(value: int = 1000, count: int = 16000) -> bytes:
 def test_voice_input_transcribes_recorded_microphone_audio() -> None:
     engine = FakeSpeechEngine("open my Grandpa project in VS Code")
 
-    result = listen_for_jarvis_command(recorder=FakeRecorder(b"audio"), speech_engine=engine)
+    result = listen_for_jarvis_command(
+        recorder=FakeRecorder(b"audio"), speech_engine=engine
+    )
 
     assert result.transcript == "open my Grandpa project in VS Code"
     assert result.engine == "fake_stt"
@@ -97,7 +101,9 @@ def test_voice_input_transcribes_recorded_microphone_audio() -> None:
 
 def test_voice_input_rejects_empty_transcript() -> None:
     with pytest.raises(VoiceRecognitionError):
-        listen_for_jarvis_command(recorder=FakeRecorder(), speech_engine=FakeSpeechEngine(" "))
+        listen_for_jarvis_command(
+            recorder=FakeRecorder(), speech_engine=FakeSpeechEngine(" ")
+        )
 
 
 def test_silence_detection_threshold() -> None:
@@ -106,7 +112,9 @@ def test_silence_detection_threshold() -> None:
 
 def test_sounddevice_recorder_accepts_valid_rms_audio(monkeypatch) -> None:
     sounddevice = FakeSoundDevice(default_device=[1, -1], frames=_pcm16_frames())
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1)
     audio = recorder.record_wav()
@@ -116,15 +124,21 @@ def test_sounddevice_recorder_accepts_valid_rms_audio(monkeypatch) -> None:
     assert recorder.last_diagnostics is not None
     assert recorder.last_diagnostics.requested_device_id is None
     assert recorder.last_diagnostics.selected_device_id == 1
-    assert recorder.last_diagnostics.device_name == "Microphone Array (AMD Audio Device)"
+    assert (
+        recorder.last_diagnostics.device_name == "Microphone Array (AMD Audio Device)"
+    )
     assert recorder.last_diagnostics.channels == 1
     assert recorder.last_diagnostics.sample_rate == 16000
     assert recorder.last_diagnostics.captured_frame_count == 16000
 
 
-def test_sounddevice_recorder_uses_first_input_when_no_default_device(monkeypatch) -> None:
+def test_sounddevice_recorder_uses_first_input_when_no_default_device(
+    monkeypatch,
+) -> None:
     sounddevice = FakeSoundDevice(default_device=[-1, -1], frames=_pcm16_frames())
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1)
     recorder.record_wav()
@@ -137,7 +151,9 @@ def test_sounddevice_recorder_uses_first_input_when_no_default_device(monkeypatc
 
 def test_sounddevice_recorder_honors_explicit_device_selection(monkeypatch) -> None:
     sounddevice = FakeSoundDevice(default_device=[1, -1], frames=_pcm16_frames())
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1, device=2)
     recorder.record_wav()
@@ -151,7 +167,9 @@ def test_sounddevice_recorder_honors_explicit_device_selection(monkeypatch) -> N
 
 def test_sounddevice_recorder_resolves_device_name(monkeypatch) -> None:
     sounddevice = FakeSoundDevice(default_device=[1, -1], frames=_pcm16_frames())
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1, device_name="USB")
     recorder.record_wav()
@@ -163,12 +181,18 @@ def test_sounddevice_recorder_resolves_device_name(monkeypatch) -> None:
     assert recorder.last_diagnostics.device_name == "USB Microphone"
 
 
-def test_sounddevice_recorder_uses_saved_microphone_preference(monkeypatch, tmp_path) -> None:
+def test_sounddevice_recorder_uses_saved_microphone_preference(
+    monkeypatch, tmp_path
+) -> None:
     sounddevice = FakeSoundDevice(default_device=[-1, -1], frames=_pcm16_frames())
     sounddevice.devices.insert(1, {"name": "USB Microphone", "max_input_channels": 1})
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
     monkeypatch.setattr(core_config, "DEFAULT_CONFIG_PATH", tmp_path / "config.toml")
-    core_config.DEFAULT_CONFIG_PATH.write_text('[voice]\npreferred_microphone = "USB Microphone"\n', encoding="utf-8")
+    core_config.DEFAULT_CONFIG_PATH.write_text(
+        '[voice]\npreferred_microphone = "USB Microphone"\n', encoding="utf-8"
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1)
     recorder.record_wav()
@@ -179,11 +203,17 @@ def test_sounddevice_recorder_uses_saved_microphone_preference(monkeypatch, tmp_
     assert recorder.last_diagnostics.selected_device_id == 1
 
 
-def test_sounddevice_recorder_warns_and_falls_back_when_saved_microphone_missing(monkeypatch, tmp_path) -> None:
+def test_sounddevice_recorder_warns_and_falls_back_when_saved_microphone_missing(
+    monkeypatch, tmp_path
+) -> None:
     sounddevice = FakeSoundDevice(default_device=[-1, -1], frames=_pcm16_frames())
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
     monkeypatch.setattr(core_config, "DEFAULT_CONFIG_PATH", tmp_path / "config.toml")
-    core_config.DEFAULT_CONFIG_PATH.write_text('[voice]\npreferred_microphone = "Missing Mic"\n', encoding="utf-8")
+    core_config.DEFAULT_CONFIG_PATH.write_text(
+        '[voice]\npreferred_microphone = "Missing Mic"\n', encoding="utf-8"
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1)
     recorder.record_wav()
@@ -197,7 +227,9 @@ def test_sounddevice_recorder_warns_and_falls_back_when_saved_microphone_missing
 def test_sounddevice_recorder_rejects_explicit_output_device(monkeypatch) -> None:
     sounddevice = FakeSoundDevice(default_device=[1, -1], frames=_pcm16_frames())
     sounddevice.devices.insert(2, {"name": "Speakers", "max_input_channels": 0})
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1, device=2)
 
@@ -212,7 +244,9 @@ def test_sounddevice_recorder_rejects_explicit_output_device(monkeypatch) -> Non
 
 def test_sounddevice_recorder_rejects_invalid_explicit_device(monkeypatch) -> None:
     sounddevice = FakeSoundDevice(default_device=[1, -1], frames=_pcm16_frames())
-    monkeypatch.setattr(voice_input.importlib, "import_module", lambda _name: sounddevice)
+    monkeypatch.setattr(
+        voice_input.importlib, "import_module", lambda _name: sounddevice
+    )
 
     recorder = SoundDeviceMicrophoneRecorder(duration_seconds=1, device=99)
 

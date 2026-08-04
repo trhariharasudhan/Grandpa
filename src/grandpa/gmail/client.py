@@ -14,7 +14,11 @@ from grandpa.gmail.safety import GmailSafetyPolicy
 class GmailClient:
     """Thin wrapper around the official Gmail API client."""
 
-    def __init__(self, auth: GmailAuthManager | None = None, safety: GmailSafetyPolicy | None = None) -> None:
+    def __init__(
+        self,
+        auth: GmailAuthManager | None = None,
+        safety: GmailSafetyPolicy | None = None,
+    ) -> None:
         self.auth = auth or GmailAuthManager()
         self.safety = safety or GmailSafetyPolicy()
         self._service_obj = None
@@ -22,9 +26,16 @@ class GmailClient:
     def account(self) -> str:
         return self.auth.status().account
 
-    def list_messages(self, query: str = "", *, limit: int = 10) -> tuple[GmailMessageSummary, ...]:
+    def list_messages(
+        self, query: str = "", *, limit: int = 10
+    ) -> tuple[GmailMessageSummary, ...]:
         service = self._service_for_read()
-        response = service.users().messages().list(userId="me", q=query, maxResults=limit).execute()
+        response = (
+            service.users()
+            .messages()
+            .list(userId="me", q=query, maxResults=limit)
+            .execute()
+        )
         messages = []
         for item in response.get("messages", [])[:limit]:
             messages.append(self.get_message(str(item["id"])))
@@ -37,13 +48,22 @@ class GmailClient:
                 raise GmailApiError("No Gmail messages matched.")
             return found[0]
         service = self._service_for_read()
-        data = service.users().messages().get(userId="me", id=selector, format="full").execute()
+        data = (
+            service.users()
+            .messages()
+            .get(userId="me", id=selector, format="full")
+            .execute()
+        )
         return self._message_from_api(data)
 
     def labels(self) -> tuple[str, ...]:
         service = self._service_for_read()
         response = service.users().labels().list(userId="me").execute()
-        return tuple(str(item.get("name") or "") for item in response.get("labels", []) if item.get("name"))
+        return tuple(
+            str(item.get("name") or "")
+            for item in response.get("labels", [])
+            if item.get("name")
+        )
 
     def create_draft(self, *, to: str, subject: str, body: str) -> str:
         service = self._service_for_write()
@@ -52,12 +72,19 @@ class GmailClient:
         message["Subject"] = subject or "(no subject)"
         message.set_content(body or "")
         raw = base64.urlsafe_b64encode(message.as_bytes()).decode("ascii")
-        result = service.users().drafts().create(userId="me", body={"message": {"raw": raw}}).execute()
+        result = (
+            service.users()
+            .drafts()
+            .create(userId="me", body={"message": {"raw": raw}})
+            .execute()
+        )
         return str(result.get("id") or "")
 
     def send_draft(self, draft_id: str = "") -> str:
         service = self._service_for_write()
-        result = service.users().drafts().send(userId="me", body={"id": draft_id}).execute()
+        result = (
+            service.users().drafts().send(userId="me", body={"id": draft_id}).execute()
+        )
         return str(result.get("id") or "")
 
     def archive(self, message_ids: tuple[str, ...]) -> int:
@@ -72,13 +99,22 @@ class GmailClient:
     def add_label(self, message_ids: tuple[str, ...], label: str) -> int:
         return self._modify(message_ids, add_labels=(label,))
 
-    def _modify(self, message_ids: tuple[str, ...], *, add_labels: tuple[str, ...] = (), remove_labels: tuple[str, ...] = ()) -> int:
+    def _modify(
+        self,
+        message_ids: tuple[str, ...],
+        *,
+        add_labels: tuple[str, ...] = (),
+        remove_labels: tuple[str, ...] = (),
+    ) -> int:
         service = self._service_for_write()
         for message_id in message_ids:
             service.users().messages().modify(
                 userId="me",
                 id=message_id,
-                body={"addLabelIds": list(add_labels), "removeLabelIds": list(remove_labels)},
+                body={
+                    "addLabelIds": list(add_labels),
+                    "removeLabelIds": list(remove_labels),
+                },
             ).execute()
         return len(message_ids)
 
@@ -92,11 +128,19 @@ class GmailClient:
         if self._service_obj is None:
             from googleapiclient.discovery import build
 
-            self._service_obj = build("gmail", "v1", credentials=self.auth.credentials(scopes=scopes), cache_discovery=False)
+            self._service_obj = build(
+                "gmail",
+                "v1",
+                credentials=self.auth.credentials(scopes=scopes),
+                cache_discovery=False,
+            )
         return self._service_obj
 
     def _message_from_api(self, data: dict[str, Any]) -> GmailMessageSummary:
-        headers = {item.get("name", "").casefold(): item.get("value", "") for item in data.get("payload", {}).get("headers", [])}
+        headers = {
+            item.get("name", "").casefold(): item.get("value", "")
+            for item in data.get("payload", {}).get("headers", [])
+        }
         body = _extract_body(data.get("payload", {}))
         attachments = []
         for part in _walk_parts(data.get("payload", {})):
@@ -115,9 +159,13 @@ class GmailClient:
             thread_id=str(data.get("threadId") or ""),
             subject=self.safety.sanitize_text(headers.get("subject", ""), limit=300),
             sender=self.safety.sanitize_text(headers.get("from", ""), limit=300),
-            recipients=(self.safety.sanitize_text(headers.get("to", ""), limit=500),) if headers.get("to") else (),
+            recipients=(self.safety.sanitize_text(headers.get("to", ""), limit=500),)
+            if headers.get("to")
+            else (),
             date=str(headers.get("date") or ""),
-            snippet=self.safety.sanitize_text(str(data.get("snippet") or ""), limit=500),
+            snippet=self.safety.sanitize_text(
+                str(data.get("snippet") or ""), limit=500
+            ),
             body=self.safety.sanitize_text(body),
             labels=tuple(str(item) for item in data.get("labelIds") or ()),
             attachments=tuple(attachments),
@@ -136,7 +184,11 @@ def _extract_body(payload: dict[str, Any]) -> str:
         data = part.get("body", {}).get("data")
         if data:
             try:
-                chunks.append(base64.urlsafe_b64decode(data.encode("ascii")).decode("utf-8", errors="replace"))
+                chunks.append(
+                    base64.urlsafe_b64decode(data.encode("ascii")).decode(
+                        "utf-8", errors="replace"
+                    )
+                )
             except Exception:
                 continue
     return "\n".join(chunks)

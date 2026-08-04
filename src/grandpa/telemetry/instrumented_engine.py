@@ -125,10 +125,18 @@ class InstrumentedEngine(InferenceEngine):
             )
 
         latency = time.time() - t0
-        sample_duration = getattr(energy_sample, "duration_seconds", 0.0) if energy_sample is not None else 0.0
+        sample_duration = (
+            getattr(energy_sample, "duration_seconds", 0.0)
+            if energy_sample is not None
+            else 0.0
+        )
         if latency <= 0 and sample_duration > 0:
             latency = float(sample_duration)
-        sample_duration = getattr(energy_sample, "duration_seconds", 0.0) if energy_sample is not None else 0.0
+        sample_duration = (
+            getattr(energy_sample, "duration_seconds", 0.0)
+            if energy_sample is not None
+            else 0.0
+        )
         if latency <= 0 and sample_duration > 0:
             latency = float(sample_duration)
 

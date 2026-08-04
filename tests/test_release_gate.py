@@ -32,7 +32,12 @@ def test_release_gate_api_reads_latest_report(monkeypatch, tmp_path):
                 "ready_to_push": False,
                 "ready_to_package": True,
                 "recommendation": "Commit first.",
-                "summary": {"passed": 3, "warnings": 1, "blockers": 0, "skipped_optional": 1},
+                "summary": {
+                    "passed": 3,
+                    "warnings": 1,
+                    "blockers": 0,
+                    "skipped_optional": 1,
+                },
                 "checks": [],
             }
         ),

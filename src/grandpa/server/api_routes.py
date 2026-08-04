@@ -486,7 +486,9 @@ burnin_router = APIRouter(prefix="/v1/burnin", tags=["burnin"])
 audit_router = APIRouter(prefix="/v1/audit", tags=["audit"])
 services_router = APIRouter(prefix="/v1/services", tags=["services"])
 actions_router = APIRouter(prefix="/v1/actions", tags=["actions"])
-desktop_operator_router = APIRouter(prefix="/v1/desktop/operator", tags=["desktop-operator"])
+desktop_operator_router = APIRouter(
+    prefix="/v1/desktop/operator", tags=["desktop-operator"]
+)
 planner_router = APIRouter(prefix="/v1/planner", tags=["planner"])
 agent_runtime_router = APIRouter(prefix="/v1/agent", tags=["agent-runtime"])
 mcp_router = APIRouter(prefix="/v1/mcp", tags=["mcp"])
@@ -504,7 +506,10 @@ async def list_skills(request: Request):
         return skill_service.list_skills()
     except Exception as exc:
         logger.warning("Failed to list skills: %s", exc)
-        return {"skills": [], "runtime": {"status": "unavailable", "error": exc.__class__.__name__}}
+        return {
+            "skills": [],
+            "runtime": {"status": "unavailable", "error": exc.__class__.__name__},
+        }
 
 
 @skills_router.get("/categories")
@@ -674,7 +679,10 @@ async def import_knowledge(req: KnowledgeImportRequest):
         if req.path:
             return engine.import_file(req.path, tags=req.tags)
         if not req.content:
-            raise HTTPException(status_code=400, detail="content, path, or import_project_docs is required")
+            raise HTTPException(
+                status_code=400,
+                detail="content, path, or import_project_docs is required",
+            )
         return engine.import_document(
             source=req.source,
             content=req.content,
@@ -709,11 +717,15 @@ async def search_knowledge_route(
 
 
 @knowledge_router.get("/semantic-search")
-async def semantic_search_knowledge_route(q: str, tag: str = "", project_only: bool = False, limit: int = 10):
+async def semantic_search_knowledge_route(
+    q: str, tag: str = "", project_only: bool = False, limit: int = 10
+):
     """Search local knowledge using stored chunk embeddings when available."""
     from grandpa.knowledge.engine import KnowledgeEngine
 
-    return KnowledgeEngine().semantic_search(q, tag=tag, project_only=project_only, limit=max(1, min(limit, 50)))
+    return KnowledgeEngine().semantic_search(
+        q, tag=tag, project_only=project_only, limit=max(1, min(limit, 50))
+    )
 
 
 @knowledge_router.get("/context")
@@ -721,7 +733,9 @@ async def knowledge_context_route(q: str, project_only: bool = False, limit: int
     """Build a compact local knowledge context packet for planners and agents."""
     from grandpa.knowledge.engine import KnowledgeEngine
 
-    return KnowledgeEngine().context(q, project_only=project_only, limit=max(1, min(limit, 20)))
+    return KnowledgeEngine().context(
+        q, project_only=project_only, limit=max(1, min(limit, 20))
+    )
 
 
 @knowledge_router.get("/related")
@@ -732,7 +746,9 @@ async def related_knowledge_route(document_id: str, limit: int = 8):
     try:
         return KnowledgeEngine().related(document_id, limit=max(1, min(limit, 50)))
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Knowledge document not found") from exc
+        raise HTTPException(
+            status_code=404, detail="Knowledge document not found"
+        ) from exc
 
 
 @knowledge_router.get("/embedding-status")
@@ -763,14 +779,20 @@ async def get_knowledge_document_route(document_id: str):
 
 
 @knowledge_router.get("/summary")
-async def knowledge_summary_route(document_id: str = "", topic: str = "", project: bool = False):
+async def knowledge_summary_route(
+    document_id: str = "", topic: str = "", project: bool = False
+):
     """Generate deterministic local knowledge summaries."""
     from grandpa.knowledge.engine import KnowledgeEngine
 
     try:
-        return KnowledgeEngine().summary(document_id=document_id, topic=topic, project=project)
+        return KnowledgeEngine().summary(
+            document_id=document_id, topic=topic, project=project
+        )
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Knowledge document not found") from exc
+        raise HTTPException(
+            status_code=404, detail="Knowledge document not found"
+        ) from exc
 
 
 @knowledge_router.get("/diagnostics")
@@ -1021,7 +1043,9 @@ async def intent_router_analyze(request: Request):
     from grandpa.services import planner_service
 
     body = await request.json()
-    text = str(body.get("request") or body.get("query") or body.get("text") or "").strip()
+    text = str(
+        body.get("request") or body.get("query") or body.get("text") or ""
+    ).strip()
     if not text:
         raise HTTPException(status_code=400, detail="'request' field is required")
     return planner_service.analyze_intent(text)
@@ -1337,7 +1361,9 @@ async def conversation_summary(request: Request):
 
 
 @conversation_router.get("/context")
-async def conversation_context(request: Request, max_messages: int = 6, max_chars: int = 2000):
+async def conversation_context(
+    request: Request, max_messages: int = 6, max_chars: int = 2000
+):
     """Return bounded recent conversation context for deterministic voice follow-up support."""
     return _build_conversation_context(
         request,
@@ -1365,7 +1391,11 @@ async def vision_disable(request: Request):
 
 
 @vision_router.post("/analyze")
-async def vision_analyze(request: Request, image: UploadFile = File(...), prompt: str | None = File(default=None)):
+async def vision_analyze(
+    request: Request,
+    image: UploadFile = File(...),
+    prompt: str | None = File(default=None),
+):
     """Validate and inspect an uploaded image without calling a vision model."""
     data = await image.read()
     return _get_vision_session(request).analyze_image_bytes(
@@ -1418,7 +1448,9 @@ async def voice_speak(req: VoiceSpeakRequest):
 
     if not req.text.strip():
         raise HTTPException(status_code=400, detail="text is required")
-    result = get_voice_runtime().speak(req.text, interrupt=req.interrupt, dry_run=req.dry_run)
+    result = get_voice_runtime().speak(
+        req.text, interrupt=req.interrupt, dry_run=req.dry_run
+    )
     _raise_for_expected_voice_error(result)
     return result
 
@@ -1546,7 +1578,9 @@ async def voice_loop_simulate_command(req: VoiceLoopTextRequest, request: Reques
         result["command_text"] = command_text
         _record_voice_history(request, result)
         if result.get("ok", True):
-            _record_conversation_exchange(request, command_text, result.get("assistant_text", ""))
+            _record_conversation_exchange(
+                request, command_text, result.get("assistant_text", "")
+            )
         return result
 
     return loop.simulate_command(transcript, command_router=route_command)
@@ -1600,8 +1634,14 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     runtime = get_voice_runtime()
     transcript = text.strip()
     wake_match = runtime.wake_detector.detect(transcript)
-    if req.require_wake_word and runtime.wake_detector.config.enabled and not wake_match.matched:
-        assistant_text = "Wake word was not detected. Use push-to-talk or say Hey Grandpa."
+    if (
+        req.require_wake_word
+        and runtime.wake_detector.config.enabled
+        and not wake_match.matched
+    ):
+        assistant_text = (
+            "Wake word was not detected. Use push-to-talk or say Hey Grandpa."
+        )
         return _attach_conversation_context_metadata(
             request,
             _voice_command_response(
@@ -1615,7 +1655,9 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
             ),
         )
 
-    command_text = (wake_match.command_text if wake_match.matched else transcript).strip()
+    command_text = (
+        wake_match.command_text if wake_match.matched else transcript
+    ).strip()
     if not command_text:
         raise HTTPException(status_code=400, detail="I didn't hear anything.")
 
@@ -1623,7 +1665,9 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     spoken = False
     if req.speak or req.speak_response:
         try:
-            speech = runtime.speak(result["assistant_text"], interrupt=True, dry_run=False)
+            speech = runtime.speak(
+                result["assistant_text"], interrupt=True, dry_run=False
+            )
             spoken = speech.get("status") in {"completed", "dry_run"}
         except Exception:
             logger.debug("Voice command speech output failed", exc_info=True)
@@ -1632,7 +1676,9 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     result["command_text"] = command_text
     _record_voice_history(request, result)
     if result.get("ok", True):
-        _record_conversation_exchange(request, command_text, result.get("assistant_text", ""))
+        _record_conversation_exchange(
+            request, command_text, result.get("assistant_text", "")
+        )
         _touch_conversation_mode(request, command_text)
     return result
 
@@ -1652,8 +1698,12 @@ async def voice_confirm(req: VoiceConfirmRequest, request: Request):
         action_status = "blocked"
     assistant_text = _friendly_voice_message(action_status, result.message)
     payload = _voice_command_response(
-        transcript=result.pending_action.get("source_text", "") if result.pending_action else "",
-        command_text=result.pending_action.get("source_text", "") if result.pending_action else "",
+        transcript=result.pending_action.get("source_text", "")
+        if result.pending_action
+        else "",
+        command_text=result.pending_action.get("source_text", "")
+        if result.pending_action
+        else "",
         assistant_text=assistant_text,
         action_type="desktop",
         action_status=action_status,
@@ -1777,7 +1827,11 @@ def _handle_voice_local_action(
 
     try:
         result = handle_local_action(command_text, execute=True)
-        if confirmed and result.status == "requires_confirmation" and result.pending_action:
+        if (
+            confirmed
+            and result.status == "requires_confirmation"
+            and result.pending_action
+        ):
             result = approve_pending_action(result.pending_action.get("id"))
     except Exception as exc:
         assistant_text = "I couldn't process that desktop command."
@@ -1889,7 +1943,8 @@ def _voice_command_response(
             pending_action = local_action.get("pending_action")
             confirmation_token = (
                 pending_action.get("id")
-                if action_status == "needs_confirmation" and isinstance(pending_action, dict)
+                if action_status == "needs_confirmation"
+                and isinstance(pending_action, dict)
                 else None
             )
             payload["action"].update(
@@ -2007,7 +2062,9 @@ def _build_conversation_context(
     ).build()
 
 
-def _record_conversation_exchange(request: Request, transcript: str, assistant_text: str) -> None:
+def _record_conversation_exchange(
+    request: Request, transcript: str, assistant_text: str
+) -> None:
     try:
         session = _get_conversation_session(request)
         session.add_user_message(transcript)
@@ -2033,20 +2090,28 @@ async def _read_voice_listen_payload(request: Request) -> dict[str, str | None]:
         audio_format = form.get("audio_format") or form.get("format")
         if hasattr(audio_value, "read"):
             audio_bytes = await audio_value.read()
-            audio_base64 = base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None
+            audio_base64 = (
+                base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None
+            )
             filename = getattr(audio_value, "filename", "")
             audio_format = audio_format or _audio_format_from_filename(filename)
         return {
             "text": str(text_value).strip() if text_value is not None else None,
             "audio_base64": str(audio_base64) if audio_base64 else None,
-            "audio_format": str(audio_format).strip().lower().lstrip(".") if audio_format else None,
+            "audio_format": str(audio_format).strip().lower().lstrip(".")
+            if audio_format
+            else None,
         }
 
-    if content_type.startswith("application/octet-stream") or content_type.startswith("audio/"):
+    if content_type.startswith("application/octet-stream") or content_type.startswith(
+        "audio/"
+    ):
         audio_bytes = await request.body()
         return {
             "text": None,
-            "audio_base64": base64.b64encode(audio_bytes).decode("ascii") if audio_bytes else None,
+            "audio_base64": base64.b64encode(audio_bytes).decode("ascii")
+            if audio_bytes
+            else None,
             "audio_format": _audio_format_from_content_type(content_type),
         }
 
@@ -2062,7 +2127,9 @@ async def _read_voice_listen_payload(request: Request) -> dict[str, str | None]:
     return {
         "text": str(text_value).strip() if text_value is not None else None,
         "audio_base64": str(audio_base64) if audio_base64 else None,
-        "audio_format": str(audio_format).strip().lower().lstrip(".") if audio_format else None,
+        "audio_format": str(audio_format).strip().lower().lstrip(".")
+        if audio_format
+        else None,
     }
 
 
@@ -2089,9 +2156,13 @@ def _record_voice_history(request: Request, result: dict[str, Any]) -> None:
         action = result.get("action") or {}
         _get_voice_history_store(request).add(
             transcript=result.get("transcript") or result.get("command_text") or "",
-            assistant_response=result.get("assistant_text") or result.get("message") or "",
+            assistant_response=result.get("assistant_text")
+            or result.get("message")
+            or "",
             action_type=str(action.get("type") or "none"),
-            action_status=str(action.get("status") or result.get("status") or "unsupported"),
+            action_status=str(
+                action.get("status") or result.get("status") or "unsupported"
+            ),
         )
     except Exception:
         logger.debug("Failed to record voice command history", exc_info=True)

@@ -57,7 +57,10 @@ def get_agent(agent_id: str) -> AgentSpec | None:
 
 def list_agents() -> list[dict[str, Any]]:
     _ensure_builtin_agents()
-    return [spec.to_dict() for spec in sorted(_AGENTS.values(), key=lambda item: item.agent_id)]
+    return [
+        spec.to_dict()
+        for spec in sorted(_AGENTS.values(), key=lambda item: item.agent_id)
+    ]
 
 
 def select_agents_for_goal(user_request: str) -> list[AgentSpec]:
@@ -66,9 +69,32 @@ def select_agents_for_goal(user_request: str) -> list[AgentSpec]:
     _ensure_builtin_agents()
     clean = user_request.lower()
     selected: list[str] = ["memory_agent"]
-    if any(word in clean for word in ("research", "tutorial", "webpage", "page", "browser", "youtube", "search")):
+    if any(
+        word in clean
+        for word in (
+            "research",
+            "tutorial",
+            "webpage",
+            "page",
+            "browser",
+            "youtube",
+            "search",
+        )
+    ):
         selected.extend(["research_agent", "browser_agent"])
-    if any(word in clean for word in ("desktop", "pc", "workspace", "coding", "vscode", "health", "diagnostic", "readiness")):
+    if any(
+        word in clean
+        for word in (
+            "desktop",
+            "pc",
+            "workspace",
+            "coding",
+            "vscode",
+            "health",
+            "diagnostic",
+            "readiness",
+        )
+    ):
         selected.extend(["desktop_agent", "coding_agent"])
     if len(selected) == 1:
         selected.extend(["research_agent", "desktop_agent"])
@@ -89,7 +115,9 @@ def agent_registry_diagnostics() -> dict[str, Any]:
         "status": "ready",
         "registered_count": len(agents),
         "agents": agents,
-        "capabilities": sorted({cap for item in agents for cap in item["capabilities"]}),
+        "capabilities": sorted(
+            {cap for item in agents for cap in item["capabilities"]}
+        ),
         "local_only": True,
         "approval_bypass_allowed": False,
     }
@@ -112,7 +140,12 @@ def _ensure_builtin_agents() -> None:
         AgentSpec(
             "browser_agent",
             "Browser Agent",
-            ("visible_page_summary", "visible_links", "visible_buttons", "search_plans"),
+            (
+                "visible_page_summary",
+                "visible_links",
+                "visible_buttons",
+                "search_plans",
+            ),
             ("summarize current webpage", "research Python tutorials"),
             _execute_browser_agent,
             "Uses read-only visible browser context and safe browser plans.",
@@ -148,15 +181,22 @@ def _ensure_builtin_agents() -> None:
             "Plans deterministic coding workspace and diagnostic workflows.",
         )
     )
+
+
 def _execute_research_agent(context: SharedAgentContext) -> dict[str, Any]:
     from grandpa.browser.agent import search_web_plan
     from grandpa.planner.engine import analyze_request
 
     analysis = analyze_request(context.user_request).to_dict()
     data: dict[str, Any] = {"planner": analysis}
-    if any(word in context.user_request.lower() for word in ("research", "search", "tutorial", "youtube")):
+    if any(
+        word in context.user_request.lower()
+        for word in ("research", "search", "tutorial", "youtube")
+    ):
         data["browser_plan"] = search_web_plan(context.user_request)
-    return _ok("Prepared a research plan using planner and browser search context.", data)
+    return _ok(
+        "Prepared a research plan using planner and browser search context.", data
+    )
 
 
 def _execute_browser_agent(context: SharedAgentContext) -> dict[str, Any]:

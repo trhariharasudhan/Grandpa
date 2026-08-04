@@ -6,7 +6,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 WebSearchActionType = Literal["search", "sources", "clear_cache", "status"]
-WebSearchStatus = Literal["handled", "not_configured", "blocked", "unsupported", "no_match", "error"]
+WebSearchStatus = Literal[
+    "handled", "not_configured", "blocked", "unsupported", "no_match", "error"
+]
 
 
 @dataclass(frozen=True)

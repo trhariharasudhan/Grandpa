@@ -123,14 +123,8 @@ def _align_uia_to_capture(
         replace(
             item,
             bounds=type(item.bounds)(
-                round(
-                    capture_left
-                    + (item.bounds.left - root.bounds.left) * scale_x
-                ),
-                round(
-                    capture_top
-                    + (item.bounds.top - root.bounds.top) * scale_y
-                ),
+                round(capture_left + (item.bounds.left - root.bounds.left) * scale_x),
+                round(capture_top + (item.bounds.top - root.bounds.top) * scale_y),
                 round(item.bounds.width * scale_x),
                 round(item.bounds.height * scale_y),
             ),

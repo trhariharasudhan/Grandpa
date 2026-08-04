@@ -51,8 +51,7 @@ def main() -> None:
         from grandpa import Grandpa
     except ImportError:
         print(
-            "Error: grandpa is not installed. "
-            "Install it with:  uv sync --extra dev",
+            "Error: grandpa is not installed. Install it with:  uv sync --extra dev",
             file=sys.stderr,
         )
         sys.exit(1)

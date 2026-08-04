@@ -57,7 +57,9 @@ class MultiProjectRegistry:
             self.registry_file = Path(registry_file).resolve()
         else:
             grandpa_home = os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")
-            self.registry_file = Path(grandpa_home).expanduser() / "projects_registry.json"
+            self.registry_file = (
+                Path(grandpa_home).expanduser() / "projects_registry.json"
+            )
 
         self.registry_file.parent.mkdir(parents=True, exist_ok=True)
         self.active_project_id: Optional[str] = None
@@ -90,7 +92,9 @@ class MultiProjectRegistry:
         }
         self.registry_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
-    def register_project(self, name: str, path: str, description: str = "") -> ProjectInfo:
+    def register_project(
+        self, name: str, path: str, description: str = ""
+    ) -> ProjectInfo:
         """Register an existing project path in the registry, preventing duplicate paths or names."""
         clean_path = str(Path(path).resolve())
         clean_name_lower = name.strip().lower()
@@ -121,7 +125,9 @@ class MultiProjectRegistry:
         self.save()
         return pinfo
 
-    def create_project(self, name: str, path: str, description: str = "") -> ProjectInfo:
+    def create_project(
+        self, name: str, path: str, description: str = ""
+    ) -> ProjectInfo:
         """Create a new project folder and register it."""
         target_path = Path(path).resolve()
         target_path.mkdir(parents=True, exist_ok=True)
@@ -134,7 +140,7 @@ class MultiProjectRegistry:
                 "project_name": name,
                 "project_path": str(target_path),
                 "tasks": [],
-                "roadmap": {}
+                "roadmap": {},
             }
             state_file.write_text(json.dumps(state_data, indent=2), encoding="utf-8")
 
@@ -147,7 +153,9 @@ class MultiProjectRegistry:
 
         del self.projects[project_id]
         if self.active_project_id == project_id:
-            self.active_project_id = list(self.projects.keys())[0] if self.projects else None
+            self.active_project_id = (
+                list(self.projects.keys())[0] if self.projects else None
+            )
 
         self.save()
 

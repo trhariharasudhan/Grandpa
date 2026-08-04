@@ -7,7 +7,9 @@ from time import time
 from typing import Any, Callable, Literal
 
 SkillRiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
-SkillStatus = Literal["completed", "dry_run", "approval_required", "blocked", "unsupported", "failed"]
+SkillStatus = Literal[
+    "completed", "dry_run", "approval_required", "blocked", "unsupported", "failed"
+]
 
 
 @dataclass(frozen=True)
@@ -93,8 +95,16 @@ class RuntimeSkill:
     executor: SkillExecutor | None = None
     aliases: tuple[str, ...] = ()
 
-    def execute(self, params: dict[str, Any] | None = None, context: SkillExecutionContext | None = None) -> SkillResult:
-        if self.approval_required and context and context.approval_state not in {"approved", "preapproved"}:
+    def execute(
+        self,
+        params: dict[str, Any] | None = None,
+        context: SkillExecutionContext | None = None,
+    ) -> SkillResult:
+        if (
+            self.approval_required
+            and context
+            and context.approval_state not in {"approved", "preapproved"}
+        ):
             return SkillResult(
                 ok=False,
                 status="approval_required",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 from typing import Iterable, Optional
 
 from grandpa.cli.slash_commands import (
@@ -16,6 +17,7 @@ try:
     from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.document import Document
     from prompt_toolkit.filters import Condition
+    from prompt_toolkit.history import FileHistory
     from prompt_toolkit.key_binding import KeyBindings
     from prompt_toolkit.layout import Layout
     from prompt_toolkit.layout.containers import (
@@ -33,6 +35,7 @@ except ImportError:  # pragma: no cover - exercised through monkeypatched fallba
     Completer = object  # type: ignore[assignment,misc]
     Completion = None  # type: ignore[assignment]
     Condition = None  # type: ignore[assignment]
+    FileHistory = None  # type: ignore[assignment]
     Document = None  # type: ignore[assignment]
     KeyBindings = None  # type: ignore[assignment]
     Layout = None  # type: ignore[assignment]
@@ -46,7 +49,7 @@ except ImportError:  # pragma: no cover - exercised through monkeypatched fallba
 
 PROMPT_TOOLKIT_AVAILABLE = Application is not None and PromptSession is not None
 
-USER_PROMPT = "> "
+USER_PROMPT = "Username > "
 USER_PROMPT_COLOR = "#6244c5"
 ASSISTANT_PROMPT_COLOR = "#ffc448"
 PICKER_HIGHLIGHT_COLOR = "#ffc448"
@@ -60,19 +63,40 @@ PICKER_CURRENT_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} bold {PICKER_HIGHLIGHT_COL
 PICKER_DIM_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} #8f8f9a"
 
 
-def read_chat_input() -> Optional[str]:
+def read_chat_input(
+    prompt: str = USER_PROMPT,
+    *,
+    history_path: Path | None = None,
+    multiline: bool = False,
+) -> Optional[str]:
     if not PROMPT_TOOLKIT_AVAILABLE or not sys.stdin.isatty():
-        return _read_chat_input_fallback()
+        return _read_chat_input_fallback(prompt)
 
     picker_state = SlashPickerState()
-    bindings = _chat_key_bindings(picker_state)
-    buffer = Buffer(multiline=False)
+    bindings = _chat_key_bindings(picker_state, multiline=multiline)
+    if history_path is not None:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+    history = FileHistory(str(history_path)) if history_path and FileHistory else None
+    buffer_kwargs = {"multiline": multiline}
+    if history is not None:
+        buffer_kwargs["history"] = history
+    buffer = Buffer(**buffer_kwargs)
     input_control = BufferControl(buffer=buffer)
-    app = _slash_input_application(buffer, input_control, picker_state, bindings)
     try:
+        app = _slash_input_application(
+            buffer,
+            input_control,
+            picker_state,
+            bindings,
+            prompt=prompt,
+        )
         return app.run()
     except (EOFError, KeyboardInterrupt):
         return None
+    except Exception as exc:
+        if exc.__class__.__name__ != "NoConsoleScreenBufferError":
+            raise
+        return _read_chat_input_fallback(prompt)
 
 
 def _slash_input_application(
@@ -80,12 +104,14 @@ def _slash_input_application(
     input_control: BufferControl,
     picker_state: "SlashPickerState",
     bindings,
+    *,
+    prompt: str = USER_PROMPT,
 ):
-    prompt_control = FormattedTextControl([("class:prompt", USER_PROMPT)])
+    prompt_control = FormattedTextControl([("class:prompt", prompt)])
     input_row = VSplit(
         [
-            Window(prompt_control, width=len(USER_PROMPT), height=1),
-            Window(input_control, height=1),
+            Window(prompt_control, width=len(prompt), height=1),
+            Window(input_control),
         ]
     )
     popup = ConditionalContainer(
@@ -136,7 +162,9 @@ class SlashCommandCompleter(Completer):
     def __init__(self, picker_state: SlashPickerState | None = None) -> None:
         self._picker_state = picker_state or SlashPickerState()
 
-    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
+    def get_completions(
+        self, document: Document, complete_event
+    ) -> Iterable[Completion]:
         if Completion is None:
             return
 
@@ -144,7 +172,9 @@ class SlashCommandCompleter(Completer):
         if not text.startswith("/"):
             return
 
-        for value, label, description in _completion_candidates(text, self._picker_state):
+        for value, label, description in _completion_candidates(
+            text, self._picker_state
+        ):
             yield Completion(
                 value,
                 start_position=-len(text),
@@ -153,7 +183,11 @@ class SlashCommandCompleter(Completer):
             )
 
 
-def _chat_key_bindings(picker_state: SlashPickerState):
+def _chat_key_bindings(
+    picker_state: SlashPickerState,
+    *,
+    multiline: bool = False,
+):
     if KeyBindings is None:
         return None
 
@@ -188,6 +222,11 @@ def _chat_key_bindings(picker_state: SlashPickerState):
         if text.startswith("/") and preview:
             picker_state.preview_index = (picker_state.preview_index - 1) % len(preview)
             event.app.invalidate()
+            return
+        if multiline and event.current_buffer.document.line_count > 1:
+            event.current_buffer.cursor_up()
+        else:
+            event.current_buffer.history_backward()
 
     @bindings.add("down")
     def _(event):
@@ -196,6 +235,11 @@ def _chat_key_bindings(picker_state: SlashPickerState):
         if text.startswith("/") and preview:
             picker_state.preview_index = (picker_state.preview_index + 1) % len(preview)
             event.app.invalidate()
+            return
+        if multiline and event.current_buffer.document.line_count > 1:
+            event.current_buffer.cursor_down()
+        else:
+            event.current_buffer.history_forward()
 
     @bindings.add("tab")
     def _(event):
@@ -215,6 +259,11 @@ def _chat_key_bindings(picker_state: SlashPickerState):
             event.app.invalidate()
             return
         event.app.exit(result=event.current_buffer.text)
+
+    @bindings.add("escape", "enter")
+    def _(event):
+        if multiline:
+            event.current_buffer.insert_text("\n")
 
     @bindings.add("c-c")
     @bindings.add("c-d")
@@ -330,7 +379,9 @@ def _picker_toolbar_lines(
     if not commands:
         return []
     state.top_index = min(state.top_index, len(commands) - 1)
-    selected_command = _selected_top_level_command(text, state) or commands[state.top_index][0]
+    selected_command = (
+        _selected_top_level_command(text, state) or commands[state.top_index][0]
+    )
     preview = _command_preview_options(selected_command)
     state.preview_index = min(state.preview_index, max(len(preview) - 1, 0))
     preview_values = [
@@ -373,7 +424,9 @@ def _picker_toolbar_fragments(
     return fragments
 
 
-def _selected_top_level_command(text: str, picker_state: SlashPickerState) -> str | None:
+def _selected_top_level_command(
+    text: str, picker_state: SlashPickerState
+) -> str | None:
     if not text.startswith("/"):
         return None
     command_name = text.split(maxsplit=1)[0].lower()
@@ -418,7 +471,9 @@ def _command_label(command_name: str) -> str:
     return command.display_label if command else command_name
 
 
-def _preview_display_label(command_value: str, fallback_label: str | None = None) -> str:
+def _preview_display_label(
+    command_value: str, fallback_label: str | None = None
+) -> str:
     if not command_value.startswith("/"):
         return fallback_label or command_value
     parts = command_value.split(maxsplit=1)
@@ -433,7 +488,9 @@ def _preview_display_label(command_value: str, fallback_label: str | None = None
 def _command_preview_options(command_name: str) -> list[tuple[str, str]]:
     if command_name == "/model":
         return _model_preview_options()
-    return [(item.command, item.label) for item in command_preview_options(command_name)]
+    return [
+        (item.command, item.label) for item in command_preview_options(command_name)
+    ]
 
 
 def _model_preview_options() -> list[tuple[str, str]]:
@@ -495,7 +552,9 @@ class _ListCompleter(Completer):
     def __init__(self, items: list[str]) -> None:
         self._items = items
 
-    def get_completions(self, document: Document, complete_event) -> Iterable[Completion]:
+    def get_completions(
+        self, document: Document, complete_event
+    ) -> Iterable[Completion]:
         if Completion is None:
             return
         text = document.text_before_cursor.lower()

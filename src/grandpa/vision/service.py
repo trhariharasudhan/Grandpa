@@ -63,9 +63,7 @@ class VisionEngine:
         graph = graph or self.inspect().graph
         if graph is None:
             return VisionResult("unsupported", "Vision graph is unavailable.")
-        matches = self.matcher.search(
-            graph, query, limit=limit, actionable=actionable
-        )
+        matches = self.matcher.search(graph, query, limit=limit, actionable=actionable)
         if not matches:
             return VisionResult(
                 "not_found",
@@ -96,7 +94,9 @@ class VisionEngine:
             for item in graph.nodes
             if item.visible and item.type not in {"text", "text_line", "paragraph"}
         ]
-        buttons = [item.label for item in controls if item.type == "button" and item.label]
+        buttons = [
+            item.label for item in controls if item.type == "button" and item.label
+        ]
         fields = [item.label or item.type for item in controls if item.editable]
         dialogs = [
             item.label

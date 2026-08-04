@@ -19,6 +19,7 @@ NEW_LOCAL_MODELS = [
     "trinity-mini",  # 26B total, 3.0B active, MoE
 ]
 
+
 def _setup_models() -> None:
     """Register builtin models needed for the tests."""
     register_builtin_models()

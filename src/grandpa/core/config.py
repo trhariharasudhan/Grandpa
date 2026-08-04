@@ -12,7 +12,9 @@ import os
 import platform
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -25,8 +27,18 @@ except ModuleNotFoundError:
 # Hardware dataclasses
 # ---------------------------------------------------------------------------
 
-DEFAULT_CONFIG_DIR = Path(os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")).expanduser()
+DEFAULT_CONFIG_DIR = Path(
+    os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")
+).expanduser()
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
+CONFIG_RECOVERY_MESSAGE = (
+    "Configuration was invalid and was backed up. Safe defaults were loaded."
+)
+CONFIG_RECOVERY_FAILED_MESSAGE = (
+    "Configuration was invalid but could not be backed up. "
+    "Safe defaults were loaded for this session."
+)
+_CONFIG_RECOVERY_WARNINGS: list[str] = []
 
 
 def _ensure_config_dir() -> Path:
@@ -34,6 +46,60 @@ def _ensure_config_dir() -> Path:
     from grandpa.security.file_utils import secure_mkdir
 
     return secure_mkdir(DEFAULT_CONFIG_DIR)
+
+
+def consume_config_recovery_warnings() -> list[str]:
+    """Return and clear pending user-facing configuration recovery notices."""
+
+    warnings = list(_CONFIG_RECOVERY_WARNINGS)
+    _CONFIG_RECOVERY_WARNINGS.clear()
+    return warnings
+
+
+def _timestamped_backup_path(path: Path, marker: str = "corrupt") -> Path:
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    candidate = path.with_name(f"{path.name}.{marker}-{timestamp}")
+    suffix = 1
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}.{marker}-{timestamp}-{suffix}")
+        suffix += 1
+    return candidate
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write UTF-8 text with a durable same-directory atomic replace."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+    )
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
+
+
+def _recover_invalid_config(path: Path, hw: "HardwareInfo", engine: str) -> Path:
+    """Preserve an invalid config and atomically replace it with safe defaults."""
+
+    backup = _timestamped_backup_path(path)
+    os.replace(path, backup)
+    try:
+        _atomic_write_text(path, generate_minimal_toml(hw, engine))
+    except Exception:
+        if not path.exists() and backup.exists():
+            os.replace(backup, path)
+        raise
+    _CONFIG_RECOVERY_WARNINGS.append(CONFIG_RECOVERY_MESSAGE)
+    return backup
 
 
 @dataclass(slots=True)
@@ -699,12 +765,21 @@ class SkillsConfig:
     max_depth: int = 5
 
 
+@dataclass(slots=True)
+class UserConfig:
+    """User-facing identity used by interactive interfaces."""
+
+    username: str = "Username"
+    onboarding_completed: bool = False
+
+
 @dataclass
 class GrandpaConfig:
     """Top-level configuration for grandpa."""
 
     installed_at: str = ""
     installer_version: str = ""
+    fullscreen: bool = True
     hardware: HardwareInfo = field(default_factory=HardwareInfo)
     engine: EngineConfig = field(default_factory=EngineConfig)
     intelligence: IntelligenceConfig = field(default_factory=IntelligenceConfig)
@@ -726,6 +801,7 @@ class GrandpaConfig:
     system_prompt: SystemPromptConfig = field(default_factory=SystemPromptConfig)
     compression: CompressionConfig = field(default_factory=CompressionConfig)
     skills: SkillsConfig = field(default_factory=SkillsConfig)
+    user: UserConfig = field(default_factory=UserConfig)
 
     @property
     def memory(self) -> StorageConfig:
@@ -907,8 +983,17 @@ def load_config(path: Optional[Path] = None) -> GrandpaConfig:
     else:
         config_path = DEFAULT_CONFIG_PATH
     if config_path.exists():
-        with open(config_path, "rb") as fh:
-            data = tomllib.load(fh)
+        try:
+            raw_config = config_path.read_bytes()
+            if not raw_config.strip():
+                raise tomllib.TOMLDecodeError("Configuration file is empty", "", 0)
+            data = tomllib.loads(raw_config.decode("utf-8-sig"))
+        except (tomllib.TOMLDecodeError, UnicodeDecodeError, ValueError):
+            try:
+                _recover_invalid_config(config_path, hw, cfg.engine.default)
+            except OSError:
+                _CONFIG_RECOVERY_WARNINGS.append(CONFIG_RECOVERY_FAILED_MESSAGE)
+            data = {}
 
         # Run backward-compat migrations before applying
         _migrate_toml_data(data, cfg)
@@ -931,6 +1016,7 @@ def load_config(path: Optional[Path] = None) -> GrandpaConfig:
             "operators",
             "speech",
             "agent_manager",
+            "user",
         )
         for section_name in top_sections:
             if section_name in data:
@@ -987,6 +1073,10 @@ def generate_minimal_toml(
 # Hardware: {hw.cpu_brand} ({hw.cpu_count} cores, {hw.ram_gb} GB RAM){gpu_comment}
 # Full reference config: Grandpa init --full
 
+[user]
+username = "Username"
+onboarding_completed = false
+
 [engine]
 default = "{engine}"
 {engine_host_section}
@@ -1011,6 +1101,10 @@ def generate_default_toml(
     return f"""\
 # Grandpa local Windows assistant configuration
 # Generated by `grandpa init`
+
+[user]
+username = "Username"
+onboarding_completed = false
 
 [engine]
 default = "ollama"
@@ -1102,7 +1196,11 @@ __all__ = [
     "TelemetryConfig",
     "ToolsConfig",
     "TracesConfig",
+    "UserConfig",
     "WorkflowConfig",
+    "CONFIG_RECOVERY_MESSAGE",
+    "CONFIG_RECOVERY_FAILED_MESSAGE",
+    "consume_config_recovery_warnings",
     "detect_hardware",
     "generate_default_toml",
     "generate_minimal_toml",

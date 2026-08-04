@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import subprocess
@@ -13,26 +14,34 @@ from typing import List, Optional
 import click
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.text import Text
 
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.cli.input_ui import read_chat_input, select_from_list
 from grandpa.cli.slash_commands import command_help_text, unknown_command_message
 from grandpa.cli.theme import (
+    FAREWELL_TEXT,
+    alternate_screen,
     help_commands_text,
     help_examples_text,
     help_modules_text,
     help_shortcuts_text,
+    render_assistant_prefix,
     render_assistant_response,
     render_chat_home,
     render_help,
+    render_status_message,
     render_user_message,
+    resolve_username,
+    user_prompt,
 )
-from grandpa.core.config import load_config
+from grandpa.core.config import consume_config_recovery_warnings, load_config
 from grandpa.core.types import Message, Role
 from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
     EngineModelNotFoundError,
+    EngineModelPullError,
 )
 from grandpa.response_cleanup import (
     GENERATION_ERROR_MESSAGE,
@@ -147,6 +156,37 @@ def _model_load_failure_message(exc: EngineModelLoadError) -> str:
     )
 
 
+async def _stream_engine_response(
+    engine: object,
+    messages: List[Message],
+    *,
+    model: str,
+    console: Console,
+    thinking: "ThinkingAnimation",
+) -> str:
+    """Render one engine stream and return the assembled assistant response."""
+
+    stream = getattr(engine, "stream")
+    chunks: list[str] = []
+    started = False
+    try:
+        async for raw_chunk in stream(messages, model=model):
+            chunk = str(raw_chunk)
+            if not chunk:
+                continue
+            if not started:
+                thinking.stop()
+                render_assistant_prefix(console)
+                started = True
+            chunks.append(chunk)
+            console.print(Text(chunk), end="", markup=False, highlight=False)
+    finally:
+        thinking.stop()
+        if started:
+            console.print()
+    return "".join(chunks)
+
+
 class ThinkingAnimation:
     """Small terminal-only spinner for blocking response generation."""
 
@@ -179,7 +219,7 @@ class ThinkingAnimation:
         index = 0
         while not self._stop.is_set():
             frame = _THINKING_FRAMES[index % len(_THINKING_FRAMES)]
-            self._write(f"\r{frame} Thinking...")
+            self._write(f"\r{frame}")
             index += 1
             self._stop.wait(self._interval)
 
@@ -825,10 +865,12 @@ def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
     normalized = _normalize_local_intent(text)
     if normalized in NATURAL_MEMORY_ALL_INTENTS:
         from grandpa.memory_context import MemoryStore
+
         memory_store = store or MemoryStore()
         return _format_memories(memory_store.list_memories())
     if normalized in NATURAL_MEMORY_LIST_INTENTS:
         from grandpa.memory_context import MemoryStore
+
         memory_store = store or MemoryStore()
         return _format_user_memories(memory_store.list_memories())
 
@@ -858,7 +900,11 @@ def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
             return "Cleared short-term session memory."
 
     if route.intent == MemoryIntent.REMEMBER:
-        if route.action_type == "save_preference" and route.target_key and route.target_value:
+        if (
+            route.action_type == "save_preference"
+            and route.target_key
+            and route.target_value
+        ):
             svc.remember_preference(route.target_key, route.target_value)
             return f"Saved preference: {route.target_key} = {route.target_value}"
         if route.action_type == "save_project_info" and route.target_value:
@@ -866,11 +912,18 @@ def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
                 project_name=route.project_name or "Grandpa",
                 goal="Set project information",
                 status="completed",
-                project_path=route.target_value if "d:\\" in route.target_value.lower() else "D:\\Grandpa",
+                project_path=route.target_value
+                if "d:\\" in route.target_value.lower()
+                else "D:\\Grandpa",
             )
             return f"Saved project memory for {route.project_name or 'Grandpa'}."
         if route.target_value:
-            item = svc.remember_explicit(text=route.target_value, category=route.scope if route.scope in ("knowledge", "project", "session", "preference") else "knowledge")
+            item = svc.remember_explicit(
+                text=route.target_value,
+                category=route.scope
+                if route.scope in ("knowledge", "project", "session", "preference")
+                else "knowledge",
+            )
             return f"I will remember that: {item.content}"
 
     if route.intent == MemoryIntent.RECALL:
@@ -938,11 +991,23 @@ def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
             if meta.get("next_task"):
                 next_task_val = meta["next_task"]
 
-            if k == "project_path" or k.endswith("_path") or k.endswith("_project_path"):
+            if (
+                k == "project_path"
+                or k.endswith("_path")
+                or k.endswith("_project_path")
+            ):
                 path_val = content
-            elif k == "latest_feature" or k.endswith("_latest_feature") or k.endswith("_feature"):
+            elif (
+                k == "latest_feature"
+                or k.endswith("_latest_feature")
+                or k.endswith("_feature")
+            ):
                 feature_val = content
-            elif k == "latest_commit" or k.endswith("_latest_commit") or k.endswith("_commit"):
+            elif (
+                k == "latest_commit"
+                or k.endswith("_latest_commit")
+                or k.endswith("_commit")
+            ):
                 commit_val = content
             elif k == "next_task" or k.endswith("_next_task"):
                 next_task_val = content
@@ -1168,12 +1233,23 @@ def _normalize_local_intent(text: str) -> str:
 @click.option("-a", "--agent", "agent_name", default=None, help="Agent type.")
 @click.option("--tools", default=None, help="Comma-separated tool names.")
 @click.option("--system", "system_prompt", default=None, help="Custom system prompt.")
+@click.option("--tui", "tui_mode", is_flag=True, default=True, hidden=True)
+@click.option(
+    "--fullscreen/--no-fullscreen",
+    "fullscreen",
+    default=None,
+    help="Run chat in full-screen alternate terminal buffer.",
+)
+@click.pass_context
 def chat(
+    ctx: click.Context,
     engine_key: str | None,
     model_name: str | None,
     agent_name: str | None,
     tools: str | None,
     system_prompt: str | None,
+    tui_mode: bool,
+    fullscreen: bool | None,
 ) -> None:
     """Start an interactive multi-turn chat session.
 
@@ -1187,6 +1263,19 @@ def chat(
     console = Console(stderr=True)
 
     config = load_config()
+    config_recovery_warnings = consume_config_recovery_warnings()
+
+    if fullscreen is None:
+        if ctx.obj and ctx.obj.get("fullscreen") is not None:
+            fullscreen = ctx.obj["fullscreen"]
+        elif getattr(config, "fullscreen", None) is not None:
+            fullscreen = config.fullscreen
+        else:
+            fullscreen = sys.stdout.isatty() and sys.stdin.isatty()
+    from grandpa.profile import ensure_profile
+
+    config = ensure_profile(console=console, config=config)
+    username = resolve_username(config)
 
     # Resolve engine
     from grandpa.engine import get_engine
@@ -1200,6 +1289,19 @@ def chat(
         sys.exit(1)
 
     engine_name, engine = resolved
+    if engine_key is None and model_name is None:
+        from grandpa.profile import repair_runtime_configuration
+
+        try:
+            installed_models = list(engine.list_models())
+        except Exception:
+            installed_models = []
+        config = repair_runtime_configuration(
+            config,
+            resolved_engine=engine_name,
+            available_models=installed_models,
+        )
+        username = resolve_username(config)
     model = model_name or config.intelligence.default_model
     if not model:
         from grandpa.engine import discover_engines, discover_models
@@ -1269,544 +1371,751 @@ def chat(
         except Exception as exc:
             console.print(f"[yellow]Agent '{agent_key}' failed: {exc}[/yellow]")
 
-    # Print banner
-    console.print()
-
-    render_chat_home(
-        console=console,
-        engine=engine_name,
-        model=model,
-        agent=agent_key or "direct",
-    )
-
-    console.print()
-
-    from grandpa.cli._bg_state import get_status
-
-    # Completion-notification dispatcher (fires once per task per session)
-    from grandpa.cli._chat_notifications import NotificationDispatcher
-
-    _notifications = NotificationDispatcher(get_status())
-
-    # Conversation state
     history: List[Message] = []
     if system_prompt:
         history.append(Message(role=Role.SYSTEM, content=system_prompt))
-    from grandpa.automation import ScreenAutomationService
 
-    automation_service = ScreenAutomationService()
+    tui_session = None
 
-    # REPL loop
-    while True:
-        for note in _notifications.diff(get_status()):
-            console.print(f"[dim cyan]{note}[/dim cyan]")
+    # Print banner
+    with alternate_screen(enabled=fullscreen):
+        console.print()
+        if tui_mode:
+            from grandpa.cli.interactive_tui import (
+                InteractiveSession,
+                render_startup_header,
+                set_terminal_title,
+            )
 
-        user_input = read_chat_input()
+            set_terminal_title()
+            tui_session = InteractiveSession(
+                console=console,
+                config=config,
+                engine_name=engine_name,
+                engine=engine,
+                model=model,
+                history=history,
+                system_prompt=system_prompt,
+                username=username,
+            )
+            render_startup_header(tui_session)
+        else:
+            render_chat_home(
+                console=console,
+                engine=engine_name,
+                model=model,
+                agent=agent_key or "direct",
+            )
 
-        if user_input is None:
-            console.print("\n[dim]Goodbye![/dim]")
-            break
+        for warning in config_recovery_warnings:
+            render_assistant_response(console, Text(warning, style="yellow"))
 
-        user_input = user_input.strip()
-        if not user_input:
-            continue
+        from grandpa.memory_context import MemoryStore as PersonalMemoryStore
+        from grandpa.memory_recovery import (
+            MemoryRecoveryError,
+            consume_memory_recovery_warnings,
+        )
 
-        render_user_message(console, user_input)
+        try:
+            PersonalMemoryStore().close()
+        except MemoryRecoveryError as exc:
+            render_assistant_response(console, Text(str(exc), style="yellow"))
+
+        for warning in consume_memory_recovery_warnings():
+            render_assistant_response(console, Text(warning, style="yellow"))
+
         console.print()
 
-        # Handle slash commands
-        cmd = user_input.lower()
-        if cmd == "/":
-            continue
-        if cmd in ("/quit", "/exit", "/q"):
-            console.print("[dim]Goodbye![/dim]")
-            break
-        elif cmd == "/clear":
-            history = []
-            if system_prompt:
-                history.append(Message(role=Role.SYSTEM, content=system_prompt))
-            console.print("[dim]History cleared.[/dim]")
-            continue
-        elif cmd == "/model" or cmd.startswith("/model "):
-            requested_model = (
-                user_input.split(maxsplit=1)[1].strip()
-                if len(user_input.split(maxsplit=1)) > 1
-                else ""
-            )
-            if requested_model:
-                model = requested_model
-                console.print(f"[green]✓[/green] Model changed to [cyan]{model}[/cyan]")
+        from grandpa.cli._bg_state import get_status
+
+        # Completion-notification dispatcher (fires once per task per session)
+        from grandpa.cli._chat_notifications import NotificationDispatcher
+
+        _notifications = NotificationDispatcher(get_status())
+
+        from grandpa.automation import ScreenAutomationService
+
+        automation_service = ScreenAutomationService()
+
+        # REPL loop
+        while True:
+            for note in _notifications.diff(get_status()):
+                render_assistant_response(console, Text(note, style="dim cyan"))
+
+            if tui_mode:
+                from grandpa.cli.interactive_tui import (
+                    TUI_HISTORY_PATH,
+                    interactive_prompt,
+                )
+
+                user_input = read_chat_input(
+                    interactive_prompt(tui_session),
+                    history_path=TUI_HISTORY_PATH,
+                    multiline=True,
+                )
+            else:
+                user_input = read_chat_input(user_prompt(username))
+
+            if user_input is None:
+                render_status_message(console, FAREWELL_TEXT)
+                if fullscreen:
+                    import time
+
+                    time.sleep(1.0)
+                break
+
+            user_input = user_input.strip()
+            if not user_input:
                 continue
 
-            models = _get_ollama_models()
+            render_user_message(console, user_input, username=username)
+            console.print()
 
-            if not models:
-                console.print("[red]No Ollama models found.[/red]")
+            # Handle slash commands
+            cmd = user_input.lower()
+            if tui_session is not None and cmd.startswith("/"):
+                from grandpa.cli.interactive_tui import (
+                    INTERACTIVE_COMMANDS,
+                    render_startup_header,
+                )
+
+                previous_engine = tui_session.engine
+                previous_model = tui_session.model
+                result = INTERACTIVE_COMMANDS.dispatch(tui_session, user_input)
+                if result.handled:
+                    engine_name = tui_session.engine_name
+                    engine = tui_session.engine
+                    model = tui_session.model
+                    history = tui_session.history
+                    if agent is not None and (
+                        engine is not previous_engine or model != previous_model
+                    ):
+                        agent = None
+                    if tui_session.clear_requested:
+                        console.clear()
+                        render_startup_header(tui_session)
+                        tui_session.clear_requested = False
+                    if tui_session.should_exit:
+                        render_status_message(console, FAREWELL_TEXT)
+                        if fullscreen:
+                            import time
+
+                            time.sleep(1.0)
+                        break
+                    if result.message:
+                        render_assistant_response(console, result.message)
+                    continue
+            if cmd == "/":
                 continue
+            if cmd in ("exit", "quit", "/quit", "/exit", "/q"):
+                render_status_message(console, FAREWELL_TEXT)
+                if fullscreen:
+                    import time
 
-            selected = select_from_list("Select Model", models)
+                    time.sleep(1.0)
+                break
+            elif cmd == "/clear":
+                history = []
+                if system_prompt:
+                    history.append(Message(role=Role.SYSTEM, content=system_prompt))
+                render_assistant_response(console, "History cleared.")
+                continue
+            elif cmd == "/model" or cmd.startswith("/model "):
+                requested_model = (
+                    user_input.split(maxsplit=1)[1].strip()
+                    if len(user_input.split(maxsplit=1)) > 1
+                    else ""
+                )
+                if requested_model:
+                    model = requested_model
+                    render_assistant_response(console, f"Model changed to {model}.")
+                    continue
 
-            if selected:
-                model = selected
-                console.print(f"[green]✓[/green] Model changed to [cyan]{model}[/cyan]")
+                models = _get_ollama_models()
 
-            continue
-        elif cmd == "/help":
-            render_help(console)
-            continue
-        elif cmd.startswith("/help "):
-            console.print(
-                _handle_help_slash_command(user_input) or "Unknown help topic."
-            )
-            continue
-        elif cmd == "/history":
-            if not history:
-                console.print("[dim]No history yet.[/dim]")
-            else:
-                for msg in history:
-                    role_str = msg.role if isinstance(msg.role, str) else msg.role.value
-                    role = role_str.upper()
-                    console.print(f"[bold]{role}:[/bold] {msg.content[:200]}")
-            continue
-        elif cmd.startswith("/memory"):
-            console.print(
-                _handle_memory_slash_command(user_input) or "Unknown memory command."
-            )
-            continue
-        elif cmd.startswith("/reminders"):
-            console.print(
-                _handle_reminders_slash_command(user_input)
-                or "Unknown reminder command."
-            )
-            continue
-        elif cmd.startswith("/notes"):
-            console.print(
-                _handle_notes_slash_command(user_input) or "Unknown Notes command."
-            )
-            continue
-        elif cmd.startswith("/downloads"):
-            console.print(
-                _handle_downloads_slash_command(user_input)
-                or "Unknown Downloads command."
-            )
-            continue
-        elif cmd.startswith("/search"):
-            console.print(
-                _handle_search_slash_command(user_input) or "Unknown Search command."
-            )
-            continue
-        elif cmd.startswith("/apps"):
-            console.print(
-                _handle_apps_slash_command(user_input)
-                or "Unknown applications command."
-            )
-            continue
-        elif cmd.startswith("/files"):
-            console.print(
-                _handle_files_slash_command(user_input) or "Unknown file command."
-            )
-            continue
-        elif cmd.startswith("/browser"):
-            console.print(
-                _handle_browser_slash_command(user_input) or "Unknown browser command."
-            )
-            continue
-        elif cmd.startswith("/gmail"):
-            console.print(
-                _handle_gmail_slash_command(user_input) or "Unknown Gmail command."
-            )
-            continue
-        elif cmd.startswith("/calendar"):
-            console.print(
-                _handle_calendar_slash_command(user_input)
-                or "Unknown Calendar command."
-            )
-            continue
-        elif cmd.startswith("/"):
-            module_help = _handle_module_slash_command(user_input)
-            if module_help is not None:
-                console.print(module_help)
-            else:
-                console.print(_unknown_slash_command_message(user_input))
-            continue
+                if not models:
+                    render_assistant_response(console, "No Ollama models found.")
+                    continue
 
-        from grandpa.core_ai_brain import (
-            build_brain_context,
-            process_user_message,
-            record_assistant_outcome,
-        )
-        from grandpa.memory_context import handle_memory_command, remember_conversation
+                selected = select_from_list("Select Model", models)
 
-        remember_conversation("user", user_input)
-        brain_analysis = process_user_message(user_input)
-        effective_user_input = brain_analysis.effective_text
+                if selected:
+                    model = selected
+                    render_assistant_response(console, f"Model changed to {model}.")
 
-        natural_intent_message = _handle_natural_assistant_intent(
-            effective_user_input,
-            automation_service=automation_service,
-        )
-        if natural_intent_message is not None:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=natural_intent_message))
-            remember_conversation("assistant", natural_intent_message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=natural_intent_message,
-                kind="local",
-                target=None,
-                status="handled",
-            )
-            console.print()
-            console.print(Markdown(natural_intent_message))
-            console.print()
-            continue
-
-        reminder_message = _create_one_shot_reminder(effective_user_input)
-        if reminder_message is not None:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=reminder_message))
-            remember_conversation("assistant", reminder_message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=reminder_message,
-                kind="reminder",
-                target=None,
-                status="handled",
-            )
-            console.print()
-            console.print(Markdown(reminder_message))
-            console.print()
-            continue
-
-        from grandpa.notes import handle_notes_command
-
-        notes_action = handle_notes_command(effective_user_input)
-        if not notes_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=notes_action.message))
-            remember_conversation("assistant", notes_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=notes_action.message,
-                kind="notes",
-                target=notes_action.action.query if notes_action.action else None,
-                status=notes_action.status,
-            )
-            console.print()
-            console.print(Markdown(notes_action.message))
-            console.print()
-            continue
-
-        from grandpa.downloads import handle_downloads_command
-
-        downloads_action = handle_downloads_command(effective_user_input)
-        if not downloads_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(
-                Message(role=Role.ASSISTANT, content=downloads_action.message)
-            )
-            remember_conversation("assistant", downloads_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=downloads_action.message,
-                kind="downloads",
-                target=downloads_action.action.query
-                if downloads_action.action
-                else None,
-                status=downloads_action.status,
-            )
-            console.print()
-            console.print(Markdown(downloads_action.message))
-            console.print()
-            continue
-
-        from grandpa.web_search import handle_web_search_command
-
-        web_search_action = handle_web_search_command(effective_user_input)
-        if not web_search_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(
-                Message(role=Role.ASSISTANT, content=web_search_action.message)
-            )
-            remember_conversation("assistant", web_search_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=web_search_action.message,
-                kind="web_search",
-                target=web_search_action.action.query.text
-                if web_search_action.action and web_search_action.action.query
-                else None,
-                status=web_search_action.status,
-            )
-            console.print()
-            console.print(Markdown(web_search_action.message))
-            console.print()
-            continue
-
-        memory_result = handle_memory_command(effective_user_input)
-        if not memory_result.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=memory_result.message))
-            remember_conversation("assistant", memory_result.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=memory_result.message,
-                kind=memory_result.kind,
-                target=memory_result.target,
-                status=memory_result.status,
-            )
-            console.print()
-            console.print(Markdown(memory_result.message))
-            console.print()
-            continue
-
-        from grandpa.calendar import handle_calendar_command
-
-        calendar_action = handle_calendar_command(effective_user_input)
-        if not calendar_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(
-                Message(role=Role.ASSISTANT, content=calendar_action.message)
-            )
-            remember_conversation("assistant", calendar_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=calendar_action.message,
-                kind="calendar",
-                target=calendar_action.action.query if calendar_action.action else None,
-                status=calendar_action.status,
-            )
-            console.print()
-            console.print(Markdown(calendar_action.message))
-            console.print()
-            continue
-
-        from grandpa.gmail import handle_gmail_command
-
-        gmail_action = handle_gmail_command(effective_user_input)
-        if not gmail_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=gmail_action.message))
-            remember_conversation("assistant", gmail_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=gmail_action.message,
-                kind="gmail",
-                target=gmail_action.action.query if gmail_action.action else None,
-                status=gmail_action.status,
-            )
-            console.print()
-            console.print(Markdown(gmail_action.message))
-            console.print()
-            continue
-
-        from grandpa.browser_awareness import handle_browser_awareness_command
-
-        browser_awareness = handle_browser_awareness_command(effective_user_input)
-        if not browser_awareness.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(
-                Message(role=Role.ASSISTANT, content=browser_awareness.message)
-            )
-            remember_conversation("assistant", browser_awareness.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=browser_awareness.message,
-                kind="browser_awareness",
-                target=browser_awareness.snapshot.url
-                if browser_awareness.snapshot
-                else None,
-                status=browser_awareness.status,
-            )
-            console.print()
-            console.print(Markdown(browser_awareness.message))
-            console.print()
-            continue
-
-        from grandpa.browser import handle_browser_command
-
-        browser_action = handle_browser_command(effective_user_input)
-        if not browser_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=browser_action.message))
-            remember_conversation("assistant", browser_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=browser_action.message,
-                kind="browser",
-                target=browser_action.url
-                or (browser_action.action.target if browser_action.action else None),
-                status=browser_action.status,
-            )
-            console.print()
-            console.print(Markdown(browser_action.message))
-            console.print()
-            continue
-
-        from grandpa.desktop.automation import handle_desktop_command
-
-        desktop_action = handle_desktop_command(effective_user_input)
-        if not desktop_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=desktop_action.message))
-            remember_conversation("assistant", desktop_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=desktop_action.message,
-                kind="desktop",
-                target=desktop_action.action.target if desktop_action.action else None,
-                status=desktop_action.status,
-            )
-            console.print()
-            console.print(Markdown(desktop_action.message))
-            console.print()
-            continue
-
-        from grandpa.local_actions import handle_local_action
-
-        local_action = handle_local_action(effective_user_input)
-        if not local_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=local_action.message))
-            remember_conversation("assistant", local_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=local_action.message,
-                kind=local_action.kind,
-                target=local_action.target,
-                status=local_action.status,
-            )
-            console.print()
-            console.print(Markdown(local_action.message))
-            console.print()
-            continue
-
-        from grandpa.file_assistant import handle_file_command
-
-        file_action = handle_file_command(effective_user_input)
-        if not file_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(Message(role=Role.ASSISTANT, content=file_action.message))
-            remember_conversation("assistant", file_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=file_action.message,
-                kind=getattr(file_action, "kind", "file"),
-                target=getattr(file_action, "target", None),
-                status=file_action.status,
-            )
-            console.print()
-            console.print(Markdown(file_action.message))
-            console.print()
-            continue
-
-        from grandpa.task_scheduler import handle_scheduler_command
-
-        scheduler_action = handle_scheduler_command(effective_user_input)
-        if not scheduler_action.should_fallback:
-            history.append(Message(role=Role.USER, content=user_input))
-            history.append(
-                Message(role=Role.ASSISTANT, content=scheduler_action.message)
-            )
-            remember_conversation("assistant", scheduler_action.message)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=scheduler_action.message,
-                kind=getattr(scheduler_action, "kind", "routine"),
-                target=getattr(scheduler_action, "target", None),
-                status=scheduler_action.status,
-            )
-            console.print()
-            console.print(Markdown(scheduler_action.message))
-            console.print()
-            continue
-
-        # Add user message
-        history.append(Message(role=Role.USER, content=effective_user_input))
-
-        # Generate response
-        try:
-            model_history = [
-                Message(role=Role.SYSTEM, content=build_brain_context(brain_analysis)),
-                *history,
-            ]
-            thinking = ThinkingAnimation(console)
-            thinking.start()
-            try:
-                if agent is not None:
-                    response = agent.run(effective_user_input)
-                    content = (
-                        response.content
-                        if hasattr(response, "content")
-                        else str(response)
-                    )
+                continue
+            elif cmd == "/help":
+                render_assistant_prefix(console)
+                render_help(console)
+                continue
+            elif cmd.startswith("/help "):
+                render_assistant_response(
+                    console,
+                    _handle_help_slash_command(user_input) or "Unknown help topic.",
+                )
+                continue
+            elif cmd == "/history":
+                if not history:
+                    render_assistant_response(console, "No history yet.")
                 else:
-                    result = engine.generate(model_history, model=model)
-                    content = (
-                        result.get("content", "")
-                        if isinstance(result, dict)
-                        else str(result)
+                    lines = []
+                    for msg in history:
+                        role_str = (
+                            msg.role if isinstance(msg.role, str) else msg.role.value
+                        )
+                        role = role_str.upper()
+                        lines.append(f"{role}: {msg.content[:200]}")
+                    render_assistant_response(console, "\n".join(lines))
+                continue
+            elif cmd.startswith("/memory"):
+                render_assistant_response(
+                    console,
+                    _handle_memory_slash_command(user_input)
+                    or "Unknown memory command.",
+                )
+                continue
+            elif cmd.startswith("/reminders"):
+                render_assistant_response(
+                    console,
+                    _handle_reminders_slash_command(user_input)
+                    or "Unknown reminder command.",
+                )
+                continue
+            elif cmd.startswith("/notes"):
+                render_assistant_response(
+                    console,
+                    _handle_notes_slash_command(user_input) or "Unknown Notes command.",
+                )
+                continue
+            elif cmd.startswith("/downloads"):
+                render_assistant_response(
+                    console,
+                    _handle_downloads_slash_command(user_input)
+                    or "Unknown Downloads command.",
+                )
+                continue
+            elif cmd.startswith("/search"):
+                render_assistant_response(
+                    console,
+                    _handle_search_slash_command(user_input)
+                    or "Unknown Search command.",
+                )
+                continue
+            elif cmd.startswith("/apps"):
+                render_assistant_response(
+                    console,
+                    _handle_apps_slash_command(user_input)
+                    or "Unknown applications command.",
+                )
+                continue
+            elif cmd.startswith("/files"):
+                render_assistant_response(
+                    console,
+                    _handle_files_slash_command(user_input) or "Unknown file command.",
+                )
+                continue
+            elif cmd.startswith("/browser"):
+                render_assistant_response(
+                    console,
+                    _handle_browser_slash_command(user_input)
+                    or "Unknown browser command.",
+                )
+                continue
+            elif cmd.startswith("/gmail"):
+                render_assistant_response(
+                    console,
+                    _handle_gmail_slash_command(user_input) or "Unknown Gmail command.",
+                )
+                continue
+            elif cmd.startswith("/calendar"):
+                render_assistant_response(
+                    console,
+                    _handle_calendar_slash_command(user_input)
+                    or "Unknown Calendar command.",
+                )
+                continue
+            elif cmd.startswith("/"):
+                module_help = _handle_module_slash_command(user_input)
+                if module_help is not None:
+                    render_assistant_response(console, module_help)
+                else:
+                    render_assistant_response(
+                        console, _unknown_slash_command_message(user_input)
                     )
-            finally:
-                thinking.stop()
-            content = clean_assistant_response(content)
-            remember_conversation("assistant", content)
-            record_assistant_outcome(
-                brain_analysis,
-                assistant_text=content,
-                kind="assistant",
-                target=None,
-                status="handled",
+                continue
+
+            from grandpa.core_ai_brain import (
+                build_brain_context,
+                process_user_message,
+                record_assistant_outcome,
+            )
+            from grandpa.memory_context import (
+                build_personal_memory_context,
+                capture_natural_personal_fact,
+                handle_memory_command,
+                remember_conversation,
             )
 
-            history.append(Message(role=Role.ASSISTANT, content=content))
-            render_assistant_response(console, Markdown(content))
-            console.print()
-        except EngineModelNotFoundError as exc:
-            console.print(
-                f"\n[red]{_model_not_found_message(engine_name, exc)}[/red]\n"
+            remember_conversation("user", user_input)
+            brain_analysis = process_user_message(user_input)
+            effective_user_input = brain_analysis.effective_text
+            capture_natural_personal_fact(effective_user_input)
+
+            natural_intent_message = _handle_natural_assistant_intent(
+                effective_user_input,
+                automation_service=automation_service,
             )
-            if engine_name == "ollama":
-                model_to_pull = exc.model
-                if not click.confirm(f'Pull "{model_to_pull}" now?', default=False):
-                    console.print(
-                        f"\n[yellow]{_model_pull_guidance(model_to_pull)}[/yellow]\n"
-                    )
-                    raise click.exceptions.Exit(code=1) from exc
-                console.print(
-                    f'\n[cyan]Pulling "{model_to_pull}" from Ollama...[/cyan]'
+            if natural_intent_message is not None:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=natural_intent_message)
                 )
+                remember_conversation("assistant", natural_intent_message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=natural_intent_message,
+                    kind="local",
+                    target=None,
+                    status="handled",
+                )
+                render_assistant_response(console, Markdown(natural_intent_message))
+                continue
+
+            reminder_message = _create_one_shot_reminder(effective_user_input)
+            if reminder_message is not None:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(Message(role=Role.ASSISTANT, content=reminder_message))
+                remember_conversation("assistant", reminder_message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=reminder_message,
+                    kind="reminder",
+                    target=None,
+                    status="handled",
+                )
+                render_assistant_response(console, Markdown(reminder_message))
+                continue
+
+            from grandpa.notes import handle_notes_command
+
+            notes_action = handle_notes_command(effective_user_input)
+            if not notes_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=notes_action.message)
+                )
+                remember_conversation("assistant", notes_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=notes_action.message,
+                    kind="notes",
+                    target=notes_action.action.query if notes_action.action else None,
+                    status=notes_action.status,
+                )
+                render_assistant_response(console, Markdown(notes_action.message))
+                continue
+
+            from grandpa.downloads import handle_downloads_command
+
+            downloads_action = handle_downloads_command(effective_user_input)
+            if not downloads_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=downloads_action.message)
+                )
+                remember_conversation("assistant", downloads_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=downloads_action.message,
+                    kind="downloads",
+                    target=downloads_action.action.query
+                    if downloads_action.action
+                    else None,
+                    status=downloads_action.status,
+                )
+                render_assistant_response(console, Markdown(downloads_action.message))
+                continue
+
+            from grandpa.web_search import handle_web_search_command
+
+            web_search_action = handle_web_search_command(effective_user_input)
+            if not web_search_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=web_search_action.message)
+                )
+                remember_conversation("assistant", web_search_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=web_search_action.message,
+                    kind="web_search",
+                    target=web_search_action.action.query.text
+                    if web_search_action.action and web_search_action.action.query
+                    else None,
+                    status=web_search_action.status,
+                )
+                render_assistant_response(console, Markdown(web_search_action.message))
+                continue
+
+            memory_result = handle_memory_command(effective_user_input)
+            if not memory_result.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=memory_result.message)
+                )
+                remember_conversation("assistant", memory_result.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=memory_result.message,
+                    kind=memory_result.kind,
+                    target=memory_result.target,
+                    status=memory_result.status,
+                )
+                render_assistant_response(console, Markdown(memory_result.message))
+                continue
+
+            from grandpa.calendar import handle_calendar_command
+
+            calendar_action = handle_calendar_command(effective_user_input)
+            if not calendar_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=calendar_action.message)
+                )
+                remember_conversation("assistant", calendar_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=calendar_action.message,
+                    kind="calendar",
+                    target=calendar_action.action.query
+                    if calendar_action.action
+                    else None,
+                    status=calendar_action.status,
+                )
+                render_assistant_response(console, Markdown(calendar_action.message))
+                continue
+
+            from grandpa.gmail import handle_gmail_command
+
+            gmail_action = handle_gmail_command(effective_user_input)
+            if not gmail_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=gmail_action.message)
+                )
+                remember_conversation("assistant", gmail_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=gmail_action.message,
+                    kind="gmail",
+                    target=gmail_action.action.query if gmail_action.action else None,
+                    status=gmail_action.status,
+                )
+                render_assistant_response(console, Markdown(gmail_action.message))
+                continue
+
+            from grandpa.browser_awareness import handle_browser_awareness_command
+
+            browser_awareness = handle_browser_awareness_command(effective_user_input)
+            if not browser_awareness.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=browser_awareness.message)
+                )
+                remember_conversation("assistant", browser_awareness.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=browser_awareness.message,
+                    kind="browser_awareness",
+                    target=browser_awareness.snapshot.url
+                    if browser_awareness.snapshot
+                    else None,
+                    status=browser_awareness.status,
+                )
+                render_assistant_response(console, Markdown(browser_awareness.message))
+                continue
+
+            from grandpa.browser import handle_browser_command
+
+            browser_action = handle_browser_command(effective_user_input)
+            if not browser_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=browser_action.message)
+                )
+                remember_conversation("assistant", browser_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=browser_action.message,
+                    kind="browser",
+                    target=browser_action.url
+                    or (
+                        browser_action.action.target if browser_action.action else None
+                    ),
+                    status=browser_action.status,
+                )
+                render_assistant_response(console, Markdown(browser_action.message))
+                continue
+
+            from grandpa.desktop.automation import handle_desktop_command
+
+            desktop_action = handle_desktop_command(effective_user_input)
+            if not desktop_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=desktop_action.message)
+                )
+                remember_conversation("assistant", desktop_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=desktop_action.message,
+                    kind="desktop",
+                    target=desktop_action.action.target
+                    if desktop_action.action
+                    else None,
+                    status=desktop_action.status,
+                )
+                render_assistant_response(console, Markdown(desktop_action.message))
+                continue
+
+            from grandpa.local_actions import handle_local_action
+
+            local_action = handle_local_action(effective_user_input)
+            if not local_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=local_action.message)
+                )
+                remember_conversation("assistant", local_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=local_action.message,
+                    kind=local_action.kind,
+                    target=local_action.target,
+                    status=local_action.status,
+                )
+                render_assistant_response(console, Markdown(local_action.message))
+                continue
+
+            from grandpa.file_assistant import handle_file_command
+
+            file_action = handle_file_command(effective_user_input)
+            if not file_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=file_action.message)
+                )
+                remember_conversation("assistant", file_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=file_action.message,
+                    kind=getattr(file_action, "kind", "file"),
+                    target=getattr(file_action, "target", None),
+                    status=file_action.status,
+                )
+                render_assistant_response(console, Markdown(file_action.message))
+                continue
+
+            from grandpa.task_scheduler import handle_scheduler_command
+
+            scheduler_action = handle_scheduler_command(effective_user_input)
+            if not scheduler_action.should_fallback:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=scheduler_action.message)
+                )
+                remember_conversation("assistant", scheduler_action.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=scheduler_action.message,
+                    kind=getattr(scheduler_action, "kind", "routine"),
+                    target=getattr(scheduler_action, "target", None),
+                    status=scheduler_action.status,
+                )
+                render_assistant_response(console, Markdown(scheduler_action.message))
+                continue
+
+            from grandpa.core.runtime_context import handle_datetime_intent
+
+            dt_resp = handle_datetime_intent(effective_user_input)
+            if dt_resp:
+                history.append(Message(role=Role.USER, content=effective_user_input))
+                history.append(Message(role=Role.ASSISTANT, content=dt_resp))
+                remember_conversation("user", effective_user_input)
+                remember_conversation("assistant", dt_resp)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=dt_resp,
+                    kind="local",
+                    target=None,
+                    status="handled",
+                )
+                render_assistant_response(console, Markdown(dt_resp))
+                continue
+
+            # Add user message
+            history.append(Message(role=Role.USER, content=effective_user_input))
+
+            # Generate response
+            try:
+                model_history = [
+                    Message(
+                        role=Role.SYSTEM, content=build_brain_context(brain_analysis)
+                    ),
+                ]
+                personal_context = build_personal_memory_context(effective_user_input)
+                if personal_context:
+                    model_history.append(
+                        Message(role=Role.SYSTEM, content=personal_context)
+                    )
+                model_history.extend(history)
+                thinking = ThinkingAnimation(console)
+                thinking.start()
                 try:
-                    engine.pull_model(model_to_pull)
-                except EngineConnectionError as pull_exc:
-                    console.print(
-                        f"\n[red]{_engine_unavailable_message(engine_name, pull_exc)}[/red]\n"
-                    )
-                    raise click.exceptions.Exit(code=1) from pull_exc
-                console.print(
-                    f'[green]Model "{model_to_pull}" was installed. '
-                    "Please rerun the chat command.[/green]"
+                    if agent is not None:
+                        response = agent.run(effective_user_input)
+                        content = (
+                            response.content
+                            if hasattr(response, "content")
+                            else str(response)
+                        )
+                    else:
+                        if getattr(engine, "supports_streaming", False) is True:
+                            content = asyncio.run(
+                                _stream_engine_response(
+                                    engine,
+                                    model_history,
+                                    model=model,
+                                    console=console,
+                                    thinking=thinking,
+                                )
+                            )
+                        else:
+                            result = engine.generate(model_history, model=model)
+                            content = (
+                                result.get("content", "")
+                                if isinstance(result, dict)
+                                else str(result)
+                            )
+                finally:
+                    thinking.stop()
+                content = clean_assistant_response(content)
+                remember_conversation("assistant", content)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=content,
+                    kind="assistant",
+                    target=None,
+                    status="handled",
                 )
+
+                history.append(Message(role=Role.ASSISTANT, content=content))
+                if (
+                    getattr(engine, "supports_streaming", False) is not True
+                    or agent is not None
+                ):
+                    render_assistant_response(console, Markdown(content))
+            except EngineModelNotFoundError as exc:
+                render_assistant_response(
+                    console,
+                    Text(_model_not_found_message(engine_name, exc), style="red"),
+                )
+                if engine_name == "ollama":
+                    model_to_pull = exc.model
+                    if not click.confirm(f'Pull "{model_to_pull}" now?', default=False):
+                        render_assistant_response(
+                            console,
+                            Text(_model_pull_guidance(model_to_pull), style="yellow"),
+                        )
+                        if tui_mode:
+                            continue
+                        raise click.exceptions.Exit(code=1) from exc
+                    render_assistant_response(
+                        console,
+                        Text(f'Pulling "{model_to_pull}" from Ollama...', style="cyan"),
+                    )
+                    try:
+                        engine.pull_model(model_to_pull)
+                    except EngineConnectionError as pull_exc:
+                        render_assistant_response(
+                            console,
+                            Text(
+                                _engine_unavailable_message(engine_name, pull_exc),
+                                style="red",
+                            ),
+                        )
+                        if tui_mode:
+                            continue
+                        raise click.exceptions.Exit(code=1) from pull_exc
+                    except EngineModelPullError as pull_exc:
+                        _log_generation_exception(pull_exc)
+                        render_assistant_response(
+                            console,
+                            Text(
+                                f'Could not install model "{model_to_pull}": {pull_exc}\n'
+                                "Check the model name with: ollama list",
+                                style="red",
+                            ),
+                        )
+                        if tui_mode:
+                            continue
+                        raise click.exceptions.Exit(code=1) from pull_exc
+                    except Exception as pull_exc:
+                        _log_generation_exception(pull_exc)
+                        render_assistant_response(
+                            console,
+                            Text(
+                                f'Could not install model "{model_to_pull}". '
+                                "Check Grandpa's log for details.",
+                                style="red",
+                            ),
+                        )
+                        if tui_mode:
+                            continue
+                        raise click.exceptions.Exit(code=1) from pull_exc
+                    render_assistant_response(
+                        console,
+                        Text(
+                            f'Model "{model_to_pull}" was installed. '
+                            "You can retry your message now.",
+                            style="green",
+                        ),
+                    )
+                    if tui_mode:
+                        continue
+                    raise click.exceptions.Exit(code=1) from exc
+                if tui_mode:
+                    continue
                 raise click.exceptions.Exit(code=1) from exc
-            raise click.exceptions.Exit(code=1) from exc
-        except EngineConnectionError as exc:
-            _log_generation_exception(exc)
-            console.print(
-                f"\n[red]{_engine_unavailable_message(engine_name, exc)}[/red]\n"
-            )
-            raise click.exceptions.Exit(code=1) from exc
-        except EngineModelLoadError as exc:
-            _log_generation_exception(exc)
-            console.print(f"\n[red]{_model_load_failure_message(exc)}[/red]\n")
-            raise click.exceptions.Exit(code=1) from exc
-        except KeyboardInterrupt:
-            console.print("\n[dim]Generation interrupted.[/dim]")
-        except Exception as exc:
-            _log_generation_exception(exc)
-            cause = clean_error_message(exc, fallback=GENERATION_ERROR_MESSAGE)
-            console.print(f"\n[red]{cause}[/red]\n")
-        finally:
-            pass
+            except EngineConnectionError as exc:
+                _log_generation_exception(exc)
+                render_assistant_response(
+                    console,
+                    Text(_engine_unavailable_message(engine_name, exc), style="red"),
+                )
+                if tui_mode:
+                    continue
+                raise click.exceptions.Exit(code=1) from exc
+            except EngineModelLoadError as exc:
+                _log_generation_exception(exc)
+                render_assistant_response(
+                    console,
+                    Text(_model_load_failure_message(exc), style="red"),
+                )
+                if tui_mode:
+                    continue
+                raise click.exceptions.Exit(code=1) from exc
+            except KeyboardInterrupt:
+                render_assistant_response(
+                    console,
+                    Text("Generation interrupted.", style="dim"),
+                )
+            except Exception as exc:
+                _log_generation_exception(exc)
+                cause = clean_error_message(exc, fallback=GENERATION_ERROR_MESSAGE)
+                render_assistant_response(console, Text(cause, style="red"))
+            finally:
+                pass
 
 
 __all__ = ["chat"]

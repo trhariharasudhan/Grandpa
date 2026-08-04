@@ -62,7 +62,10 @@ def test_deterministic_embedding_fallback_is_stable():
 
     assert first == second
     assert len(first) == 128
-    assert KnowledgeEmbedder(model="missing-model-for-test").embed("hello").true_semantic is False
+    assert (
+        KnowledgeEmbedder(model="missing-model-for-test").embed("hello").true_semantic
+        is False
+    )
 
 
 def test_semantic_and_hybrid_search_explain_mode(tmp_path, monkeypatch):
@@ -129,7 +132,9 @@ def test_recent_project_and_diagnostics(tmp_path):
 def test_file_import_supports_txt_md_json(tmp_path):
     engine = KnowledgeEngine(KnowledgeStore(tmp_path / "knowledge.db"))
     note = tmp_path / "note.md"
-    note.write_text("# Grandpa Note\n\nLocal knowledge indexing works.", encoding="utf-8")
+    note.write_text(
+        "# Grandpa Note\n\nLocal knowledge indexing works.", encoding="utf-8"
+    )
 
     imported = engine.import_file(note)
 
@@ -165,7 +170,10 @@ def test_knowledge_skill_registration_and_execution(tmp_path, monkeypatch):
     ensure_default_skills_registered()
 
     skill = get_skill("knowledge.search")
-    result = skill.execute({"query": "indexed documents"}, SkillExecutionContext(user_request="indexed documents"))
+    result = skill.execute(
+        {"query": "indexed documents"},
+        SkillExecutionContext(user_request="indexed documents"),
+    )
 
     assert result.ok is True
     assert result.data["results"]
@@ -178,7 +186,9 @@ def test_knowledge_skill_registration_and_execution(tmp_path, monkeypatch):
         {"query": "local indexed documents"},
         SkillExecutionContext(user_request="local indexed documents"),
     )
-    status = get_skill("knowledge.embedding_status").execute({}, SkillExecutionContext())
+    status = get_skill("knowledge.embedding_status").execute(
+        {}, SkillExecutionContext()
+    )
     assert semantic.ok is True
     assert context.ok is True
     assert status.data["embedding_count"] >= 1
@@ -209,8 +219,14 @@ def test_knowledge_api_routes(tmp_path, monkeypatch):
     assert client.get("/v1/knowledge/context?q=keyword").json()["chunks"]
     assert client.get("/v1/knowledge/embedding-status").json()["embedding_count"] >= 1
     assert client.get("/v1/knowledge/documents").json()["documents"]
-    assert client.get(f"/v1/knowledge/document/{document_id}").json()["title"] == "API Knowledge"
-    assert "summary" in client.get(f"/v1/knowledge/summary?document_id={document_id}").json()
+    assert (
+        client.get(f"/v1/knowledge/document/{document_id}").json()["title"]
+        == "API Knowledge"
+    )
+    assert (
+        "summary"
+        in client.get(f"/v1/knowledge/summary?document_id={document_id}").json()
+    )
 
 
 def test_module_diagnostics_json_ready(tmp_path, monkeypatch):

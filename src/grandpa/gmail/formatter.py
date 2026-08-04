@@ -25,7 +25,9 @@ def format_message_cards(messages: tuple[GmailMessageSummary, ...]) -> str:
     return "\n\n".join(cards)
 
 
-def format_full_message(message: GmailMessageSummary, *, safety: GmailSafetyPolicy | None = None) -> str:
+def format_full_message(
+    message: GmailMessageSummary, *, safety: GmailSafetyPolicy | None = None
+) -> str:
     safety = safety or GmailSafetyPolicy()
     attachments = _format_attachments(message)
     return "\n".join(
@@ -35,21 +37,29 @@ def format_full_message(message: GmailMessageSummary, *, safety: GmailSafetyPoli
             f"To: {', '.join(message.recipients) if message.recipients else 'Unknown'}",
             f"Date: {message.date or 'Unknown'}",
             "",
-            safety.sanitize_text(message.body or message.snippet or "(No readable body.)"),
+            safety.sanitize_text(
+                message.body or message.snippet or "(No readable body.)"
+            ),
             "",
             attachments,
         ]
     ).strip()
 
 
-def format_summary(messages: tuple[GmailMessageSummary, ...], *, safety: GmailSafetyPolicy | None = None) -> str:
+def format_summary(
+    messages: tuple[GmailMessageSummary, ...],
+    *,
+    safety: GmailSafetyPolicy | None = None,
+) -> str:
     if not messages:
         return "No Gmail messages matched."
     safety = safety or GmailSafetyPolicy()
     lines = ["Summary:"]
     for message in messages[:5]:
         body = safety.summarize_body(message.body or message.snippet)
-        lines.append(f"- {message.subject or '(no subject)'} from {message.sender or 'Unknown'}: {body[:350]}")
+        lines.append(
+            f"- {message.subject or '(no subject)'} from {message.sender or 'Unknown'}: {body[:350]}"
+        )
     return "\n".join(lines)
 
 
@@ -70,7 +80,9 @@ def _format_attachments(message: GmailMessageSummary) -> str:
         return "Attachments: none"
     lines = ["Attachments:"]
     for attachment in message.attachments:
-        suffix = " (blocked executable/script type)" if attachment.get("blocked") else ""
+        suffix = (
+            " (blocked executable/script type)" if attachment.get("blocked") else ""
+        )
         lines.append(
             f"- {attachment.get('filename', 'attachment')} "
             f"{attachment.get('mime_type', '')} "
@@ -79,4 +91,9 @@ def _format_attachments(message: GmailMessageSummary) -> str:
     return "\n".join(lines)
 
 
-__all__ = ["format_draft_preview", "format_full_message", "format_message_cards", "format_summary"]
+__all__ = [
+    "format_draft_preview",
+    "format_full_message",
+    "format_message_cards",
+    "format_summary",
+]

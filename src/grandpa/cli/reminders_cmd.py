@@ -29,7 +29,9 @@ def reminders_create(message: str, due_at: str) -> None:
     """Create a one-shot reminder."""
     console = Console()
     try:
-        reminder = ReminderStore().create(message, due_at, source={"cli": "grandpa reminders create"})
+        reminder = ReminderStore().create(
+            message, due_at, source={"cli": "grandpa reminders create"}
+        )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise SystemExit(1) from exc
@@ -92,7 +94,9 @@ def reminders_list(show_all: bool, status: str | None) -> None:
     table.add_column("Due")
     table.add_column("Message", max_width=50)
     for reminder in items:
-        table.add_row(reminder.id, reminder.status, reminder.due_at.isoformat(), reminder.message)
+        table.add_row(
+            reminder.id, reminder.status, reminder.due_at.isoformat(), reminder.message
+        )
     console.print(table)
 
 
@@ -125,7 +129,9 @@ def reminders_clear(status: ReminderStatus | None, clear_all: bool, yes: bool) -
         deleted = store.delete()
         _print_deleted(console, deleted, None)
         return
-    statuses: list[ReminderStatus] = [status] if status is not None else ["triggered", "cancelled", "failed"]
+    statuses: list[ReminderStatus] = (
+        [status] if status is not None else ["triggered", "cancelled", "failed"]
+    )
     deleted = store.delete(statuses=statuses)
     _print_deleted(console, deleted, status)
 
@@ -148,7 +154,9 @@ def reminders_run_due() -> None:
     console = Console()
     service = ReminderSchedulerService(ReminderStore(), notifier=WindowsToastNotifier())
     result = service.tick()
-    console.print(f"[green]Checked reminders.[/green] Triggered: {len(result['triggered'])}; failed: {len(result['failed'])}")
+    console.print(
+        f"[green]Checked reminders.[/green] Triggered: {len(result['triggered'])}; failed: {len(result['failed'])}"
+    )
 
 
 def _print_deleted(console: Console, deleted: int, status: str | None) -> None:

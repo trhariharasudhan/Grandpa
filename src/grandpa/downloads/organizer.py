@@ -34,7 +34,9 @@ class DownloadsOrganizer:
     def __init__(self, safety: DownloadsSafetyPolicy) -> None:
         self.safety = safety
 
-    def move_items(self, items: tuple[DownloadItem, ...], destination: Path) -> tuple[Path, ...]:
+    def move_items(
+        self, items: tuple[DownloadItem, ...], destination: Path
+    ) -> tuple[Path, ...]:
         destination = self.safety.safe_destination(destination)
         destination.mkdir(parents=True, exist_ok=True)
         moved = []
@@ -45,14 +47,18 @@ class DownloadsOrganizer:
             moved.append(target)
         return tuple(moved)
 
-    def organize_items(self, root: Path, items: tuple[DownloadItem, ...]) -> tuple[Path, ...]:
+    def organize_items(
+        self, root: Path, items: tuple[DownloadItem, ...]
+    ) -> tuple[Path, ...]:
         moved = []
         for item in items:
             folder = ORGANIZE_FOLDERS.get(item.kind, "Other")
             moved.extend(self.move_items((item,), root / folder))
         return tuple(moved)
 
-    def archive_items(self, root: Path, items: tuple[DownloadItem, ...]) -> tuple[Path, ...]:
+    def archive_items(
+        self, root: Path, items: tuple[DownloadItem, ...]
+    ) -> tuple[Path, ...]:
         return self.move_items(items, root / "Archives")
 
 
@@ -64,4 +70,9 @@ def destination_for_name(name: str) -> Path:
     return Path(folder).expanduser()
 
 
-__all__ = ["DESTINATION_ALIASES", "ORGANIZE_FOLDERS", "DownloadsOrganizer", "destination_for_name"]
+__all__ = [
+    "DESTINATION_ALIASES",
+    "ORGANIZE_FOLDERS",
+    "DownloadsOrganizer",
+    "destination_for_name",
+]

@@ -166,8 +166,7 @@ class SkillManager:
         examples: List[str] = []
         for name, manifest in self._skills.items():
             oj = (
-                manifest.metadata.get("grandpa")
-                or manifest.metadata.get("Grandpa", {})
+                manifest.metadata.get("grandpa") or manifest.metadata.get("Grandpa", {})
                 if manifest.metadata
                 else {}
             )

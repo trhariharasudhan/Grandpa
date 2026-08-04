@@ -72,7 +72,11 @@ def diagnostics() -> dict[str, Any]:
 
 def _extract_skill_name(value: str) -> str:
     text = " ".join(value.strip().split())
-    match = re.search(r"(?:create a skill called|skill called|called)\s+(.+)$", text, flags=re.IGNORECASE)
+    match = re.search(
+        r"(?:create a skill called|skill called|called)\s+(.+)$",
+        text,
+        flags=re.IGNORECASE,
+    )
     if match:
         return match.group(1).strip()
     return text

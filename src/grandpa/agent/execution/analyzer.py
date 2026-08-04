@@ -12,7 +12,9 @@ from grandpa.agent.execution.models import (
 )
 
 
-def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[DiagnosticEvidence]]:
+def analyze_failure(
+    result: DiagnosticResult,
+) -> tuple[FailureAnalysis, list[DiagnosticEvidence]]:
     """Parse output from diagnostic command (ruff, pytest, compileall) to extract file/line details, classify, and generate structured evidence."""
     stdout = result.stdout or ""
     stderr = result.stderr or ""
@@ -40,7 +42,7 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             stderr_excerpt=stderr[:500],
             parser="timeout_parser",
             failure_type="timeout",
-            confidence=1.0
+            confidence=1.0,
         )
         evidences.append(evidence)
         return FailureAnalysis(
@@ -49,10 +51,14 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             message="The execution exceeded the configured duration boundary.",
             root_cause="Process hung or operation timed out.",
             is_confirmed=True,
-            evidence_ids=[evidence.evidence_id]
+            evidence_ids=[evidence.evidence_id],
         ), evidences
 
-    if "command not found" in full_output.lower() or "executable not found" in full_output.lower() or "not recognized as an internal or external command" in full_output.lower():
+    if (
+        "command not found" in full_output.lower()
+        or "executable not found" in full_output.lower()
+        or "not recognized as an internal or external command" in full_output.lower()
+    ):
         evidence = DiagnosticEvidence(
             evidence_id=f"ev_{str(uuid.uuid4())[:6]}",
             command=result.command,
@@ -63,7 +69,7 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             stderr_excerpt=stderr[:500],
             parser="env_parser",
             failure_type="environment_failure",
-            confidence=1.0
+            confidence=1.0,
         )
         evidences.append(evidence)
         return FailureAnalysis(
@@ -72,10 +78,14 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             message="Required executable or command not found in environment.",
             root_cause="Dependency missing or PATH environment configuration error.",
             is_confirmed=True,
-            evidence_ids=[evidence.evidence_id]
+            evidence_ids=[evidence.evidence_id],
         ), evidences
 
-    if "connection refused" in full_output.lower() or "http connection" in full_output.lower() or "server connection failed" in full_output.lower():
+    if (
+        "connection refused" in full_output.lower()
+        or "http connection" in full_output.lower()
+        or "server connection failed" in full_output.lower()
+    ):
         evidence = DiagnosticEvidence(
             evidence_id=f"ev_{str(uuid.uuid4())[:6]}",
             command=result.command,
@@ -86,7 +96,7 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             stderr_excerpt=stderr[:500],
             parser="env_parser",
             failure_type="environment_failure",
-            confidence=1.0
+            confidence=1.0,
         )
         evidences.append(evidence)
         return FailureAnalysis(
@@ -95,7 +105,7 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             message="Server connection refused.",
             root_cause="External service or background daemon is not running.",
             is_confirmed=True,
-            evidence_ids=[evidence.evidence_id]
+            evidence_ids=[evidence.evidence_id],
         ), evidences
 
     # 2. Parse Compileall / SyntaxError
@@ -104,8 +114,13 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
     # Format:     some syntax error
     # Format: SyntaxError: invalid syntax
     syntax_file_match = re.search(r"File\s+\"([^\"]+)\",\s+line\s+(\d+)", full_output)
-    syntax_err_match = re.search(r"(SyntaxError|IndentationError|TabError):\s*(.*)", full_output)
-    compile_match = re.search(r"\*\*\*\s+Error compiling\s+'([^']+)'\s*\.\.\.\n(?:.*\n)?([A-Za-z]+Error):\s*(.*)", full_output)
+    syntax_err_match = re.search(
+        r"(SyntaxError|IndentationError|TabError):\s*(.*)", full_output
+    )
+    compile_match = re.search(
+        r"\*\*\*\s+Error compiling\s+'([^']+)'\s*\.\.\.\n(?:.*\n)?([A-Za-z]+Error):\s*(.*)",
+        full_output,
+    )
 
     if compile_match or (syntax_file_match and syntax_err_match):
         if compile_match:
@@ -135,7 +150,7 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             failure_type=failure_type,
             file_path=failing_file,
             line_number=failing_line,
-            confidence=1.0
+            confidence=1.0,
         )
         evidences.append(evidence)
         return FailureAnalysis(
@@ -146,13 +161,15 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             message=f"{err_name}: {message}",
             root_cause=f"Syntax compilation/parsing failed in '{failing_file}'. Details: {message}",
             is_confirmed=True,
-            evidence_ids=[evidence.evidence_id]
+            evidence_ids=[evidence.evidence_id],
         ), evidences
 
     # 3. Parse Ruff errors
     # Format: src/grandpa/agent/runtime.py:29:41: F821 Undefined name `Any`
     # Format: src/grandpa/agent/runtime.py:29: F821 Undefined name `Any`
-    ruff_matches = re.finditer(r"([^\s\n\r:]+):(\d+):(?:\d+:)?\s*([A-Z]\d+\s+.*)", full_output)
+    ruff_matches = re.finditer(
+        r"([^\s\n\r:]+):(\d+):(?:\d+:)?\s*([A-Z]\d+\s+.*)", full_output
+    )
     for m in ruff_matches:
         f_file = m.group(1)
         f_line = int(m.group(2))
@@ -174,7 +191,7 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             failure_type=f_type,
             file_path=f_file,
             line_number=f_line,
-            confidence=1.0
+            confidence=1.0,
         )
         evidences.append(evidence)
 
@@ -189,13 +206,17 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             message=first_ev.stdout_excerpt,
             root_cause=f"Ruff code quality or styling rule failure in '{first_ev.file_path}': {first_ev.stdout_excerpt}",
             is_confirmed=True,
-            evidence_ids=[ev.evidence_id for ev in evidences]
+            evidence_ids=[ev.evidence_id for ev in evidences],
         ), evidences
 
     # 4. Parse Pytest Traceback
     # Parse Pytest failure blocks to extract FAILED test node and tracebacks
-    pytest_failed_node_match = re.search(r"FAILED\s+([^\s:]+)::([^\s\-]+)(?:\s+-\s+(.*))?", full_output)
-    pytest_traceback_match = re.search(r"([^:\s\n]+):(\d+):\s+([A-Za-z]+Error(?:\s+.*)?)", full_output)
+    pytest_failed_node_match = re.search(
+        r"FAILED\s+([^\s:]+)::([^\s\-]+)(?:\s+-\s+(.*))?", full_output
+    )
+    pytest_traceback_match = re.search(
+        r"([^:\s\n]+):(\d+):\s+([A-Za-z]+Error(?:\s+.*)?)", full_output
+    )
     pytest_exc_block = re.search(r"\nE\s+([A-Za-z]+Error):\s*(.*)", full_output)
 
     if pytest_failed_node_match or pytest_traceback_match or pytest_exc_block:
@@ -241,13 +262,17 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             argv=result.command,
             working_directory=".",
             exit_code=result.exit_code,
-            stdout_excerpt=full_output[max(0, full_output.find("FAILURES") if "FAILURES" in full_output else 0):][:1000],
+            stdout_excerpt=full_output[
+                max(
+                    0, full_output.find("FAILURES") if "FAILURES" in full_output else 0
+                ) :
+            ][:1000],
             stderr_excerpt="",
             parser="pytest_parser",
             failure_type=f_type,
             file_path=failing_file,
             line_number=failing_line,
-            confidence=1.0
+            confidence=1.0,
         )
         evidences.append(evidence)
 
@@ -259,7 +284,7 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
             message=msg,
             root_cause=f"Pytest assertion or runtime failure: {msg}",
             is_confirmed=True,
-            evidence_ids=[evidence.evidence_id]
+            evidence_ids=[evidence.evidence_id],
         ), evidences
 
     return FailureAnalysis(
@@ -268,5 +293,5 @@ def analyze_failure(result: DiagnosticResult) -> tuple[FailureAnalysis, list[Dia
         message=message,
         root_cause=root_cause,
         is_confirmed=False,
-        evidence_ids=[]
+        evidence_ids=[],
     ), evidences

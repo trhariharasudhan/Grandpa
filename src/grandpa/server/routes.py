@@ -118,7 +118,9 @@ def _available_engine_models(engine) -> list[str]:
         return []
 
 
-def _apply_ai_routing(engine, request_body: ChatCompletionRequest, user_text: str) -> dict[str, Any] | None:
+def _apply_ai_routing(
+    engine, request_body: ChatCompletionRequest, user_text: str
+) -> dict[str, Any] | None:
     if not user_text:
         return None
     try:
@@ -819,7 +821,9 @@ async def ai_plan(request: Request):
     query = str(body.get("query", "")).strip()
     if not query:
         raise HTTPException(status_code=400, detail="'query' field is required")
-    requested_model = str(body.get("model") or getattr(request.app.state, "model", "")).strip()
+    requested_model = str(
+        body.get("model") or getattr(request.app.state, "model", "")
+    ).strip()
     engine = getattr(request.app.state, "engine", None)
     models = _available_engine_models(engine) if engine is not None else []
     return build_plan(
@@ -882,7 +886,9 @@ async def browser_agent_plan(request: Request):
     from grandpa.browser.agent import plan_browser_workflow
 
     body = await request.json()
-    goal = str(body.get("goal") or body.get("request") or body.get("query") or "").strip()
+    goal = str(
+        body.get("goal") or body.get("request") or body.get("query") or ""
+    ).strip()
     if not goal:
         raise HTTPException(status_code=400, detail="'goal' field is required")
     return plan_browser_workflow(goal)
@@ -937,7 +943,9 @@ async def personal_memory_search(request: Request):
     if category is not None:
         category = str(category).strip() or None
     limit = int(body.get("limit", 8))
-    return search_personal_memory(query, category=category, limit=max(1, min(limit, 25)))
+    return search_personal_memory(
+        query, category=category, limit=max(1, min(limit, 25))
+    )
 
 
 @router.get("/v1/memory/profile")
@@ -1012,7 +1020,9 @@ async def file_intelligence_organize_plan(request: Request):
     from grandpa.document_intelligence import organization_plan
 
     body = await request.json()
-    result = organization_plan(str(body.get("query", "")).strip(), dry_run=bool(body.get("dry_run", True)))
+    result = organization_plan(
+        str(body.get("query", "")).strip(), dry_run=bool(body.get("dry_run", True))
+    )
     return {"status": result.status, "message": result.message, **result.data}
 
 
@@ -1040,7 +1050,9 @@ async def office_report(request: Request):
     from grandpa.office_productivity import generate_report
 
     body = await request.json()
-    result = generate_report(str(body.get("title", "Report")), str(body.get("source_text", "")))
+    result = generate_report(
+        str(body.get("title", "Report")), str(body.get("source_text", ""))
+    )
     return {"status": result.status, "message": result.message, **result.data}
 
 
@@ -1049,7 +1061,9 @@ async def office_presentation_outline(request: Request):
     from grandpa.office_productivity import create_presentation_outline
 
     body = await request.json()
-    result = create_presentation_outline(str(body.get("topic", "Grandpa Assistant")), slides=int(body.get("slides", 6)))
+    result = create_presentation_outline(
+        str(body.get("topic", "Grandpa Assistant")), slides=int(body.get("slides", 6))
+    )
     return {"status": result.status, "message": result.message, **result.data}
 
 
@@ -1196,7 +1210,9 @@ async def pending_structured_local_actions():
 
 
 @router.get("/api/local-action/approvals")
-async def structured_local_action_approvals(limit: int = Query(default=100, ge=1, le=500)):
+async def structured_local_action_approvals(
+    limit: int = Query(default=100, ge=1, le=500),
+):
     """List structured PC approval records across lifecycle states."""
     from grandpa.pc_control import get_pc_control_runtime_health, list_approval_records
 
@@ -1243,7 +1259,9 @@ async def desktop_control_kernel():
 
 
 @router.get("/api/local-action/audit")
-async def recent_structured_local_action_audit(limit: int = Query(default=100, ge=1, le=500)):
+async def recent_structured_local_action_audit(
+    limit: int = Query(default=100, ge=1, le=500),
+):
     """Read recent redacted structured PC action audit entries."""
     from grandpa.pc_control import read_recent_audit_entries
 

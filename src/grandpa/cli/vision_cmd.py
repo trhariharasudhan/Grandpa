@@ -75,9 +75,7 @@ def dump() -> None:
 @click.option("--monitor", type=click.IntRange(1), default=None)
 @click.option("--active-window/--desktop", default=True)
 @click.option("--output", type=click.Path(path_type=Path), default=None)
-def screenshot(
-    monitor: int | None, active_window: bool, output: Path | None
-) -> None:
+def screenshot(monitor: int | None, active_window: bool, output: Path | None) -> None:
     engine = _engine()
     graph, captured = _safe_run(
         lambda: engine.extractor.inspect(

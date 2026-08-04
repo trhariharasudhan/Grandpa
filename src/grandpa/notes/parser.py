@@ -23,7 +23,13 @@ class NotesParser:
         )
 
     def _parse_list(self, command: str) -> NotesAction | None:
-        if command in {"show my notes", "list my notes", "show notes", "notes", "notes list"}:
+        if command in {
+            "show my notes",
+            "list my notes",
+            "show notes",
+            "notes",
+            "notes list",
+        }:
             return NotesAction("list")
         if command in {"list recent notes", "recent notes", "notes recent"}:
             return NotesAction("recent")
@@ -41,7 +47,9 @@ class NotesParser:
             if match:
                 query = raw[match.start(1) : match.end(1)]
                 return NotesAction("search", query=query)
-        match = re.fullmatch(r"(?:open|show|read) (?:my )?note(?: called)? (.+)", command)
+        match = re.fullmatch(
+            r"(?:open|show|read) (?:my )?note(?: called)? (.+)", command
+        )
         if match:
             title = raw[match.start(1) : match.end(1)]
             return NotesAction("open", title=title, query=title)
@@ -54,7 +62,10 @@ class NotesParser:
             return NotesAction("create", title=title)
         if command == "create a project note":
             return NotesAction("create", title="Project Note", category="project")
-        match = re.fullmatch(r"(?:take a note|remember this note|add this to my notes)(?: (.+))?", command)
+        match = re.fullmatch(
+            r"(?:take a note|remember this note|add this to my notes)(?: (.+))?",
+            command,
+        )
         if match:
             content = raw[match.start(1) : match.end(1)] if match.group(1) else ""
             return NotesAction("create", title="Quick Note", content=content)

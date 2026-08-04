@@ -16,11 +16,15 @@ DEFAULT_WEB_SEARCH_CACHE_DIR = DEFAULT_CONFIG_DIR / "cache" / "web_search"
 class WebSearchCache:
     """File-backed cache keyed by normalized provider/query/filter data."""
 
-    def __init__(self, root: Path | str = DEFAULT_WEB_SEARCH_CACHE_DIR, ttl_minutes: int = 15) -> None:
+    def __init__(
+        self, root: Path | str = DEFAULT_WEB_SEARCH_CACHE_DIR, ttl_minutes: int = 15
+    ) -> None:
         self.root = Path(root)
         self.ttl_seconds = ttl_minutes * 60
 
-    def get(self, provider: str, query: WebSearchQuery) -> tuple[WebSearchResult, ...] | None:
+    def get(
+        self, provider: str, query: WebSearchQuery
+    ) -> tuple[WebSearchResult, ...] | None:
         path = self._path(provider, query)
         if not path.exists():
             return None
@@ -32,7 +36,9 @@ class WebSearchCache:
         except Exception:
             return None
 
-    def set(self, provider: str, query: WebSearchQuery, results: tuple[WebSearchResult, ...]) -> None:
+    def set(
+        self, provider: str, query: WebSearchQuery, results: tuple[WebSearchResult, ...]
+    ) -> None:
         self.root.mkdir(parents=True, exist_ok=True)
         path = self._path(provider, query)
         payload = {

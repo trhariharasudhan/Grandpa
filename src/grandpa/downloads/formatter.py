@@ -5,7 +5,9 @@ from __future__ import annotations
 from grandpa.downloads.models import DownloadItem
 
 
-def format_download_list(items: tuple[DownloadItem, ...], *, empty_message: str = "No downloads found.") -> str:
+def format_download_list(
+    items: tuple[DownloadItem, ...], *, empty_message: str = "No downloads found."
+) -> str:
     if not items:
         return empty_message
     lines = ["Downloads:"]
@@ -16,7 +18,9 @@ def format_download_list(items: tuple[DownloadItem, ...], *, empty_message: str 
         if not item.safe_to_open:
             flags.append("unsafe to open")
         flag_text = f" [{' / '.join(flags)}]" if flags else ""
-        lines.append(f"- {item.name} — {item.kind}, {_format_size(item.size_bytes)}, modified {item.modified_at}{flag_text}")
+        lines.append(
+            f"- {item.name} — {item.kind}, {_format_size(item.size_bytes)}, modified {item.modified_at}{flag_text}"
+        )
     return "\n".join(lines)
 
 
@@ -39,7 +43,9 @@ def format_duplicate_groups(items: tuple[DownloadItem, ...]) -> str:
         return "No duplicate downloads found."
     lines = ["Duplicate downloads:"]
     for item in items:
-        lines.append(f"- [{item.duplicate_group}] {item.name} — {_format_size(item.size_bytes)}")
+        lines.append(
+            f"- [{item.duplicate_group}] {item.name} — {_format_size(item.size_bytes)}"
+        )
     return "\n".join(lines)
 
 
@@ -57,4 +63,9 @@ def _format_size(size: int) -> str:
     return f"{size} B"
 
 
-__all__ = ["format_download_info", "format_download_list", "format_duplicate_groups", "format_operation_plan"]
+__all__ = [
+    "format_download_info",
+    "format_download_list",
+    "format_duplicate_groups",
+    "format_operation_plan",
+]

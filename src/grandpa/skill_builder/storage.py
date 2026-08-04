@@ -15,7 +15,9 @@ DEFAULT_USER_SKILLS_DB = Path("runtime") / "skills" / "user_skills.db"
 
 class UserSkillStore:
     def __init__(self, db_path: str | Path | None = None) -> None:
-        self.db_path = Path(db_path or os.getenv("GRANDPA_USER_SKILLS_DB") or DEFAULT_USER_SKILLS_DB)
+        self.db_path = Path(
+            db_path or os.getenv("GRANDPA_USER_SKILLS_DB") or DEFAULT_USER_SKILLS_DB
+        )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -43,7 +45,9 @@ class UserSkillStore:
                 )
                 """
             )
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_user_skills_deleted_updated ON user_skills(deleted, updated_at DESC)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_user_skills_deleted_updated ON user_skills(deleted, updated_at DESC)"
+            )
 
     def create(self, data: dict[str, Any]) -> dict[str, Any]:
         now = time.time()

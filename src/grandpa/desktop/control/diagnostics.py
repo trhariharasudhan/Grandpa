@@ -66,7 +66,11 @@ class DesktopDiagnosticsService:
                 "support": info,
             }
         except Exception as exc:
-            return {"service": self.name, "ready": False, "error": exc.__class__.__name__}
+            return {
+                "service": self.name,
+                "ready": False,
+                "error": exc.__class__.__name__,
+            }
 
 
 __all__ = ["DesktopDiagnosticsService"]

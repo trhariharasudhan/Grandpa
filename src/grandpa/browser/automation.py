@@ -10,7 +10,11 @@ from grandpa.browser.parser import BrowserParser
 class BrowserAutomation:
     """Parse and execute safe browser commands."""
 
-    def __init__(self, parser: BrowserParser | None = None, executor: BrowserExecutor | None = None) -> None:
+    def __init__(
+        self,
+        parser: BrowserParser | None = None,
+        executor: BrowserExecutor | None = None,
+    ) -> None:
         self.parser = parser or BrowserParser()
         self.executor = executor or BrowserExecutor()
 

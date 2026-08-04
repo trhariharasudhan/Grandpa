@@ -40,10 +40,14 @@ def voice_client(tmp_path, monkeypatch):
     monkeypatch.setenv("GRANDPA_KNOWLEDGE_EMBEDDING_MODE", "fallback")
     approval_store = LocalActionApprovalStore(tmp_path / "approvals.db")
     reminder_store = ReminderStore(tmp_path / "reminders.db")
-    monkeypatch.setattr(local_actions, "LocalActionApprovalStore", lambda: approval_store)
+    monkeypatch.setattr(
+        local_actions, "LocalActionApprovalStore", lambda: approval_store
+    )
     app = FastAPI()
     app.state.reminder_store = reminder_store
-    app.state.voice_history_store = VoiceCommandHistoryStore(tmp_path / "voice_history.db")
+    app.state.voice_history_store = VoiceCommandHistoryStore(
+        tmp_path / "voice_history.db"
+    )
     app.state.wake_word_session = WakeWordSession(tmp_path / "wake_word.json")
     app.include_router(voice_router)
     app.include_router(conversation_router)
@@ -51,7 +55,9 @@ def voice_client(tmp_path, monkeypatch):
 
 
 def test_wake_word_detection_extracts_command():
-    detector = WakeWordDetector(WakeWordConfig(enabled=True, phrases=("hey grandpa", "grandpa")))
+    detector = WakeWordDetector(
+        WakeWordConfig(enabled=True, phrases=("hey grandpa", "grandpa"))
+    )
 
     match = detector.detect("Hey Grandpa desktop summary")
 
@@ -82,7 +88,9 @@ def test_speech_input_accepts_existing_transcript():
 
 
 def test_voice_runtime_reports_missing_speech_dependency(monkeypatch):
-    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: None)
+    monkeypatch.setattr(
+        "grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: None
+    )
     runtime = VoiceRuntime()
 
     result = runtime.listen(audio_base64=base64.b64encode(b"audio").decode("ascii"))
@@ -114,9 +122,13 @@ def test_voice_listen_api_accepts_browser_transcript(voice_client):
     assert body["speech_input"]["engine"] == "provided_transcript"
 
 
-def test_voice_listen_api_audio_missing_dependency_is_friendly(monkeypatch, voice_client):
+def test_voice_listen_api_audio_missing_dependency_is_friendly(
+    monkeypatch, voice_client
+):
     monkeypatch.setattr("grandpa.voice.session._RUNTIME", None)
-    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: None)
+    monkeypatch.setattr(
+        "grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: None
+    )
 
     response = voice_client.post(
         "/v1/voice/listen",
@@ -134,8 +146,12 @@ def test_voice_listen_api_invalid_audio_is_friendly(monkeypatch, voice_client):
             raise RuntimeError("invalid audio data")
 
     monkeypatch.setattr("grandpa.voice.session._RUNTIME", None)
-    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
-    monkeypatch.setattr(SpeechInputEngine, "_create_backend", lambda _self: InvalidAudioBackend())
+    monkeypatch.setattr(
+        "grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object()
+    )
+    monkeypatch.setattr(
+        SpeechInputEngine, "_create_backend", lambda _self: InvalidAudioBackend()
+    )
 
     response = voice_client.post(
         "/v1/voice/listen",
@@ -147,7 +163,9 @@ def test_voice_listen_api_invalid_audio_is_friendly(monkeypatch, voice_client):
 
 
 def test_voice_stt_status_endpoint_reports_model(monkeypatch, voice_client):
-    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
+    monkeypatch.setattr(
+        "grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object()
+    )
 
     response = voice_client.get("/v1/voice/stt/status")
 
@@ -162,7 +180,9 @@ def test_voice_stt_status_endpoint_reports_model(monkeypatch, voice_client):
 
 def test_speech_input_successful_local_whisper_transcription(monkeypatch):
     class FakeBackend:
-        def transcribe(self, audio: bytes, *, format: str = "wav", language: str | None = None):
+        def transcribe(
+            self, audio: bytes, *, format: str = "wav", language: str | None = None
+        ):
             assert audio == b"audio"
             assert format == "webm"
             assert language is None
@@ -173,8 +193,12 @@ def test_speech_input_successful_local_whisper_transcription(monkeypatch):
                 duration_seconds=1.25,
             )
 
-    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
-    monkeypatch.setattr(SpeechInputEngine, "_create_backend", lambda _self: FakeBackend())
+    monkeypatch.setattr(
+        "grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object()
+    )
+    monkeypatch.setattr(
+        SpeechInputEngine, "_create_backend", lambda _self: FakeBackend()
+    )
 
     result = SpeechInputEngine().listen(audio_bytes=b"audio", audio_format="webm")
 
@@ -197,8 +221,12 @@ def test_speech_input_missing_model_is_friendly(monkeypatch):
         def transcribe(self, *_args, **_kwargs):
             raise RuntimeError("model not found")
 
-    monkeypatch.setattr("grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object())
-    monkeypatch.setattr(SpeechInputEngine, "_create_backend", lambda _self: MissingModelBackend())
+    monkeypatch.setattr(
+        "grandpa.voice.speech_input.importlib.util.find_spec", lambda _name: object()
+    )
+    monkeypatch.setattr(
+        SpeechInputEngine, "_create_backend", lambda _self: MissingModelBackend()
+    )
 
     with pytest.raises(VoiceDependencyError) as excinfo:
         SpeechInputEngine().listen(audio_bytes=b"audio", audio_format="wav")
@@ -278,7 +306,11 @@ def test_speech_output_dry_run_and_stop():
 def test_speech_output_invokes_pyttsx3_backend(monkeypatch):
     calls = []
 
-    monkeypatch.setattr(speech_output.importlib.util, "find_spec", lambda name: object() if name == "pyttsx3" else None)
+    monkeypatch.setattr(
+        speech_output.importlib.util,
+        "find_spec",
+        lambda name: object() if name == "pyttsx3" else None,
+    )
     monkeypatch.setattr(
         speech_output,
         "_speak_with_pyttsx3",
@@ -384,16 +416,22 @@ def test_voice_api_routes(monkeypatch, tmp_path):
     assert missing_input.status_code == 400
     assert "No usable microphone was detected." in missing_input.json()["detail"]
 
-    listened = client.post("/v1/voice/listen", json={"text": "Hey Grandpa desktop summary"})
+    listened = client.post(
+        "/v1/voice/listen", json={"text": "Hey Grandpa desktop summary"}
+    )
     assert listened.status_code == 200
     assert listened.json()["transcript"] == "Hey Grandpa desktop summary"
 
-    commanded = client.post("/v1/voice/command", json={"transcript": "Hey Grandpa desktop summary"})
+    commanded = client.post(
+        "/v1/voice/command", json={"transcript": "Hey Grandpa desktop summary"}
+    )
     assert commanded.status_code == 200
     assert commanded.json()["command_text"] == "desktop summary"
     assert commanded.json()["assistant_text"]
 
-    spoken = client.post("/v1/voice/speak", json={"text": "Grandpa voice ready.", "dry_run": True})
+    spoken = client.post(
+        "/v1/voice/speak", json={"text": "Grandpa voice ready.", "dry_run": True}
+    )
     assert spoken.status_code == 200
     assert spoken.json()["status"] == "dry_run"
 
@@ -568,7 +606,9 @@ def test_voice_command_missing_transcript_returns_validation_error(voice_client)
 
 
 def test_voice_history_records_commands(voice_client):
-    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+    voice_client.post(
+        "/v1/voice/command", json={"transcript": "what is my voice status"}
+    )
 
     response = voice_client.get("/v1/voice/history")
 
@@ -595,7 +635,9 @@ def test_voice_history_limit(voice_client):
 
 
 def test_voice_history_clear(voice_client):
-    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+    voice_client.post(
+        "/v1/voice/command", json={"transcript": "what is my voice status"}
+    )
 
     cleared = voice_client.post("/v1/voice/history/clear")
     history = voice_client.get("/v1/voice/history")
@@ -629,7 +671,9 @@ def test_conversation_session_keeps_latest_20_messages():
 
     assert history["message_count"] == MAX_CONVERSATION_MESSAGES
     assert history["messages"][0]["content"] == "message 5"
-    assert history["messages"][-1]["content"] == f"message {MAX_CONVERSATION_MESSAGES + 4}"
+    assert (
+        history["messages"][-1]["content"] == f"message {MAX_CONVERSATION_MESSAGES + 4}"
+    )
 
 
 def test_conversation_session_clear_and_summary():
@@ -694,11 +738,16 @@ def test_conversation_context_builder_ignores_empty_messages_and_preserves_order
     context = ConversationContextBuilder(session).build()
 
     assert [message["role"] for message in context["messages"]] == ["user", "assistant"]
-    assert [message["content"] for message in context["messages"]] == ["first", "second"]
+    assert [message["content"] for message in context["messages"]] == [
+        "first",
+        "second",
+    ]
 
 
 def test_conversation_context_endpoint(voice_client):
-    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+    voice_client.post(
+        "/v1/voice/command", json={"transcript": "what is my voice status"}
+    )
 
     response = voice_client.get("/v1/conversation/context?max_messages=1&max_chars=200")
 
@@ -723,11 +772,16 @@ def test_voice_command_returns_context_metadata(voice_client):
     assert first["context_message_count"] == 0
     assert second["context_used"] is True
     assert second["context_message_count"] == 2
-    assert second["assistant_text"] == "I can use recent context, but I don't know how to answer that yet."
+    assert (
+        second["assistant_text"]
+        == "I can use recent context, but I don't know how to answer that yet."
+    )
 
 
 def test_clear_conversation_resets_context(voice_client):
-    voice_client.post("/v1/voice/command", json={"transcript": "what is my voice status"})
+    voice_client.post(
+        "/v1/voice/command", json={"transcript": "what is my voice status"}
+    )
     voice_client.post("/v1/conversation/clear")
 
     context = voice_client.get("/v1/conversation/context").json()
@@ -888,7 +942,10 @@ def test_voice_loop_cannot_start_if_wake_word_disabled(tmp_path):
 
     assert status["running"] is False
     assert status["mode"] == "error"
-    assert status["last_error"] == "Wake word must be enabled before starting the voice loop."
+    assert (
+        status["last_error"]
+        == "Wake word must be enabled before starting the voice loop."
+    )
 
 
 def test_voice_loop_starts_after_wake_word_enabled(tmp_path):
@@ -977,14 +1034,19 @@ def test_voice_loop_api_cannot_start_if_wake_word_disabled(voice_client):
     body = response.json()
     assert body["running"] is False
     assert body["mode"] == "error"
-    assert body["last_error"] == "Wake word must be enabled before starting the voice loop."
+    assert (
+        body["last_error"]
+        == "Wake word must be enabled before starting the voice loop."
+    )
 
 
 def test_voice_loop_api_simulates_wake_and_command(voice_client):
     voice_client.post("/v1/voice/wake-word/enable")
     voice_client.post("/v1/voice/loop/enable")
     started = voice_client.post("/v1/voice/loop/start")
-    wake = voice_client.post("/v1/voice/loop/simulate-wake", json={"text": "hey grandpa"})
+    wake = voice_client.post(
+        "/v1/voice/loop/simulate-wake", json={"text": "hey grandpa"}
+    )
     command = voice_client.post(
         "/v1/voice/loop/simulate-command",
         json={"transcript": "what is my voice status"},
@@ -1119,7 +1181,9 @@ def test_voice_command_does_not_update_expired_conversation_mode(voice_client):
     assert status["last_transcript"] is None
 
 
-def test_conversation_mode_has_no_ollama_microphone_or_thread_dependency(voice_client, monkeypatch):
+def test_conversation_mode_has_no_ollama_microphone_or_thread_dependency(
+    voice_client, monkeypatch
+):
     monkeypatch.delenv("OLLAMA_HOST", raising=False)
 
     status = voice_client.post("/v1/voice/conversation-mode/start").json()

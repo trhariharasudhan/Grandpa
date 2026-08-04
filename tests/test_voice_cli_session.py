@@ -15,6 +15,7 @@ from grandpa.voice.errors import (
     VoiceDependencyError,
     VoiceRecognitionError,
 )
+from grandpa.voice.microphone import CapturedAudio
 from grandpa.voice.text_to_speech import GrandpaTextToSpeech, clean_text_for_speech
 from grandpa.voice.wake_word import WakeWordDetector
 
@@ -121,11 +122,14 @@ def test_voice_session_successful_transcription_flow() -> None:
     )
 
     assert session.run() == 0
-    assert "Grandpa Voice Assistant" in output
+    assert any("Voice Assistant" in line for line in output)
     assert "You: open notepad" in output
     assert "Grandpa: Handled open notepad" in output
     assert responder.received == ["open notepad"]
-    assert speaker.spoken == ["Handled open notepad", "Goodbye."]
+    assert speaker.spoken == [
+        "Handled open notepad",
+        "Goodbye! I’ll be here when you need me.",
+    ]
 
 
 def test_microphone_capture_waits_until_speaker_is_idle() -> None:
@@ -292,7 +296,7 @@ def test_ctrl_c_during_tts_stops_speech_without_resuming_capture() -> None:
     assert session.run() == 0
     assert microphone.calls == 1
     assert speaker.stopped is True
-    assert "Stopping Grandpa Voice Assistant..." in output
+    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
 
 
 def test_grandpa_tts_exposes_reliable_speaking_state(monkeypatch) -> None:
@@ -344,7 +348,7 @@ def test_voice_session_exit_phrase_stops_loop() -> None:
     )
 
     assert session.run() == 0
-    assert "Grandpa: Goodbye." in output
+    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
 
 
 def test_voice_session_ctrl_c_shuts_down_cleanly() -> None:
@@ -360,8 +364,8 @@ def test_voice_session_ctrl_c_shuts_down_cleanly() -> None:
     )
 
     assert session.run() == 0
-    assert "Stopping Grandpa Voice Assistant..." in output
-    assert "Voice assistant stopped." in output
+    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert "Voice assistant stopped." not in output
     assert not any("Traceback" in line for line in output)
     assert microphone.closed is True
     assert speaker.stopped is True
@@ -385,7 +389,7 @@ def test_voice_session_stop_event_interrupts_capture_without_transcribing() -> N
     assert microphone.stop_events[0].is_set()
     assert transcriber.calls == 0
     assert output.count("Listening...") == 1
-    assert "Voice assistant stopped." in output
+    assert "Goodbye! I’ll be here when you need me." not in output
 
 
 def test_voice_session_microphone_failure_is_actionable() -> None:
@@ -417,7 +421,7 @@ def test_voice_session_stt_initialization_failure_is_actionable() -> None:
     )
 
     assert session.run() == 1
-    assert "The Whisper model could not be loaded." in output
+    assert any("The Whisper model could not be loaded." in line for line in output)
 
 
 def test_voice_session_recoverable_recognition_failure_continues() -> None:
@@ -579,7 +583,7 @@ def test_wake_word_mode_exit_phrase_stops_while_waiting() -> None:
     )
 
     assert session.run() == 0
-    assert "Grandpa: Goodbye." in output
+    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
     assert responder.received == []
 
 
@@ -598,8 +602,8 @@ def test_wake_word_mode_ctrl_c_during_wake_capture() -> None:
 
     assert session.run() == 0
     assert microphone.calls == 1
-    assert "Stopping Grandpa Voice Assistant..." in output
-    assert "Voice assistant stopped." in output
+    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert "Voice assistant stopped." not in output
     assert not any("Traceback" in line for line in output)
     assert microphone.closed is True
 
@@ -620,7 +624,7 @@ def test_wake_word_mode_ctrl_c_during_command_capture() -> None:
 
     assert session.run() == 0
     assert microphone.calls == 2
-    assert "Stopping Grandpa Voice Assistant..." in output
+    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
     assert responder.received == []
 
 
@@ -640,7 +644,7 @@ def test_wake_word_mode_can_disable_spoken_acknowledgement() -> None:
 
     assert session.run() == 0
     assert "Grandpa: Yes?" not in output
-    assert speaker.spoken == ["Goodbye."]
+    assert speaker.spoken == ["Goodbye! I’ll be here when you need me."]
 
 
 def test_clean_text_for_speech_removes_markdown_and_truncates() -> None:
@@ -683,3 +687,131 @@ def test_voice_config_defaults_and_environment_overrides(monkeypatch) -> None:
 )
 def test_exit_phrase_matching(phrase: str) -> None:
     assert is_exit_phrase(phrase)
+
+
+def test_voice_session_normal_startup_stays_alive() -> None:
+    output = []
+
+    class StoppingMicrophone(FakeMicrophone):
+        def capture(self, stop_event=None):
+            self.calls += 1
+            if self.calls == 1:
+                return CapturedAudio(b"", 16000)
+            else:
+                if stop_event:
+                    stop_event.set()
+                return CapturedAudio(b"", 16000)
+
+    microphone = StoppingMicrophone()
+    transcriber = FakeTranscriber(["hello"])
+    responder = FakeResponder()
+
+    session = VoiceSession(
+        microphone,
+        transcriber,
+        responder,
+        None,
+        output=output.append,
+    )
+
+    assert session.run() == 0
+    assert "Voice assistant stopped." not in output
+    assert "Stopping Grandpa Voice Assistant..." not in output
+
+
+def test_voice_session_ollama_unavailable_at_startup() -> None:
+    from unittest.mock import MagicMock
+
+    from grandpa.engine import EngineConnectionError
+
+    output = []
+    responder = MagicMock()
+    responder._ensure_engine = MagicMock(
+        side_effect=EngineConnectionError("Ollama not reachable")
+    )
+
+    session = VoiceSession(
+        FakeMicrophone(),
+        FakeTranscriber(["hello"]),
+        responder,
+        None,
+        output=output.append,
+    )
+
+    exit_code = session.run()
+    assert exit_code == 1
+    assert any(
+        "Ollama is not available" in str(line) or "Ollama not reachable" in str(line)
+        for line in output
+    )
+
+
+def test_voice_session_ollama_healthy_at_startup() -> None:
+    from unittest.mock import MagicMock
+
+    output = []
+
+    class StoppingMicrophone(FakeMicrophone):
+        def capture(self, stop_event=None):
+            if stop_event:
+                stop_event.set()
+            return CapturedAudio(b"", 16000)
+
+    responder = MagicMock()
+    responder._ensure_engine = MagicMock()
+
+    session = VoiceSession(
+        StoppingMicrophone(),
+        FakeTranscriber(["hello"]),
+        responder,
+        None,
+        output=output.append,
+    )
+
+    exit_code = session.run()
+    assert exit_code == 0
+
+
+def test_voice_session_handle_transcript_inference_error() -> None:
+    from unittest.mock import MagicMock
+
+    from grandpa.engine import EngineConnectionError
+
+    output = []
+    responder = MagicMock()
+    responder._ensure_engine = MagicMock()
+    responder.handle_user_input = MagicMock(
+        side_effect=EngineConnectionError("Ollama not reachable")
+    )
+
+    class StoppingMicrophone(FakeMicrophone):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls = 0
+
+        def capture(self, stop_event=None):
+            self.calls += 1
+            if self.calls == 1:
+                return CapturedAudio(b"hello", 16000)
+            else:
+                if stop_event:
+                    stop_event.set()
+                return CapturedAudio(b"", 16000)
+
+    speaker = MagicMock()
+
+    session = VoiceSession(
+        StoppingMicrophone(),
+        FakeTranscriber(["hello"]),
+        responder,
+        speaker,
+        output=output.append,
+    )
+
+    exit_code = session.run()
+    assert exit_code == 0
+    assert speaker.speak.call_count == 0
+    assert any(
+        "Ollama is not available" in str(line) or "Ollama not reachable" in str(line)
+        for line in output
+    )

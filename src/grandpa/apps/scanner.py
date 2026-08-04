@@ -45,23 +45,37 @@ def scan_app_inventory(
     records: dict[str, ApplicationInfo] = {}
     path_index: dict[str, str] = {}
 
-    selected_start_roots = default_start_menu_roots() if start_menu_roots is None else start_menu_roots
-    selected_install_roots = default_install_roots() if install_roots is None else install_roots
+    selected_start_roots = (
+        default_start_menu_roots() if start_menu_roots is None else start_menu_roots
+    )
+    selected_install_roots = (
+        default_install_roots() if install_roots is None else install_roots
+    )
 
     for path in _iter_start_menu_targets(selected_start_roots):
         _merge_record(records, path_index, _path_record(path, "start_menu"))
 
-    trusted_rows = resolver_rows if resolver_rows is not None else _windows_resolver_rows()
+    trusted_rows = (
+        resolver_rows if resolver_rows is not None else _windows_resolver_rows()
+    )
     for row in trusted_rows:
         _merge_record(records, path_index, _row_record(row, default_source="resolver"))
 
-    app_paths = app_path_rows if app_path_rows is not None else _registry_app_path_rows()
+    app_paths = (
+        app_path_rows if app_path_rows is not None else _registry_app_path_rows()
+    )
     for row in app_paths:
-        _merge_record(records, path_index, _row_record(row, default_source="registry_app_path"))
+        _merge_record(
+            records, path_index, _row_record(row, default_source="registry_app_path")
+        )
 
-    uninstall_rows = registry_rows if registry_rows is not None else _registry_installed_apps()
+    uninstall_rows = (
+        registry_rows if registry_rows is not None else _registry_installed_apps()
+    )
     for row in uninstall_rows:
-        _merge_record(records, path_index, _row_record(row, default_source="registry_uninstall"))
+        _merge_record(
+            records, path_index, _row_record(row, default_source="registry_uninstall")
+        )
 
     if len(records) < MAX_DISCOVERED_APPS:
         for path in _iter_program_files_candidates(selected_install_roots):
@@ -81,7 +95,8 @@ def scan_app_inventory(
 
 def default_start_menu_roots() -> list[Path]:
     return [
-        Path(os.environ.get("ProgramData", r"C:\ProgramData")) / r"Microsoft\Windows\Start Menu\Programs",
+        Path(os.environ.get("ProgramData", r"C:\ProgramData"))
+        / r"Microsoft\Windows\Start Menu\Programs",
         Path(os.environ.get("AppData", "")) / r"Microsoft\Windows\Start Menu\Programs",
     ]
 
@@ -144,7 +159,10 @@ def _iter_program_files_candidates(roots: list[Path]):
 
 def _matches_product_folder(path: Path, product_dir: Path) -> bool:
     app_name = normalize_app_name(path.stem)
-    folder_names = {normalize_app_name(product_dir.name), normalize_app_name(path.parent.name)}
+    folder_names = {
+        normalize_app_name(product_dir.name),
+        normalize_app_name(path.parent.name),
+    }
     known_launchers = {
         "chrome",
         "msedge",
@@ -166,7 +184,9 @@ def _path_record(path: Path, source: str) -> ApplicationInfo | None:
 
 
 def _row_record(row: dict[str, str], *, default_source: str) -> ApplicationInfo | None:
-    target = Path(str(row.get("path") or row.get("launch_target") or row.get("executable") or ""))
+    target = Path(
+        str(row.get("path") or row.get("launch_target") or row.get("executable") or "")
+    )
     display_name = str(row.get("display_name") or row.get("name") or target.stem)
     return _make_record(
         display_name=display_name,
@@ -229,8 +249,16 @@ def _merge_record(
         path_index[normalized_path] = candidate.canonical_key
         return
 
-    preferred, secondary = (candidate, existing) if _record_rank(candidate) > _record_rank(existing) else (existing, candidate)
-    aliases = tuple(sorted(set(preferred.aliases) | set(secondary.aliases) | {preferred.canonical_key}))
+    preferred, secondary = (
+        (candidate, existing)
+        if _record_rank(candidate) > _record_rank(existing)
+        else (existing, candidate)
+    )
+    aliases = tuple(
+        sorted(
+            set(preferred.aliases) | set(secondary.aliases) | {preferred.canonical_key}
+        )
+    )
     merged = replace(
         preferred,
         aliases=aliases,
@@ -241,7 +269,9 @@ def _merge_record(
         is_launchable=preferred.is_launchable or secondary.is_launchable,
         last_seen_at=max(preferred.last_seen_at, secondary.last_seen_at),
     )
-    old_key = next((item_key for item_key, item in records.items() if item is existing), key)
+    old_key = next(
+        (item_key for item_key, item in records.items() if item is existing), key
+    )
     records.pop(old_key, None)
     records[merged.canonical_key] = merged
     path_index[_normalized_path(existing.path)] = merged.canonical_key
@@ -249,7 +279,11 @@ def _merge_record(
 
 
 def _record_rank(app: ApplicationInfo) -> tuple[float, int, int]:
-    return (app.confidence, int(app.path.casefold().endswith(".lnk")), int(bool(app.publisher)))
+    return (
+        app.confidence,
+        int(app.path.casefold().endswith(".lnk")),
+        int(bool(app.publisher)),
+    )
 
 
 def _normalized_path(value: str) -> str:
@@ -258,7 +292,11 @@ def _normalized_path(value: str) -> str:
 
 def _source_kind(source: str) -> str:
     for kind in SOURCE_CONFIDENCE:
-        if source == kind or source.startswith(f"{kind}:") or (kind == "resolver" and source.startswith("resolver:")):
+        if (
+            source == kind
+            or source.startswith(f"{kind}:")
+            or (kind == "resolver" and source.startswith("resolver:"))
+        ):
             return kind
     return "registry_uninstall"
 
@@ -280,7 +318,9 @@ def _display_name_from_target(path: Path) -> str:
         "calc": "Calculator",
         "mspaint": "Paint",
     }
-    return replacements.get(path.stem.casefold(), path.stem.replace("_", " ").replace("-", " ").strip())
+    return replacements.get(
+        path.stem.casefold(), path.stem.replace("_", " ").replace("-", " ").strip()
+    )
 
 
 def _registry_app_path_rows() -> list[dict[str, str]]:
@@ -302,7 +342,13 @@ def _registry_app_path_rows() -> list[dict[str, str]]:
                     except OSError:
                         continue
                     if target:
-                        rows.append({"display_name": Path(sub_name).stem, "path": target, "source": "registry_app_path"})
+                        rows.append(
+                            {
+                                "display_name": Path(sub_name).stem,
+                                "path": target,
+                                "source": "registry_app_path",
+                            }
+                        )
         except OSError:
             continue
     return rows
@@ -335,13 +381,17 @@ def _read_uninstall_key(winreg_module, root, base: str) -> list[dict[str, str]]:
                     sub_name = winreg_module.EnumKey(parent, index)
                     with winreg_module.OpenKey(parent, sub_name) as sub_key:
                         display_name = _query_reg(winreg_module, sub_key, "DisplayName")
-                        install_location = _query_reg(winreg_module, sub_key, "InstallLocation")
+                        install_location = _query_reg(
+                            winreg_module, sub_key, "InstallLocation"
+                        )
                         display_icon = _query_reg(winreg_module, sub_key, "DisplayIcon")
                         publisher = _query_reg(winreg_module, sub_key, "Publisher")
                         version = _query_reg(winreg_module, sub_key, "DisplayVersion")
                 except OSError:
                     continue
-                executable = _registry_executable(display_icon, install_location, display_name)
+                executable = _registry_executable(
+                    display_icon, install_location, display_name
+                )
                 if display_name and executable:
                     rows.append(
                         {
@@ -365,16 +415,22 @@ def _query_reg(winreg_module, key, name: str) -> str:
     return str(value or "").strip().strip('"')
 
 
-def _registry_executable(display_icon: str, install_location: str, display_name: str) -> str:
+def _registry_executable(
+    display_icon: str, install_location: str, display_name: str
+) -> str:
     if display_icon:
         candidate = display_icon.split(",", 1)[0].strip().strip('"')
-        if candidate.casefold().endswith(".exe") and looks_user_facing(candidate, display_name):
+        if candidate.casefold().endswith(".exe") and looks_user_facing(
+            candidate, display_name
+        ):
             return candidate
     if install_location:
         root = Path(install_location)
         try:
             for path in root.glob("*.exe"):
-                if _matches_product_folder(path, root) and looks_user_facing(path, display_name):
+                if _matches_product_folder(path, root) and looks_user_facing(
+                    path, display_name
+                ):
                     return str(path)
         except OSError:
             return ""

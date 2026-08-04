@@ -90,7 +90,12 @@ def inspect_repository(repo_path: str) -> RepositoryState:
                 if code[1] in ("M", "D"):
                     unstaged.append(filepath)
 
-    is_clean = len(staged) == 0 and len(unstaged) == 0 and len(untracked) == 0 and len(conflicted) == 0
+    is_clean = (
+        len(staged) == 0
+        and len(unstaged) == 0
+        and len(untracked) == 0
+        and len(conflicted) == 0
+    )
 
     return RepositoryState(
         repo_root=str(path),

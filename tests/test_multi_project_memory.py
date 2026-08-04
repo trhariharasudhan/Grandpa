@@ -125,6 +125,7 @@ def test_persistence(temp_workspace) -> None:
 def test_agent_runtime_multi_project(temp_workspace, setup_memory) -> None:
     # We patch global projects_registry path so AgentRuntime uses our isolated file
     import os
+
     os.environ["GRANDPA_HOME"] = str(temp_workspace)
 
     registry = MultiProjectRegistry()
@@ -150,20 +151,25 @@ def test_agent_runtime_multi_project(temp_workspace, setup_memory) -> None:
 
 def test_cli_commands(temp_workspace, setup_memory) -> None:
     import os
+
     os.environ["GRANDPA_HOME"] = str(temp_workspace)
 
     runner = click.testing.CliRunner()
 
     # 1. Create Command
     p1_path = temp_workspace / "ChronoBot"
-    res_create = runner.invoke(project_group, ["create", "ChronoBot", str(p1_path), "--desc", "Chronos app"])
+    res_create = runner.invoke(
+        project_group, ["create", "ChronoBot", str(p1_path), "--desc", "Chronos app"]
+    )
     assert res_create.exit_code == 0
     assert "Created and registered project 'ChronoBot'" in res_create.output
 
     # 2. Register Command
     p2_path = temp_workspace / "MotoCompass"
     p2_path.mkdir()
-    res_register = runner.invoke(project_group, ["register", "MotoCompass", str(p2_path)])
+    res_register = runner.invoke(
+        project_group, ["register", "MotoCompass", str(p2_path)]
+    )
     assert res_register.exit_code == 0
     assert "Registered project 'MotoCompass'" in res_register.output
 

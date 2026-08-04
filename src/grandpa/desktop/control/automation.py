@@ -31,27 +31,55 @@ class AutomationControlService:
         if action == "keyboard_type":
             text = str(request.args.get("text", request.target))
             pyautogui.write(text, interval=0.01)
-            return LocalActionResponse(True, None, "completed", "Typed text.", False, "MEDIUM", {"characters": len(text)})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Typed text.",
+                False,
+                "MEDIUM",
+                {"characters": len(text)},
+            )
         if action == "keyboard_hotkey":
             keys = request.args.get("keys", request.target)
             if isinstance(keys, str):
                 keys = [part.strip() for part in keys.split("+") if part.strip()]
             pyautogui.hotkey(*keys)
-            return LocalActionResponse(True, None, "completed", "Pressed hotkey.", False, "MEDIUM", {"keys": keys})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Pressed hotkey.",
+                False,
+                "MEDIUM",
+                {"keys": keys},
+            )
         if action == "mouse_move":
             if "relative_x" in request.args or "relative_y" in request.args:
                 pyautogui.moveRel(
                     int(request.args.get("relative_x", 0)),
                     int(request.args.get("relative_y", 0)),
-                    duration=max(0.0, min(1.0, float(request.args.get("duration", 0.15)))),
+                    duration=max(
+                        0.0, min(1.0, float(request.args.get("duration", 0.15)))
+                    ),
                 )
             else:
                 pyautogui.moveTo(
                     int(request.args.get("x", 0)),
                     int(request.args.get("y", 0)),
-                    duration=max(0.0, min(1.0, float(request.args.get("duration", 0.15)))),
+                    duration=max(
+                        0.0, min(1.0, float(request.args.get("duration", 0.15)))
+                    ),
                 )
-            return LocalActionResponse(True, None, "completed", "Moved mouse.", False, "MEDIUM", {"x": request.args.get("x"), "y": request.args.get("y")})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Moved mouse.",
+                False,
+                "MEDIUM",
+                {"x": request.args.get("x"), "y": request.args.get("y")},
+            )
         if action == "mouse_click":
             pyautogui.click(
                 int(request.args.get("x", 0)),
@@ -60,10 +88,26 @@ class AutomationControlService:
                 interval=max(0.0, min(0.5, float(request.args.get("interval", 0.12)))),
                 button=str(request.args.get("button", "left")),
             )
-            return LocalActionResponse(True, None, "completed", "Clicked mouse.", False, "MEDIUM", {"x": request.args.get("x"), "y": request.args.get("y")})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Clicked mouse.",
+                False,
+                "MEDIUM",
+                {"x": request.args.get("x"), "y": request.args.get("y")},
+            )
         if action == "mouse_scroll":
             pyautogui.scroll(int(request.args.get("amount", request.target or 0)))
-            return LocalActionResponse(True, None, "completed", "Scrolled mouse.", False, "MEDIUM", {"amount": request.args.get("amount", request.target)})
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                "Scrolled mouse.",
+                False,
+                "MEDIUM",
+                {"amount": request.args.get("amount", request.target)},
+            )
         if action == "mouse_drag":
             start_x = int(request.args.get("start_x", request.args.get("x", 0)))
             start_y = int(request.args.get("start_y", request.args.get("y", 0)))
@@ -71,7 +115,12 @@ class AutomationControlService:
             end_y = int(request.args.get("end_y", request.args.get("to_y", 0)))
             duration = max(0.1, min(2.0, float(request.args.get("duration", 0.25))))
             pyautogui.moveTo(start_x, start_y)
-            pyautogui.dragTo(end_x, end_y, duration=duration, button=str(request.args.get("button", "left")))
+            pyautogui.dragTo(
+                end_x,
+                end_y,
+                duration=duration,
+                button=str(request.args.get("button", "left")),
+            )
             return LocalActionResponse(
                 True,
                 None,
@@ -79,15 +128,43 @@ class AutomationControlService:
                 "Dragged the mouse.",
                 False,
                 "MEDIUM",
-                {"start": [start_x, start_y], "end": [end_x, end_y], "duration": duration},
+                {
+                    "start": [start_x, start_y],
+                    "end": [end_x, end_y],
+                    "duration": duration,
+                },
             )
         if action == "desktop_navigate":
             direction = str(request.args.get("direction", request.target)).lower()
             if direction not in {"up", "down", "left", "right"}:
-                return LocalActionResponse(False, None, "blocked", "I blocked this navigation action for safety.", False, "BLOCKED", error="blocked_by_policy")
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "blocked",
+                    "I blocked this navigation action for safety.",
+                    False,
+                    "BLOCKED",
+                    error="blocked_by_policy",
+                )
             pyautogui.press(direction)
-            return LocalActionResponse(True, None, "completed", f"Moved selection {direction}.", False, "MEDIUM", {"direction": direction})
-        return LocalActionResponse(False, None, "blocked", "I blocked this automation action for safety.", False, "BLOCKED", error="blocked_by_policy")
+            return LocalActionResponse(
+                True,
+                None,
+                "completed",
+                f"Moved selection {direction}.",
+                False,
+                "MEDIUM",
+                {"direction": direction},
+            )
+        return LocalActionResponse(
+            False,
+            None,
+            "blocked",
+            "I blocked this automation action for safety.",
+            False,
+            "BLOCKED",
+            error="blocked_by_policy",
+        )
 
     def diagnostics(self, *, platform: str) -> dict[str, Any]:
         try:

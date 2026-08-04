@@ -38,11 +38,17 @@ def health() -> dict[str, Any]:
             "visible_context": bool(payload.get("details", {}).get("context_available"))
             if isinstance(payload.get("details"), dict)
             else False,
-            "visible_page": bool(payload.get("context", {}).get("supported")) if isinstance(payload.get("context"), dict) else False,
+            "visible_page": bool(payload.get("context", {}).get("supported"))
+            if isinstance(payload.get("context"), dict)
+            else False,
         },
     }
 
 
 def readiness() -> dict[str, Any]:
     payload = safe_call("browser", diagnostics)
-    return {"ready": bool(payload.get("ready")), "message": payload.get("message", ""), "local_only": True}
+    return {
+        "ready": bool(payload.get("ready")),
+        "message": payload.get("message", ""),
+        "local_only": True,
+    }

@@ -47,7 +47,9 @@ from grandpa.planner.validator import PlanValidator
 from grandpa.planner.verifier import StepVerifier
 
 
-def _goal(text: str = "Open Chrome and search for FastAPI", session: str = "test") -> Goal:
+def _goal(
+    text: str = "Open Chrome and search for FastAPI", session: str = "test"
+) -> Goal:
     return Goal(text, normalize_goal(text), session)
 
 
@@ -55,7 +57,9 @@ def _store(tmp_path: Path) -> PlanStateStore:
     return PlanStateStore(tmp_path / "plans")
 
 
-def _plan(*steps: PlanStep, session: str = "test", limits: PlannerLimits | None = None) -> ExecutionPlan:
+def _plan(
+    *steps: PlanStep, session: str = "test", limits: PlannerLimits | None = None
+) -> ExecutionPlan:
     return ExecutionPlan.create(_goal(session=session), list(steps), limits=limits)
 
 
@@ -81,7 +85,9 @@ class FakeExecutor:
         self.calls.append((f"clarify:{response}", False, False))
         if self.results:
             return self.results.pop(0)
-        return StepResult("success", "Choice applied.", step.step_id, {"verified": True})
+        return StepResult(
+            "success", "Choice applied.", step.step_id, {"verified": True}
+        )
 
 
 class PassVerifier:
@@ -183,9 +189,7 @@ def test_literal_type_payload_is_not_reparsed_as_commands() -> None:
         ),
     ],
 )
-def test_notepad_close_goal_variants(
-    goal: str, choice: str, verification: str
-) -> None:
+def test_notepad_close_goal_variants(goal: str, choice: str, verification: str) -> None:
     steps = DeterministicDecomposer().decompose(_goal(goal), PlannerLimits())
 
     assert steps is not None
@@ -228,7 +232,9 @@ def test_readiness_steps_retry_but_input_and_dialog_actions_do_not() -> None:
 
 
 def test_unsupported_vague_goal_does_not_guess() -> None:
-    assert DeterministicDecomposer().decompose(_goal("Click it"), PlannerLimits()) is None
+    assert (
+        DeterministicDecomposer().decompose(_goal("Click it"), PlannerLimits()) is None
+    )
 
 
 def test_local_model_plan_is_strict_json_and_preserves_source(tmp_path: Path) -> None:
@@ -245,6 +251,7 @@ def test_local_model_plan_is_strict_json_and_preserves_source(tmp_path: Path) ->
                 ]
             }
         )
+
     executive = ExecutivePlanner(
         session_id="model",
         local_model=LocalModelDecomposer(planner),
@@ -293,7 +300,10 @@ def test_validator_rejects_raw_coordinates() -> None:
     result = PlanValidator().validate(_plan(step))
 
     assert not result.valid
-    assert {issue.code for issue in result.issues} >= {"unexpected_parameter", "raw_coordinates"}
+    assert {issue.code for issue in result.issues} >= {
+        "unexpected_parameter",
+        "raw_coordinates",
+    }
 
 
 def test_validator_rejects_dependency_cycle() -> None:
@@ -335,9 +345,7 @@ def test_successful_multi_step_plan_updates_every_step(tmp_path: Path) -> None:
         store=_store(tmp_path),
     )
 
-    result = executive.execute(
-        "Open Chrome and search for FastAPI", dry_run=True
-    )
+    result = executive.execute("Open Chrome and search for FastAPI", dry_run=True)
 
     assert result.status == "completed"
     assert all(step.status == StepStatus.COMPLETED for step in result.plan.steps)
@@ -365,7 +373,9 @@ def test_false_success_is_prevented_by_verifier(tmp_path: Path) -> None:
 def test_confirmation_pauses_and_same_session_can_resume(tmp_path: Path) -> None:
     executor = FakeExecutor(
         [
-            StepResult("confirmation_required", "Confirm?", "step_1", confirmation_token="abc"),
+            StepResult(
+                "confirmation_required", "Confirm?", "step_1", confirmation_token="abc"
+            ),
             StepResult("success", "Done.", "step_1", {"verified": True}),
         ]
     )
@@ -395,7 +405,10 @@ def test_wrong_session_cannot_resume_confirmation(tmp_path: Path) -> None:
         store=store,
     )
     other = ExecutivePlanner(
-        session_id="other", executor=FakeExecutor(), verifier=PassVerifier(), store=store
+        session_id="other",
+        executor=FakeExecutor(),
+        verifier=PassVerifier(),
+        store=store,
     )
     owner.execute("Open Chrome")
 
@@ -553,7 +566,9 @@ def test_safe_formatters_do_not_expose_runtime_ids() -> None:
         "verified": True,
     }
 
-    rendered = format_plan(plan_value) + format_trace(plan_value) + format_graph(plan_value)
+    rendered = (
+        format_plan(plan_value) + format_trace(plan_value) + format_graph(plan_value)
+    )
 
     assert "window_handle" not in rendered
     assert "process_id" not in rendered
@@ -733,7 +748,9 @@ def test_focus_step_uses_pinned_notepad_document_identity() -> None:
     targets = _WindowTargets(resolved=notepad)
     service = _AutomationService(targets)
     service.pin_target(notepad)
-    executor = PlannerStepExecutor(session_id="notepad-focus", automation_service=service)
+    executor = PlannerStepExecutor(
+        session_id="notepad-focus", automation_service=service
+    )
     step = PlanStep(
         "step_3",
         3,
@@ -771,9 +788,7 @@ def test_calculator_alias_mismatch_uses_pinned_ready_window() -> None:
         verification=StepVerification("application_window_exists"),
     )
 
-    result = verifier.verify(
-        step, StepResult("success", "Opened.", step.step_id)
-    )
+    result = verifier.verify(step, StepResult("success", "Opened.", step.step_id))
 
     assert result.status == "success"
     assert result.data["verified"] is True
@@ -801,9 +816,7 @@ def test_window_resolution_failure_is_structured_not_raised() -> None:
 
 
 def test_calculator_result_is_verified_from_visible_semantic_text() -> None:
-    vision = SimpleNamespace(
-        read=lambda: SimpleNamespace(message="Display is 12,905")
-    )
+    vision = SimpleNamespace(read=lambda: SimpleNamespace(message="Display is 12,905"))
     verifier = StepVerifier(
         SimpleNamespace(
             automation_service=_AutomationService(_WindowTargets()),
@@ -829,9 +842,7 @@ def test_calculator_result_is_verified_from_visible_semantic_text() -> None:
 
 def test_calculator_expression_uses_accessible_expression_and_display_text() -> None:
     vision = SimpleNamespace(
-        read=lambda: SimpleNamespace(
-            message="Expression is 145 ×\nDisplay is 89"
-        )
+        read=lambda: SimpleNamespace(message="Expression is 145 ×\nDisplay is 89")
     )
     verifier = StepVerifier(
         SimpleNamespace(
@@ -866,7 +877,9 @@ def test_calculator_expression_invokes_exact_uia_controls() -> None:
     targets = _WindowTargets(resolved=calculator)
     service = _AutomationService(targets)
     service.pin_target(calculator)
-    executor = PlannerStepExecutor(session_id="calculator-uia", automation_service=service)
+    executor = PlannerStepExecutor(
+        session_id="calculator-uia", automation_service=service
+    )
     step = PlanStep(
         "step_4",
         4,
@@ -894,7 +907,9 @@ def test_calculator_expression_invokes_exact_uia_controls() -> None:
     ]
 
 
-def test_failed_launch_stops_dependent_input_and_records_failure(tmp_path: Path) -> None:
+def test_failed_launch_stops_dependent_input_and_records_failure(
+    tmp_path: Path,
+) -> None:
     executor = FakeExecutor(
         [
             StepResult("target_lost", "Calculator was not ready.", "step_1"),
@@ -1002,28 +1017,26 @@ def test_cli_failed_preview_has_no_empty_plan_shell() -> None:
     assert "Estimated maximum duration:" not in result.output
 
 
-def test_cli_partial_plan_with_failure_returns_nonzero(monkeypatch, tmp_path: Path) -> None:
+def test_cli_partial_plan_with_failure_returns_nonzero(
+    monkeypatch, tmp_path: Path
+) -> None:
     def factory(*, session_id):
         return ExecutivePlanner(
             session_id=session_id,
-                executor=FakeExecutor(
-                    [
-                        StepResult(
-                            "success", "Opened.", "step_1", {"verified": True}
-                        ),
-                        StepResult("target_lost", "Target changed.", "step_2"),
-                        StepResult("target_lost", "Target changed.", "step_2"),
-                    ]
-                ),
+            executor=FakeExecutor(
+                [
+                    StepResult("success", "Opened.", "step_1", {"verified": True}),
+                    StepResult("target_lost", "Target changed.", "step_2"),
+                    StepResult("target_lost", "Target changed.", "step_2"),
+                ]
+            ),
             verifier=PassVerifier(),
             store=_store(tmp_path),
         )
 
     monkeypatch.setattr("grandpa.cli.plan_cmd.ExecutivePlanner", factory)
 
-    result = CliRunner().invoke(
-        plan, ["execute", "Open Chrome and search for FastAPI"]
-    )
+    result = CliRunner().invoke(plan, ["execute", "Open Chrome and search for FastAPI"])
 
     assert result.exit_code == 1
     assert "Target changed." in result.output

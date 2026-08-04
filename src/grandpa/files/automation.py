@@ -22,9 +22,13 @@ class FileAutomation:
         opener: OpenCallback | None = None,
     ) -> None:
         self.parser = parser or FileParser()
-        self.executor = executor or FileExecutor(roots=roots, safety=FileSafetyPolicy(), opener=opener)
+        self.executor = executor or FileExecutor(
+            roots=roots, safety=FileSafetyPolicy(), opener=opener
+        )
 
-    def handle(self, text: str, *, confirm: ConfirmationCallback | None = None) -> FileOperationResult:
+    def handle(
+        self, text: str, *, confirm: ConfirmationCallback | None = None
+    ) -> FileOperationResult:
         action = self.parser.parse(text)
         if action is None:
             return FileOperationResult("no_match", "")

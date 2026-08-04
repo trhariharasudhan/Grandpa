@@ -70,14 +70,18 @@ def free(window: tuple[str, ...]) -> None:
 @calendar.command("search")
 @click.argument("query", nargs=-1)
 def search(query: tuple[str, ...]) -> None:
-    click.echo(handle_calendar_command("search calendar for " + " ".join(query)).message)
+    click.echo(
+        handle_calendar_command("search calendar for " + " ".join(query)).message
+    )
 
 
 @calendar.command("create")
 @click.argument("detail", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm event creation.")
 def create(detail: tuple[str, ...], yes: bool) -> None:
-    result = handle_calendar_command("create a meeting " + " ".join(detail), confirmed=yes)
+    result = handle_calendar_command(
+        "create a meeting " + " ".join(detail), confirmed=yes
+    )
     click.echo(result.message)
 
 
@@ -85,7 +89,9 @@ def create(detail: tuple[str, ...], yes: bool) -> None:
 @click.argument("detail", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm event update.")
 def update(detail: tuple[str, ...], yes: bool) -> None:
-    result = handle_calendar_command("move my meeting to " + " ".join(detail), confirmed=yes)
+    result = handle_calendar_command(
+        "move my meeting to " + " ".join(detail), confirmed=yes
+    )
     click.echo(result.message)
 
 

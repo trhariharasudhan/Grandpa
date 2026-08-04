@@ -62,7 +62,14 @@ def analyze_image_with_local_model(
             tags.raise_for_status()
             installed = _installed_models(tags.json())
             if installed:
-                model = next((candidate for candidate in models if _model_installed(candidate, installed)), None)
+                model = next(
+                    (
+                        candidate
+                        for candidate in models
+                        if _model_installed(candidate, installed)
+                    ),
+                    None,
+                )
                 if model is None:
                     return _response(
                         False,
@@ -97,16 +104,27 @@ def analyze_image_with_local_model(
         text = exc.response.text[:300] if exc.response is not None else ""
         if _is_model_missing_text(text):
             model = models[0]
-            return _response(False, model, "", f"Vision model is not installed. Run: ollama pull {model}")
-        return _response(False, None, "", f"Ollama vision analysis failed: {text or exc}")
+            return _response(
+                False,
+                model,
+                "",
+                f"Vision model is not installed. Run: ollama pull {model}",
+            )
+        return _response(
+            False, None, "", f"Ollama vision analysis failed: {text or exc}"
+        )
     except Exception as exc:
         return _response(False, None, "", f"Ollama vision analysis failed: {exc}")
 
-    analysis = str(body.get("response") or body.get("message", {}).get("content") or "").strip()
+    analysis = str(
+        body.get("response") or body.get("message", {}).get("content") or ""
+    ).strip()
     return _response(True, str(body.get("model") or model), analysis, None)
 
 
-def _response(available: bool, model: str | None, analysis: str, error: str | None) -> dict[str, Any]:
+def _response(
+    available: bool, model: str | None, analysis: str, error: str | None
+) -> dict[str, Any]:
     return {
         "available": available,
         "model": model,
@@ -169,4 +187,6 @@ def _is_model_missing_response(response: httpx.Response) -> bool:
 
 def _is_model_missing_text(text: str) -> bool:
     lowered = text.lower()
-    return "model" in lowered and ("not found" in lowered or "pull" in lowered or "not installed" in lowered)
+    return "model" in lowered and (
+        "not found" in lowered or "pull" in lowered or "not installed" in lowered
+    )

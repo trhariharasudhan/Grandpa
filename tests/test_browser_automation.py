@@ -38,7 +38,11 @@ def test_parser_open_explicit_url() -> None:
         ("Search Google for FastAPI tutorials", "google", "FastAPI tutorials"),
         ("Search YouTube for Python automation", "youtube", "Python automation"),
         ("Search GitHub for FastAPI starter", "github", "FastAPI starter"),
-        ("Search Stack Overflow for Python import error", "stack overflow", "Python import error"),
+        (
+            "Search Stack Overflow for Python import error",
+            "stack overflow",
+            "Python import error",
+        ),
         ("Google Python decorators", "google", "Python decorators"),
     ],
 )
@@ -112,7 +116,9 @@ def test_executor_opens_website_with_mocked_opener() -> None:
     action = BrowserParser().parse("open github")
     assert action is not None
 
-    result = BrowserExecutor(opener=lambda url: opened.append(url) is None or True).execute(action)
+    result = BrowserExecutor(
+        opener=lambda url: opened.append(url) is None or True
+    ).execute(action)
 
     assert result.status == "handled"
     assert opened == ["https://github.com"]
@@ -124,7 +130,9 @@ def test_executor_generates_search_url_with_mocked_opener() -> None:
     action = BrowserParser().parse("search youtube for Python automation")
     assert action is not None
 
-    result = BrowserExecutor(opener=lambda url: opened.append(url) is None or True).execute(action)
+    result = BrowserExecutor(
+        opener=lambda url: opened.append(url) is None or True
+    ).execute(action)
 
     assert result.status == "handled"
     assert opened == ["https://www.youtube.com/results?search_query=Python+automation"]
@@ -136,14 +144,18 @@ def test_executor_browser_hotkeys_are_mockable() -> None:
     action = BrowserParser().parse("open a new tab")
     assert action is not None
 
-    result = BrowserExecutor(hotkey_runner=lambda keys: keys_seen.append(keys) is None or True).execute(action)
+    result = BrowserExecutor(
+        hotkey_runner=lambda keys: keys_seen.append(keys) is None or True
+    ).execute(action)
 
     assert result.status == "handled"
     assert keys_seen == [("ctrl", "t")]
 
 
 def test_unsafe_url_returns_friendly_blocked_error() -> None:
-    result = handle_browser_command("open javascript:alert(1)", opener=lambda _url: True)
+    result = handle_browser_command(
+        "open javascript:alert(1)", opener=lambda _url: True
+    )
 
     assert result.status == "blocked"
     assert "Blocked unsafe URL scheme" in result.message
@@ -151,7 +163,9 @@ def test_unsafe_url_returns_friendly_blocked_error() -> None:
 
 def test_browser_slash_routes_to_automation(monkeypatch) -> None:
     opened: list[str] = []
-    monkeypatch.setattr("webbrowser.open", lambda url, new=0: opened.append(url) is None or True)
+    monkeypatch.setattr(
+        "webbrowser.open", lambda url, new=0: opened.append(url) is None or True
+    )
 
     message = _handle_browser_slash_command("/browser search youtube Python automation")
 
@@ -191,7 +205,9 @@ def test_chat_browser_command_does_not_call_llm(monkeypatch) -> None:
     config.intelligence.default_model = "test-model"
 
     monkeypatch.setattr("grandpa.cli.chat_cmd.load_config", lambda: config)
-    monkeypatch.setattr("grandpa.engine.get_engine", lambda *_args, **_kwargs: ("mock", engine))
+    monkeypatch.setattr(
+        "grandpa.engine.get_engine", lambda *_args, **_kwargs: ("mock", engine)
+    )
     monkeypatch.setattr("grandpa.intelligence.register_builtin_models", lambda: None)
     monkeypatch.setattr(
         "grandpa.browser.handle_browser_command",
@@ -204,7 +220,9 @@ def test_chat_browser_command_does_not_call_llm(monkeypatch) -> None:
         ),
     )
 
-    result = CliRunner().invoke(chat, ["--model", "test-model"], input="open youtube\n/quit\n")
+    result = CliRunner().invoke(
+        chat, ["--model", "test-model"], input="open youtube\n/quit\n"
+    )
 
     assert result.exit_code == 0
     assert "YouTube opened." in result.output

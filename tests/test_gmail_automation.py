@@ -38,7 +38,9 @@ class FakeGmailClient:
     def account(self) -> str:
         return "hari@example.com"
 
-    def list_messages(self, query: str = "", *, limit: int = 10) -> tuple[GmailMessageSummary, ...]:
+    def list_messages(
+        self, query: str = "", *, limit: int = 10
+    ) -> tuple[GmailMessageSummary, ...]:
         messages = (
             GmailMessageSummary(
                 "msg-1",
@@ -111,7 +113,9 @@ def test_parser_handles_core_gmail_commands() -> None:
         query="from:arjun@example.com",
         selector="latest",
     )
-    assert parser.parse("draft an email to hari@example.com about demo").action == "draft"
+    assert (
+        parser.parse("draft an email to hari@example.com about demo").action == "draft"
+    )
 
 
 def test_safety_redacts_secrets_and_flags_injection() -> None:
@@ -180,7 +184,9 @@ def test_format_message_cards_never_exposes_gmail_message_ids() -> None:
     assert "Grandpa build update" in text
 
 
-def test_gmail_slash_command_routes_through_safe_facade(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gmail_slash_command_routes_through_safe_facade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     calls: list[str] = []
 
     def fake_handle(text: str):
@@ -201,7 +207,9 @@ def test_gmail_slash_command_is_registered_for_picker() -> None:
     assert "/gmail unread" in command.subcommands
 
 
-def test_voice_assistant_routes_gmail_without_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_voice_assistant_routes_gmail_without_llm(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     monkeypatch.setattr(
         "grandpa.gmail.handle_gmail_command",
         lambda _text: SimpleNamespace(
@@ -258,7 +266,9 @@ def test_auth_status_and_disconnect_use_local_credential_paths(tmp_path: Path) -
     assert not token.exists()
 
 
-def test_doctor_reports_unconfigured_gmail_as_optional(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_doctor_reports_unconfigured_gmail_as_optional(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     class FakeAuth:
         def status(self):
             return GmailAuthStatus(

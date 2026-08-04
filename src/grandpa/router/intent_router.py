@@ -48,7 +48,9 @@ def route_local_intent(request_text: str):
         try:
             result = execute_skill_route(route)
         except Exception:
-            logger.debug("Intent skill route failed for %s", route.skill_name, exc_info=True)
+            logger.debug(
+                "Intent skill route failed for %s", route.skill_name, exc_info=True
+            )
             _record(route, "fallback", "skill_error")
             return None
         _record(route, result.status, "skill")
@@ -106,7 +108,11 @@ def _planner_route(request_text: str) -> IntentRoute | None:
     except Exception:
         logger.debug("Planner analysis failed during intent routing", exc_info=True)
         return None
-    if analysis.confidence < 0.7 or not analysis.steps or analysis.estimated_risk == "BLOCKED":
+    if (
+        analysis.confidence < 0.7
+        or not analysis.steps
+        or analysis.estimated_risk == "BLOCKED"
+    ):
         return None
     if not analysis.workflow_suitable and len(analysis.steps) < 2:
         return None
@@ -116,7 +122,10 @@ def _planner_route(request_text: str) -> IntentRoute | None:
         category="planner",
         confidence=analysis.confidence,
         skill_name="",
-        params={"required_skills": list(analysis.required_skills), "goal_class": analysis.goal_class},
+        params={
+            "required_skills": list(analysis.required_skills),
+            "goal_class": analysis.goal_class,
+        },
         risk_level=analysis.estimated_risk,
         approval_required=bool(analysis.approval_needed_steps),
         execution_source="planner",

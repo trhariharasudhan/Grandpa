@@ -12,7 +12,11 @@ def diagnostics() -> dict[str, Any]:
     from grandpa.mcp import tool_diagnostics
     from grandpa.planner import planner_diagnostics
 
-    return {"planner": planner_diagnostics(), "agent": agent_diagnostics(), "mcp": tool_diagnostics()}
+    return {
+        "planner": planner_diagnostics(),
+        "agent": agent_diagnostics(),
+        "mcp": tool_diagnostics(),
+    }
 
 
 def analyze_request(text: str) -> dict[str, Any]:
@@ -61,15 +65,23 @@ def analyze_intent(text: str) -> dict[str, Any]:
 
 def health() -> dict[str, Any]:
     payload = safe_call("planner", diagnostics)
-    ready = summarize_ready(payload.get("planner", {})) and summarize_ready(payload.get("agent", {}))
+    ready = summarize_ready(payload.get("planner", {})) and summarize_ready(
+        payload.get("agent", {})
+    )
     return {
         "name": "planner",
         "ready": ready,
         "status": "ready" if ready else "partial",
         "dependencies": {
-            "planner": payload.get("planner", {}).get("status", "unknown") if isinstance(payload.get("planner"), dict) else "unknown",
-            "agent": payload.get("agent", {}).get("status", "unknown") if isinstance(payload.get("agent"), dict) else "unknown",
-            "mcp": payload.get("mcp", {}).get("status", "unknown") if isinstance(payload.get("mcp"), dict) else "unknown",
+            "planner": payload.get("planner", {}).get("status", "unknown")
+            if isinstance(payload.get("planner"), dict)
+            else "unknown",
+            "agent": payload.get("agent", {}).get("status", "unknown")
+            if isinstance(payload.get("agent"), dict)
+            else "unknown",
+            "mcp": payload.get("mcp", {}).get("status", "unknown")
+            if isinstance(payload.get("mcp"), dict)
+            else "unknown",
         },
     }
 

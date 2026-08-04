@@ -61,7 +61,9 @@ class ExecutivePlanner:
         self.scheduler = scheduler or PlanScheduler()
         self.store = store or PlanStateStore()
 
-    def create(self, goal_text: str, *, allow_local_model: bool = False) -> ExecutionPlan:
+    def create(
+        self, goal_text: str, *, allow_local_model: bool = False
+    ) -> ExecutionPlan:
         goal = Goal(goal_text.strip(), normalize_goal(goal_text), self.session_id)
         steps = self.deterministic.decompose(goal, self.limits)
         source = "deterministic"
@@ -106,7 +108,9 @@ class ExecutivePlanner:
             return PlanResult("clarification_required", str(exc), empty)
         if plan.status == PlanStatus.FAILED:
             message = _validation_message(plan)
-            return PlanResult("blocked", message, plan, FailureReason("validation_failed", message))
+            return PlanResult(
+                "blocked", message, plan, FailureReason("validation_failed", message)
+            )
         return PlanResult("ready", f"I created a {len(plan.steps)}-step plan.", plan)
 
     def execute(
@@ -124,9 +128,16 @@ class ExecutivePlanner:
         else:
             plan = goal_or_plan
         if plan.session_id != self.session_id:
-            return PlanResult("blocked", "That plan belongs to another session.", plan, FailureReason("session_mismatch", "Plan session mismatch."))
+            return PlanResult(
+                "blocked",
+                "That plan belongs to another session.",
+                plan,
+                FailureReason("session_mismatch", "Plan session mismatch."),
+            )
         if plan.status not in {PlanStatus.READY, PlanStatus.PAUSED, PlanStatus.RUNNING}:
-            return PlanResult("blocked", f"Plan cannot execute from {plan.status.value}.", plan)
+            return PlanResult(
+                "blocked", f"Plan cannot execute from {plan.status.value}.", plan
+            )
         return self._run(plan, dry_run=dry_run)
 
     def resume(self, *, confirmed: bool = False) -> PlanResult:
@@ -137,17 +148,33 @@ class ExecutivePlanner:
             return PlanResult("blocked", "That plan belongs to another session.", plan)
         if plan.status == PlanStatus.WAITING_FOR_CONFIRMATION:
             if not confirmed:
-                return PlanResult("confirmation_required", plan.confirmation.message if plan.confirmation else "Confirmation is required.", plan)
+                return PlanResult(
+                    "confirmation_required",
+                    plan.confirmation.message
+                    if plan.confirmation
+                    else "Confirmation is required.",
+                    plan,
+                )
             step = _current_step(plan)
             if step is None:
-                return PlanResult("failed", "The pending plan step is unavailable.", plan)
+                return PlanResult(
+                    "failed", "The pending plan step is unavailable.", plan
+                )
             plan.confirmation = None
             step.status = StepStatus.READY
             return self._run(plan, confirmed_step_id=step.step_id)
         if plan.status == PlanStatus.WAITING_FOR_CLARIFICATION:
-            return PlanResult("clarification_required", plan.clarification.message if plan.clarification else "Clarification is required.", plan)
+            return PlanResult(
+                "clarification_required",
+                plan.clarification.message
+                if plan.clarification
+                else "Clarification is required.",
+                plan,
+            )
         if plan.status != PlanStatus.PAUSED:
-            return PlanResult("blocked", f"Plan cannot resume from {plan.status.value}.", plan)
+            return PlanResult(
+                "blocked", f"Plan cannot resume from {plan.status.value}.", plan
+            )
         return self._run(plan)
 
     def clarify(self, response: str) -> PlanResult:
@@ -159,7 +186,9 @@ class ExecutivePlanner:
         if plan.session_id != self.session_id:
             return PlanResult("blocked", "That plan belongs to another session.", plan)
         if plan.status != PlanStatus.WAITING_FOR_CLARIFICATION:
-            return PlanResult("blocked", "This plan is not waiting for clarification.", plan)
+            return PlanResult(
+                "blocked", "This plan is not waiting for clarification.", plan
+            )
         step = _current_step(plan)
         if step is None:
             return PlanResult("failed", "The pending plan step is unavailable.", plan)
@@ -196,7 +225,9 @@ class ExecutivePlanner:
         if plan is None:
             return _missing_result(self.session_id)
         if plan.status not in {PlanStatus.RUNNING, PlanStatus.READY}:
-            return PlanResult("blocked", f"Plan cannot pause from {plan.status.value}.", plan)
+            return PlanResult(
+                "blocked", f"Plan cannot pause from {plan.status.value}.", plan
+            )
         plan.status = PlanStatus.PAUSED
         plan.updated_at = utc_now()
         self.store.save(plan)
@@ -206,13 +237,21 @@ class ExecutivePlanner:
         plan = self.current()
         if plan is None:
             return _missing_result(self.session_id)
-        if plan.status in {PlanStatus.COMPLETED, PlanStatus.CANCELLED, PlanStatus.FAILED}:
+        if plan.status in {
+            PlanStatus.COMPLETED,
+            PlanStatus.CANCELLED,
+            PlanStatus.FAILED,
+        }:
             return PlanResult("blocked", f"Plan is already {plan.status.value}.", plan)
         plan.status = PlanStatus.CANCELLED
         plan.confirmation = None
         plan.clarification = None
         for step in plan.steps:
-            if step.status in {StepStatus.PENDING, StepStatus.READY, StepStatus.RETRYING}:
+            if step.status in {
+                StepStatus.PENDING,
+                StepStatus.READY,
+                StepStatus.RETRYING,
+            }:
                 step.status = StepStatus.CANCELLED
         plan.updated_at = utc_now()
         self.store.save(plan)
@@ -222,9 +261,14 @@ class ExecutivePlanner:
         plan = self.current()
         if plan is None:
             return _missing_result(self.session_id)
-        step = _current_step(plan) or next((item for item in reversed(plan.steps) if item.status == StepStatus.FAILED), None)
+        step = _current_step(plan) or next(
+            (item for item in reversed(plan.steps) if item.status == StepStatus.FAILED),
+            None,
+        )
         if step is None or step.action in NON_IDEMPOTENT_ACTIONS:
-            return PlanResult("blocked", "The failed step cannot be retried automatically.", plan)
+            return PlanResult(
+                "blocked", "The failed step cannot be retried automatically.", plan
+            )
         step.status = StepStatus.RETRYING
         plan.status = PlanStatus.RUNNING
         return self._run(plan)
@@ -245,15 +289,27 @@ class ExecutivePlanner:
         plan.status = PlanStatus.RUNNING
         while True:
             if time.monotonic() - started > plan.limits.max_duration_seconds:
-                return self._fail(plan, "plan_timeout", "The task stopped because its time limit was reached.")
+                return self._fail(
+                    plan,
+                    "plan_timeout",
+                    "The task stopped because its time limit was reached.",
+                )
             step = self.scheduler.next_step(plan)
             if step is None:
                 blocked = self.scheduler.blocked_by_dependency(plan)
                 if blocked:
                     for item in blocked:
                         item.status = StepStatus.BLOCKED
-                    return self._fail(plan, "dependency_failed", "The task stopped because a required earlier step failed.", partial=True)
-                if all(item.status in {StepStatus.COMPLETED, StepStatus.SKIPPED} for item in plan.steps):
+                    return self._fail(
+                        plan,
+                        "dependency_failed",
+                        "The task stopped because a required earlier step failed.",
+                        partial=True,
+                    )
+                if all(
+                    item.status in {StepStatus.COMPLETED, StepStatus.SKIPPED}
+                    for item in plan.steps
+                ):
                     partial = bool(plan.metadata.get("partial_steps"))
                     plan.status = (
                         PlanStatus.PARTIALLY_COMPLETED
@@ -270,9 +326,16 @@ class ExecutivePlanner:
                         import subprocess
 
                         from grandpa.memory.service import MemoryService
+
                         vcommit = None
                         try:
-                            cp = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd="D:\\Grandpa", capture_output=True, text=True, timeout=3)
+                            cp = subprocess.run(
+                                ["git", "rev-parse", "--short", "HEAD"],
+                                cwd="D:\\Grandpa",
+                                capture_output=True,
+                                text=True,
+                                timeout=3,
+                            )
                             if cp.returncode == 0 and cp.stdout.strip():
                                 vcommit = cp.stdout.strip()
                         except Exception:
@@ -295,7 +358,12 @@ class ExecutivePlanner:
                         else "Task completed.",
                         plan,
                     )
-                return self._fail(plan, "no_runnable_step", "The task stopped because no verified step could run.", partial=True)
+                return self._fail(
+                    plan,
+                    "no_runnable_step",
+                    "The task stopped because no verified step could run.",
+                    partial=True,
+                )
             plan.current_step_id = step.step_id
             step.status = StepStatus.RUNNING
             attempt = StepAttempt(len(step.attempts) + 1)
@@ -371,8 +439,14 @@ class ExecutivePlanner:
                 self._sync_diagnostics(plan)
                 self.store.save(plan)
                 continue
-            step.status = StepStatus.BLOCKED if result.status in {"blocked", "target_lost"} else StepStatus.FAILED
-            return self._fail(plan, "step_failed", result.message, step_id=step.step_id, partial=True)
+            step.status = (
+                StepStatus.BLOCKED
+                if result.status in {"blocked", "target_lost"}
+                else StepStatus.FAILED
+            )
+            return self._fail(
+                plan, "step_failed", result.message, step_id=step.step_id, partial=True
+            )
 
     def _fail(
         self,
@@ -384,7 +458,11 @@ class ExecutivePlanner:
         partial: bool = False,
     ) -> PlanResult:
         completed = any(step.status == StepStatus.COMPLETED for step in plan.steps)
-        plan.status = PlanStatus.PARTIALLY_COMPLETED if partial and completed else PlanStatus.FAILED
+        plan.status = (
+            PlanStatus.PARTIALLY_COMPLETED
+            if partial and completed
+            else PlanStatus.FAILED
+        )
         plan.metadata["failure_point"] = {
             "code": code,
             "step_id": step_id,
@@ -397,6 +475,7 @@ class ExecutivePlanner:
         # Record failed plan outcome in ProjectMemory
         try:
             from grandpa.memory.service import MemoryService
+
             MemoryService.get_instance().remember_project_result(
                 project_name="Grandpa",
                 goal=plan.original_goal,
@@ -405,9 +484,12 @@ class ExecutivePlanner:
             )
         except Exception as exc:
             import sys
+
             sys.stderr.write(f"MEM_ERR: {exc}\n")
 
-        return PlanResult(plan.status.value, message, plan, FailureReason(code, message, step_id))
+        return PlanResult(
+            plan.status.value, message, plan, FailureReason(code, message, step_id)
+        )
 
     def _sync_diagnostics(self, plan: ExecutionPlan) -> None:
         diagnostics = getattr(self.executor, "diagnostics", None)
@@ -417,15 +499,26 @@ class ExecutivePlanner:
 
 def _validation_message(plan: ExecutionPlan) -> str:
     issues = plan.metadata.get("validation_issues", [])
-    return "Plan validation failed: " + "; ".join(str(item.get("message")) for item in issues[:5])
+    return "Plan validation failed: " + "; ".join(
+        str(item.get("message")) for item in issues[:5]
+    )
 
 
 def _current_step(plan: ExecutionPlan):
-    return next((step for step in plan.steps if step.step_id == plan.current_step_id), None)
+    return next(
+        (step for step in plan.steps if step.step_id == plan.current_step_id), None
+    )
 
 
 def _safe_evidence(data: dict) -> dict:
-    blocked = {"window_handle", "process_id", "runtime_id", "password", "token", "secret"}
+    blocked = {
+        "window_handle",
+        "process_id",
+        "runtime_id",
+        "password",
+        "token",
+        "secret",
+    }
     return {key: value for key, value in data.items() if key.casefold() not in blocked}
 
 
