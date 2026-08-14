@@ -102,9 +102,11 @@ def reset_router_diagnostics() -> None:
 
 def _planner_route(request_text: str) -> IntentRoute | None:
     try:
+        from grandpa.core.config import load_config
         from grandpa.planner import analyze_request
 
-        analysis = analyze_request(request_text)
+        include_memory = load_config().agent.context_from_memory
+        analysis = analyze_request(request_text, include_memory=include_memory)
     except Exception:
         logger.debug("Planner analysis failed during intent routing", exc_info=True)
         return None

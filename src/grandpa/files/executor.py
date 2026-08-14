@@ -6,9 +6,9 @@ import os
 import shutil
 import zipfile
 from collections.abc import Callable
-from datetime import datetime
 from pathlib import Path, PurePosixPath
 
+from grandpa.files.metadata import format_properties_message, inspect_path_metadata
 from grandpa.files.models import FileAction, FileOperationResult
 from grandpa.files.paths import (
     describe_path,
@@ -303,21 +303,10 @@ class FileExecutor:
         source = self._resolve_existing(action.source)
         if isinstance(source, FileOperationResult):
             return source
-        stat = source.stat()
-        kind = (
-            "folder"
-            if source.is_dir()
-            else (source.suffix.lower().lstrip(".") or "file")
+        metadata = inspect_path_metadata(source)
+        return FileOperationResult(
+            "handled", format_properties_message(metadata), action, metadata.path
         )
-        message = (
-            f"Properties for {source.name}:\n"
-            f"- Path: {source}\n"
-            f"- Type: {kind}\n"
-            f"- Size: {_size_label(stat.st_size)}\n"
-            f"- Created: {datetime.fromtimestamp(stat.st_ctime).isoformat(timespec='seconds')}\n"
-            f"- Modified: {datetime.fromtimestamp(stat.st_mtime).isoformat(timespec='seconds')}"
-        )
-        return FileOperationResult("handled", message, action, source)
 
     def _move_or_copy(
         self,
@@ -428,14 +417,6 @@ def _default_open(path: Path) -> None:
     if os.name != "nt":
         raise OSError("Opening files is only supported on Windows desktop here.")
     os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606
-
-
-def _size_label(size: int) -> str:
-    if size < 1024:
-        return f"{size} B"
-    if size < 1024 * 1024:
-        return f"{size / 1024:.1f} KB"
-    return f"{size / (1024 * 1024):.1f} MB"
 
 
 __all__ = ["ConfirmationCallback", "FileExecutor", "OpenCallback"]

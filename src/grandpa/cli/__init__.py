@@ -126,6 +126,9 @@ def cli(
 cli.add_command(
     _lazy("init", "grandpa.cli.init_cmd:init", short_help="Initialize Grandpa.")
 )
+cli.add_command(
+    _lazy("launcher", "grandpa.cli.launcher:launcher", short_help="Launch interactive menu.")
+)
 cli.add_command(_lazy("ask", "grandpa.cli.ask:ask", short_help="Ask Grandpa once."))
 cli.add_command(
     _lazy("chat", "grandpa.cli.chat_cmd:chat", short_help="Start chat mode.")

@@ -1,0 +1,33 @@
+Grandpa F5 audio compatibility result
+Captured: 2026-08-12 Asia/Calcutta
+
+Remediation:
+- Installed BtbN FFmpeg 7.1 LGPL shared Windows x64 build locally under
+  D:\Grandpa\voice_runtime\tools\ffmpeg-7.1-lgpl-shared\
+- Download archive SHA-256:
+  10CEF71054CDC9B83EB3EFB479C7199A8632902F189F545F7A28E7135F1DA9FE
+- Added its bin directory to the current user's PATH while preserving all
+  existing entries.
+- No Python package was installed, removed, upgraded, or downgraded.
+
+Verification:
+- ffmpeg: n7.1.5-12-g1fdbca85aa-20260812, shared LGPL build
+- ffprobe: available
+- torch: 2.13.0+cpu
+- torchaudio: 2.11.0+cpu
+- torchcodec: 0.15.0+cpu, import PASS
+- torchaudio.load(hari_reference.wav): PASS, 1 x 308700, 44100 Hz
+- pydub reference load: PASS, 7000 ms, mono, 44100 Hz, 16-bit
+- soundfile remains installed and available: 0.14.0
+- pip check: no broken requirements
+
+Real F5 inference:
+- Text: Hello Hari, Grandpa is ready.
+- Exit code: 0
+- Runtime: 441.891 seconds
+- Output: D:\Grandpa\voice_runtime\outputs\audio_runtime_fix_test.wav
+- Output: PCM16 WAV, mono, 24000 Hz, 1.514667 seconds, 72748 bytes
+- Initial available RAM: 4.307 GiB
+- Minimum available RAM: 1.309 GiB
+- Peak tracked process-tree working set: 2.238 GiB
+- No pydub FFmpeg warning, TorchCodec error, or soundfile fallback appeared.

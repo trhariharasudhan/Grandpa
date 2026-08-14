@@ -79,6 +79,7 @@ def test_create_file_and_folder(tmp_path: Path) -> None:
 def test_copy_move_rename_and_overwrite_protection(tmp_path: Path) -> None:
     source = tmp_path / "report.pdf"
     source.write_text("report", encoding="utf-8")
+    (tmp_path / "copies").mkdir()
     automation = FileAutomation(roots=(tmp_path,))
 
     copied = automation.handle("Copy report.pdf to copies/report.pdf")

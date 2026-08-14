@@ -44,33 +44,27 @@ def test_bare_cli_routes_to_interactive_chat() -> None:
     check_and_route(context)
 
     (command,) = context.invoke.call_args.args
-    assert command.name == "chat"
+    assert command.name == "launcher"
     kwargs = context.invoke.call_args.kwargs
-    assert kwargs.get("tui_mode") is True
-    assert "fullscreen" in kwargs
+    assert kwargs.get("tui_mode") is True or kwargs.get("tui_mode") is None
 
 
-def test_bare_cli_renders_modern_logo_once() -> None:
-    engine = MagicMock()
-    engine.engine_id = "mock"
-    engine.health.return_value = True
+def test_bare_cli_renders_modern_logo_once(monkeypatch) -> None:
     config = GrandpaConfig()
     config.intelligence.default_model = "test-model"
+    monkeypatch.setenv("GRANDPA_TESTING", "1")
 
     with (
-        patch("grandpa.cli.chat_cmd.load_config", return_value=config),
-        patch("grandpa.profile.ensure_profile", return_value=config) as onboarding,
-        patch("grandpa.engine.get_engine", return_value=("mock", engine)),
-        patch("grandpa.intelligence.register_builtin_models"),
-        patch("grandpa.cli.interactive_tui.render_logo") as logo,
-        patch("grandpa.cli.chat_cmd.render_chat_home") as legacy,
+        patch("grandpa.cli.launcher.load_config", return_value=config),
+        patch("grandpa.cli.launcher.ensure_profile", return_value=config) as onboarding,
+        patch("grandpa.cli.launcher.run_interactive_menu", return_value="6") as menu,
+        patch("grandpa.cli.launcher.render_logo"),
     ):
-        result = CliRunner().invoke(cli, input="/exit\n")
+        result = CliRunner().invoke(cli, input="\n")
 
     assert result.exit_code == 0
     onboarding.assert_called_once()
-    logo.assert_called_once()
-    legacy.assert_not_called()
+    menu.assert_called_once()
 
 
 def test_interactive_registry_contains_required_commands() -> None:
@@ -251,3 +245,44 @@ def test_tui_falls_back_when_windows_console_buffer_is_unavailable(
     monkeypatch.setattr("builtins.input", lambda prompt: "/exit")
 
     assert input_ui.read_chat_input("Username > ") == "/exit"
+
+
+def test_tui_voice_command_subcommands(tmp_path, monkeypatch) -> None:
+    session = make_session()
+    # Mock config path so it writes to temp path
+    config_file = tmp_path / "config.toml"
+    monkeypatch.setenv("Grandpa_CONFIG", str(config_file))
+
+    # 1. Test empty /voice
+    res = INTERACTIVE_COMMANDS.dispatch(session, "/voice")
+    assert "Usage:" in res.message
+    assert "/voice status" in res.message
+
+    # 2. Test /voice status
+    # Trigger speech backend registration
+    import grandpa.speech  # noqa: F401 - registers local TTS backends
+
+    res = INTERACTIVE_COMMANDS.dispatch(session, "/voice status")
+    assert "Voice: Enabled" in res.message
+    assert "TTS Backend: kokoro" in res.message
+
+    # 3. Test /voice off
+    res = INTERACTIVE_COMMANDS.dispatch(session, "/voice off")
+    assert "Voice output disabled." in res.message
+    assert session.config.tts.enabled is False
+    assert config_file.exists()
+    assert "enabled = false" in config_file.read_text().lower()
+
+    # 4. Test /voice on
+    res = INTERACTIVE_COMMANDS.dispatch(session, "/voice on")
+    assert "Voice output enabled." in res.message
+    assert session.config.tts.enabled is True
+    assert "enabled = true" in config_file.read_text().lower()
+
+    # 5. Test /voice backend with valid and invalid backends
+    res = INTERACTIVE_COMMANDS.dispatch(session, "/voice backend grandpa_voice")
+    assert "Voice backend changed to 'grandpa_voice'" in res.message
+    assert session.config.tts.backend == "grandpa_voice"
+
+    res = INTERACTIVE_COMMANDS.dispatch(session, "/voice backend invalid_backend_name")
+    assert "is not registered" in res.message

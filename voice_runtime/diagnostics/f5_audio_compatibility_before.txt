@@ -1,0 +1,28 @@
+Grandpa F5 audio compatibility snapshot
+Captured: 2026-08-12 Asia/Calcutta
+
+Python: 3.11.9 x64
+Interpreter: D:\Grandpa\voice_runtime\.venv\Scripts\python.exe
+F5-TTS: 1.1.22
+PyTorch: 2.13.0+cpu
+TorchAudio: 2.11.0+cpu
+TorchCodec: 0.15.0
+SoundFile: 0.14.0
+pydub: 0.25.1
+CUDA: unavailable (expected CPU-only runtime)
+
+Before remediation:
+- ffmpeg and ffprobe were not found on PATH.
+- No FFmpeg avcodec/avformat/avutil shared DLLs existed in voice_runtime.
+- torchcodec import failed while loading libtorchcodec because its FFmpeg DLL
+  dependencies were absent.
+- torchaudio.load delegated to torchcodec and failed for the same reason.
+- soundfile read hari_reference.wav successfully as mono PCM16 WAV, 44.1 kHz,
+  7.000 seconds.
+- F5 inference remained functional through its controlled soundfile fallback.
+
+Compatibility decision:
+- Preserve the working CPU-only PyTorch/F5 stack.
+- Install only an LGPL FFmpeg 7.1 full-shared Windows x64 build first.
+- Do not replace torch, torchaudio, or torchcodec unless the shared FFmpeg test
+  proves a separate ABI incompatibility.

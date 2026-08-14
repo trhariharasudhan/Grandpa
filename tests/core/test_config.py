@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from grandpa.core.config import (
     GrandpaConfig,
     HardwareInfo,
@@ -15,6 +17,7 @@ from grandpa.core.config import (
     generate_minimal_toml,
     load_config,
     recommend_engine,
+    validate_ollama_num_ctx,
 )
 
 
@@ -25,6 +28,28 @@ def test_defaults_are_local_and_safe() -> None:
     assert cfg.memory.default_backend == "sqlite"
     assert cfg.security.enabled is True
     assert cfg.security.enforce_tool_confirmation is True
+    assert cfg.engine.ollama.num_ctx == 8192
+
+
+def test_loads_ollama_context_override(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[engine.ollama]\nnum_ctx = 1024\n", encoding="utf-8")
+
+    assert load_config(config_path).engine.ollama.num_ctx == 1024
+
+
+def test_invalid_ollama_context_in_toml_is_rejected(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.toml"
+    config_path.write_text("[engine.ollama]\nnum_ctx = 0\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="engine.ollama.num_ctx"):
+        load_config(config_path)
+
+
+@pytest.mark.parametrize("value", (0, -1, 255, 262_145, True, "1024"))
+def test_rejects_invalid_ollama_context(value: object) -> None:
+    with pytest.raises(ValueError, match="engine.ollama.num_ctx"):
+        validate_ollama_num_ctx(value)
 
 
 def test_recommend_engine_is_ollama() -> None:

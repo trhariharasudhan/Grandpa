@@ -24,6 +24,11 @@ def _make_engine(key: str, config: GrandpaConfig) -> InferenceEngine:
     host_attr = _HOST_MAP.get(key)
     if host_attr is not None:
         host = getattr(config.engine, host_attr, None)
+        if key == "ollama":
+            kwargs: dict[str, Any] = {"num_ctx": config.engine.ollama.num_ctx}
+            if host:
+                kwargs["host"] = host
+            return cls(**kwargs)
         if host:
             return cls(host=host)
     return cls()

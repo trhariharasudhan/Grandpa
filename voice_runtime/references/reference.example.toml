@@ -1,0 +1,7 @@
+# Copy this file to reference.local.toml. The copied file and audio are ignored.
+audio = "hari_reference.wav"
+transcript = "REPLACE WITH THE EXACT VERBATIM REFERENCE TRANSCRIPT"
+sha256 = "f9f2229c59044658262fa464e2a49616527089e0fd9192c07de3bcd554bd54a0"
+duration_seconds = 7.0
+sample_rate = 44100
+channels = 1

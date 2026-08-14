@@ -27,6 +27,11 @@ def engine() -> OllamaEngine:
 
 
 class TestOllamaGenerate:
+    @pytest.mark.parametrize("num_ctx", (0, 255, 262_145))
+    def test_rejects_invalid_context(self, num_ctx: int) -> None:
+        with pytest.raises(ValueError, match="engine.ollama.num_ctx"):
+            OllamaEngine(host="http://testhost:11434", num_ctx=num_ctx)
+
     def test_generate_returns_content(self, engine: OllamaEngine) -> None:
         with respx.mock:
             route = respx.post("http://testhost:11434/api/chat").mock(
@@ -50,8 +55,25 @@ class TestOllamaGenerate:
         payload = json.loads(route.calls.last.request.content)
         assert payload["think"] is False
         assert payload["options"]["num_predict"] == 1024
+        assert payload["options"]["num_ctx"] == 8192
         assert payload["options"]["repeat_penalty"] == 1.08
         assert "<|endoftext|>" in payload["options"]["stop"]
+
+    def test_generate_uses_configured_context(self) -> None:
+        configured = OllamaEngine(host="http://testhost:11434", num_ctx=1024)
+        with respx.mock:
+            route = respx.post("http://testhost:11434/api/chat").mock(
+                return_value=httpx.Response(
+                    200,
+                    json={"message": {"role": "assistant", "content": "Hello!"}},
+                )
+            )
+            configured.generate(
+                [Message(role=Role.USER, content="Hi")], model="qwen2.5:0.5b"
+            )
+
+        payload = json.loads(route.calls.last.request.content)
+        assert payload["options"]["num_ctx"] == 1024
 
     def test_generate_cleans_reasoning_leak(self, engine: OllamaEngine) -> None:
         with respx.mock:

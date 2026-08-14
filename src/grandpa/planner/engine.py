@@ -277,7 +277,9 @@ def build_execution_plan(request: str) -> ExecutionGraph:
     )
 
 
-def analyze_request(request: str) -> PlannerAnalysis:
+def analyze_request(
+    request: str, *, include_memory: bool = True
+) -> PlannerAnalysis:
     clean = request.strip()
     goal = classify_goal(clean)
     steps = tuple(decompose_multi_step_task(clean))
@@ -287,7 +289,16 @@ def analyze_request(request: str) -> PlannerAnalysis:
     approval_steps = tuple(step.id for step in steps if step.approval_required)
     required = tuple(step.skill for step in steps)
     dependencies = {step.id: step.dependencies for step in steps if step.dependencies}
-    memory = _memory_context(clean)
+    memory = (
+        _memory_context(clean)
+        if include_memory
+        else {
+            "available": False,
+            "matches": [],
+            "confidence": 0.0,
+            "source": "disabled",
+        }
+    )
     unsupported = (
         ""
         if steps and risk != "BLOCKED"

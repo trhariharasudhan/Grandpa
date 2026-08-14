@@ -18,7 +18,6 @@ def check_and_route(ctx: click.Context) -> None:
         return
 
     # Late imports to avoid circular import with cli/__init__.py.
-    from grandpa.cli.chat_cmd import chat as chat_cmd
+    from grandpa.cli.launcher import launcher as launcher_cmd
 
-    fullscreen = ctx.obj.get("fullscreen")
-    ctx.invoke(chat_cmd, tui_mode=True, fullscreen=fullscreen)
+    ctx.invoke(launcher_cmd)

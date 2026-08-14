@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from rich.console import Console
 
@@ -163,11 +163,133 @@ def _memory(_session: InteractiveSession, argument: str) -> LocalCommandResult:
     )
 
 
-def _voice(_session: InteractiveSession, _argument: str) -> LocalCommandResult:
-    return LocalCommandResult(
-        True,
-        "Voice mode is available as a dedicated session.\nRun: grandpa voice",
-    )
+def _voice(session: InteractiveSession, argument: str) -> LocalCommandResult:
+    args = argument.strip().split()
+    if not args:
+        return LocalCommandResult(
+            True,
+            "Usage:\n"
+            "  /voice status           - Show current voice engine status\n"
+            "  /voice backend <name>   - Change active TTS backend (e.g. grandpa_voice, kokoro)\n"
+            "  /voice test             - Test voice synthesis and playback\n"
+            "  /voice off              - Disable speech output\n"
+            "  /voice on               - Enable speech output"
+        )
+
+    cmd = args[0].lower()
+
+    # Helper to save settings
+    def _update_and_persist_config(key: str, value: Any) -> None:
+        parts = key.split(".")
+        current = session.config
+        for part in parts[:-1]:
+            current = getattr(current, part)
+        setattr(current, parts[-1], value)
+
+        import tomlkit
+
+        from grandpa.core.config import DEFAULT_CONFIG_DIR
+        config_path = Path(
+            os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
+        )
+        if config_path.exists():
+            try:
+                doc = tomlkit.parse(config_path.read_text("utf-8"))
+            except Exception:
+                doc = tomlkit.document()
+        else:
+            doc = tomlkit.document()
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+
+        current_toml = doc
+        for part in parts[:-1]:
+            if part not in current_toml:
+                current_toml.add(part, tomlkit.table())
+            current_toml = current_toml[part]
+        current_toml[parts[-1]] = value
+
+        config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+
+    if cmd == "status":
+        import grandpa.speech  # noqa: F401 - registers local TTS backends
+        from grandpa.core.registry import TTSRegistry
+
+        backend = session.config.tts.backend
+        enabled_str = "Enabled" if session.config.tts.enabled else "Disabled"
+
+        health_str = "Offline"
+        if TTSRegistry.contains(backend):
+            try:
+                backend_cls = TTSRegistry.get(backend)
+                health_str = "Ready" if backend_cls().health() else "Offline"
+            except Exception:
+                pass
+
+        status_msg = (
+            f"Voice: {enabled_str}\n"
+            f"TTS Backend: {backend}\n"
+            f"Engine: {session.config.grandpa_voice.engine}\n"
+            f"Mode: Local\n"
+            f"Internet Required: No\n"
+            f"Reference Voice: {session.config.grandpa_voice.voice_id}\n"
+            f"Health: {health_str}"
+        )
+        return LocalCommandResult(True, status_msg)
+
+    elif cmd == "backend":
+        if len(args) < 2:
+            return LocalCommandResult(True, "Please specify a backend name, e.g. /voice backend grandpa_voice")
+        backend_name = args[1].lower()
+
+        import grandpa.speech  # noqa: F401 - registers local TTS backends
+        from grandpa.core.registry import TTSRegistry
+
+        if not TTSRegistry.contains(backend_name):
+            return LocalCommandResult(
+                True,
+                f"Backend '{backend_name}' is not registered.\n"
+                f"Available backends: {', '.join(TTSRegistry.keys())}"
+            )
+
+        try:
+            _update_and_persist_config("tts.backend", backend_name)
+            return LocalCommandResult(True, f"Voice backend changed to '{backend_name}'.")
+        except Exception as exc:
+            return LocalCommandResult(True, f"Failed to save voice backend: {exc}")
+
+    elif cmd == "off":
+        try:
+            _update_and_persist_config("tts.enabled", False)
+            return LocalCommandResult(True, "Voice output disabled.")
+        except Exception as exc:
+            return LocalCommandResult(True, f"Failed to disable voice output: {exc}")
+
+    elif cmd == "on":
+        try:
+            _update_and_persist_config("tts.enabled", True)
+            return LocalCommandResult(True, "Voice output enabled.")
+        except Exception as exc:
+            return LocalCommandResult(True, f"Failed to enable voice output: {exc}")
+
+    elif cmd == "test":
+        from grandpa.voice.speech_output import SpeechOutputEngine
+        engine = SpeechOutputEngine()
+        phrase = "Hello, I am Grandpa, your offline local cloned voice assistant."
+        try:
+            result = engine.speak(phrase)
+            if result.status == "fallback" and result.engine == "print_only":
+                return LocalCommandResult(True, f"Test phrase: '{phrase}'\n(Speech output unavailable; printed response only)")
+            return LocalCommandResult(
+                True,
+                f"Live voice test spoken successfully.\n"
+                f"Text: '{phrase}'\n"
+                f"Backend used: {result.engine}"
+            )
+        except Exception as exc:
+            return LocalCommandResult(True, f"Live voice test failed: {exc}")
+
+    else:
+        return LocalCommandResult(True, f"Unknown voice subcommand: '{cmd}'. Type '/voice' for help.")
 
 
 def _doctor(session: InteractiveSession, _argument: str) -> LocalCommandResult:

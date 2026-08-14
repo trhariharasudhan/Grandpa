@@ -380,6 +380,7 @@ class OllamaEngineConfig:
     """Per-engine config for Ollama."""
 
     host: str = ""
+    num_ctx: int = 8192
 
 
 @dataclass
@@ -717,6 +718,39 @@ class SpeechConfig:
 
 
 @dataclass(slots=True)
+class TTSConfig:
+    """Text-to-speech settings."""
+
+    backend: str = "kokoro"  # Default fallback backend
+    enabled: bool = True
+
+
+@dataclass(slots=True)
+class GrandpaVoiceConfig:
+    """Grandpa local cloned voice TTS engine settings."""
+
+    engine: str = "f5"
+    device: str = "cpu"
+    voice_id: str = "grandpa"
+    reference_audio: str = ""
+    reference_text: str = ""
+    service_url: str = "http://127.0.0.1:8765"
+    synthesis_timeout_seconds: float = 600.0
+    nfe_step: int = 8
+    cpu_threads: int = 4
+    cfg_strength: float = 0.0
+    character_voice: bool = True
+    pitch_semitones: float = -2.0
+    character_speed: float = 0.92
+    target_lufs: float = -14.5
+    true_peak_db: float = -1.0
+    compression: bool = True
+    eq_profile: str = "grandpa_deep_clear"
+    runtime_python: str = ""
+    model_cache: str = ""
+
+
+@dataclass(slots=True)
 class AgentManagerConfig:
     """Persistent agent manager settings."""
 
@@ -780,6 +814,7 @@ class GrandpaConfig:
     installed_at: str = ""
     installer_version: str = ""
     fullscreen: bool = True
+    last_used_mode: str = ""
     hardware: HardwareInfo = field(default_factory=HardwareInfo)
     engine: EngineConfig = field(default_factory=EngineConfig)
     intelligence: IntelligenceConfig = field(default_factory=IntelligenceConfig)
@@ -796,6 +831,8 @@ class GrandpaConfig:
     a2a: A2AConfig = field(default_factory=A2AConfig)
     operators: OperatorsConfig = field(default_factory=OperatorsConfig)
     speech: SpeechConfig = field(default_factory=SpeechConfig)
+    tts: TTSConfig = field(default_factory=TTSConfig)
+    grandpa_voice: GrandpaVoiceConfig = field(default_factory=GrandpaVoiceConfig)
     agent_manager: AgentManagerConfig = field(default_factory=AgentManagerConfig)
     memory_files: MemoryFilesConfig = field(default_factory=MemoryFilesConfig)
     system_prompt: SystemPromptConfig = field(default_factory=SystemPromptConfig)
@@ -910,6 +947,10 @@ def _apply_toml_section(target: Any, section: Dict[str, Any]) -> None:
                 else:
                     setattr(target, key, value)
             else:
+                if isinstance(target, OllamaEngineConfig) and key == "num_ctx":
+                    value = validate_ollama_num_ctx(value)
+                if isinstance(target, GrandpaVoiceConfig):
+                    value = validate_grandpa_voice_setting(key, value)
                 # Normalise TOML arrays → comma-separated string.
                 # Covers both real dataclass fields and backward-compat
                 # property setters (e.g. reward_weights, default_tools).
@@ -925,6 +966,70 @@ def _apply_toml_section(target: Any, section: Dict[str, Any]) -> None:
                     if is_str_field:
                         value = ",".join(str(v) for v in value)
                 setattr(target, key, value)
+
+
+def validate_ollama_num_ctx(value: Any) -> int:
+    """Return a safe Ollama context length from configuration input."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("engine.ollama.num_ctx must be an integer")
+    if not 256 <= value <= 262_144:
+        raise ValueError("engine.ollama.num_ctx must be between 256 and 262144")
+    return value
+
+
+def validate_grandpa_voice_setting(key: str, value: Any) -> Any:
+    """Validate bounded F5 inference settings loaded from user configuration."""
+    if key in {"nfe_step", "cpu_threads"}:
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"grandpa_voice.{key} must be an integer")
+        upper_bound = 64
+        if not 1 <= value <= upper_bound:
+            raise ValueError(
+                f"grandpa_voice.{key} must be between 1 and {upper_bound}"
+            )
+    elif key == "cfg_strength":
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("grandpa_voice.cfg_strength must be a number")
+        value = float(value)
+        if not 0.0 <= value <= 10.0:
+            raise ValueError(
+                "grandpa_voice.cfg_strength must be between 0.0 and 10.0"
+            )
+    elif key in {"character_voice", "compression"}:
+        if not isinstance(value, bool):
+            raise ValueError(f"grandpa_voice.{key} must be a boolean")
+    elif key in {
+        "pitch_semitones",
+        "character_speed",
+        "target_lufs",
+        "true_peak_db",
+    }:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"grandpa_voice.{key} must be a number")
+        value = float(value)
+        bounds = {
+            "pitch_semitones": (-4.0, 2.0),
+            "character_speed": (0.75, 1.25),
+            "target_lufs": (-24.0, -10.0),
+            "true_peak_db": (-6.0, -0.1),
+        }
+        lower, upper = bounds[key]
+        if not lower <= value <= upper:
+            raise ValueError(
+                f"grandpa_voice.{key} must be between {lower} and {upper}"
+            )
+    elif key == "eq_profile" and value not in {
+        "grandpa_balanced",
+        "grandpa_deep",
+        "grandpa_balanced_clear",
+        "grandpa_deep_clear",
+        "grandpa_clarity",
+        "grandpa_presence",
+        "none",
+        "flat",
+    }:
+        raise ValueError("grandpa_voice.eq_profile is not supported")
+    return value
 
 
 def _migrate_toml_data(data: Dict[str, Any], cfg: "GrandpaConfig") -> None:
@@ -1015,6 +1120,8 @@ def load_config(path: Optional[Path] = None) -> GrandpaConfig:
             "a2a",
             "operators",
             "speech",
+            "tts",
+            "grandpa_voice",
             "agent_manager",
             "user",
         )
@@ -1029,8 +1136,8 @@ def load_config(path: Optional[Path] = None) -> GrandpaConfig:
         if "memory" in data:
             _apply_toml_section(cfg.tools.storage, data["memory"])
 
-        # Top-level install provenance (installed_at, installer_version)
-        for key in ("installed_at", "installer_version"):
+        # Top-level install provenance (installed_at, installer_version, fullscreen, last_used_mode)
+        for key in ("installed_at", "installer_version", "fullscreen", "last_used_mode"):
             if key in data:
                 setattr(cfg, key, data[key])
 
@@ -1208,4 +1315,5 @@ __all__ = [
     "recommend_engine",
     "recommend_model",
     "validate_config_key",
+    "validate_ollama_num_ctx",
 ]

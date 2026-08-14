@@ -1,0 +1,61 @@
+{
+  "pc_control": [
+    "src/grandpa/agents/context.py",
+    "src/grandpa/agents/goal_mode.py",
+    "src/grandpa/automation/executor.py",
+    "src/grandpa/automation/service.py",
+    "src/grandpa/browser/executor.py",
+    "src/grandpa/cli/jarvis_cmd.py",
+    "src/grandpa/desktop/automation.py",
+    "src/grandpa/desktop/control/applications.py",
+    "src/grandpa/desktop/control/automation.py",
+    "src/grandpa/desktop/control/clipboard.py",
+    "src/grandpa/desktop/control/diagnostics.py",
+    "src/grandpa/desktop/control/files.py",
+    "src/grandpa/desktop/control/monitors.py",
+    "src/grandpa/desktop/control/power.py",
+    "src/grandpa/desktop/control/windows.py",
+    "src/grandpa/desktop/kernel/approvals.py",
+    "src/grandpa/desktop/kernel/audits.py",
+    "src/grandpa/desktop/kernel/emergency.py",
+    "src/grandpa/desktop/kernel/execution.py",
+    "src/grandpa/desktop/kernel/requests.py",
+    "src/grandpa/desktop/kernel/risk.py",
+    "src/grandpa/desktop/operator.py",
+    "src/grandpa/local_actions.py",
+    "src/grandpa/projects/service.py",
+    "src/grandpa/server/app.py",
+    "src/grandpa/server/routes.py",
+    "src/grandpa/skills/registry/defaults.py",
+    "src/grandpa/voice/operator.py"
+  ],
+  "local_actions": [
+    "src/grandpa/actions/browser_actions.py",
+    "src/grandpa/actions/desktop_actions.py",
+    "src/grandpa/actions/planner_actions.py",
+    "src/grandpa/actions/vision_actions.py",
+    "src/grandpa/actions/workflow_actions.py",
+    "src/grandpa/burnin.py",
+    "src/grandpa/cli/ask.py",
+    "src/grandpa/cli/chat_cmd.py",
+    "src/grandpa/cli/doctor_cmd.py",
+    "src/grandpa/router/legacy_adapter.py",
+    "src/grandpa/server/api_routes.py",
+    "src/grandpa/server/routes.py",
+    "src/grandpa/task_scheduler.py",
+    "src/grandpa/voice/assistant.py",
+    "src/grandpa/voice/session.py"
+  ],
+  "tool_executor": [
+    "src/grandpa/agents/_stubs.py",
+    "src/grandpa/mcp/server.py",
+    "src/grandpa/skills/executor.py",
+    "src/grandpa/skills/manager.py",
+    "src/grandpa/system/builder.py",
+    "src/grandpa/system/core.py",
+    "src/grandpa/tools/__init__.py"
+  ],
+  "legacy_action_router": [
+    "src/grandpa/actions/__init__.py"
+  ]
+}

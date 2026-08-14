@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -74,6 +76,26 @@ def test_planner_route_is_detected_without_executing_tools():
     assert route.category == "planner"
     assert route.planner_suitable is True
     assert "desktop.summary" in route.params["required_skills"]
+
+
+def test_planner_routing_respects_disabled_memory_context(monkeypatch):
+    observed = {}
+
+    def fake_analyze_request(_text, *, include_memory=True):
+        observed["include_memory"] = include_memory
+        return SimpleNamespace(
+            confidence=0.0,
+            steps=(),
+            estimated_risk="LOW",
+        )
+
+    config = SimpleNamespace(agent=SimpleNamespace(context_from_memory=False))
+    monkeypatch.setattr("grandpa.core.config.load_config", lambda: config)
+    monkeypatch.setattr("grandpa.planner.analyze_request", fake_analyze_request)
+
+    analyze_intent("an unmatched conversational request")
+
+    assert observed["include_memory"] is False
 
 
 def test_router_api_analyzes_and_reports_diagnostics():

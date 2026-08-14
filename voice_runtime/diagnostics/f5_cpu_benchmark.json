@@ -1,0 +1,68 @@
+{
+  "text": "Hello Hari, Grandpa is ready.",
+  "reference": "D:\\Grandpa\\voice_runtime\\references\\hari_reference.wav",
+  "seed": 20260812,
+  "torch": "2.13.0+cpu",
+  "cpu_count": 8,
+  "baseline": {
+    "nfe": 32,
+    "threads": 4,
+    "cfg": 2.0,
+    "total_seconds": 441.891,
+    "audio_seconds": 1.514667
+  },
+  "runs": [
+    {
+      "nfe": 16,
+      "threads": 2,
+      "cfg": 2.0,
+      "total_seconds": 176.6417523,
+      "model_sample_seconds": 174.68994460000022,
+      "vocos_decode_seconds": 0.07365049999998519,
+      "other_seconds": 1.878157199999805,
+      "audio_seconds": 1.5146666666666666,
+      "rtf": 116.62087519806339,
+      "initial_available_gib": 3.427093505859375,
+      "minimum_available_gib": 3.3091354370117188,
+      "peak_process_tree_gib": 2.0807456970214844,
+      "output": "D:\\Grandpa\\voice_runtime\\outputs\\f5_cpu_benchmarks\\hari_nfe16_threads2_cfg2.wav",
+      "sample_rate": 24000,
+      "channels": 1
+    },
+    {
+      "nfe": 8,
+      "threads": 4,
+      "cfg": 0.0,
+      "total_seconds": 38.98087959999975,
+      "model_sample_seconds": 38.86027609999974,
+      "vocos_decode_seconds": 0.0556456999997863,
+      "other_seconds": 0.06495780000022933,
+      "audio_seconds": 1.5146666666666666,
+      "rtf": 25.73561593309843,
+      "initial_available_gib": 3.6878890991210938,
+      "minimum_available_gib": 3.5989608764648438,
+      "peak_process_tree_gib": 2.0454254150390625,
+      "output": "D:\\Grandpa\\voice_runtime\\outputs\\f5_cpu_benchmarks\\hari_nfe8_threads4_cfg0.wav",
+      "sample_rate": 24000,
+      "channels": 1
+    },
+    {
+      "nfe": 4,
+      "threads": 8,
+      "cfg": 0.0,
+      "total_seconds": 18.812709999999697,
+      "model_sample_seconds": 18.685253999999986,
+      "vocos_decode_seconds": 0.0815351000001101,
+      "other_seconds": 0.045920899999600806,
+      "audio_seconds": 1.5146666666666666,
+      "rtf": 12.420363116196985,
+      "initial_available_gib": 3.760631561279297,
+      "minimum_available_gib": 3.6882705688476562,
+      "peak_process_tree_gib": 2.0601577758789062,
+      "output": "D:\\Grandpa\\voice_runtime\\outputs\\f5_cpu_benchmarks\\hari_nfe4_threads8_cfg0.wav",
+      "sample_rate": 24000,
+      "channels": 1
+    }
+  ],
+  "model_and_vocoder_load_seconds": 7.432799700000032
+}

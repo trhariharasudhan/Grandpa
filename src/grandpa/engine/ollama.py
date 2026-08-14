@@ -10,6 +10,7 @@ from typing import Any, Dict, List
 
 import httpx
 
+from grandpa.core.config import validate_ollama_num_ctx
 from grandpa.core.registry import EngineRegistry
 from grandpa.core.types import Message
 from grandpa.engine._base import (
@@ -150,6 +151,7 @@ class OllamaEngine(InferenceEngine):
         host: str | None = None,
         *,
         timeout: float = 180.0,
+        num_ctx: int = 8192,
     ) -> None:
         # Priority: explicit host (from config.toml) > OLLAMA_HOST env var > default
         if host is None:
@@ -157,6 +159,7 @@ class OllamaEngine(InferenceEngine):
             host = env_host or self._DEFAULT_HOST
         self._host = normalize_ollama_host(host)
         self._client = httpx.Client(base_url=self._host, timeout=timeout)
+        self._num_ctx = validate_ollama_num_ctx(num_ctx)
         # Last stream usage — captured from Ollama's final chunk
         self._last_stream_usage: Dict[str, int] = {}
 
@@ -184,7 +187,11 @@ class OllamaEngine(InferenceEngine):
             "model": model,
             "messages": msg_dicts,
             "stream": False,
-            "options": _generation_options(temperature, max_tokens, kwargs),
+            "options": _generation_options(
+                temperature,
+                max_tokens,
+                {"num_ctx": self._num_ctx, **kwargs},
+            ),
         }
         # Disable extended thinking by default (Qwen3.5 etc.).
         # When enabled, thinking tokens consume the entire budget and
@@ -310,7 +317,11 @@ class OllamaEngine(InferenceEngine):
             "model": model,
             "messages": messages_to_dicts(messages),
             "stream": True,
-            "options": _generation_options(temperature, max_tokens, kwargs),
+            "options": _generation_options(
+                temperature,
+                max_tokens,
+                {"num_ctx": self._num_ctx, **kwargs},
+            ),
         }
         # Mirror generate()'s default: disable extended thinking unless the
         # caller opted in. Qwen3/etc. with thinking on can stall the visible

@@ -118,3 +118,22 @@ learning.db
 
 # Local runtime data
 runtime/
+
+# Local cloned-voice runtime artifacts
+voice_runtime/.venv/
+voice_runtime/models_or_cache/
+voice_runtime/outputs/
+voice_runtime/logs/
+voice_runtime/references/*
+!voice_runtime/references/reference.example.toml
+voice_runtime/**/*.ckpt
+voice_runtime/**/*.pt
+voice_runtime/**/*.pth
+voice_runtime/**/*.safetensors
+
+# Personal voice-training datasets (scripts remain reviewable)
+voice_runtime/datasets/*/raw/
+voice_runtime/datasets/*/processed/
+voice_runtime/datasets/*/wavs/
+voice_runtime/datasets/*/metadata/
+voice_runtime/datasets/*/reports/

@@ -1,0 +1,38 @@
+{
+  "status": "benchmarks_deferred_low_memory",
+  "reason": "Available physical RAM remained between approximately 0.94 and 1.15 GiB; prior successful F5 Base inference required roughly 3 GiB of available-memory headroom.",
+  "baseline": {
+    "nfe": 32,
+    "threads": 4,
+    "cfg_strength": 2.0,
+    "total_seconds": 441.891,
+    "model_progress_seconds": 398.29,
+    "audio_seconds": 1.514667,
+    "rtf": 291.742,
+    "minimum_available_gib": 1.309,
+    "peak_process_tree_gib": 2.238,
+    "quality": "Hari similarity accepted",
+    "pronunciation": "accepted"
+  },
+  "static_findings": {
+    "default_nfe": 32,
+    "default_threads": 4,
+    "default_cfg_strength": 2.0,
+    "cfg_zero_supported_by_model_api": true,
+    "cfg_zero_cli_override_bug": "infer_cli uses `args.cfg_strength or default`, so numeric zero cannot be selected through the CLI; direct API supports it.",
+    "reference_preprocess_first_seconds": 0.0605353,
+    "reference_preprocess_cached_seconds": 0.0017269,
+    "reference_cache_scope": "process-local",
+    "torch_compile": "unavailable in current environment because the Windows cl compiler is absent",
+    "onnx_openvino_directml": "no official installed full-model CPU export/runtime; installed ONNX script exports Vocos only for NVIDIA Triton/TensorRT-LLM",
+    "vocos_load_seconds": 44.0736202,
+    "vocos_decode_seconds": 0.1162805,
+    "vocos_test_frames": 142,
+    "vocos_output_samples": 36096
+  },
+  "planned_runs_not_started": [
+    {"nfe": 16, "threads": 2, "cfg_strength": 2.0},
+    {"nfe": 8, "threads": 4, "cfg_strength": 0.0},
+    {"nfe": 4, "threads": 8, "cfg_strength": 0.0}
+  ]
+}
