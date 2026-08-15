@@ -3,10 +3,9 @@ from datetime import datetime
 
 from rich.align import Align
 from rich.console import Console, Group, RenderableType
-from rich.table import Table
 from rich.text import Text
 
-from grandpa.cli.slash_commands import command_groups
+from grandpa.cli.slash_commands import command_groups, picker_group_items
 
 ACCENT = "#ffc448"  # border + GRANDPA logo
 TEXT_ACCENT = "#6244c5"  # inside blue text replacement
@@ -102,90 +101,38 @@ def render_logo_borderless(console: Console) -> None:
 
 
 def render_help(console: Console) -> None:
-    groups = command_groups()
-    top_grid = Table.grid(expand=True)
-    top_grid.add_column(ratio=1)
-    top_grid.add_column(ratio=1)
-    top_grid.add_column(ratio=1)
-    top_grid.add_row(
-        _command_group("Core", [command.name for command in groups["Core"]]),
-        _command_group(
-            "Memory & Productivity",
-            [command.name for command in groups["Memory & Productivity"]],
-        ),
-        _command_group("Computer", [command.name for command in groups["Computer"]]),
-    )
-
-    bottom_grid = Table.grid(expand=True)
-    bottom_grid.add_column(ratio=1)
-    bottom_grid.add_column(ratio=1)
-    bottom_grid.add_column(ratio=1)
-    bottom_grid.add_row(
-        _command_group("Developer", [command.name for command in groups["Developer"]]),
-        _command_group("Personal", [command.name for command in groups["Personal"]]),
-        _command_group(
-            "Automation", [command.name for command in groups["Automation"]]
-        ),
-    )
-
-    examples = (
-        f"[bold {TEXT_ACCENT}]Natural examples[/bold {TEXT_ACCENT}]\n"
-        "- show my memories\n"
-        "- what reminders do I have\n"
-        "- open Chrome\n"
-        "- search YouTube for Python\n"
-        "- call Amma\n"
-        "- order biryani"
-    )
-
-    layout = Table.grid(expand=True)
-    layout.add_column()
-    layout.add_row(top_grid)
-    layout.add_row("")
-    layout.add_row(bottom_grid)
-    layout.add_row("")
-    layout.add_row(examples)
-
     console.print(f"[bold {ACCENT}]Grandpa Command Center[/bold {ACCENT}]")
     console.print()
-    console.print(layout)
+    console.print(help_commands_text())
+    console.print()
+    console.print("[dim]More: /help tools  /help advanced  /help all[/dim]")
 
 
-def help_commands_text() -> str:
-    groups = command_groups()
-    descriptions = {
-        "/help": "Open command center",
-        "/status": "Show Grandpa health",
-        "/mode": "Switch assistant mode",
-        "/settings": "Show settings help",
-        "/model": "Select or change model",
-        "/history": "Show chat history",
-        "/clear": "Clear chat history",
-        "/quit": "Exit chat",
-        "/exit": "Exit chat",
-        "/memory": "Manage saved memories",
-        "/reminders": "Manage reminders",
-        "/tasks": "Task planning help",
-        "/desktop": "Desktop control help",
-        "/browser": "Browser navigation/search help",
-        "/files": "Local file search/actions",
-        "/system": "System status help",
-        "/coding": "Developer assistant",
-        "/git": "Git workflow help",
-        "/github": "GitHub workflow help",
-        "/voice": "Voice controls",
-        "/order": "Daily-life ordering placeholder",
-        "/automation": "Workflow automation help",
-    }
-    lines = [
-        "/help commands - Shows all available slash commands grouped by module.",
-    ]
+def help_commands_text(view: str = "default") -> str:
+    groups = command_groups(view)
+    heading = {
+        "default": "Beginner commands",
+        "tools": "/help tools - Local tools and integrations",
+        "advanced": "/help advanced - Settings and advanced controls",
+        "all": "/help all - Complete slash command reference",
+        "commands": "/help commands - Shows beginner-friendly slash commands.",
+    }.get(view, "Beginner commands")
+    lines = [heading]
     for category, commands in groups.items():
         lines.extend(("", category))
-        lines.extend(
-            f"{command.name:<13} {descriptions.get(command.name, command.description)}"
-            for command in commands
-        )
+        for command in commands:
+            if view in {"default", "commands"} and command.name == "/tools":
+                lines.extend(
+                    f"{item.command:<22} {item.description}"
+                    for item in picker_group_items("Tools")
+                )
+                continue
+            display_name = command.name
+            if view == "tools":
+                display_name = f"/tools {command.name.lstrip('/')}"
+            elif view == "advanced":
+                display_name = f"/settings {command.name.lstrip('/')}"
+            lines.append(f"{display_name:<22} {command.description}")
     return "\n".join(lines)
 
 

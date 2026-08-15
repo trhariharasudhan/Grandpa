@@ -79,9 +79,12 @@ class VoiceServiceRuntime:
         self._model_loader = model_loader or _load_f5_model
         self._audio_encoder = audio_encoder or _encode_wav
         self._cpu_thread_configurer = cpu_thread_configurer or _configure_cpu_threads
-        self._character_processor = character_processor or FFmpegCharacterVoiceProcessor(
-            self.character_voice_settings,
-            ffmpeg_path=ffmpeg_path,
+        self._character_processor = (
+            character_processor
+            or FFmpegCharacterVoiceProcessor(
+                self.character_voice_settings,
+                ffmpeg_path=ffmpeg_path,
+            )
         )
         self.last_raw_audio = b""
         self.model: Any | None = None
@@ -90,10 +93,15 @@ class VoiceServiceRuntime:
 
     def initialize(self) -> None:
         """Load the configured model only when the service process starts."""
-        if importlib.util.find_spec("f5_tts") is None and self._model_loader is _load_f5_model:
+        if (
+            importlib.util.find_spec("f5_tts") is None
+            and self._model_loader is _load_f5_model
+        ):
             self.reason = "dependency_not_installed"
             return
-        reference = Path(self.reference_audio).expanduser() if self.reference_audio else None
+        reference = (
+            Path(self.reference_audio).expanduser() if self.reference_audio else None
+        )
         if reference is None or not reference.is_file():
             self.reason = "reference_voice_invalid"
             return

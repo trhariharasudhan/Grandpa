@@ -149,9 +149,7 @@ class KernelFileAutomationAdapter:
             error="kernel_error",
         )
 
-    def _copy_compatibility(
-        self, action: FileAction
-    ) -> FileOperationResult | None:
+    def _copy_compatibility(self, action: FileAction) -> FileOperationResult | None:
         source, matches = self._resolve_copy_source(action.source)
         if source is None:
             if len(matches) > 1:

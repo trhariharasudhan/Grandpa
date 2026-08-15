@@ -49,9 +49,13 @@ class TestOllamaGenerate:
                 [Message(role=Role.USER, content="Hi")], model="qwen3:8b"
             )
         assert result["content"] == "Hello!"
-        assert result["usage"]["prompt_tokens"] == 10
+        assert result["usage"]["prompt_tokens"] >= 10
         assert result["usage"]["completion_tokens"] == 5
-        assert result["usage"]["total_tokens"] == 15
+        assert result["usage"]["total_tokens"] == (result["usage"]["prompt_tokens"] + 5)
+        sent_messages = route.calls.last.request.read()
+        assert b"Canonical Grandpa Identity" in sent_messages
+        assert b"General Conversation Reliability" in sent_messages
+        assert b"Lack of live web access is not a reason to refuse" in sent_messages
         payload = json.loads(route.calls.last.request.content)
         assert payload["think"] is False
         assert payload["options"]["num_predict"] == 1024
@@ -168,7 +172,7 @@ class TestOllamaGenerate:
         assert exc_info.value.model == "grandpa-fast:latest"
         assert exc_info.value.low_memory is True
         assert "available memory is too low" in str(exc_info.value)
-        assert "grandpa-light:latest" in str(exc_info.value)
+        assert "grandpa-mini:latest" in str(exc_info.value)
 
 
 class TestOllamaListModels:

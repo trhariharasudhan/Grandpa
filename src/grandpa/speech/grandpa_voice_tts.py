@@ -49,6 +49,7 @@ class GrandpaVoiceTTSBackend(TTSBackend):
 
         if engine_type == "f5":
             from grandpa.speech.local_voice.f5_engine import F5VoiceEngine
+
             self._engine = F5VoiceEngine(
                 service_url=service_url,
                 synthesis_timeout_seconds=synthesis_timeout_seconds,

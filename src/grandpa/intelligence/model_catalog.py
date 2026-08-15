@@ -6,6 +6,7 @@ from typing import List
 
 from grandpa.core.registry import ModelRegistry
 from grandpa.core.types import ModelSpec
+from grandpa.intelligence.grandpa_models import GRANDPA_MODEL_ROLES
 
 
 def _local_model(
@@ -31,6 +32,18 @@ def _local_model(
 
 
 BUILTIN_MODELS: List[ModelSpec] = [
+    *[
+        _local_model(
+            entry.ollama_tag,
+            entry.display_name,
+            entry.parameter_count_b,
+            0,
+            provider="grandpa-odin",
+            architecture="specialized" if entry.specialized else "dense",
+        )
+        for entry in GRANDPA_MODEL_ROLES
+        if "embeddings" not in entry.capabilities
+    ],
     _local_model("qwen3:0.6b", "Qwen3 0.6B", 0.6, 40960, provider="alibaba"),
     _local_model("qwen3:1.7b", "Qwen3 1.7B", 1.7, 40960, provider="alibaba"),
     _local_model("qwen3:4b", "Qwen3 4B", 4.0, 262144, provider="alibaba"),

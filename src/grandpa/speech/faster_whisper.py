@@ -5,12 +5,27 @@ from __future__ import annotations
 import logging
 import os
 import tempfile
-from typing import List, Optional
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, List, Optional
 
 from grandpa.core.registry import SpeechRegistry
 from grandpa.speech._stubs import Segment, SpeechBackend, TranscriptionResult
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class FasterWhisperDiagnostics:
+    """Details from the latest canonical Faster-Whisper invocation."""
+
+    model: str
+    options: dict[str, Any]
+    decoded_duration_seconds: float
+    language: str | None
+    language_probability: float | None
+    segments: tuple[dict[str, Any], ...]
+
 
 try:
     from faster_whisper import WhisperModel
@@ -34,6 +49,7 @@ class FasterWhisperBackend(SpeechBackend):
         self._device = device
         self._compute_type = select_compute_type(device, compute_type)
         self._model: Optional[WhisperModel] = None
+        self.last_diagnostics: FasterWhisperDiagnostics | None = None
 
     def _ensure_model(self) -> WhisperModel:
         """Lazy-load the Whisper model on first use."""
@@ -71,20 +87,22 @@ class FasterWhisperBackend(SpeechBackend):
         language: Optional[str] = None,
     ) -> TranscriptionResult:
         """Transcribe audio bytes using Faster-Whisper."""
-        model = self._ensure_model()
-
         suffix = f".{format}" if not format.startswith(".") else format
         tmp_path = _write_closed_temp_audio(audio, suffix)
         try:
-            kwargs = {}
-            if language:
-                kwargs["language"] = language
-            kwargs["initial_prompt"] = "Grandpa, Ollama"
-
-            segments_iter, info = model.transcribe(tmp_path, **kwargs)
-            segments_list = list(segments_iter)
+            return self.transcribe_file(tmp_path, language=language)
         finally:
             _delete_temp_audio(tmp_path)
+
+    def transcribe_file(
+        self, path: str | Path, *, language: str | None = None
+    ) -> TranscriptionResult:
+        """Transcribe a closed audio file through the canonical production path."""
+
+        model = self._ensure_model()
+        options = build_transcription_options(language)
+        segments_iter, info = model.transcribe(str(path), **options)
+        segments_list = list(segments_iter)
 
         # Filter segments based on confidence metadata to reject background noise/hallucination
         valid_segments = []
@@ -117,13 +135,38 @@ class FasterWhisperBackend(SpeechBackend):
             for seg in valid_segments
         ]
 
-        return TranscriptionResult(
+        result = TranscriptionResult(
             text=text,
             language=getattr(info, "language", None),
             confidence=getattr(info, "language_probability", None),
             duration_seconds=getattr(info, "duration", 0.0),
             segments=segments,
         )
+        self.last_diagnostics = FasterWhisperDiagnostics(
+            model=self._model_size,
+            options=options,
+            decoded_duration_seconds=float(getattr(info, "duration", 0.0) or 0.0),
+            language=getattr(info, "language", None),
+            language_probability=getattr(info, "language_probability", None),
+            segments=tuple(
+                {
+                    "start": float(getattr(segment, "start", 0.0)),
+                    "end": float(getattr(segment, "end", 0.0)),
+                    "text": str(getattr(segment, "text", "")).strip(),
+                    "no_speech_probability": _numeric_or_none(
+                        getattr(segment, "no_speech_prob", None)
+                    ),
+                    "average_log_probability": _numeric_or_none(
+                        getattr(segment, "avg_logprob", None)
+                    ),
+                    "compression_ratio": _numeric_or_none(
+                        getattr(segment, "compression_ratio", None)
+                    ),
+                }
+                for segment in segments_list
+            ),
+        )
+        return result
 
     def health(self) -> bool:
         """Check if model is loaded or loadable."""
@@ -148,6 +191,28 @@ def select_compute_type(device: str = "auto", compute_type: str = "auto") -> str
     if selected_device in {"cuda", "gpu"}:
         return "float16"
     return "int8"
+
+
+def build_transcription_options(language: str | None = None) -> dict[str, Any]:
+    """Return the single production decoding policy used for local STT."""
+
+    options: dict[str, Any] = {
+        "beam_size": 5,
+        "temperature": 0.0,
+        "condition_on_previous_text": False,
+        "initial_prompt": None,
+        "vad_filter": False,
+        "no_speech_threshold": 0.6,
+        "compression_ratio_threshold": 2.4,
+        "log_prob_threshold": -1.0,
+    }
+    if language:
+        options["language"] = language
+    return options
+
+
+def _numeric_or_none(value: Any) -> float | None:
+    return float(value) if isinstance(value, (int, float)) else None
 
 
 def _compute_type_candidates(device: str, compute_type: str) -> list[str]:

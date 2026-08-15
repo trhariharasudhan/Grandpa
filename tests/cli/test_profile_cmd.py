@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
@@ -10,8 +11,10 @@ from grandpa.core.config import GrandpaConfig, load_config
 from grandpa.profile import (
     atomic_update_profile,
     ensure_profile,
+    format_profile_display_name,
     load_profile,
     repair_runtime_configuration,
+    validate_title,
     validate_username,
 )
 
@@ -42,10 +45,12 @@ def test_first_run_collects_and_persists_local_profile(tmp_path: Path) -> None:
         config=config,
         interactive=True,
         text_prompt=answer,
+        title_prompt=lambda _current: "Mr.",
     )
 
     assert prompts == ["Display name"]
     assert updated.user.username == "Hari"
+    assert updated.user.title == "Mr."
     assert updated.user.onboarding_completed is True
     assert updated.engine.default == "existing-engine"
     assert updated.intelligence.default_model == "existing-model"
@@ -58,6 +63,7 @@ def test_completed_onboarding_does_not_prompt_again(tmp_path: Path) -> None:
     atomic_update_profile(
         path,
         username="Hari",
+        title="Mrs.",
         engine="ollama",
         model="grandpa-fast:latest",
         memory_enabled=True,
@@ -106,7 +112,7 @@ def test_profile_edit_updates_existing_profile(tmp_path: Path) -> None:
     result = CliRunner().invoke(
         profile,
         ["edit"],
-        input="Hari\n",
+        input="1\nHari\n",
         env={"Grandpa_CONFIG": str(path)},
     )
 
@@ -124,6 +130,7 @@ def test_profile_reset_requires_confirmation_and_resets_onboarding(
     atomic_update_profile(
         path,
         username="Hari",
+        title="Mrs.",
         onboarding_completed=True,
         engine="ollama",
         model="grandpa-fast:latest",
@@ -140,6 +147,7 @@ def test_profile_reset_requires_confirmation_and_resets_onboarding(
     assert result.exit_code == 0
     assert load_profile(path).onboarding_completed is False
     assert load_profile(path).username == "Hari"
+    assert load_profile(path).title == "Mrs."
     assert load_profile(path).engine == "ollama"
     assert load_profile(path).model == "grandpa-fast:latest"
     assert load_profile(path).memory_enabled is False
@@ -188,10 +196,81 @@ def test_onboarding_reprompts_after_an_empty_display_name(tmp_path: Path) -> Non
         config=GrandpaConfig(),
         interactive=True,
         text_prompt=answer,
+        title_prompt=lambda _current: "",
     )
 
     assert prompts == ["Display name", "Display name"]
     assert updated.user.username == "Hari"
+
+
+@pytest.mark.parametrize("title", ["Mr.", "Ms.", "Mrs.", "Mx.", ""])
+def test_new_profile_persists_supported_title(tmp_path: Path, title: str) -> None:
+    path = tmp_path / "config.toml"
+
+    updated = ensure_profile(
+        console=_console(),
+        path=path,
+        config=GrandpaConfig(),
+        interactive=True,
+        text_prompt=lambda _label, _default: "Hari Hara Sudhan",
+        title_prompt=lambda _current: title,
+    )
+
+    assert updated.user.title == title
+    assert load_profile(path).title == title
+
+
+def test_legacy_profile_without_title_loads_without_onboarding(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[user]\nusername = "Hari Hara Sudhan"\nonboarding_completed = true\n',
+        encoding="utf-8",
+    )
+    load_config.cache_clear()
+
+    profile_data = load_profile(path)
+
+    assert profile_data.username == "Hari Hara Sudhan"
+    assert profile_data.title == ""
+    assert profile_data.onboarding_completed is True
+
+
+def test_profile_table_compatibility_and_title_normalization(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    path.write_text(
+        '[profile]\ndisplay_name = "Hari Hara Sudhan"\ntitle = "Mr."\n',
+        encoding="utf-8",
+    )
+    load_config.cache_clear()
+
+    loaded = load_profile(path)
+
+    assert format_profile_display_name(loaded) == "Mr. Hari Hara Sudhan"
+    assert validate_title("Mr..") == "Mr."
+
+
+def test_profile_title_can_be_edited_and_removed(tmp_path: Path) -> None:
+    path = tmp_path / "config.toml"
+    atomic_update_profile(path, username="Hari", title="Mr.", onboarding_completed=True)
+    load_config.cache_clear()
+
+    edited = CliRunner().invoke(
+        profile,
+        ["edit"],
+        input="2\n4\n",
+        env={"Grandpa_CONFIG": str(path)},
+    )
+    assert edited.exit_code == 0
+    assert load_profile(path).title == "Mx."
+
+    removed = CliRunner().invoke(
+        profile,
+        ["edit"],
+        input="2\n5\n",
+        env={"Grandpa_CONFIG": str(path)},
+    )
+    assert removed.exit_code == 0
+    assert load_profile(path).title == ""
 
 
 def test_invalid_onboarding_runtime_values_are_repaired_without_pull(
@@ -246,3 +325,28 @@ def test_runtime_repair_leaves_legitimate_configuration_unchanged(
 
     assert repaired.intelligence.default_model == "custom-model:latest"
     assert path.read_text(encoding="utf-8") == before
+
+
+def test_runtime_repair_migrates_legacy_tiny_qwen_when_mini_is_installed(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "config.toml"
+    legacy = "qwen2.5:0.5b-instruct-q4_K_M"
+    atomic_update_profile(
+        path,
+        username="Hari",
+        onboarding_completed=True,
+        engine="ollama",
+        model=legacy,
+        memory_enabled=True,
+    )
+    load_config.cache_clear()
+
+    repaired = repair_runtime_configuration(
+        load_config(path),
+        resolved_engine="ollama",
+        available_models=[legacy, "grandpa-mini:latest"],
+        path=path,
+    )
+
+    assert repaired.intelligence.default_model == "grandpa-mini:latest"

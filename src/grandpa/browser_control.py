@@ -684,6 +684,11 @@ def _find_visible_browser_window() -> tuple[int, str, str] | None:
     if sys.platform != "win32":
         return None
 
+    if os.environ.get("GRANDPA_BROWSER_CONTEXT_JSON") or os.environ.get(
+        "GRANDPA_BROWSER_CONTEXT_FILE"
+    ):
+        return (0, "Chrome", "Browser Page")
+
     try:
         from grandpa.windows_window_control import (
             _get_foreground_window,
@@ -692,18 +697,21 @@ def _find_visible_browser_window() -> tuple[int, str, str] | None:
     except Exception:
         return None
 
-    # 1. Check if active window title ends with a valid browser suffix (handles monkeypatching & active browsers)
+    # The active title is authoritative. Never substitute an unrelated background
+    # browser for a foreground non-browser application.
     title = _active_window_title()
     if title:
         browser = _browser_from_title(title)
-        if browser:
-            try:
-                fg_hwnd = _get_foreground_window()
-            except Exception:
-                fg_hwnd = 0
-            return (fg_hwnd or 0, browser, title)
+        if not browser:
+            return None
+        try:
+            fg_hwnd = _get_foreground_window()
+        except Exception:
+            fg_hwnd = 0
+        return (fg_hwnd or 0, browser, title)
 
-    # 2. Check process name for foreground window
+    # Some browser titles do not carry a recognizable suffix. In that case,
+    # verify the foreground process rather than enumerating background windows.
     allowed = {"chrome.exe", "msedge.exe", "firefox.exe"}
     try:
         fg_hwnd = _get_foreground_window()
@@ -718,41 +726,8 @@ def _find_visible_browser_window() -> tuple[int, str, str] | None:
                 )
                 return (fg_hwnd, bname, fg_title)
 
-        # 3. Foreground window is terminal/IDE -> enumerate desktop windows for visible Chrome/Edge if live desktop enabled
-        if not _is_live_desktop_enabled():
-            return None
-        import ctypes
-
-        user32 = ctypes.windll.user32
-        match = None
-
-        def callback(hwnd: int, _lparam: int) -> bool:
-            nonlocal match
-            if user32.IsWindowVisible(hwnd):
-                wtitle = _get_window_title(int(hwnd))
-                pname = _get_process_name_for_hwnd(int(hwnd))
-                if pname in allowed and wtitle and not wtitle.startswith("DevTools"):
-                    bname = (
-                        "Chrome"
-                        if pname == "chrome.exe"
-                        else ("Firefox" if pname == "firefox.exe" else "Microsoft Edge")
-                    )
-                    match = (int(hwnd), bname, wtitle)
-                    return False
-            return True
-
-        cb_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
-        user32.EnumWindows(cb_type(callback), 0)
-        if match:
-            return match
     except Exception:
         pass
-
-    # 4. Environment context payload override (for tests/mocks)
-    if os.environ.get("GRANDPA_BROWSER_CONTEXT_JSON") or os.environ.get(
-        "GRANDPA_BROWSER_CONTEXT_FILE"
-    ):
-        return (0, "Chrome", "Browser Page")
 
     return None
 

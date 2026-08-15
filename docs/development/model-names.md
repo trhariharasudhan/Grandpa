@@ -1,17 +1,17 @@
-# Grandpa Model Names
+# Grandpa Odin Model Roles
 
-This document was moved from repository root for organization.
+Grandpa is the assistant and product identity. Odin is the internal model-family
+codename. Foundation-model names remain visible in technical diagnostics, but
+normal model selection uses stable Grandpa roles.
 
-| Friendly Name | Original Ollama Model | Use |
-|---|---|---|
-| Core | qwen2.5:3b | Daily chat, normal assistant |
-| Prime | qwen3:4b | Deep reasoning, complex explanation |
-| DevOps | deepseek-coder:6.7b | Coding, debugging, backend/dev tasks |
-| Vision | llava:latest | Image/screenshot analysis |
-| Memory | nomic-embed-text:latest | Embeddings, RAG, memory search |
-| Pulse | phi3:mini | Fast lightweight fallback |
-| Vector | mistral:7b | Balanced general-purpose AI |
-| Astra | llama3:8b | Strong general backup |
-| Echo | gemma3:4b | Experimental/testing model |
-| Hyperion | gemma4:latest | Heavy large-model testing |
-| Micro | gemma:2b | Tiny lightweight fallback |
+| Role | Runtime tag | Purpose | Foundation family |
+|---|---|---|---|
+| Mini | `grandpa-mini:latest` | Default low-resource chat | Qwen2.5 |
+| Fast | `grandpa-fast:latest` | Better general responses | Qwen3 |
+| Coder | `grandpa-coder:latest` | Coding specialist | DeepSeek Coder |
+| Eyes | `grandpa-eyes:latest` | Local vision | LLaVA |
+| Embeddings | `nomic-embed-text:latest` | Internal semantic memory/RAG | Nomic BERT |
+
+Legacy upstream tags remain supported during migration. They are not deleted
+automatically. `nomic-embed-text` is intentionally hidden from conversational
+model selectors because it cannot generate chat responses.

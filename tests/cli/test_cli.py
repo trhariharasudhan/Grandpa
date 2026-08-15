@@ -59,6 +59,12 @@ class TestCLI:
         assert result.exit_code == 0
         assert "grandpa" in result.output
 
+    def test_internal_bootstrap_is_hidden_from_public_help(self) -> None:
+        result = CliRunner().invoke(cli, ["--help"])
+
+        assert result.exit_code == 0
+        assert "_bootstrap" not in result.output
+
     def test_version(self) -> None:
         result = CliRunner().invoke(cli, ["--version"])
         assert result.exit_code == 0

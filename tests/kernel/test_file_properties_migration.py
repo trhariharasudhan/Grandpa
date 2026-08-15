@@ -96,9 +96,7 @@ def test_in_root_symlink_properties_match_legacy_behavior(tmp_path):
         pytest.skip(f"symlinks are unavailable: {exc}")
 
     expected = _legacy_properties("Show properties of linked.txt", tmp_path)
-    actual = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of linked.txt"
-    )
+    actual = FileAutomation(roots=(tmp_path,)).handle("Show properties of linked.txt")
 
     _assert_parity(actual, expected)
     assert "- Type: folder" in actual.message
@@ -106,9 +104,7 @@ def test_in_root_symlink_properties_match_legacy_behavior(tmp_path):
 
 def test_missing_path_matches_legacy_error(tmp_path):
     expected = _legacy_properties("Show properties of missing.txt", tmp_path)
-    actual = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of missing.txt"
-    )
+    actual = FileAutomation(roots=(tmp_path,)).handle("Show properties of missing.txt")
 
     _assert_parity(actual, expected)
     assert actual.action is None
@@ -120,9 +116,7 @@ def test_ambiguous_path_matches_legacy_result(tmp_path):
         (folder / "report.txt").write_text("report", encoding="utf-8")
 
     expected = _legacy_properties("Show properties of report.txt", tmp_path)
-    actual = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    actual = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     _assert_parity(actual, expected)
     assert actual.status == "ambiguous"
@@ -130,9 +124,7 @@ def test_ambiguous_path_matches_legacy_result(tmp_path):
 
 def test_latest_pdf_without_match_preserves_legacy_result(tmp_path):
     expected = _legacy_properties("Show properties of latest PDF", tmp_path)
-    actual = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of latest PDF"
-    )
+    actual = FileAutomation(roots=(tmp_path,)).handle("Show properties of latest PDF")
 
     _assert_parity(actual, expected)
     assert actual.status == "handled"
@@ -167,9 +159,7 @@ def test_properties_routes_through_complete_kernel_lifecycle(tmp_path):
     bus = get_event_bus(record_history=True)
     (tmp_path / "report.txt").write_text("report", encoding="utf-8")
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     audits = [event.data["kernel_audit"] for event in bus.history]
     assert result.status == "handled"
@@ -209,9 +199,7 @@ def test_stat_executor_and_verifier_run_once(tmp_path, monkeypatch):
     monkeypatch.setattr(kernel_files.StatPathExecutor, "execute", execute)
     monkeypatch.setattr(kernel_files.StatPathVerifier, "verify", verify)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     assert result.status == "handled"
     assert calls["execute"] == 1
@@ -259,9 +247,7 @@ def test_properties_do_not_mutate_filesystem(tmp_path):
     target.write_text("unchanged", encoding="utf-8")
     before = _snapshot(tmp_path)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     assert result.status == "handled"
     assert _snapshot(tmp_path) == before
@@ -307,9 +293,7 @@ def test_path_outside_validated_root_is_blocked(tmp_path):
     outside = tmp_path / "outside.txt"
     outside.write_text("outside", encoding="utf-8")
 
-    result = FileAutomation(roots=(root,)).handle(
-        f"Show properties of {outside}"
-    )
+    result = FileAutomation(roots=(root,)).handle(f"Show properties of {outside}")
 
     assert result.status == "error"
     assert "outside the allowed" in result.message.lower()
@@ -324,9 +308,7 @@ def test_access_error_translates_to_legacy_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr(kernel_files, "_inspect_path_metadata", denied)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     assert result.status == "error"
     assert result.message == "I could not complete that file action: denied"
@@ -389,9 +371,7 @@ def test_audit_failure_blocks_stat_execution(tmp_path, monkeypatch):
     bus.subscribe(EventType.TRACE_STEP, reject_execution_start)
     monkeypatch.setattr(StatPathExecutor, "execute", execute)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     assert result.status == "error"
     assert calls == 0
@@ -407,9 +387,7 @@ def test_executor_exception_returns_safe_legacy_error(tmp_path, monkeypatch):
 
     monkeypatch.setattr(StatPathExecutor, "execute", fail)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     assert result.status == "error"
     assert result.message == "The tool could not complete the action."
@@ -428,9 +406,7 @@ def test_verifier_failure_is_not_translated_as_success(tmp_path, monkeypatch):
 
     monkeypatch.setattr(kernel_files.StatPathVerifier, "verify", fail)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     assert result.status == "error"
     assert result.message == "Independent stat verification failed."
@@ -448,9 +424,7 @@ def test_changed_file_fails_independent_size_verification(tmp_path, monkeypatch)
 
     monkeypatch.setattr(StatPathExecutor, "execute", execute_then_change)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Show properties of report.txt"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Show properties of report.txt")
 
     assert result.status == "error"
     assert "size changed" in result.message.lower()

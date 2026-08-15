@@ -24,6 +24,7 @@ from grandpa.engine._base import (
 )
 from grandpa.engine._network import local_port_is_open
 from grandpa.engine._stubs import StreamChunk
+from grandpa.prompt.identity import ensure_grandpa_identity
 from grandpa.response_cleanup import clean_assistant_response
 
 logger = logging.getLogger(__name__)
@@ -172,6 +173,7 @@ class OllamaEngine(InferenceEngine):
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        messages = ensure_grandpa_identity(messages, model)
         msg_dicts = messages_to_dicts(messages)
         # Ollama expects tool_call arguments as dicts, not JSON strings
         for md in msg_dicts:
@@ -313,6 +315,7 @@ class OllamaEngine(InferenceEngine):
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
+        messages = ensure_grandpa_identity(messages, model)
         payload: Dict[str, Any] = {
             "model": model,
             "messages": messages_to_dicts(messages),
@@ -405,6 +408,7 @@ class OllamaEngine(InferenceEngine):
         response. Falls back to a tools-less retry on 400 (mirrors
         ``generate()``'s behaviour for models that don't support tools).
         """
+        messages = ensure_grandpa_identity(messages, model)
         msg_dicts = messages_to_dicts(messages)
         for md in msg_dicts:
             for tc in md.get("tool_calls", []):
@@ -643,7 +647,7 @@ def _format_model_load_error(model: str, body: str) -> str:
     if _is_low_memory_error(body):
         return (
             f"Ollama could not load {model} because available memory is too low. "
-            "Close memory-heavy apps or use grandpa-light:latest."
+            "Close memory-heavy apps or use grandpa-mini:latest."
         )
     return f"Ollama could not load {model}: {detail}"
 

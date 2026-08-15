@@ -113,21 +113,39 @@ def _status(session: InteractiveSession, _argument: str) -> LocalCommandResult:
 
 
 def _model(session: InteractiveSession, argument: str) -> LocalCommandResult:
+    from grandpa.intelligence.grandpa_models import (
+        canonical_model_tag,
+        get_model_role,
+        user_visible_models,
+    )
+
     if not argument:
         models = _list_models(session.engine)
-        available = ", ".join(models[:8]) if models else "No models reported"
+        installed = set(models)
+        lines = ["Grandpa Models", ""]
+        for entry in user_visible_models(capability="chat"):
+            marker = "*" if entry.ollama_tag == session.model else " "
+            status = "" if entry.ollama_tag in installed else " (not installed)"
+            lines.append(
+                f"{marker} {entry.display_name.removeprefix('Grandpa '):<8} "
+                f"{entry.description}{status}"
+            )
+        lines.append("\nUse /model <role> or /model <tag>.")
         return LocalCommandResult(
             True,
-            f"Active model: {session.model}\nAvailable: {available}",
+            "\n".join(lines),
         )
     available = _list_models(session.engine)
-    if available and argument not in available:
+    requested = canonical_model_tag(argument)
+    if available and requested not in available:
         return LocalCommandResult(
             True,
-            f'Model "{argument}" is not available on {session.engine_name}.',
+            f'Model "{requested}" is not available on {session.engine_name}.',
         )
-    session.model = argument
-    return LocalCommandResult(True, f"Model changed to {argument}.")
+    session.model = requested
+    entry = get_model_role(requested)
+    label = entry.display_name if entry else requested
+    return LocalCommandResult(True, f"Model changed to {label} ({requested}).")
 
 
 def _engine(session: InteractiveSession, argument: str) -> LocalCommandResult:
@@ -173,7 +191,7 @@ def _voice(session: InteractiveSession, argument: str) -> LocalCommandResult:
             "  /voice backend <name>   - Change active TTS backend (e.g. grandpa_voice, kokoro)\n"
             "  /voice test             - Test voice synthesis and playback\n"
             "  /voice off              - Disable speech output\n"
-            "  /voice on               - Enable speech output"
+            "  /voice on               - Enable speech output",
         )
 
     cmd = args[0].lower()
@@ -189,6 +207,7 @@ def _voice(session: InteractiveSession, argument: str) -> LocalCommandResult:
         import tomlkit
 
         from grandpa.core.config import DEFAULT_CONFIG_DIR
+
         config_path = Path(
             os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
         )
@@ -238,7 +257,9 @@ def _voice(session: InteractiveSession, argument: str) -> LocalCommandResult:
 
     elif cmd == "backend":
         if len(args) < 2:
-            return LocalCommandResult(True, "Please specify a backend name, e.g. /voice backend grandpa_voice")
+            return LocalCommandResult(
+                True, "Please specify a backend name, e.g. /voice backend grandpa_voice"
+            )
         backend_name = args[1].lower()
 
         import grandpa.speech  # noqa: F401 - registers local TTS backends
@@ -248,12 +269,14 @@ def _voice(session: InteractiveSession, argument: str) -> LocalCommandResult:
             return LocalCommandResult(
                 True,
                 f"Backend '{backend_name}' is not registered.\n"
-                f"Available backends: {', '.join(TTSRegistry.keys())}"
+                f"Available backends: {', '.join(TTSRegistry.keys())}",
             )
 
         try:
             _update_and_persist_config("tts.backend", backend_name)
-            return LocalCommandResult(True, f"Voice backend changed to '{backend_name}'.")
+            return LocalCommandResult(
+                True, f"Voice backend changed to '{backend_name}'."
+            )
         except Exception as exc:
             return LocalCommandResult(True, f"Failed to save voice backend: {exc}")
 
@@ -273,23 +296,29 @@ def _voice(session: InteractiveSession, argument: str) -> LocalCommandResult:
 
     elif cmd == "test":
         from grandpa.voice.speech_output import SpeechOutputEngine
+
         engine = SpeechOutputEngine()
         phrase = "Hello, I am Grandpa, your offline local cloned voice assistant."
         try:
             result = engine.speak(phrase)
             if result.status == "fallback" and result.engine == "print_only":
-                return LocalCommandResult(True, f"Test phrase: '{phrase}'\n(Speech output unavailable; printed response only)")
+                return LocalCommandResult(
+                    True,
+                    f"Test phrase: '{phrase}'\n(Speech output unavailable; printed response only)",
+                )
             return LocalCommandResult(
                 True,
                 f"Live voice test spoken successfully.\n"
                 f"Text: '{phrase}'\n"
-                f"Backend used: {result.engine}"
+                f"Backend used: {result.engine}",
             )
         except Exception as exc:
             return LocalCommandResult(True, f"Live voice test failed: {exc}")
 
     else:
-        return LocalCommandResult(True, f"Unknown voice subcommand: '{cmd}'. Type '/voice' for help.")
+        return LocalCommandResult(
+            True, f"Unknown voice subcommand: '{cmd}'. Type '/voice' for help."
+        )
 
 
 def _doctor(session: InteractiveSession, _argument: str) -> LocalCommandResult:
@@ -361,10 +390,30 @@ def _profile(session: InteractiveSession, argument: str) -> LocalCommandResult:
             True, format_profile(profile_from_config(session.config))
         )
     if action == "edit":
+        import click
+
+        choice = click.prompt(
+            "Profile: 1) display name  2) preferred title  3) reset  4) back",
+            type=click.Choice(("1", "2", "3", "4")),
+            default="4",
+        )
+        if choice == "4":
+            return LocalCommandResult(True, "Profile unchanged.")
+        if choice == "3":
+            if not click.confirm("Reset local profile?", default=False):
+                return LocalCommandResult(True, "Profile reset cancelled.")
+            reset_profile(confirmed=True)
+            session.config.user.onboarding_completed = False
+            return LocalCommandResult(
+                True,
+                "Profile reset. Onboarding will run at the next interactive launch.",
+            )
         updated = configure_profile(
             console=session.console,
             config=session.config,
             interactive=True,
+            edit_username=choice == "1",
+            edit_title=choice == "2",
         )
         session.config = updated
         session.username = resolve_username(updated)
@@ -441,14 +490,30 @@ def render_startup_header(session: InteractiveSession) -> None:
     render_logo(session.console)
     session.console.print()
     engine_label = session.engine_name.replace("_", " ").title()
+    from grandpa.intelligence.grandpa_models import get_model_role
+
+    entry = get_model_role(session.model)
+    model_label = entry.ollama_tag.removesuffix(":latest") if entry else session.model
     session.console.print(
         f"[bold #ffc448]Grandpa v{grandpa.__version__}[/bold #ffc448] "
         f"[dim]|[/dim] [#ffffff]{engine_label}[/#ffffff] "
-        f"[dim]|[/dim] [#ffffff]{session.model}[/#ffffff]"
+        f"[dim]|[/dim] [#ffffff]{model_label}[/#ffffff]"
     )
     session.console.print()
-    session.console.print(
-        "[dim]Type /help for commands. Alt+Enter adds a new line.[/dim]"
+    session.console.print(f"[dim]{chat_helper_text(session.console)}[/dim]")
+
+
+def chat_helper_text(console: Console) -> str:
+    """Return modern helper text with an encoding-safe separator."""
+
+    encoding = getattr(getattr(console, "file", None), "encoding", None) or "utf-8"
+    try:
+        "•".encode(encoding)
+        separator = " • "
+    except (LookupError, UnicodeEncodeError):
+        separator = " | "
+    return separator.join(
+        ("Ask anything", "/ for commands", "Alt+Enter for a new line")
     )
 
 
@@ -459,10 +524,22 @@ def interactive_prompt(session: InteractiveSession) -> str:
 
 
 def runtime_status_text(session: InteractiveSession) -> str:
+    from grandpa.intelligence.grandpa_models import get_model_role
+
+    entry = get_model_role(session.model)
+    if entry:
+        model_lines = (
+            f"Model: {entry.display_name}\n"
+            f"Role: {entry.description}\n"
+            f"Runtime tag: {entry.ollama_tag}\n"
+            f"Base family: {entry.base_family}"
+        )
+    else:
+        model_lines = f"Model: {session.model}"
     return (
         f"Grandpa v{grandpa.__version__}\n"
         f"Engine: {session.engine_name}\n"
-        f"Model: {session.model}\n"
+        f"{model_lines}\n"
         f"Directory: {Path.cwd()}\n"
         f"Memory: {_memory_status()}\n"
         f"Ollama: {_ollama_status(session)}"
@@ -513,6 +590,7 @@ __all__ = [
     "LocalCommandResult",
     "TUI_HISTORY_PATH",
     "TUI_PROMPT",
+    "chat_helper_text",
     "render_startup_header",
     "interactive_prompt",
     "runtime_status_text",

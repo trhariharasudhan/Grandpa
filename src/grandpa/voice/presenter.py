@@ -214,6 +214,15 @@ class VoicePresenter:
         else:
             self.output(f"< {content}")
 
+    def print_farewell(self, content: str) -> None:
+        """Print a session-status farewell without an assistant prefix."""
+        if self.quiet:
+            return
+        if not self.no_color and not self.screen_reader:
+            self.console.print(f"[dim]{content}[/dim]")
+        else:
+            self.output(content)
+
     def print_confirmation_required(self, command: str) -> None:
         """Render action confirmation warning and instruction."""
         if self.quiet:

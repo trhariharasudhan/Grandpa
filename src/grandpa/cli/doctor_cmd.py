@@ -99,28 +99,32 @@ def _grandpa_executable_candidates() -> list[str]:
 
 
 def _active_grandpa_executable(candidates: list[str]) -> str:
-    """Return the current launcher path when it can be identified safely."""
+    """Return the executable that started this process, independent of PATH order."""
 
-    invoked = Path(sys.argv[0]).expanduser()
-    if invoked.name.casefold() in {"grandpa", "grandpa.exe"}:
+    invocation_args = [sys.argv[0], *getattr(sys, "orig_argv", ())]
+    for argument in invocation_args:
+        invoked = Path(argument).expanduser()
+        if invoked.name.casefold() not in {"grandpa", "grandpa.exe"}:
+            continue
         try:
             if invoked.exists():
                 return str(invoked.resolve())
         except OSError:
             pass
-    executable_dir = Path(sys.executable).resolve().parent
+    executable = Path(sys.executable).resolve()
+    executable_dir = executable.parent
     for candidate in candidates:
         try:
             if Path(candidate).resolve().parent == executable_dir:
                 return candidate
         except OSError:
             continue
-    return candidates[0] if candidates else "Not found on PATH"
+    return f"{executable} (Python module invocation)"
 
 
 def _duplicate_launcher_guidance(candidates: list[str], preferred: str) -> str:
     lines = [
-        *candidates,
+        *(f"Detected: {candidate}" for candidate in candidates),
         f"Prefer: {preferred}",
         "Use `uv run grandpa ...` to force the project environment.",
     ]
@@ -131,6 +135,7 @@ def _duplicate_launcher_guidance(candidates: list[str], preferred: str) -> str:
         scripts_dir = candidate_path.parent
         python = scripts_dir.parent / "python.exe"
         if python.exists():
+            lines.append(f"Other installation (review whether stale): {candidate}")
             lines.append(
                 f'Review the other install with: "{python}" -m pip show grandpa'
             )
@@ -166,11 +171,41 @@ def _check_runtime_environment() -> list[CheckResult]:
         )
     )
 
-    if len(candidates) > 1:
+    active_path = Path(active)
+    active_is_launcher = active_path.name.casefold() in {"grandpa", "grandpa.exe"}
+    known_launchers = list(candidates)
+    if active_is_launcher and all(
+        active.casefold() != candidate.casefold() for candidate in known_launchers
+    ):
+        known_launchers.insert(0, active)
+
+    if (
+        candidates
+        and active_is_launcher
+        and active.casefold() != candidates[0].casefold()
+    ):
+        checks.append(
+            CheckResult(
+                "Grandpa executable PATH order",
+                "warn",
+                "PATH resolves to a different Grandpa installation",
+                details=f"Running: {active}\nPATH first: {candidates[0]}",
+            )
+        )
+    else:
+        checks.append(
+            CheckResult(
+                "Grandpa executable PATH order",
+                "ok",
+                "Running launcher agrees with PATH order",
+            )
+        )
+
+    if len(known_launchers) > 1:
         preferred = None
         if project_root:
             expected = project_root / ".venv" / "Scripts" / "grandpa.exe"
-            for candidate in candidates:
+            for candidate in known_launchers:
                 if Path(candidate).resolve() == expected.resolve():
                     preferred = str(expected)
                     break
@@ -179,8 +214,8 @@ def _check_runtime_environment() -> list[CheckResult]:
             CheckResult(
                 "Grandpa executable duplicates",
                 "warn",
-                f"{len(candidates)} executables found on PATH",
-                details=_duplicate_launcher_guidance(candidates, preferred),
+                f"{len(known_launchers)} executables detected (Grandpa launchers)",
+                details=_duplicate_launcher_guidance(known_launchers, preferred),
             )
         )
     else:
@@ -360,6 +395,9 @@ def _check_default_model() -> CheckResult:
         return CheckResult("Default model", "warn", "Skipped (config unavailable)")
 
     default_model = config.intelligence.default_model
+    from grandpa.intelligence.grandpa_models import get_model_role
+
+    role = get_model_role(default_model)
     if not default_model:
         return CheckResult(
             "Default model",
@@ -385,10 +423,23 @@ def _check_default_model() -> CheckResult:
             if engine.health():
                 models = engine.list_models()
                 if default_model in models:
+                    label = role.display_name if role else default_model
+                    details = None
+                    if role:
+                        details = (
+                            f"Runtime tag: {role.ollama_tag}\n"
+                            f"Base family: {role.base_family}"
+                        )
+                        if default_model != role.ollama_tag:
+                            details += (
+                                f"\nLegacy model configuration detected: {default_model}"
+                                f"\nRecommended canonical role: {role.ollama_tag}"
+                            )
                     return CheckResult(
                         "Default model",
                         "ok",
-                        f"{default_model} (on {key})",
+                        f"{label} (on {key})",
+                        details=details,
                     )
         except Exception:
             continue
@@ -495,7 +546,11 @@ def _check_daily_default_model() -> CheckResult:
     host = _ollama_host(config)
     ok, models, detail = _fetch_ollama_models(host)
     if ok and model in models:
-        return CheckResult("Default model available", "ok", f"Ready ({model})")
+        from grandpa.intelligence.grandpa_models import get_model_role
+
+        role = get_model_role(model)
+        label = role.display_name if role else model
+        return CheckResult("Default model available", "ok", f"Ready ({label})")
     if ok:
         return CheckResult(
             "Default model available",
@@ -509,6 +564,23 @@ def _check_daily_default_model() -> CheckResult:
         "Missing/optional",
         details=f"{_windows_setup_hint('ollama')} Last error: {detail}",
     )
+
+
+def _check_odin_support_model(label: str, model: str) -> CheckResult:
+    """Check an independently required Odin support-model tag."""
+
+    config = _get_config()
+    ok, models, detail = _fetch_ollama_models(_ollama_host(config))
+    if ok and model in models:
+        return CheckResult(label, "ok", f"Ready ({model})")
+    if ok:
+        return CheckResult(
+            label,
+            "warn",
+            "Missing",
+            details=f"Install with `ollama pull {model}`.",
+        )
+    return CheckResult(label, "warn", "Unavailable", details=detail)
 
 
 def _check_rest_api_installed() -> CheckResult:
@@ -1104,6 +1176,10 @@ def _run_all_checks() -> List[CheckResult]:
     checks.extend(_check_engines())
     checks.extend(_check_models())
     checks.append(_check_default_model())
+    checks.append(
+        _check_odin_support_model("Embedding model", "nomic-embed-text:latest")
+    )
+    checks.append(_check_odin_support_model("Vision model", "grandpa-eyes:latest"))
     checks.extend(_check_optional_deps())
     checks.append(_check_security_profile())
     return checks
@@ -1129,6 +1205,10 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         else:
             ai_engines.append(check)
     ai_engines.append(_check_default_model())
+    ai_engines.append(
+        _check_odin_support_model("Embedding model", "nomic-embed-text:latest")
+    )
+    ai_engines.append(_check_odin_support_model("Vision model", "grandpa-eyes:latest"))
     ai_engines.extend(_check_models())
 
     daily_features: List[CheckResult] = [

@@ -6,10 +6,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import click
 from click.testing import CliRunner
 
 from grandpa.cli import cli
-from grandpa.cli.daemon_cmd import _pid_alive, _read_pid, _write_pid
+from grandpa.cli.daemon_cmd import (
+    _pid_alive,
+    _read_daemon_state,
+    _read_pid,
+    _write_daemon_state,
+    _write_pid,
+)
 
 
 def _config(host: str = "127.0.0.1", port: int = 8000) -> SimpleNamespace:
@@ -144,6 +151,71 @@ class TestDaemonCommands:
         assert "running" in result.output
         assert "9999" in result.output
         assert "http://127.0.0.1:8000" in result.output
+
+    def test_status_uses_persisted_custom_endpoint(self, tmp_path: Path) -> None:
+        pid_file = tmp_path / "server.pid"
+        with (
+            patch("grandpa.cli.daemon_cmd._PID_FILE", pid_file),
+            patch("grandpa.cli.daemon_cmd._read_pid", return_value=9999),
+            patch("grandpa.cli.daemon_cmd.load_config", return_value=_config()),
+        ):
+            _write_daemon_state(
+                pid=9999,
+                host="127.0.0.1",
+                port=18766,
+                engine_key="ollama",
+                model_name="tiny",
+                agent_name=None,
+            )
+            result = CliRunner().invoke(cli, ["status"])
+
+        assert result.exit_code == 0
+        assert "http://127.0.0.1:18766" in result.output
+
+    def test_daemon_state_round_trip(self, tmp_path: Path) -> None:
+        with patch("grandpa.cli.daemon_cmd._PID_FILE", tmp_path / "server.pid"):
+            _write_daemon_state(
+                pid=123,
+                host="localhost",
+                port=9001,
+                engine_key=None,
+                model_name=None,
+                agent_name=None,
+            )
+            state = _read_daemon_state()
+
+        assert state is not None
+        assert state["pid"] == 123
+        assert state["host"] == "localhost"
+        assert state["port"] == 9001
+
+    def test_restart_preserves_custom_endpoint(self, tmp_path: Path) -> None:
+        pid_file = tmp_path / "server.pid"
+        calls: list[dict[str, object]] = []
+
+        @click.command()
+        def fake_start(**kwargs) -> None:
+            calls.append(kwargs)
+
+        with (
+            patch("grandpa.cli.daemon_cmd._PID_FILE", pid_file),
+            patch("grandpa.cli.daemon_cmd._read_pid", return_value=4321),
+            patch("grandpa.cli.daemon_cmd._terminate_pid"),
+            patch("grandpa.cli.daemon_cmd.start", fake_start),
+        ):
+            _write_daemon_state(
+                pid=4321,
+                host="127.0.0.1",
+                port=18766,
+                engine_key="ollama",
+                model_name="tiny",
+                agent_name="default",
+            )
+            result = CliRunner().invoke(cli, ["restart"])
+
+        assert result.exit_code == 0
+        assert calls[0]["port"] == 18766
+        assert calls[0]["host"] == "127.0.0.1"
 
     def test_start_already_running(self) -> None:
         """``Grandpa start`` exits with error when a server is already running."""

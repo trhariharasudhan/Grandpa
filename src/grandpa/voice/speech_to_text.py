@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 from typing import Protocol
 
 from grandpa.voice.errors import VoiceRecognitionError
@@ -62,6 +63,20 @@ class FasterWhisperSpeechToText:
                     time.sleep(self.retry_delay_seconds)
         assert last_error is not None
         raise last_error
+
+    def transcribe_file(self, path: str | Path) -> str:
+        """Transcribe a closed WAV file with the same loaded production backend."""
+
+        backend = self._engine._get_backend()
+        result = backend.transcribe_file(path, language=self.language)
+        return " ".join(result.text.strip().split())
+
+    @property
+    def backend_diagnostics(self):
+        """Expose read-only diagnostics from the canonical backend."""
+
+        backend = self._engine._get_backend()
+        return getattr(backend, "last_diagnostics", None)
 
 
 __all__ = ["FasterWhisperSpeechToText", "SpeechToTextEngine"]

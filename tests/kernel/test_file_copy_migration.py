@@ -183,9 +183,7 @@ def test_copy_uses_complete_kernel_lifecycle_with_medium_allow(tmp_path):
     reset_event_bus()
     bus = get_event_bus(record_history=True)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     audits = [event.data["kernel_audit"] for event in bus.history]
     assert result.status == "handled"
@@ -233,9 +231,7 @@ def test_policy_authorization_execution_and_verification_order(tmp_path, monkeyp
     monkeypatch.setattr(kernel_files.CopyPathExecutor, "execute", execute)
     monkeypatch.setattr(kernel_files.CopyPathVerifier, "verify", verify)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "handled"
     assert calls == ["policy", "execute", "verify"]
@@ -333,9 +329,7 @@ def test_existing_destination_preserves_legacy_confirmation_without_execution(
     reset_event_bus()
     bus = get_event_bus(record_history=True)
 
-    actual = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    actual = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     _assert_parity(actual, expected)
     assert calls == 0
@@ -366,9 +360,7 @@ def test_missing_destination_parent_is_not_created(tmp_path):
     destination = tmp_path / "missing" / "copy.txt"
     source.write_text("unchanged", encoding="utf-8")
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "unsupported"
     assert "create it before copying" in result.message.lower()
@@ -419,15 +411,11 @@ def test_traversal_protected_and_outside_paths_are_blocked(tmp_path):
     source.write_text("unchanged", encoding="utf-8")
     outside = tmp_path / "outside.txt"
 
-    traversal = FileAutomation(roots=(root,)).handle(
-        f"copy {source} to ../outside.txt"
-    )
+    traversal = FileAutomation(roots=(root,)).handle(f"copy {source} to ../outside.txt")
     protected = FileAutomation(roots=(root,)).handle(
         f"copy {source} to {root / '.ssh' / 'copy.txt'}"
     )
-    outside_result = FileAutomation(roots=(root,)).handle(
-        f"copy {source} to {outside}"
-    )
+    outside_result = FileAutomation(roots=(root,)).handle(f"copy {source} to {outside}")
 
     assert traversal.status == "blocked"
     assert protected.status == "blocked"
@@ -486,9 +474,7 @@ def test_policy_block_wrong_digest_and_audit_failure_prevent_copy(
             "wrong-digest",
         )
 
-    monkeypatch.setattr(
-        kernel_files.FileCompatibilityPolicy, "evaluate", wrong_digest
-    )
+    monkeypatch.setattr(kernel_files.FileCompatibilityPolicy, "evaluate", wrong_digest)
     wrong_destination = tmp_path / "wrong.txt"
     result = FileAutomation(roots=(tmp_path,)).handle(
         f"copy {source} to {wrong_destination}"
@@ -508,13 +494,9 @@ def test_policy_exception_prevents_copy(tmp_path, monkeypatch):
     def failed_policy(self, *args, **kwargs):
         raise RuntimeError("policy unavailable")
 
-    monkeypatch.setattr(
-        kernel_files.FileCompatibilityPolicy, "evaluate", failed_policy
-    )
+    monkeypatch.setattr(kernel_files.FileCompatibilityPolicy, "evaluate", failed_policy)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "error"
     assert "policy unavailable" not in result.message
@@ -545,9 +527,7 @@ def test_permission_error_is_translated_without_false_success(tmp_path, monkeypa
 
     monkeypatch.setattr(shutil, "copy2", denied)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "error"
     assert result.error == "PermissionError"
@@ -571,9 +551,7 @@ def test_verifier_rejects_tampering_and_unrelated_mutation(tmp_path, monkeypatch
         kernel_files.CopyPathExecutor, "execute", execute_with_tampering
     )
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "error"
     assert "independently verified" in result.message.lower()
@@ -594,9 +572,7 @@ def test_verifier_detects_concurrent_source_change(tmp_path, monkeypatch):
         kernel_files.CopyPathExecutor, "execute", execute_then_change_source
     )
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "error"
     assert result.error == "verification_failed"
@@ -616,9 +592,7 @@ def test_verification_failure_never_claims_success(tmp_path, monkeypatch):
 
     monkeypatch.setattr(kernel_files.CopyPathVerifier, "verify", fail)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "error"
     assert result.message == "Independent copy verification failed."
@@ -631,9 +605,7 @@ def test_copy_preserves_binary_content_across_sizes(tmp_path, size):
     destination = tmp_path / f"destination-{size}.bin"
     source.write_bytes(bytes(range(256)) * (size // 256) + b"x" * (size % 256))
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "handled"
     assert destination.read_bytes() == source.read_bytes()
@@ -644,9 +616,7 @@ def test_copy_handles_spaces_unicode_and_larger_binary_file(tmp_path):
     destination = tmp_path / "copied ☃ file.bin"
     source.write_bytes((bytes(range(256)) * (10 * 1024 * 1024 // 256)))
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "handled"
     assert destination.read_bytes() == source.read_bytes()
@@ -677,9 +647,7 @@ def test_only_destination_file_is_added(tmp_path):
     preserved.write_text("preserved", encoding="utf-8")
     before = _snapshot(tmp_path)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        f"copy {source} to {destination}"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle(f"copy {source} to {destination}")
 
     assert result.status == "handled"
     assert _snapshot(tmp_path) == {**before, "destination.txt": b"source"}

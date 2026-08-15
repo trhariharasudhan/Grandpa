@@ -297,7 +297,13 @@ def _load_preferred_microphone_name() -> str | None:
         return None
 
 
-def save_preferred_microphone_name(name: str) -> str:
+def save_preferred_microphone_name(
+    name: str,
+    *,
+    host_api: str = "",
+    input_channels: int | None = None,
+    sample_rate: int | None = None,
+) -> str:
     cleaned = _clean_device_name(name)
     if not cleaned:
         raise ValueError("Microphone name cannot be empty.")
@@ -316,7 +322,30 @@ def save_preferred_microphone_name(name: str) -> str:
         voice_section = tomlkit.table()
         doc["voice"] = voice_section
     voice_section["preferred_microphone"] = cleaned
-    config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+    if host_api:
+        voice_section["preferred_microphone_host_api"] = host_api
+    if input_channels is not None:
+        voice_section["preferred_microphone_input_channels"] = input_channels
+    if sample_rate is not None:
+        voice_section["preferred_microphone_sample_rate"] = sample_rate
+    import os
+    import tempfile
+
+    handle, temporary_name = tempfile.mkstemp(
+        prefix=f".{config_path.name}.", suffix=".tmp", dir=config_path.parent
+    )
+    try:
+        with os.fdopen(handle, "w", encoding="utf-8") as temporary:
+            temporary.write(tomlkit.dumps(doc))
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_name, config_path)
+    except Exception:
+        try:
+            os.unlink(temporary_name)
+        except OSError:
+            pass
+        raise
     return cleaned
 
 

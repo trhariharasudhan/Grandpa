@@ -417,7 +417,7 @@ def test_local_model_missing_model_guidance(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert result == {
         "available": False,
-        "model": "grandpa-eyes",
+        "model": "grandpa-eyes:latest",
         "analysis": "",
-        "error": "Vision model is not installed. Run: ollama pull grandpa-eyes",
+        "error": "Vision model is not installed. Run: ollama pull grandpa-eyes:latest",
     }

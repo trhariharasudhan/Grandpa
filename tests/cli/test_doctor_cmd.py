@@ -12,6 +12,7 @@ from grandpa.cli import cli
 from grandpa.cli.doctor_cmd import (
     CheckResult,
     DoctorSection,
+    _active_grandpa_executable,
     _check_background_scheduler_ready,
     _check_config_exists,
     _check_default_model,
@@ -130,6 +131,47 @@ class TestRuntimeEnvironmentChecks:
             "D:\\Grandpa\\.venv\\Scripts\\grandpa.exe",
             "C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python311\\Scripts\\grandpa.exe",
         ]
+
+    def test_active_executable_uses_python_environment_not_path_order(self) -> None:
+        candidates = [
+            "C:\\Python311\\Scripts\\grandpa.exe",
+            "D:\\Grandpa\\.venv\\Scripts\\grandpa.exe",
+        ]
+        with (
+            patch("grandpa.cli.doctor_cmd.sys.argv", ["-m", "grandpa.cli"]),
+            patch(
+                "grandpa.cli.doctor_cmd.sys.orig_argv", ["python", "-m", "grandpa.cli"]
+            ),
+            patch(
+                "grandpa.cli.doctor_cmd.sys.executable",
+                "D:\\Grandpa\\.venv\\Scripts\\python.exe",
+            ),
+        ):
+            active = _active_grandpa_executable(candidates)
+
+        assert active == "D:\\Grandpa\\.venv\\Scripts\\grandpa.exe"
+
+    def test_active_executable_prefers_actual_invoked_launcher(self, tmp_path) -> None:
+        invoked = tmp_path / "grandpa.exe"
+        invoked.touch()
+        candidates = ["D:\\Grandpa\\.venv\\Scripts\\grandpa.exe", str(invoked)]
+        with patch("grandpa.cli.doctor_cmd.sys.argv", [str(invoked)]):
+            active = _active_grandpa_executable(candidates)
+
+        assert active == str(invoked.resolve())
+
+    def test_original_process_arguments_identify_running_launcher(
+        self, tmp_path
+    ) -> None:
+        invoked = tmp_path / "grandpa.exe"
+        invoked.touch()
+        with (
+            patch("grandpa.cli.doctor_cmd.sys.argv", ["doctor"]),
+            patch("grandpa.cli.doctor_cmd.sys.orig_argv", [str(invoked), "doctor"]),
+        ):
+            active = _active_grandpa_executable([])
+
+        assert active == str(invoked.resolve())
 
     def test_runtime_checks_warn_when_duplicate_executables_exist(self) -> None:
         candidates = [

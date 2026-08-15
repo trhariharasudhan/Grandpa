@@ -12,6 +12,13 @@ class SlashPreviewItem:
 
 
 @dataclass(frozen=True)
+class SlashPickerItem:
+    command: str
+    label: str
+    description: str
+
+
+@dataclass(frozen=True)
 class SlashCommand:
     name: str
     description: str
@@ -23,10 +30,20 @@ class SlashCommand:
     examples: tuple[str, ...] = ()
     note: str = ""
     routing: str = "local"
+    aliases: tuple[str, ...] = ()
+    visibility: str = "hidden"
+    scope: str = "user"
+    picker_group: str = ""
+    handler: str = ""
+    implemented: bool = True
 
     @property
     def display_label(self) -> str:
         return self.label or self.name.lstrip("/").replace("-", " ").title()
+
+    @property
+    def handler_key(self) -> str:
+        return self.handler or self.name.lstrip("/")
 
 
 CATEGORY_ORDER = (
@@ -38,20 +55,37 @@ CATEGORY_ORDER = (
     "Automation",
 )
 
+PICKER_GROUP_ORDER = ("Grandpa", "Chat", "Tools", "Session")
+
 SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     SlashCommand(
         "/help",
-        "Command center",
+        "Open Grandpa's command center",
         "Core",
-        preview=("/help", "/help commands", "/help examples", "/help modules"),
+        preview=(
+            "/help",
+            "/help commands",
+            "/help examples",
+            "/help modules",
+            "/help shortcuts",
+            "/help tools",
+            "/help advanced",
+            "/help all",
+        ),
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="interactive_tui._help",
     ),
     SlashCommand(
         "/status",
-        "Grandpa status",
+        "Show current runtime status",
         "Core",
         preview=("/status", "/system", "/model"),
         examples=("what is your status", "is Grandpa running"),
         note="Status checks are read-only.",
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="interactive_tui._status",
     ),
     SlashCommand(
         "/mode",
@@ -72,14 +106,22 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "/settings",
-        "Settings",
+        "Open settings and advanced controls",
         "Core",
-        status="Planned / Not configured",
-        subcommands=("/settings", "/settings show", "/settings profile"),
-        preview=("/settings", "/mode", "/model"),
+        status="Available",
+        subcommands=(
+            "/settings config",
+            "/settings permissions",
+            "/settings engine",
+            "/settings compact",
+            "/settings whoami",
+        ),
         examples=("show my settings", "what is my default model"),
-        note="Settings changes are not wired into chat yet.",
-        routing="help",
+        note="Advanced controls remain available through this namespace.",
+        routing="local",
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="namespace:settings",
     ),
     SlashCommand(
         "/engine",
@@ -88,27 +130,66 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/engine", "/engine ollama"),
         note="Engine changes apply to the current interactive session.",
     ),
-    SlashCommand("/model", "Model picker", "Core"),
-    SlashCommand("/history", "Chat history", "Core"),
+    SlashCommand(
+        "/model",
+        "Choose or inspect Grandpa's active AI model",
+        "Core",
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="interactive_tui._model",
+    ),
+    SlashCommand(
+        "/history",
+        "Show this session's conversation history",
+        "Core",
+        visibility="primary",
+        picker_group="Chat",
+        handler="interactive_tui._history",
+    ),
     SlashCommand(
         "/profile",
-        "Local profile",
+        "View or edit the local user profile",
         "Core",
         subcommands=("/profile", "/profile edit", "/profile reset"),
         examples=("show my local profile", "change my display name"),
         note="Profile settings stay on this computer.",
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="interactive_tui._profile",
     ),
-    SlashCommand("/whoami", "Local identity and mode", "Core"),
-    SlashCommand("/compact", "Compact context", "Core"),
-    SlashCommand("/config", "Active configuration", "Core"),
-    SlashCommand("/permissions", "Safety permissions", "Core"),
-    SlashCommand("/doctor", "Readiness check", "Core"),
-    SlashCommand("/clear", "Clear chat", "Core"),
-    SlashCommand("/quit", "Exit chat", "Core"),
-    SlashCommand("/exit", "Exit chat", "Core"),
+    SlashCommand("/whoami", "Local identity and mode", "Core", scope="advanced"),
+    SlashCommand("/compact", "Compact context", "Core", scope="advanced"),
+    SlashCommand("/config", "Active configuration", "Core", scope="advanced"),
+    SlashCommand("/permissions", "Safety permissions", "Core", scope="advanced"),
+    SlashCommand(
+        "/doctor",
+        "Run Grandpa readiness diagnostics",
+        "Core",
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="interactive_tui._doctor",
+    ),
+    SlashCommand(
+        "/clear",
+        "Clear the current conversation display",
+        "Core",
+        visibility="primary",
+        picker_group="Chat",
+        handler="interactive_tui._clear",
+    ),
+    SlashCommand("/quit", "Exit chat (legacy alias)", "Core", scope="alias"),
+    SlashCommand(
+        "/exit",
+        "Exit Grandpa cleanly",
+        "Core",
+        aliases=("/quit", "/q"),
+        visibility="primary",
+        picker_group="Session",
+        handler="interactive_tui._exit",
+    ),
     SlashCommand(
         "/memory",
-        "Personal memory",
+        "Inspect or manage Grandpa's personal memory",
         "Memory & Productivity",
         subcommands=(
             "/memory list",
@@ -117,6 +198,24 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "/memory forget <query or id>",
         ),
         examples=("show my memories", "remember my name is Hari"),
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="interactive_tui._memory",
+    ),
+    SlashCommand(
+        "/tools",
+        "Local tools and integrations",
+        "Memory & Productivity",
+        subcommands=(
+            "/tools gmail",
+            "/tools calendar",
+            "/tools notes",
+            "/tools files",
+            "/tools browser",
+        ),
+        visibility="primary",
+        picker_group="Tools",
+        handler="namespace:tools",
     ),
     SlashCommand(
         "/reminders",
@@ -127,7 +226,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "/gmail",
-        "Gmail",
+        "Read and manage configured Gmail safely",
         "Memory & Productivity",
         status="Optional / requires OAuth setup",
         subcommands=(
@@ -146,10 +245,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "summarize emails from today",
         ),
         note="Gmail uses local OAuth tokens and never asks for your Google password.",
+        handler="chat_cmd._handle_gmail_slash_command",
     ),
     SlashCommand(
         "/calendar",
-        "Calendar",
+        "View or manage the configured calendar",
         "Memory & Productivity",
         status="Optional / requires OAuth setup",
         subcommands=(
@@ -170,10 +270,11 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "create a meeting tomorrow at 3 PM",
         ),
         note="Calendar writes require confirmation and use local OAuth tokens.",
+        handler="chat_cmd._handle_calendar_slash_command",
     ),
     SlashCommand(
         "/notes",
-        "Notes",
+        "Create, find, and manage local notes",
         "Memory & Productivity",
         status="Available / local only",
         subcommands=(
@@ -195,6 +296,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "append this to my project note",
         ),
         note="Notes are local Markdown files under Grandpa's notes directory.",
+        handler="chat_cmd._handle_notes_slash_command",
     ),
     SlashCommand(
         "/tasks",
@@ -205,6 +307,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         examples=("show my tasks", "plan my day", "what should I do next"),
         note="Task planning is a safe placeholder here and does not execute actions.",
         routing="help",
+        implemented=False,
     ),
     SlashCommand(
         "/desktop",
@@ -239,7 +342,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "/browser",
-        "Browser control",
+        "Open, search, or inspect the browser",
         "Computer",
         status="Planned / Partially available",
         subcommands=("/browser open <url>", "/browser search <query>", "/browser tabs"),
@@ -249,6 +352,7 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
             "summarize this page",
         ),
         note="Browser actions must stay local and permission-aware.",
+        handler="chat_cmd._handle_browser_slash_command",
     ),
     SlashCommand(
         "/search",
@@ -272,12 +376,13 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "/files",
-        "Files",
+        "Search and inspect local files safely",
         "Computer",
         status="Available with safe local handling",
         subcommands=("/files search <query>", "/files recent"),
         examples=("summarize this file", "find my notes about Grandpa"),
         note="File actions should avoid destructive changes unless explicitly confirmed.",
+        handler="chat_cmd._handle_files_slash_command",
     ),
     SlashCommand(
         "/downloads",
@@ -348,13 +453,16 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
     ),
     SlashCommand(
         "/voice",
-        "Voice",
+        "Manage Grandpa's voice mode",
         "Personal",
         status="Help only / dedicated voice command available",
         subcommands=("/voice status", "/voice wake-word", "/voice loop"),
         examples=("what is my voice status", "start push to talk"),
         note="No always-on microphone starts from this chat command.",
         routing="help",
+        visibility="primary",
+        picker_group="Grandpa",
+        handler="interactive_tui._voice",
     ),
     SlashCommand(
         "/order",
@@ -382,19 +490,81 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
 )
 
 COMMAND_BY_NAME = {command.name: command for command in SLASH_COMMANDS}
+for _command in SLASH_COMMANDS:
+    for _alias in _command.aliases:
+        COMMAND_BY_NAME[_alias] = _command
+
+_TOOL_NAMESPACE = {
+    "gmail": "/gmail",
+    "calendar": "/calendar",
+    "notes": "/notes",
+    "tasks": "/tasks",
+    "files": "/files",
+    "browser": "/browser",
+}
+_SETTINGS_NAMESPACE = {
+    "config": "/config",
+    "permissions": "/permissions",
+    "engine": "/engine",
+    "compact": "/compact",
+    "whoami": "/whoami",
+    "profile": "/profile",
+    "mode": "/mode",
+    "model": "/model",
+}
 
 
-def command_groups() -> dict[str, list[SlashCommand]]:
-    groups: dict[str, list[SlashCommand]] = {
-        category: [] for category in CATEGORY_ORDER
-    }
+def command_groups(view: str = "default") -> dict[str, list[SlashCommand]]:
+    if view in {"default", "commands"}:
+        groups = {group: [] for group in PICKER_GROUP_ORDER}
+        for command in top_level_commands():
+            groups[command.picker_group].append(command)
+        return groups
+    if view == "tools":
+        groups = {"Tools": []}
+        for name in _TOOL_NAMESPACE.values():
+            command = get_command(name)
+            if command is not None and command.implemented:
+                groups["Tools"].append(command)
+        return groups
+    if view == "advanced":
+        names = tuple(_SETTINGS_NAMESPACE.values())
+        return {
+            "Advanced": [
+                command for name in names if (command := get_command(name)) is not None
+            ]
+        }
+    groups = {category: [] for category in CATEGORY_ORDER}
     for command in SLASH_COMMANDS:
-        groups.setdefault(command.category, []).append(command)
+        if command.scope != "alias":
+            groups.setdefault(command.category, []).append(command)
     return groups
 
 
 def top_level_commands() -> list[SlashCommand]:
-    return list(SLASH_COMMANDS)
+    return [command for command in SLASH_COMMANDS if command.visibility == "primary"]
+
+
+def picker_group_items(group: str) -> list[SlashPickerItem]:
+    """Return implemented picker entries for one user-facing group."""
+
+    if group == "Tools":
+        tools = get_command("/tools")
+        if tools is None:
+            return []
+        items: list[SlashPickerItem] = []
+        for value in tools.subcommands:
+            target = get_command(expand_namespaced_command(value).split(maxsplit=1)[0])
+            if target is not None and target.implemented:
+                items.append(
+                    SlashPickerItem(value, target.display_label, target.description)
+                )
+        return items
+    return [
+        SlashPickerItem(command.name, command.display_label, command.description)
+        for command in top_level_commands()
+        if command.picker_group == group and command.name != "/tools"
+    ]
 
 
 def command_names() -> list[str]:
@@ -426,11 +596,41 @@ def validate_command_registry() -> list[str]:
                 errors.append(
                     f"{command.name} preview references unknown command {preview!r}"
                 )
+        if command.visibility not in {"primary", "hidden"}:
+            errors.append(f"{command.name} has invalid visibility")
+        if (
+            command.visibility == "primary"
+            and command.picker_group not in PICKER_GROUP_ORDER
+        ):
+            errors.append(f"{command.name} has invalid picker group")
+        if command.visibility == "primary" and not command.handler:
+            errors.append(f"{command.name} has no handler identity")
+        if command.visibility == "primary" and not command.implemented:
+            errors.append(f"{command.name} is visible but not implemented")
+        for alias in command.aliases:
+            if not alias.startswith("/"):
+                errors.append(f"{command.name} has invalid alias {alias!r}")
     return errors
 
 
 def get_command(name: str) -> SlashCommand | None:
     return COMMAND_BY_NAME.get(name)
+
+
+def expand_namespaced_command(command: str) -> str:
+    """Translate curated namespaces to existing legacy handlers."""
+
+    parts = command.strip().split(maxsplit=2)
+    if len(parts) < 2:
+        return command
+    namespace = parts[0].casefold()
+    mapping = _TOOL_NAMESPACE if namespace == "/tools" else _SETTINGS_NAMESPACE
+    if namespace not in {"/tools", "/settings"}:
+        return command
+    target = mapping.get(parts[1].casefold())
+    if target is None:
+        return command
+    return " ".join((target, *parts[2:]))
 
 
 def command_help_text(name: str) -> str | None:

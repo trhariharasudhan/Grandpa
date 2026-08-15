@@ -6,28 +6,44 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, List, Optional
+from typing import TYPE_CHECKING
 
 import click
 from rich.console import Console
-from rich.text import Text
 
 from grandpa.cli.theme import (
     FAREWELL_TEXT,
     alternate_screen,
-    render_logo,
     render_status_message,
     resolve_username,
 )
 from grandpa.core.config import DEFAULT_CONFIG_DIR, load_config
-from grandpa.profile import configure_profile, ensure_profile, reset_profile
+from grandpa.profile import (
+    configure_profile,
+    ensure_profile,
+    format_profile_display_name,
+    reset_profile,
+)
 
 if TYPE_CHECKING:
     from grandpa.core.config import GrandpaConfig
 
+_MAX_INVALID_MENU_RESULTS = 3
+_MAIN_ACTIONS = frozenset(
+    {"chat", "voice", "doctor", "profile", "settings", "exit", "cancel"}
+)
+_PROFILE_ACTIONS = frozenset(
+    {"view", "edit_name", "edit_title", "reset", "back", "cancel"}
+)
+_SETTINGS_ACTIONS = frozenset(
+    {"loaded", "hardware", "toml", "status", "back", "cancel"}
+)
+
+
 # Existing Grandpa ASCII logo generator
 def get_logo_text() -> str:
     from grandpa.cli.theme import _logo
+
     return _logo()
 
 
@@ -86,6 +102,10 @@ def run_interactive_menu(
 
         @kb.add("c-c")
         def _cancel(event):
+            event.app.exit(result="cancel")
+
+        @kb.add("c-d")
+        def _eof(event):
             event.app.exit(result="cancel")
 
         def make_handler(act):
@@ -200,15 +220,20 @@ def run_profile_submenu(
 
     menu_items = [
         ("1", "v", "View profile", "view"),
-        ("2", "e", "Edit display name", "edit"),
-        ("3", "r", "Reset profile", "reset"),
-        ("4", "b", "Back", "back"),
+        ("2", "n", "Edit display name", "edit_name"),
+        ("3", "t", "Edit preferred title", "edit_title"),
+        ("4", "r", "Reset profile", "reset"),
+        ("5", "b", "Back", "back"),
     ]
 
-    while True:
-        action = run_interactive_menu(
-            console, "Profile", menu_items, username, None
-        )
+    invalid_results = 0
+    while invalid_results < _MAX_INVALID_MENU_RESULTS:
+        action = run_interactive_menu(console, "Profile", menu_items, username, None)
+        if action not in _PROFILE_ACTIONS:
+            invalid_results += 1
+            console.print("[yellow]Invalid profile selection.[/yellow]")
+            continue
+        invalid_results = 0
         if action == "back" or action == "cancel":
             return True, config, username
 
@@ -221,11 +246,14 @@ def run_profile_submenu(
                 input("Press Enter to return to Profile menu...")
             except (KeyboardInterrupt, EOFError):
                 pass
-
-        elif action == "edit":
+        elif action in {"edit_name", "edit_title"}:
             console.print()
             updated = configure_profile(
-                console=console, config=config, interactive=True
+                console=console,
+                config=config,
+                interactive=True,
+                edit_username=action == "edit_name",
+                edit_title=action == "edit_title",
             )
             config = updated
             username = resolve_username(updated)
@@ -243,6 +271,11 @@ def run_profile_submenu(
                     return False, config, username
             except (KeyboardInterrupt, EOFError):
                 pass
+
+    console.print(
+        "[yellow]Returning to the launcher after repeated invalid selections.[/yellow]"
+    )
+    return True, config, username
 
 
 def run_settings_submenu(
@@ -264,10 +297,14 @@ def run_settings_submenu(
         os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
     )
 
-    while True:
-        action = run_interactive_menu(
-            console, "Settings", menu_items, username, None
-        )
+    invalid_results = 0
+    while invalid_results < _MAX_INVALID_MENU_RESULTS:
+        action = run_interactive_menu(console, "Settings", menu_items, username, None)
+        if action not in _SETTINGS_ACTIONS:
+            invalid_results += 1
+            console.print("[yellow]Invalid settings selection.[/yellow]")
+            continue
+        invalid_results = 0
         if action == "back" or action == "cancel":
             return True
 
@@ -279,7 +316,6 @@ def run_settings_submenu(
                 input("Press Enter to return to Settings...")
             except (KeyboardInterrupt, EOFError):
                 pass
-
         elif action == "hardware":
             console.print()
             _show_hardware_info(console, show_recommendations=True)
@@ -288,7 +324,6 @@ def run_settings_submenu(
                 input("Press Enter to return to Settings...")
             except (KeyboardInterrupt, EOFError):
                 pass
-
         elif action == "toml":
             console.print()
             if config_path.exists():
@@ -303,13 +338,14 @@ def run_settings_submenu(
                 )
                 console.print(Panel(syntax, border_style="dim"))
             else:
-                console.print("[yellow]TOML configuration file does not exist.[/yellow]")
+                console.print(
+                    "[yellow]TOML configuration file does not exist.[/yellow]"
+                )
             console.print()
             try:
                 input("Press Enter to return to Settings...")
             except (KeyboardInterrupt, EOFError):
                 pass
-
         elif action == "status":
             console.print()
             try:
@@ -321,6 +357,11 @@ def run_settings_submenu(
                 input("Press Enter to return to Settings...")
             except (KeyboardInterrupt, EOFError):
                 pass
+
+    console.print(
+        "[yellow]Returning to the launcher after repeated invalid selections.[/yellow]"
+    )
+    return True
 
 
 @click.command(hidden=True)
@@ -354,15 +395,28 @@ def launcher(ctx: click.Context) -> None:
     ]
 
     with alternate_screen(enabled=fullscreen):
+        invalid_results = 0
         while True:
             # Refresh configs in loop in case profile updated
             config = load_config()
             username = resolve_username(config)
+            greeting_name = format_profile_display_name(config)
             last_used = getattr(config, "last_used_mode", None) or None
 
             action = run_interactive_menu(
-                console, "Choose a mode", menu_items, username, last_used
+                console, "Choose a mode", menu_items, greeting_name, last_used
             )
+
+            if action not in _MAIN_ACTIONS:
+                invalid_results += 1
+                console.print("[yellow]Invalid launcher selection.[/yellow]")
+                if invalid_results >= _MAX_INVALID_MENU_RESULTS:
+                    console.print(
+                        "[yellow]Launcher stopped after repeated invalid selections.[/yellow]"
+                    )
+                    break
+                continue
+            invalid_results = 0
 
             if action == "exit" or action == "cancel":
                 render_status_message(console, FAREWELL_TEXT)

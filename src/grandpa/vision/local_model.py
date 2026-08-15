@@ -9,7 +9,7 @@ from typing import Any
 import httpx
 
 DEFAULT_VISION_PROMPT = "Describe this image clearly and mention any visible text."
-FALLBACK_VISION_MODELS = ("grandpa-eyes", "llava:latest")
+FALLBACK_VISION_MODELS = ("grandpa-eyes:latest", "llava:latest")
 OLLAMA_ENGINE = "ollama"
 OLLAMA_UNAVAILABLE = "Ollama is not available. Start it with: ollama serve"
 

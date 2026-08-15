@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
+import textwrap
 from pathlib import Path
 from typing import Iterable, Optional
 
 from grandpa.cli.slash_commands import (
+    PICKER_GROUP_ORDER,
     command_preview_options,
     get_command,
+    picker_group_items,
     top_level_commands,
 )
 
@@ -149,10 +153,12 @@ def _picker_style_dict() -> dict[str, str]:
 
 class SlashPickerState:
     def __init__(self) -> None:
+        self.category_index = 0
         self.top_index = 0
         self.preview_index = 0
 
     def reset_preview(self) -> None:
+        self.top_index = 0
         self.preview_index = 0
 
 
@@ -196,6 +202,10 @@ def _chat_key_bindings(
     @bindings.add("left")
     def _(event):
         text = event.current_buffer.text
+        if _is_hybrid_picker(text):
+            _move_picker_category(picker_state, -1)
+            event.app.invalidate()
+            return
         commands = _top_level_suggestions("/")
         if text.startswith("/") and commands:
             picker_state.top_index = (picker_state.top_index - 1) % len(commands)
@@ -207,6 +217,10 @@ def _chat_key_bindings(
     @bindings.add("right")
     def _(event):
         text = event.current_buffer.text
+        if _is_hybrid_picker(text):
+            _move_picker_category(picker_state, 1)
+            event.app.invalidate()
+            return
         commands = _top_level_suggestions("/")
         if text.startswith("/") and commands:
             picker_state.top_index = (picker_state.top_index + 1) % len(commands)
@@ -218,6 +232,16 @@ def _chat_key_bindings(
     @bindings.add("up")
     def _(event):
         text = event.current_buffer.text
+        if _is_hybrid_picker(text):
+            if _move_picker_command(text, picker_state, -1):
+                event.app.invalidate()
+            return
+        commands = _top_level_suggestions(text)
+        if _is_top_level_picker(text) and commands:
+            picker_state.top_index = (picker_state.top_index - 1) % len(commands)
+            picker_state.reset_preview()
+            event.app.invalidate()
+            return
         preview = _selected_preview_options(text, picker_state)
         if text.startswith("/") and preview:
             picker_state.preview_index = (picker_state.preview_index - 1) % len(preview)
@@ -231,6 +255,16 @@ def _chat_key_bindings(
     @bindings.add("down")
     def _(event):
         text = event.current_buffer.text
+        if _is_hybrid_picker(text):
+            if _move_picker_command(text, picker_state, 1):
+                event.app.invalidate()
+            return
+        commands = _top_level_suggestions(text)
+        if _is_top_level_picker(text) and commands:
+            picker_state.top_index = (picker_state.top_index + 1) % len(commands)
+            picker_state.reset_preview()
+            event.app.invalidate()
+            return
         preview = _selected_preview_options(text, picker_state)
         if text.startswith("/") and preview:
             picker_state.preview_index = (picker_state.preview_index + 1) % len(preview)
@@ -265,6 +299,12 @@ def _chat_key_bindings(
         if multiline:
             event.current_buffer.insert_text("\n")
 
+    @bindings.add("escape")
+    def _(event):
+        if event.current_buffer.text.startswith("/"):
+            _dismiss_picker(event.current_buffer, picker_state)
+            event.app.invalidate()
+
     @bindings.add("c-c")
     @bindings.add("c-d")
     def _(event):
@@ -279,7 +319,7 @@ def _should_complete_while_typing() -> bool:
 
 def _read_chat_input_fallback(prompt: str = USER_PROMPT) -> Optional[str]:
     try:
-        return input(prompt)
+        return input(prompt if sys.stdin.isatty() else "")
     except (EOFError, KeyboardInterrupt):
         return None
 
@@ -375,10 +415,40 @@ def _picker_toolbar_lines(
     if not text.startswith("/"):
         return []
     state = picker_state or SlashPickerState()
-    commands = _top_level_suggestions("/")
+    if _is_hybrid_picker(text):
+        entries = _hybrid_picker_entries(text, state)
+        state.top_index = min(state.top_index, max(len(entries) - 1, 0))
+        width = _picker_width()
+        separator = _picker_category_separator(width)
+        lines = ["Commands", "", separator.join(_picker_category_labels(width)), ""]
+        for index, entry in enumerate(entries):
+            marker = "> " if index == state.top_index else "  "
+            lines.append(f"{marker}{entry.label}")
+        if entries:
+            lines.append("")
+            lines.extend(textwrap.wrap(entries[state.top_index].description, width))
+        return lines
+    commands = _top_level_suggestions(text if _is_top_level_picker(text) else "/")
     if not commands:
         return []
     state.top_index = min(state.top_index, len(commands) - 1)
+    if _is_top_level_picker(text):
+        selected = commands[state.top_index][0]
+        lines = ["Commands", ""]
+        for group in PICKER_GROUP_ORDER:
+            group_commands = [
+                (name, label)
+                for name, label in commands
+                if (command := get_command(name)) is not None
+                and command.picker_group == group
+            ]
+            if not group_commands:
+                continue
+            lines.append(group)
+            for name, label in group_commands:
+                marker = "> " if name == selected else "  "
+                lines.append(f"{marker}{label}")
+        return lines
     selected_command = (
         _selected_top_level_command(text, state) or commands[state.top_index][0]
     )
@@ -387,12 +457,7 @@ def _picker_toolbar_lines(
     preview_values = [
         _preview_display_label(value, label) for value, label in preview
     ] or [_command_label(selected_command)]
-    lines = [
-        "Slash Commands",
-        "",
-        "  ".join(label for _command, label in commands),
-        "",
-    ]
+    lines = ["Commands", "", _command_label(selected_command), ""]
     for index, value in enumerate(preview_values):
         marker = "> " if index == state.preview_index else "  "
         lines.append(f"{marker}{value}")
@@ -408,9 +473,24 @@ def _picker_toolbar_fragments(
         return []
     fragments: list[tuple[str, str]] = []
     for line_number, line in enumerate(lines):
-        if line_number == 0:
+        if line_number == 2 and _is_hybrid_picker(text):
+            active_group = _active_picker_group(text, picker_state)
+            labels = _picker_category_labels(_picker_width())
+            separator = _picker_category_separator(_picker_width())
+            for index, (group, label) in enumerate(zip(PICKER_GROUP_ORDER, labels)):
+                if index:
+                    fragments.append(("class:picker.background", separator))
+                style = (
+                    "class:picker.current"
+                    if group == active_group
+                    else "class:picker.command"
+                )
+                fragments.append((style, label))
+            fragments.append(("class:picker.background", "\n"))
+            continue
+        if line_number == 0 or line in PICKER_GROUP_ORDER:
             style = "class:picker.title"
-        elif line_number == 2:
+        elif line_number == 2 or line.startswith("  "):
             style = "class:picker.command"
         elif line:
             style = "class:picker.text"
@@ -439,6 +519,77 @@ def _selected_top_level_command(
     return commands[picker_state.top_index][0]
 
 
+def _is_top_level_picker(text: str) -> bool:
+    if not text.startswith("/") or " " in text:
+        return False
+    return get_command(text.casefold()) is None
+
+
+def _is_hybrid_picker(text: str) -> bool:
+    normalized = text.casefold()
+    return (
+        normalized in {"/", "/tools"}
+        or normalized.startswith("/tools ")
+        or (" " not in normalized and get_command(normalized) is None)
+    )
+
+
+def _picker_width() -> int:
+    return max(18, shutil.get_terminal_size((80, 24)).columns - len(USER_PROMPT))
+
+
+def _picker_category_labels(width: int) -> tuple[str, ...]:
+    if width < 32:
+        return ("Gpa", "Chat", "Tools", "Exit")
+    return PICKER_GROUP_ORDER
+
+
+def _picker_category_separator(width: int) -> str:
+    return "  " if width < 32 else "   "
+
+
+def _active_picker_group(text: str, picker_state: SlashPickerState) -> str:
+    if text.casefold().startswith("/tools"):
+        picker_state.category_index = PICKER_GROUP_ORDER.index("Tools")
+    return PICKER_GROUP_ORDER[picker_state.category_index]
+
+
+def _hybrid_picker_entries(text: str, picker_state: SlashPickerState):
+    group = _active_picker_group(text, picker_state)
+    entries = picker_group_items(group)
+    query = text.casefold()
+    if query == "/":
+        return entries
+    return [
+        entry
+        for entry in entries
+        if entry.command.casefold().startswith(query)
+        or entry.label.casefold().startswith(query.lstrip("/"))
+    ]
+
+
+def _dismiss_picker(buffer, picker_state: SlashPickerState) -> None:
+    buffer.text = ""
+    buffer.cursor_position = 0
+    picker_state.category_index = 0
+    picker_state.reset_preview()
+
+
+def _move_picker_category(picker_state: SlashPickerState, delta: int) -> None:
+    picker_state.category_index = (picker_state.category_index + delta) % len(
+        PICKER_GROUP_ORDER
+    )
+    picker_state.reset_preview()
+
+
+def _move_picker_command(text: str, picker_state: SlashPickerState, delta: int) -> bool:
+    entries = _hybrid_picker_entries(text, picker_state)
+    if not entries:
+        return False
+    picker_state.top_index = (picker_state.top_index + delta) % len(entries)
+    return True
+
+
 def _selected_preview_options(
     text: str,
     picker_state: SlashPickerState,
@@ -453,6 +604,22 @@ def _apply_picker_selection(buffer, picker_state: SlashPickerState) -> bool:
     text = buffer.text
     if not text.startswith("/"):
         return False
+    if _is_hybrid_picker(text):
+        entries = _hybrid_picker_entries(text, picker_state)
+        if not entries:
+            return False
+        picker_state.top_index = min(picker_state.top_index, len(entries) - 1)
+        buffer.text = entries[picker_state.top_index].command
+        buffer.cursor_position = len(buffer.text)
+        return True
+    if _is_top_level_picker(text):
+        commands = _top_level_suggestions(text)
+        if not commands:
+            return False
+        picker_state.top_index = min(picker_state.top_index, len(commands) - 1)
+        buffer.text = commands[picker_state.top_index][0]
+        buffer.cursor_position = len(buffer.text)
+        return True
     preview = _selected_preview_options(text, picker_state)
     if preview:
         picker_state.preview_index = min(picker_state.preview_index, len(preview) - 1)
@@ -501,7 +668,15 @@ def _model_preview_options() -> list[tuple[str, str]]:
             ("/model", "No local models found"),
             ("/model", "Install with: ollama pull qwen2.5:3b"),
         ]
-    return [("/model", "Model"), *((f"/model {model}", model) for model in models)]
+    from grandpa.intelligence.grandpa_models import user_visible_models
+
+    installed = set(models)
+    options = [("/model", "Grandpa Models")]
+    for entry in user_visible_models(capability="chat"):
+        if entry.ollama_tag in installed:
+            label = entry.display_name.removeprefix("Grandpa ")
+            options.append((f"/model {entry.role}", label))
+    return options
 
 
 def _installed_ollama_models() -> list[str]:

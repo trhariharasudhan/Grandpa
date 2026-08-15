@@ -51,6 +51,25 @@ class MicrophoneDevice:
 
 
 @dataclass(frozen=True)
+class MicrophoneIdentity:
+    """Stable microphone metadata persisted independently of PortAudio indexes."""
+
+    name: str
+    host_api: str = ""
+    input_channels: int | None = None
+    default_sample_rate: int | None = None
+
+    @classmethod
+    def from_device(cls, device: MicrophoneDevice) -> MicrophoneIdentity:
+        return cls(
+            name=device.name,
+            host_api=device.driver,
+            input_channels=device.input_channels,
+            default_sample_rate=device.default_sample_rate,
+        )
+
+
+@dataclass(frozen=True)
 class MicrophoneSelection:
     """A selected microphone and any truthful fallback warning."""
 
@@ -67,11 +86,11 @@ class MicrophoneDeviceManager:
         self,
         sounddevice: Any,
         *,
-        preference_loader: Callable[[], str | None] | None = None,
+        preference_loader: Callable[[], MicrophoneIdentity | str | None] | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.sounddevice = sounddevice
-        self.preference_loader = preference_loader or load_preferred_microphone_name
+        self.preference_loader = preference_loader or load_preferred_microphone_identity
         self.clock = clock
         self._failed_indexes: set[int] = set()
         self._recent_errors: list[str] = []
@@ -154,10 +173,19 @@ class MicrophoneDeviceManager:
                 )
             return MicrophoneSelection(match, requested_index=requested_index)
 
-        clean_name = (requested_name or "").strip() or self.preference_loader()
+        preference = self.preference_loader()
+        identity = _coerce_identity(preference)
+        clean_name = (requested_name or "").strip() or (
+            identity.name if identity is not None else ""
+        )
         warning = None
         if clean_name:
-            match = _find_by_name(devices, clean_name)
+            match = _find_by_identity(
+                devices,
+                MicrophoneIdentity(name=clean_name)
+                if requested_name
+                else identity or MicrophoneIdentity(name=clean_name),
+            )
             if match is not None and match.index not in self._failed_indexes:
                 return MicrophoneSelection(match, requested_name=clean_name)
             if requested_name and not allow_fallback:
@@ -215,6 +243,19 @@ class MicrophoneDeviceManager:
             return _device_dict(devices[index])
         return None
 
+    def replacement_for_stale_index(self, index: int) -> MicrophoneDevice | None:
+        """Find the current input endpoint corresponding to an old index."""
+
+        devices = self.enumerate()
+        raw = self._raw_device(index)
+        raw_name = str((raw or {}).get("name") or "").strip()
+        if raw_name:
+            match = _find_by_identity(devices, MicrophoneIdentity(name=raw_name))
+            if match is not None:
+                return match
+        identity = _coerce_identity(self.preference_loader())
+        return _find_by_identity(devices, identity) if identity is not None else None
+
     @staticmethod
     def _selection_error(
         message: str, devices: tuple[MicrophoneDevice, ...]
@@ -227,8 +268,8 @@ class MicrophoneDeviceManager:
         return MicrophoneUnavailableError(detail, detail=detail)
 
 
-def load_preferred_microphone_name() -> str | None:
-    """Load the persisted device name without requiring the full config model."""
+def load_preferred_microphone_identity() -> MicrophoneIdentity | None:
+    """Load persisted stable metadata without requiring the full config model."""
 
     try:
         from grandpa.core import config as core_config
@@ -240,10 +281,29 @@ def load_preferred_microphone_name() -> str | None:
         voice = data.get("voice") if isinstance(data, dict) else None
         if not isinstance(voice, dict):
             return None
-        value = str(voice.get("preferred_microphone") or "").strip()
-        return value or None
+        name = str(voice.get("preferred_microphone") or "").strip()
+        if not name:
+            return None
+        return MicrophoneIdentity(
+            name=name,
+            host_api=str(voice.get("preferred_microphone_host_api") or "").strip(),
+            input_channels=_optional_int(
+                voice.get("preferred_microphone_input_channels")
+            ),
+            default_sample_rate=_optional_int(
+                voice.get("preferred_microphone_sample_rate")
+            ),
+        )
+
     except Exception:
         return None
+
+
+def load_preferred_microphone_name() -> str | None:
+    """Backward-compatible preferred microphone name accessor."""
+
+    identity = load_preferred_microphone_identity()
+    return identity.name if identity is not None else None
 
 
 def import_sounddevice() -> Any:
@@ -277,27 +337,52 @@ def _best_device(devices: list[MicrophoneDevice]) -> MicrophoneDevice | None:
         return default
     physical = [item for item in devices if not item.is_virtual]
     for hint in PHYSICAL_DEVICE_HINTS:
-        match = next(
-            (item for item in physical if hint in normalize_device_name(item.name)),
-            None,
-        )
-        if match is not None:
-            return match
+        matches = [
+            item for item in physical if hint in normalize_device_name(item.name)
+        ]
+        if matches:
+            return max(
+                matches,
+                key=lambda item: (
+                    "wasapi" in normalize_device_name(item.driver),
+                    item.input_channels > 0,
+                ),
+            )
     return physical[0] if physical else (default or devices[0])
 
 
-def _find_by_name(
-    devices: tuple[MicrophoneDevice, ...], name: str
+def _find_by_identity(
+    devices: tuple[MicrophoneDevice, ...], identity: MicrophoneIdentity
 ) -> MicrophoneDevice | None:
-    normalized = normalize_device_name(name)
-    exact = next(
-        (item for item in devices if normalize_device_name(item.name) == normalized),
-        None,
+    normalized = normalize_device_name(identity.name)
+    matches = [
+        item
+        for item in devices
+        if normalize_device_name(item.name) == normalized
+        or normalized in normalize_device_name(item.name)
+    ]
+    if not matches:
+        return None
+    requested_api = normalize_device_name(identity.host_api)
+    return max(
+        matches,
+        key=lambda item: (
+            bool(requested_api and normalize_device_name(item.driver) == requested_api),
+            item.input_channels > 0,
+            item.is_default,
+            "wasapi" in normalize_device_name(item.driver),
+            not item.is_virtual,
+        ),
     )
-    return exact or next(
-        (item for item in devices if normalized in normalize_device_name(item.name)),
-        None,
-    )
+
+
+def _coerce_identity(
+    value: MicrophoneIdentity | str | None,
+) -> MicrophoneIdentity | None:
+    if isinstance(value, MicrophoneIdentity):
+        return value
+    name = str(value or "").strip()
+    return MicrophoneIdentity(name=name) if name else None
 
 
 def normalize_device_name(value: str) -> str:
@@ -376,9 +461,11 @@ def _optional_float(value: Any) -> float | None:
 
 __all__ = [
     "MicrophoneDevice",
+    "MicrophoneIdentity",
     "MicrophoneDeviceManager",
     "MicrophoneSelection",
     "import_sounddevice",
+    "load_preferred_microphone_identity",
     "load_preferred_microphone_name",
     "normalize_device_name",
 ]

@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import re
 
-from grandpa.agent.execution.command_catalog import run_catalog_command
+from grandpa.agent.execution.command_catalog import (
+    python_module_command,
+    run_catalog_command,
+)
 from grandpa.agent.execution.models import DiagnosticCommand, ValidationResult
 
 
 def run_focused_tests(test_path: str, workspace_root: str) -> ValidationResult:
     """Run pytest on the focused test path and parse results."""
     cmd = DiagnosticCommand(
-        args=["uv", "run", "pytest", test_path],
+        args=python_module_command("pytest", test_path),
         timeout_seconds=45,
         cwd=workspace_root,
     )

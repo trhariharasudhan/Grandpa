@@ -6,7 +6,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from grandpa.core.registry import SpeechRegistry
-from grandpa.speech.faster_whisper import FasterWhisperBackend, select_compute_type
+from grandpa.speech.faster_whisper import (
+    FasterWhisperBackend,
+    build_transcription_options,
+    select_compute_type,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -52,6 +56,26 @@ def test_faster_whisper_transcribe():
         assert result.text == "Hello world"
         assert result.language == "en"
         assert result.duration_seconds == 1.5
+        options = mock_model.transcribe.call_args.kwargs
+        assert options == build_transcription_options(None)
+        assert options["initial_prompt"] is None
+        assert options["condition_on_previous_text"] is False
+
+
+def test_canonical_transcription_options_are_explicit() -> None:
+    options = build_transcription_options("en")
+
+    assert options == {
+        "beam_size": 5,
+        "temperature": 0.0,
+        "condition_on_previous_text": False,
+        "initial_prompt": None,
+        "vad_filter": False,
+        "no_speech_threshold": 0.6,
+        "compression_ratio_threshold": 2.4,
+        "log_prob_threshold": -1.0,
+        "language": "en",
+    }
 
 
 def test_faster_whisper_closes_and_deletes_temp_audio_before_transcribe():

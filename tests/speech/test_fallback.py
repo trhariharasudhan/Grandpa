@@ -27,9 +27,7 @@ def _config(backend: str = "grandpa_voice") -> GrandpaConfig:
 
 
 def test_grandpa_voice_healthy_is_selected(monkeypatch):
-    monkeypatch.setattr(
-        TTSRegistry.get("grandpa_voice"), "health", lambda self: True
-    )
+    monkeypatch.setattr(TTSRegistry.get("grandpa_voice"), "health", lambda self: True)
     monkeypatch.setattr(TTSRegistry.get("kokoro"), "health", lambda self: False)
     monkeypatch.setattr("grandpa.core.config.load_config", lambda: _config())
 
@@ -123,9 +121,7 @@ def test_all_local_backends_fail_returns_text_only_without_crashing(monkeypatch)
 def test_edge_tts_is_not_an_automatic_offline_fallback(monkeypatch):
     for name in ("grandpa_voice", "kokoro"):
         monkeypatch.setattr(TTSRegistry.get(name), "health", lambda self: False)
-    monkeypatch.setattr(
-        "grandpa.core.config.load_config", lambda: _config("edge_tts")
-    )
+    monkeypatch.setattr("grandpa.core.config.load_config", lambda: _config("edge_tts"))
     monkeypatch.setattr(
         "grandpa.voice.speech_output.importlib.util.find_spec",
         lambda name: object() if name == "edge_tts" else None,

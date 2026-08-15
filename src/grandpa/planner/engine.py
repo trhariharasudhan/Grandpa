@@ -277,9 +277,7 @@ def build_execution_plan(request: str) -> ExecutionGraph:
     )
 
 
-def analyze_request(
-    request: str, *, include_memory: bool = True
-) -> PlannerAnalysis:
+def analyze_request(request: str, *, include_memory: bool = True) -> PlannerAnalysis:
     clean = request.strip()
     goal = classify_goal(clean)
     steps = tuple(decompose_multi_step_task(clean))

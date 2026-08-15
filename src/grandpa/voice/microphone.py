@@ -28,6 +28,13 @@ class CapturedAudio:
     device_index: int | None = None
     captured_frame_count: int = 0
     speech_detected: bool = False
+    capture_sample_rate: int = 16_000
+    capture_channels: int = 1
+    native_frame_count: int = 0
+    speech_onset_seconds: float | None = None
+    speech_active_seconds: float = 0.0
+    trailing_silence_seconds: float = 0.0
+    finalization_reason: str = "unknown"
 
 
 class MicrophoneCapture:
@@ -80,11 +87,13 @@ class MicrophoneCapture:
             except (KeyboardInterrupt, SystemExit):
                 raise
             except Exception as exc:
+                from grandpa.voice.errors import MicrophoneUnavailableError
+
+                if isinstance(exc, MicrophoneUnavailableError):
+                    raise
                 self.close()
                 self.last_error = f"{type(exc).__name__}: {exc}"
                 if attempts >= self.recovery_attempts:
-                    from grandpa.voice.errors import MicrophoneUnavailableError
-
                     raise MicrophoneUnavailableError(
                         "The microphone became unavailable during capture. "
                         "Check the device connection and try again.",
@@ -104,11 +113,14 @@ class MicrophoneCapture:
         selected: MicrophoneDevice,
         stop: threading.Event,
     ) -> CapturedAudio:
-        sample_rate = int(self.sample_rate)
-        channels = 1
+        sample_rate, channels = _negotiate_capture_settings(
+            sounddevice,
+            selected,
+            requested_rate=int(self.sample_rate),
+        )
         chunk_frames = max(1, int(sample_rate * self.chunk_seconds))
         max_frames = max(1, int(sample_rate * self.duration_seconds))
-        captured_frames = 0
+        native_frame_count = 0
         chunks: list[bytes] = []
         detector = VoiceActivityDetector(self.vad_config)
 
@@ -120,31 +132,52 @@ class MicrophoneCapture:
                 device=selected.index,
             )
             with self._stream as stream:
-                while not stop.is_set() and captured_frames < max_frames:
-                    frames_to_read = min(chunk_frames, max_frames - captured_frames)
+                while not stop.is_set() and native_frame_count < max_frames:
+                    frames_to_read = min(chunk_frames, max_frames - native_frame_count)
                     recording, _overflowed = stream.read(frames_to_read)
                     frames = recording.tobytes()
                     chunks.append(frames)
                     frame_count = _captured_frame_count(recording, frames_to_read)
-                    captured_frames += frame_count
+                    native_frame_count += frame_count
                     if detector.observe(
-                        calculate_pcm16_rms(frames),
+                        calculate_pcm16_rms(_downmix_pcm16(frames, channels)),
                         frame_count / sample_rate,
                     ):
                         break
         finally:
             self.close()
 
-        audio_frames = b"".join(chunks)
+        native_frames = b"".join(chunks)
+        audio_frames = _normalize_pcm16_audio(
+            native_frames,
+            input_rate=sample_rate,
+            input_channels=channels,
+            output_rate=int(self.sample_rate),
+        )
+        canonical_frame_count = len(audio_frames) // 2
         self.last_device = selected
         return CapturedAudio(
-            data=_wav_bytes(audio_frames, channels=channels, sample_rate=sample_rate),
+            data=_wav_bytes(
+                audio_frames,
+                channels=1,
+                sample_rate=int(self.sample_rate),
+            ),
             format="wav",
             rms_level=calculate_pcm16_rms(audio_frames),
             device_name=selected.name,
             device_index=selected.index,
-            captured_frame_count=captured_frames,
+            captured_frame_count=canonical_frame_count,
             speech_detected=detector.speech_started,
+            capture_sample_rate=sample_rate,
+            capture_channels=channels,
+            native_frame_count=native_frame_count,
+            speech_onset_seconds=detector.speech_onset_seconds,
+            speech_active_seconds=detector.speech_active_seconds,
+            trailing_silence_seconds=detector.trailing_silence_seconds,
+            finalization_reason=(
+                detector.finalization_reason
+                or ("cancelled" if stop.is_set() else "stream_ended")
+            ),
         )
 
     def close(self) -> None:
@@ -183,6 +216,115 @@ def _wav_bytes(frames: bytes, *, channels: int, sample_rate: int) -> bytes:
         wav_file.setframerate(sample_rate)
         wav_file.writeframes(frames)
     return buffer.getvalue()
+
+
+def _negotiate_capture_settings(
+    sounddevice,
+    selected: MicrophoneDevice,
+    *,
+    requested_rate: int,
+) -> tuple[int, int]:
+    """Choose a supported physical format while preserving canonical output."""
+
+    if selected.input_channels <= 0:
+        from grandpa.voice.errors import MicrophoneUnavailableError
+
+        raise MicrophoneUnavailableError(
+            f"{selected.name} does not provide an input channel."
+        )
+    native_channels = max(1, min(2, selected.input_channels))
+    attempts = [(requested_rate, 1)]
+    default_rate = int(selected.default_sample_rate or requested_rate)
+    if (default_rate, native_channels) not in attempts:
+        attempts.append((default_rate, native_channels))
+    if (default_rate, 1) not in attempts:
+        attempts.append((default_rate, 1))
+
+    checker = getattr(sounddevice, "check_input_settings", None)
+    if not callable(checker):
+        return attempts[0]
+    errors: list[str] = []
+    for sample_rate, channels in attempts:
+        try:
+            checker(
+                device=selected.index,
+                samplerate=sample_rate,
+                channels=channels,
+                dtype="int16",
+            )
+        except Exception as exc:
+            errors.append(f"{sample_rate} Hz/{channels} channel(s): {exc}")
+            continue
+        return sample_rate, channels
+
+    from grandpa.voice.errors import MicrophoneUnavailableError
+
+    detail = "; ".join(errors)
+    raise MicrophoneUnavailableError(
+        (
+            f"Could not open {selected.name} at the requested {requested_rate} Hz "
+            f"or its default {default_rate} Hz. Check the Windows microphone format."
+        ),
+        detail=detail,
+    )
+
+
+def _normalize_pcm16_audio(
+    frames: bytes,
+    *,
+    input_rate: int,
+    input_channels: int,
+    output_rate: int,
+) -> bytes:
+    """Downmix then resample PCM16 exactly once for the STT boundary."""
+
+    mono = _downmix_pcm16(frames, input_channels)
+    if input_rate == output_rate:
+        return mono
+    import audioop
+
+    converted, _state = audioop.ratecv(
+        mono,
+        2,
+        1,
+        input_rate,
+        output_rate,
+        None,
+    )
+    return converted
+
+
+def _downmix_pcm16(frames: bytes, channels: int) -> bytes:
+    if channels <= 1:
+        return frames
+    samples = array("h")
+    samples.frombytes(frames[: len(frames) - (len(frames) % 2)])
+    usable = len(samples) - (len(samples) % channels)
+    channel_samples = [
+        array("h", samples[channel:usable:channels]) for channel in range(channels)
+    ]
+    averaged = array(
+        "h",
+        (
+            round(sum(samples[index : index + channels]) / channels)
+            for index in range(0, usable, channels)
+        ),
+    )
+    averaged_bytes = averaged.tobytes()
+    strongest = max(channel_samples, key=lambda values: _pcm16_array_rms(values))
+    strongest_bytes = strongest.tobytes()
+    # Some Windows microphone arrays expose phase-opposed channels. Averaging
+    # them can cancel intelligible speech, so retain the strongest physical
+    # channel only when its energy is materially above the standard downmix.
+    if calculate_pcm16_rms(strongest_bytes) > calculate_pcm16_rms(averaged_bytes) * 1.5:
+        return strongest_bytes
+    return averaged_bytes
+
+
+def _pcm16_array_rms(samples: array) -> float:
+    if not samples:
+        return 0.0
+    return math.sqrt(sum(sample * sample for sample in samples) / len(samples))
 
 
 def _captured_frame_count(recording, fallback: int) -> int:

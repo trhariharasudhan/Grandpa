@@ -24,6 +24,7 @@ from grandpa.agent.execution import (
     run_focused_tests,
     verify_execution_outcome,
 )
+from grandpa.agent.execution.command_catalog import python_module_command
 from grandpa.agent.executor import AgentExecutor
 from grandpa.agent.models import (
     AgentContext,
@@ -876,7 +877,7 @@ class AgentRuntime:
         # 2. Run diagnostics ( Ruff / Pytest / Compileall )
         # Run compileall first
         cmd_compile = DiagnosticCommand(
-            args=["python", "-m", "compileall", "-q", "src", "tests", "scripts"],
+            args=python_module_command("compileall", "-q", "src", "tests", "scripts"),
             timeout_seconds=30,
             cwd=ws_ctx.root_path,
         )
@@ -884,7 +885,7 @@ class AgentRuntime:
 
         # Run ruff check
         cmd_ruff = DiagnosticCommand(
-            args=["uv", "run", "ruff", "check", "src", "tests"],
+            args=python_module_command("ruff", "check", "src", "tests"),
             timeout_seconds=30,
             cwd=ws_ctx.root_path,
         )
@@ -900,7 +901,7 @@ class AgentRuntime:
             test_file = pytest_match.group(0)
 
         cmd_test = DiagnosticCommand(
-            args=["uv", "run", "pytest", test_file],
+            args=python_module_command("pytest", test_file),
             timeout_seconds=30,
             cwd=ws_ctx.root_path,
         )
@@ -910,8 +911,10 @@ class AgentRuntime:
         analysis = None
         for res in (res_compile, res_ruff, res_test):
             if res.exit_code != 0:
-                analysis, _ = analyze_failure(res)
-                break
+                candidate, _ = analyze_failure(res)
+                if candidate.is_confirmed:
+                    analysis = candidate
+                    break
 
         # Fix 2: No-Failure Semantics
         if not analysis or not analysis.is_confirmed:
@@ -1103,13 +1106,13 @@ class AgentRuntime:
 
         # Run Ruff/Compileall post-write lint checks
         cmd_compile = DiagnosticCommand(
-            args=["python", "-m", "compileall", "-q", "src", "tests", "scripts"],
+            args=python_module_command("compileall", "-q", "src", "tests", "scripts"),
             cwd=ws_ctx.root_path,
         )
         res_compile = run_catalog_command(cmd_compile)
 
         cmd_ruff = DiagnosticCommand(
-            args=["uv", "run", "ruff", "check", "src", "tests"],
+            args=python_module_command("ruff", "check", "src", "tests"),
             cwd=ws_ctx.root_path,
         )
         res_ruff = run_catalog_command(cmd_ruff)

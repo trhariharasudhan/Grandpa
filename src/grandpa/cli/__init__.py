@@ -67,14 +67,17 @@ def _lazy(
     short_help: str = "",
     optional_modules: Sequence[str] = (),
     install_hint: str = "",
+    hidden: bool = False,
 ) -> LazyCommand:
-    return LazyCommand(
+    command = LazyCommand(
         name,
         import_path,
         short_help=short_help,
         optional_modules=optional_modules,
         install_hint=install_hint,
     )
+    command.hidden = hidden
+    return command
 
 
 @click.group(
@@ -127,7 +130,11 @@ cli.add_command(
     _lazy("init", "grandpa.cli.init_cmd:init", short_help="Initialize Grandpa.")
 )
 cli.add_command(
-    _lazy("launcher", "grandpa.cli.launcher:launcher", short_help="Launch interactive menu.")
+    _lazy(
+        "launcher",
+        "grandpa.cli.launcher:launcher",
+        short_help="Launch interactive menu.",
+    )
 )
 cli.add_command(_lazy("ask", "grandpa.cli.ask:ask", short_help="Ask Grandpa once."))
 cli.add_command(
@@ -375,6 +382,7 @@ cli.add_command(
         "_bootstrap",
         "grandpa.cli._bootstrap:bootstrap_cmd",
         short_help="Bootstrap helper.",
+        hidden=True,
     )
 )
 

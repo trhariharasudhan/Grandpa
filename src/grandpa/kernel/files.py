@@ -432,9 +432,7 @@ class FileCompatibilityPolicy:
                 },
             )
         if action.tool_name != CREATE_FOLDER_TOOL:
-            return self._read_only.evaluate(
-                request, context, action, action_digest
-            )
+            return self._read_only.evaluate(request, context, action, action_digest)
         return PolicyDecision(
             outcome=PolicyOutcome.ALLOW,
             risk=RiskLevel.MEDIUM,
@@ -596,9 +594,7 @@ class StatPathExecutor:
             )
 
         try:
-            metadata = _inspect_path_metadata(
-                Path(str(canonical_arguments["path"]))
-            )
+            metadata = _inspect_path_metadata(Path(str(canonical_arguments["path"])))
         except OSError as exc:
             return ToolResult(
                 status=ToolStatus.FAILED,
@@ -636,10 +632,7 @@ class CreateFolderExecutor:
         authorization: ExecutionAuthorization,
     ) -> ToolResult:
         del context
-        if (
-            action.tool_name != CREATE_FOLDER_TOOL
-            or tool.name != CREATE_FOLDER_TOOL
-        ):
+        if action.tool_name != CREATE_FOLDER_TOOL or tool.name != CREATE_FOLDER_TOOL:
             raise SecurityInvariantError("Wrong executor selected for folder creation.")
         if authorization.decision.action_digest == "":
             raise SecurityInvariantError(
@@ -1078,9 +1071,7 @@ class CreateFolderVerifier:
             )
         try:
             _validate_canonical_create_folder_arguments(canonical_arguments)
-            target = Path(str(canonical_arguments["target_path"])).resolve(
-                strict=True
-            )
+            target = Path(str(canonical_arguments["target_path"])).resolve(strict=True)
             expected_target = _resolve_created_target_for_verification(
                 str(canonical_arguments["requested_path"]),
                 tuple(canonical_arguments["roots"]),
@@ -1174,9 +1165,9 @@ class CopyPathVerifier:
         try:
             _validate_canonical_copy_arguments(canonical_arguments)
             source = Path(str(canonical_arguments["source_path"])).resolve(strict=True)
-            destination = Path(
-                str(canonical_arguments["destination_path"])
-            ).resolve(strict=True)
+            destination = Path(str(canonical_arguments["destination_path"])).resolve(
+                strict=True
+            )
             _verify_copy_paths(source, destination, canonical_arguments)
             source_digest = _sha256_file(source)
             destination_digest = _sha256_file(destination)
@@ -1260,12 +1251,8 @@ class FileCompatibilityVerifier:
                 action, canonical_arguments, result, context
             )
         if action.tool_name == COPY_PATH_TOOL:
-            return self._copy_path.verify(
-                action, canonical_arguments, result, context
-            )
-        return self._read_only.verify(
-            action, canonical_arguments, result, context
-        )
+            return self._copy_path.verify(action, canonical_arguments, result, context)
+        return self._read_only.verify(action, canonical_arguments, result, context)
 
 
 def _search_matches(arguments: Mapping[str, Any]) -> tuple[Path, ...]:
@@ -1446,9 +1433,9 @@ def _resolve_copy_path_arguments(
                 safe_message="No matching files found.",
             )
     else:
-        direct_source = resolve_path(
-            requested_source, roots=canonical_roots
-        ).resolve(strict=False)
+        direct_source = resolve_path(requested_source, roots=canonical_roots).resolve(
+            strict=False
+        )
         if direct_source.exists():
             source = direct_source
         else:
@@ -1495,9 +1482,9 @@ def _resolve_copy_path_arguments(
         elif resolve_alias(requested_destination) is not None:
             destination = (destination / source.name).resolve(strict=False)
     else:
-        destination = source.with_name(
-            f"{source.stem} copy{source.suffix}"
-        ).resolve(strict=False)
+        destination = source.with_name(f"{source.stem} copy{source.suffix}").resolve(
+            strict=False
+        )
 
     if safety.is_protected(destination) or not _is_within_roots(
         destination, list(canonical_roots)
@@ -1560,7 +1547,9 @@ def _validate_canonical_copy_arguments(arguments: Mapping[str, Any]) -> None:
         "destination_parent_children",
     }
     if set(arguments) != required:
-        raise ToolArgumentValidationError("Canonical file-copy arguments are incomplete.")
+        raise ToolArgumentValidationError(
+            "Canonical file-copy arguments are incomplete."
+        )
     if not isinstance(arguments["roots"], list) or not all(
         isinstance(item, str) for item in arguments["roots"]
     ):
@@ -1568,9 +1557,7 @@ def _validate_canonical_copy_arguments(arguments: Mapping[str, Any]) -> None:
     if not isinstance(arguments["destination_parent_children"], list) or not all(
         isinstance(item, str) for item in arguments["destination_parent_children"]
     ):
-        raise ToolArgumentValidationError(
-            "Canonical destination snapshot is invalid."
-        )
+        raise ToolArgumentValidationError("Canonical destination snapshot is invalid.")
     if not isinstance(arguments["destination_exists"], bool):
         raise ToolArgumentValidationError("Canonical destination state is invalid.")
     for key in ("source_path", "destination_path", "destination_parent"):
@@ -1712,11 +1699,7 @@ def _resolve_create_folder_arguments(
 
     if target.exists():
         existing_type = (
-            "directory"
-            if target.is_dir()
-            else "file"
-            if target.is_file()
-            else "other"
+            "directory" if target.is_dir() else "file" if target.is_file() else "other"
         )
         missing_chain: list[Path] = []
         anchor = target.parent
@@ -1781,16 +1764,12 @@ def _validate_canonical_create_folder_arguments(
         "file",
         "other",
     }:
-        raise ToolArgumentValidationError(
-            "Canonical folder target type is invalid."
-        )
+        raise ToolArgumentValidationError("Canonical folder target type is invalid.")
     for key in ("roots", "missing_chain", "anchor_children"):
         if not isinstance(arguments[key], list) or not all(
             isinstance(item, str) for item in arguments[key]
         ):
-            raise ToolArgumentValidationError(
-                "Canonical folder paths are invalid."
-            )
+            raise ToolArgumentValidationError("Canonical folder paths are invalid.")
     if not isinstance(arguments["target_path"], str) or not isinstance(
         arguments["anchor_path"], str
     ):
@@ -1835,7 +1814,9 @@ def _resolve_created_target_for_verification(
         strict=True
     )
     if safety.blocks_traversal(requested_path):
-        raise ToolArgumentValidationError("Path traversal detected during verification.")
+        raise ToolArgumentValidationError(
+            "Path traversal detected during verification."
+        )
     if safety.is_protected(target) or not _is_within_roots(target, canonical_roots):
         raise ToolArgumentValidationError(
             "Created folder failed protected-root verification."

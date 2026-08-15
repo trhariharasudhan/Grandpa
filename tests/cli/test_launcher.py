@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import click
 import pytest
 from click.testing import CliRunner
 
 from grandpa.cli.launcher import launcher as launcher_cmd
-from grandpa.core.config import GrandpaConfig, load_config
+from grandpa.core.config import load_config
 from grandpa.profile import atomic_update_profile
 
 
@@ -51,6 +51,34 @@ def test_launcher_exit_action(temp_config, monkeypatch) -> None:
     assert "Goodbye" in result.output
 
 
+def test_launcher_uses_formal_profile_name_when_title_exists(
+    temp_config, monkeypatch
+) -> None:
+    atomic_update_profile(temp_config, title="Mr.")
+    load_config.cache_clear()
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    menu = MagicMock(return_value="exit")
+    monkeypatch.setattr("grandpa.cli.launcher.run_interactive_menu", menu)
+
+    result = CliRunner().invoke(launcher_cmd)
+
+    assert result.exit_code == 0
+    assert menu.call_args.args[3] == "Mr. TestUser"
+
+
+def test_launcher_uses_plain_profile_name_without_title(
+    temp_config, monkeypatch
+) -> None:
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    menu = MagicMock(return_value="exit")
+    monkeypatch.setattr("grandpa.cli.launcher.run_interactive_menu", menu)
+
+    result = CliRunner().invoke(launcher_cmd)
+
+    assert result.exit_code == 0
+    assert menu.call_args.args[3] == "TestUser"
+
+
 def test_launcher_chat_action(temp_config, monkeypatch) -> None:
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
 
@@ -60,16 +88,19 @@ def test_launcher_chat_action(temp_config, monkeypatch) -> None:
     monkeypatch.setattr("grandpa.cli.launcher.run_interactive_menu", mock_menu)
 
     # Mock chat invoke to assert tui_mode=True and fullscreen=False
-    mock_chat = MagicMock()
-    monkeypatch.setattr("grandpa.cli.chat_cmd.chat", mock_chat)
+    calls: list[dict[str, object]] = []
+
+    @click.command()
+    def fake_chat(**kwargs) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr("grandpa.cli.chat_cmd.chat", fake_chat)
 
     runner = CliRunner()
     result = runner.invoke(launcher_cmd)
     assert result.exit_code == 0
     # Chat should be invoked with fullscreen=False
-    mock_chat.callback.assert_called_once()
-    assert mock_chat.callback.call_args[1].get("fullscreen") is False
-    assert mock_chat.callback.call_args[1].get("tui_mode") is True
+    assert calls == [{"tui_mode": True, "fullscreen": False}]
 
 
 def test_launcher_voice_action(temp_config, monkeypatch) -> None:
@@ -80,13 +111,20 @@ def test_launcher_voice_action(temp_config, monkeypatch) -> None:
     mock_menu = MagicMock(side_effect=lambda *args, **kwargs: menu_responses.pop(0))
     monkeypatch.setattr("grandpa.cli.launcher.run_interactive_menu", mock_menu)
 
-    mock_voice = MagicMock()
-    monkeypatch.setattr("grandpa.cli.voice_cmd.voice", mock_voice)
+    calls: list[dict[str, object]] = []
+
+    @click.command()
+    def fake_voice(**kwargs) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr("grandpa.cli.voice_cmd.voice", fake_voice)
 
     runner = CliRunner()
     result = runner.invoke(launcher_cmd)
     assert result.exit_code == 0
-    mock_voice.callback.assert_called_once()
+    assert len(calls) == 1
+    assert calls[0]["no_tts"] is False
+    assert calls[0]["wake_word"] is False
 
 
 def test_launcher_doctor_action(temp_config, monkeypatch) -> None:
@@ -98,8 +136,13 @@ def test_launcher_doctor_action(temp_config, monkeypatch) -> None:
     monkeypatch.setattr("grandpa.cli.launcher.run_interactive_menu", mock_menu)
 
     # Mock doctor invoke
-    mock_doctor = MagicMock()
-    monkeypatch.setattr("grandpa.cli.doctor_cmd.doctor", mock_doctor)
+    calls: list[dict[str, object]] = []
+
+    @click.command()
+    def fake_doctor(**kwargs) -> None:
+        calls.append(kwargs)
+
+    monkeypatch.setattr("grandpa.cli.doctor_cmd.doctor", fake_doctor)
 
     # Mock user input to return to launcher
     monkeypatch.setattr("builtins.input", lambda *args: "")
@@ -107,7 +150,7 @@ def test_launcher_doctor_action(temp_config, monkeypatch) -> None:
     runner = CliRunner()
     result = runner.invoke(launcher_cmd)
     assert result.exit_code == 0
-    mock_doctor.callback.assert_called_once()
+    assert calls == [{"as_json": False}]
 
 
 def test_launcher_profile_submenu_view(temp_config, monkeypatch) -> None:
@@ -182,7 +225,7 @@ def test_launcher_settings_submenu(temp_config, monkeypatch) -> None:
     runner = CliRunner()
     result = runner.invoke(launcher_cmd)
     assert result.exit_code == 0
-    assert "Effective Configuration" in result.output
+    assert "Loading config from:" in result.output
 
 
 def test_launcher_settings_submenu_hardware(temp_config, monkeypatch) -> None:
@@ -214,8 +257,11 @@ def test_launcher_saves_last_used_mode(temp_config, monkeypatch) -> None:
     mock_menu = MagicMock(side_effect=lambda *args, **kwargs: menu_responses.pop(0))
     monkeypatch.setattr("grandpa.cli.launcher.run_interactive_menu", mock_menu)
 
-    mock_chat = MagicMock()
-    monkeypatch.setattr("grandpa.cli.chat_cmd.chat", mock_chat)
+    @click.command()
+    def fake_chat(**_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr("grandpa.cli.chat_cmd.chat", fake_chat)
 
     runner = CliRunner()
     result = runner.invoke(launcher_cmd)
@@ -257,3 +303,24 @@ def test_ctrl_c_inside_submenu_returns_to_launcher(temp_config, monkeypatch) -> 
     result = runner.invoke(launcher_cmd)
     assert result.exit_code == 0
     assert "Goodbye" in result.output
+
+
+def test_repeated_invalid_submenu_results_return_to_launcher(
+    temp_config, monkeypatch
+) -> None:
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    main_menu_responses = ["profile", "exit"]
+
+    def mock_menu_side_effect(_console, title, _items, _username, _last_used):
+        if title == "Profile":
+            return "obsolete-action"
+        return main_menu_responses.pop(0)
+
+    menu = MagicMock(side_effect=mock_menu_side_effect)
+    monkeypatch.setattr("grandpa.cli.launcher.run_interactive_menu", menu)
+
+    result = CliRunner().invoke(launcher_cmd)
+
+    assert result.exit_code == 0
+    assert "repeated invalid selections" in result.output
+    assert menu.call_count == 5

@@ -27,6 +27,7 @@ LOCAL_MODE = "Local only"
 
 TextPrompt = Callable[[str, str], str]
 MAX_USERNAME_LENGTH = 40
+PREFERRED_TITLES = ("Mr.", "Ms.", "Mrs.", "Mx.", "")
 _KNOWN_BAD_ONBOARDING_VALUES = {
     "1",
     "n",
@@ -43,6 +44,7 @@ _KNOWN_BAD_ONBOARDING_VALUES = {
 @dataclass(frozen=True)
 class LocalProfile:
     username: str
+    title: str
     engine: str
     model: str
     memory_enabled: bool
@@ -59,6 +61,7 @@ def config_path(path: Path | None = None) -> Path:
 def profile_from_config(config: GrandpaConfig) -> LocalProfile:
     return LocalProfile(
         username=_safe_username(config.user.username),
+        title=validate_title(getattr(config.user, "title", "")),
         engine=config.engine.default or "ollama",
         model=config.intelligence.default_model or "Not configured",
         memory_enabled=bool(config.agent.context_from_memory),
@@ -77,6 +80,7 @@ def ensure_profile(
     config: GrandpaConfig | None = None,
     interactive: bool | None = None,
     text_prompt: TextPrompt | None = None,
+    title_prompt: Callable[[str], str] | None = None,
 ) -> GrandpaConfig:
     """Run onboarding once, using local defaults when input is unavailable."""
 
@@ -98,6 +102,7 @@ def ensure_profile(
         config=current,
         interactive=True,
         text_prompt=text_prompt,
+        title_prompt=title_prompt,
         heading="Welcome to Grandpa",
     )
 
@@ -109,9 +114,12 @@ def configure_profile(
     config: GrandpaConfig | None = None,
     interactive: bool = True,
     text_prompt: TextPrompt | None = None,
+    title_prompt: Callable[[str], str] | None = None,
     heading: str = "Grandpa Profile",
+    edit_username: bool = True,
+    edit_title: bool = True,
 ) -> GrandpaConfig:
-    """Collect and atomically persist the display name only."""
+    """Collect and atomically persist profile-owned identity fields."""
 
     target = config_path(path)
     current = config or load_config(target)
@@ -123,13 +131,23 @@ def configure_profile(
         console.print(
             "[dim]Your profile stays on this computer. No account is required.[/dim]"
         )
-        username = _prompt_username(console, prompt_text, username_default)
+        username = (
+            _prompt_username(console, prompt_text, username_default)
+            if edit_username
+            else username_default
+        )
+        title = (
+            validate_title((title_prompt or _click_title_prompt)(current.user.title))
+            if edit_title
+            else validate_title(current.user.title)
+        )
     else:
         return current
 
     atomic_update_profile(
         target,
         username=username,
+        title=title,
         onboarding_completed=True,
     )
     load_config.cache_clear()
@@ -191,7 +209,13 @@ def repair_runtime_configuration(
         and installed_models
         and configured_model not in installed_models
     )
-    if not engine_is_bad and not model_is_bad:
+    from grandpa.intelligence.grandpa_models import canonical_installed_tag
+
+    canonical_model = canonical_installed_tag(configured_model, available_models)
+    model_needs_migration = bool(
+        canonical_model and canonical_model != configured_model
+    )
+    if not engine_is_bad and not model_is_bad and not model_needs_migration:
         return config
 
     updates: dict[str, object] = {}
@@ -203,6 +227,8 @@ def repair_runtime_configuration(
             resolved_engine=resolved_engine,
             available_models=available_models,
         )
+    elif model_needs_migration:
+        updates["model"] = canonical_model
 
     atomic_update_profile(config_path(path), **updates)
     load_config.cache_clear()
@@ -221,6 +247,7 @@ def atomic_update_profile(path: Path, **values: object) -> None:
 
     mapping = {
         "username": ("user", "username"),
+        "title": ("user", "title"),
         "onboarding_completed": ("user", "onboarding_completed"),
         "engine": ("engine", "default"),
         "model": ("intelligence", "default_model"),
@@ -254,6 +281,7 @@ def format_profile(profile: LocalProfile) -> str:
     return (
         "Local Profile\n"
         f"Name: {profile.username}\n"
+        f"Preferred title: {profile.title or 'None'}\n"
         f"Mode: {profile.mode}\n"
         f"Engine: {profile.engine}\n"
         f"Model: {profile.model}\n"
@@ -263,6 +291,43 @@ def format_profile(profile: LocalProfile) -> str:
 
 def _click_text_prompt(label: str, default: str) -> str:
     return str(click.prompt(label, default=default, show_default=True))
+
+
+def _click_title_prompt(current: str) -> str:
+    labels = ("Mr.", "Ms.", "Mrs.", "Mx.", "No title")
+    default = str(PREFERRED_TITLES.index(validate_title(current)) + 1)
+    click.echo("Preferred title:")
+    for index, label in enumerate(labels, start=1):
+        click.echo(f"  {index}. {label}")
+    selected = click.prompt(
+        "Select preferred title",
+        type=click.Choice(tuple(str(index) for index in range(1, 6))),
+        default=default,
+        show_default=True,
+    )
+    return PREFERRED_TITLES[int(selected) - 1]
+
+
+def validate_title(value: object) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    if not normalized or normalized.casefold() in {"none", "no title"}:
+        return ""
+    without_period = normalized.rstrip(".").casefold()
+    for title in PREFERRED_TITLES[:-1]:
+        if title.rstrip(".").casefold() == without_period:
+            return title
+    raise ValueError("Preferred title must be Mr., Ms., Mrs., Mx., or no title.")
+
+
+def format_profile_display_name(profile_or_config: LocalProfile | GrandpaConfig) -> str:
+    """Return the canonical formal profile name for greeting surfaces."""
+
+    profile = (
+        profile_or_config
+        if isinstance(profile_or_config, LocalProfile)
+        else profile_from_config(profile_or_config)
+    )
+    return f"{profile.title} {profile.username}".strip()
 
 
 def validate_username(value: object) -> str:
@@ -311,7 +376,9 @@ def _select_repair_model(
     installed = [str(model).strip() for model in available_models if str(model).strip()]
     fallback = str(config.intelligence.fallback_model or "").strip()
     recommended = recommend_model(config.hardware, resolved_engine)
-    for candidate in (fallback, "grandpa-fast:latest", recommended):
+    from grandpa.intelligence.grandpa_models import DEFAULT_MODEL_TAG
+
+    for candidate in (fallback, DEFAULT_MODEL_TAG, "grandpa-fast:latest", recommended):
         if candidate and candidate in installed:
             return candidate
     if installed:
@@ -329,9 +396,11 @@ __all__ = [
     "configure_profile",
     "ensure_profile",
     "format_profile",
+    "format_profile_display_name",
     "load_profile",
     "profile_from_config",
     "reset_profile",
     "repair_runtime_configuration",
     "validate_username",
+    "validate_title",
 ]

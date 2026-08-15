@@ -464,7 +464,7 @@ class Grandpa:
             "compare",
         ]
 
-        default_model = self._config.intelligence.default_model or "qwen:latest"
+        default_model = self._config.intelligence.default_model or "grandpa-mini:latest"
 
         if any(k in q for k in image_keywords):
             target = "llava"

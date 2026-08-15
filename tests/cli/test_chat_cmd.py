@@ -7,6 +7,7 @@ from io import StringIO
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 from rich.console import Console
 
@@ -32,10 +33,14 @@ from grandpa.cli.chat_cmd import (
     chat,
 )
 from grandpa.cli.slash_commands import (
+    command_groups,
     command_names,
     command_preview_items,
     command_preview_options,
+    expand_namespaced_command,
     get_command,
+    picker_group_items,
+    top_level_commands,
     unknown_command_message,
     validate_command_registry,
 )
@@ -233,6 +238,40 @@ class TestChatCommand:
         assert "Hello there" in result.output
         assert result.output.count("Grandpa > Hello there") == 1
 
+    @pytest.mark.parametrize(
+        ("question", "expected"),
+        (
+            ("Who are you?", "I'm Grandpa, your local AI assistant."),
+            ("Are you Gemini?", "No. I'm Grandpa, your local AI assistant."),
+        ),
+    )
+    def test_chat_handles_product_identity_without_model_hallucination(
+        self,
+        question: str,
+        expected: str,
+    ) -> None:
+        engine = MagicMock()
+        engine.engine_id = "mock"
+        engine.supports_streaming = False
+        config = GrandpaConfig()
+        config.intelligence.default_model = "grandpa-mini:latest"
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch("grandpa.engine.get_engine", return_value=("mock", engine)),
+            patch("grandpa.intelligence.register_builtin_models"),
+        ):
+            result = CliRunner().invoke(
+                chat,
+                ["--model", "grandpa-mini:latest"],
+                input=f"{question}\n/quit\n",
+            )
+
+        assert result.exit_code == 0
+        assert expected in result.output
+        assert "Google's Grandpa" not in result.output
+        engine.generate.assert_not_called()
+
     def test_explicit_chat_renders_modern_logo_once_without_legacy_banner(
         self,
     ) -> None:
@@ -274,16 +313,15 @@ class TestChatCommand:
         output = console.export_text()
 
         assert "Grandpa Command Center" in output
-        assert "Core" in output
-        assert "Memory & Productivity" in output
-        assert "Computer" in output
-        assert "Developer" in output
-        assert "Personal" in output
-        assert "Automation" in output
-        assert "/desktop" in output
-        assert "/order" in output
-        assert "/github" in output
-        assert "order biryani" in output
+        assert "Beginner commands" in output
+        assert "Grandpa" in output
+        assert "Chat" in output
+        assert "Tools" in output
+        assert "Session" in output
+        assert "/memory" in output
+        assert "/tools" in output
+        assert "/desktop" not in output
+        assert "/quit" not in output
         assert "╭" not in output
         assert "╰" not in output
 
@@ -304,14 +342,11 @@ class TestChatCommand:
 
         assert result.exit_code == 0
         assert "Grandpa Command Center" in result.output
-        assert "Core" in result.output
-        assert "Computer" in result.output
-        assert "Developer" in result.output
-        assert "Personal" in result.output
-        assert "Automation" in result.output
-        assert "/desktop" in result.output
-        assert "/order" in result.output
-        assert "/github" in result.output
+        assert "Beginner commands" in result.output
+        assert "/tools" in result.output
+        assert "/desktop" not in result.output
+        help_output = result.output.split("Username > /quit", maxsplit=1)[0]
+        assert "/quit" not in help_output
         engine.generate.assert_not_called()
 
     def test_help_subcommands_return_specific_sections(self) -> None:
@@ -322,8 +357,8 @@ class TestChatCommand:
 
         assert commands is not None
         assert "/help commands" in commands
-        assert "Core" in commands
-        assert "Open command center" in commands
+        assert "Grandpa" in commands
+        assert "Open Grandpa's command center" in commands
         assert "/memory" in commands
         assert "Help Module\nStatus: Available" not in commands
         assert examples is not None
@@ -490,6 +525,7 @@ class TestReadInput:
         self, monkeypatch
     ) -> None:
         monkeypatch.setattr(input_ui, "PROMPT_TOOLKIT_AVAILABLE", False)
+        monkeypatch.setattr(input_ui.sys.stdin, "isatty", lambda: True)
         prompts = []
 
         def fake_input(prompt=""):
@@ -500,6 +536,22 @@ class TestReadInput:
 
         assert input_ui.read_chat_input() == "/help"
         assert prompts == ["Username > "]
+
+    def test_noninteractive_fallback_does_not_echo_transient_prompt(
+        self, monkeypatch
+    ) -> None:
+        monkeypatch.setattr(input_ui, "PROMPT_TOOLKIT_AVAILABLE", False)
+        monkeypatch.setattr(input_ui.sys.stdin, "isatty", lambda: False)
+        prompts = []
+
+        def fake_input(prompt=""):
+            prompts.append(prompt)
+            return "/exit"
+
+        monkeypatch.setattr("builtins.input", fake_input)
+
+        assert input_ui.read_chat_input() == "/exit"
+        assert prompts == [""]
         assert "You>" not in prompts
 
     def test_prompt_colors_are_theme_correct(self) -> None:
@@ -547,6 +599,66 @@ class TestSlashCommandRegistry:
         assert get_command("/status").display_label == "Status"  # type: ignore[union-attr]
         assert get_command("/github").display_label == "GitHub"  # type: ignore[union-attr]
 
+    def test_default_registry_surface_hides_aliases_and_advanced_commands(self) -> None:
+        names = [command.name for command in top_level_commands()]
+
+        assert names == [
+            "/help",
+            "/status",
+            "/settings",
+            "/model",
+            "/history",
+            "/profile",
+            "/doctor",
+            "/clear",
+            "/exit",
+            "/memory",
+            "/tools",
+            "/voice",
+        ]
+        assert get_command("/quit") is get_command("/exit")
+        assert get_command("/q") is get_command("/exit")
+        assert "/config" not in names
+
+    def test_every_visible_picker_item_has_an_implemented_handler(self) -> None:
+        import grandpa.cli.chat_cmd as chat_module
+        from grandpa.cli.interactive_tui import INTERACTIVE_COMMANDS
+
+        interactive_names = {command.name for command in INTERACTIVE_COMMANDS.commands}
+        for command in top_level_commands():
+            assert command.implemented is True
+            assert command.handler
+            if command.handler.startswith("interactive_tui."):
+                assert command.name in interactive_names
+        for group in ("Grandpa", "Chat", "Tools", "Session"):
+            for item in picker_group_items(group):
+                canonical = expand_namespaced_command(item.command).split(maxsplit=1)[0]
+                command = get_command(canonical)
+                assert command is not None
+                assert command.implemented is True
+                assert command.handler
+                if command.handler.startswith("chat_cmd."):
+                    handler_name = command.handler.partition(".")[2]
+                    assert callable(getattr(chat_module, handler_name, None))
+
+        assert get_command("/tasks").implemented is False  # type: ignore[union-attr]
+
+    def test_namespaces_preserve_legacy_command_routing(self) -> None:
+        assert expand_namespaced_command("/tools browser tabs") == "/browser tabs"
+        assert expand_namespaced_command("/tools gmail") == "/gmail"
+        assert expand_namespaced_command("/settings config") == "/config"
+        assert expand_namespaced_command("/settings engine ollama") == (
+            "/engine ollama"
+        )
+
+    def test_help_views_use_registry_categories_and_namespaces(self) -> None:
+        assert list(command_groups()) == ["Grandpa", "Chat", "Tools", "Session"]
+        tools_help = theme.help_commands_text("tools")
+        assert "/tools browser" in tools_help
+        assert "/tools tasks" not in tools_help
+        assert "/settings config" in theme.help_commands_text("advanced")
+        assert "/desktop" in theme.help_commands_text("all")
+
     def test_mode_subcommands_exist(self) -> None:
         command = get_command("/mode")
 
@@ -555,13 +667,13 @@ class TestSlashCommandRegistry:
         assert "/mode learning" in command.subcommands
 
     def test_help_preview_items_exist(self) -> None:
-        assert command_preview_items("/help") == [
+        assert command_preview_items("/help")[:4] == [
             "/help",
             "/help commands",
             "/help examples",
             "/help modules",
         ]
-        assert [item.label for item in command_preview_options("/help")] == [
+        assert [item.label for item in command_preview_options("/help")][:4] == [
             "Help",
             "Commands",
             "Examples",
@@ -587,15 +699,17 @@ class TestSlashCommandRegistry:
             assert command in command_names()
             assert command in message
 
-    def test_picker_top_level_suggestions_are_horizontal_candidates(self) -> None:
+    def test_picker_top_level_suggestions_are_curated(self) -> None:
         suggestions = input_ui._top_level_suggestions("/")
         names = [name for name, _description in suggestions]
         labels = [label for _name, label in suggestions]
 
-        assert names[:3] == ["/help", "/status", "/mode"]
-        assert labels[:3] == ["Help", "Status", "Mode"]
+        assert names[:3] == ["/help", "/status", "/settings"]
+        assert labels[:3] == ["Help", "Status", "Settings"]
         assert "/voice" in names
-        assert "/order" in names
+        assert "/tools" in names
+        assert "/order" not in names
+        assert "/quit" not in names
         assert "/help" not in labels
 
     def test_live_slash_completion_returns_top_level_commands(self) -> None:
@@ -604,21 +718,89 @@ class TestSlashCommandRegistry:
         assert completions
         assert completions[0][0] == "/help"
 
-    def test_picker_toolbar_shows_horizontal_and_vertical_commands(self) -> None:
+    def test_picker_filters_curated_commands_while_typing(self) -> None:
+        assert input_ui._top_level_suggestions("/mo") == [("/model", "Model")]
+        assert input_ui._top_level_suggestions("/quit") == []
+
+    def test_grouped_picker_is_narrow_terminal_friendly(self, monkeypatch) -> None:
+        monkeypatch.setattr(input_ui, "_picker_width", lambda: 24)
+        lines = input_ui._picker_toolbar_lines("/", input_ui.SlashPickerState())
+
+        assert lines[2] == "Gpa  Chat  Tools  Exit"
+        assert max(map(len, lines)) <= 24
+        assert not any("  Help  Status" in line for line in lines)
+
+    def test_picker_toolbar_shows_grouped_vertical_commands(self) -> None:
         state = input_ui.SlashPickerState()
-        state.preview_index = 3
+        state.top_index = 0
 
         lines = input_ui._picker_toolbar_lines("/", state)
 
-        assert lines[0] == "Slash Commands"
-        assert "Help  Status  Mode" in lines[2]
-        assert "/help  /status  /mode" not in lines[2]
+        assert lines[0] == "Commands"
+        assert lines[2] == "Grandpa   Chat   Tools   Session"
         assert not any(line.startswith("Selected:") for line in lines)
-        assert "  Help" in lines
-        assert "  Help commands" in lines
-        assert "  Help examples" in lines
-        assert "> Help modules" in lines
-        assert not any(line.strip().startswith("/") for line in lines[4:])
+        assert "> Help" in lines
+        assert "  Status" in lines
+        assert not any(line.strip().startswith("/") for line in lines[2:])
+
+    def test_picker_category_selects_vertical_command_group(self) -> None:
+        state = input_ui.SlashPickerState()
+        state.category_index = 1
+
+        assert "> History" in input_ui._picker_toolbar_lines("/", state)
+
+        state.category_index = 2
+        tools_lines = input_ui._picker_toolbar_lines("/", state)
+        assert "> Gmail" in tools_lines
+        assert "  Files" in tools_lines
+        assert not any("Tasks" in line for line in tools_lines)
+
+        state.category_index = 3
+        assert "> Exit" in input_ui._picker_toolbar_lines("/", state)
+
+    def test_picker_category_and_command_navigation_are_independent(self) -> None:
+        state = input_ui.SlashPickerState()
+
+        input_ui._move_picker_category(state, 1)
+        assert state.category_index == 1
+        assert state.top_index == 0
+        assert input_ui._move_picker_command("/", state, 1) is True
+        assert state.top_index == 1
+        assert "> Clear" in input_ui._picker_toolbar_lines("/", state)
+
+        input_ui._move_picker_category(state, 1)
+        assert state.category_index == 2
+        assert state.top_index == 0
+        assert "> Gmail" in input_ui._picker_toolbar_lines("/", state)
+
+    def test_tools_filter_and_selection_preserve_namespaced_value(self) -> None:
+        state = input_ui.SlashPickerState()
+
+        lines = input_ui._picker_toolbar_lines("/tools f", state)
+        assert "> Files" in lines
+
+        class FakeBuffer:
+            text = "/tools f"
+            cursor_position = 0
+
+        buffer = FakeBuffer()
+        assert input_ui._apply_picker_selection(buffer, state) is True
+        assert buffer.text == "/tools files"
+
+    def test_escape_dismisses_picker_without_submitting(self) -> None:
+        state = input_ui.SlashPickerState()
+        state.category_index = 2
+
+        class FakeBuffer:
+            text = "/"
+            cursor_position = 1
+
+        buffer = FakeBuffer()
+        input_ui._dismiss_picker(buffer, state)
+
+        assert buffer.text == ""
+        assert buffer.cursor_position == 0
+        assert state.category_index == 0
 
     def test_picker_display_labels_keep_command_values_for_selection(self) -> None:
         state = input_ui.SlashPickerState()
@@ -627,9 +809,8 @@ class TestSlashCommandRegistry:
 
         lines = input_ui._picker_toolbar_lines("/", state)
 
-        assert "Mode" in lines[2]
+        assert "> Settings" in lines
         assert not any(line.startswith("Selected:") for line in lines)
-        assert any(line.endswith("Mode list") for line in lines)
 
         class FakeBuffer:
             text = "/"
@@ -637,8 +818,8 @@ class TestSlashCommandRegistry:
 
         buffer = FakeBuffer()
         assert input_ui._apply_picker_selection(buffer, state) is True
-        assert buffer.text == "/mode list"
-        assert buffer.cursor_position == len("/mode list")
+        assert buffer.text == "/settings"
+        assert buffer.cursor_position == len("/settings")
 
     def test_picker_toolbar_uses_dark_theme_fragments(self) -> None:
         fragments = input_ui._picker_toolbar_fragments("/", input_ui.SlashPickerState())
@@ -697,7 +878,7 @@ class TestSlashCommandRegistry:
         assert "/mode learning" in names
 
     def test_picker_preview_lines_include_selected_command_details(self) -> None:
-        assert input_ui._picker_preview_lines("/help") == [
+        assert input_ui._picker_preview_lines("/help")[:4] == [
             "Help",
             "Help commands",
             "Help examples",
@@ -736,13 +917,12 @@ class TestSlashCommandRegistry:
         )
 
         assert input_ui._picker_preview_lines("/model") == [
-            "Model",
-            "gemma3:4b",
-            "grandpa-fast:latest",
+            "Grandpa Models",
+            "Fast",
         ]
         assert input_ui._command_preview_options("/model")[1] == (
-            "/model gemma3:4b",
-            "gemma3:4b",
+            "/model fast",
+            "Fast",
         )
 
     def test_model_preview_handles_ollama_failure(self, monkeypatch) -> None:
@@ -1424,7 +1604,7 @@ class TestChatOllamaUnavailable:
             (
                 "Ollama could not load grandpa-fast:latest because available "
                 "memory is too low. Close memory-heavy apps or use "
-                "grandpa-light:latest."
+                "grandpa-mini:latest."
             ),
             low_memory=True,
         )
@@ -1447,7 +1627,7 @@ class TestChatOllamaUnavailable:
 
         assert result.exit_code == 0
         assert "available memory is too low" in result.output
-        assert "grandpa-light:latest" in result.output
+        assert "grandpa-mini:latest" in result.output
         assert "Traceback" not in result.output
         assert "Chat generation failed" in log_path.read_text(encoding="utf-8")
 

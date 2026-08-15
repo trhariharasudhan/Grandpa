@@ -18,7 +18,11 @@ from rich.text import Text
 
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.cli.input_ui import read_chat_input, select_from_list
-from grandpa.cli.slash_commands import command_help_text, unknown_command_message
+from grandpa.cli.slash_commands import (
+    command_help_text,
+    expand_namespaced_command,
+    unknown_command_message,
+)
 from grandpa.cli.theme import (
     FAREWELL_TEXT,
     alternate_screen,
@@ -806,14 +810,19 @@ def _handle_help_slash_command(command: str) -> str | None:
         return None
     topic = parts[1].strip()
     if topic == "commands":
-        return help_commands_text()
+        return help_commands_text("commands")
     if topic == "examples":
         return help_examples_text()
     if topic == "modules":
         return help_modules_text()
     if topic == "shortcuts":
         return help_shortcuts_text()
-    return "Unknown help topic. Try /help commands, /help examples, /help modules, or /help shortcuts."
+    if topic in {"all", "tools", "advanced"}:
+        return help_commands_text(topic)
+    return (
+        "Unknown help topic. Try /help commands, /help tools, /help advanced, "
+        "/help all, /help examples, /help modules, or /help shortcuts."
+    )
 
 
 def _unknown_slash_command_message(command: str) -> str:
@@ -1470,13 +1479,13 @@ def chat(
 
             render_user_message(console, user_input, username=username)
             console.print()
+            user_input = expand_namespaced_command(user_input)
 
             # Handle slash commands
             cmd = user_input.lower()
             if tui_session is not None and cmd.startswith("/"):
                 from grandpa.cli.interactive_tui import (
                     INTERACTIVE_COMMANDS,
-                    render_startup_header,
                 )
 
                 previous_engine = tui_session.engine
@@ -1493,7 +1502,6 @@ def chat(
                         agent = None
                     if tui_session.clear_requested:
                         console.clear()
-                        render_startup_header(tui_session)
                         tui_session.clear_requested = False
                     if tui_session.should_exit:
                         render_status_message(console, FAREWELL_TEXT)
@@ -1660,6 +1668,26 @@ def chat(
             brain_analysis = process_user_message(user_input)
             effective_user_input = brain_analysis.effective_text
             capture_natural_personal_fact(effective_user_input)
+
+            from grandpa.prompt.identity import resolve_identity_response
+
+            identity_message = resolve_identity_response(
+                effective_user_input,
+                model=model,
+            )
+            if identity_message is not None:
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(Message(role=Role.ASSISTANT, content=identity_message))
+                remember_conversation("assistant", identity_message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=identity_message,
+                    kind="identity",
+                    target=None,
+                    status="handled",
+                )
+                render_assistant_response(console, Markdown(identity_message))
+                continue
 
             natural_intent_message = _handle_natural_assistant_intent(
                 effective_user_input,

@@ -172,7 +172,7 @@ class VoiceSession:
             else:
                 self._run_direct_loop(stop)
         except KeyboardInterrupt:
-            self.presenter.print_assistant_message(FAREWELL_TEXT)
+            self.presenter.print_farewell(FAREWELL_TEXT)
             self._exit_message_printed = True
             stop.set()
             logger.info("Voice assistant stopped by keyboard interrupt")
@@ -208,7 +208,7 @@ class VoiceSession:
             if wake_transcript is None:
                 continue
             if is_exit_phrase(wake_transcript):
-                self.presenter.print_assistant_message(FAREWELL_TEXT)
+                self.presenter.print_farewell(FAREWELL_TEXT)
                 self._exit_message_printed = True
                 self._speak(FAREWELL_TEXT)
                 logger.info(
@@ -323,7 +323,7 @@ class VoiceSession:
     def _handle_transcript(self, transcript: str, stop: threading.Event) -> None:
         self.presenter.print_user_message(transcript)
         if is_exit_phrase(transcript):
-            self.presenter.print_assistant_message(FAREWELL_TEXT)
+            self.presenter.print_farewell(FAREWELL_TEXT)
             self._exit_message_printed = True
             self._speak(FAREWELL_TEXT)
             logger.info("Voice assistant stopped by exit phrase")
@@ -551,14 +551,9 @@ def build_voice_session(
 def is_exit_phrase(text: str) -> bool:
     """Return True when recognized text asks to stop voice mode."""
 
-    normalized = re.sub(r"\s+", " ", text.strip().casefold()).rstrip(".?!,")
-    if normalized in EXIT_PHRASES:
-        return True
-    if "stop listening" in normalized or "stop listening" in normalized.replace(
-        "-", " "
-    ):
-        return True
-    return False
+    normalized = re.sub(r"\s+", " ", text.strip().casefold().replace("-", " "))
+    normalized = normalized.rstrip(".?!,")
+    return normalized in EXIT_PHRASES
 
 
 def normalize_echo_text(text: str) -> str:

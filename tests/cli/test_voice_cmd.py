@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import io
+import wave
+from array import array
+from types import SimpleNamespace
+
 from click.testing import CliRunner
 
 from grandpa.cli import cli
@@ -107,8 +112,8 @@ def test_voice_list_microphones(monkeypatch) -> None:
     result = CliRunner().invoke(cli, ["voice", "--list-microphones"])
 
     assert result.exit_code == 0
-    assert "2: Microphone Array" in result.output
-    assert "*default*" in result.output
+    assert "INDEX | NAME | HOST API" in result.output
+    assert "2 | Microphone Array | unknown | 1 | 16000 Hz | yes" in result.output
 
 
 def test_voice_list_voices(monkeypatch) -> None:
@@ -184,6 +189,25 @@ def test_voice_runtime_diagnostics_reports_active_interpreter() -> None:
     assert diagnostics["project_root"].endswith("Grandpa")
 
 
+def test_voice_runtime_diagnostics_ignores_stale_path_launcher(
+    monkeypatch, tmp_path
+) -> None:
+    project_scripts = tmp_path / "project" / ".venv" / "Scripts"
+    project_scripts.mkdir(parents=True)
+    python = project_scripts / "python.exe"
+    launcher = project_scripts / "grandpa.exe"
+    for path in (python, launcher):
+        path.touch()
+
+    monkeypatch.setattr("grandpa.voice.diagnostics.sys.executable", str(python))
+    monkeypatch.setattr("grandpa.voice.diagnostics.sys.argv", [str(launcher)])
+    monkeypatch.setenv("PATH", str(tmp_path / "global" / "Scripts"))
+
+    diagnostics = voice_runtime_diagnostics()
+
+    assert diagnostics["grandpa_executable"] == str(launcher.resolve())
+
+
 def test_voice_diagnose_option(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.cli.voice_cmd.run_voice_doctor",
@@ -218,3 +242,147 @@ def test_voice_diagnose_subcommand_does_not_record(monkeypatch) -> None:
     assert result.exit_code == 0
     assert calls == {"device": 2, "duration_seconds": 0}
     assert "USB Mic" in result.output
+
+
+def _diagnostic_wav() -> bytes:
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav_file:
+        wav_file.setnchannels(1)
+        wav_file.setsampwidth(2)
+        wav_file.setframerate(16_000)
+        wav_file.writeframes(array("h", [0, 800, -800] * 2_000).tobytes())
+    return buffer.getvalue()
+
+
+def test_voice_microphone_test_replays_transcribes_and_cleans_up(
+    monkeypatch, tmp_path
+) -> None:
+    calls: list[str] = []
+    audio = SimpleNamespace(
+        data=_diagnostic_wav(),
+        speech_onset_seconds=0.2,
+        speech_active_seconds=0.8,
+        trailing_silence_seconds=1.2,
+        finalization_reason="trailing_silence",
+    )
+
+    class FakeCapture:
+        last_device = SimpleNamespace(
+            index=15,
+            name="Microphone Array",
+            driver="Windows WASAPI",
+        )
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def capture(self):
+            calls.append("capture")
+            return audio
+
+        def close(self):
+            calls.append("close")
+
+    class FakeTranscriber:
+        last_result = SimpleNamespace(language="en")
+
+        def __init__(self, **_kwargs):
+            pass
+
+        def transcribe(self, captured):
+            assert captured is audio
+            calls.append("transcribe")
+            return "Hello Grandpa."
+
+        def transcribe_file(self, path):
+            assert path.read_bytes() == audio.data
+            calls.append("direct_transcribe")
+            return "Hello Grandpa."
+
+        @property
+        def backend_diagnostics(self):
+            return None
+
+    temporary = tmp_path / "diagnostic.wav"
+
+    class TemporaryFile:
+        def __enter__(self):
+            self.handle = temporary.open("wb")
+            return self.handle
+
+        def __exit__(self, *_args):
+            self.handle.close()
+
+    monkeypatch.setattr("grandpa.cli.voice_cmd.MicrophoneCapture", FakeCapture)
+    selected_device = SimpleNamespace(index=15)
+
+    class FakeManager:
+        def __init__(self, _sounddevice):
+            pass
+
+        def select(self, **_kwargs):
+            return SimpleNamespace(device=selected_device)
+
+    monkeypatch.setattr("grandpa.cli.voice_cmd.import_sounddevice", lambda: object())
+    monkeypatch.setattr("grandpa.cli.voice_cmd.MicrophoneDeviceManager", FakeManager)
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.FasterWhisperSpeechToText", FakeTranscriber
+    )
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.play_wav_bytes",
+        lambda _audio: calls.append("playback"),
+    )
+    monkeypatch.setattr("grandpa.cli.voice_cmd.time.sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.tempfile.NamedTemporaryFile",
+        lambda **_kwargs: TemporaryFile(),
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["voice", "microphone-test", "--device", "15"],
+        input="y\ny\n",
+    )
+
+    assert result.exit_code == 0
+    assert calls == [
+        "capture",
+        "playback",
+        "transcribe",
+        "direct_transcribe",
+        "close",
+    ]
+    assert "Windows WASAPI" in result.output
+    assert "Production transcript: Hello Grandpa." in result.output
+    assert "Direct same-WAV transcript: Hello Grandpa." in result.output
+    assert "Captured bytes identical to diagnostic WAV: True" in result.output
+    assert "Human playback assessment: clear" in result.output
+    assert not temporary.exists()
+
+
+def test_voice_microphone_test_accepts_supervised_sentence(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.MicrophoneCapture",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not capture")),
+    )
+
+    result = CliRunner().invoke(
+        cli,
+        ["voice", "microphone-test", "--sentence", "Hello Grandpa"],
+        input="n\n",
+    )
+
+    assert result.exit_code == 0
+    assert 'Say: "Hello Grandpa"' in result.output
+
+
+def test_voice_microphone_test_can_cancel_before_capture(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "grandpa.cli.voice_cmd.MicrophoneCapture",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("must not capture")),
+    )
+
+    result = CliRunner().invoke(cli, ["voice", "microphone-test"], input="n\n")
+
+    assert result.exit_code == 0
+    assert "cancelled" in result.output

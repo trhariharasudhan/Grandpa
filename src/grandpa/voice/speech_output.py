@@ -54,6 +54,7 @@ class SpeechOutputEngine:
     def __post_init__(self) -> None:
         try:
             from grandpa.core.config import load_config
+
             config = load_config()
             # Respect configured enabled status
             self.enabled = config.tts.enabled
@@ -160,9 +161,7 @@ class SpeechOutputEngine:
             backend_cls = TTSRegistry.get(engine)
             result = backend_cls().synthesize(text)
             if not result.audio:
-                raise VoiceOutputUnavailableError(
-                    detail=f"{engine} returned no audio."
-                )
+                raise VoiceOutputUnavailableError(detail=f"{engine} returned no audio.")
             _play_audio_bytes(result.audio, self)
             return
         if engine == "pyttsx3":
@@ -180,6 +179,7 @@ class SpeechOutputEngine:
         _stop_active_pyttsx3()
         try:
             import sounddevice as sd
+
             sd.stop()
         except Exception:
             pass
@@ -223,7 +223,9 @@ class SpeechOutputEngine:
                 if backend.health() and candidate not in available:
                     available.append(candidate)
             except Exception as exc:
-                logger.warning("Local TTS health check failed for %s: %s", candidate, exc)
+                logger.warning(
+                    "Local TTS health check failed for %s: %s", candidate, exc
+                )
         return tuple(available)
 
     def diagnostics(self) -> dict[str, Any]:

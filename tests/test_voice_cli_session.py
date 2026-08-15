@@ -4,6 +4,7 @@ import threading
 
 import pytest
 
+from grandpa.cli.theme import FAREWELL_TEXT
 from grandpa.voice.cli_session import (
     VoiceSession,
     is_exit_phrase,
@@ -296,7 +297,8 @@ def test_ctrl_c_during_tts_stops_speech_without_resuming_capture() -> None:
     assert session.run() == 0
     assert microphone.calls == 1
     assert speaker.stopped is True
-    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert FAREWELL_TEXT in output
+    assert f"Grandpa: {FAREWELL_TEXT}" not in output
 
 
 def test_grandpa_tts_exposes_reliable_speaking_state(monkeypatch) -> None:
@@ -348,7 +350,8 @@ def test_voice_session_exit_phrase_stops_loop() -> None:
     )
 
     assert session.run() == 0
-    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert FAREWELL_TEXT in output
+    assert f"Grandpa: {FAREWELL_TEXT}" not in output
 
 
 def test_voice_session_ctrl_c_shuts_down_cleanly() -> None:
@@ -364,7 +367,8 @@ def test_voice_session_ctrl_c_shuts_down_cleanly() -> None:
     )
 
     assert session.run() == 0
-    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert FAREWELL_TEXT in output
+    assert f"Grandpa: {FAREWELL_TEXT}" not in output
     assert "Voice assistant stopped." not in output
     assert not any("Traceback" in line for line in output)
     assert microphone.closed is True
@@ -583,7 +587,8 @@ def test_wake_word_mode_exit_phrase_stops_while_waiting() -> None:
     )
 
     assert session.run() == 0
-    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert FAREWELL_TEXT in output
+    assert f"Grandpa: {FAREWELL_TEXT}" not in output
     assert responder.received == []
 
 
@@ -602,7 +607,8 @@ def test_wake_word_mode_ctrl_c_during_wake_capture() -> None:
 
     assert session.run() == 0
     assert microphone.calls == 1
-    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert FAREWELL_TEXT in output
+    assert f"Grandpa: {FAREWELL_TEXT}" not in output
     assert "Voice assistant stopped." not in output
     assert not any("Traceback" in line for line in output)
     assert microphone.closed is True
@@ -624,7 +630,8 @@ def test_wake_word_mode_ctrl_c_during_command_capture() -> None:
 
     assert session.run() == 0
     assert microphone.calls == 2
-    assert "Grandpa: Goodbye! I’ll be here when you need me." in output
+    assert FAREWELL_TEXT in output
+    assert f"Grandpa: {FAREWELL_TEXT}" not in output
     assert responder.received == []
 
 
@@ -687,6 +694,60 @@ def test_voice_config_defaults_and_environment_overrides(monkeypatch) -> None:
 )
 def test_exit_phrase_matching(phrase: str) -> None:
     assert is_exit_phrase(phrase)
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "I will give you an example today.",
+        "Please don't stop listening.",
+        "We should discuss the exit voice mode behavior.",
+        "This is quite useful.",
+    ],
+)
+def test_similar_words_do_not_stop_voice_session(phrase: str) -> None:
+    assert not is_exit_phrase(phrase)
+
+
+def test_normal_transcript_continues_and_invokes_responder_and_tts() -> None:
+    output: list[str] = []
+    responder = FakeResponder()
+    speaker = FakeSpeaker()
+    stop = threading.Event()
+    session = VoiceSession(
+        FakeMicrophone(),
+        FakeTranscriber([]),
+        responder,
+        speaker,
+        output=output.append,
+        stop_event=stop,
+    )
+
+    session._handle_transcript("I will give you an example today.", stop)
+
+    assert not stop.is_set()
+    assert responder.received == ["I will give you an example today."]
+    assert speaker.spoken
+    assert not any("Goodbye" in line for line in output)
+
+
+def test_shutdown_farewell_has_no_assistant_prefix() -> None:
+    output: list[str] = []
+    stop = threading.Event()
+    session = VoiceSession(
+        FakeMicrophone(),
+        FakeTranscriber([]),
+        FakeResponder(),
+        FakeSpeaker(),
+        output=output.append,
+        stop_event=stop,
+    )
+
+    session._handle_transcript("stop listening", stop)
+
+    assert stop.is_set()
+    assert FAREWELL_TEXT in output
+    assert f"Grandpa: {FAREWELL_TEXT}" not in output
 
 
 def test_voice_session_normal_startup_stays_alive() -> None:

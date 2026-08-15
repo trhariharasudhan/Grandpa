@@ -32,9 +32,7 @@ def _clean_audio(sample_rate: int = 22_050, duration: float = 3.0) -> np.ndarray
         envelope[int(start * sample_rate) : int(end * sample_rate)] = 1.0
     tone = envelope * 0.25 * np.sin(2 * np.pi * 180 * time)
     noise = np.random.default_rng(7).normal(0, 0.001, count)
-    samples = np.asarray(
-        np.clip((tone + noise) * 32767, -32768, 32767), dtype=np.int16
-    )
+    samples = np.asarray(np.clip((tone + noise) * 32767, -32768, 32767), dtype=np.int16)
     return samples[:, None]
 
 
@@ -128,8 +126,16 @@ class FakeSoundDevice:
         self.default = type("Default", (), {"device": (default_index, -1)})()
         self.devices = [
             {"name": "Output", "max_input_channels": 0, "default_samplerate": 48_000},
-            {"name": "Microphone Array", "max_input_channels": 2, "default_samplerate": 44_100},
-            {"name": "USB Microphone", "max_input_channels": 1, "default_samplerate": 48_000},
+            {
+                "name": "Microphone Array",
+                "max_input_channels": 2,
+                "default_samplerate": 44_100,
+            },
+            {
+                "name": "USB Microphone",
+                "max_input_channels": 1,
+                "default_samplerate": 48_000,
+            },
         ]
         self.checked: list[int] = []
 
@@ -199,9 +205,7 @@ def test_v2_recording_runs_through_existing_preparer(
         _clean_audio(),
         22_050,
     )
-    (raw_output / f"{item.stem}.txt").write_text(
-        item.text + "\n", encoding="utf-8"
-    )
+    (raw_output / f"{item.stem}.txt").write_text(item.text + "\n", encoding="utf-8")
     monkeypatch.setattr(record_dataset, "DATASET_ROOT", dataset_root)
     monkeypatch.setattr(record_dataset, "RAW_OUTPUT", raw_output)
     monkeypatch.setattr(record_dataset, "PROMPTS", (item,))
@@ -240,8 +244,10 @@ def test_v2_recording_runs_through_existing_preparer(
     assert issues == []
     assert len(records) == 1
     assert records[0].quality_status == "accepted"
-    assert (manifest.parent / "metadata.csv").read_text(encoding="utf-8").startswith(
-        f"{item.stem}.wav|"
+    assert (
+        (manifest.parent / "metadata.csv")
+        .read_text(encoding="utf-8")
+        .startswith(f"{item.stem}.wav|")
     )
 
 
@@ -275,13 +281,13 @@ def test_recording_session_launches_preparation_in_voice_runtime(
 
 def _write_valid_pair(root: Path, item=None) -> None:
     item = item or record_dataset.PROMPTS[0]
-    record_dataset.write_pcm_wav(
-        root / f"{item.stem}.wav", _clean_audio(), 22_050
-    )
+    record_dataset.write_pcm_wav(root / f"{item.stem}.wav", _clean_audio(), 22_050)
     (root / f"{item.stem}.txt").write_text(item.text + "\n", encoding="utf-8")
 
 
-def test_progress_resumes_after_existing_valid_clip(monkeypatch, tmp_path: Path) -> None:
+def test_progress_resumes_after_existing_valid_clip(
+    monkeypatch, tmp_path: Path
+) -> None:
     raw = tmp_path / "original_v2"
     raw.mkdir()
     _write_valid_pair(raw)
@@ -373,7 +379,9 @@ def test_fast_mode_auto_accepts_valid_clip(monkeypatch, tmp_path: Path) -> None:
     item = record_dataset.PROMPTS[0]
     monkeypatch.setattr(record_dataset, "RAW_OUTPUT", raw)
     monkeypatch.setattr(record_dataset, "countdown", lambda: None)
-    monkeypatch.setattr(record_dataset, "capture_audio", lambda *_args, **_kwargs: _clean_audio())
+    monkeypatch.setattr(
+        record_dataset, "capture_audio", lambda *_args, **_kwargs: _clean_audio()
+    )
 
     result = record_dataset.record_item(
         object(),
@@ -396,7 +404,9 @@ def test_quit_preserves_previously_accepted_clip(monkeypatch, tmp_path: Path) ->
     _write_valid_pair(raw, accepted)
     monkeypatch.setattr(record_dataset, "RAW_OUTPUT", raw)
     monkeypatch.setattr(record_dataset, "countdown", lambda: None)
-    monkeypatch.setattr(record_dataset, "capture_audio", lambda *_args, **_kwargs: _clean_audio())
+    monkeypatch.setattr(
+        record_dataset, "capture_audio", lambda *_args, **_kwargs: _clean_audio()
+    )
     answers = iter(("", "q"))
 
     result = record_dataset.record_item(
@@ -442,9 +452,7 @@ def test_ten_clip_checkpoint_defaults_to_saved_quit() -> None:
     assert updated.checkpoints_shown == (10,)
 
 
-def test_completed_recording_is_never_overwritten(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_completed_recording_is_never_overwritten(monkeypatch, tmp_path: Path) -> None:
     raw = tmp_path / "original_v2"
     raw.mkdir()
     item = record_dataset.PROMPTS[0]

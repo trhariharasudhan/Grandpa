@@ -224,9 +224,7 @@ def test_service_rejects_unbounded_or_unknown_request_fields(tmp_path):
             "/synthesize",
             json={"text": "x" * (MAX_TEXT_LENGTH + 1)},
         )
-        bad_speed = client.post(
-            "/synthesize", json={"text": "Hello", "speed": 10}
-        )
+        bad_speed = client.post("/synthesize", json={"text": "Hello", "speed": 10})
         bad_voice = client.post(
             "/synthesize", json={"text": "Hello", "voice_id": "other"}
         )
@@ -235,9 +233,7 @@ def test_service_rejects_unbounded_or_unknown_request_fields(tmp_path):
             json={"text": "Hello", "reference_audio": "C:/secret.wav"},
         )
 
-    assert {too_long.status_code, bad_speed.status_code, bad_voice.status_code} == {
-        422
-    }
+    assert {too_long.status_code, bad_speed.status_code, bad_voice.status_code} == {422}
     assert injected_path.status_code == 422
 
 

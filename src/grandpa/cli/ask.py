@@ -966,7 +966,7 @@ def ask(
         for ek, model_ids in all_models.items():
             installed.extend(model_ids)
 
-        default_model = config.intelligence.default_model or "qwen:latest"
+        default_model = config.intelligence.default_model or "grandpa-mini:latest"
 
         if any(k in q for k in image_keywords):
             target = "llava"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
@@ -11,6 +12,7 @@ from grandpa.cli.interactive_tui import (
     INTERACTIVE_COMMANDS,
     TUI_PROMPT,
     InteractiveSession,
+    chat_helper_text,
     render_startup_header,
 )
 from grandpa.cli.theme import resolve_username, user_prompt
@@ -49,6 +51,15 @@ def test_bare_cli_routes_to_interactive_chat() -> None:
     assert kwargs.get("tui_mode") is True or kwargs.get("tui_mode") is None
 
 
+def test_direct_subcommand_bypasses_launcher() -> None:
+    context = MagicMock()
+    context.invoked_subcommand = "doctor"
+
+    check_and_route(context)
+
+    context.invoke.assert_not_called()
+
+
 def test_bare_cli_renders_modern_logo_once(monkeypatch) -> None:
     config = GrandpaConfig()
     config.intelligence.default_model = "test-model"
@@ -57,14 +68,30 @@ def test_bare_cli_renders_modern_logo_once(monkeypatch) -> None:
     with (
         patch("grandpa.cli.launcher.load_config", return_value=config),
         patch("grandpa.cli.launcher.ensure_profile", return_value=config) as onboarding,
-        patch("grandpa.cli.launcher.run_interactive_menu", return_value="6") as menu,
-        patch("grandpa.cli.launcher.render_logo"),
+        patch("grandpa.cli.launcher.run_interactive_menu", return_value="exit") as menu,
     ):
         result = CliRunner().invoke(cli, input="\n")
 
     assert result.exit_code == 0
     onboarding.assert_called_once()
     menu.assert_called_once()
+
+
+def test_launcher_bounds_invalid_menu_results(monkeypatch) -> None:
+    config = GrandpaConfig()
+    config.user.onboarding_completed = True
+    monkeypatch.setenv("GRANDPA_TESTING", "1")
+
+    with (
+        patch("grandpa.cli.launcher.load_config", return_value=config),
+        patch("grandpa.cli.launcher.ensure_profile", return_value=config),
+        patch("grandpa.cli.launcher.run_interactive_menu", return_value="6") as menu,
+    ):
+        result = CliRunner().invoke(cli)
+
+    assert result.exit_code == 0
+    assert menu.call_count == 3
+    assert "repeated invalid selections" in result.output
 
 
 def test_interactive_registry_contains_required_commands() -> None:
@@ -96,7 +123,8 @@ def test_local_slash_command_does_not_need_generation() -> None:
 
     assert result.handled is True
     assert "Engine: ollama" in (result.message or "")
-    assert "Model: grandpa-fast:latest" in (result.message or "")
+    assert "Model: Grandpa Fast" in (result.message or "")
+    assert "Runtime tag: grandpa-fast:latest" in (result.message or "")
 
 
 def test_model_command_updates_current_session() -> None:
@@ -105,7 +133,7 @@ def test_model_command_updates_current_session() -> None:
     result = INTERACTIVE_COMMANDS.dispatch(session, "/model grandpa-light:latest")
 
     assert result.handled is True
-    assert session.model == "grandpa-light:latest"
+    assert session.model == "grandpa-fast:latest"
 
 
 def test_compact_keeps_recent_context() -> None:
@@ -130,15 +158,23 @@ def test_startup_header_is_compact_and_status_remains_detailed() -> None:
     output = console.export_text()
     assert "██████╗ ██████╗" in output
     assert "Grandpa v" in output
-    assert "| Ollama | grandpa-fast:latest" in output
+    assert "| Ollama | grandpa-fast" in output
     assert "Directory" not in output
     assert "Memory" not in output
-    assert "Type /help for commands" in output
+    assert "Ask anything • / for commands • Alt+Enter for a new line" in output
 
     status = INTERACTIVE_COMMANDS.dispatch(session, "/status")
     assert "Directory:" in (status.message or "")
     assert "Memory:" in (status.message or "")
     assert "Ollama:" in (status.message or "")
+
+
+def test_chat_helper_text_falls_back_for_ascii_terminal() -> None:
+    console = SimpleNamespace(file=SimpleNamespace(encoding="ascii"))
+
+    assert chat_helper_text(console) == (
+        "Ask anything | / for commands | Alt+Enter for a new line"
+    )
 
 
 def test_prompt_uses_default_username() -> None:
@@ -153,6 +189,14 @@ def test_prompt_uses_configured_username() -> None:
     assert resolve_username(config) == "Hari"
     assert user_prompt(resolve_username(config)) == "Hari > "
     assert validate_config_key("user.username") is str
+
+
+def test_prompt_omits_formal_profile_title() -> None:
+    config = GrandpaConfig()
+    config.user.username = "Hari Hara Sudhan"
+    config.user.title = "Mr."
+
+    assert user_prompt(resolve_username(config)) == "Hari Hara Sudhan > "
 
 
 def test_profile_and_whoami_commands_use_local_session_profile() -> None:
@@ -175,7 +219,10 @@ def test_profile_edit_refreshes_prompt_name_for_current_session() -> None:
     updated.user.username = "Hari"
     updated.user.onboarding_completed = True
 
-    with patch("grandpa.profile.configure_profile", return_value=updated):
+    with (
+        patch("grandpa.profile.configure_profile", return_value=updated),
+        patch("click.prompt", return_value="1"),
+    ):
         result = INTERACTIVE_COMMANDS.dispatch(session, "/profile edit")
 
     assert result.handled is True
@@ -261,6 +308,11 @@ def test_tui_voice_command_subcommands(tmp_path, monkeypatch) -> None:
     # 2. Test /voice status
     # Trigger speech backend registration
     import grandpa.speech  # noqa: F401 - registers local TTS backends
+    from grandpa.core.registry import TTSRegistry
+    from grandpa.speech.grandpa_voice_tts import GrandpaVoiceTTSBackend
+
+    if not TTSRegistry.contains("grandpa_voice"):
+        TTSRegistry.register_value("grandpa_voice", GrandpaVoiceTTSBackend)
 
     res = INTERACTIVE_COMMANDS.dispatch(session, "/voice status")
     assert "Voice: Enabled" in res.message

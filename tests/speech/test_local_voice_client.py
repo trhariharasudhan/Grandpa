@@ -52,9 +52,7 @@ def test_health_uses_short_timeout_independent_of_synthesis(monkeypatch):
         captured.update(url=url, timeout=timeout)
         return response
 
-    monkeypatch.setattr(
-        "grandpa.speech.local_voice.service_client.httpx.get", get
-    )
+    monkeypatch.setattr("grandpa.speech.local_voice.service_client.httpx.get", get)
 
     client = LocalVoiceServiceClient(synthesis_timeout_seconds=900.0)
 
@@ -70,9 +68,7 @@ def test_synthesis_payload_is_bounded_and_uses_voice_id(monkeypatch):
         captured.update(url=url, json=json, timeout=timeout)
         return response
 
-    monkeypatch.setattr(
-        "grandpa.speech.local_voice.service_client.httpx.post", post
-    )
+    monkeypatch.setattr("grandpa.speech.local_voice.service_client.httpx.post", post)
 
     audio = LocalVoiceServiceClient("http://127.0.0.1:8765").synthesize(
         "Hello", voice="grandpa", speed=1.25, timeout_seconds=4.0
@@ -94,9 +90,7 @@ def test_synthesis_uses_dedicated_default_timeout(monkeypatch):
         captured.update(timeout=timeout)
         return response
 
-    monkeypatch.setattr(
-        "grandpa.speech.local_voice.service_client.httpx.post", post
-    )
+    monkeypatch.setattr("grandpa.speech.local_voice.service_client.httpx.post", post)
 
     client = LocalVoiceServiceClient()
 

@@ -6,9 +6,10 @@ import importlib
 import importlib.util
 import logging
 import os
-import shutil
 import sys
 import traceback
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -113,12 +114,31 @@ def voice_runtime_diagnostics() -> dict[str, Any]:
     return {
         "python_executable": str(executable),
         "virtual_environment": str(active_venv),
-        "grandpa_executable": shutil.which("grandpa") or sys.argv[0],
+        "grandpa_executable": _active_grandpa_executable(executable),
         "project_root": str(project_root),
         "expected_virtual_environment": str(expected_venv),
         "in_project_virtual_environment": in_project_venv,
         "environment_processes": _environment_processes(expected_venv),
     }
+
+
+def _active_grandpa_executable(python_executable: Path) -> str:
+    """Resolve the launcher for this process without trusting PATH order."""
+
+    for argument in (sys.argv[0], *getattr(sys, "orig_argv", ())):
+        invoked = Path(argument).expanduser()
+        if invoked.name.casefold() not in {"grandpa", "grandpa.exe"}:
+            continue
+        try:
+            if invoked.exists():
+                return str(invoked.resolve())
+        except OSError:
+            continue
+
+    sibling = python_executable.parent / "grandpa.exe"
+    if sibling.exists():
+        return str(sibling.resolve())
+    return f"{python_executable} (Python module invocation)"
 
 
 def voice_diagnostic_log_path() -> Path:
@@ -277,6 +297,7 @@ def run_voice_doctor(
     checks.append(
         _check("sample rate", "pass", "Using 16000 Hz for push-to-talk capture.")
     )
+    checks.extend(_voice_configuration_checks())
 
     if devices and duration_seconds > 0:
         try:
@@ -316,6 +337,63 @@ def run_voice_doctor(
     checks.append(
         _check("Windows microphone permission", "pass", _windows_permission_hint())
     )
+    return checks
+
+
+def _voice_configuration_checks() -> list[dict[str, Any]]:
+    from grandpa.core.config import load_config
+    from grandpa.voice.config import load_voice_assistant_config
+
+    voice = load_voice_assistant_config()
+    config = load_config()
+    checks = [
+        _check(
+            "capture configuration",
+            "pass",
+            (
+                f"maximum={voice.phrase_duration_limit:g}s; "
+                f"speech_start_rms={voice.speech_start_rms:g}; "
+                f"minimum_speech={voice.minimum_speech_seconds:g}s; "
+                f"trailing_silence={voice.silence_timeout_seconds:g}s"
+            ),
+        ),
+        _check(
+            "configured STT",
+            "pass",
+            (
+                f"model={voice.stt_model}; language={voice.language or 'auto'}; "
+                f"device={voice.device}; compute={voice.compute_type}"
+            ),
+        ),
+        _check(
+            "configured TTS",
+            "pass" if config.tts.enabled else "warn",
+            f"enabled={config.tts.enabled}; backend={config.tts.backend}",
+        ),
+    ]
+    grandpa_voice = getattr(config, "grandpa_voice", None)
+    service_url = str(
+        getattr(grandpa_voice, "service_url", "http://127.0.0.1:8765")
+    ).rstrip("/")
+    try:
+        with urllib.request.urlopen(f"{service_url}/health", timeout=1.5) as response:
+            healthy = 200 <= int(response.status) < 300
+    except (OSError, ValueError, urllib.error.URLError) as exc:
+        checks.append(
+            _check(
+                "cloned voice service",
+                "warn",
+                f"Unavailable at {service_url}; pyttsx3 fallback remains available ({type(exc).__name__}).",
+            )
+        )
+    else:
+        checks.append(
+            _check(
+                "cloned voice service",
+                "pass" if healthy else "warn",
+                f"{'Ready' if healthy else 'Unhealthy'} at {service_url}.",
+            )
+        )
     return checks
 
 

@@ -310,59 +310,19 @@ def _available_memory_gb(hw: HardwareInfo) -> float:
     return 0.0
 
 
-# Explicit tier table: (max_ram_gb, model_id).
-# Walked in order — first tier where available_gb <= max_ram is chosen.
-# Uses Qwen3.5 MoE models — better quality per GB than dense models since
-# only a fraction of parameters are active per token.
-_MODEL_TIERS = [
-    (8, "qwen3.5:2b"),
-    (16, "qwen3.5:4b"),
-    (32, "qwen3.5:9b"),
-    (64, "qwen3.5:27b"),
-]
-_MODEL_TIER_FALLBACK = "qwen3.5:27b"
+_MODEL_TIER_FALLBACK = "grandpa-mini:latest"
 
 
 def recommend_model(hw: HardwareInfo, engine: str) -> str:
     """Suggest a default model for the selected engine and hardware.
 
-    Uses the local Ollama-compatible Qwen3.5 tier mapping.
+    Uses the canonical low-resource Grandpa Odin role for local Ollama.
     """
-    from grandpa.intelligence.model_catalog import BUILTIN_MODELS
-
-    available_gb = _available_memory_gb(hw)
-    if available_gb <= 0:
+    if engine != "ollama":
         return ""
-
-    # Build a lookup for quick engine-compatibility checks
-    catalog = {spec.model_id: spec for spec in BUILTIN_MODELS}
-
-    # Try explicit tier mapping first
-    model_id = _MODEL_TIER_FALLBACK
-    for max_ram, tier_model in _MODEL_TIERS:
-        if available_gb <= max_ram:
-            model_id = tier_model
-            break
-
-    spec = catalog.get(model_id)
-    if spec and engine in spec.supported_engines:
-        return model_id
-
-    # Fallback: scan all Qwen3.5 models for engine compatibility
-    candidates = [
-        s
-        for s in BUILTIN_MODELS
-        if s.provider == "alibaba"
-        and s.model_id.startswith("qwen3.5:")
-        and engine in s.supported_engines
-    ]
-    candidates.sort(key=lambda s: s.parameter_count_b, reverse=True)
-    for s in candidates:
-        estimated_gb = s.parameter_count_b * 0.5 * 1.1
-        if estimated_gb <= available_gb:
-            return s.model_id
-
-    return ""
+    if _available_memory_gb(hw) <= 0:
+        return ""
+    return _MODEL_TIER_FALLBACK
 
 
 def estimated_download_gb(parameter_count_b: float) -> float:
@@ -404,7 +364,7 @@ class EngineConfig:
 class IntelligenceConfig:
     """The model — identity, paths, quantization, and generation defaults."""
 
-    default_model: str = ""
+    default_model: str = "grandpa-mini:latest"
     fallback_model: str = ""
     model_path: str = ""  # Local weights (HF repo, GGUF file, etc.)
     checkpoint_path: str = ""  # Checkpoint/adapter path
@@ -804,6 +764,7 @@ class UserConfig:
     """User-facing identity used by interactive interfaces."""
 
     username: str = "Username"
+    title: str = ""
     onboarding_completed: bool = False
 
 
@@ -984,17 +945,13 @@ def validate_grandpa_voice_setting(key: str, value: Any) -> Any:
             raise ValueError(f"grandpa_voice.{key} must be an integer")
         upper_bound = 64
         if not 1 <= value <= upper_bound:
-            raise ValueError(
-                f"grandpa_voice.{key} must be between 1 and {upper_bound}"
-            )
+            raise ValueError(f"grandpa_voice.{key} must be between 1 and {upper_bound}")
     elif key == "cfg_strength":
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise ValueError("grandpa_voice.cfg_strength must be a number")
         value = float(value)
         if not 0.0 <= value <= 10.0:
-            raise ValueError(
-                "grandpa_voice.cfg_strength must be between 0.0 and 10.0"
-            )
+            raise ValueError("grandpa_voice.cfg_strength must be between 0.0 and 10.0")
     elif key in {"character_voice", "compression"}:
         if not isinstance(value, bool):
             raise ValueError(f"grandpa_voice.{key} must be a boolean")
@@ -1015,9 +972,7 @@ def validate_grandpa_voice_setting(key: str, value: Any) -> Any:
         }
         lower, upper = bounds[key]
         if not lower <= value <= upper:
-            raise ValueError(
-                f"grandpa_voice.{key} must be between {lower} and {upper}"
-            )
+            raise ValueError(f"grandpa_voice.{key} must be between {lower} and {upper}")
     elif key == "eq_profile" and value not in {
         "grandpa_balanced",
         "grandpa_deep",
@@ -1132,12 +1087,26 @@ def load_config(path: Optional[Path] = None) -> GrandpaConfig:
                     data[section_name],
                 )
 
+        # Compatibility with the short-lived [profile] display_name/title schema.
+        profile_data = data.get("profile")
+        user_data = data.get("user") if isinstance(data.get("user"), dict) else {}
+        if isinstance(profile_data, dict):
+            if "username" not in user_data and profile_data.get("display_name"):
+                cfg.user.username = str(profile_data["display_name"])
+            if "title" not in user_data and profile_data.get("title") is not None:
+                cfg.user.title = str(profile_data["title"])
+
         # Memory: accept [memory] (old) → maps to tools.storage
         if "memory" in data:
             _apply_toml_section(cfg.tools.storage, data["memory"])
 
         # Top-level install provenance (installed_at, installer_version, fullscreen, last_used_mode)
-        for key in ("installed_at", "installer_version", "fullscreen", "last_used_mode"):
+        for key in (
+            "installed_at",
+            "installer_version",
+            "fullscreen",
+            "last_used_mode",
+        ):
             if key in data:
                 setattr(cfg, key, data[key])
 

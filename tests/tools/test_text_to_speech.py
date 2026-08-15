@@ -11,8 +11,8 @@ from grandpa.speech.tts import TTSResult
 def test_tts_tool_registered():
     from grandpa.tools.text_to_speech import TextToSpeechTool
 
-    ToolRegistry.register_value("text_to_speech", TextToSpeechTool)
     assert ToolRegistry.contains("text_to_speech")
+    assert ToolRegistry.get("text_to_speech") is TextToSpeechTool
 
 
 def test_tts_tool_execute(tmp_path):

@@ -7,7 +7,7 @@ default = "ollama"
 host = "http://127.0.0.1:11434"
 
 [intelligence]
-default_model = "qwen:latest"
+default_model = "grandpa-mini:latest"
 fallback_model = ""
 provider = "local"
 temperature = 0.7

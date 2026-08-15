@@ -128,11 +128,13 @@ def build_character_filters(
     if settings.pitch_semitones != 0.0:
         pitch_ratio = 2.0 ** (settings.pitch_semitones / 12.0)
         tempo = settings.speed / pitch_ratio
-        filters.extend([
-            f"asetrate={sample_rate}*{pitch_ratio:.8f}",
-            f"aresample={sample_rate}",
-            f"atempo={tempo:.8f}",
-        ])
+        filters.extend(
+            [
+                f"asetrate={sample_rate}*{pitch_ratio:.8f}",
+                f"aresample={sample_rate}",
+                f"atempo={tempo:.8f}",
+            ]
+        )
     elif settings.speed != 1.0:
         filters.append(f"atempo={settings.speed:.8f}")
 
@@ -235,10 +237,7 @@ def _second_pass_loudnorm(
 def _true_peak_limiter(target_db: float) -> str:
     # Leave a small inter-sample margin because alimiter operates on samples.
     limit = 10.0 ** ((target_db - 0.15) / 20.0)
-    return (
-        f"alimiter=limit={limit:.8f}:attack=5:release=50:"
-        "level=false:latency=true"
-    )
+    return f"alimiter=limit={limit:.8f}:attack=5:release=50:level=false:latency=true"
 
 
 def _wav_sample_rate(path: Path) -> int:
@@ -267,7 +266,10 @@ def validate_character_voice_settings(settings: CharacterVoiceSettings) -> None:
         "target_lufs": settings.target_lufs,
         "true_peak_db": settings.true_peak_db,
     }
-    if any(isinstance(value, bool) or not math.isfinite(float(value)) for value in numeric.values()):
+    if any(
+        isinstance(value, bool) or not math.isfinite(float(value))
+        for value in numeric.values()
+    ):
         raise ValueError("Character voice numeric settings must be finite numbers")
     if not -4.0 <= settings.pitch_semitones <= 2.0:
         raise ValueError("grandpa_voice.pitch_semitones must be between -4 and 2")

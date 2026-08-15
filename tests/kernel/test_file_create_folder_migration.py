@@ -104,9 +104,7 @@ def test_nested_folder_creation_matches_legacy(tmp_path):
     target.parent.rmdir()
     target.parent.parent.rmdir()
 
-    actual = FileAutomation(roots=(tmp_path,)).handle(
-        "Create folder parent/child/leaf"
-    )
+    actual = FileAutomation(roots=(tmp_path,)).handle("Create folder parent/child/leaf")
 
     _assert_parity(actual, expected)
 
@@ -215,12 +213,8 @@ def test_action_digest_binds_request_tool_and_canonical_target(tmp_path):
         text="Create folder A",
     )
     tool = CreateFolderToolDefinition()
-    first_args = tool.validate_arguments(
-        {"path": "FolderA", "roots": [str(tmp_path)]}
-    )
-    second_args = tool.validate_arguments(
-        {"path": "FolderB", "roots": [str(tmp_path)]}
-    )
+    first_args = tool.validate_arguments({"path": "FolderA", "roots": [str(tmp_path)]})
+    second_args = tool.validate_arguments({"path": "FolderB", "roots": [str(tmp_path)]})
     first_action = PlannedAction(
         action_id="action",
         tool_name="files.create_folder",
@@ -277,9 +271,7 @@ def test_only_the_requested_directory_chain_is_created(tmp_path):
     preserved.write_text("unchanged", encoding="utf-8")
     before = _snapshot(tmp_path)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Create folder parent/child/leaf"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Create folder parent/child/leaf")
 
     after = _snapshot(tmp_path)
     assert result.status == "handled"
@@ -367,9 +359,7 @@ def test_parent_file_is_rejected_before_execution(tmp_path, monkeypatch):
 
     monkeypatch.setattr(CreateFolderExecutor, "execute", execute)
 
-    result = FileAutomation(roots=(tmp_path,)).handle(
-        "Create folder parent/child"
-    )
+    result = FileAutomation(roots=(tmp_path,)).handle("Create folder parent/child")
 
     assert result.status == "error"
     assert "parent path is not a directory" in result.message.lower()
@@ -408,19 +398,13 @@ def test_policy_block_and_exception_prevent_creation(tmp_path, monkeypatch):
 
     monkeypatch.setattr(kernel_files.FileCompatibilityPolicy, "evaluate", blocked)
     monkeypatch.setattr(CreateFolderExecutor, "execute", execute)
-    blocked_result = FileAutomation(roots=(tmp_path,)).handle(
-        "Create folder blocked"
-    )
+    blocked_result = FileAutomation(roots=(tmp_path,)).handle("Create folder blocked")
 
     def failed_policy(self, *args, **kwargs):
         raise RuntimeError("policy unavailable")
 
-    monkeypatch.setattr(
-        kernel_files.FileCompatibilityPolicy, "evaluate", failed_policy
-    )
-    failed_result = FileAutomation(roots=(tmp_path,)).handle(
-        "Create folder failed"
-    )
+    monkeypatch.setattr(kernel_files.FileCompatibilityPolicy, "evaluate", failed_policy)
+    failed_result = FileAutomation(roots=(tmp_path,)).handle("Create folder failed")
 
     assert blocked_result.status == "error"
     assert failed_result.status == "error"

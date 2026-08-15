@@ -64,7 +64,9 @@ class LocalVoiceServiceClient:
         except LocalVoiceServiceError:
             raise
         except Exception as exc:
-            logger.error("Failed to connect to local voice service /synthesize: %s", exc)
+            logger.error(
+                "Failed to connect to local voice service /synthesize: %s", exc
+            )
             raise LocalVoiceServiceError(
                 "Local voice service synthesis is unavailable."
             ) from exc

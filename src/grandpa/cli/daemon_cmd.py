@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import platform
 import signal
@@ -9,6 +10,7 @@ import socket
 import subprocess
 import sys
 import time
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -17,6 +19,60 @@ from grandpa.core.config import DEFAULT_CONFIG_DIR, load_config
 
 _PID_FILE = DEFAULT_CONFIG_DIR / "server.pid"
 _LOG_FILE = DEFAULT_CONFIG_DIR / "server.log"
+
+
+def _state_file() -> Path:
+    return _PID_FILE.with_name("server-state.json")
+
+
+def _read_daemon_state() -> dict[str, object] | None:
+    path = _state_file()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    return data
+
+
+def _write_daemon_state(
+    *,
+    pid: int,
+    host: str,
+    port: int,
+    engine_key: str | None,
+    model_name: str | None,
+    agent_name: str | None,
+) -> None:
+    path = _state_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "pid": pid,
+        "host": host,
+        "port": port,
+        "engine": engine_key,
+        "model": model_name,
+        "agent": agent_name,
+        "started_at": time.time(),
+    }
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    temporary.replace(path)
+
+
+def _remove_daemon_state() -> None:
+    _state_file().unlink(missing_ok=True)
+
+
+def _daemon_endpoint(pid: int, default_host: str, default_port: int) -> tuple[str, int]:
+    state = _read_daemon_state()
+    if state and state.get("pid") == pid:
+        host = state.get("host")
+        port = state.get("port")
+        if isinstance(host, str) and isinstance(port, int):
+            return host, port
+    return default_host, default_port
 
 
 def _read_pid() -> int | None:
@@ -221,8 +277,11 @@ def start(
     existing = _read_pid()
     if existing is not None:
         config = load_config()
-        bind_host = host or config.server.host
-        bind_port = port or config.server.port
+        bind_host, bind_port = _daemon_endpoint(
+            existing,
+            host or config.server.host,
+            port or config.server.port,
+        )
         console.print(f"[yellow]Server already running (PID {existing}).[/yellow]")
         console.print(f"  URL: http://{bind_host}:{bind_port}")
         console.print(f"  Log: {_LOG_FILE}")
@@ -263,6 +322,14 @@ def start(
             **_daemon_popen_kwargs(),
         )
     _write_pid(proc.pid)
+    _write_daemon_state(
+        pid=proc.pid,
+        host=bind_host,
+        port=bind_port,
+        engine_key=engine_key,
+        model_name=model_name,
+        agent_name=agent_name,
+    )
 
     console.print(
         f"[green]Grandpa server started[/green] (PID {proc.pid})\n"
@@ -282,6 +349,7 @@ def stop() -> None:
 
     _terminate_pid(pid)
     _PID_FILE.unlink(missing_ok=True)
+    _remove_daemon_state()
     console.print(f"[green]Server stopped[/green] (PID {pid}).")
 
 
@@ -291,10 +359,18 @@ def restart(ctx: click.Context) -> None:
     """Restart the Grandpa server daemon."""
     console = Console(stderr=True)
     pid = _read_pid()
+    state = _read_daemon_state() if pid is not None else None
     if pid is not None:
         console.print(f"Stopping server (PID {pid})...")
         ctx.invoke(stop)
-    ctx.invoke(start)
+    ctx.invoke(
+        start,
+        host=state.get("host") if state else None,
+        port=state.get("port") if state else None,
+        engine_key=state.get("engine") if state else None,
+        model_name=state.get("model") if state else None,
+        agent_name=state.get("agent") if state else None,
+    )
 
 
 @daemon.command()
@@ -319,9 +395,10 @@ def status() -> None:
         pass
 
     config = load_config()
+    host, port = _daemon_endpoint(pid, config.server.host, config.server.port)
     console.print(
         f"[green]Server is running[/green] (PID {pid}){uptime_info}\n"
-        f"  URL: http://{config.server.host}:{config.server.port}\n"
+        f"  URL: http://{host}:{port}\n"
         f"  Log: {_LOG_FILE}"
     )
 

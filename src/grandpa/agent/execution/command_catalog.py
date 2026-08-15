@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -28,26 +29,44 @@ def is_command_allowed(args: list[str]) -> bool:
     if args_tuple in ALLOWLIST_COMMANDS:
         return True
 
+    if _uses_current_python(args):
+        module_args = args[2:]
+        if module_args == ["compileall", "-q", "src", "tests", "scripts"]:
+            return True
+        if module_args == ["ruff", "check", "src", "tests"]:
+            return True
+        if module_args and module_args[0] == "pytest":
+            return _safe_pytest_args(module_args[1:])
+
     # Validate pytest dynamically but strictly: must start with ("uv", "run", "pytest") and target approved subfolders/files
     if len(args) >= 3 and args[:3] == ["uv", "run", "pytest"]:
-        # Verify all remaining arguments are safe test paths (no flags starting with - unless allowlisted, no chaining)
-        for arg in args[3:]:
-            if arg.startswith("-") and arg not in ("-v", "-s", "-q"):
-                return False
-            # Check for path safety, preventing traversal/semicolon/chaining
-            if (
-                ";" in arg
-                or "|" in arg
-                or "&" in arg
-                or "`" in arg
-                or "$" in arg
-                or ">" in arg
-                or "<" in arg
-            ):
-                return False
-        return True
+        return _safe_pytest_args(args[3:])
 
     return False
+
+
+def _uses_current_python(args: list[str]) -> bool:
+    if len(args) < 3 or args[1] != "-m":
+        return False
+    try:
+        return Path(args[0]).resolve() == Path(sys.executable).resolve()
+    except OSError:
+        return False
+
+
+def _safe_pytest_args(args: list[str]) -> bool:
+    for arg in args:
+        if arg.startswith("-") and arg not in ("-v", "-s", "-q"):
+            return False
+        if any(token in arg for token in (";", "|", "&", "`", "$", ">", "<")):
+            return False
+    return bool(args)
+
+
+def python_module_command(module: str, *args: str) -> list[str]:
+    """Build an allowlisted module command in Grandpa's active environment."""
+
+    return [sys.executable, "-m", module, *args]
 
 
 def run_catalog_command(cmd: DiagnosticCommand) -> DiagnosticResult:

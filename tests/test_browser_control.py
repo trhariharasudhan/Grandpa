@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -73,6 +74,42 @@ def test_visible_context_requires_visible_browser(monkeypatch):
 
     assert context.supported is False
     assert "Chrome or Edge" in context.message
+
+
+def test_background_browser_is_not_used_when_notepad_is_foreground(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr(
+        "grandpa.browser_control._active_window_title", lambda: "Notes - Notepad"
+    )
+    process_lookup = MagicMock(return_value="chrome.exe")
+    monkeypatch.setattr(
+        "grandpa.browser_control._get_process_name_for_hwnd", process_lookup
+    )
+
+    context = get_visible_browser_context()
+
+    assert context.supported is False
+    process_lookup.assert_not_called()
+
+
+def test_foreground_browser_process_is_used_when_title_is_empty(monkeypatch):
+    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
+    monkeypatch.setattr("grandpa.browser_control._active_window_title", lambda: "")
+    monkeypatch.setattr(
+        "grandpa.windows_window_control._get_foreground_window", lambda: 123
+    )
+    monkeypatch.setattr(
+        "grandpa.windows_window_control._get_window_title",
+        lambda _hwnd: "Chrome application",
+    )
+    monkeypatch.setattr(
+        "grandpa.browser_control._get_process_name_for_hwnd", lambda _hwnd: "chrome.exe"
+    )
+
+    context = get_visible_browser_context()
+
+    assert context.supported is True
+    assert context.browser == "Chrome"
 
 
 def test_summary_requires_dom_text(monkeypatch):

@@ -179,9 +179,7 @@ class ExistingReadOnlyFileIntentClassifier:
 
 
 class ExistingReadOnlyFileContextProvider:
-    def __init__(
-        self, roots: tuple[Path, ...], *, include_write: bool = False
-    ) -> None:
+    def __init__(self, roots: tuple[Path, ...], *, include_write: bool = False) -> None:
         self._roots = roots
         self._include_write = include_write
 
@@ -391,9 +389,7 @@ def build_file_compatibility_kernel(
             include_create_folder=True,
             include_copy_path=True,
         ),
-        context_provider=ExistingReadOnlyFileContextProvider(
-            roots, include_write=True
-        ),
+        context_provider=ExistingReadOnlyFileContextProvider(roots, include_write=True),
         planner=ExistingReadOnlyFilePlanner(),
         policy=FileCompatibilityPolicy(),
         confirmations=InMemoryConfirmationService(),
