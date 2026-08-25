@@ -8,6 +8,11 @@ from typing import Any
 
 SAFE_APP_ALIASES = {
     "notepad": "notepad",
+    "note pad": "notepad",
+    "node pad": "notepad",
+    "note bad": "notepad",
+    "node bad": "notepad",
+    "the pad": "notepad",
     "calculator": "calculator",
     "calc": "calculator",
     "chrome": "chrome",
@@ -236,6 +241,41 @@ class ApplicationControlService:
                 error="ambiguous_app",
             )
         record = result.matches[0]
+        canonical_app_id = SAFE_APP_ALIASES.get(
+            record.display_name.strip().lower()
+        ) or SAFE_APP_ALIASES.get(record.name.strip().lower())
+        if canonical_app_id:
+            from grandpa.windows_app_resolver import resolve_app
+
+            resolution = resolve_app(canonical_app_id)
+            if resolution.status in {"found", "available"}:
+                from dataclasses import replace
+
+                try:
+                    req = replace(request, target=canonical_app_id)
+                except Exception:
+                    req = request
+                return self.execute(req, action)
+
+        target_path = Path(record.path)
+        if not target_path.exists():
+            import shutil
+
+            which_path = shutil.which(record.path)
+            if which_path:
+                target_path = Path(which_path)
+            else:
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "failed",
+                    f"I found {record.display_name}, but its executable path does not exist on disk: {record.path}",
+                    False,
+                    "LOW",
+                    evidence={"app": record.to_dict()},
+                    error="missing_executable",
+                )
+
         try:
             message = launch_inventory_app(record)
         except ValueError:

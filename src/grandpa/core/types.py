@@ -97,12 +97,12 @@ class Conversation:
 
 @dataclass(slots=True)
 class ModelSpec:
-    """Metadata describing a language model."""
+    """Metadata describing a model in Grandpa's model registry."""
 
     model_id: str
     name: str
-    parameter_count_b: float
-    context_length: int
+    parameter_count_b: float = 0.0
+    context_length: int = 0
     active_parameter_count_b: Optional[float] = None  # MoE active params
     quantization: Quantization = Quantization.NONE
     min_vram_gb: float = 0.0
@@ -110,6 +110,54 @@ class ModelSpec:
     provider: str = ""
     requires_api_key: bool = False
     metadata: Dict[str, Any] = field(default_factory=dict)
+    version: str = "latest"
+    family: str = ""
+    capabilities: Sequence[str] = field(default_factory=lambda: ("chat",))
+    local_path: Optional[str] = None
+    size_bytes: Optional[int] = None
+    backend: str = "local"
+    status: str = "available"
+
+    @property
+    def display_name(self) -> str:
+        """User-facing model name alias."""
+        return self.name
+
+    @property
+    def tag(self) -> str:
+        """Version tag alias."""
+        return self.version
+
+    @property
+    def capability(self) -> str:
+        """Primary capability string."""
+        return self.capabilities[0] if self.capabilities else "chat"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert specification to a serializable dictionary."""
+        return {
+            "model_id": self.model_id,
+            "name": self.name,
+            "display_name": self.display_name,
+            "version": self.version,
+            "tag": self.tag,
+            "family": self.family,
+            "capability": self.capability,
+            "capabilities": list(self.capabilities),
+            "parameter_count_b": self.parameter_count_b,
+            "active_parameter_count_b": self.active_parameter_count_b,
+            "context_length": self.context_length,
+            "quantization": self.quantization.value,
+            "min_vram_gb": self.min_vram_gb,
+            "supported_engines": list(self.supported_engines),
+            "provider": self.provider,
+            "requires_api_key": self.requires_api_key,
+            "local_path": self.local_path,
+            "size_bytes": self.size_bytes,
+            "backend": self.backend,
+            "status": self.status,
+            "metadata": dict(self.metadata),
+        }
 
 
 @dataclass(slots=True)

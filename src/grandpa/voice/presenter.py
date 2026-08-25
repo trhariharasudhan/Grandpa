@@ -97,19 +97,28 @@ class VoicePresenter:
         no_color: bool = False,
         screen_reader: bool | None = None,
         output: Callable[[str], None] = print,
+        debug: bool = False,
     ) -> None:
         self.quiet = quiet
         self.verbose = verbose
         self.output = output
+        self.debug = debug
+        self._current_ui_state: str = ""
 
         interactive = is_interactive_terminal()
+        custom_output = output != print
 
-        if screen_reader is None:
-            screen_reader = not interactive
+        if custom_output and console is None:
+            if screen_reader is None:
+                screen_reader = True
+            self.no_color = True
+        else:
+            if screen_reader is None:
+                screen_reader = not interactive
+            self.no_color = (
+                no_color or getattr(console, "no_color", False) or not interactive
+            )
 
-        self.no_color = (
-            no_color or getattr(console, "no_color", False) or not interactive
-        )
         self.screen_reader = screen_reader
 
         # Disable colors/styles if no_color or screen_reader is true
@@ -121,6 +130,55 @@ class VoicePresenter:
                 self.console._is_terminal = True
             except Exception:
                 pass
+
+    def on_idle_listening(self) -> None:
+        """Emitted once when entering idle microphone listening."""
+        if self._current_ui_state == "idle":
+            return
+        self._current_ui_state = "idle"
+        self.stop_thinking()
+        self.stop_listening()
+        if self.debug:
+            self.print_status("[IDLE] Listening...")
+        else:
+            self.print_status("Listening...")
+            self.start_listening()
+
+    def on_speech_detected(self) -> None:
+        """Emitted when speech onset is detected by VAD."""
+        if self._current_ui_state == "capturing":
+            return
+        self._current_ui_state = "capturing"
+        self.stop_listening()
+        if self.debug:
+            self.print_status("[CAPTURING] Speech detected")
+
+    def on_transcribing(self) -> None:
+        """Emitted when audio capture is sent to STT."""
+        if self._current_ui_state == "transcribing":
+            return
+        self._current_ui_state = "transcribing"
+        self.stop_listening()
+        if self.debug:
+            self.print_status("[PROCESSING] Transcribing...")
+        else:
+            self.start_thinking()
+
+    def on_routing(self) -> None:
+        """Emitted when transcript is being routed."""
+        if self._current_ui_state == "routing":
+            return
+        self._current_ui_state = "routing"
+        if self.debug:
+            self.print_status("[PROCESSING] Routing...")
+
+    def on_executing(self, action: str = "") -> None:
+        """Emitted when action execution starts."""
+        self._current_ui_state = "executing"
+        self.stop_thinking()
+        if self.debug:
+            msg = f"[EXECUTING] {action}" if action else "[EXECUTING] ..."
+            self.print_status(msg)
 
     def print_banner(self, engine: str, model: str) -> None:
         """Print the large GRANDPA banner and setup instructions."""
@@ -138,18 +196,12 @@ class VoicePresenter:
             self.output("")
 
     def print_status(self, state: str) -> None:
-        """Print current session status (Listening, Thinking, etc.) with rich/emoji style."""
+        """Print current session status (Listening, Thinking, etc.) with rich style."""
         if self.quiet:
             return
 
-        state.lower()
-        text_rich = ""
-        color = "white"
-
         if not self.no_color and not self.screen_reader:
-            if text_rich:
-                color_str = f"dim {color}" if color != "white" else "dim"
-                self.console.print(f"[{color_str}]{text_rich}[/{color_str}]")
+            self.console.print(f"[dim]{state}[/dim]", highlight=False)
         else:
             self.output(state)
 

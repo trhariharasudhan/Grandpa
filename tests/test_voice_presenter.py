@@ -69,16 +69,19 @@ def test_voice_presenter_rich_modes(monkeypatch):
         console=console,
     )
 
-    # Non-exit statuses are no-ops in rich TTY mode
-    presenter.print_status("listening")
-    assert "Listening" not in buffer.getvalue()
+    # Statuses render visibly in rich TTY mode
+    presenter.print_status("Listening...")
+    assert "Listening..." in buffer.getvalue()
 
-    presenter.print_status("thinking")
-    assert "Thinking" not in buffer.getvalue()
+    buffer.truncate(0)
+    buffer.seek(0)
+    presenter.print_status("Thinking...")
+    assert "Thinking..." in buffer.getvalue()
 
-    # Exit statuses are no-ops now in TTY mode
-    presenter.print_status("stopping")
-    assert "Stopped" not in buffer.getvalue()
+    buffer.truncate(0)
+    buffer.seek(0)
+    presenter.print_status("Stopped")
+    assert "Stopped" in buffer.getvalue()
 
     # User and assistant messages render directly to console
     buffer.truncate(0)

@@ -18,17 +18,42 @@ _HOST_MAP: Dict[str, str | None] = {
 
 
 def _make_engine(key: str, config: GrandpaConfig) -> InferenceEngine:
-    """Instantiate a registered engine with the appropriate config host."""
+    """Instantiate a registered engine with the appropriate config."""
+    if not EngineRegistry.contains(key):
+        if key == "native":
+            from grandpa.runtime.native_adapter import NativeBackendAdapter
+
+            EngineRegistry.register_or_replace("native", NativeBackendAdapter)
+        elif key == "ollama":
+            from grandpa.runtime.ollama_adapter import OllamaBackendAdapter
+
+            EngineRegistry.register_or_replace("ollama", OllamaBackendAdapter)
+
     cls = EngineRegistry.get(key)
+
+    if key == "ollama":
+        kwargs: dict[str, Any] = {"num_ctx": config.engine.ollama.num_ctx}
+        host = getattr(config.engine, "ollama_host", None) or config.engine.ollama.host
+        if host:
+            kwargs["host"] = host
+        return cls(**kwargs)
+
+    if key == "native":
+        kwargs = {
+            "n_ctx": config.engine.native.n_ctx,
+            "n_threads": config.engine.native.n_threads,
+            "n_gpu_layers": config.engine.native.n_gpu_layers,
+            "use_mmap": config.engine.native.use_mmap,
+            "use_mlock": config.engine.native.use_mlock,
+            "verbose": config.engine.native.verbose,
+        }
+        if config.engine.native.models_dir:
+            kwargs["models_dir"] = config.engine.native.models_dir
+        return cls(**kwargs)
 
     host_attr = _HOST_MAP.get(key)
     if host_attr is not None:
         host = getattr(config.engine, host_attr, None)
-        if key == "ollama":
-            kwargs: dict[str, Any] = {"num_ctx": config.engine.ollama.num_ctx}
-            if host:
-                kwargs["host"] = host
-            return cls(**kwargs)
         if host:
             return cls(host=host)
     return cls()

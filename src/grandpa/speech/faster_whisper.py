@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
@@ -113,7 +114,7 @@ class FasterWhisperBackend(SpeechBackend):
             if isinstance(no_speech, (int, float)) and isinstance(
                 avg_log, (int, float)
             ):
-                if no_speech > 0.6 or avg_log < -1.0:
+                if no_speech > 0.45 or avg_log < -0.85:
                     logger.info(
                         "Ignoring noisy segment %r (no_speech_prob=%f, avg_logprob=%f)",
                         seg.text,
@@ -125,6 +126,11 @@ class FasterWhisperBackend(SpeechBackend):
 
         # Build result
         text = "".join(seg.text for seg in valid_segments).strip()
+        if text and _is_hallucinated_repetition(text):
+            logger.info("Ignoring degenerate repetitive hallucination: %r", text)
+            text = ""
+            valid_segments = []
+
         segments = [
             Segment(
                 text=seg.text.strip(),
@@ -197,17 +203,16 @@ def build_transcription_options(language: str | None = None) -> dict[str, Any]:
     """Return the single production decoding policy used for local STT."""
 
     options: dict[str, Any] = {
-        "beam_size": 5,
+        "beam_size": 1,
         "temperature": 0.0,
         "condition_on_previous_text": False,
-        "initial_prompt": None,
+        "initial_prompt": "Grandpa, Notepad, Chrome, Calculator, VS Code, Explorer, Settings, Terminal.",
         "vad_filter": False,
-        "no_speech_threshold": 0.6,
+        "no_speech_threshold": 0.5,
         "compression_ratio_threshold": 2.4,
-        "log_prob_threshold": -1.0,
+        "log_prob_threshold": -0.85,
+        "language": language or "en",
     }
-    if language:
-        options["language"] = language
     return options
 
 
@@ -245,3 +250,20 @@ def _delete_temp_audio(path: str) -> None:
         os.unlink(path)
     except OSError:
         pass
+
+
+def _is_hallucinated_repetition(text: str) -> bool:
+    """Return True if the transcribed text is a degenerate Whisper repetition loop."""
+    clean = re.sub(r"[^\w\s]", " ", text.lower()).strip()
+    words = clean.split()
+    if len(words) >= 6:
+        for n in (1, 2, 3):
+            chunks = [
+                " ".join(words[i : i + n])
+                for i in range(0, len(words) - n + 1, n)
+            ]
+            if len(chunks) >= 3:
+                most_common = max(set(chunks), key=chunks.count)
+                if chunks.count(most_common) / len(chunks) >= 0.65:
+                    return True
+    return False

@@ -18,10 +18,21 @@ class GrandpaModelRole:
     parameter_count_b: float
     minimum_memory_gb: float
     recommended_memory_gb: float
+    context_length: int = 32768
     fallback_role: str | None = None
     user_visible: bool = True
     specialized: bool = False
     legacy_aliases: tuple[str, ...] = ()
+
+    @property
+    def model_id(self) -> str:
+        """Backend-independent model identifier."""
+        return self.ollama_tag
+
+    @property
+    def tag(self) -> str:
+        """Version tag / model tag alias."""
+        return self.ollama_tag
 
 
 GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
@@ -35,6 +46,7 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         parameter_count_b=0.5,
         minimum_memory_gb=1.0,
         recommended_memory_gb=2.0,
+        context_length=32768,
         legacy_aliases=("qwen2.5:0.5b-instruct-q4_K_M",),
     ),
     GrandpaModelRole(
@@ -47,6 +59,7 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         parameter_count_b=4.0,
         minimum_memory_gb=4.0,
         recommended_memory_gb=6.0,
+        context_length=32768,
         fallback_role="mini",
         legacy_aliases=("qwen:latest", "grandpa-light:latest", "gemma3:4b"),
     ),
@@ -60,6 +73,7 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         parameter_count_b=6.7,
         minimum_memory_gb=6.0,
         recommended_memory_gb=8.0,
+        context_length=16384,
         fallback_role="fast",
         specialized=True,
     ),
@@ -73,6 +87,7 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         parameter_count_b=7.2,
         minimum_memory_gb=6.0,
         recommended_memory_gb=8.0,
+        context_length=4096,
         fallback_role="fast",
         specialized=True,
     ),
@@ -86,6 +101,7 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         parameter_count_b=0.137,
         minimum_memory_gb=0.5,
         recommended_memory_gb=1.0,
+        context_length=8192,
         user_visible=False,
         specialized=True,
         legacy_aliases=("nomic-embed-text",),

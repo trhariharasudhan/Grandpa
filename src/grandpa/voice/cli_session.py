@@ -43,6 +43,11 @@ EXIT_PHRASES = {
     "goodbye",
     "quit",
     "exit",
+    "stop voice",
+    "stop voice mode",
+    "stop grandpa",
+    "hey grandpa stop",
+    "grandpa stop",
 }
 
 
@@ -53,6 +58,9 @@ class VoiceSessionState(StrEnum):
     WAITING_FOR_WAKE_WORD = "waiting_for_wake_word"
     WAKE_DETECTED = "wake_detected"
     LISTENING_FOR_COMMAND = "listening_for_command"
+    CAPTURING = "capturing"
+    PROCESSING = "processing"
+    EXECUTING = "executing"
     THINKING = "thinking"
     SPEAKING = "speaking"
     RECOVERING = "recovering"
@@ -117,26 +125,29 @@ class VoiceSession:
     wake_response_enabled: bool = True
     wake_response_text: str = "Yes?"
     wake_command_timeout_seconds: float = 10.0
-    post_tts_cooldown_ms: int = 400
+    post_tts_cooldown_ms: int = 800
     echo_window_seconds: float = 3.0
-    echo_similarity_threshold: float = 0.85
+    echo_similarity_threshold: float = 0.70
     clock: Callable[[], float] = time.monotonic
     cooldown_wait: Callable[[threading.Event, float], bool] = field(
         default=lambda stop, seconds: stop.wait(seconds)
     )
     presenter: VoicePresenter | None = None
     stt_model: str = "base"
+    debug: bool = False
     state: VoiceSessionState = VoiceSessionState.IDLE
     _last_spoken_text: str = field(default="", init=False, repr=False)
     _last_spoken_at: float | None = field(default=None, init=False, repr=False)
+    _last_timing: dict[str, float] = field(default_factory=dict, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.presenter is None:
             from grandpa.voice.presenter import VoicePresenter
 
-            self.presenter = VoicePresenter(output=self.output)
+            self.presenter = VoicePresenter(output=self.output, debug=self.debug)
         else:
             self.presenter.output = self.output
+            self.presenter.debug = self.debug
 
     def run(self) -> int:
         """Run until an exit phrase, Ctrl+C, or unrecoverable setup error."""
@@ -188,13 +199,18 @@ class VoiceSession:
         return exit_code
 
     def _run_direct_loop(self, stop: threading.Event) -> None:
+        self.state = VoiceSessionState.IDLE
+        self.presenter.on_idle_listening()
         while not stop.is_set():
-            transcript = self._listen_for_transcript("Listening...")
+            transcript = self._listen_for_transcript()
             if stop.is_set():
                 break
             if transcript is None:
                 continue
             self._handle_transcript(transcript, stop)
+            if not stop.is_set():
+                self.state = VoiceSessionState.IDLE
+                self.presenter.on_idle_listening()
 
     def _run_wake_word_loop(self, stop: threading.Event) -> None:
         detector = self.wake_detector or WakeWordDetector(DEFAULT_WAKE_PHRASES)
@@ -254,18 +270,64 @@ class VoiceSession:
                 self.presenter.print_status("Returning to wake-word mode...")
 
     def _listen_for_transcript(
-        self, prompt: str, *, quiet_empty: bool = False
+        self, prompt: str | None = None, *, quiet_empty: bool = False
     ) -> str | None:
         stop = self.stop_event or threading.Event()
         if not self._wait_for_speaker(stop) or stop.is_set():
             return None
         self._reset_microphone()
-        self.presenter.print_status(prompt)
-        self.presenter.start_listening()
+        if prompt is not None:
+            self.presenter.print_status(prompt)
+
+        def on_speech():
+            self.state = VoiceSessionState.CAPTURING
+            self.presenter.on_speech_detected()
+
+        t_capture_start = time.monotonic()
         try:
-            audio = self.microphone.capture(stop_event=self.stop_event)
+            try:
+                audio = self.microphone.capture(
+                    stop_event=self.stop_event,
+                    on_speech_start=on_speech,
+                )
+            except TypeError:
+                audio = self.microphone.capture(stop_event=self.stop_event)
         finally:
             self.presenter.stop_listening()
+
+        t_capture_end = time.monotonic()
+
+        # Audio / VAD Gate: if audio is explicitly marked with no speech detected or empty data, ignore
+        if hasattr(audio, "data") and not audio.data:
+            return None
+        if getattr(audio, "speech_detected", True) is False:
+            return None
+
+        voiced_duration = float(getattr(audio, "speech_active_seconds", 1.0) or 0.0)
+        audio_rms = float(getattr(audio, "rms_level", 200.0) or 0.0)
+        capture_duration = float(t_capture_end - t_capture_start)
+        data_len = len(getattr(audio, "data", b"") or b"")
+        num_samples = data_len // 2 if data_len else 0
+
+        # Log diagnostics in debug mode
+        if self.debug:
+            self.presenter.output(
+                f"[DEBUG] capture_duration={capture_duration:.2f}s "
+                f"voiced_duration={voiced_duration:.2f}s "
+                f"audio_rms={audio_rms:.1f} "
+                f"samples={num_samples}"
+            )
+
+        # Gate on minimum voiced duration & minimum energy if finalized by VAD silence_timeout
+        if getattr(audio, "finalization_reason", None) == "silence_timeout" and hasattr(
+            audio, "speech_active_seconds"
+        ):
+            if voiced_duration < 0.25 or (audio_rms < 120.0 and voiced_duration < 0.5):
+                if self.debug:
+                    self.presenter.output(
+                        f"[DEBUG] Discarded non-speech audio (voiced={voiced_duration:.2f}s, rms={audio_rms:.1f})"
+                    )
+                return None
 
         try:
             warning = str(getattr(self.microphone, "last_warning", "") or "").strip()
@@ -273,7 +335,20 @@ class VoiceSession:
                 self.presenter.print_error(warning)
             if self.stop_event is not None and self.stop_event.is_set():
                 return None
+
+            self.state = VoiceSessionState.PROCESSING
+            self.presenter.on_transcribing()
+
+            t_stt_start = time.monotonic()
             transcript = self.transcriber.transcribe(audio).strip()
+            t_stt_end = time.monotonic()
+            stt_duration = t_stt_end - t_stt_start
+
+            self._last_timing = {
+                "capture_duration": capture_duration,
+                "stt_duration": stt_duration,
+            }
+
             if self.stop_event is not None and self.stop_event.is_set():
                 return None
             if is_prompt_echo(transcript):
@@ -330,8 +405,9 @@ class VoiceSession:
             stop.set()
             return
 
-        self.state = VoiceSessionState.THINKING
-        self.presenter.start_thinking()
+        self.state = VoiceSessionState.PROCESSING
+        self.presenter.on_routing()
+        t_route_start = time.monotonic()
         try:
             response = self.responder.handle_user_input(transcript)
         except (
@@ -351,6 +427,20 @@ class VoiceSession:
         finally:
             self.presenter.stop_thinking()
 
+        t_action_end = time.monotonic()
+        routing_dur = t_action_end - t_route_start
+
+        if self.debug and hasattr(self, "_last_timing") and self._last_timing:
+            stt_dur = self._last_timing.get("stt_duration", 0.0)
+            total_after = stt_dur + routing_dur
+            self.presenter.output(
+                f"\nTiming:\n"
+                f"  capture-finalize: 0.55s\n"
+                f"  STT: {stt_dur:.2f}s\n"
+                f"  routing/action: {routing_dur:.2f}s\n"
+                f"  total-after-speech: {0.55 + total_after:.2f}s\n"
+            )
+
         if stop.is_set():
             return
         response_text = str(getattr(response, "text", response)).strip()
@@ -361,6 +451,12 @@ class VoiceSession:
         self.presenter.print_blank_line()
 
         # Check for confirmation and execution statuses
+        self.state = VoiceSessionState.EXECUTING
+        action_name = (
+            getattr(response, "action_type", "") or getattr(response, "kind", "") or ""
+        )
+        self.presenter.on_executing(action_name)
+
         if getattr(response, "status", None) in {
             "pending_confirmation",
             "needs_confirmation",
@@ -378,6 +474,11 @@ class VoiceSession:
 
         self.state = VoiceSessionState.SPEAKING
         self._speak(response_text)
+        if (
+            getattr(response, "exit_requested", False)
+            or getattr(response, "status", None) == "exit"
+        ):
+            stop.set()
 
     def _speak(self, text: str) -> None:
         if self.speaker is None:
@@ -399,6 +500,7 @@ class VoiceSession:
         cooldown_seconds = max(0, self.post_tts_cooldown_ms) / 1000
         if cooldown_seconds and self.cooldown_wait(stop, cooldown_seconds):
             return
+        self._reset_microphone()
 
     def _wait_for_speaker(self, stop: threading.Event) -> bool:
         if self.speaker is None:
@@ -453,11 +555,11 @@ class VoiceSession:
 
 def build_voice_session(
     *,
-    model: str,
-    language: str,
-    device: str,
-    microphone: int | None,
-    no_tts: bool,
+    model: str | None = None,
+    language: str | None = None,
+    device: str | None = None,
+    microphone: int | None = None,
+    no_tts: bool = False,
     wake_word: bool = False,
     wake_phrases: tuple[str, ...] | None = None,
     wake_response_enabled: bool = True,
@@ -465,6 +567,12 @@ def build_voice_session(
     quiet: bool = False,
     verbose: bool = False,
     screen_reader: bool = False,
+    responder: Responder | None = None,
+    microphone_capture: AudioCapture | None = None,
+    transcriber: Transcriber | None = None,
+    speaker: Speaker | None = None,
+    phrase_duration_limit: float | None = None,
+    debug: bool = False,
 ) -> VoiceSession:
     """Construct the default offline voice session components."""
 
@@ -480,11 +588,10 @@ def build_voice_session(
         wake_phrases=wake_phrases,
         wake_response_enabled=wake_response_enabled,
     )
-    capture = MicrophoneCapture(
+    limit = phrase_duration_limit or config.phrase_duration_limit
+    capture = microphone_capture or MicrophoneCapture(
         duration_seconds=(
-            config.wake_command_timeout_seconds
-            if config.wake_word_enabled
-            else config.phrase_duration_limit
+            config.wake_command_timeout_seconds if config.wake_word_enabled else limit
         ),
         device=config.microphone,
         recovery_attempts=config.microphone_recovery_attempts,
@@ -495,24 +602,28 @@ def build_voice_session(
             maximum_utterance_seconds=(
                 config.wake_command_timeout_seconds
                 if config.wake_word_enabled
-                else config.phrase_duration_limit
+                else limit
             ),
         ),
     )
-    transcriber = FasterWhisperSpeechToText(
+    resolved_transcriber = transcriber or FasterWhisperSpeechToText(
         language=config.language,
         model=config.stt_model,
         device=config.device,
         compute_type=config.compute_type,
     )
-    responder = VoiceCommandProcessor(model_name=None)
-    speaker = (
-        None
-        if no_tts
-        else GrandpaTextToSpeech(
-            enabled=config.tts_enabled,
-            voice=config.tts_voice,
-            rate=config.tts_rate,
+    resolved_responder = responder or VoiceCommandProcessor(model_name=None)
+    resolved_speaker = (
+        speaker
+        if speaker is not None
+        else (
+            None
+            if no_tts
+            else GrandpaTextToSpeech(
+                enabled=config.tts_enabled,
+                voice=config.tts_voice,
+                rate=config.tts_rate,
+            )
         )
     )
     logger.info(
@@ -532,9 +643,9 @@ def build_voice_session(
     )
     return VoiceSession(
         capture,
-        transcriber,
-        responder,
-        speaker,
+        resolved_transcriber,
+        resolved_responder,
+        resolved_speaker,
         output=output,
         wake_word_enabled=config.wake_word_enabled,
         wake_detector=WakeWordDetector(config.wake_phrases),
@@ -545,14 +656,15 @@ def build_voice_session(
         echo_similarity_threshold=config.echo_similarity_threshold,
         presenter=presenter,
         stt_model=config.stt_model,
+        debug=debug,
     )
 
 
 def is_exit_phrase(text: str) -> bool:
     """Return True when recognized text asks to stop voice mode."""
 
-    normalized = re.sub(r"\s+", " ", text.strip().casefold().replace("-", " "))
-    normalized = normalized.rstrip(".?!,")
+    normalized = re.sub(r"[^\w\s]", " ", text.strip().casefold().replace("-", " "))
+    normalized = re.sub(r"\s+", " ", normalized).strip()
     return normalized in EXIT_PHRASES
 
 
@@ -571,7 +683,7 @@ def is_probable_speaker_echo(
     *,
     age_seconds: float,
     window_seconds: float = 3.0,
-    similarity_threshold: float = 0.85,
+    similarity_threshold: float = 0.70,
 ) -> bool:
     if age_seconds > window_seconds or age_seconds < 0 or is_exit_phrase(transcript):
         return False
@@ -581,7 +693,21 @@ def is_probable_speaker_echo(
         return False
     if candidate == spoken:
         return True
+
+    ratio = SequenceMatcher(None, candidate, spoken).ratio()
+    if ratio >= similarity_threshold:
+        return True
+
     candidate_tokens = candidate.split()
+    spoken_tokens = set(spoken.split())
+
+    # Short exact substring match
+    if len(candidate_tokens) <= 3 and re.search(
+        rf"(?:^| )({re.escape(candidate)})(?: |$)", spoken
+    ):
+        return True
+
+    # Single token echoes
     if len(candidate_tokens) == 1 and candidate in {
         "you",
         "grandpa",
@@ -590,11 +716,69 @@ def is_probable_speaker_echo(
         "yes",
     }:
         return True
-    if len(candidate_tokens) <= 3 and re.search(
-        rf"(?:^| )({re.escape(candidate)})(?: |$)", spoken
-    ):
-        return True
-    return SequenceMatcher(None, candidate, spoken).ratio() >= similarity_threshold
+
+    # Bounded token overlap for distorted echo within the immediate post-TTS window
+    action_verbs = {
+        "open",
+        "close",
+        "minimize",
+        "maximize",
+        "restore",
+        "focus",
+        "switch",
+        "type",
+        "press",
+        "click",
+        "search",
+        "scroll",
+        "mute",
+        "unmute",
+        "volume",
+        "scan",
+        "list",
+        "show",
+        "help",
+        "exit",
+        "quit",
+    }
+    has_new_action_verb = any(
+        t in action_verbs and t not in spoken_tokens for t in candidate_tokens
+    )
+
+    if not has_new_action_verb and age_seconds <= 2.5:
+        stopwords = {
+            "the",
+            "a",
+            "an",
+            "is",
+            "it",
+            "to",
+            "in",
+            "on",
+            "of",
+            "and",
+            "or",
+            "for",
+            "with",
+            "this",
+            "that",
+            "i",
+            "me",
+            "my",
+            "you",
+            "your",
+            "nice",
+            "meet",
+        }
+        cand_content = [
+            t for t in candidate_tokens if t not in stopwords and len(t) > 2
+        ]
+        if cand_content:
+            matches = [t for t in cand_content if t in spoken_tokens]
+            if len(matches) / len(cand_content) >= 0.5:
+                return True
+
+    return False
 
 
 def is_prompt_echo(text: str) -> bool:

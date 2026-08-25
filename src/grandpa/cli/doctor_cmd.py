@@ -451,6 +451,134 @@ def _check_default_model() -> CheckResult:
     )
 
 
+def _check_native_backend_diagnostics(config: Any | None = None) -> List[CheckResult]:
+    """Run comprehensive diagnostics on native local inference backend."""
+    results: List[CheckResult] = []
+    config = config or _get_config()
+
+    from grandpa.core import config as core_config
+
+    native_cfg = getattr(getattr(config, "engine", None), "native", None)
+    models_dir_val = getattr(native_cfg, "models_dir", None)
+    models_dir = (
+        Path(models_dir_val).expanduser()
+        if models_dir_val
+        else core_config.DEFAULT_CONFIG_DIR / "models"
+    )
+
+    # 1. llama-cpp-python package
+    try:
+        import llama_cpp  # noqa: F401
+
+        results.append(CheckResult("llama-cpp-python runtime", "ok", "Installed"))
+    except ImportError:
+        status_lvl = (
+            "warn"
+            if getattr(getattr(config, "engine", None), "default", "") == "native"
+            else "info"
+        )
+        results.append(
+            CheckResult(
+                "llama-cpp-python runtime",
+                status_lvl,
+                "Not installed",
+                details="Install with `pip install llama-cpp-python` to use native in-process inference.",
+            )
+        )
+
+    # 2. Models directory
+    if models_dir.is_dir():
+        results.append(
+            CheckResult("Native models directory", "ok", f"Available ({models_dir})")
+        )
+    else:
+        status_lvl = (
+            "warn"
+            if getattr(getattr(config, "engine", None), "default", "") == "native"
+            else "info"
+        )
+        results.append(
+            CheckResult(
+                "Native models directory",
+                status_lvl,
+                f"Not created ({models_dir})",
+                details="Directory will be automatically created on `grandpa models pull`.",
+            )
+        )
+
+    # 3. Discovered GGUF models
+    gguf_files = list(models_dir.glob("*.gguf")) if models_dir.is_dir() else []
+    valid_ggufs = [f for f in gguf_files if not f.name.startswith(".")]
+    if valid_ggufs:
+        names = [f.stem for f in valid_ggufs]
+        names_str = ", ".join(names[:5]) + (
+            f" (+{len(names)-5} more)" if len(names) > 5 else ""
+        )
+        results.append(
+            CheckResult(
+                "Native GGUF models",
+                "ok",
+                f"{len(names)} installed ({names_str})",
+            )
+        )
+    else:
+        status_lvl = (
+            "warn"
+            if getattr(getattr(config, "engine", None), "default", "") == "native"
+            else "info"
+        )
+        results.append(
+            CheckResult(
+                "Native GGUF models",
+                status_lvl,
+                "No GGUF files found",
+                details="Acquire a model with: `grandpa models pull <repo/model.gguf> --backend native`",
+            )
+        )
+
+    # 4. Check selected native model if active
+    if getattr(getattr(config, "engine", None), "default", "") == "native":
+        selected_model = getattr(
+            getattr(config, "intelligence", None), "default_model", ""
+        )
+        if selected_model:
+            from grandpa.runtime.native_adapter import NativeBackendAdapter
+
+            adapter = NativeBackendAdapter(models_dir=models_dir)
+            try:
+                resolved_path = adapter.resolve_model_path(selected_model)
+                if resolved_path.is_file():
+                    size_mb = resolved_path.stat().st_size / (1024 * 1024)
+                    results.append(
+                        CheckResult(
+                            "Selected native model",
+                            "ok",
+                            f"Ready ({selected_model}, {size_mb:.1f} MB)",
+                            details=f"Path: {resolved_path}",
+                        )
+                    )
+                else:
+                    results.append(
+                        CheckResult(
+                            "Selected native model",
+                            "fail",
+                            f"File missing ({selected_model})",
+                            details=f"Expected at: {resolved_path}",
+                        )
+                    )
+            except Exception as exc:
+                results.append(
+                    CheckResult(
+                        "Selected native model",
+                        "warn",
+                        f"Unresolved ({selected_model})",
+                        details=str(exc),
+                    )
+                )
+
+    return results
+
+
 def _check_optional_deps() -> List[CheckResult]:
     """Check availability of optional dependency packages."""
     results: List[CheckResult] = []
@@ -1187,6 +1315,7 @@ def _run_all_checks() -> List[CheckResult]:
 
 def _build_doctor_dashboard() -> List[DoctorSection]:
     """Build the grouped doctor dashboard without duplicate visible checks."""
+    config = _get_config()
     optional_integrations: List[CheckResult] = []
 
     core_runtime = [
@@ -1200,6 +1329,11 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
 
     ai_engines = []
     for check in _check_engines():
+        if check.status == "info":
+            optional_integrations.append(check)
+        else:
+            ai_engines.append(check)
+    for check in _check_native_backend_diagnostics(config):
         if check.status == "info":
             optional_integrations.append(check)
         else:

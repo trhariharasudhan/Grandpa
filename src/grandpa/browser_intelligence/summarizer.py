@@ -115,9 +115,9 @@ class LocalPageSummarizer:
             from grandpa.engine import get_engine
 
             config = load_config()
-            selected = get_engine(config, "ollama")
+            selected = get_engine(config)
             if selected is None:
-                raise Exception("No ollama engine found")
+                raise Exception("No inference engine runtime found")
             _, engine = selected
 
             model = (

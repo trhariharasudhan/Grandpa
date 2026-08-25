@@ -92,7 +92,7 @@ APP_DEFINITIONS: dict[str, AppDefinition] = {
     "notepad": AppDefinition(
         "notepad",
         "Notepad",
-        ("notepad",),
+        ("notepad", "note pad", "node pad", "note bad", "node bad", "the pad"),
         ("notepad.exe",),
         system_command="notepad.exe",
     ),

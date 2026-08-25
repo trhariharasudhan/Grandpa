@@ -88,6 +88,7 @@ security-signing = ["cryptography>=43"]
 tray = ["pystray>=0.19.5", "pillow>=12.1.1"]
 windows-notifications = ["winotify>=1.1; sys_platform == 'win32'"]
 speech = ["faster-whisper>=1.0"]
+native = ["llama-cpp-python>=0.3.0"]
 screen = [
     "mss>=9.0",
     "pywin32>=306; sys_platform == 'win32'",

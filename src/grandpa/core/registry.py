@@ -51,6 +51,13 @@ class RegistryBase(Generic[T]):
         return value
 
     @classmethod
+    def register_or_replace(cls, key: str, value: T) -> T:
+        """Imperatively register or update a *value* under *key*."""
+        entries = cls._entries()
+        entries[key] = value
+        return value
+
+    @classmethod
     def get(cls, key: str) -> T:
         """Retrieve the entry for *key*, raising ``KeyError`` if missing."""
         try:
@@ -99,6 +106,72 @@ class RegistryBase(Generic[T]):
 
 class ModelRegistry(RegistryBase[Any]):
     """Registry for ``ModelSpec`` objects."""
+
+    @classmethod
+    def list_models(cls) -> list[Any]:
+        """Return all registered model specifications."""
+        return list(cls._entries().values())
+
+    @classmethod
+    def find_by_capability(cls, capability: str) -> list[Any]:
+        """Find models supporting the given capability (e.g. 'chat', 'code', 'image', 'embeddings')."""
+        cap = capability.lower().strip()
+        results = []
+        for spec in cls._entries().values():
+            caps = getattr(spec, "capabilities", ()) or ()
+            if any(str(c).lower().strip() == cap for c in caps):
+                results.append(spec)
+        return results
+
+    @classmethod
+    def find_by_family(cls, family: str) -> list[Any]:
+        """Find models belonging to a specific model family (e.g. 'qwen', 'llama', 'deepseek')."""
+        fam = family.lower().strip()
+        return [
+            spec
+            for spec in cls._entries().values()
+            if getattr(spec, "family", "").lower().strip() == fam
+        ]
+
+    @classmethod
+    def find_by_backend(cls, backend: str) -> list[Any]:
+        """Find models supported by or assigned to a specific backend."""
+        b = backend.lower().strip()
+        results = []
+        for spec in cls._entries().values():
+            spec_backend = getattr(spec, "backend", "").lower().strip()
+            supported = getattr(spec, "supported_engines", ()) or ()
+            if spec_backend == b or any(str(e).lower().strip() == b for e in supported):
+                results.append(spec)
+        return results
+
+    @classmethod
+    def find_by_status(cls, status: str) -> list[Any]:
+        """Find models matching a specific status."""
+        st = status.lower().strip()
+        return [
+            spec
+            for spec in cls._entries().values()
+            if getattr(spec, "status", "").lower().strip() == st
+        ]
+
+    @classmethod
+    def get_or_default(cls, key: str, default: Any = None) -> Any:
+        """Safely retrieve model spec or return default if missing."""
+        return cls._entries().get(key, default)
+
+    @classmethod
+    def to_dict(cls) -> dict[str, dict[str, Any]]:
+        """Export all registered models as a dictionary of metadata."""
+        out = {}
+        for key, spec in cls._entries().items():
+            if hasattr(spec, "to_dict"):
+                out[key] = spec.to_dict()
+            elif isinstance(spec, dict):
+                out[key] = dict(spec)
+            else:
+                out[key] = {"model_id": key, "name": str(spec)}
+        return out
 
 
 class EngineRegistry(RegistryBase[Type["InferenceEngine"]]):

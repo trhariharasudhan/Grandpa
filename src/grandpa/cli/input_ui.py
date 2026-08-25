@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -661,43 +660,39 @@ def _command_preview_options(command_name: str) -> list[tuple[str, str]]:
 
 
 def _model_preview_options() -> list[tuple[str, str]]:
-    models = _installed_ollama_models()
+    models = _installed_models()
     if not models:
         return [
             ("/model", "Model"),
             ("/model", "No local models found"),
-            ("/model", "Install with: ollama pull qwen2.5:3b"),
+            ("/model", "Install with: grandpa models pull <model>"),
         ]
     from grandpa.intelligence.grandpa_models import user_visible_models
 
     installed = set(models)
     options = [("/model", "Grandpa Models")]
     for entry in user_visible_models(capability="chat"):
-        if entry.ollama_tag in installed:
+        if entry.model_id in installed or entry.ollama_tag in installed:
             label = entry.display_name.removeprefix("Grandpa ")
             options.append((f"/model {entry.role}", label))
     return options
 
 
+def _installed_models() -> list[str]:
+    """Retrieve installed model IDs without shell subprocesses."""
+    return _installed_ollama_models()
+
+
 def _installed_ollama_models() -> list[str]:
+    """Retrieve installed model IDs via ModelRegistry and discovery."""
     try:
-        result = subprocess.run(
-            ["ollama", "list"],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=2,
-        )
+        from grandpa.core.registry import ModelRegistry
+        from grandpa.intelligence.model_catalog import register_builtin_models
+
+        register_builtin_models()
+        return [s.model_id for s in ModelRegistry.list_models()]
     except Exception:
         return []
-    if result.returncode != 0:
-        return []
-    models: list[str] = []
-    for line in result.stdout.splitlines()[1:]:
-        parts = line.split()
-        if parts:
-            models.append(parts[0])
-    return models
 
 
 def select_from_list(title: str, items: list[str]) -> Optional[str]:

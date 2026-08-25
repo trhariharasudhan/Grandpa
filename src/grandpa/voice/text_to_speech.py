@@ -40,6 +40,7 @@ class GrandpaTextToSpeech:
         self.enabled = enabled
         self.max_chars = max_chars
         self._engine = SpeechOutputEngine(voice=voice, rate=rate, enabled=enabled)
+        self._engine.enabled = enabled
         self._speaking = threading.Event()
         self._finished = threading.Event()
         self._finished.set()
@@ -108,12 +109,19 @@ class GrandpaTextToSpeech:
         self._finished.clear()
         self._speaking.set()
         thread.start()
+        import time
+
+        start_time = time.monotonic()
+        max_tts_wait = 15.0
         try:
             while thread.is_alive():
                 thread.join(timeout=0.1)
                 if stop_event.is_set():
                     self.stop()
                     return
+                if (time.monotonic() - start_time) > max_tts_wait:
+                    self.stop()
+                    break
             if error:
                 raise error[0]
         finally:

@@ -701,67 +701,32 @@ async def pull_model(request: Request):
         raise HTTPException(status_code=400, detail="'model' field is required")
 
     engine = request.app.state.engine
-    engine_name = getattr(request.app.state, "engine_name", "")
-    # Only Ollama supports pulling
-    if engine_name != "ollama" and getattr(engine, "engine_id", "") != "ollama":
+    if not hasattr(engine, "pull_model"):
         raise HTTPException(
             status_code=501,
-            detail="Model pulling is only supported with the Ollama engine",
+            detail="Model pulling is not supported by the current runtime backend",
         )
 
-    import httpx as _httpx
-
-    host = getattr(engine, "_host", "http://localhost:11434")
-    client = _httpx.Client(base_url=host, timeout=600.0)
     try:
-        resp = client.post(
-            "/api/pull",
-            json={"name": model_name, "stream": False},
-        )
-        resp.raise_for_status()
-    except (_httpx.ConnectError, _httpx.TimeoutException) as exc:
-        raise HTTPException(status_code=502, detail=f"Ollama unreachable: {exc}")
-    except _httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=exc.response.status_code,
-            detail=f"Ollama error: {exc.response.text[:300]}",
-        )
-    finally:
-        client.close()
-
-    return {"status": "ok", "model": model_name}
+        return engine.pull_model(model_name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.delete("/v1/models/{model_name:path}")
 async def delete_model(model_name: str, request: Request):
-    """Delete a model from Ollama."""
+    """Delete a model via the runtime backend."""
     engine = request.app.state.engine
-    engine_name = getattr(request.app.state, "engine_name", "")
-    if engine_name != "ollama" and getattr(engine, "engine_id", "") != "ollama":
-        raise HTTPException(status_code=501, detail="Only supported with Ollama engine")
-
-    import httpx as _httpx
-
-    host = getattr(engine, "_host", "http://localhost:11434")
-    client = _httpx.Client(base_url=host, timeout=30.0)
-    try:
-        resp = client.request(
-            "DELETE",
-            "/api/delete",
-            json={"name": model_name},
-        )
-        resp.raise_for_status()
-    except (_httpx.ConnectError, _httpx.TimeoutException) as exc:
-        raise HTTPException(status_code=502, detail=f"Ollama unreachable: {exc}")
-    except _httpx.HTTPStatusError as exc:
+    if not hasattr(engine, "delete_model"):
         raise HTTPException(
-            status_code=exc.response.status_code,
-            detail=f"Ollama error: {exc.response.text[:300]}",
+            status_code=501,
+            detail="Model deletion is not supported by the current runtime backend",
         )
-    finally:
-        client.close()
 
-    return {"status": "deleted", "model": model_name}
+    try:
+        return engine.delete_model(model_name)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @router.post("/v1/telemetry/reset")

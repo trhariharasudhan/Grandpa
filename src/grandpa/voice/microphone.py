@@ -8,6 +8,7 @@ import threading
 import wave
 from array import array
 from dataclasses import dataclass
+from typing import Any, Callable
 
 from grandpa.voice.device_manager import (
     MicrophoneDevice,
@@ -27,7 +28,7 @@ class CapturedAudio:
     device_name: str = ""
     device_index: int | None = None
     captured_frame_count: int = 0
-    speech_detected: bool = False
+    speech_detected: bool = True
     capture_sample_rate: int = 16_000
     capture_channels: int = 1
     native_frame_count: int = 0
@@ -51,6 +52,7 @@ class MicrophoneCapture:
         recovery_attempts: int = 2,
         vad_config: VoiceActivityConfig | None = None,
         device_manager: MicrophoneDeviceManager | None = None,
+        sounddevice: Any = None,
     ) -> None:
         self.duration_seconds = duration_seconds
         self.sample_rate = sample_rate
@@ -62,16 +64,32 @@ class MicrophoneCapture:
             maximum_utterance_seconds=max(1.0, duration_seconds)
         )
         self.device_manager = device_manager
+        self.sounddevice = sounddevice
         self.last_warning: str | None = None
         self.last_device: MicrophoneDevice | None = None
         self.last_error: str | None = None
         self._stream = None
 
-    def capture(self, stop_event: threading.Event | None = None) -> CapturedAudio:
-        """Capture a short WAV phrase, checking ``stop_event`` every chunk."""
+    def capture(
+        self,
+        stop_event: threading.Event | None = None,
+        on_speech_start: Callable[[], None] | None = None,
+    ) -> CapturedAudio:
+        """Capture one complete utterance using VAD chunk inspection."""
 
         stop = stop_event or threading.Event()
-        sounddevice = import_sounddevice()
+        if stop.is_set():
+            return CapturedAudio(
+                b"",
+                speech_detected=False,
+                finalization_reason="cancelled",
+            )
+
+        sounddevice = (
+            self.sounddevice
+            or getattr(self.device_manager, "sounddevice", None)
+            or import_sounddevice()
+        )
         manager = self.device_manager or MicrophoneDeviceManager(sounddevice)
         self.device_manager = manager
         selection = manager.select(
@@ -83,7 +101,12 @@ class MicrophoneCapture:
         attempts = 0
         while True:
             try:
-                return self._capture_from_device(sounddevice, selection.device, stop)
+                return self._capture_from_device(
+                    sounddevice,
+                    selection.device,
+                    stop,
+                    on_speech_start=on_speech_start,
+                )
             except (KeyboardInterrupt, SystemExit):
                 raise
             except Exception as exc:
@@ -112,6 +135,7 @@ class MicrophoneCapture:
         sounddevice,
         selected: MicrophoneDevice,
         stop: threading.Event,
+        on_speech_start: Callable[[], None] | None = None,
     ) -> CapturedAudio:
         sample_rate, channels = _negotiate_capture_settings(
             sounddevice,
@@ -119,9 +143,13 @@ class MicrophoneCapture:
             requested_rate=int(self.sample_rate),
         )
         chunk_frames = max(1, int(sample_rate * self.chunk_seconds))
-        max_frames = max(1, int(sample_rate * self.duration_seconds))
+        max_utterance_frames = max(
+            1, int(sample_rate * max(1.0, self.duration_seconds))
+        )
         native_frame_count = 0
         chunks: list[bytes] = []
+        pre_chunks: list[bytes] = []
+        pre_chunk_limit = max(2, int(0.3 / max(0.01, self.chunk_seconds)))
         detector = VoiceActivityDetector(self.vad_config)
 
         try:
@@ -132,18 +160,37 @@ class MicrophoneCapture:
                 device=selected.index,
             )
             with self._stream as stream:
-                while not stop.is_set() and native_frame_count < max_frames:
-                    frames_to_read = min(chunk_frames, max_frames - native_frame_count)
-                    recording, _overflowed = stream.read(frames_to_read)
+                while not stop.is_set():
+                    recording, _overflowed = stream.read(chunk_frames)
                     frames = recording.tobytes()
-                    chunks.append(frames)
-                    frame_count = _captured_frame_count(recording, frames_to_read)
-                    native_frame_count += frame_count
-                    if detector.observe(
-                        calculate_pcm16_rms(_downmix_pcm16(frames, channels)),
-                        frame_count / sample_rate,
-                    ):
-                        break
+                    frame_count = _captured_frame_count(recording, chunk_frames)
+                    rms = calculate_pcm16_rms(_downmix_pcm16(frames, channels))
+
+                    if not detector.speech_started:
+                        pre_chunks.append(frames)
+                        if len(pre_chunks) > pre_chunk_limit:
+                            pre_chunks.pop(0)
+                        finished = detector.observe(rms, frame_count / sample_rate)
+                        if detector.speech_started:
+                            if on_speech_start is not None:
+                                try:
+                                    on_speech_start()
+                                except Exception:
+                                    pass
+                            chunks.extend(pre_chunks)
+                            native_frame_count = sum(
+                                len(c) // (channels * 2) for c in chunks
+                            )
+                        if finished:
+                            break
+                    else:
+                        chunks.append(frames)
+                        native_frame_count += frame_count
+                        if detector.observe(rms, frame_count / sample_rate):
+                            break
+                        if native_frame_count >= max_utterance_frames:
+                            detector._finalization_reason = "maximum_duration"
+                            break
         finally:
             self.close()
 

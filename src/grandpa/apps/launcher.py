@@ -20,6 +20,14 @@ def launch_application(app: ApplicationInfo, *, args: list[str] | None = None) -
     if not is_safe_launch_target(target):
         logger.warning("Blocked unsafe application launch target: %s", target)
         raise ValueError("dangerous_launch_target")
+    if not target.exists():
+        import shutil
+
+        which_path = shutil.which(str(target))
+        if which_path:
+            target = Path(which_path)
+        else:
+            raise FileNotFoundError(f"Application target not found: {target}")
     launch_args = list(args or [])
     logger.info("Application launch requested: %s (%s)", app.display_name, target)
     if target.suffix.lower() == ".exe":

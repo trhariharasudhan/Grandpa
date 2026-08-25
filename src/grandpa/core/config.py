@@ -343,12 +343,26 @@ class OllamaEngineConfig:
     num_ctx: int = 8192
 
 
+@dataclass(slots=True)
+class NativeEngineConfig:
+    """Per-engine config for Native in-process llama.cpp / GGUF backend."""
+
+    models_dir: str = ""
+    n_threads: int = 0
+    n_gpu_layers: int = 0
+    n_ctx: int = 8192
+    use_mmap: bool = True
+    use_mlock: bool = False
+    verbose: bool = False
+
+
 @dataclass
 class EngineConfig:
-    """Local Ollama inference settings."""
+    """Inference settings for local and remote runtimes."""
 
     default: str = "ollama"
     ollama: OllamaEngineConfig = field(default_factory=OllamaEngineConfig)
+    native: NativeEngineConfig = field(default_factory=NativeEngineConfig)
 
     @property
     def ollama_host(self) -> str:

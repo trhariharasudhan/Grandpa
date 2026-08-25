@@ -9,7 +9,7 @@ import pytest
 
 from grandpa.voice.device_manager import MicrophoneDevice
 from grandpa.voice.errors import MicrophoneUnavailableError
-from grandpa.voice.microphone import MicrophoneCapture
+from grandpa.voice.microphone import CapturedAudio, MicrophoneCapture
 from grandpa.voice.vad import VoiceActivityConfig
 
 
@@ -170,3 +170,57 @@ def test_negotiation_failure_names_device_and_rates() -> None:
     assert "Microphone Array" in message
     assert "16000 Hz" in message
     assert "48000 Hz" in message
+
+
+def test_microphone_capture_injects_sounddevice_into_device_manager(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from grandpa.voice.device_manager import MicrophoneDeviceManager
+
+    mock_sd = FakeSoundDevice({(16_000, 1)})
+    mock_sd.query_devices = MagicMock(return_value=[
+        {"name": "Default Mic", "max_input_channels": 1, "default_samplerate": 16000, "hostapi": 0}
+    ])
+    mock_sd.query_hostapis = MagicMock(return_value=[{"name": "MME"}])
+    mock_sd.default = MagicMock()
+    mock_sd.default.device = (0, 0)
+
+    capture = MicrophoneCapture(
+        sounddevice=mock_sd,
+        duration_seconds=0.1,
+        vad_config=VoiceActivityConfig(maximum_utterance_seconds=0.1),
+    )
+    stop = threading.Event()
+    stop.set()  # Stop immediately so capture doesn't block
+
+    # Prior to stop, verify calling capture creates device_manager with injected sounddevice
+    capture.device_manager = None
+    stop_event = threading.Event()
+    monkeypatch.setattr(capture, "_capture_from_device", lambda sd, dev, st, **kw: CapturedAudio(b""))
+
+    capture.capture(stop_event=stop_event)
+
+    assert capture.device_manager is not None
+    assert isinstance(capture.device_manager, MicrophoneDeviceManager)
+    assert capture.device_manager.sounddevice is mock_sd
+
+
+def test_microphone_capture_uses_injected_device_manager(monkeypatch) -> None:
+    from unittest.mock import MagicMock
+
+    from grandpa.voice.device_manager import MicrophoneDeviceManager
+
+    mock_sd = FakeSoundDevice({(16_000, 1)})
+    mock_manager = MicrophoneDeviceManager(mock_sd)
+    mock_manager.select = MagicMock(return_value=MagicMock(device=_device(16_000, 1), warning=None))
+
+    capture = MicrophoneCapture(
+        device_manager=mock_manager,
+        duration_seconds=0.1,
+    )
+    monkeypatch.setattr(capture, "_capture_from_device", lambda sd, dev, st, **kw: CapturedAudio(b""))
+
+    capture.capture(stop_event=threading.Event())
+
+    assert capture.device_manager is mock_manager
+    assert mock_manager.select.called

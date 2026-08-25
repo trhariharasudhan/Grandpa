@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import subprocess
 import sys
 import threading
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 import click
 from rich.console import Console
@@ -236,21 +235,29 @@ class ThinkingAnimation:
         file.flush()
 
 
+def _get_available_models(engine: Any = None) -> list[str]:
+    """Retrieve available model identifiers from ModelRegistry and active engine runtime."""
+    try:
+        from grandpa.core.registry import ModelRegistry
+        from grandpa.intelligence.model_catalog import register_builtin_models
+
+        register_builtin_models()
+        registered = [s.model_id for s in ModelRegistry.list_models()]
+        if engine and hasattr(engine, "list_models"):
+            try:
+                for m in engine.list_models():
+                    if m not in registered:
+                        registered.append(m)
+            except Exception:
+                pass
+        return registered
+    except Exception:
+        return []
+
+
 def _get_ollama_models() -> list[str]:
-    result = subprocess.run(
-        ["ollama", "list"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    models = []
-    for line in result.stdout.splitlines()[1:]:
-        parts = line.split()
-        if parts:
-            models.append(parts[0])
-
-    return models
+    """Deprecated alias for _get_available_models."""
+    return _get_available_models()
 
 
 def _create_one_shot_reminder(text: str, *, store=None) -> str | None:
@@ -1539,10 +1546,10 @@ def chat(
                     render_assistant_response(console, f"Model changed to {model}.")
                     continue
 
-                models = _get_ollama_models()
+                models = _get_available_models(engine)
 
                 if not models:
-                    render_assistant_response(console, "No Ollama models found.")
+                    render_assistant_response(console, "No models found in model registry.")
                     continue
 
                 selected = select_from_list("Select Model", models)

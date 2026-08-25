@@ -9,10 +9,10 @@ from dataclasses import dataclass
 class VoiceActivityConfig:
     """Bounded speech and silence thresholds for phrase capture."""
 
-    minimum_rms: float = 180.0
+    minimum_rms: float = 200.0
     noise_multiplier: float = 2.5
     minimum_speech_seconds: float = 0.25
-    silence_seconds: float = 0.75
+    silence_seconds: float = 0.55
     maximum_utterance_seconds: float = 12.0
 
 
@@ -92,7 +92,10 @@ class VoiceActivityDetector:
         else:
             self._silence_after_speech += duration
 
-        if self._elapsed >= self.config.maximum_utterance_seconds:
+        if (
+            self._speech_started
+            and self._speech_active_seconds >= self.config.maximum_utterance_seconds
+        ):
             self._finalization_reason = "maximum_duration"
             return True
         finalized = (
@@ -100,7 +103,10 @@ class VoiceActivityDetector:
             and self._silence_after_speech >= self.config.silence_seconds
         )
         if finalized:
-            self._finalization_reason = "trailing_silence"
+            if self._speech_active_seconds < self.config.minimum_speech_seconds:
+                self.reset()
+                return False
+            self._finalization_reason = "silence_timeout"
         return finalized
 
 

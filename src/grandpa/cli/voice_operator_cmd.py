@@ -52,6 +52,7 @@ def voice_operator(
             device_name=device_name,
             prefer_voice=False if typed_only else None,
             speech_output=speech_output,
+            no_tts=no_tts,
             debug=debug,
         )
     )

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -18,7 +18,7 @@ from grandpa.server.app import create_app  # noqa: E402
 
 
 def _make_engine(engine_id="mock", models=None):
-    engine = MagicMock()
+    engine = MagicMock(spec=["engine_id", "health", "list_models", "generate", "stream", "close"])
     engine.engine_id = engine_id
     engine.health.return_value = True
     engine.list_models.return_value = models or ["test-model"]
@@ -39,8 +39,25 @@ def _make_engine(engine_id="mock", models=None):
 
 def _make_ollama_engine(models=None):
     """Create a mock engine that looks like OllamaEngine."""
-    engine = _make_engine(engine_id="ollama", models=models)
+    engine = MagicMock(
+        spec=[
+            "engine_id",
+            "health",
+            "list_models",
+            "generate",
+            "stream",
+            "close",
+            "pull_model",
+            "delete_model",
+            "_host",
+        ]
+    )
+    engine.engine_id = "ollama"
     engine._host = "http://localhost:11434"
+    engine.health.return_value = True
+    engine.list_models.return_value = models or ["test-model"]
+    engine.pull_model.return_value = {"status": "ok", "model": "qwen3.5:4b"}
+    engine.delete_model.return_value = {"status": "deleted", "model": "qwen3:0.6b"}
     return engine
 
 
@@ -71,34 +88,20 @@ class TestModelPull:
         engine = _make_ollama_engine()
         client = TestClient(_app(engine, engine_name="ollama"))
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as MockClient:
-            instance = MockClient.return_value
-            instance.post.return_value = mock_resp
-            instance.close = MagicMock()
-
-            resp = client.post("/v1/models/pull", json={"model": "qwen3.5:4b"})
+        resp = client.post("/v1/models/pull", json={"model": "qwen3.5:4b"})
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "ok"
         assert data["model"] == "qwen3.5:4b"
+        engine.pull_model.assert_called_once_with("qwen3.5:4b")
 
     def test_pull_ollama_unreachable(self):
         engine = _make_ollama_engine()
+        engine.pull_model.side_effect = RuntimeError("refused")
         client = TestClient(_app(engine, engine_name="ollama"))
 
-        import httpx
-
-        with patch("httpx.Client") as MockClient:
-            instance = MockClient.return_value
-            instance.post.side_effect = httpx.ConnectError("refused")
-            instance.close = MagicMock()
-
-            resp = client.post("/v1/models/pull", json={"model": "foo"})
+        resp = client.post("/v1/models/pull", json={"model": "foo"})
 
         assert resp.status_code == 502
 
@@ -119,21 +122,13 @@ class TestModelDelete:
         engine = _make_ollama_engine()
         client = TestClient(_app(engine, engine_name="ollama"))
 
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.raise_for_status = MagicMock()
-
-        with patch("httpx.Client") as MockClient:
-            instance = MockClient.return_value
-            instance.request.return_value = mock_resp
-            instance.close = MagicMock()
-
-            resp = client.delete("/v1/models/qwen3:0.6b")
+        resp = client.delete("/v1/models/qwen3:0.6b")
 
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "deleted"
         assert data["model"] == "qwen3:0.6b"
+        engine.delete_model.assert_called_once_with("qwen3:0.6b")
 
 
 # ---------------------------------------------------------------------------

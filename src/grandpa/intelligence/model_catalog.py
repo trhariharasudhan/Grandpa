@@ -9,6 +9,48 @@ from grandpa.core.types import ModelSpec
 from grandpa.intelligence.grandpa_models import GRANDPA_MODEL_ROLES
 
 
+def _infer_family(model_id: str, provider: str = "") -> str:
+    mid = model_id.lower()
+    if "qwen" in mid:
+        return "qwen"
+    if "llama" in mid:
+        return "llama"
+    if "deepseek" in mid:
+        return "deepseek"
+    if "gemma" in mid:
+        return "gemma"
+    if "mistral" in mid:
+        return "mistral"
+    if "granite" in mid:
+        return "granite"
+    if "phi" in mid:
+        return "phi"
+    if "nomic" in mid:
+        return "nomic"
+    if "llava" in mid:
+        return "llava"
+    if "gpt" in mid:
+        return "gpt"
+    return provider.lower() if provider else mid.split(":")[0].split("-")[0]
+
+
+def _infer_version(model_id: str) -> str:
+    if ":" in model_id:
+        return model_id.split(":", 1)[1]
+    return "latest"
+
+
+def _infer_capabilities(model_id: str) -> tuple[str, ...]:
+    mid = model_id.lower()
+    if "embed" in mid:
+        return ("embeddings",)
+    if any(k in mid for k in ("eyes", "vision", "image", "llava")):
+        return ("text", "image")
+    if any(k in mid for k in ("coder", "code")):
+        return ("text", "code")
+    return ("text", "chat")
+
+
 def _local_model(
     model_id: str,
     name: str,
@@ -18,16 +60,28 @@ def _local_model(
     active_parameter_count_b: float | None = None,
     provider: str = "",
     architecture: str = "dense",
+    family: str = "",
+    capabilities: tuple[str, ...] | None = None,
+    backend: str = "ollama",
+    status: str = "available",
 ) -> ModelSpec:
+    derived_family = family or _infer_family(model_id, provider)
+    derived_caps = capabilities or _infer_capabilities(model_id)
+    derived_version = _infer_version(model_id)
     return ModelSpec(
         model_id=model_id,
         name=name,
         parameter_count_b=parameter_count_b,
         active_parameter_count_b=active_parameter_count_b,
         context_length=context_length,
-        supported_engines=("ollama",),
+        supported_engines=(backend,),
         provider=provider,
         metadata={"architecture": architecture},
+        version=derived_version,
+        family=derived_family,
+        capabilities=derived_caps,
+        backend=backend,
+        status=status,
     )
 
 
@@ -37,9 +91,13 @@ BUILTIN_MODELS: List[ModelSpec] = [
             entry.ollama_tag,
             entry.display_name,
             entry.parameter_count_b,
-            0,
+            entry.context_length,
             provider="grandpa-odin",
-            architecture="specialized" if entry.specialized else "dense",
+            architecture="dense",
+            family=entry.base_family.lower().split()[0],
+            capabilities=tuple(entry.capabilities),
+            backend="ollama",
+            status="available",
         )
         for entry in GRANDPA_MODEL_ROLES
         if "embeddings" not in entry.capabilities
@@ -153,6 +211,11 @@ def merge_discovered_models(engine_key: str, model_ids: List[str]) -> None:
                 parameter_count_b=0.0,
                 context_length=0,
                 supported_engines=(engine_key,),
+                version=_infer_version(model_id),
+                family=_infer_family(model_id),
+                capabilities=_infer_capabilities(model_id),
+                backend=engine_key,
+                status="available",
             )
             ModelRegistry.register_value(model_id, spec)
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import sys
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -60,6 +59,11 @@ APP_ALIASES = {
     "vs code": "vscode",
     "visual studio code": "vscode",
     "notepad": "notepad",
+    "note pad": "notepad",
+    "node pad": "notepad",
+    "note bad": "notepad",
+    "node bad": "notepad",
+    "the pad": "notepad",
     "calculator": "calculator",
     "calc": "calculator",
     "file explorer": "file explorer",
@@ -89,16 +93,19 @@ APP_PHRASE_ALIASES = {
     "visual studio code": "vscode",
     "vs code": "vscode",
     "note bad": "notepad",
+    "node bad": "notepad",
     "note pad": "notepad",
+    "node pad": "notepad",
+    "the pad": "notepad",
 }
 
 
 def parse_voice_operator_command(
     text: str,
     *,
-    has_pending_confirmation: bool = False,
-    has_pending_window_choice: bool = False,
-    has_pending_dialog: bool = False,
+    has_pending_confirmation: bool | Callable[[], bool] = False,
+    has_pending_window_choice: bool | Callable[[], bool] = False,
+    has_pending_dialog: bool | Callable[[], bool] = False,
 ) -> VoiceOperatorIntent:
     raw_command = str(text).strip()
     command = normalize_voice_operator_transcript(text)
@@ -106,7 +113,13 @@ def parse_voice_operator_command(
         return VoiceOperatorIntent(
             "none", status="unsupported", message="I did not hear a command."
         )
-    if command in {"stop listening", "exit", "quit"}:
+    from grandpa.voice.cli_session import is_exit_phrase
+
+    if (
+        is_exit_phrase(raw_command)
+        or is_exit_phrase(command)
+        or command in {"stop listening", "exit", "quit"}
+    ):
         return VoiceOperatorIntent(
             "exit", status="exit", message="Voice Operator Mode stopped."
         )
@@ -114,11 +127,39 @@ def parse_voice_operator_command(
         return VoiceOperatorIntent(
             "blocked", status="blocked", message="I blocked that command for safety."
         )
-
     from grandpa.automation import AutomationPlanner
 
-    if command in {"yes", "confirm", "continue", "no", "cancel"} and (
-        has_pending_confirmation
+    is_pending_conf = (
+        has_pending_confirmation()
+        if callable(has_pending_confirmation)
+        else bool(has_pending_confirmation)
+    )
+    is_pending_wc = (
+        has_pending_window_choice()
+        if callable(has_pending_window_choice)
+        else bool(has_pending_window_choice)
+    )
+    is_pending_dlg = (
+        has_pending_dialog()
+        if callable(has_pending_dialog)
+        else bool(has_pending_dialog)
+    )
+
+    if (
+        command
+        in {
+            "yes",
+            "confirm",
+            "continue",
+            "do it",
+            "ok",
+            "okay",
+            "no",
+            "cancel",
+            "don't",
+            "dont",
+        }
+        and is_pending_conf
     ):
         return VoiceOperatorIntent(
             "screen_automation",
@@ -126,14 +167,14 @@ def parse_voice_operator_command(
             args={"command": command},
             message="Handling automation confirmation.",
         )
-    if has_pending_window_choice:
+    if is_pending_wc:
         return VoiceOperatorIntent(
             "screen_automation",
             "window_choice",
             args={"command": command},
             message="Selecting a window.",
         )
-    if has_pending_dialog:
+    if is_pending_dlg:
         return VoiceOperatorIntent(
             "screen_automation",
             "dialog_response",
@@ -864,9 +905,265 @@ def execute_voice_operator_intent(
     )
 
 
+@dataclass(frozen=True)
+class VoiceOperatorTurnResponse:
+    """Structured result returned by the single-turn Voice Operator processor."""
+
+    text: str
+    status: OperatorStatus = "handled"
+    spoken_text: str = ""
+    action: dict[str, Any] | None = None
+    requires_confirmation: bool = False
+    exit_requested: bool = False
+
+
+@dataclass
+class VoiceOperatorResponder:
+    """Single-turn processor for Voice Operator commands implementing Responder protocol."""
+
+    dry_run: bool = False
+    action_runner: Callable[[dict[str, Any]], Any] = run_local_action
+    screen_reader: Callable[..., Any] | None = None
+    automation_service: Any = None
+    debug: bool = False
+    debug_output: Callable[[str], None] | None = None
+
+    def __post_init__(self) -> None:
+        if self.automation_service is None:
+            from grandpa.automation.executor import AutomationExecutor
+            from grandpa.automation.service import ScreenAutomationService
+
+            self.automation_service = ScreenAutomationService(
+                executor=AutomationExecutor(runner=self.action_runner)
+            )
+
+    def handle_user_input(self, text: str) -> VoiceOperatorTurnResponse:
+        return process_voice_operator_turn(
+            text,
+            dry_run=self.dry_run,
+            action_runner=self.action_runner,
+            screen_reader=self.screen_reader,
+            automation_service=self.automation_service,
+            debug=self.debug,
+            debug_output=self.debug_output,
+        )
+
+
+def process_voice_operator_turn(
+    text: str,
+    *,
+    dry_run: bool = False,
+    action_runner: Callable[[dict[str, Any]], Any] = run_local_action,
+    screen_reader: Callable[..., Any] | None = None,
+    automation_service: Any = None,
+    debug: bool = False,
+    debug_output: Callable[[str], None] | None = None,
+) -> VoiceOperatorTurnResponse:
+    """Execute one recognized phrase through the Voice Operator router and return the result."""
+
+    if automation_service is None:
+        from grandpa.automation.executor import AutomationExecutor
+        from grandpa.automation.service import ScreenAutomationService
+
+        automation_service = ScreenAutomationService(
+            executor=AutomationExecutor(runner=action_runner)
+        )
+
+    raw_text = str(text or "").strip()
+    normalized_text = normalize_voice_operator_transcript(raw_text)
+    if debug and debug_output:
+        debug_output(f"Raw transcript: {raw_text}")
+        debug_output(f"Normalized transcript: {normalized_text}")
+
+    if not normalized_text:
+        return VoiceOperatorTurnResponse(
+            text="I did not hear a command.",
+            status="unsupported",
+            spoken_text="I did not hear a command.",
+        )
+
+    from grandpa.voice.cli_session import is_exit_phrase
+
+    if (
+        is_exit_phrase(raw_text)
+        or is_exit_phrase(normalized_text)
+        or normalized_text in {"stop listening", "exit", "quit"}
+    ):
+        return VoiceOperatorTurnResponse(
+            text="Voice Operator Mode stopped.",
+            status="exit",
+            spoken_text="Voice Operator Mode stopped.",
+            exit_requested=True,
+        )
+
+    def _is_pending(fn_or_val: Any) -> bool:
+        if fn_or_val is None:
+            return False
+        if callable(fn_or_val):
+            try:
+                return bool(fn_or_val())
+            except TypeError:
+                return False
+        return bool(fn_or_val)
+
+    has_pending = (
+        _is_pending(getattr(automation_service, "has_pending_confirmation", None))
+        or _is_pending(getattr(automation_service, "has_pending_window_choice", None))
+        or _is_pending(getattr(automation_service, "has_pending_dialog", None))
+    )
+    if has_pending:
+        intent = parse_voice_operator_command(
+            normalized_text,
+            has_pending_confirmation=automation_service.has_pending_confirmation,
+            has_pending_window_choice=automation_service.has_pending_window_choice,
+            has_pending_dialog=automation_service.has_pending_dialog,
+        )
+        result = execute_voice_operator_intent(
+            intent,
+            dry_run=dry_run,
+            action_runner=action_runner,
+            screen_reader=screen_reader,
+            automation_service=automation_service,
+        )
+        return VoiceOperatorTurnResponse(
+            text=result.message,
+            status=result.status,
+            spoken_text=result.spoken_text,
+            action=result.action,
+            requires_confirmation=result.requires_confirmation,
+            exit_requested=(result.status == "exit"),
+        )
+
+    # Unified assistant routing
+    from grandpa.agent.context import classify_intent
+    from grandpa.agent.models import AgentIntent
+
+    intent_type = classify_intent(normalized_text)
+
+    if intent_type in (
+        AgentIntent.GREETING,
+        AgentIntent.TIME_QUERY,
+        AgentIntent.PROJECT,
+        AgentIntent.ROADMAP,
+        AgentIntent.SPRINT,
+        AgentIntent.AGENT,
+        AgentIntent.PLANNER,
+    ):
+        from grandpa.agent.runtime import AgentRuntime
+
+        runtime = AgentRuntime()
+        res = runtime.run(normalized_text)
+        exit_requested = intent_type == AgentIntent.STOP_CANCEL or normalized_text in {
+            "stop listening",
+            "exit",
+            "quit",
+        }
+        return VoiceOperatorTurnResponse(
+            text=res.message,
+            status="handled",
+            spoken_text=res.message,
+            exit_requested=exit_requested,
+        )
+
+    from grandpa.planner.routing import handle_executive_goal
+
+    planned = handle_executive_goal(
+        normalized_text,
+        automation_service=automation_service,
+        source="voice_operator",
+    )
+    if planned is not None:
+        return VoiceOperatorTurnResponse(
+            text=planned,
+            status="handled",
+            spoken_text=planned,
+        )
+
+    intent = parse_voice_operator_command(
+        normalized_text,
+        has_pending_confirmation=automation_service.has_pending_confirmation,
+        has_pending_window_choice=automation_service.has_pending_window_choice,
+        has_pending_dialog=automation_service.has_pending_dialog,
+    )
+    result = execute_voice_operator_intent(
+        intent,
+        dry_run=dry_run,
+        action_runner=action_runner,
+        screen_reader=screen_reader,
+        automation_service=automation_service,
+    )
+    return VoiceOperatorTurnResponse(
+        text=result.message,
+        status=result.status,
+        spoken_text=result.spoken_text,
+        action=result.action,
+        requires_confirmation=result.requires_confirmation,
+        exit_requested=(result.status == "exit"),
+    )
+
+
+def build_voice_operator_session(
+    *,
+    model: str | None = None,
+    language: str | None = None,
+    device: str | None = None,
+    microphone: int | None = None,
+    device_name: str | None = None,
+    no_tts: bool = False,
+    wake_word: bool = False,
+    wake_phrases: tuple[str, ...] | None = None,
+    wake_response_enabled: bool = True,
+    duration_seconds: float | None = None,
+    dry_run: bool = False,
+    action_runner: Callable[[dict[str, Any]], Any] | None = None,
+    automation_service: Any | None = None,
+    screen_reader: Callable[..., Any] | None = None,
+    output: Callable[[str], None] = print,
+    quiet: bool = False,
+    verbose: bool = False,
+    screen_reader_mode: bool = False,
+    debug: bool = False,
+    microphone_capture: Any | None = None,
+    transcriber: Any | None = None,
+    speaker: Any | None = None,
+) -> Any:
+    """Construct a continuous VoiceSession wired to VoiceOperatorResponder."""
+
+    from grandpa.voice.cli_session import build_voice_session
+
+    responder = VoiceOperatorResponder(
+        dry_run=dry_run,
+        action_runner=action_runner or run_local_action,
+        screen_reader=screen_reader,
+        automation_service=automation_service,
+        debug=debug,
+        debug_output=output if debug else None,
+    )
+    return build_voice_session(
+        model=model,
+        language=language,
+        device=device,
+        microphone=microphone,
+        no_tts=no_tts,
+        wake_word=wake_word,
+        wake_phrases=wake_phrases,
+        wake_response_enabled=wake_response_enabled,
+        output=output,
+        quiet=quiet,
+        verbose=verbose,
+        screen_reader=screen_reader_mode,
+        responder=responder,
+        microphone_capture=microphone_capture,
+        transcriber=transcriber,
+        speaker=speaker,
+        phrase_duration_limit=duration_seconds,
+        debug=debug,
+    )
+
+
 def run_voice_operator_loop(
     *,
-    input_func: Callable[[str], str] = input,
+    input_func: Callable[[str], str] | None = None,
     output_func: Callable[[str], None] = print,
     listen_func: Callable[[], str] | None = None,
     action_runner: Callable[[dict[str, Any]], Any] | None = None,
@@ -877,12 +1174,129 @@ def run_voice_operator_loop(
     device: int | None = None,
     device_name: str | None = None,
     debug: bool = False,
+    no_tts: bool = False,
+    screen_reader: bool = False,
+    automation_service: Any | None = None,
+    session: Any | None = None,
+) -> int:
+    """Run command-first Voice Operator mode with hands-free or typed interaction."""
+
+    if session is not None:
+        return session.run()
+
+    if prefer_voice is False:
+        return _run_typed_operator_loop(
+            input_func=input_func or input,
+            output_func=output_func,
+            action_runner=action_runner,
+            automation_service=automation_service,
+            speech_output=speech_output,
+            dry_run=dry_run,
+            debug=debug,
+            no_tts=no_tts,
+        )
+
+    if listen_func is not None or (input_func is not None and input_func is not input):
+        return _run_simulated_or_custom_operator_loop(
+            input_func=input_func,
+            output_func=output_func,
+            listen_func=listen_func,
+            action_runner=action_runner,
+            speech_output=speech_output,
+            dry_run=dry_run,
+            duration_seconds=duration_seconds,
+            device=device,
+            device_name=device_name,
+            debug=debug,
+            no_tts=no_tts,
+            automation_service=automation_service,
+        )
+
+    no_speech_out = no_tts or (speech_output is not None and not speech_output.enabled)
+    voice_session = build_voice_operator_session(
+        device=None,
+        microphone=device,
+        device_name=device_name,
+        no_tts=no_speech_out,
+        duration_seconds=duration_seconds,
+        dry_run=dry_run,
+        action_runner=action_runner,
+        automation_service=automation_service,
+        output=output_func,
+        debug=debug,
+        screen_reader_mode=screen_reader,
+    )
+    return voice_session.run()
+
+
+def _run_typed_operator_loop(
+    *,
+    input_func: Callable[[str], str],
+    output_func: Callable[[str], None],
+    action_runner: Callable[[dict[str, Any]], Any] | None,
+    automation_service: Any | None,
+    speech_output: SpeechOutputEngine | None,
+    dry_run: bool,
+    debug: bool,
+    no_tts: bool,
+) -> int:
+    output_func("Voice Operator Mode started")
+    output_func("Type a command. Say 'stop listening' or type 'quit' to exit.")
+    speaker = speech_output or (None if no_tts else SpeechOutputEngine())
+    responder = VoiceOperatorResponder(
+        dry_run=dry_run,
+        action_runner=action_runner or run_local_action,
+        automation_service=automation_service,
+        debug=debug,
+        debug_output=output_func if debug else None,
+    )
+
+    while True:
+        try:
+            text = input_func("> ")
+            if text is None:
+                raise EOFError
+            if not text.strip():
+                continue
+        except (EOFError, KeyboardInterrupt):
+            output_func("Voice Operator Mode stopped.")
+            return 0
+
+        normalized = normalize_voice_operator_transcript(text)
+        if debug:
+            output_func(f"Raw transcript: {text}")
+            output_func(f"Normalized transcript: {normalized}")
+        output_func(f"Understood: {normalized}")
+
+        res = responder.handle_user_input(text)
+        output_func(res.text)
+        if speaker and speaker.enabled and not no_tts:
+            _speak_best_effort(speaker, res.spoken_text or res.text, dry_run=dry_run)
+        if res.exit_requested or res.status == "exit":
+            return 0
+
+
+def _run_simulated_or_custom_operator_loop(
+    *,
+    input_func: Callable[[str], str] | None,
+    output_func: Callable[[str], None],
+    listen_func: Callable[[], str] | None,
+    action_runner: Callable[[dict[str, Any]], Any] | None,
+    speech_output: SpeechOutputEngine | None,
+    dry_run: bool,
+    duration_seconds: float,
+    device: int | None,
+    device_name: str | None,
+    debug: bool,
+    no_tts: bool,
+    automation_service: Any | None,
 ) -> int:
     output_func("Voice Operator Mode started")
     output_func(
         "Press Enter to record, or type a command. Say 'stop listening' to exit."
     )
-    use_voice = sys.stdin.isatty() if prefer_voice is None else prefer_voice
+    prompt_input = input_func or input
+    use_voice = True
     listener = listen_func or (
         lambda: _listen_once(
             duration_seconds=duration_seconds,
@@ -892,19 +1306,19 @@ def run_voice_operator_loop(
             warning_output=output_func,
         )
     )
-    runner = action_runner or run_local_action
-    speaker = speech_output or SpeechOutputEngine()
-    from grandpa.automation.executor import AutomationExecutor
-    from grandpa.automation.service import ScreenAutomationService
-
-    automation_service = ScreenAutomationService(
-        executor=AutomationExecutor(runner=runner)
+    speaker = speech_output or (None if no_tts else SpeechOutputEngine())
+    responder = VoiceOperatorResponder(
+        dry_run=dry_run,
+        action_runner=action_runner or run_local_action,
+        automation_service=automation_service,
+        debug=debug,
+        debug_output=output_func if debug else None,
     )
 
     while True:
         try:
             if use_voice:
-                trigger = input_func("Press Enter to record, or type command: ")
+                trigger = prompt_input("Press Enter to record, or type command: ")
                 if trigger is None:
                     raise EOFError
                 if trigger.strip():
@@ -923,19 +1337,19 @@ def run_voice_operator_loop(
                         output_func(str(exc))
                         output_func("Falling back to typed input.")
                         use_voice = False
-                        text = input_func("> ")
+                        text = prompt_input("> ")
                     except VoiceError as exc:
                         output_func(str(exc))
                         output_func("Falling back to typed input.")
                         use_voice = False
-                        text = input_func("> ")
+                        text = prompt_input("> ")
                 if not text.strip():
                     output_func(
                         "No command heard. Press Enter to record, or type a command."
                     )
                     continue
             else:
-                text = input_func("> ")
+                text = prompt_input("> ")
                 if text is None:
                     raise EOFError
                 if not text.strip():
@@ -944,71 +1358,17 @@ def run_voice_operator_loop(
             output_func("Voice Operator Mode stopped")
             return 0
 
-        normalized_text = normalize_voice_operator_transcript(text)
+        normalized = normalize_voice_operator_transcript(text)
         if debug:
             output_func(f"Raw transcript: {text}")
-            output_func(f"Normalized transcript: {normalized_text}")
-        output_func(f"Understood: {normalized_text}")
+            output_func(f"Normalized transcript: {normalized}")
+        output_func(f"Understood: {normalized}")
 
-        if normalized_text in {"stop listening", "exit", "quit"}:
-            output_func("Voice Operator Mode stopped.")
-            return 0
-
-        # Unified assistant routing
-        from grandpa.agent.context import classify_intent
-        from grandpa.agent.models import AgentIntent
-
-        intent_type = classify_intent(normalized_text)
-
-        if intent_type in (
-            AgentIntent.GREETING,
-            AgentIntent.TIME_QUERY,
-            AgentIntent.PROJECT,
-            AgentIntent.ROADMAP,
-            AgentIntent.SPRINT,
-            AgentIntent.AGENT,
-            AgentIntent.PLANNER,
-        ):
-            from grandpa.agent.runtime import AgentRuntime
-
-            runtime = AgentRuntime()
-            res = runtime.run(normalized_text)
-            output_func(res.message)
-            _speak_best_effort(speaker, res.message, dry_run=dry_run)
-            if intent_type == AgentIntent.STOP_CANCEL or normalized_text in (
-                "stop listening",
-                "exit",
-                "quit",
-            ):
-                return 0
-            continue
-
-        from grandpa.planner.routing import handle_executive_goal
-
-        planned = handle_executive_goal(
-            normalized_text,
-            automation_service=automation_service,
-            source="voice_operator",
-        )
-        if planned is not None:
-            output_func(planned)
-            _speak_best_effort(speaker, planned, dry_run=dry_run)
-            continue
-        intent = parse_voice_operator_command(
-            normalized_text,
-            has_pending_confirmation=automation_service.has_pending_confirmation,
-            has_pending_window_choice=automation_service.has_pending_window_choice,
-            has_pending_dialog=automation_service.has_pending_dialog,
-        )
-        result = execute_voice_operator_intent(
-            intent,
-            dry_run=dry_run,
-            action_runner=runner,
-            automation_service=automation_service,
-        )
-        output_func(result.message)
-        _speak_best_effort(speaker, result.spoken_text, dry_run=dry_run)
-        if result.status == "exit":
+        res = responder.handle_user_input(text)
+        output_func(res.text)
+        if speaker and speaker.enabled and not no_tts:
+            _speak_best_effort(speaker, res.spoken_text or res.text, dry_run=dry_run)
+        if res.exit_requested or res.status == "exit":
             return 0
 
 
@@ -1170,12 +1530,42 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", value)
 
 
+_VOCATIVE_PREFIX_PATTERNS = (
+    re.compile(
+        r"^(hey|okay|ok|hi|hello)\s+grandpa\s*,?\s*please\s*,?\s*", re.IGNORECASE
+    ),
+    re.compile(r"^grandpa\s*,?\s*please\s*,?\s*", re.IGNORECASE),
+    re.compile(r"^please\s*,?\s*grandpa\s*,?\s*", re.IGNORECASE),
+    re.compile(r"^(hey|okay|ok|hi|hello)\s+grandpa\s*,?\s*", re.IGNORECASE),
+    re.compile(r"^grandpa\s*,?\s*", re.IGNORECASE),
+)
+
+
+def _strip_vocative_prefix_raw(text: str) -> str:
+    result = text.strip()
+    for pattern in _VOCATIVE_PREFIX_PATTERNS:
+        match = pattern.match(result)
+        if match:
+            return result[match.end() :].strip()
+    return result
+
+
 def normalize_voice_operator_transcript(text: str) -> str:
-    command = _normalise(text)
+    raw = str(text or "").strip()
+    if not raw:
+        return ""
+
+    # Strip optional leading conversational vocative prefix ("Grandpa, ", "Hey Grandpa, ", etc.)
+    stripped = _strip_vocative_prefix_raw(raw)
+
+    # For typing commands, preserve exact case and text payload
+    if stripped.lower().startswith("type "):
+        typed_payload = stripped[5:].strip()
+        return f"type {typed_payload}".strip()
+
+    command = _normalise(stripped)
     if not command:
         return ""
-    if command.startswith("type "):
-        return command
 
     words = command.split()
     deduped_words: list[str] = []
@@ -1211,9 +1601,13 @@ def _normalize_app_phrase(value: str) -> str:
 
 __all__ = [
     "VoiceOperatorIntent",
+    "VoiceOperatorResponder",
     "VoiceOperatorResult",
+    "VoiceOperatorTurnResponse",
+    "build_voice_operator_session",
     "execute_voice_operator_intent",
     "normalize_voice_operator_transcript",
     "parse_voice_operator_command",
+    "process_voice_operator_turn",
     "run_voice_operator_loop",
 ]

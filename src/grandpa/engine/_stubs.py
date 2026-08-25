@@ -8,50 +8,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Sequence
 
 from grandpa.core.types import Message
+from grandpa.runtime.interface import ModelRuntime, ResponseFormat, StreamChunk
 
 
-@dataclass(slots=True)
-class StreamChunk:
-    """A single chunk from a streaming LLM response.
-
-    Used by ``stream_full()`` to yield rich streaming data including
-    tool_calls fragments and finish_reason, unlike ``stream()`` which
-    only yields plain content strings.
-
-    ``content_blocks`` and ``tool_results`` are aggregate fields emitted
-    once at end-of-stream so streaming callers reach parity with the
-    non-streaming ``generate()`` return shape.
-    """
-
-    content: Optional[str] = None
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    finish_reason: Optional[str] = None
-    usage: Optional[Dict[str, Any]] = None
-    content_blocks: Optional[List[Dict[str, Any]]] = None
-    tool_results: Optional[List[Dict[str, Any]]] = None
-
-
-@dataclass(slots=True)
-class ResponseFormat:
-    """Structured output configuration for inference engines.
-
-    Attributes:
-        type: The response format type. ``"json_object"`` enables JSON mode
-            (the model returns valid JSON). ``"json_schema"`` enables structured
-            output constrained to a specific JSON Schema.
-        schema: A JSON Schema dict used when *type* is ``"json_schema"``.
-            Ignored for ``"json_object"`` mode.
-    """
-
-    type: str = "json_object"
-    schema: Optional[Dict[str, Any]] = field(default=None)
-
-
-class InferenceEngine(ABC):
+class InferenceEngine(ModelRuntime, ABC):
     """Base class for all inference engine backends.
 
     Subclasses must be registered via

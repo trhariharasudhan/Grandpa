@@ -29,10 +29,10 @@ class FasterWhisperSpeechToText:
         device: str | None = None,
         compute_type: str | None = None,
         engine: SpeechInputEngine | None = None,
-        max_attempts: int = 2,
-        retry_delay_seconds: float = 0.1,
+        max_attempts: int = 1,
+        retry_delay_seconds: float = 0.0,
     ) -> None:
-        self.language = language or None
+        self.language = language or "en"
         self._engine = engine or SpeechInputEngine(
             model=model, device=device, compute_type=compute_type
         )

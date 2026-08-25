@@ -13,6 +13,7 @@ so ingestion never fails because a sidecar service is down.
 from __future__ import annotations
 
 import logging
+from abc import ABC, abstractmethod
 from typing import List, Optional
 
 import numpy as np
@@ -25,18 +26,34 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 DEFAULT_EMBED_MODEL = "nomic-embed-text"
 
 
-class OllamaEmbedder:
-    """Embed text via a local Ollama daemon.
+class BaseEmbedder(ABC):
+    """Abstract base class for dense text embedders in Grandpa."""
 
-    Parameters
-    ----------
-    model:
-        Ollama model tag (e.g. ``nomic-embed-text``, ``mxbai-embed-large``).
-    host:
-        Base URL for the Ollama HTTP API. Defaults to ``http://localhost:11434``.
-    timeout:
-        Per-request timeout in seconds.
-    """
+    @property
+    @abstractmethod
+    def model_version(self) -> str:
+        """Stable identifier persisted alongside each embedding row."""
+
+    @property
+    @abstractmethod
+    def dim(self) -> Optional[int]:
+        """Embedding dimensionality."""
+
+    @abstractmethod
+    def is_available(self) -> bool:
+        """Return True iff the embedder backend is reachable and ready."""
+
+    @abstractmethod
+    def embed(self, text: str) -> Optional[bytes]:
+        """Embed a single string. Returns float32 bytes or None on failure."""
+
+    def embed_batch(self, texts: List[str]) -> List[Optional[bytes]]:
+        """Embed a sequence of strings."""
+        return [self.embed(t) for t in texts]
+
+
+class OllamaEmbedder(BaseEmbedder):
+    """Embed text via a local Ollama daemon."""
 
     def __init__(
         self,
@@ -150,6 +167,7 @@ def decode_embedding(
 
 
 __all__ = [
+    "BaseEmbedder",
     "OllamaEmbedder",
     "decode_embedding",
     "DEFAULT_EMBED_MODEL",

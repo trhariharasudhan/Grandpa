@@ -32,9 +32,9 @@ class VoiceAssistantConfig:
     wake_phrases: tuple[str, ...] = DEFAULT_WAKE_PHRASES
     wake_response_enabled: bool = True
     wake_command_timeout_seconds: float = 10.0
-    post_tts_cooldown_ms: int = 400
+    post_tts_cooldown_ms: int = 800
     echo_window_seconds: float = 3.0
-    echo_similarity_threshold: float = 0.85
+    echo_similarity_threshold: float = 0.70
 
 
 def load_voice_assistant_config(
@@ -84,7 +84,7 @@ def load_voice_assistant_config(
             0.0, _env_float("GRANDPA_VOICE_MINIMUM_SPEECH_SECONDS", 0.25)
         ),
         silence_timeout_seconds=max(
-            0.1, _env_float("GRANDPA_VOICE_SILENCE_TIMEOUT_SECONDS", 1.2)
+            0.1, _env_float("GRANDPA_VOICE_SILENCE_TIMEOUT_SECONDS", 0.55)
         ),
         microphone_recovery_attempts=max(
             0, _env_int("GRANDPA_VOICE_RECOVERY_ATTEMPTS", 2) or 0
@@ -111,14 +111,14 @@ def load_voice_assistant_config(
             "GRANDPA_VOICE_WAKE_COMMAND_TIMEOUT", 10.0
         ),
         post_tts_cooldown_ms=max(
-            0, _env_int("GRANDPA_VOICE_POST_TTS_COOLDOWN_MS", 400) or 0
+            0, _env_int("GRANDPA_VOICE_POST_TTS_COOLDOWN_MS", 800) or 0
         ),
         echo_window_seconds=max(
             0.0, _env_float("GRANDPA_VOICE_ECHO_WINDOW_SECONDS", 3.0)
         ),
         echo_similarity_threshold=min(
             1.0,
-            max(0.5, _env_float("GRANDPA_VOICE_ECHO_SIMILARITY_THRESHOLD", 0.85)),
+            max(0.5, _env_float("GRANDPA_VOICE_ECHO_SIMILARITY_THRESHOLD", 0.70)),
         ),
     )
 

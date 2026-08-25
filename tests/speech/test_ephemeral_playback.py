@@ -8,14 +8,16 @@ import subprocess
 import tempfile
 import wave
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
 from grandpa.core.config import GrandpaConfig
 from grandpa.core.registry import TTSRegistry
 from grandpa.speech.tts import TTSResult
-from grandpa.voice.speech_output import SpeechOutputEngine, SpeechOutputResult, _play_audio_bytes
+from grandpa.voice.speech_output import (
+    SpeechOutputEngine,
+)
 from grandpa.voice_service.post_processing import (
     CharacterVoiceProcessingError,
     CharacterVoiceSettings,
@@ -38,8 +40,7 @@ def _make_dummy_wav_bytes(sample_rate: int = 24_000, duration_seconds: float = 0
 def _ensure_speech_registered():
     import importlib
     import sys
-    import grandpa.speech.grandpa_voice_tts
-    import grandpa.speech.kokoro_tts
+
 
     importlib.reload(sys.modules["grandpa.speech.grandpa_voice_tts"])
     importlib.reload(sys.modules["grandpa.speech.kokoro_tts"])
