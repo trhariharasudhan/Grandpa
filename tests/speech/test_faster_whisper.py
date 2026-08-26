@@ -58,24 +58,40 @@ def test_faster_whisper_transcribe():
         assert result.duration_seconds == 1.5
         options = mock_model.transcribe.call_args.kwargs
         assert options == build_transcription_options(None)
-        assert options["initial_prompt"] is None
+        # The policy now carries a domain vocabulary prompt biasing Whisper
+        # toward the app names Grandpa controls; it is no longer None.
+        assert (
+            options["initial_prompt"]
+            == (CANONICAL_TRANSCRIPTION_OPTIONS["initial_prompt"])
+        )
         assert options["condition_on_previous_text"] is False
 
 
-def test_canonical_transcription_options_are_explicit() -> None:
-    options = build_transcription_options("en")
+#: The production decoding policy, pinned so drift has to be acknowledged.
+#:
+#: Re-synced with build_transcription_options() after the policy was
+#: deliberately retuned for a local voice assistant: greedy decoding
+#: (beam_size 5 -> 1) for latency, a domain vocabulary prompt biasing Whisper
+#: toward the application names Grandpa actually controls, and slightly more
+#: permissive speech gating (no_speech_threshold 0.6 -> 0.5,
+#: log_prob_threshold -1.0 -> -0.85).
+CANONICAL_TRANSCRIPTION_OPTIONS = {
+    "beam_size": 1,
+    "temperature": 0.0,
+    "condition_on_previous_text": False,
+    "initial_prompt": (
+        "Grandpa, Notepad, Chrome, Calculator, VS Code, Explorer, Settings, Terminal."
+    ),
+    "vad_filter": False,
+    "no_speech_threshold": 0.5,
+    "compression_ratio_threshold": 2.4,
+    "log_prob_threshold": -0.85,
+    "language": "en",
+}
 
-    assert options == {
-        "beam_size": 5,
-        "temperature": 0.0,
-        "condition_on_previous_text": False,
-        "initial_prompt": None,
-        "vad_filter": False,
-        "no_speech_threshold": 0.6,
-        "compression_ratio_threshold": 2.4,
-        "log_prob_threshold": -1.0,
-        "language": "en",
-    }
+
+def test_canonical_transcription_options_are_explicit() -> None:
+    assert build_transcription_options("en") == CANONICAL_TRANSCRIPTION_OPTIONS
 
 
 def test_faster_whisper_closes_and_deletes_temp_audio_before_transcribe():

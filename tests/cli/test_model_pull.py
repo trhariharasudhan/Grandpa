@@ -33,9 +33,21 @@ def test_ollama_pull_connection_error() -> None:
         assert not ollama_pull("http://localhost:11434", "qwen3.5:2b", console)
 
 
-def test_pull_cli_only_accepts_ollama() -> None:
+def test_pull_cli_rejects_unsupported_backend() -> None:
+    """The option is ``--backend`` (was ``--engine``) and is a fixed Choice.
+
+    Only the two backends Grandpa can actually install for are accepted.
+    """
     result = CliRunner().invoke(
-        cli, ["model", "pull", "qwen3.5:2b", "--engine", "vllm"]
+        cli, ["model", "pull", "qwen3.5:2b", "--backend", "vllm"]
     )
     assert result.exit_code == 2
     assert "Invalid value" in result.output
+
+
+def test_pull_cli_backend_choices_are_native_and_ollama() -> None:
+    result = CliRunner().invoke(cli, ["model", "pull", "--help"])
+    assert result.exit_code == 0
+    assert "--backend" in result.output
+    assert "native" in result.output
+    assert "ollama" in result.output

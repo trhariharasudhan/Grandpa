@@ -931,7 +931,10 @@ class TestSlashCommandRegistry:
         lines = input_ui._picker_preview_lines("/model")
 
         assert "No local models found" in lines
-        assert "Install with: ollama pull qwen2.5:3b" in lines
+        # The hint points at Grandpa's own command rather than a hard-coded
+        # upstream tag: `qwen2.5:3b` is not a model this project ships, and the
+        # default is `grandpa-mini:latest` (see input_ui._picker_preview_lines).
+        assert "Install with: grandpa models pull <model>" in lines
 
 
 class TestChatSlashCommands:
