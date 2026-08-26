@@ -20,8 +20,18 @@ date onward are the work of The Grandpa Authors.
 Grandpa has been substantially modified from its upstream origin. It is a
 Windows-first local AI assistant; OpenJarvis was a general agent and
 inference platform. Substantial portions of the upstream platform layer
-have been retained, extended, or removed. Files whose module docstring
-records a direct derivation from IPW are, at the time of writing:
+have been retained, extended, or removed.
+
+Measured scope of derivation, at the time of writing: of 616 Python source
+files under src/, 223 (36%) already existed in the upstream tree immediately
+before the rebrand and are therefore derived works; 393 were written for
+Grandpa afterwards. The inherited files are concentrated in the platform
+layer -- tools (47), cli (33), security (18), agents (16), server (12),
+connectors (9), learning (9), skills (9), core (6), and smaller counts across
+speech, system, workflow, a2a, engine, mcp, telemetry, operators, scheduler,
+traces, sessions, and others.
+
+Files whose module docstring records a direct derivation from IPW are:
 
     src/grandpa/core/registry.py        "Adapted from IPW's src/ipw/core/registry.py"
     src/grandpa/engine/_stubs.py        "Adapted from IPW's InferenceClient"
@@ -29,8 +39,12 @@ records a direct derivation from IPW are, at the time of writing:
     src/grandpa/agents/prompt_registry.py  "Adapted from IPW's prompt_registry.py"
     src/grandpa/core/events.py          "Extends IPW's EventRecorder"
 
-This list is not exhaustive as to derivation; it records the files that
-carry an explicit upstream attribution in their own docstring.
+That list records only the files carrying an explicit upstream attribution in
+their own docstring; the 223 figure above is the actual derivation scope.
+
+A scan of all tracked source (src/, rust/, scripts/) found no third-party
+copyright or SPDX headers, and no vendored third-party code other than the
+FFmpeg build recorded below.
 
 Both the upstream work and this derivative are licensed under the Apache
 License, Version 2.0. See the LICENSE file for the full license text.
