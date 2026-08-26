@@ -6,7 +6,6 @@ import asyncio
 import logging
 import re
 import sys
-import threading
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -15,6 +14,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.text import Text
 
+from grandpa.cli._animation import TerminalAnimation
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.cli.input_ui import read_chat_input, select_from_list
 from grandpa.cli.slash_commands import (
@@ -190,49 +190,15 @@ async def _stream_engine_response(
     return "".join(chunks)
 
 
-class ThinkingAnimation:
+class ThinkingAnimation(TerminalAnimation):
     """Small terminal-only spinner for blocking response generation."""
 
+    frames = _THINKING_FRAMES
+    thread_name = "grandpa-thinking-animation"
+
     def __init__(self, console: Console, *, interval: float = 0.1) -> None:
-        self._console = console
-        self._interval = interval
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+        super().__init__(console, interval=interval)
         self._enabled = bool(getattr(console, "is_terminal", False))
-
-    def start(self) -> None:
-        if not self._enabled or self._thread is not None:
-            return
-        self._thread = threading.Thread(
-            target=self._run,
-            name="grandpa-thinking-animation",
-            daemon=True,
-        )
-        self._thread.start()
-
-    def stop(self) -> None:
-        if not self._thread:
-            return
-        self._stop.set()
-        self._thread.join(timeout=1.0)
-        self._clear_line()
-        self._thread = None
-
-    def _run(self) -> None:
-        index = 0
-        while not self._stop.is_set():
-            frame = _THINKING_FRAMES[index % len(_THINKING_FRAMES)]
-            self._write(f"\r{frame}")
-            index += 1
-            self._stop.wait(self._interval)
-
-    def _clear_line(self) -> None:
-        self._write("\r\033[2K")
-
-    def _write(self, text: str) -> None:
-        file = self._console.file
-        file.write(text)
-        file.flush()
 
 
 def _get_available_models(engine: Any = None) -> list[str]:
