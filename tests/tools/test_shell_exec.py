@@ -1,8 +1,13 @@
 """Tests for the shell_exec tool.
 
-Tests mock the Rust backend to verify the Python wrapper handles
-the Rust output format correctly:
-    "Exit code: {code}\\n--- stdout ---\\n{stdout}\\n--- stderr ---\\n{stderr}"
+Python's ``subprocess`` is the single authoritative implementation. These tests
+exercise it directly and pin the four guarantees a Rust-first branch used to
+drop silently: timeout enforcement, environment sanitisation, output
+truncation, and truthful return codes.
+
+Commands are written portably. Anything beyond a bare ``echo`` runs through
+``sys.executable -c`` so the same assertion holds on cmd.exe and on POSIX
+shells; a handful of shell-syntax-specific cases are parameterised per platform.
 """
 
 from __future__ import annotations
@@ -10,30 +15,30 @@ from __future__ import annotations
 import importlib
 import os
 import sys
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from grandpa.tools.shell_exec import ShellExecTool
+from grandpa.tools.shell_exec import (
+    _MAX_OUTPUT_BYTES,
+    _MAX_TIMEOUT,
+    ShellExecTool,
+)
+
+IS_WINDOWS = sys.platform == "win32"
 
 
-def _rust_output(stdout: str = "", stderr: str = "", code: int = 0) -> str:
-    """Build the Rust shell_exec output format."""
-    return f"Exit code: {code}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+def _py(code: str) -> str:
+    """A shell command running *code* under the current interpreter.
+
+    Quoted so it survives both cmd.exe and POSIX shells: the code itself uses
+    no double quotes, so wrapping in double quotes is safe on both.
+    """
+    return f'"{sys.executable}" -c "{code}"'
 
 
-def _make_mock_rust(side_effect=None, return_value=None):
-    """Create a mock Rust module with a ShellExecTool that returns *return_value*
-    or raises via *side_effect*."""
-    mock_tool_instance = MagicMock()
-    if side_effect is not None:
-        mock_tool_instance.execute.side_effect = side_effect
-    else:
-        mock_tool_instance.execute.return_value = return_value
-    mock_shell_cls = MagicMock(return_value=mock_tool_instance)
-    mock_mod = MagicMock()
-    mock_mod.ShellExecTool = mock_shell_cls
-    return mock_mod
+def _echo_env(var: str) -> str:
+    """A shell command echoing environment variable *var* using shell syntax."""
+    return f"echo %{var}%" if IS_WINDOWS else f"echo ${var}"
 
 
 class TestShellExecTool:
@@ -56,220 +61,263 @@ class TestShellExecTool:
         assert "command" in tool.spec.parameters["properties"]
         assert "command" in tool.spec.parameters["required"]
 
+    def test_tool_id(self):
+        assert ShellExecTool().tool_id == "shell_exec"
+
+    def test_to_openai_function(self):
+        fn = ShellExecTool().to_openai_function()
+        assert fn["type"] == "function"
+        assert fn["function"]["name"] == "shell_exec"
+        assert "command" in fn["function"]["parameters"]["properties"]
+
     def test_no_command(self):
-        tool = ShellExecTool()
-        result = tool.execute(command="")
+        result = ShellExecTool().execute(command="")
         assert result.success is False
         assert "No command" in result.content
 
     def test_no_command_param(self):
-        tool = ShellExecTool()
-        result = tool.execute()
+        result = ShellExecTool().execute()
         assert result.success is False
         assert "No command" in result.content
 
-    def test_simple_echo(self):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout="hello\n"),
-        )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo hello")
+    # -- output capture ---------------------------------------------------
+
+    def test_simple_stdout(self):
+        result = ShellExecTool().execute(command=_py("print('hello')"))
         assert result.success is True
         assert "hello" in result.content
-        assert "--- stdout ---" in result.content
+        assert "=== STDOUT ===" in result.content
 
     def test_capture_stderr(self):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stderr="error_msg\n"),
+        result = ShellExecTool().execute(
+            command=_py("import sys; sys.stderr.write('error_msg')"),
         )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo error_msg >&2")
         assert "error_msg" in result.content
-        assert "--- stderr ---" in result.content
+        assert "=== STDERR ===" in result.content
 
-    @pytest.mark.skip(
-        reason="Rust backend has no timeout — Command::output() blocks",
-    )
-    def test_timeout_exceeded(self):
-        tool = ShellExecTool()
-        result = tool.execute(command="sleep 60", timeout=1)
+    def test_no_output(self):
+        result = ShellExecTool().execute(command=_py("pass"))
+        assert result.success is True
+        assert result.content == "(no output)"
+
+
+class TestReturnCodeIsTruthful:
+    """A non-zero exit must be reported as a failure with its real code.
+
+    The removed Rust branch hardcoded ``returncode: 0, success: True`` for every
+    invocation, so a command that failed was indistinguishable from one that
+    succeeded.
+    """
+
+    def test_zero_returncode_is_success(self):
+        result = ShellExecTool().execute(command=_py("pass"))
+        assert result.success is True
+        assert result.metadata["returncode"] == 0
+
+    def test_nonzero_returncode_is_failure(self):
+        result = ShellExecTool().execute(command=_py("raise SystemExit(42)"))
         assert result.success is False
-        assert "timed out" in result.content
+        assert result.metadata["returncode"] == 42
+
+    def test_nonzero_returncode_still_returns_output(self):
+        result = ShellExecTool().execute(
+            command=_py("import sys; print('partial'); sys.exit(3)"),
+        )
+        assert result.success is False
+        assert result.metadata["returncode"] == 3
+        assert "partial" in result.content
+
+
+class TestTimeoutIsEnforced:
+    """``timeout`` must actually bound execution.
+
+    The removed Rust branch called ``Command::output()``, which blocks with no
+    deadline, while still reporting ``timeout_used`` in metadata.
+    """
+
+    def test_timeout_terminates_long_command(self):
+        result = ShellExecTool().execute(
+            command=_py("import time; time.sleep(30)"),
+            timeout=1,
+        )
+        assert result.success is False
+        assert "timed out" in result.content.lower()
         assert result.metadata["returncode"] == -1
         assert result.metadata["timeout_used"] == 1
 
     def test_timeout_capped_at_max(self):
-        """timeout param is still capped in Python; Rust ignores it."""
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout="ok\n"),
-        )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo ok", timeout=999)
-        assert result.success is True
-        assert result.metadata["timeout_used"] == 300
+        result = ShellExecTool().execute(command=_py("pass"), timeout=999)
+        assert result.metadata["timeout_used"] == _MAX_TIMEOUT
 
-    def test_working_dir(self, tmp_path):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout=str(tmp_path) + "\n"),
+    def test_timeout_floored_at_one(self):
+        result = ShellExecTool().execute(command=_py("pass"), timeout=0)
+        assert result.metadata["timeout_used"] == 1
+
+    def test_default_timeout_metadata(self):
+        result = ShellExecTool().execute(command=_py("pass"))
+        assert result.metadata["timeout_used"] == 30
+
+    @pytest.mark.parametrize("bad", ["abc", None, [], {}])
+    def test_invalid_timeout_falls_back_to_default(self, bad):
+        result = ShellExecTool().execute(command=_py("pass"), timeout=bad)
+        assert result.metadata["timeout_used"] == 30
+
+
+class TestEnvironmentIsSanitised:
+    """The child must receive the curated environment, not the parent's.
+
+    The removed Rust branch inherited the full parent environment, so any secret
+    in the agent's own environment was readable by an executed command.
+    """
+
+    def test_arbitrary_env_var_is_not_inherited(self, monkeypatch):
+        monkeypatch.setenv("GRANDPA_TEST_SECRET_12345", "leaked")
+        result = ShellExecTool().execute(
+            command=_py(
+                "import os; print(os.environ.get("
+                "'GRANDPA_TEST_SECRET_12345', 'ABSENT'))"
+            ),
         )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="pwd", working_dir=str(tmp_path))
         assert result.success is True
-        assert str(tmp_path) in result.content
+        assert "leaked" not in result.content
+        assert "ABSENT" in result.content
+
+    def test_env_passthrough_allows_named_var(self, monkeypatch):
+        monkeypatch.setenv("GRANDPA_TEST_PASSTHROUGH_67890", "allowed_value")
+        result = ShellExecTool().execute(
+            command=_py(
+                "import os; print(os.environ.get("
+                "'GRANDPA_TEST_PASSTHROUGH_67890', 'ABSENT'))"
+            ),
+            env_passthrough=["GRANDPA_TEST_PASSTHROUGH_67890"],
+        )
+        assert result.success is True
+        assert "allowed_value" in result.content
+
+    def test_env_passthrough_of_unset_var_is_not_an_error(self):
+        result = ShellExecTool().execute(
+            command=_py("pass"),
+            env_passthrough=["GRANDPA_DEFINITELY_UNSET_VAR_XYZ"],
+        )
+        assert result.success is True
+
+    def test_path_is_preserved(self):
+        result = ShellExecTool().execute(
+            command=_py("import os; print('PATH' in os.environ)"),
+        )
+        assert "True" in result.content
+
+    @pytest.mark.skipif(IS_WINDOWS, reason="POSIX shell variable syntax")
+    def test_shell_expansion_does_not_leak_secret_posix(self, monkeypatch):
+        monkeypatch.setenv("GRANDPA_TEST_SHELL_SECRET", "leaked")
+        result = ShellExecTool().execute(
+            command=_echo_env("GRANDPA_TEST_SHELL_SECRET"),
+        )
+        assert "leaked" not in result.content
+
+
+class TestOutputTruncation:
+    """Output beyond the cap must be truncated.
+
+    The removed Rust branch returned whatever the command produced, so a command
+    emitting hundreds of megabytes flowed straight into a model prompt.
+    """
+
+    def test_large_stdout_is_truncated(self):
+        result = ShellExecTool().execute(
+            command=_py(f"print('A' * {_MAX_OUTPUT_BYTES * 2})"),
+            timeout=60,
+        )
+        assert "stdout truncated" in result.content
+        assert len(result.content) < _MAX_OUTPUT_BYTES * 2
+
+    def test_large_stderr_is_truncated(self):
+        result = ShellExecTool().execute(
+            command=_py(f"import sys; sys.stderr.write('B' * {_MAX_OUTPUT_BYTES * 2})"),
+            timeout=60,
+        )
+        assert "stderr truncated" in result.content
+
+
+class TestWorkingDir:
+    def test_working_dir_is_used(self, tmp_path):
+        result = ShellExecTool().execute(
+            command=_py("import os; print(os.getcwd())"),
+            working_dir=str(tmp_path),
+        )
+        assert result.success is True
         assert result.metadata["working_dir"] == str(tmp_path)
+        assert str(tmp_path.resolve()).lower() in result.content.lower()
 
     def test_working_dir_not_exists(self):
-        tool = ShellExecTool()
-        result = tool.execute(command="echo hi", working_dir="/nonexistent/path")
+        result = ShellExecTool().execute(
+            command="echo hi",
+            working_dir=os.path.join(os.sep, "nonexistent", "path"),
+        )
         assert result.success is False
         assert "does not exist" in result.content
 
     def test_working_dir_not_directory(self, tmp_path):
         f = tmp_path / "file.txt"
         f.write_text("data", encoding="utf-8")
-        tool = ShellExecTool()
-        result = tool.execute(command="echo hi", working_dir=str(f))
+        result = ShellExecTool().execute(command="echo hi", working_dir=str(f))
         assert result.success is False
         assert "not a directory" in result.content
 
-    @pytest.mark.skip(reason="Rust backend inherits parent env — no env isolation")
-    def test_env_clearing(self):
-        """Verify that arbitrary env vars are NOT passed through."""
-        marker = "grandpa_TEST_SECRET_12345"
-        os.environ[marker] = "leaked"
-        try:
-            tool = ShellExecTool()
-            result = tool.execute(command=f"echo ${marker}")
-            assert result.success is True
-            assert "leaked" not in result.content
-        finally:
-            os.environ.pop(marker, None)
 
-    @pytest.mark.skip(
-        reason="Rust backend inherits parent env — no env_passthrough",
-    )
-    def test_env_passthrough(self):
-        """Verify that explicitly listed env vars ARE passed through."""
-        marker = "grandpa_TEST_PASSTHROUGH_67890"
-        os.environ[marker] = "allowed_value"
-        try:
-            tool = ShellExecTool()
-            result = tool.execute(
-                command=f"echo ${marker}",
-                env_passthrough=[marker],
+class TestNoRustDelegation:
+    """shell_exec must not consult the Rust backend at all.
+
+    Regression guard for the removed Rust-first branch. Even a working
+    ``grandpa_rust`` must not change how a shell command is executed, because
+    the two implementations did not share timeout, environment, truncation, or
+    return-code semantics.
+    """
+
+    def test_rust_module_is_never_requested(self, monkeypatch):
+        calls: list[str] = []
+
+        def _fail() -> None:
+            calls.append("get_rust_module")
+            raise AssertionError(
+                "shell_exec must not delegate to the Rust backend",
             )
-            assert result.success is True
-            assert "allowed_value" in result.content
-        finally:
-            os.environ.pop(marker, None)
 
-    def test_returncode_in_metadata(self):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout="ok\n"),
-        )
-        tool = ShellExecTool()
-        with patch(
+        monkeypatch.setattr(
             "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo ok")
+            _fail,
+        )
+        result = ShellExecTool().execute(command=_py("print('ok')"))
+
+        assert calls == []
         assert result.success is True
-        assert result.metadata["returncode"] == 0
+        assert "ok" in result.content
 
-    def test_nonzero_returncode(self):
-        """Non-zero exit in Rust returns ToolResult::failure() but PyO3 binding
-        returns Ok(content).  The Python wrapper currently treats that as
-        success=True (it only sets success=False on exception).  The Rust
-        output still contains the exit code in the formatted string."""
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(code=42),
-        )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="exit 42")
-        # PyO3 binding returns content for both success/failure ToolResults,
-        # so Python wrapper sets success=True and returncode=0.
-        assert result.success is True
-        assert "Exit code: 42" in result.content
+    def test_source_contains_no_rust_reference(self):
+        import inspect
 
-    @pytest.mark.skip(reason="Rust backend has no output truncation")
-    def test_max_output_truncation(self, tmp_path):
-        """Stdout exceeding 100 KB is truncated."""
-        tool = ShellExecTool()
-        result = tool.execute(
-            command="python3 -c \"print('A' * 200000)\"",
-        )
-        assert "truncated" in result.content
-        assert len(result.content) < 200_000
+        import grandpa.tools.shell_exec as mod
 
-    def test_no_output(self):
-        """Rust always returns the format string even when stdout/stderr are empty."""
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(),
-        )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="true")
-        assert result.success is True
-        assert "Exit code: 0" in result.content
-        assert "--- stdout ---" in result.content
-        assert "--- stderr ---" in result.content
+        source = inspect.getsource(mod.ShellExecTool.execute)
+        assert "get_rust_module" not in source
+        assert "_rust" not in source
 
-    def test_tool_id(self):
-        tool = ShellExecTool()
-        assert tool.tool_id == "shell_exec"
 
-    def test_to_openai_function(self):
-        tool = ShellExecTool()
-        fn = tool.to_openai_function()
-        assert fn["type"] == "function"
-        assert fn["function"]["name"] == "shell_exec"
-        assert "command" in fn["function"]["parameters"]["properties"]
+class TestRustBridgeContract:
+    """``_rust_bridge`` must describe the backend it actually has."""
 
-    def test_default_timeout_metadata(self):
-        mock_mod = _make_mock_rust(
-            return_value=_rust_output(stdout="ok\n"),
-        )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="echo ok")
-        assert result.metadata["timeout_used"] == 30
+    def test_rust_available_reflects_reality(self):
+        import importlib.util
 
-    def test_rust_exception_sets_failure(self):
-        """When the Rust backend raises an exception, Python sets success=False."""
-        mock_mod = _make_mock_rust(
-            side_effect=RuntimeError("Failed to execute: No such file or directory"),
-        )
-        tool = ShellExecTool()
-        with patch(
-            "grandpa._rust_bridge.get_rust_module",
-            return_value=mock_mod,
-        ):
-            result = tool.execute(command="/nonexistent_binary")
-        assert result.success is False
-        assert result.metadata["returncode"] == -1
+        from grandpa import _rust_bridge
+
+        expected = importlib.util.find_spec("grandpa_rust") is not None
+        assert _rust_bridge.RUST_AVAILABLE is expected
+        assert _rust_bridge.rust_available() is expected
+
+    def test_docstring_does_not_claim_rust_is_mandatory(self):
+        from grandpa import _rust_bridge
+
+        doc = (_rust_bridge.__doc__ or "").lower()
+        assert "optional" in doc
+        assert "mandatory" not in doc.split("previously documented")[0]

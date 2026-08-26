@@ -1,13 +1,25 @@
 """Single point of contact between Python and the Rust ``grandpa_rust`` module.
 
 Every Python module that wants to delegate to Rust should import helpers from
-here rather than importing ``grandpa_rust`` directly.  The Rust backend is
-mandatory — if it cannot be imported, a hard ``ImportError`` is raised.
+here rather than importing ``grandpa_rust`` directly.
+
+The Rust backend is **optional**.  ``grandpa_rust`` is a compiled PyO3
+extension that is not built by the default install and is not shipped in the
+wheel (the build backend is hatchling, which produces a pure-Python
+distribution).  Python is the authoritative implementation for everything;
+callers that consult Rust must degrade to their Python path when it is absent,
+and must not change observable behaviour depending on which one ran.
+
+This module previously documented the opposite — that Rust was mandatory with
+no Python fallback — while every one of its callers wrapped the call in
+``try/except`` and fell back.  ``RUST_AVAILABLE`` was likewise hardcoded to
+``True``.  Both statements were false on every machine the project has run on.
 """
 
 from __future__ import annotations
 
 import functools
+import importlib.util
 import json
 from typing import TYPE_CHECKING, List
 
@@ -15,7 +27,7 @@ if TYPE_CHECKING:
     import types as _types
 
 # ---------------------------------------------------------------------------
-# Mandatory import — Rust backend is required
+# Optional import — the Rust backend may legitimately be absent
 # ---------------------------------------------------------------------------
 
 
@@ -23,16 +35,27 @@ if TYPE_CHECKING:
 def get_rust_module() -> _types.ModuleType:
     """Return the ``grandpa_rust`` module.
 
-    Raises ``ImportError`` if the compiled extension is not available.
-    The Rust backend is mandatory for all modules that have Rust
-    implementations — there is no Python fallback.
+    Raises ``ImportError`` if the compiled extension is not available, which is
+    the normal case for a default install.  Callers must handle that and use
+    their Python implementation.
     """
     import grandpa_rust  # type: ignore[import-untyped]
 
     return grandpa_rust
 
 
-RUST_AVAILABLE: bool = True
+def rust_available() -> bool:
+    """Return whether the compiled ``grandpa_rust`` extension can be imported.
+
+    Uses ``find_spec`` so the extension is not actually loaded as a side effect
+    of asking.
+    """
+    return importlib.util.find_spec("grandpa_rust") is not None
+
+
+#: Whether the compiled extension is present.  Resolved at import time from the
+#: real interpreter state rather than asserted.
+RUST_AVAILABLE: bool = rust_available()
 
 
 # ---------------------------------------------------------------------------
@@ -175,6 +198,7 @@ __all__ = [
     "optimization_run_from_json",
     "optimization_store_from_rust",
     "retrieval_results_from_json",
+    "rust_available",
     "scan_result_from_json",
     "trial_result_from_json",
 ]
