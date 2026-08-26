@@ -18,7 +18,6 @@ Install Python 3.10 or newer, [uv](https://docs.astral.sh/uv/), and
 git clone https://github.com/trhariharasudhan/Grandpa.git
 cd Grandpa
 uv sync --extra voice --extra screen --extra server
-copy .env.example .env
 ollama pull qwen2.5:3b
 uv run grandpa doctor
 uv run grandpa chat

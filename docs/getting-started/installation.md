@@ -25,7 +25,6 @@ Optional local capabilities:
 git clone https://github.com/trhariharasudhan/Grandpa.git
 cd Grandpa
 uv sync --extra voice --extra screen --extra server
-copy .env.example .env
 ```
 
 Start Ollama and install a local model:

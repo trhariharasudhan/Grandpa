@@ -40,18 +40,24 @@ class TestSecurityConfigDefaults:
         cfg = SecurityConfig()
         assert cfg.mode == "redact"
 
-    def test_rate_limiting_enabled_by_default(self) -> None:
-        from grandpa.core.config import SecurityConfig
+    def test_removed_keys_are_not_silently_accepted(self) -> None:
+        """rate_limit_* and local_*_bypass were never read by any code path.
+
+        They are gone rather than left looking configurable; a config still
+        setting one gets a warning instead of a silent no-op.
+        """
+        from grandpa.core.config import REMOVED_CONFIG_KEYS, SecurityConfig
 
         cfg = SecurityConfig()
-        assert cfg.rate_limit_enabled is True
-
-    def test_bypass_defaults_conservative(self) -> None:
-        from grandpa.core.config import SecurityConfig
-
-        cfg = SecurityConfig()
-        assert cfg.local_engine_bypass is False
-        assert cfg.local_tool_bypass is False
+        for name in (
+            "rate_limit_enabled",
+            "rate_limit_rpm",
+            "rate_limit_burst",
+            "local_engine_bypass",
+            "local_tool_bypass",
+        ):
+            assert not hasattr(cfg, name)
+            assert f"security.{name}" in REMOVED_CONFIG_KEYS
 
     def test_profile_default_empty(self) -> None:
         from grandpa.core.config import SecurityConfig

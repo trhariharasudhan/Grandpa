@@ -34,7 +34,6 @@ db_path = "~/.grandpa/telemetry.db"
 enabled = true
 scan_input = true
 scan_output = true
-enforce_tool_confirmation = true
 
 [scheduler]
 enabled = false

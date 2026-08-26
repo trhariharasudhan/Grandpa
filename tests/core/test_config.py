@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -27,7 +28,6 @@ def test_defaults_are_local_and_safe() -> None:
     assert cfg.engine.default == "ollama"
     assert cfg.memory.default_backend == "sqlite"
     assert cfg.security.enabled is True
-    assert cfg.security.enforce_tool_confirmation is True
     assert cfg.engine.ollama.num_ctx == 8192
 
 
@@ -146,3 +146,84 @@ def test_minimal_toml_uses_requested_loopback_host() -> None:
 
     assert 'default = "ollama"' in rendered
     assert 'host = "http://127.0.0.1:11434"' in rendered
+
+
+def test_removed_config_keys_are_not_fields() -> None:
+    """Inert options were removed, not left looking configurable."""
+    from grandpa.core.config import REMOVED_CONFIG_KEYS, GrandpaConfig
+
+    cfg = GrandpaConfig()
+    for dotted in REMOVED_CONFIG_KEYS:
+        section, _, key = dotted.partition(".")
+        assert not hasattr(getattr(cfg, section), key), dotted
+
+
+def test_removed_config_key_in_toml_warns_instead_of_silently_dropping(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """_apply_toml_section ignores unknown keys, so removal needs a warning."""
+    import grandpa.core.config as config_module
+    from grandpa.core.config import consume_config_recovery_warnings, load_config
+
+    config_path = tmp_path / "config.toml"
+    config_path.write_text(
+        "[security]\nenabled = true\nrate_limit_rpm = 120\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", config_path)
+    monkeypatch.setattr(config_module, "DEFAULT_CONFIG_DIR", tmp_path)
+
+    consume_config_recovery_warnings()  # clear anything pending
+    cfg = load_config()
+
+    assert cfg.security.enabled is True
+    warnings = consume_config_recovery_warnings()
+    assert any("security.rate_limit_rpm" in w for w in warnings), warnings
+
+
+def test_security_profiles_only_set_live_keys() -> None:
+    """A profile must not advertise behaviour it cannot deliver."""
+    from grandpa.core.config import (
+        _SECURITY_PROFILES,
+        SecurityConfig,
+        ServerConfig,
+    )
+
+    security_fields = set(SecurityConfig.__dataclass_fields__)
+    server_fields = set(ServerConfig.__dataclass_fields__)
+    for name, definition in _SECURITY_PROFILES.items():
+        assert set(definition.get("security", {})) <= security_fields, name
+        assert set(definition.get("server", {})) <= server_fields, name
+
+
+def test_dotenv_files_are_not_loaded(tmp_path: Path, monkeypatch) -> None:
+    """Grandpa configures from config.toml + the process environment only.
+
+    A `.env` file is not read: nothing in the codebase parses one and
+    python-dotenv is not a dependency. The misleading `.env.example` and the
+    README step that told users to copy it were removed rather than adding a
+    second configuration mechanism.
+    """
+    import grandpa.core.config as config_module
+    from grandpa.core.config import load_config
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / ".env").write_text(
+        "GRANDPA_API_KEY=gp_sk_from_dotenv\n", encoding="utf-8"
+    )
+    monkeypatch.delenv("GRANDPA_API_KEY", raising=False)
+    monkeypatch.setattr(config_module, "DEFAULT_CONFIG_PATH", tmp_path / "config.toml")
+    monkeypatch.setattr(config_module, "DEFAULT_CONFIG_DIR", tmp_path)
+
+    load_config()
+
+    assert os.environ.get("GRANDPA_API_KEY") is None
+
+    from grandpa.server.auth_middleware import api_key_from_env
+
+    assert api_key_from_env() == ""
+
+
+def test_repository_ships_no_dotenv_example() -> None:
+    """The file implied a loader that does not exist."""
+    repo_root = Path(__file__).resolve().parents[2]
+    assert not (repo_root / ".env.example").exists()

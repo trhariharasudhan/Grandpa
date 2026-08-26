@@ -129,7 +129,6 @@ def project_diagnostics(repo: Path | str = REPO_ROOT) -> DeveloperResult:
         "uv_lock": (repo / "uv.lock").exists(),
         "python_package": (repo / "src" / "grandpa").is_dir(),
         "tests": (repo / "tests").exists(),
-        "env_example": any(repo.glob("*.env.example")),
     }
     missing = [key for key, ok in checks.items() if not ok]
     return DeveloperResult(
