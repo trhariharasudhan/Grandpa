@@ -224,7 +224,11 @@ def test_background_listening_after_app_launch(monkeypatch):
 
     call_count = 0
 
-    def fake_capture(sd, dev, stop):
+    # Mirrors MicrophoneCapture._capture_from_device, which gained the
+    # on_speech_start VAD-onset callback the presenter uses. The fake had not
+    # been updated, so the real signature raised TypeError, which the retry
+    # loop then reported as a microphone failure.
+    def fake_capture(sd, dev, stop, on_speech_start=None):
         nonlocal call_count
         call_count += 1
         if call_count == 1:

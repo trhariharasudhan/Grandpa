@@ -1,22 +1,18 @@
-"""Detect how Grandpa was installed so we can show the right upgrade
-command (and run the right upgrade command for ``Grandpa self-update``).
+"""Detect how Grandpa was installed, to decide whether it can self-update.
 
-Three install paths are supported today:
+Grandpa has no published distribution. The PyPI name ``grandpa`` belongs to
+an unrelated project (``grandpa`` 0.6.3, "Bizerba AI Team"), so
+``pip install --upgrade grandpa`` and ``uv tool upgrade grandpa`` would pull a
+third party's package over the user's environment. Neither command is ever
+produced by this module.
 
-- **PyPI** (``pip install grandpa``). The package lives somewhere
-  inside ``site-packages``. Upgrade with ``pip install --upgrade grandpa``.
-- **uv tool** (``uv tool install grandpa``). Lives in a uv-managed
-  isolated venv under ``~/.local/share/uv/tools/``. Upgrade with
-  ``uv tool upgrade grandpa``.
-- **Editable git checkout** (``uv sync`` / ``pip install -e .`` from a
-  cloned repo). The package's ``__file__`` is inside a working tree
-  with a ``.git`` directory at the repo root. Upgrade with
-  ``git pull && uv sync`` from the checkout.
+The only supported install today is the documented one: a git checkout with an
+editable install (``git clone`` + ``uv sync``). That upgrades from the user's
+own remote, so it is safe and stays enabled.
 
-We detect by inspecting ``grandpa.__file__``. If we can't tell with
-confidence we fall back to the PyPI command — that's the most common
-case and the worst outcome is a no-op for a user who has nothing to
-pull from PyPI.
+Every other install shape reports ``upgrade_command = ""`` and an
+``unsupported_reason``. Callers must check :attr:`InstallInfo.can_upgrade`
+before running anything.
 """
 
 from __future__ import annotations
@@ -27,14 +23,28 @@ from typing import Optional
 
 import grandpa
 
+#: Why non-checkout installs cannot self-update. Referenced in the CLI output.
+NO_DISTRIBUTION_REASON = (
+    "Grandpa has no published package. The name 'grandpa' on PyPI belongs to "
+    "an unrelated project, so upgrading through pip or uv would install "
+    "someone else's software. Update by pulling the git checkout instead: "
+    "https://github.com/trhariharasudhan/Grandpa"
+)
+
 
 @dataclass(frozen=True)
 class InstallInfo:
-    """How Grandpa was installed."""
+    """How Grandpa was installed, and whether it can upgrade itself."""
 
     kind: str  # "pypi" | "uv-tool" | "editable-git" | "unknown"
-    upgrade_command: str
+    upgrade_command: str  # "" when no verified upgrade path exists
     repo_root: Optional[Path] = None  # only set for editable-git
+    unsupported_reason: str = ""
+
+    @property
+    def can_upgrade(self) -> bool:
+        """True only when a verified upgrade command is available."""
+        return bool(self.upgrade_command)
 
 
 def detect_install() -> InstallInfo:
@@ -48,7 +58,8 @@ def detect_install() -> InstallInfo:
     except Exception:
         return InstallInfo(
             kind="unknown",
-            upgrade_command="pip install --upgrade grandpa",
+            upgrade_command="",
+            unsupported_reason=NO_DISTRIBUTION_REASON,
         )
 
     parts = [p.lower() for p in pkg_file.parts]
@@ -56,7 +67,8 @@ def detect_install() -> InstallInfo:
     if "uv" in parts and "tools" in parts:
         return InstallInfo(
             kind="uv-tool",
-            upgrade_command="uv tool upgrade grandpa",
+            upgrade_command="",
+            unsupported_reason=NO_DISTRIBUTION_REASON,
         )
 
     # Editable install: a ``.git`` dir within a few parents of the
@@ -78,10 +90,12 @@ def detect_install() -> InstallInfo:
     if "site-packages" in parts:
         return InstallInfo(
             kind="pypi",
-            upgrade_command="pip install --upgrade grandpa",
+            upgrade_command="",
+            unsupported_reason=NO_DISTRIBUTION_REASON,
         )
 
     return InstallInfo(
         kind="unknown",
-        upgrade_command="pip install --upgrade grandpa",
+        upgrade_command="",
+        unsupported_reason=NO_DISTRIBUTION_REASON,
     )

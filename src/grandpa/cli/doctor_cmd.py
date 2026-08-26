@@ -512,7 +512,7 @@ def _check_native_backend_diagnostics(config: Any | None = None) -> List[CheckRe
     if valid_ggufs:
         names = [f.stem for f in valid_ggufs]
         names_str = ", ".join(names[:5]) + (
-            f" (+{len(names)-5} more)" if len(names) > 5 else ""
+            f" (+{len(names) - 5} more)" if len(names) > 5 else ""
         )
         results.append(
             CheckResult(

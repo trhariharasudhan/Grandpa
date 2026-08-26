@@ -378,7 +378,6 @@ mode = "warn"               # "warn" | "redact" | "block"
 secret_scanner = true
 pii_scanner = true
 audit_log_path = "~/.grandpa/audit.db"
-enforce_tool_confirmation = true
 ```
 
 ### Configuration Reference
@@ -392,7 +391,21 @@ enforce_tool_confirmation = true
 | `secret_scanner` | `bool` | `true` | Run `SecretScanner` on all text |
 | `pii_scanner` | `bool` | `true` | Run `PIIScanner` on all text |
 | `audit_log_path` | `str` | `~/.grandpa/audit.db` | Path to the SQLite audit log |
-| `enforce_tool_confirmation` | `bool` | `true` | Require explicit confirmation before tool execution |
+| `profile` | `str` | `""` | Named preset: `personal`, `shared`, or `server` |
+
+Every key above is read by `setup_security()`. Options that no code path
+consulted — `enforce_tool_confirmation`, `merkle_audit`, `signing_key_path`,
+`ssrf_protection`, `rate_limit_enabled`, `rate_limit_rpm`,
+`rate_limit_burst`, `local_engine_bypass`, `local_tool_bypass` and
+`vault_key_path` — have been removed rather than left looking
+configurable. A config that still sets one gets a warning on load. See
+`REMOVED_CONFIG_KEYS` in `grandpa/core/config.py`.
+
+SSRF protection is **not** configurable: `check_ssrf` runs unconditionally
+in the `http_request`, `browser` and `web_search` tools and has no off
+switch. Tool confirmation is decided per tool by
+`ToolSpec.requires_confirmation` together with the executor's
+`confirm_callback`, not by a global flag.
 
 !!! tip "Start with warn, tighten later"
     `mode = "warn"` is a good starting point. It lets you observe what patterns are being triggered without disrupting normal usage. Switch to `"redact"` once you are satisfied that the scanner isn't producing too many false positives for your workload.

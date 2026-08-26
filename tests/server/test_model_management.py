@@ -18,7 +18,9 @@ from grandpa.server.app import create_app  # noqa: E402
 
 
 def _make_engine(engine_id="mock", models=None):
-    engine = MagicMock(spec=["engine_id", "health", "list_models", "generate", "stream", "close"])
+    engine = MagicMock(
+        spec=["engine_id", "health", "list_models", "generate", "stream", "close"]
+    )
     engine.engine_id = engine_id
     engine.health.return_value = True
     engine.list_models.return_value = models or ["test-model"]

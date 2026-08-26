@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import os
 import sys
-import threading
 from typing import Callable
 
 from rich.console import Console
 from rich.panel import Panel
 
+from grandpa.cli._animation import TerminalAnimation
 from grandpa.cli.theme import (
     VOICE_STARTUP_TEXT,
     render_assistant_response,
@@ -33,57 +33,17 @@ def is_interactive_terminal() -> bool:
     return False
 
 
-class ListeningAnimation:
+class ListeningAnimation(TerminalAnimation):
     """Small terminal-only animation for microphone capture."""
 
-    def __init__(self, console: Console, *, interval: float = 0.4) -> None:
-        self._console = console
-        self._interval = interval
-        self._stop = threading.Event()
-        self._thread: threading.Thread | None = None
+    frames = ("Listening", "Listening.", "Listening..", "Listening...")
+    thread_name = "grandpa-listening-animation"
 
+    def __init__(self, console: Console, *, interval: float = 0.4) -> None:
+        super().__init__(console, interval=interval)
         self._enabled = is_interactive_terminal() and not getattr(
             console, "no_color", False
         )
-
-    def start(self) -> None:
-        if not self._enabled or self._thread is not None:
-            return
-        self._stop.clear()
-        self._thread = threading.Thread(
-            target=self._run,
-            name="grandpa-listening-animation",
-            daemon=True,
-        )
-        self._thread.start()
-
-    def stop(self) -> None:
-        if not self._thread:
-            return
-        self._stop.set()
-        self._thread.join(timeout=1.0)
-        self._clear_line()
-        self._thread = None
-
-    def _run(self) -> None:
-        frames = ["Listening", "Listening.", "Listening..", "Listening..."]
-        index = 0
-        while not self._stop.is_set():
-            frame = frames[index % len(frames)]
-            self._write(f"\r{frame}")
-            index += 1
-            self._stop.wait(self._interval)
-
-    def _clear_line(self) -> None:
-        self._write("\r\033[2K")
-
-    def _write(self, text: str) -> None:
-        try:
-            file = self._console.file
-            file.write(text)
-            file.flush()
-        except Exception:
-            pass
 
 
 class VoicePresenter:
@@ -209,6 +169,9 @@ class VoicePresenter:
         """Start the temporary animated listening indicator."""
         if self.quiet or self.screen_reader or self.no_color:
             return
+        # Stop first: replacing the attribute while a thread is running would
+        # orphan it with nothing left holding its stop event.
+        self.stop_listening()
         self._listening = ListeningAnimation(self.console)
         self._listening.start()
 
@@ -225,6 +188,7 @@ class VoicePresenter:
             return
         from grandpa.cli.chat_cmd import ThinkingAnimation
 
+        self.stop_thinking()
         self._thinking = ThinkingAnimation(self.console)
         self._thinking.start()
 

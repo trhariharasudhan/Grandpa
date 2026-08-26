@@ -105,6 +105,22 @@ def pytest_collection_modifyitems(
         if rel_path in _RELEASE_TEST_PATHS:
             item.add_marker(pytest.mark.release)
         marker_names = {marker.name for marker in item.iter_markers()}
+        # Tests explicitly marked ``microphone`` drive real audio hardware and
+        # block indefinitely on a machine with a sound card. Opt in with
+        # GRANDPA_RUN_MICROPHONE_TESTS=1; otherwise treat them as environment
+        # tests and skip, so a default ``pytest`` run always terminates.
+        if "microphone" in marker_names:
+            item.add_marker(pytest.mark.environment)
+            if os.environ.get("GRANDPA_RUN_MICROPHONE_TESTS") != "1":
+                item.add_marker(
+                    pytest.mark.skip(
+                        reason=(
+                            "requires microphone/audio hardware; set "
+                            "GRANDPA_RUN_MICROPHONE_TESTS=1 to run"
+                        )
+                    )
+                )
+            continue
         if not marker_names.intersection({"optional", "environment", "slow", "live"}):
             item.add_marker(pytest.mark.core)
 

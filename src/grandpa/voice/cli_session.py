@@ -640,6 +640,12 @@ def build_voice_session(
         quiet=quiet,
         verbose=verbose,
         screen_reader=screen_reader,
+        # Must be passed at construction: VoicePresenter decides here whether
+        # to render through Rich or route text to this callable. Assigning
+        # ``presenter.output`` afterwards leaves that decision made against the
+        # default ``print``, and every message goes to the console instead of
+        # the caller's sink.
+        output=output,
     )
     return VoiceSession(
         capture,

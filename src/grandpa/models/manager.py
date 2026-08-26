@@ -16,6 +16,7 @@ from grandpa.models.source import HuggingFaceModelSource, ModelSource
 
 logger = logging.getLogger(__name__)
 
+
 class NativeModelManager:
     """Manages installation, discovery, validation, and removal of local GGUF models."""
 

@@ -1242,11 +1242,21 @@ async def emergency_stop_local_actions():
 
 
 @router.post("/api/local-action/{action_id}/approve")
-async def approve_structured_local_action(action_id: str):
-    """Approve a pending structured PC action."""
+async def approve_structured_local_action(
+    action_id: str,
+    payload: dict[str, Any] | None = None,
+    token: str = Query(default=""),
+):
+    """Approve a pending structured PC action.
+
+    Requires the out-of-band approval code printed on the Grandpa console when
+    the action was staged. Supply it as ``{"token": "..."}`` in the body or as
+    a ``?token=`` query parameter — an ``action_id`` alone does not authorise.
+    """
     from grandpa.pc_control import approve_local_action
 
-    return approve_local_action(action_id).to_dict()
+    supplied = token or str((payload or {}).get("token", ""))
+    return approve_local_action(action_id, supplied).to_dict()
 
 
 @router.post("/api/local-action/{action_id}/reject")

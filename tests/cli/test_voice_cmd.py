@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import wave
 from array import array
+from pathlib import Path
 from types import SimpleNamespace
 
 from click.testing import CliRunner
@@ -186,7 +187,14 @@ def test_voice_runtime_diagnostics_reports_active_interpreter() -> None:
 
     assert diagnostics["python_executable"]
     assert diagnostics["virtual_environment"]
-    assert diagnostics["project_root"].endswith("Grandpa")
+    # Assert the property that matters — project_root points at the repository
+    # root — rather than the directory's name. The previous assertion required
+    # the checkout to be named exactly "Grandpa", so the suite could not pass
+    # from a clone, worktree, or CI path with any other name.
+    project_root = Path(diagnostics["project_root"])
+    assert project_root.is_dir()
+    assert (project_root / "pyproject.toml").is_file()
+    assert (project_root / "src" / "grandpa").is_dir()
 
 
 def test_voice_runtime_diagnostics_ignores_stale_path_launcher(

@@ -1044,7 +1044,9 @@ def test_voice_operator_inventory_canonical_fallback_and_missing_path_safety() -
     assert resp.status in {"blocked", "failed"}
 
 
-def test_voice_activity_detector_idle_silence_does_not_timeout_until_speech_starts() -> None:
+def test_voice_activity_detector_idle_silence_does_not_timeout_until_speech_starts() -> (
+    None
+):
     from grandpa.voice.vad import VoiceActivityConfig, VoiceActivityDetector
 
     config = VoiceActivityConfig(
@@ -1106,7 +1108,9 @@ def test_voice_session_silence_does_not_invoke_transcriber() -> None:
 
     mic = SilentMicrophone()
     stt = SpyTranscriber()
-    responder = SimpleNamespace(handle_user_input=lambda text: SimpleNamespace(text="hi"))
+    responder = SimpleNamespace(
+        handle_user_input=lambda text: SimpleNamespace(text="hi")
+    )
 
     session = VoiceSession(
         mic,
@@ -1126,8 +1130,18 @@ def test_faster_whisper_repetition_hallucination_filtered() -> None:
     from grandpa.speech.faster_whisper import _is_hallucinated_repetition
 
     # Degenerate hallucination loops must be identified
-    assert _is_hallucinated_repetition("I'm sorry. I'm sorry. I'm sorry. I'm sorry. I'm sorry.") is True
-    assert _is_hallucinated_repetition("Thank you. Thank you. Thank you. Thank you. Thank you.") is True
+    assert (
+        _is_hallucinated_repetition(
+            "I'm sorry. I'm sorry. I'm sorry. I'm sorry. I'm sorry."
+        )
+        is True
+    )
+    assert (
+        _is_hallucinated_repetition(
+            "Thank you. Thank you. Thank you. Thank you. Thank you."
+        )
+        is True
+    )
     assert _is_hallucinated_repetition("you you you you you you you") is True
 
     # Normal phrases must NOT be flagged
@@ -1308,7 +1322,9 @@ def test_voice_session_no_repeated_listening_on_polling_loops() -> None:
     assert len(listening_lines) == 1
 
 
-def test_voice_session_state_transitions_idle_to_capturing_to_processing_to_executing() -> None:
+def test_voice_session_state_transitions_idle_to_capturing_to_processing_to_executing() -> (
+    None
+):
     from grandpa.voice.cli_session import VoiceSession, VoiceSessionState
     from grandpa.voice.operator import VoiceOperatorResponder
 
@@ -1436,7 +1452,9 @@ def test_whisper_uses_greedy_beam_size_1_for_fast_inference() -> None:
     assert options["language"] == "en"
 
 
-def test_faster_whisper_speech_to_text_warm_model_reuse_without_reinstantiation() -> None:
+def test_faster_whisper_speech_to_text_warm_model_reuse_without_reinstantiation() -> (
+    None
+):
     from grandpa.voice.speech_input import SpeechInputEngine
     from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 
@@ -1582,5 +1600,3 @@ def test_voice_session_ctrl_c_immediate_shutdown() -> None:
 
     assert exit_code == 0
     assert any("Goodbye" in line for line in output)
-
-

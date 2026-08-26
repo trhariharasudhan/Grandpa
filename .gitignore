@@ -50,11 +50,11 @@ Thumbs.db
 *.jsonl
 *.npz
 *.log
-runtime/reports/
-runtime/burnin/
-runtime/**/*.jsonl
-runtime/**/*.db
-runtime/**/*.sqlite
+/runtime/reports/
+/runtime/burnin/
+/runtime/**/*.jsonl
+/runtime/**/*.db
+/runtime/**/*.sqlite
 results/
 logs/
 traces/
@@ -116,10 +116,19 @@ learning.db
 **/teacher_traces/
 *.session.json
 
-# Local runtime data
-runtime/
+# Local runtime data.
+# NOTE: the leading slash anchors this to the repository root. Without it, Git
+# matches any directory named "runtime" at any depth — which silently excluded
+# the src/grandpa/runtime/ source package (the ModelRuntime layer) from version
+# control. Keep every pattern in this block root-anchored.
+/runtime/
 
 # Local cloned-voice runtime artifacts
+# voice_runtime/rvc/source was previously an unregistered submodule gitlink
+# (mode 160000 with no .gitmodules), which made `git submodule status` fail on
+# every clone. The gitlink is removed; the upstream RVC checkout is a local
+# vendor drop and stays out of version control.
+voice_runtime/rvc/source/
 voice_runtime/.venv/
 voice_runtime/models_or_cache/
 voice_runtime/outputs/

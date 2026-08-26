@@ -1,18 +1,15 @@
-"""`Grandpa self-update` — upgrade Grandpa to the latest release.
+"""`Grandpa self-update` — upgrade a Grandpa git checkout.
 
-Runs the right upgrade command for how the user installed Grandpa:
+Grandpa is distributed as a git checkout, not as a package. Editable git
+installs upgrade with ``git pull && uv sync`` against the user's own remote.
 
-- PyPI installs get ``pip install --upgrade Grandpa``.
-- uv-tool installs get ``uv tool upgrade Grandpa``.
-- Editable git checkouts get ``git pull && uv sync`` in the checkout.
-
-The detection logic is shared with the post-command "new version
-available" hint in ``_version_check.py`` so both surfaces stay in sync.
+Every other install shape refuses: the PyPI name ``grandpa`` belongs to an
+unrelated project, so there is no package this command could safely upgrade
+from. See ``_install_detect.NO_DISTRIBUTION_REASON``.
 """
 
 from __future__ import annotations
 
-import shlex
 import subprocess
 import sys
 
@@ -48,18 +45,20 @@ def self_update(check: bool, yes: bool) -> None:
 
     click.echo(f"Current Grandpa version: v{current}")
     click.echo(f"Install method: {info.kind}")
+
+    if not info.can_upgrade:
+        # No verified source exists for this install shape. Refuse rather than
+        # guess — a guess here installs an unrelated PyPI package.
+        click.echo("Upgrade command: (none available)")
+        click.echo(f"\n{info.unsupported_reason}", err=True)
+        if check:
+            return
+        sys.exit(1)
+
     click.echo(f"Upgrade command: {info.upgrade_command}")
 
     if check:
         return
-
-    if info.kind == "unknown":
-        click.echo(
-            "\nCould not determine install method with confidence. The "
-            "command above is a best guess; verify it matches how you "
-            "installed before running.",
-            err=True,
-        )
 
     if not yes:
         if not click.confirm("\nRun the upgrade command now?", default=True):
@@ -68,15 +67,10 @@ def self_update(check: bool, yes: bool) -> None:
 
     click.echo(f"\n→ {info.upgrade_command}\n")
 
-    # ``editable-git`` uses shell features (``&&``); the others are
-    # simple argv-style commands. Use ``shell=True`` only for the
-    # editable case to keep the surface small. The command itself is
-    # constructed from a trusted, locally-detected path — no user
-    # input flows into it.
-    if info.kind == "editable-git":
-        result = subprocess.run(info.upgrade_command, shell=True)
-    else:
-        result = subprocess.run(shlex.split(info.upgrade_command))
+    # ``editable-git`` is the only shape that reaches here, and its command
+    # chains with ``&&``, so it needs a shell. The command is built from a
+    # locally-detected checkout path — no user input flows into it.
+    result = subprocess.run(info.upgrade_command, shell=True)
 
     if result.returncode != 0:
         click.echo(

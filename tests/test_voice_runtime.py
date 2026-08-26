@@ -144,7 +144,10 @@ def test_vad_stops_after_speech_and_silence() -> None:
     assert detector.observe(10, 0.1) is False
     assert detector.observe(10, 0.1) is False
     assert detector.observe(10, 0.1) is True
-    assert detector.finalization_reason == "trailing_silence"
+    # The VAD reports "silence_timeout" (vad.py). "trailing_silence" is the
+    # separate *duration* field, trailing_silence_seconds — these tests had
+    # conflated the two. cli_session.py branches on "silence_timeout".
+    assert detector.finalization_reason == "silence_timeout"
     assert detector.speech_onset_seconds == pytest.approx(0.1)
     assert detector.speech_active_seconds == pytest.approx(0.2)
 
@@ -166,7 +169,10 @@ def test_vad_preserves_short_pause_inside_sentence() -> None:
     for _ in range(11):
         assert detector.observe(10, 0.1) is False
     assert detector.observe(10, 0.1) is True
-    assert detector.finalization_reason == "trailing_silence"
+    # The VAD reports "silence_timeout" (vad.py). "trailing_silence" is the
+    # separate *duration* field, trailing_silence_seconds — these tests had
+    # conflated the two. cli_session.py branches on "silence_timeout".
+    assert detector.finalization_reason == "silence_timeout"
 
 
 def test_vad_enforces_safe_maximum_duration() -> None:

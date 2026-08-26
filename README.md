@@ -18,7 +18,6 @@ Install Python 3.10 or newer, [uv](https://docs.astral.sh/uv/), and
 git clone https://github.com/trhariharasudhan/Grandpa.git
 cd Grandpa
 uv sync --extra voice --extra screen --extra server
-copy .env.example .env
 ollama pull qwen2.5:3b
 uv run grandpa doctor
 uv run grandpa chat
@@ -124,8 +123,12 @@ uv sync --extra server
 uv run grandpa serve --host 127.0.0.1 --port 8000
 ```
 
-The server binds to loopback by default. Browser origins are not enabled by
-default; configure CORS explicitly only for a trusted local client.
+The server binds to loopback by default and is authenticated by default: on
+first run it generates an API key, prints it, and stores it in
+`~/.grandpa/config.toml`. Pass it as `Authorization: Bearer <key>`, or override
+it with `GRANDPA_API_KEY`. Use `--no-auth` only where every local process is
+trusted. Browser origins are not enabled by default; configure CORS explicitly
+only for a trusted local client.
 
 ## Development
 
