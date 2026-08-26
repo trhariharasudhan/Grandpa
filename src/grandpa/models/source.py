@@ -116,7 +116,9 @@ class HuggingFaceModelSource(ModelSource):
             )
 
         sanitized_filename = validate_gguf_filename(filename)
-        download_url = f"{self.base_url}/{repo_id}/resolve/{revision}/{sanitized_filename}"
+        download_url = (
+            f"{self.base_url}/{repo_id}/resolve/{revision}/{sanitized_filename}"
+        )
 
         return ResolvedModelArtifact(
             source_type="huggingface",

@@ -1515,7 +1515,9 @@ def chat(
                 models = _get_available_models(engine)
 
                 if not models:
-                    render_assistant_response(console, "No models found in model registry.")
+                    render_assistant_response(
+                        console, "No models found in model registry."
+                    )
                     continue
 
                 selected = select_from_list("Select Model", models)

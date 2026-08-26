@@ -33,17 +33,23 @@ def validate_gguf_filename(filename: str) -> str:
     base_name = os.path.basename(clean_name)
 
     if base_name != clean_name:
-        raise ModelSecurityError(f"Path traversal detected in model filename: {filename!r}")
+        raise ModelSecurityError(
+            f"Path traversal detected in model filename: {filename!r}"
+        )
 
     if ".." in clean_name or "/" in clean_name or "\\" in clean_name:
         raise ModelSecurityError(f"Invalid characters in model filename: {filename!r}")
 
     if not clean_name.lower().endswith(".gguf"):
-        raise ModelSecurityError(f"Model file must have a .gguf extension, got: {filename!r}")
+        raise ModelSecurityError(
+            f"Model file must have a .gguf extension, got: {filename!r}"
+        )
 
     # Ensure no control characters or shell injection characters
     if not _SAFE_FILENAME_RE.match(clean_name):
-        raise ModelSecurityError(f"Model filename contains illegal characters: {filename!r}")
+        raise ModelSecurityError(
+            f"Model filename contains illegal characters: {filename!r}"
+        )
 
     return clean_name
 
