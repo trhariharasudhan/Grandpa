@@ -411,11 +411,29 @@ def test_voice_operator_loop_integration(
 
     from grandpa.voice.operator import run_voice_operator_loop
 
-    # Run loop
+    # Run loop.
+    #
+    # no_tts=True is required, not incidental. Without it the loop builds a real
+    # SpeechOutputEngine (operator.py:1245) and speaks every reply
+    # (operator.py:1274 -> _speak_best_effort). On a machine with no audio
+    # device that lands in pyttsx3's SAPI5 driver at sapi5.startLoop, which
+    # blocks forever: GitHub's windows-latest runner hung here, and because
+    # pytest-timeout's thread method cannot interrupt a blocking COM call, the
+    # whole session wedged and never printed a summary.
+    #
+    # This is a memory-integration test. Every assertion below reads `outputs`,
+    # which is fed by output_func(res.text) and is completely independent of
+    # TTS, and the call already passes prefer_voice=False to select typed mode.
+    # no_tts is a first-class parameter of run_voice_operator_loop, so this is
+    # the API being used as intended rather than a guard bolted on: the test
+    # keeps running on every platform, exercises the same memory path, and
+    # asserts exactly what it did before. Speech output itself is covered by
+    # tests/test_voice_operator_mode.py and tests/speech/.
     exit_code = run_voice_operator_loop(
         input_func=mock_input,
         output_func=mock_output,
         prefer_voice=False,
+        no_tts=True,
     )
 
     assert exit_code == 0

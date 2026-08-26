@@ -144,6 +144,17 @@ def test_grandpa_project_path_is_not_protected():
     assert pc_control._is_protected_path(Path(r"D:\Grandpa")) is False
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason=(
+        "Asserts Windows protected-path semantics. On POSIX, Path(r'C:\\Windows') "
+        "is a PosixPath whose backslash is an ordinary filename character, so the "
+        "whole string is one path component rather than a drive plus directory, "
+        "and _is_protected_path can never match it. Running this off-Windows "
+        "tests nothing about the guard it is named for. The windows-latest CI job "
+        "runs it where the premise holds."
+    ),
+)
 @pytest.mark.parametrize(
     "path",
     [
@@ -410,6 +421,16 @@ def test_delete_requires_approval(tmp_path):
     assert pending[0]["decision"] == "pending"
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason=(
+        "Same root cause as test_true_windows_protected_paths_are_blocked: the "
+        "target 'C:\\\\Windows\\\\grandpa-test.txt' only resolves to a protected "
+        "location under Windows path semantics. On POSIX the action is correctly "
+        "reported 'completed' because that string is an ordinary relative "
+        "filename, so the assertion tests the platform rather than the guard."
+    ),
+)
 def test_protected_path_blocked():
     result = run_local_action(
         {"action_type": "file_create", "target": "C:\\Windows\\grandpa-test.txt"}
