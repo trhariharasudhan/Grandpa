@@ -175,6 +175,20 @@ git diff --check
 - [Roadmap](docs/development/roadmap.md)
 - [Security](docs/user-guide/security.md)
 
+## Origins and Attribution
+
+Grandpa is a derivative work of [OpenJarvis](https://github.com/open-jarvis),
+an Apache-2.0 project by The OpenJarvis Authors, which is itself derived in
+part from IPW (Intelligence-per-Watt). This repository retains the upstream
+commit history: work up to 2026-05-22 is the OpenJarvis contributors'; Grandpa
+was established on 2026-05-23 and has since been substantially rewritten around
+a Windows-first local assistant, where OpenJarvis was a general agent and
+inference platform.
+
+Copyright and attribution for both works are recorded in [LICENSE](LICENSE) and
+[NOTICE](NOTICE). Third-party components, including the vendored FFmpeg build
+used by the optional voice runtime, are listed in [NOTICE](NOTICE).
+
 ## License
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

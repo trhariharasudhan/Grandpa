@@ -1,0 +1,56 @@
+Grandpa
+Copyright 2025-2026 The Grandpa Authors
+
+This product includes software developed by The OpenJarvis Authors.
+Copyright 2025 The OpenJarvis Authors
+
+------------------------------------------------------------------------------
+Origin and derivation
+------------------------------------------------------------------------------
+
+Grandpa is a derivative work of OpenJarvis, an Apache-2.0 licensed project
+developed by The OpenJarvis Authors and contributors. OpenJarvis is itself
+derived in part from IPW (Intelligence-per-Watt).
+
+This repository retains the full commit history of the upstream project.
+Commits from 2026-03-12 through 2026-05-22 are the work of the OpenJarvis
+contributors. Grandpa was established on 2026-05-23, and commits from that
+date onward are the work of The Grandpa Authors.
+
+Grandpa has been substantially modified from its upstream origin. It is a
+Windows-first local AI assistant; OpenJarvis was a general agent and
+inference platform. Substantial portions of the upstream platform layer
+have been retained, extended, or removed. Files whose module docstring
+records a direct derivation from IPW are, at the time of writing:
+
+    src/grandpa/core/registry.py        "Adapted from IPW's src/ipw/core/registry.py"
+    src/grandpa/engine/_stubs.py        "Adapted from IPW's InferenceClient"
+    src/grandpa/agents/_stubs.py        "Adapted from IPW's BaseAgent"
+    src/grandpa/agents/prompt_registry.py  "Adapted from IPW's prompt_registry.py"
+    src/grandpa/core/events.py          "Extends IPW's EventRecorder"
+
+This list is not exhaustive as to derivation; it records the files that
+carry an explicit upstream attribution in their own docstring.
+
+Both the upstream work and this derivative are licensed under the Apache
+License, Version 2.0. See the LICENSE file for the full license text.
+
+------------------------------------------------------------------------------
+Third-party components
+------------------------------------------------------------------------------
+
+FFmpeg
+    voice_runtime/tools/ffmpeg-7.1-lgpl-shared/
+
+    An unmodified prebuilt FFmpeg 7.1 LGPL shared build is vendored for the
+    optional local voice runtime. FFmpeg is licensed under the GNU Lesser
+    General Public License, version 3. Its full license text is included at
+    voice_runtime/tools/ffmpeg-7.1-lgpl-shared/
+        ffmpeg-n7.1-latest-win64-lgpl-shared-7.1/LICENSE.txt
+
+    Grandpa invokes FFmpeg as a separate executable via subprocess. It does
+    not link against libavcodec, libavformat, or any other FFmpeg library,
+    and no FFmpeg source has been modified.
+
+    Corresponding source and build provenance for this binary distribution
+    are recorded in voice_runtime/README.md.
