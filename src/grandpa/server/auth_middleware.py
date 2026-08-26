@@ -11,6 +11,31 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
 
+#: Canonical environment variable for the local API key.
+API_KEY_ENV = "GRANDPA_API_KEY"
+#: Pre-rename spelling, still honoured so existing setups keep working.
+LEGACY_API_KEY_ENV = "Grandpa_API_KEY"
+
+
+def api_key_from_env() -> str:
+    """Return the API key from the environment, preferring the canonical name.
+
+    ``Grandpa_API_KEY`` predates the project rename and is case-inconsistent
+    with every other ``GRANDPA_*`` variable. It is still read, with a warning,
+    so existing setups do not break.
+    """
+    key = os.environ.get(API_KEY_ENV, "").strip()
+    if key:
+        return key
+    legacy = os.environ.get(LEGACY_API_KEY_ENV, "").strip()
+    if legacy:
+        logger.warning(
+            "%s is deprecated; rename it to %s.",
+            LEGACY_API_KEY_ENV,
+            API_KEY_ENV,
+        )
+    return legacy
+
 
 class AuthMiddleware:
     """Validate bearer credentials on protected HTTP and WebSocket routes.
@@ -21,7 +46,7 @@ class AuthMiddleware:
 
     def __init__(self, app: ASGIApp, api_key: str = "") -> None:
         self.app = app
-        self._api_key = api_key or os.environ.get("Grandpa_API_KEY", "")
+        self._api_key = api_key or api_key_from_env()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         scope_type = scope.get("type")
@@ -91,8 +116,9 @@ def check_bind_safety(
 
     if not is_loop and not api_key and not allow_insecure_bind:
         logger.error(
-            "Binding to %s requires Grandpa_API_KEY to be set. "
-            "Run: Grandpa auth generate-key",
+            "Binding to %s requires an API key. Set %s, or drop --no-auth so "
+            "grandpa serve generates one for you.",
             host,
+            API_KEY_ENV,
         )
         sys.exit(1)

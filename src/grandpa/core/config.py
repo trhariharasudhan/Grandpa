@@ -493,6 +493,17 @@ class AgentConfig:
 
 
 @dataclass(slots=True)
+class ServerAuthConfig:
+    """Local API authentication settings.
+
+    ``grandpa serve`` requires a bearer key by default. When this is empty a
+    key is generated on first run and written back here.
+    """
+
+    api_key: str = ""
+
+
+@dataclass(slots=True)
 class ServerConfig:
     """API server settings."""
 
@@ -502,6 +513,7 @@ class ServerConfig:
     model: str = ""
     workers: int = 1
     cors_origins: list = field(default_factory=list)
+    auth: ServerAuthConfig = field(default_factory=ServerAuthConfig)
 
 
 @dataclass(slots=True)

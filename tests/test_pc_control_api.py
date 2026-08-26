@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -98,7 +99,23 @@ def test_local_action_endpoint_approval_execute_flow(
     pending = client.post(
         "/api/local-action", json={"action_type": "file_delete", "target": str(target)}
     ).json()
-    approved = client.post(f"/api/local-action/{pending['action_id']}/approve").json()
+    action_id = pending["action_id"]
+
+    # The staging response must not carry the approval code, and the id alone
+    # must not authorise execution.
+    assert "token" not in json.dumps(pending)
+    refused = client.post(f"/api/local-action/{action_id}/approve").json()
+    assert refused["ok"] is False
+    assert refused["error"] == "invalid_approval_token"
+    assert target.exists()
+
+    # The operator reads the code off the console and supplies it out of band.
+    record = pc_control._load_pending_record(action_id)
+    assert record is not None
+    approved = client.post(
+        f"/api/local-action/{action_id}/approve",
+        json={"token": record.approval_token},
+    ).json()
 
     assert approved["ok"] is True
     assert approved["status"] == "completed"

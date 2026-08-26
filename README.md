@@ -124,8 +124,12 @@ uv sync --extra server
 uv run grandpa serve --host 127.0.0.1 --port 8000
 ```
 
-The server binds to loopback by default. Browser origins are not enabled by
-default; configure CORS explicitly only for a trusted local client.
+The server binds to loopback by default and is authenticated by default: on
+first run it generates an API key, prints it, and stores it in
+`~/.grandpa/config.toml`. Pass it as `Authorization: Bearer <key>`, or override
+it with `GRANDPA_API_KEY`. Use `--no-auth` only where every local process is
+trusted. Browser origins are not enabled by default; configure CORS explicitly
+only for a trusted local client.
 
 ## Development
 

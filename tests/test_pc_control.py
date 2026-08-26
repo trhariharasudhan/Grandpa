@@ -515,6 +515,18 @@ def test_empty_recycle_bin_requires_approval():
     assert result.risk_level == "HIGH"
 
 
+def _approval_code(action_id: str) -> str:
+    """Read the out-of-band approval code a pending action was staged with.
+
+    Production callers read this off the operator console; the HTTP API never
+    returns it.
+    """
+    record = pc_control._load_pending_record(action_id)
+    assert record is not None
+    assert record.approval_token
+    return record.approval_token
+
+
 def test_approval_approve_reject_flow(tmp_path):
     target = tmp_path / "delete-me.txt"
     target.write_text("x", encoding="utf-8")
@@ -525,25 +537,132 @@ def test_approval_approve_reject_flow(tmp_path):
     assert target.exists()
 
     pending2 = run_local_action({"action_type": "file_delete", "target": str(target)})
-    approved = pc_control.approve_local_action(pending2.action_id or "")
+    action_id = pending2.action_id or ""
+    approved = pc_control.approve_local_action(action_id, _approval_code(action_id))
     assert approved.ok is True
     assert not target.exists()
+
+
+def test_approval_requires_out_of_band_code(tmp_path):
+    """An action_id alone must not authorise execution."""
+    target = tmp_path / "delete-me.txt"
+    target.write_text("x", encoding="utf-8")
+    pending = run_local_action({"action_type": "file_delete", "target": str(target)})
+    action_id = pending.action_id or ""
+    code = _approval_code(action_id)
+
+    no_code = pc_control.approve_local_action(action_id)
+    assert no_code.ok is False
+    assert no_code.error == "invalid_approval_token"
+    assert target.exists()
+
+    wrong_code = pc_control.approve_local_action(action_id, "DEADBEEF")
+    assert wrong_code.ok is False
+    assert wrong_code.error == "invalid_approval_token"
+    assert target.exists()
+
+    # A rejected attempt must not consume the pending action.
+    approved = pc_control.approve_local_action(action_id, code)
+    assert approved.ok is True
+    assert not target.exists()
+
+
+def test_pending_listing_does_not_leak_approval_code(tmp_path):
+    target = tmp_path / "delete-me.txt"
+    target.write_text("x", encoding="utf-8")
+    pending = run_local_action({"action_type": "file_delete", "target": str(target)})
+    code = _approval_code(pending.action_id or "")
+
+    serialised = json.dumps(
+        {
+            "pending": pc_control.list_pending_actions(),
+            "records": pc_control.list_approval_records(),
+            "response": pending.to_dict(),
+        },
+        default=str,
+    )
+    assert code not in serialised
+    assert "approval_token" not in serialised
 
 
 def test_duplicate_approval_does_not_execute_twice(tmp_path):
     target = tmp_path / "delete-me.txt"
     target.write_text("x", encoding="utf-8")
     pending = run_local_action({"action_type": "file_delete", "target": str(target)})
+    action_id = pending.action_id or ""
+    code = _approval_code(action_id)
 
-    first = pc_control.approve_local_action(pending.action_id or "")
-    second = pc_control.approve_local_action(pending.action_id or "")
-    rejected = pc_control.reject_local_action(pending.action_id or "")
+    first = pc_control.approve_local_action(action_id, code)
+    second = pc_control.approve_local_action(action_id, code)
+    rejected = pc_control.reject_local_action(action_id)
 
     assert first.ok is True
     assert second.ok is False
     assert second.error == "already_completed"
     assert rejected.ok is False
     assert rejected.error == "already_completed"
+
+
+@pytest.mark.parametrize(
+    "action_type",
+    [
+        "keyboard_type",
+        "keyboard_hotkey",
+        "mouse_click",
+        "mouse_drag",
+        "browser_form_fill",
+        "browser_download",
+    ],
+)
+def test_synthetic_input_actions_require_approval(action_type):
+    """Synthetic input reaches arbitrary code execution, so it cannot run unattended."""
+    result = run_local_action({"action_type": action_type, "target": "x"})
+
+    assert result.status == "approval_required"
+    assert result.approval_required is True
+    assert result.action_id
+
+
+@pytest.mark.parametrize(
+    "keys",
+    ["win+r", "Windows + R", "WIN+X", "ctrl+shift+esc", "ctrl+alt+delete"],
+)
+def test_command_surface_hotkeys_are_blocked_before_approval(keys):
+    """A denied shortcut fails immediately rather than queuing for approval."""
+    result = run_local_action({"action_type": "keyboard_hotkey", "target": keys})
+
+    assert result.status == "blocked"
+    assert result.error == "blocked_by_policy"
+    assert result.action_id is None
+
+
+def test_blocked_hotkey_cannot_be_smuggled_via_empty_keys():
+    """An empty ``keys`` entry must not suppress the denylist check on ``target``."""
+    result = run_local_action(
+        {"action_type": "keyboard_hotkey", "target": "win+r", "args": {"keys": ""}}
+    )
+
+    assert result.status == "blocked"
+    assert result.error == "blocked_by_policy"
+    assert result.action_id is None
+
+
+@pytest.mark.parametrize("keys", ["ctrl+c", "alt+tab", "win+d"])
+def test_ordinary_hotkeys_still_reach_the_approval_gate(keys):
+    result = run_local_action({"action_type": "keyboard_hotkey", "target": keys})
+
+    assert result.status == "approval_required"
+
+
+@pytest.mark.parametrize("action_type", ["mouse_move", "mouse_scroll"])
+def test_pointer_only_actions_do_not_require_approval(action_type):
+    """Moving or scrolling cannot commit an action, so it stays unattended."""
+    result = run_local_action(
+        {"action_type": action_type, "target": "0", "dry_run": True}
+    )
+
+    assert result.status == "dry_run"
+    assert result.approval_required is False
 
 
 def test_expired_approval_cannot_execute(tmp_path):
