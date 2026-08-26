@@ -1,253 +1,54 @@
-"""Tests for the post-command "new version available" hint."""
+"""Tests for the update-check shim.
+
+The PyPI poll this module used to perform targeted ``grandpa`` on PyPI, which
+is an unrelated project. It has been removed: the check compared Grandpa's
+version against a stranger's releases and pointed users at a pip command that
+would install that project. These tests pin the removal — the shim must stay
+inert and must never touch the network.
+"""
 
 from __future__ import annotations
 
-import io
-import json
-import time
 from unittest.mock import patch
 
 import pytest
 
 from grandpa.cli import _version_check
-from grandpa.cli._version_check import (
-    _check_disabled,
-    _config_disabled,
-    _fetch_latest_stable,
-    _get_latest_version,
-    check_for_updates,
+from grandpa.cli._version_check import UPDATE_CHECKS_AVAILABLE, check_for_updates
+
+
+def test_update_checks_are_disabled():
+    """Grandpa has no verified distribution channel to check against."""
+    assert UPDATE_CHECKS_AVAILABLE is False
+
+
+@pytest.mark.parametrize(
+    "command_name",
+    ["ask", "chat", "serve", "doctor", "init", "_bootstrap", "daemon", ""],
 )
+def test_check_for_updates_is_a_silent_no_op(command_name, capsys):
+    assert check_for_updates(command_name) is None
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == ""
 
 
-@pytest.fixture(autouse=True)
-def _clean_env(monkeypatch, tmp_path):
-    for v in ("grandpa_NO_UPDATE_CHECK", "CI", "grandpa_CONFIG"):
-        monkeypatch.delenv(v, raising=False)
-    # Point config + cache at empty tmp paths so tests don't see the
-    # developer's real ~/.grandpa state.
-    monkeypatch.setenv("grandpa_CONFIG", str(tmp_path / "no-config.toml"))
-    monkeypatch.setattr(_version_check, "_CACHE_PATH", tmp_path / "version-check.json")
+@pytest.mark.parametrize("command_name", ["ask", "chat", "doctor"])
+def test_check_for_updates_makes_no_network_call(command_name):
+    """Regression guard: the poll hit pypi.org on nearly every CLI run."""
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        check_for_updates(command_name)
+    mock_urlopen.assert_not_called()
 
 
-def _pypi_response(
-    versions: dict[str, list] | None = None, info_version: str = ""
-) -> io.BytesIO:
-    """Build a minimal PyPI JSON payload."""
-    payload = {
-        "info": {"version": info_version},
-        "releases": versions if versions is not None else {},
-    }
-    return io.BytesIO(json.dumps(payload).encode())
+def test_module_exposes_no_pypi_endpoint():
+    """Nothing should remain that names the unrelated PyPI package."""
+    source_names = dir(_version_check)
+    assert "_PYPI_API" not in source_names
+    assert "_fetch_latest_stable" not in source_names
+    assert "_get_latest_version" not in source_names
 
 
-class _FakeResponse:
-    """Context-manager-able stand-in for urllib's response."""
-
-    def __init__(self, body: bytes) -> None:
-        self._body = body
-
-    def __enter__(self) -> "_FakeResponse":
-        return self
-
-    def __exit__(self, *exc) -> None:
-        pass
-
-    def read(self) -> bytes:
-        return self._body
-
-
-class TestCheckDisabled:
-    def test_default_not_disabled(self):
-        assert _check_disabled() is False
-
-    @pytest.mark.parametrize("value", ["1", "true", "yes", "on", "anything"])
-    def test_Grandpa_no_update_check_disables(self, monkeypatch, value):
-        monkeypatch.setenv("grandpa_NO_UPDATE_CHECK", value)
-        assert _check_disabled() is True
-
-    @pytest.mark.parametrize("value", ["", "0", "false", "no", "off"])
-    def test_falsy_does_not_disable(self, monkeypatch, value):
-        monkeypatch.setenv("grandpa_NO_UPDATE_CHECK", value)
-        assert _check_disabled() is False
-
-    def test_ci_env_disables_by_default(self, monkeypatch):
-        monkeypatch.setenv("CI", "true")
-        assert _check_disabled() is True
-
-    def test_ci_false_does_not_disable(self, monkeypatch):
-        monkeypatch.setenv("CI", "false")
-        assert _check_disabled() is False
-
-
-class TestConfigDisabled:
-    def test_missing_file_not_disabled(self):
-        assert _config_disabled() is False
-
-    def test_auto_update_false_disables(self, monkeypatch, tmp_path):
-        cfg = tmp_path / "config.toml"
-        cfg.write_text("[updates]\nauto_update = false\n")
-        monkeypatch.setenv("grandpa_CONFIG", str(cfg))
-        assert _config_disabled() is True
-
-    def test_auto_update_true_does_not_disable(self, monkeypatch, tmp_path):
-        cfg = tmp_path / "config.toml"
-        cfg.write_text("[updates]\nauto_update = true\n")
-        monkeypatch.setenv("grandpa_CONFIG", str(cfg))
-        assert _config_disabled() is False
-
-    def test_updates_section_absent_does_not_disable(self, monkeypatch, tmp_path):
-        cfg = tmp_path / "config.toml"
-        cfg.write_text("[other]\nkey = 1\n")
-        monkeypatch.setenv("grandpa_CONFIG", str(cfg))
-        assert _config_disabled() is False
-
-    def test_malformed_toml_treated_as_optout(self, monkeypatch, tmp_path):
-        """A typo in the user's config must not silently re-enable updates.
-
-        Conservative: if the user touched the file at all, assume they meant
-        to opt out and would rather see no nudge than the wrong behavior.
-        """
-        cfg = tmp_path / "config.toml"
-        cfg.write_text("[updates\nauto_update = false\n")  # missing ]
-        monkeypatch.setenv("grandpa_CONFIG", str(cfg))
-        assert _config_disabled() is True
-
-    def test_grandpa_config_env_override(self, monkeypatch, tmp_path):
-        """grandpa_CONFIG should redirect the lookup, matching core.config."""
-        cfg = tmp_path / "alt.toml"
-        cfg.write_text("[updates]\nauto_update = false\n")
-        monkeypatch.setenv("grandpa_CONFIG", str(cfg))
-        assert _check_disabled() is True
-
-
-class TestFetchLatestStable:
-    def test_picks_highest_non_dev_release(self):
-        body = _pypi_response(
-            versions={
-                "1.0.0": [{}],
-                "1.0.1": [{}],
-                "1.0.2.dev500": [{}],
-                "1.0.2.dev499": [{}],
-            },
-            info_version="1.0.2.dev500",  # PyPI's "latest upload" may be a dev
-        )
-        with patch(
-            "urllib.request.urlopen", return_value=_FakeResponse(body.getvalue())
-        ):
-            assert _fetch_latest_stable() == "1.0.1"
-
-    def test_returns_info_version_when_no_stable(self):
-        body = _pypi_response(
-            versions={"1.0.0.dev1": [{}]},
-            info_version="1.0.0.dev1",
-        )
-        with patch(
-            "urllib.request.urlopen", return_value=_FakeResponse(body.getvalue())
-        ):
-            # No stable release yet — fall back to info.version so we still
-            # report *something* rather than silently returning None.
-            assert _fetch_latest_stable() == "1.0.0.dev1"
-
-    def test_skips_invalid_version_strings(self):
-        body = _pypi_response(
-            versions={
-                "1.0.0": [{}],
-                "garbage-version": [{}],
-                "1.1.0": [{}],
-            },
-            info_version="1.1.0",
-        )
-        with patch(
-            "urllib.request.urlopen", return_value=_FakeResponse(body.getvalue())
-        ):
-            assert _fetch_latest_stable() == "1.1.0"
-
-    def test_network_error_returns_none(self):
-        with patch("urllib.request.urlopen", side_effect=OSError("offline")):
-            assert _fetch_latest_stable() is None
-
-    def test_filters_prereleases(self):
-        body = _pypi_response(
-            versions={"1.0.0": [{}], "1.1.0rc1": [{}], "1.1.0b2": [{}]},
-            info_version="1.1.0rc1",
-        )
-        with patch(
-            "urllib.request.urlopen", return_value=_FakeResponse(body.getvalue())
-        ):
-            assert _fetch_latest_stable() == "1.0.0"
-
-
-class TestGetLatestVersion:
-    def test_fresh_cache_short_circuits_network(self, tmp_path):
-        cache = _version_check._CACHE_PATH
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(
-            json.dumps({"last_check": time.time(), "latest_version": "9.9.9"})
-        )
-        with patch("urllib.request.urlopen") as mock_open:
-            assert _get_latest_version("1.0.0") == "9.9.9"
-            mock_open.assert_not_called()
-
-    def test_stale_cache_refetches(self, tmp_path):
-        cache = _version_check._CACHE_PATH
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(
-            json.dumps({"last_check": time.time() - 999_999, "latest_version": "0.0.1"})
-        )
-        body = _pypi_response(versions={"1.2.3": [{}]}, info_version="1.2.3")
-        with patch(
-            "urllib.request.urlopen", return_value=_FakeResponse(body.getvalue())
-        ):
-            assert _get_latest_version("1.0.0") == "1.2.3"
-
-    def test_empty_version_is_not_cached(self, tmp_path):
-        """An empty PyPI ``info.version`` must not poison the cache for 24h."""
-        cache = _version_check._CACHE_PATH
-        body = _pypi_response(versions={}, info_version="")
-        with patch(
-            "urllib.request.urlopen", return_value=_FakeResponse(body.getvalue())
-        ):
-            assert _get_latest_version("1.0.0") is None
-        assert not cache.exists(), "empty version must not be written to cache"
-
-    def test_cached_empty_string_returns_none(self, tmp_path):
-        """A previously-cached empty string from older builds must not crash."""
-        cache = _version_check._CACHE_PATH
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps({"last_check": time.time(), "latest_version": ""}))
-        with patch("urllib.request.urlopen") as mock_open:
-            assert _get_latest_version("1.0.0") is None
-            mock_open.assert_not_called()
-
-
-class TestCheckForUpdates:
-    @patch("grandpa.cli._version_check._do_check")
-    def test_runs_for_ask_command(self, mock_do):
-        check_for_updates("ask")
-        mock_do.assert_called_once()
-
-    @patch("grandpa.cli._version_check._do_check")
-    def test_runs_for_doctor_command(self, mock_do):
-        """Widened list: doctor wasn't checked before."""
-        check_for_updates("doctor")
-        mock_do.assert_called_once()
-
-    @patch("grandpa.cli._version_check._do_check")
-    def test_skips_unknown_command(self, mock_do):
-        check_for_updates("_bootstrap")
-        mock_do.assert_not_called()
-
-    @patch("grandpa.cli._version_check._do_check")
-    def test_ci_env_short_circuits_widely(self, mock_do, monkeypatch):
-        monkeypatch.setenv("CI", "1")
-        check_for_updates("ask")
-        mock_do.assert_not_called()
-
-    @patch(
-        "grandpa.cli._version_check._do_check",
-        side_effect=Exception("boom"),
-    )
-    def test_exception_in_do_check_never_propagates(self, mock_do):
-        # Best-effort: a broken check must not break the user's command.
-        check_for_updates("ask")
-        mock_do.assert_called_once()
+def test_check_for_updates_never_raises():
+    """The CLI calls this on every command; it must not be able to fail."""
+    assert check_for_updates(None) is None  # type: ignore[arg-type]

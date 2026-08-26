@@ -80,3 +80,22 @@ uv run maturin develop -m rust/crates/grandpa-python/Cargo.toml
 
 If this optional build is unavailable, the Python CLI and most local assistant
 features continue to work.
+
+## Updating
+
+Grandpa is distributed as a git checkout, not as a published package. Update
+from your own clone:
+
+```powershell
+uv run grandpa self-update
+```
+
+That runs `git pull && uv sync` in the checkout. `--check` prints the command
+without running it.
+
+`self-update` deliberately refuses on any other install shape. The name
+`grandpa` on PyPI belongs to an unrelated project, so `pip install --upgrade
+grandpa` and `uv tool upgrade grandpa` would install someone else's software
+over your environment — Grandpa never runs either command. For the same reason
+there is no automatic "new version available" check: there is no Grandpa
+release feed to poll.
