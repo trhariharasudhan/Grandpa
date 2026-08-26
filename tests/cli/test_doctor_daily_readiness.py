@@ -272,12 +272,19 @@ def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
 
     sections = _build_doctor_dashboard()
 
-    assert [section.name for section in sections] == [
+    # The four mandatory sections always render, in this order. A fifth
+    # "Optional Integrations" section is appended only when at least one
+    # optional check reports "info", which depends on what happens to be
+    # installed on the host — so assert on the mandatory prefix, not on
+    # strict equality.
+    section_names = [section.name for section in sections]
+    assert section_names[:4] == [
         "Core Runtime",
         "AI Engines",
         "Daily Use Features",
         "System Integration",
     ]
+    assert section_names[4:] in ([], ["Optional Integrations"])
     all_names = {check.name for section in sections for check in section.checks}
     assert "REST API server installed" in all_names
     assert "Windows app resolver ready" in all_names

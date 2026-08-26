@@ -1,9 +1,16 @@
+import pytest
 from click.testing import CliRunner
 
 from grandpa.cli import cli
 from grandpa.voice.speech_output import SpeechOutputResult
 
 
+# These two invoke the real ``voice-operator`` command without patching
+# ``run_voice_operator_loop``, so ``SpeechOutputEngine(enabled=True)`` and
+# microphone detection run against real audio hardware. On a machine with a
+# sound card they block indefinitely. The other tests in this file patch the
+# loop and are safe to run anywhere.
+@pytest.mark.microphone
 def test_voice_operator_command_typed_quit() -> None:
     result = CliRunner().invoke(cli, ["voice-operator"], input="quit\n")
 
@@ -13,6 +20,7 @@ def test_voice_operator_command_typed_quit() -> None:
     assert "Voice Operator Mode stopped." in result.output
 
 
+@pytest.mark.microphone
 def test_voice_operator_command_typed_fallback_action(monkeypatch) -> None:
     calls = []
 
