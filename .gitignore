@@ -124,6 +124,11 @@ learning.db
 /runtime/
 
 # Local cloned-voice runtime artifacts
+# voice_runtime/rvc/source was previously an unregistered submodule gitlink
+# (mode 160000 with no .gitmodules), which made `git submodule status` fail on
+# every clone. The gitlink is removed; the upstream RVC checkout is a local
+# vendor drop and stays out of version control.
+voice_runtime/rvc/source/
 voice_runtime/.venv/
 voice_runtime/models_or_cache/
 voice_runtime/outputs/

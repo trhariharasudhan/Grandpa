@@ -91,8 +91,15 @@ class AuthMiddleware:
 
 
 def generate_api_key() -> str:
-    """Generate a new API key with ``oj_sk_`` prefix."""
-    return f"oj_sk_{secrets.token_urlsafe(32)}"
+    """Generate a new API key with a ``gp_sk_`` prefix.
+
+    The prefix was ``oj_sk_`` from the project's OpenJarvis era. It is purely
+    informational — nothing validates it, and comparison is against the whole
+    key. Renaming it is free right now because auth only just became enabled by
+    default, so no keys have been issued yet; once they exist in configs and
+    scripts, it would no longer be.
+    """
+    return f"gp_sk_{secrets.token_urlsafe(32)}"
 
 
 def check_bind_safety(
