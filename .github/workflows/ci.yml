@@ -99,6 +99,51 @@ jobs:
           path: coverage.xml
           if-no-files-found: warn
 
+  windows:
+    # Grandpa is a Windows-first assistant: pywin32, UIA, SAPI TTS, pyautogui
+    # and the whole desktop/automation/screen/voice stack only execute here.
+    # Until this job existed CI ran on ubuntu-latest only, so the product's
+    # core was never exercised and only the Linux-portable subset -- the
+    # inherited platform layer -- was validated.
+    #
+    # Deliberately does NOT build the Rust extension. Nothing in the Python
+    # product loads it (shell_exec was the last Rust-first path and was removed
+    # in C2), it is absent from the hatchling-built wheel, and building it here
+    # would add an MSVC toolchain dependency for no runtime benefit.
+    name: test (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra server --extra voice --extra screen
+
+      - name: Verify the package imports from a clean checkout
+        run: uv run python -c "import grandpa.runtime, grandpa.engine, grandpa.security"
+
+      - name: Verify hardware-dependent tests are gated
+        # The microphone marker must actually skip by default. If these ever
+        # run unguarded they block on real audio hardware and hang the job
+        # rather than failing it.
+        shell: bash
+        run: |
+          uv run python -m pytest tests/cli/test_voice_operator_cmd.py -q             | tee result.txt
+          grep -q "skipped" result.txt
+
+      - name: Run tests
+        # Full deterministic suite. Hardware-dependent tests self-skip unless
+        # GRANDPA_RUN_MICROPHONE_TESTS=1; pytest-timeout (timeout = 300 in
+        # pyproject.toml) bounds any test that blocks anyway.
+        run: uv run pytest -m "not live and not cloud" --tb=short -q
+
   rust:
     runs-on: ubuntu-latest
     defaults:
