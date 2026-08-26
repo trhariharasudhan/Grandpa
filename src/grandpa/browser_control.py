@@ -1161,11 +1161,27 @@ def _browser_media_action(target: str, context: BrowserContext) -> BrowserAction
 
 
 def _redact_sensitive_visible_text(text: str) -> str:
-    redacted = " ".join(
-        "[redacted]" if _looks_high_risk(part) else part for part in text.split()
-    )
+    """Redact secrets from browser-derived text.
+
+    This is the ingress boundary for ``browser_control``: visible page text,
+    headings, links, buttons and control labels all pass through here before
+    they leave :func:`get_visible_browser_context`, which is in turn the shared
+    source for ``browser/``, ``browser_awareness/`` and ``browser_intelligence/``.
+
+    Secret redaction is delegated to :func:`grandpa.screen.redaction
+    .redact_screen_text`, the canonical routine also used by ``screen/`` and
+    ``vision/``, so a pattern added there covers every ingress path at once.
+    The local high-risk-word and ``_SECRET_VALUE_RE`` passes run afterwards and
+    cover shapes the canonical set does not, so no coverage is lost.
+    """
     import re
 
+    from grandpa.screen.redaction import redact_screen_text
+
+    redacted = redact_screen_text(text).text
+    redacted = " ".join(
+        "[redacted]" if _looks_high_risk(part) else part for part in redacted.split()
+    )
     for pattern in _SECRET_VALUE_RE:
         redacted = re.sub(pattern, "[redacted]", redacted)
     return redacted

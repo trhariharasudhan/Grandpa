@@ -57,6 +57,26 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         ),
         "[REDACTED_SECRET]",
     ),
+    # Slack-style workspace tokens (xoxb-, xoxp-, xoxa-, xoxr-, xoxs-).
+    (
+        re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}"),
+        "[REDACTED_TOKEN]",
+    ),
+    # JSON Web Tokens: three base64url segments. Anchored on the standard
+    # ``eyJ`` header prefix so ordinary dotted identifiers are not matched.
+    (
+        re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),
+        "[REDACTED_TOKEN]",
+    ),
+    # One-time codes introduced in prose rather than as a key/value pair,
+    # e.g. "Your verification code is 894213". The keyed form is handled by
+    # the OTP pattern above; this covers the phrasing sites actually use.
+    (
+        re.compile(
+            r"(?i)\b((?:verification|security|authentication|login|access|one[- ]time|recovery)\s+code\s+(?:is\s+)?)\d{4,12}\b"
+        ),
+        r"\1[REDACTED_SECRET]",
+    ),
 )
 
 _SENSITIVE_CONTEXT = re.compile(

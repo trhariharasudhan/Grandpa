@@ -246,7 +246,11 @@ def test_visible_context_redacts_sensitive_values(monkeypatch):
     assert context.inputs == ({"label": "Search", "type": "text"},)
     assert "abcd1234" not in context.visible_text
     assert "4111" not in context.visible_text
-    assert "[redacted]" in context.visible_text
+    # Either marker is acceptable: the canonical redactor emits typed markers
+    # such as [REDACTED_TOKEN]/[REDACTED_CARD], the browser-local passes emit
+    # [redacted]. The security assertions above are what matter; this only
+    # confirms a replacement happened rather than the text being dropped.
+    assert "redacted" in context.visible_text.lower()
 
 
 def test_summary_uses_explicit_visible_context(monkeypatch):

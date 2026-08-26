@@ -9,6 +9,7 @@ from typing import Any
 from grandpa.browser_control import BrowserContext, get_visible_browser_context
 from grandpa.browser_intelligence.models import PageContent
 from grandpa.browser_intelligence.source_verifier import extract_domain
+from grandpa.screen.redaction import redact_screen_text
 
 # Prompt injection markers to sanitize from webpage text
 _PROMPT_INJECTION_PATTERNS = (
@@ -24,11 +25,25 @@ _PROMPT_INJECTION_PATTERNS = (
 
 
 def sanitize_untrusted_text(text: str) -> str:
-    """Sanitize webpage text against prompt injections and secret leaks."""
+    """Sanitize webpage text against prompt injections and secret leaks.
+
+    This is the ingress boundary for ``browser_intelligence``: every extracted
+    heading, paragraph, button, link, code block, table cell, list item, title,
+    and summary passes through here before it reaches a log or a model prompt.
+
+    Secret redaction is delegated to :func:`grandpa.screen.redaction
+    .redact_screen_text`, the same routine ``screen/`` and ``vision/`` use, so
+    a pattern added there covers every ingress path at once. Prompt-injection
+    defanging stays local because it is specific to web content.
+
+    Until this delegation was added the docstring claimed secret-leak coverage
+    that the implementation did not provide -- only the injection patterns ran,
+    so credentials rendered on a page reached prompts verbatim.
+    """
     if not text:
         return ""
 
-    cleaned = text
+    cleaned = redact_screen_text(text).text
     for pattern in _PROMPT_INJECTION_PATTERNS:
         cleaned = re.sub(pattern, "[UNTRUSTED_INSTRUCTION_REMOVED]", cleaned)
 
