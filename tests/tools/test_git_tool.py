@@ -205,9 +205,12 @@ class TestGitStatusTool:
         tool = GitStatusTool()
         mock_mod = _make_mock_rust_git_not_found()
         with patch("grandpa.tools.git_tool.get_rust_module", return_value=mock_mod):
-            result = tool.execute(repo_path=".")
+            # Rust raises → Python fallback via _run_git, which also
+            # checks shutil.which
+            with patch("grandpa.tools.git_tool.shutil.which", return_value=None):
+                result = tool.execute(repo_path=".")
         assert result.success is False
-        assert "Failed to run git" in result.content
+        assert "not found" in result.content
 
     def test_to_openai_function(self):
         tool = GitStatusTool()
@@ -293,9 +296,12 @@ class TestGitDiffTool:
         tool = GitDiffTool()
         mock_mod = _make_mock_rust_git_not_found()
         with patch("grandpa.tools.git_tool.get_rust_module", return_value=mock_mod):
-            result = tool.execute(repo_path=".")
+            # Rust raises → Python fallback via _run_git, which also
+            # checks shutil.which
+            with patch("grandpa.tools.git_tool.shutil.which", return_value=None):
+                result = tool.execute(repo_path=".")
         assert result.success is False
-        assert "Failed to run git" in result.content
+        assert "not found" in result.content
 
     def test_invalid_repo_path(self, tmp_path):
         tool = GitDiffTool()
@@ -537,3 +543,129 @@ class TestGitLogTool:
         fn = tool.to_openai_function()
         assert fn["type"] == "function"
         assert fn["function"]["name"] == "git_log"
+
+
+# ---------------------------------------------------------------------------
+# TestGitToolsWithoutRustExtension
+# ---------------------------------------------------------------------------
+
+
+def _no_rust():
+    """Patch ``get_rust_module`` to raise the real production ImportError.
+
+    ``grandpa_rust`` is not built by the default install and is absent from the
+    hatchling wheel, so this — not the mocked-Rust path — is what every user
+    actually runs.
+    """
+    return patch(
+        "grandpa.tools.git_tool.get_rust_module",
+        side_effect=ImportError("No module named 'grandpa_rust'"),
+    )
+
+
+class TestGitToolsWithoutRustExtension:
+    """Regression: the git tools must work when the extension is absent.
+
+    Every other test in this module patches ``get_rust_module`` with a working
+    mock, so none of them exercise the default install.  ``get_rust_module()``
+    was previously called outside the guarding ``try`` in ``GitStatusTool``,
+    ``GitDiffTool`` and ``GitLogTool``, so all three raised an uncaught
+    ``ModuleNotFoundError`` on every real invocation while the suite stayed
+    green.
+    """
+
+    def test_status_falls_back_to_cli(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "new_file.txt").write_text("hello")
+        with _no_rust():
+            result = GitStatusTool().execute(repo_path=str(tmp_path))
+        assert result.success is True
+        assert "new_file.txt" in result.content
+        assert result.metadata["returncode"] == 0
+
+    def test_diff_falls_back_to_cli(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "README.md").write_text("# Changed\n")
+        with _no_rust():
+            result = GitDiffTool().execute(repo_path=str(tmp_path))
+        assert result.success is True
+        assert "Changed" in result.content
+
+    def test_diff_staged_falls_back_to_cli(self, tmp_path):
+        """The staged path never used Rust, but was unreachable behind it."""
+        _init_repo(tmp_path)
+        (tmp_path / "README.md").write_text("# Staged\n")
+        subprocess.run(
+            ["git", "add", "README.md"],
+            cwd=str(tmp_path),
+            capture_output=True,
+            check=True,
+        )
+        with _no_rust():
+            result = GitDiffTool().execute(repo_path=str(tmp_path), staged=True)
+        assert result.success is True
+        assert "Staged" in result.content
+
+    def test_log_falls_back_to_cli(self, tmp_path):
+        _init_repo(tmp_path)
+        with _no_rust():
+            result = GitLogTool().execute(repo_path=str(tmp_path))
+        assert result.success is True
+        assert "Initial commit" in result.content
+
+    def test_commit_never_used_rust(self, tmp_path):
+        _init_repo(tmp_path)
+        (tmp_path / "new.txt").write_text("hello")
+        with _no_rust():
+            result = GitCommitTool().execute(
+                message="Add new file",
+                repo_path=str(tmp_path),
+                files="new.txt",
+            )
+        assert result.success is True
+
+    def test_log_count_is_honoured_by_cli(self, tmp_path):
+        """The CLI path respects ``count``; the Rust binding silently drops it.
+
+        ``TestGitLogTool.test_log_count`` pins the Rust behaviour (param ``n``
+        vs ``count``), which only holds while the mock is installed.
+        """
+        _init_repo(tmp_path)
+        for i in range(4):
+            (tmp_path / f"f{i}.txt").write_text(str(i))
+            subprocess.run(
+                ["git", "add", "."], cwd=str(tmp_path), capture_output=True, check=True
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"Commit {i}"],
+                cwd=str(tmp_path),
+                capture_output=True,
+                check=True,
+            )
+        with _no_rust():
+            result = GitLogTool().execute(repo_path=str(tmp_path), count=2)
+        assert result.success is True
+        lines = [ln for ln in result.content.strip().splitlines() if ln.strip()]
+        assert len(lines) == 2
+
+    def test_log_oneline_false_is_honoured_by_cli(self, tmp_path):
+        """The CLI path respects ``oneline``; the Rust binding forces oneline."""
+        _init_repo(tmp_path)
+        with _no_rust():
+            result = GitLogTool().execute(repo_path=str(tmp_path), oneline=False)
+        assert result.success is True
+        assert "Author:" in result.content
+
+    def test_no_tool_raises(self, tmp_path):
+        """None of the git tools may raise; they return a ToolResult."""
+        _init_repo(tmp_path)
+        calls = [
+            (GitStatusTool(), {}),
+            (GitDiffTool(), {}),
+            (GitDiffTool(), {"staged": True}),
+            (GitLogTool(), {}),
+        ]
+        with _no_rust():
+            for tool, kwargs in calls:
+                result = tool.execute(repo_path=str(tmp_path), **kwargs)
+                assert isinstance(result.content, str)
