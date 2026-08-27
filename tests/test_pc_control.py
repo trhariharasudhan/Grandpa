@@ -144,31 +144,47 @@ def test_grandpa_project_path_is_not_protected():
     assert pc_control._is_protected_path(Path(r"D:\Grandpa")) is False
 
 
+# Drive-absolute Windows paths. These only parse as "drive + directory" under
+# Windows path semantics: on POSIX, Path(r"C:\Windows") is a PosixPath whose
+# backslash is an ordinary filename character, so the whole string is a single
+# component and _is_protected_path can never match it. Asserting them
+# off-Windows tests the platform, not the guard.
+_WINDOWS_ONLY_PROTECTED_PATHS = [
+    Path(r"C:\Windows"),
+    Path(r"C:\Windows\System32"),
+    Path(r"C:\Program Files"),
+    Path(r"C:\Program Files (x86)\Common Files"),
+    Path(r"C:\$Recycle.Bin"),
+    Path(r"C:\System Volume Information"),
+]
+
+# Home-relative paths. Path.home() resolves correctly on every platform, so
+# these assert real behaviour everywhere and must keep running off-Windows --
+# ~/.ssh in particular is a credential directory whose protection is worth
+# verifying on every OS the suite runs on.
+_PORTABLE_PROTECTED_PATHS = [
+    Path.home() / ".ssh",
+    Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data",
+]
+
+
 @pytest.mark.skipif(
     sys.platform != "win32",
     reason=(
-        "Asserts Windows protected-path semantics. On POSIX, Path(r'C:\\Windows') "
-        "is a PosixPath whose backslash is an ordinary filename character, so the "
-        "whole string is one path component rather than a drive plus directory, "
-        "and _is_protected_path can never match it. Running this off-Windows "
-        "tests nothing about the guard it is named for. The windows-latest CI job "
-        "runs it where the premise holds."
+        "Drive-absolute Windows paths do not parse as drive+directory on POSIX, "
+        "so _is_protected_path cannot match them there. The windows-latest CI "
+        "job runs these where the premise holds. Home-relative protected paths "
+        "are covered on every platform by "
+        "test_portable_protected_paths_are_blocked."
     ),
 )
-@pytest.mark.parametrize(
-    "path",
-    [
-        Path(r"C:\Windows"),
-        Path(r"C:\Windows\System32"),
-        Path(r"C:\Program Files"),
-        Path(r"C:\Program Files (x86)\Common Files"),
-        Path.home() / ".ssh",
-        Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data",
-        Path(r"C:\$Recycle.Bin"),
-        Path(r"C:\System Volume Information"),
-    ],
-)
+@pytest.mark.parametrize("path", _WINDOWS_ONLY_PROTECTED_PATHS)
 def test_true_windows_protected_paths_are_blocked(path: Path):
+    assert pc_control._is_protected_path(path) is True
+
+
+@pytest.mark.parametrize("path", _PORTABLE_PROTECTED_PATHS)
+def test_portable_protected_paths_are_blocked(path: Path):
     assert pc_control._is_protected_path(path) is True
 
 

@@ -1,3 +1,23 @@
+"""Voice operator loop behaviour: parsing, routing, exit, and error handling.
+
+Every ``run_voice_operator_loop`` call here passes ``no_tts=True``. That is
+required, not stylistic: without it the loop builds a real SpeechOutputEngine
+(operator.py:1245/1309) and speaks each reply (operator.py:1274 ->
+_speak_best_effort). On a machine with no audio device that reaches pyttsx3's
+SAPI5 driver at ``sapi5.startLoop``, which blocks indefinitely --
+GitHub's windows-latest runner hung there, and pytest-timeout's thread method
+cannot interrupt a blocking COM call, so the whole session wedged without ever
+printing a summary.
+
+None of these tests is about speech. They assert loop control flow, and their
+assertions read the ``output`` list fed by ``output_func``, which is
+independent of TTS. ``no_tts`` is a first-class parameter of
+run_voice_operator_loop -- exercised directly by
+test_voice_operator_no_tts_disables_speaker below -- so this is the API used as
+intended rather than a guard bolted on, and the tests keep running on every
+platform. Speech output itself is covered by tests/speech/.
+"""
+
 from types import SimpleNamespace
 
 from grandpa.voice.errors import MicrophoneUnavailableError, VoiceRecognitionError
@@ -156,6 +176,7 @@ def test_exit_command_stops_loop() -> None:
             ok=True, status="completed", message="done", approval_required=False
         ),
         prefer_voice=False,
+        no_tts=True,
     )
 
     assert code == 0
@@ -183,6 +204,7 @@ def test_empty_input_records_audio_in_voice_mode() -> None:
             approval_required=False,
         ),
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -207,6 +229,7 @@ def test_debug_prints_raw_and_normalized_transcript() -> None:
         ),
         prefer_voice=True,
         debug=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -225,6 +248,7 @@ def test_eof_exits_voice_operator_loop_gracefully() -> None:
         input_func=input_func,
         output_func=output.append,
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -239,6 +263,7 @@ def test_typed_mode_empty_input_repompts_without_stopping() -> None:
         input_func=lambda _prompt: next(inputs),
         output_func=output.append,
         prefer_voice=False,
+        no_tts=True,
     )
 
     assert code == 0
@@ -362,6 +387,7 @@ def test_typed_fallback_after_microphone_unavailable() -> None:
         listen_func=lambda: (_ for _ in ()).throw(MicrophoneUnavailableError()),
         action_runner=action_runner,
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -383,6 +409,7 @@ def test_stt_exception_allows_retry_or_typed_input() -> None:
             )
         ),
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -407,6 +434,7 @@ def test_voice_operator_routes_multistep_goal_to_executive_planner(monkeypatch) 
         action_runner=lambda payload: actions.append(payload),
         prefer_voice=False,
         dry_run=True,
+        no_tts=True,
     )
 
     assert code == 0
