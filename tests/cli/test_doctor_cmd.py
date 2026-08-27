@@ -173,19 +173,37 @@ class TestRuntimeEnvironmentChecks:
 
         assert active == str(invoked.resolve())
 
-    def test_runtime_checks_warn_when_duplicate_executables_exist(self) -> None:
-        candidates = [
-            "D:\\Grandpa\\.venv\\Scripts\\grandpa.exe",
-            "C:\\Users\\ASUS\\AppData\\Local\\Programs\\Python\\Python311\\Scripts\\grandpa.exe",
-        ]
+    def test_runtime_checks_warn_when_duplicate_executables_exist(
+        self, tmp_path: Path
+    ) -> None:
+        # Build a real two-install layout on disk rather than naming absolute
+        # paths. _duplicate_launcher_guidance only emits the pip remediation
+        # when `scripts_dir.parent / "python.exe"` exists on the filesystem
+        # (doctor_cmd.py:139), so the previous hardcoded
+        # C:\Users\ASUS\...\Python311\ made the assertion pass only on a machine
+        # where that interpreter happened to be installed. It failed on CI for
+        # that reason alone, having never exercised the branch anywhere else.
+        project_root = tmp_path / "project"
+        preferred_dir = project_root / ".venv" / "Scripts"
+        preferred_dir.mkdir(parents=True)
+        preferred = preferred_dir / "grandpa.exe"
+        preferred.write_text("", encoding="utf-8")
+
+        other_root = tmp_path / "other-python"
+        other_scripts = other_root / "Scripts"
+        other_scripts.mkdir(parents=True)
+        other = other_scripts / "grandpa.exe"
+        other.write_text("", encoding="utf-8")
+        # The interpreter beside the duplicate is what unlocks the pip guidance.
+        (other_root / "python.exe").write_text("", encoding="utf-8")
+
+        candidates = [str(preferred), str(other)]
         with (
             patch(
                 "grandpa.cli.doctor_cmd._grandpa_executable_candidates",
                 return_value=candidates,
             ),
-            patch(
-                "grandpa.cli.doctor_cmd._project_root", return_value=Path("D:/Grandpa")
-            ),
+            patch("grandpa.cli.doctor_cmd._project_root", return_value=project_root),
         ):
             results = _check_runtime_environment()
 
@@ -194,10 +212,15 @@ class TestRuntimeEnvironmentChecks:
             for result in results
             if result.name == "Grandpa executable duplicates"
         )
+        details = str(duplicate.details)
         assert duplicate.status == "warn"
         assert "2 executables" in duplicate.message
-        assert "uv run grandpa" in str(duplicate.details)
-        assert "pip uninstall grandpa" in str(duplicate.details)
+        assert "uv run grandpa" in details
+        assert "pip uninstall grandpa" in details
+        # The remediation must name the duplicate's interpreter, not the
+        # preferred one -- that is the whole point of the guidance.
+        assert str(other_root / "python.exe") in details
+        assert str(other) in details
 
 
 class TestCheckConfigMissing:
