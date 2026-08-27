@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import tempfile
 from pathlib import Path
 
@@ -65,6 +66,97 @@ def test_workspace_safety(temp_workspace) -> None:
     ws_ssh = resolve_and_verify_workspace("~/.ssh")
     assert not ws_ssh.is_safe
     assert "blocked" in ws_ssh.reason
+
+
+class TestSensitivePathsBlockedRegardlessOfExistence:
+    """A protected location is refused for being protected, not for being absent.
+
+    resolve_and_verify_workspace used to test existence first, so ~/.ssh
+    reported "does not exist" on a host without one and "blocked" on a host with
+    one -- the same request yielding a different verdict, and an audit trail
+    recording the wrong reason. GitHub's windows-latest runner has no ~/.ssh,
+    which is how this surfaced.
+
+    is_safe was False either way, so the outcome never changed; these tests pin
+    the reason, which is what a reviewer or audit log actually reads.
+    """
+
+    @pytest.mark.parametrize("secret_dir", [".ssh", ".aws", ".gemini"])
+    def test_nonexistent_user_secret_dir_is_blocked_not_missing(
+        self, secret_dir, monkeypatch
+    ):
+        # The fake home must sit OUTSIDE the system temp directory. Anything
+        # under temp is deliberately exempt from the secrets patterns (the
+        # Windows temp directory is itself under AppData), so a tmp_path-based
+        # home would skip the very check this test exists to pin.
+        #
+        # Nothing is created on disk -- being absent is the point. Without the
+        # ordering fix each of these returns "Workspace path does not exist."
+        fake_home = (
+            "C:\\grandpa-test-home-does-not-exist"
+            if sys.platform == "win32"
+            else "/home/grandpa-test-home-does-not-exist"
+        )
+        monkeypatch.setenv("USERPROFILE", fake_home)
+        monkeypatch.setenv("HOME", fake_home)
+
+        ws = resolve_and_verify_workspace(f"~/{secret_dir}")
+
+        assert not ws.is_safe
+        assert "blocked" in ws.reason
+        assert "does not exist" not in ws.reason
+
+    # The system-directory list is platform-specific by construction: on
+    # Windows "/etc" resolves to a drive-relative path such as D:\etc and can
+    # never match the POSIX entries, and vice versa. Assert only the entries
+    # that are meaningful on the host.
+    @pytest.mark.parametrize(
+        "system_dir",
+        (
+            ["C:\\Windows", "C:\\Program Files", "C:\\Program Files (x86)"]
+            if sys.platform == "win32"
+            else ["/etc", "/proc", "/usr/bin", "/sbin"]
+        ),
+    )
+    def test_system_dir_is_blocked_before_existence(self, system_dir):
+        ws = resolve_and_verify_workspace(system_dir)
+
+        assert not ws.is_safe
+        assert "blocked" in ws.reason
+        assert "does not exist" not in ws.reason
+
+    def test_absent_system_dir_is_still_blocked(self):
+        # A subdirectory that certainly does not exist, under a directory that
+        # certainly is protected. This is the case the reorder is for: the
+        # refusal must be about the location, not about the missing folder.
+        absent = (
+            "C:\\Windows\\grandpa-nonexistent-subdir"
+            if sys.platform == "win32"
+            else "/etc/grandpa-nonexistent-subdir"
+        )
+        ws = resolve_and_verify_workspace(absent)
+
+        assert not ws.is_safe
+        assert "blocked" in ws.reason
+        assert "does not exist" not in ws.reason
+
+    def test_ordinary_missing_path_still_reports_missing(self, tmp_path):
+        # The reorder must not turn every absent path into a security refusal;
+        # a plain nonexistent directory keeps its original, accurate reason.
+        ws = resolve_and_verify_workspace(str(tmp_path / "no-such-dir"))
+
+        assert not ws.is_safe
+        assert "exist" in ws.reason
+        assert "blocked" not in ws.reason
+
+    def test_temp_workspace_is_still_usable(self, temp_workspace):
+        # Guards the is_in_temp carve-out: the Windows temp directory lives
+        # under AppData, which is itself a secret pattern, so moving the secrets
+        # check earlier must not start blocking legitimate temp workspaces.
+        ws = resolve_and_verify_workspace(str(temp_workspace))
+
+        assert ws.is_safe
+        assert ws.root_path == str(temp_workspace)
 
 
 # --- Repository inspection tests ---
