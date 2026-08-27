@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import traceback
+from unittest.mock import patch
 
 from click.testing import CliRunner, Result
 
@@ -11,26 +12,13 @@ from grandpa.cli import cli
 
 
 def _describe(result: Result) -> str:
-    """Render everything known about a CliRunner result.
-
-    All three tests below failed on GitHub's windows-latest runner with
-    ``JSONDecodeError: Expecting value: line 1 column 1 (char 0)``, meaning
-    ``result.output`` was empty. They pass locally both in isolation and in a
-    full-suite run, and two hypotheses have been tested and disproved: an
-    unreachable Ollama still yields clean JSON, and forcing
-    ``OllamaBackendAdapter.list_models`` to raise ``TimeoutError`` also yields
-    clean JSON (exit 0 both times).
-
-    The cause is therefore not established, and this helper exists so the next
-    CI run reports it rather than only saying the output would not parse. It
-    surfaces the exit code, any exception Click captured with its traceback,
-    and the raw output with its repr so whitespace or a stray banner is visible.
-    """
+    """Render everything known about a CliRunner result."""
     parts = [
         f"exit_code={result.exit_code!r}",
         f"exception={result.exception!r}",
-        f"output_len={len(result.output)}",
-        f"output_repr={result.output[:2000]!r}",
+        f"stdout_len={len(result.stdout)}",
+        f"stdout_repr={result.stdout[:2000]!r}",
+        f"stderr_repr={result.stderr[:500]!r}",
     ]
     if result.exception is not None and result.exc_info is not None:
         parts.append(
@@ -40,26 +28,44 @@ def _describe(result: Result) -> str:
 
 
 def _doctor_json() -> list[dict]:
-    """Invoke ``doctor --json`` and return the parsed payload.
+    """Invoke ``doctor --json`` and return the payload parsed from stdout.
 
-    The JSON contract is asserted here rather than weakened: the command must
-    exit 0, emit non-empty output, parse as JSON, and yield a list of check
-    objects carrying at least ``name`` and ``status``. Each failure mode gets
-    its own message so a CI failure identifies which step broke instead of
-    surfacing as an opaque decode error at char 0.
+    Parses ``result.stdout``, not ``result.output``. Click's ``output`` is the
+    merged terminal view -- "as the user would see it" -- so it interleaves
+    stderr. ``--json`` only ever promises that *stdout* is machine-readable.
+
+    That distinction is the whole bug these tests hit. On GitHub's
+    windows-latest runner there is no Ollama, so listing models times out and
+    ``ollama_adapter.py:512`` logs a warning. ``setup_logging`` attaches a
+    ``logging.StreamHandler()`` with no stream argument, which writes to
+    stderr. Reading ``result.output`` therefore produced
+
+        WARNING grandpa.runtime.ollama_adapter: Failed to list models ...
+        WARNING grandpa.runtime.ollama_adapter: Failed to list models ...
+        [
+          {"name": "Python version", ...
+
+    and json.loads failed at char 0. stdout by itself was valid JSON the whole
+    time, and `grandpa doctor --json | jq` is unaffected in a real shell
+    because stderr does not travel through the pipe. The product was correct;
+    the tests were reading the wrong stream. Locally the failure was invisible
+    only because Ollama is running, so no warning was emitted.
+
+    The contract is asserted rather than weakened: exit 0, non-empty stdout,
+    valid JSON, a list, non-empty, and name/status on every entry.
     """
     result = CliRunner().invoke(cli, ["doctor", "--json"])
 
     assert result.exit_code == 0, f"doctor --json exited non-zero.\n{_describe(result)}"
-    assert result.output.strip(), (
-        f"doctor --json produced no output.\n{_describe(result)}"
+    assert result.stdout.strip(), (
+        f"doctor --json produced no stdout.\n{_describe(result)}"
     )
 
     try:
-        data = json.loads(result.output)
+        data = json.loads(result.stdout)
     except json.JSONDecodeError as exc:
         raise AssertionError(
-            f"doctor --json emitted output that is not valid JSON: {exc}\n"
+            f"doctor --json emitted stdout that is not valid JSON: {exc}\n"
             f"{_describe(result)}"
         ) from exc
 
@@ -100,3 +106,42 @@ class TestDoctorOptionalLabels:
         data = _doctor_json()
         names = [c["name"] for c in data]
         assert "Default model" in names
+
+
+class TestDoctorJsonStdoutStaysMachineReadable:
+    """``--json`` must keep stdout parseable when a backend is unreachable.
+
+    This is the condition the CI runner is always in and a developer machine
+    running Ollama never is, which is why it went unnoticed locally. Diagnostic
+    logging belongs on stderr so `grandpa doctor --json | jq` keeps working
+    precisely when something is wrong.
+    """
+
+    def test_stdout_is_valid_json_when_ollama_is_unreachable(self) -> None:
+        import httpx
+
+        from grandpa.cli.log_config import setup_logging
+
+        # Attach the console handler the real CLI installs, otherwise the
+        # warning has nowhere to go and the test cannot observe the split.
+        setup_logging()
+
+        def refuse(*_args, **_kwargs):
+            raise httpx.ConnectError("simulated: no Ollama on this host")
+
+        # Patch inside the adapter's try/except so the real warning at
+        # ollama_adapter.py:512 fires. Replacing list_models outright removes
+        # the very code that logs, which is how an earlier investigation
+        # wrongly cleared this hypothesis.
+        with patch("httpx.Client.get", refuse):
+            result = CliRunner().invoke(cli, ["doctor", "--json"])
+
+        assert result.exit_code == 0, _describe(result)
+
+        # stdout alone must parse. This is the contract.
+        payload = json.loads(result.stdout)
+        assert isinstance(payload, list) and payload
+
+        # The warning must be present but confined to stderr.
+        assert "Failed to list models" in result.stderr
+        assert "WARNING" not in result.stdout
