@@ -158,8 +158,8 @@ class TestBuilderBackendResolution:
 
 
 _SERVE_PROBE = r"""
-import json, sys
-from unittest.mock import patch
+import contextlib, json, sys
+from unittest.mock import MagicMock, patch
 from click.testing import CliRunner
 
 from grandpa.core.config import load_config
@@ -173,6 +173,11 @@ config = load_config()
 config.agent.context_from_memory = True
 config.memory.default_backend = backend_key
 config.memory.db_path = db_path
+# Pin the model so resolution does not depend on what discovery finds.
+config.server.model = "stub-model"
+# Dead host: if anything still reaches for a live engine, fail fast and
+# loudly rather than quietly succeeding because the dev box runs Ollama.
+config.engine.ollama.host = "http://127.0.0.1:59999"
 
 calls = []
 real = MemoryRegistry.create.__func__
@@ -185,11 +190,26 @@ def spy(cls, key, *args, **kwargs):
 
 from grandpa.cli.serve import serve  # noqa: E402
 
-with patch("uvicorn.run"), patch(
-    "grandpa.cli.serve.load_config", return_value=config
-), patch.object(MemoryRegistry, "create", classmethod(spy)):
-    CliRunner().invoke(serve, ["--no-auth"], catch_exceptions=True)
+# get_engine() probes engine.health() over the network and returns None when
+# nothing answers, at which point serve exits(1) long before the memory block
+# this test is about.  Stub engine discovery so the memory-resolution path is
+# reached deterministically; everything under test still runs for real.
+patches = [
+    patch("uvicorn.run"),
+    patch("grandpa.cli.serve.load_config", return_value=config),
+    patch("grandpa.cli.serve.get_engine", return_value=("stub", MagicMock())),
+    patch("grandpa.cli.serve.discover_engines", return_value={}),
+    patch("grandpa.cli.serve.discover_models", return_value={}),
+    patch.object(MemoryRegistry, "create", classmethod(spy)),
+]
+with contextlib.ExitStack() as stack:
+    for p in patches:
+        stack.enter_context(p)
+    result = CliRunner().invoke(serve, ["--no-auth"], catch_exceptions=True)
 
+# Emitted ahead of the marker so that if serve ever stops early again, the
+# failure text says why instead of only that no backend was constructed.
+print("__EXIT__" + json.dumps([result.exit_code, repr(result.exception)]))
 print("__CALLS__" + json.dumps(calls))
 """
 
@@ -203,7 +223,8 @@ def _run_serve(backend_key: str, db_path: str):
     ``serve`` invocation runs against emptied registries and aborts before it
     reaches the memory block.  That made the in-process version pass or fail
     depending on test order.  ``uvicorn.run`` is stubbed so nothing binds a
-    port; the memory-resolution path under test runs for real.
+    port, and engine discovery is stubbed so the test does not need Ollama or
+    any other live engine; the memory-resolution path under test runs for real.
     """
     proc = subprocess.run(
         [sys.executable, "-c", _SERVE_PROBE, backend_key, db_path],
