@@ -342,10 +342,16 @@ def serve(
 
             mem_key = config.memory.default_backend
             if MemoryRegistry.contains(mem_key):
-                memory_backend = MemoryRegistry.create(
-                    mem_key,
-                    db_path=config.memory.db_path,
-                )
+                # Only the sqlite backend takes db_path; passing it to the
+                # others raises TypeError, which the except below turned into
+                # memory being silently absent from the server.
+                if mem_key == "sqlite":
+                    memory_backend = MemoryRegistry.create(
+                        mem_key,
+                        db_path=config.memory.db_path,
+                    )
+                else:
+                    memory_backend = MemoryRegistry.create(mem_key)
                 console.print("  Memory:    [cyan]active[/cyan]")
         except Exception as exc:
             logger.debug("Memory backend init failed: %s", exc)

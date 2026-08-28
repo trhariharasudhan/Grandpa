@@ -304,7 +304,16 @@ class SystemBuilder:
 
             key = config.memory.default_backend
             if MemoryRegistry.contains(key):
-                return MemoryRegistry.create(key, db_path=config.memory.db_path)
+                # Only the sqlite backend takes db_path. Passing it to every
+                # backend raises TypeError for the others (dense, hybrid), and
+                # the except below turned that into memory being silently
+                # disabled rather than an error the caller could see.
+                if key == "sqlite":
+                    return MemoryRegistry.create(
+                        key,
+                        db_path=config.memory.db_path,
+                    )
+                return MemoryRegistry.create(key)
         except Exception as exc:
             logger.warning("Failed to resolve memory backend: %s", exc)
         return None
