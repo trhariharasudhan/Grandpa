@@ -81,7 +81,19 @@ def test_scanner_detects_large_files_and_duplicates(tmp_path: Path) -> None:
 
 def test_open_latest_safe_file_and_block_executable(tmp_path: Path) -> None:
     opened: list[Path] = []
-    _file(tmp_path / "safe.pdf")
+    # safe.pdf is aged a day so setup.exe below is unambiguously the latest
+    # download. Without that, both files are written in the same instant and
+    # can share an st_mtime: DownloadsScanner.scan sorts by st_mtime descending
+    # and Python's sort is stable, so a tie falls back to iterdir order, which
+    # on NTFS is alphabetical -- "safe.pdf" before "setup.exe". latest() then
+    # returns the pdf and the executable is never even considered, so the
+    # blocking assertion fails with 'handled' instead of 'blocked'.
+    #
+    # That is exactly what happened on GitHub's windows-latest runner. It
+    # passes locally only because the two writes land ~1ms apart here; the
+    # runner's timestamp granularity is coarser. Aging the pdf removes the tie
+    # rather than relying on write speed. Both assertions are unchanged.
+    _file(tmp_path / "safe.pdf", days_old=1)
     scanner = DownloadsScanner((tmp_path,))
     result = DownloadsAutomation(scanner=scanner, opener=opened.append).handle(
         "open latest download"
