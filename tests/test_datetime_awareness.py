@@ -26,7 +26,40 @@ def mock_frozen_time():
     set_mock_now(None)
 
 
-def test_frozen_time_expected_values(mock_frozen_time):
+@pytest.fixture
+def pinned_windows_timezone(monkeypatch):
+    """Pin the Windows registry timezone so the zone name is deterministic.
+
+    On Windows, get_runtime_context() does not trust the mocked datetime's
+    tzinfo for the zone name: it reads TimeZoneKeyName from the registry and
+    overwrites tz_name with the mapped value (runtime_context.py:72-87). The
+    frozen-time assertion below therefore used to depend on where the machine
+    was -- it passed only where the system zone already mapped to Asia/Kolkata,
+    and failed on GitHub's runner, which is UTC.
+
+    Pinning the registry read keeps the assertion exercising the real mapping
+    (`"India Standard Time" -> "Asia/Kolkata"`, runtime_context.py:17) instead
+    of the runner's location. Off Windows the registry branch never runs and
+    str(now.tzinfo) is used directly, which already yields Asia/Kolkata from
+    the fixture, so no patching is needed there.
+    """
+    import platform
+
+    if platform.system() != "Windows":
+        yield
+        return
+
+    import winreg
+
+    monkeypatch.setattr(
+        winreg,
+        "QueryValueEx",
+        lambda _key, _name: ("India Standard Time", winreg.REG_SZ),
+    )
+    yield
+
+
+def test_frozen_time_expected_values(mock_frozen_time, pinned_windows_timezone):
     ctx = get_runtime_context()
     assert "Sunday" in ctx["local_date"]
     assert "August 2, 2026" in ctx["local_date"]

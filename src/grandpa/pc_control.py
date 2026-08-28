@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import os
+import secrets
 import sqlite3
 import sys
 import threading
@@ -20,6 +22,8 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
+
+logger = logging.getLogger(__name__)
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 ActionStatus = Literal[
@@ -126,6 +130,26 @@ BLOCKED_ACTIONS = {
     "browser_purchase",
 }
 
+# Actions that always require explicit human approval, regardless of risk tier.
+#
+# Synthetic keyboard and mouse input is equivalent to arbitrary code execution:
+# ``keyboard_hotkey`` opens a launcher and ``keyboard_type`` fills it in, which
+# reaches exactly the capability ``script_run``/``shell_run`` are BLOCKED to
+# prevent. Their blast radius is still classified MEDIUM (they are recoverable
+# and scoped to the visible desktop), so rather than inflate the risk tier we
+# gate them on approval directly.
+#
+# ``mouse_move`` and ``mouse_scroll`` are deliberately excluded — moving the
+# cursor or scrolling cannot commit an action on its own.
+APPROVAL_REQUIRED_ACTIONS = {
+    "keyboard_type",
+    "keyboard_hotkey",
+    "mouse_click",
+    "mouse_drag",
+    "browser_form_fill",
+    "browser_download",
+}
+
 SAFE_APP_ALIASES = {
     "notepad": "notepad",
     "calculator": "calculator",
@@ -194,6 +218,8 @@ class PendingLocalAction:
     status: str = "pending"
     decision: str = "pending"
     decision_timestamp: float | None = None
+    # Out-of-band approval code; never surfaced through the HTTP API.
+    approval_token: str = ""
 
 
 @dataclass
@@ -277,7 +303,11 @@ def _run_local_action_impl(
         _audit(request, response, approval_status="dry_run")
         return response
 
-    if request.require_approval or risk == "HIGH":
+    if (
+        request.require_approval
+        or risk == "HIGH"
+        or _normalise_action_type(request.action_type) in APPROVAL_REQUIRED_ACTIONS
+    ):
         action_id = _create_pending(request)
         response = LocalActionResponse(
             ok=False,
@@ -309,13 +339,13 @@ def _run_local_action_impl(
     return response
 
 
-def approve_local_action(action_id: str) -> LocalActionResponse:
+def approve_local_action(action_id: str, token: str = "") -> LocalActionResponse:
     from grandpa.desktop.kernel.approvals import approve
 
-    return approve(action_id)
+    return approve(action_id, token)
 
 
-def _approve_local_action_impl(action_id: str) -> LocalActionResponse:
+def _approve_local_action_impl(action_id: str, token: str = "") -> LocalActionResponse:
     with _STORE_LOCK:
         _expire_pending()
         pending = _load_pending_record(action_id)
@@ -323,6 +353,30 @@ def _approve_local_action_impl(action_id: str) -> LocalActionResponse:
             return _missing_or_decided_action(action_id)
         request = pending.request
         risk = classify_risk(request)
+        # An action_id is not an authorisation. The approval code is delivered
+        # out of band (operator console/log), so a caller that can only see the
+        # HTTP response cannot approve what it staged. A wrong code is refused
+        # without consuming the pending action, so a typo is recoverable.
+        expected = pending.approval_token
+        if not expected or not secrets.compare_digest(str(token or ""), expected):
+            logger.warning(
+                "Rejected approval for local action %s: invalid approval code",
+                action_id,
+            )
+            response = LocalActionResponse(
+                ok=False,
+                action_id=action_id,
+                status="blocked",
+                message=(
+                    "That approval code is not valid for this action. The code is "
+                    "shown on the Grandpa console when the action is staged."
+                ),
+                approval_required=True,
+                risk_level=risk,
+                error="invalid_approval_token",
+            )
+            _audit(request, response, approval_status="invalid_token")
+            return response
         if pending.expires_at <= time.time():
             _mark_pending_decision(action_id, status="expired", decision="expired")
             response = LocalActionResponse(
@@ -914,6 +968,22 @@ def _preflight_guard(
                 )
     if action == "file_permanent_delete":
         return _blocked("Permanent delete is blocked by Grandpa's safety policy.")
+    if action == "keyboard_hotkey":
+        # Checked here, before the approval gate, so a denied shortcut fails
+        # immediately instead of asking the operator to approve something that
+        # can never run. The actuation layer re-checks as defence in depth.
+        from grandpa.desktop.control.automation import is_blocked_hotkey
+
+        # Check both slots independently rather than resolving one. An empty
+        # ``keys`` entry suppresses the fallback to ``target``, so checking only
+        # the resolved value would let ``{"target": "win+r", "keys": ""}`` stage
+        # for approval. Checking both can only ever block more, never less.
+        if is_blocked_hotkey(request.args.get("keys")) or is_blocked_hotkey(
+            request.target
+        ):
+            return _blocked(
+                "I blocked this hotkey because it opens a command-execution surface."
+            )
     if action in {"keyboard_type", "keyboard_hotkey", "mouse_click", "mouse_drag"}:
         try:
             from grandpa.desktop_context import active_window_is_protected
@@ -1020,10 +1090,21 @@ def _connect_approval_db() -> sqlite3.Connection:
             status TEXT NOT NULL,
             approval_required INTEGER NOT NULL,
             decision TEXT NOT NULL,
-            decision_timestamp REAL
+            decision_timestamp REAL,
+            approval_token TEXT NOT NULL DEFAULT ''
         )
         """
     )
+    # Migrate approval databases created before out-of-band approval codes.
+    columns = {
+        str(row["name"])
+        for row in conn.execute("PRAGMA table_info(pc_control_approvals)")
+    }
+    if "approval_token" not in columns:
+        conn.execute(
+            "ALTER TABLE pc_control_approvals "
+            "ADD COLUMN approval_token TEXT NOT NULL DEFAULT ''"
+        )
     return conn
 
 
@@ -1081,6 +1162,9 @@ def _pending_from_row(row: sqlite3.Row) -> PendingLocalAction:
         decision_timestamp=float(row["decision_timestamp"])
         if row["decision_timestamp"] is not None
         else None,
+        approval_token=str(
+            row["approval_token"] if "approval_token" in row.keys() else ""
+        ),
     )
 
 
@@ -1189,14 +1273,19 @@ def _create_pending(request: LocalActionRequest) -> str:
     now = time.time()
     action_id = uuid.uuid4().hex
     risk = classify_risk(request)
+    # Out-of-band approval code. The API caller that stages an action never
+    # receives this; it is emitted only to the local operator's console/log, so
+    # possession of an action_id alone cannot authorise execution.
+    token = secrets.token_hex(4).upper()
     args_json = json.dumps(request.args, ensure_ascii=True, sort_keys=True, default=str)
     with _connect_approval_db() as conn:
         conn.execute(
             """
             INSERT INTO pc_control_approvals (
                 action_id, action_type, target, args_json, risk_level, created_at,
-                expires_at, status, approval_required, decision, decision_timestamp
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending', NULL)
+                expires_at, status, approval_required, decision, decision_timestamp,
+                approval_token
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending', NULL, ?)
             """,
             (
                 action_id,
@@ -1206,9 +1295,24 @@ def _create_pending(request: LocalActionRequest) -> str:
                 risk,
                 now,
                 now + PENDING_TTL_SECONDS,
-                int(request.require_approval or risk == "HIGH"),
+                int(
+                    request.require_approval
+                    or risk == "HIGH"
+                    or _normalise_action_type(request.action_type)
+                    in APPROVAL_REQUIRED_ACTIONS
+                ),
+                token,
             ),
         )
+    logger.warning(
+        "Local action %s requires approval: %s (risk %s). Approval code: %s "
+        "(expires in %ds)",
+        action_id,
+        request.action_type,
+        risk,
+        token,
+        PENDING_TTL_SECONDS,
+    )
     return action_id
 
 

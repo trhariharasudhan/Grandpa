@@ -18,7 +18,6 @@ Install Python 3.10 or newer, [uv](https://docs.astral.sh/uv/), and
 git clone https://github.com/trhariharasudhan/Grandpa.git
 cd Grandpa
 uv sync --extra voice --extra screen --extra server
-copy .env.example .env
 ollama pull qwen2.5:3b
 uv run grandpa doctor
 uv run grandpa chat
@@ -124,8 +123,12 @@ uv sync --extra server
 uv run grandpa serve --host 127.0.0.1 --port 8000
 ```
 
-The server binds to loopback by default. Browser origins are not enabled by
-default; configure CORS explicitly only for a trusted local client.
+The server binds to loopback by default and is authenticated by default: on
+first run it generates an API key, prints it, and stores it in
+`~/.grandpa/config.toml`. Pass it as `Authorization: Bearer <key>`, or override
+it with `GRANDPA_API_KEY`. Use `--no-auth` only where every local process is
+trusted. Browser origins are not enabled by default; configure CORS explicitly
+only for a trusted local client.
 
 ## Development
 
@@ -172,6 +175,20 @@ git diff --check
 - [Roadmap](docs/development/roadmap.md)
 - [Security](docs/user-guide/security.md)
 
+## Origins and Attribution
+
+Grandpa is a derivative work of [OpenJarvis](https://github.com/open-jarvis),
+an Apache-2.0 project by The OpenJarvis Authors, which is itself derived in
+part from IPW (Intelligence-per-Watt). This repository retains the upstream
+commit history: work up to 2026-05-22 is the OpenJarvis contributors'; Grandpa
+was established on 2026-05-23 and has since been substantially rewritten around
+a Windows-first local assistant, where OpenJarvis was a general agent and
+inference platform.
+
+Copyright and attribution for both works are recorded in [LICENSE](LICENSE) and
+[NOTICE](NOTICE). Third-party components, including the vendored FFmpeg build
+used by the optional voice runtime, are listed in [NOTICE](NOTICE).
+
 ## License
 
-Apache-2.0.
+Apache-2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).

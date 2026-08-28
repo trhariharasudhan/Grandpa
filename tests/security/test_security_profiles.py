@@ -14,7 +14,6 @@ class TestProfileExpansion:
         cfg = SecurityConfig(profile="personal")
         apply_security_profile(cfg, None)
         assert cfg.mode == "redact"
-        assert cfg.rate_limit_enabled is True
 
     def test_server_profile_sets_block(self) -> None:
         from grandpa.core.config import (
@@ -27,8 +26,6 @@ class TestProfileExpansion:
         server_cfg = ServerConfig()
         apply_security_profile(cfg, server_cfg)
         assert cfg.mode == "block"
-        assert cfg.rate_limit_rpm == 30
-        assert cfg.rate_limit_burst == 5
         assert server_cfg.host == "0.0.0.0"
 
     def test_explicit_override_beats_profile(self) -> None:

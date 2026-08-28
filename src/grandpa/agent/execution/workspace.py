@@ -20,22 +20,20 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
             reason=f"Failed to resolve path: {exc}",
         )
 
-    # 1. Canonicalize and check existence
-    if not resolved_path.exists():
-        return WorkspaceContext(
-            root_path=str(resolved_path),
-            is_safe=False,
-            reason="Workspace path does not exist.",
-        )
+    # Sensitivity is decided before existence, deliberately.
+    #
+    # These checks are pure path inspection and need no filesystem access, so
+    # ordering them first means a protected location is refused for being
+    # protected whether or not it happens to exist on this machine. Previously
+    # existence was tested first, so `~/.ssh` reported "does not exist" on a
+    # host without one and "blocked" on a host with one -- the same request
+    # producing a different security verdict depending on the machine, and an
+    # audit trail that recorded the wrong reason. is_safe was False either way,
+    # so this changes the reported reason and the ordering, not the outcome.
 
-    if not resolved_path.is_dir():
-        return WorkspaceContext(
-            root_path=str(resolved_path),
-            is_safe=False,
-            reason="Workspace path is not a directory.",
-        )
+    path_lower = str(resolved_path).lower()
 
-    # 2. Reject sensitive system directories
+    # 1. Reject sensitive system directories
     system_dirs = {
         "c:\\windows",
         "c:\\program files",
@@ -49,7 +47,6 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
         "/sys",
         "/proc",
     }
-    path_lower = str(resolved_path).lower()
     for sys_dir in system_dirs:
         if path_lower.startswith(sys_dir):
             return WorkspaceContext(
@@ -58,13 +55,16 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
                 reason=f"Access denied: System directory '{sys_dir}' is blocked.",
             )
 
-    # 3. Enforce approved workspace scope
-    # Approved locations: D:\\Grandpa, or any folder under system temp directory
+    # 2. Determine approved scope.
+    # Approved locations: D:\\Grandpa, or any folder under system temp directory.
+    # is_in_temp is needed by the secrets check below: the system temp directory
+    # itself lives under AppData on Windows, which would otherwise match the
+    # "appdata" secret pattern and block every legitimate temp workspace.
     temp_dir = Path(os.environ.get("TEMP", os.environ.get("TMP", "/tmp"))).resolve()
     is_in_temp = is_subpath(resolved_path, temp_dir)
     is_in_grandpa = is_subpath(resolved_path, Path("D:\\Grandpa"))
 
-    # 4. Reject user profile secrets directories (unless inside temp directory)
+    # 3. Reject user profile secrets directories (unless inside temp directory)
     if not is_in_temp:
         user_secret_patterns = [
             "\\.ssh",
@@ -83,6 +83,21 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
                     is_safe=False,
                     reason=f"Access denied: Sensitive user path matching '{pattern}' is blocked.",
                 )
+
+    # 4. Only now consider whether the path is usable at all.
+    if not resolved_path.exists():
+        return WorkspaceContext(
+            root_path=str(resolved_path),
+            is_safe=False,
+            reason="Workspace path does not exist.",
+        )
+
+    if not resolved_path.is_dir():
+        return WorkspaceContext(
+            root_path=str(resolved_path),
+            is_safe=False,
+            reason="Workspace path is not a directory.",
+        )
 
     if not (is_in_grandpa or is_in_temp or str(resolved_path) == "D:\\Grandpa"):
         return WorkspaceContext(

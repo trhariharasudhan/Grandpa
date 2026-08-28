@@ -5,6 +5,54 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+# Key aliases normalised before checking the hotkey denylist, so "Windows+R",
+# "win + r" and "WIN+r" are all recognised as the same combination.
+_HOTKEY_ALIASES = {
+    "windows": "win",
+    "super": "win",
+    "meta": "win",
+    "cmd": "win",
+    "command": "win",
+    "control": "ctrl",
+    "escape": "esc",
+    "del": "delete",
+    "return": "enter",
+}
+
+# Key combinations that open a command-execution surface. These are blocked
+# outright rather than gated on approval: approving "press Win+R" is in effect
+# approving shell access, which BLOCKED_ACTIONS (script_run / shell_run) exists
+# to prevent. Compared as unordered key sets.
+_BLOCKED_HOTKEYS = (
+    frozenset({"win", "r"}),  # Run dialog
+    frozenset({"win", "x"}),  # Power User menu -> Terminal / PowerShell
+    frozenset({"ctrl", "shift", "esc"}),  # Task Manager
+    frozenset({"ctrl", "alt", "delete"}),  # Secure attention sequence
+)
+
+
+def _normalise_hotkey(keys: Any) -> list[str]:
+    """Split and canonicalise a hotkey spec into a list of lowercase key names."""
+    if isinstance(keys, str):
+        parts = [part for part in keys.split("+")]
+    elif isinstance(keys, (list, tuple)):
+        parts = [str(part) for part in keys]
+    else:
+        parts = [str(keys)]
+    normalised: list[str] = []
+    for part in parts:
+        token = str(part).strip().lower()
+        if not token:
+            continue
+        normalised.append(_HOTKEY_ALIASES.get(token, token))
+    return normalised
+
+
+def is_blocked_hotkey(keys: Any) -> bool:
+    """Return ``True`` when *keys* names a denied command-execution shortcut."""
+    pressed = frozenset(_normalise_hotkey(keys))
+    return any(combo <= pressed for combo in _BLOCKED_HOTKEYS)
+
 
 @dataclass(frozen=True)
 class AutomationControlService:
@@ -41,9 +89,29 @@ class AutomationControlService:
                 {"characters": len(text)},
             )
         if action == "keyboard_hotkey":
-            keys = request.args.get("keys", request.target)
-            if isinstance(keys, str):
-                keys = [part.strip() for part in keys.split("+") if part.strip()]
+            raw_keys = request.args.get("keys", request.target)
+            keys = _normalise_hotkey(raw_keys)
+            if not keys:
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "blocked",
+                    "I blocked this hotkey because no keys were supplied.",
+                    False,
+                    "BLOCKED",
+                    error="blocked_by_policy",
+                )
+            if is_blocked_hotkey(keys):
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "blocked",
+                    "I blocked this hotkey because it opens a command-execution surface.",
+                    False,
+                    "BLOCKED",
+                    {"keys": keys},
+                    error="blocked_by_policy",
+                )
             pyautogui.hotkey(*keys)
             return LocalActionResponse(
                 True,

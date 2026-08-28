@@ -876,3 +876,52 @@ def test_voice_session_handle_transcript_inference_error() -> None:
         "Ollama is not available" in str(line) or "Ollama not reachable" in str(line)
         for line in output
     )
+
+
+def test_build_voice_session_routes_output_to_the_caller_sink(monkeypatch):
+    """A caller-supplied ``output`` sink must actually receive messages.
+
+    ``build_voice_session`` used to construct ``VoicePresenter`` without
+    passing ``output``, so the presenter decided its rendering mode against
+    the default ``print`` and sent everything to a Rich console on stderr.
+    ``VoiceSession.__post_init__`` then assigned ``presenter.output``, but the
+    mode was already fixed — so errors, status and assistant text never
+    reached the sink. Embedders and screen-reader users saw nothing.
+    """
+    from grandpa.voice.cli_session import build_voice_session
+
+    captured: list[str] = []
+
+    session = build_voice_session(
+        output=captured.append,
+        microphone_capture=FakeMicrophone(error=MicrophoneUnavailableError("boom")),
+        transcriber=FakeTranscriber(),
+        speaker=FakeSpeaker(),
+    )
+
+    presenter = session.presenter
+    # ``==`` not ``is``: each attribute access builds a fresh bound method.
+    assert presenter.output == captured.append
+    # The mode must reflect the real sink, not the default print.
+    assert presenter.no_color is True
+
+    presenter.print_error("Device disconnected.")
+    assert any("Device disconnected." in line for line in captured)
+
+
+def test_voice_session_surfaces_setup_errors_through_the_output_sink():
+    """End-to-end: an unrecoverable mic error reaches the caller's sink."""
+    from grandpa.voice.operator import build_voice_operator_session
+
+    captured: list[str] = []
+    session = build_voice_operator_session(
+        microphone_capture=FakeMicrophone(
+            error=MicrophoneUnavailableError("Device disconnected.")
+        ),
+        transcriber=FakeTranscriber(),
+        speaker=FakeSpeaker(),
+        output=captured.append,
+    )
+
+    assert session.run() == 1
+    assert any("Device disconnected." in line for line in captured)

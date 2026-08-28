@@ -11,10 +11,10 @@ def create(request: Any) -> str:
     return pc_control._create_pending(request)
 
 
-def approve(action_id: str):
+def approve(action_id: str, token: str = ""):
     from grandpa import pc_control
 
-    return pc_control._approve_local_action_impl(action_id)
+    return pc_control._approve_local_action_impl(action_id, token)
 
 
 def reject(action_id: str):

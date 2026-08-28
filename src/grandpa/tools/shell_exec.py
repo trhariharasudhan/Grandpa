@@ -123,34 +123,16 @@ class ShellExecTool(BaseTool):
             if val is not None:
                 env[key] = val
 
-        try:
-            from grandpa._rust_bridge import get_rust_module
-
-            _rust = get_rust_module()
-            output = _rust.ShellExecTool().execute(command, working_dir)
-            return ToolResult(
-                tool_name="shell_exec",
-                content=output or "(no output)",
-                success=True,
-                metadata={
-                    "returncode": 0,
-                    "timeout_used": timeout,
-                    "working_dir": working_dir,
-                },
-            )
-        except ImportError:
-            pass  # Fall through to subprocess below
-        except Exception as exc:
-            return ToolResult(
-                tool_name="shell_exec",
-                content=str(exc),
-                success=False,
-                metadata={
-                    "returncode": -1,
-                    "timeout_used": timeout,
-                    "working_dir": working_dir,
-                },
-            )
+        # This subprocess call is the single authoritative implementation.
+        #
+        # A Rust-first branch used to run here and fall back to subprocess only
+        # on ImportError. It silently dropped every guarantee this tool exists
+        # to provide: it ignored ``timeout``, passed the inherited environment
+        # instead of ``env``, skipped output truncation, and hardcoded
+        # ``returncode: 0, success: True`` so a command that exited non-zero was
+        # reported as having succeeded. It was inert only because the compiled
+        # extension is never built. See docs/architecture/ARCHITECTURE_DECISIONS.md
+        # (AD-002) for why Rust is not the execution path for this tool.
         try:
             result = subprocess.run(
                 command,

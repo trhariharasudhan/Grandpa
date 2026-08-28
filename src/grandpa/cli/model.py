@@ -158,15 +158,9 @@ def _render_model_info(
         console.print(json.dumps(spec.to_dict(), indent=2))
         return
 
-    params = (
-        f"{spec.parameter_count_b}B"
-        if spec.parameter_count_b
-        else "unknown"
-    )
+    params = f"{spec.parameter_count_b}B" if spec.parameter_count_b else "unknown"
     active = (
-        f"{spec.active_parameter_count_b}B"
-        if spec.active_parameter_count_b
-        else "-"
+        f"{spec.active_parameter_count_b}B" if spec.active_parameter_count_b else "-"
     )
     ctx_len = f"{spec.context_length:,}" if spec.context_length else "unknown"
     vram = f"{spec.min_vram_gb}GB" if spec.min_vram_gb else "-"
@@ -240,9 +234,7 @@ def _render_models_status(
 
     resolved_engine = get_engine(config, active_engine_key)
     engine_healthy = resolved_engine[1].health() if resolved_engine else False
-    installed_models = (
-        resolved_engine[1].list_models() if resolved_engine else []
-    )
+    installed_models = resolved_engine[1].list_models() if resolved_engine else []
 
     cap_counts: dict[str, int] = {}
     family_counts: dict[str, int] = {}
@@ -277,7 +269,9 @@ def _render_models_status(
     table.add_column("Property", style="cyan", no_wrap=True)
     table.add_column("Value", style="green")
 
-    health_style = "[green]Healthy[/green]" if engine_healthy else "[red]Unreachable[/red]"
+    health_style = (
+        "[green]Healthy[/green]" if engine_healthy else "[red]Unreachable[/red]"
+    )
     table.add_row("Active Engine Backend", f"{active_engine_key} ({health_style})")
     table.add_row("Default Model", str(default_model))
     table.add_row("Total Registered Models", str(len(specs)))
@@ -286,14 +280,10 @@ def _render_models_status(
     caps_summary = ", ".join(f"{k}: {v}" for k, v in sorted(cap_counts.items()))
     table.add_row("Capabilities", caps_summary or "-")
 
-    families_summary = ", ".join(
-        f"{k}: {v}" for k, v in sorted(family_counts.items())
-    )
+    families_summary = ", ".join(f"{k}: {v}" for k, v in sorted(family_counts.items()))
     table.add_row("Model Families", families_summary or "-")
 
-    backends_summary = ", ".join(
-        f"{k}: {v}" for k, v in sorted(backend_counts.items())
-    )
+    backends_summary = ", ".join(f"{k}: {v}" for k, v in sorted(backend_counts.items()))
     table.add_row("Backends", backends_summary or "-")
 
     console.print(table)
@@ -310,11 +300,37 @@ def models_cmd() -> None:
 
 
 @models_cmd.command("list")
-@click.option("--capability", "-c", default=None, help="Filter by capability (e.g. chat, code, image, embeddings).")
-@click.option("--family", "-f", default=None, help="Filter by model family (e.g. qwen, llama, deepseek).")
-@click.option("--backend", "-b", default=None, help="Filter by backend (e.g. ollama, local, llamacpp).")
-@click.option("--status", "-s", default=None, help="Filter by status (e.g. available, downloading).")
-@click.option("--json", "as_json", is_flag=True, default=False, help="Output results in JSON format.")
+@click.option(
+    "--capability",
+    "-c",
+    default=None,
+    help="Filter by capability (e.g. chat, code, image, embeddings).",
+)
+@click.option(
+    "--family",
+    "-f",
+    default=None,
+    help="Filter by model family (e.g. qwen, llama, deepseek).",
+)
+@click.option(
+    "--backend",
+    "-b",
+    default=None,
+    help="Filter by backend (e.g. ollama, local, llamacpp).",
+)
+@click.option(
+    "--status",
+    "-s",
+    default=None,
+    help="Filter by status (e.g. available, downloading).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Output results in JSON format.",
+)
 def models_list(
     capability: str | None,
     family: str | None,
@@ -336,14 +352,23 @@ def models_list(
 
 @models_cmd.command("info")
 @click.argument("model_name")
-@click.option("--json", "as_json", is_flag=True, default=False, help="Output in JSON format.")
+@click.option(
+    "--json", "as_json", is_flag=True, default=False, help="Output in JSON format."
+)
 def models_info(model_name: str, as_json: bool) -> None:
     """Show detailed metadata for a registered model."""
     console = Console()
     _render_model_info(console, model_name, as_json=as_json)
 
+
 @models_cmd.command("status")
-@click.option("--json", "as_json", is_flag=True, default=False, help="Output status in JSON format.")
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    default=False,
+    help="Output status in JSON format.",
+)
 def models_status(as_json: bool) -> None:
     """Show current model registry and active backend status."""
     console = Console()
@@ -364,15 +389,12 @@ def _handle_pull(
     target_backend = (backend or "").lower().strip()
 
     # Determine if this is a native GGUF acquisition or Ollama pull
-    is_native = (
-        target_backend == "native"
-        or (
-            not target_backend
-            and (
-                filename is not None
-                or model_name.lower().endswith(".gguf")
-                or ("/" in model_name and not model_name.startswith("http"))
-            )
+    is_native = target_backend == "native" or (
+        not target_backend
+        and (
+            filename is not None
+            or model_name.lower().endswith(".gguf")
+            or ("/" in model_name and not model_name.startswith("http"))
         )
     )
 
@@ -438,7 +460,9 @@ def _handle_remove(model_name: str, console: Console) -> None:
 
     mgr = get_model_manager(config)
     if mgr.remove(model_name):
-        console.print(f"[green]Successfully removed local native model:[/green] {model_name}")
+        console.print(
+            f"[green]Successfully removed local native model:[/green] {model_name}"
+        )
         return
 
     # Check if this exists on active engine (e.g. Ollama)
@@ -453,7 +477,9 @@ def _handle_remove(model_name: str, console: Console) -> None:
     except Exception:
         pass
 
-    console.print(f"[yellow]Model not found or could not be removed:[/yellow] {model_name}")
+    console.print(
+        f"[yellow]Model not found or could not be removed:[/yellow] {model_name}"
+    )
     sys.exit(1)
 
 
@@ -468,7 +494,9 @@ def _handle_remove(model_name: str, console: Console) -> None:
     help="Target engine backend.",
 )
 @click.option("--model-id", default=None, help="Custom identifier for ModelRegistry.")
-@click.option("--sha256", default=None, help="Expected SHA-256 checksum for verification.")
+@click.option(
+    "--sha256", default=None, help="Expected SHA-256 checksum for verification."
+)
 @click.option("--revision", default="main", help="Repository revision/branch.")
 def models_pull(
     model_name: str,
@@ -509,7 +537,9 @@ def model() -> None:
 @click.option("--family", "-f", default=None, help="Filter by model family.")
 @click.option("--backend", "-b", default=None, help="Filter by backend.")
 @click.option("--status", "-s", default=None, help="Filter by status.")
-@click.option("--json", "as_json", is_flag=True, default=False, help="Output in JSON format.")
+@click.option(
+    "--json", "as_json", is_flag=True, default=False, help="Output in JSON format."
+)
 def legacy_model_list(
     capability: str | None,
     family: str | None,
@@ -542,7 +572,9 @@ def legacy_model_list(
 
 @model.command("info")
 @click.argument("model_name")
-@click.option("--json", "as_json", is_flag=True, default=False, help="Output in JSON format.")
+@click.option(
+    "--json", "as_json", is_flag=True, default=False, help="Output in JSON format."
+)
 def legacy_model_info(model_name: str, as_json: bool) -> None:
     """Show details for a model."""
     console = Console()
@@ -550,7 +582,9 @@ def legacy_model_info(model_name: str, as_json: bool) -> None:
 
 
 @model.command("status")
-@click.option("--json", "as_json", is_flag=True, default=False, help="Output in JSON format.")
+@click.option(
+    "--json", "as_json", is_flag=True, default=False, help="Output in JSON format."
+)
 def legacy_model_status(as_json: bool) -> None:
     """Show model platform status."""
     console = Console()
@@ -612,7 +646,9 @@ def find_model_spec(model_name: str) -> ModelSpec | None:
     help="Target engine backend.",
 )
 @click.option("--model-id", default=None, help="Custom identifier for ModelRegistry.")
-@click.option("--sha256", default=None, help="Expected SHA-256 checksum for verification.")
+@click.option(
+    "--sha256", default=None, help="Expected SHA-256 checksum for verification."
+)
 @click.option("--revision", default="main", help="Repository revision/branch.")
 def pull(
     model_name: str,

@@ -169,7 +169,13 @@ class AgentExecutor:
             self._bus.subscribe(EventType.TOOL_CALL_START, _on_tool_start)
             self._bus.subscribe(EventType.TOOL_CALL_END, _on_tool_end)
 
+        # Wall clock for the recorded timestamp; a monotonic counter for the
+        # elapsed measurement. time.time() is the wrong primitive for a
+        # duration: it can step backwards when the system clock is adjusted,
+        # and its granularity on Windows is ~15.6ms, so every tick faster than
+        # that recorded as exactly 0.0 seconds.
         tick_start = time.time()
+        tick_started_monotonic = time.perf_counter()
         result = None
         error_info = None
 
@@ -185,7 +191,7 @@ class AgentExecutor:
                 self._bus.unsubscribe(EventType.TOOL_CALL_START, _on_tool_start)
                 self._bus.unsubscribe(EventType.TOOL_CALL_END, _on_tool_end)
 
-            tick_duration = time.time() - tick_start
+            tick_duration = time.perf_counter() - tick_started_monotonic
             self._finalize_tick(agent_id, result, error_info, tick_duration)
 
             if self._trace_store:

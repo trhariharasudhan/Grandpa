@@ -31,8 +31,12 @@ class TestModelsListCmd:
         cfg = GrandpaConfig()
         monkeypatch.setattr("grandpa.cli.model.load_config", lambda: cfg)
         fake = _mock_engine()
-        monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [("mock", fake)])
-        monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {"mock": ["test-model-1"]})
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_engines", lambda c: [("mock", fake)]
+        )
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_models", lambda e: {"mock": ["test-model-1"]}
+        )
 
         result = _runner().invoke(cli, ["models", "list"])
         assert result.exit_code == 0
@@ -48,11 +52,21 @@ class TestModelsListCmd:
         ModelRegistry.clear()
         ModelRegistry.register_value(
             "qwen-test",
-            ModelSpec(model_id="qwen-test", name="Qwen Test", family="qwen", capabilities=("chat",)),
+            ModelSpec(
+                model_id="qwen-test",
+                name="Qwen Test",
+                family="qwen",
+                capabilities=("chat",),
+            ),
         )
         ModelRegistry.register_value(
             "llama-test",
-            ModelSpec(model_id="llama-test", name="Llama Test", family="llama", capabilities=("chat",)),
+            ModelSpec(
+                model_id="llama-test",
+                name="Llama Test",
+                family="llama",
+                capabilities=("chat",),
+            ),
         )
 
         result = _runner().invoke(cli, ["models", "list", "--family", "qwen"])
@@ -90,7 +104,9 @@ class TestModelsListCmd:
         ModelRegistry.clear()
         ModelRegistry.register_value(
             "json-model",
-            ModelSpec(model_id="json-model", name="JSON Model", family="qwen", version="v1.0"),
+            ModelSpec(
+                model_id="json-model", name="JSON Model", family="qwen", version="v1.0"
+            ),
         )
 
         result = _runner().invoke(cli, ["models", "list", "--json"])
@@ -105,7 +121,9 @@ class TestModelsListCmd:
         monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [])
         monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {})
 
-        result = _runner().invoke(cli, ["models", "list", "--family", "nonexistent-family-xyz"])
+        result = _runner().invoke(
+            cli, ["models", "list", "--family", "nonexistent-family-xyz"]
+        )
         assert result.exit_code == 0
         assert "No models found" in result.output
 
@@ -187,8 +205,13 @@ class TestModelsStatusCmd:
 
         fake = _mock_engine()
         monkeypatch.setattr("grandpa.cli.model.get_engine", lambda c, k: ("mock", fake))
-        monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [("mock", fake)])
-        monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {"mock": ["grandpa-mini:latest"]})
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_engines", lambda c: [("mock", fake)]
+        )
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_models",
+            lambda e: {"mock": ["grandpa-mini:latest"]},
+        )
 
         result = _runner().invoke(cli, ["models", "status"])
         assert result.exit_code == 0
@@ -200,8 +223,13 @@ class TestModelsStatusCmd:
         monkeypatch.setattr("grandpa.cli.model.load_config", lambda: cfg)
         fake = _mock_engine()
         monkeypatch.setattr("grandpa.cli.model.get_engine", lambda c, k: ("mock", fake))
-        monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [("mock", fake)])
-        monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {"mock": ["grandpa-mini:latest"]})
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_engines", lambda c: [("mock", fake)]
+        )
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_models",
+            lambda e: {"mock": ["grandpa-mini:latest"]},
+        )
 
         result = _runner().invoke(cli, ["models", "status", "--json"])
         assert result.exit_code == 0

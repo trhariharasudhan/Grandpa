@@ -13,4 +13,8 @@
 # differently, add a more-specific pattern beneath it (later, more
 # specific rules win).
 
-* @jonsaadfalcon @ANarayan @robbym-dev
+# Grandpa is a fork of OpenJarvis (see NOTICE). The upstream maintainers
+# previously listed here have no role in this repository and cannot approve
+# its pull requests; owning every path to them made the Code Owners ruleset
+# unsatisfiable by the actual maintainer.
+* @trhariharasudhan

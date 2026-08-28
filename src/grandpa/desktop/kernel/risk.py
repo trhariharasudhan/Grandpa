@@ -12,8 +12,15 @@ def classify(request: Any) -> str:
 
 
 def requires_approval(request: Any) -> bool:
+    from grandpa import pc_control
+
     risk = classify(request)
-    return bool(getattr(request, "require_approval", False) or risk == "HIGH")
+    action = pc_control._normalise_action_type(getattr(request, "action_type", ""))
+    return bool(
+        getattr(request, "require_approval", False)
+        or risk == "HIGH"
+        or action in pc_control.APPROVAL_REQUIRED_ACTIONS
+    )
 
 
 def readiness() -> dict[str, Any]:

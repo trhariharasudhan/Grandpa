@@ -35,7 +35,9 @@ def test_executor_records_trace(tmp_path):
                 "agent": agent_dict["id"],
                 "tool": "web_search",
                 "result": "search results...",
-                "duration": 0.5,
+                # The real ToolExecutor publishes "latency" (tools/_stubs.py);
+                # "duration" is a key nothing emits and nothing reads.
+                "latency": 0.5,
             },
         )
         return AgentResult(content="found it", metadata={"tokens_used": 100})

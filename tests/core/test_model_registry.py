@@ -155,8 +155,18 @@ class TestModelRegistryQueries:
         assert {m.model_id for m in qwen_models} == {"q1", "q2"}
 
     def test_find_by_backend(self) -> None:
-        s1 = ModelSpec(model_id="b1", name="Ollama Mod", backend="ollama", supported_engines=("ollama",))
-        s2 = ModelSpec(model_id="b2", name="Native Mod", backend="grandpa-native", supported_engines=("grandpa-native", "llamacpp"))
+        s1 = ModelSpec(
+            model_id="b1",
+            name="Ollama Mod",
+            backend="ollama",
+            supported_engines=("ollama",),
+        )
+        s2 = ModelSpec(
+            model_id="b2",
+            name="Native Mod",
+            backend="grandpa-native",
+            supported_engines=("grandpa-native", "llamacpp"),
+        )
 
         ModelRegistry.register_value("b1", s1)
         ModelRegistry.register_value("b2", s2)

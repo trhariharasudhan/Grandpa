@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
+from pathlib import Path
 
 import click
 from rich.console import Console
@@ -21,6 +23,59 @@ from grandpa.intelligence import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _generate_and_persist_api_key(console: Console) -> str:
+    """Mint a local API key on first run and write it to ``config.toml``.
+
+    Returns the key. If it cannot be persisted the key is still returned and
+    used for this process, so the server stays authenticated either way — the
+    operator just has to re-read it from the console next start.
+    """
+    import tomlkit
+
+    from grandpa.core.config import DEFAULT_CONFIG_DIR
+    from grandpa.server.auth_middleware import API_KEY_ENV, generate_api_key
+
+    key = generate_api_key()
+    config_path = Path(
+        os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
+    )
+    persisted = False
+    try:
+        if config_path.exists():
+            doc = tomlkit.parse(config_path.read_text(encoding="utf-8"))
+        else:
+            doc = tomlkit.document()
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+        server_table = doc.get("server")
+        if server_table is None:
+            server_table = tomlkit.table()
+            doc["server"] = server_table
+        auth_table = server_table.get("auth")
+        if auth_table is None:
+            auth_table = tomlkit.table()
+            server_table["auth"] = auth_table
+        auth_table["api_key"] = key
+        config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        persisted = True
+    except OSError as exc:
+        logger.debug("Could not persist generated API key: %s", exc)
+
+    console.print(
+        "\n[green bold]Generated a local API key[/green bold] "
+        "(the API is authenticated by default).\n"
+        f"  Key: [cyan]{key}[/cyan]\n"
+        "  Use: [cyan]Authorization: Bearer <key>[/cyan]\n"
+        + (
+            f"  Saved to: [cyan]{config_path}[/cyan]\n"
+            if persisted
+            else "  [yellow]Could not save it — set "
+            f"{API_KEY_ENV} to reuse this key.[/yellow]\n"
+        )
+        + "  Run with [cyan]--no-auth[/cyan] to serve unauthenticated.\n"
+    )
+    return key
 
 
 @click.command()
@@ -45,6 +100,11 @@ logger = logging.getLogger(__name__)
     is_flag=True,
     help="Allow binding non-loopback without an API key (unsafe on untrusted networks).",
 )
+@click.option(
+    "--no-auth",
+    is_flag=True,
+    help="Serve without an API key. Any local process can then drive the desktop.",
+)
 def serve(
     host: str | None,
     port: int | None,
@@ -52,6 +112,7 @@ def serve(
     model_name: str | None,
     agent_name: str | None,
     allow_insecure_bind: bool,
+    no_auth: bool,
 ) -> None:
     """Start the OpenAI-compatible API server."""
     console = Console(stderr=True)
@@ -281,32 +342,43 @@ def serve(
 
             mem_key = config.memory.default_backend
             if MemoryRegistry.contains(mem_key):
-                memory_backend = MemoryRegistry.create(
-                    mem_key,
-                    db_path=config.memory.db_path,
-                )
+                # Only the sqlite backend takes db_path; passing it to the
+                # others raises TypeError, which the except below turned into
+                # memory being silently absent from the server.
+                if mem_key == "sqlite":
+                    memory_backend = MemoryRegistry.create(
+                        mem_key,
+                        db_path=config.memory.db_path,
+                    )
+                else:
+                    memory_backend = MemoryRegistry.create(mem_key)
                 console.print("  Memory:    [cyan]active[/cyan]")
         except Exception as exc:
             logger.debug("Memory backend init failed: %s", exc)
 
-    # The API is loopback-first and may be protected with a local API key.
-    import os as _os
+    # The API is loopback-first and authenticated by default. Every route under
+    # /v1 and /api can read personal memory or drive the desktop, so an
+    # unauthenticated bind is opt-in via --no-auth rather than the default.
+    from grandpa.server.auth_middleware import (
+        api_key_from_env,
+        check_bind_safety,
+    )
 
-    api_key = _os.environ.get("Grandpa_API_KEY", "")
-    if not api_key:
-        try:
-            import tomllib
+    api_key = api_key_from_env() or config.server.auth.api_key.strip()
 
-            _cfg_path = str(
-                __import__("pathlib").Path.home() / ".grandpa" / "config.toml"
+    if no_auth:
+        if api_key:
+            console.print(
+                "[yellow]--no-auth: ignoring the configured API key and "
+                "serving unauthenticated.[/yellow]"
             )
-            with open(_cfg_path, "rb") as _f:
-                _raw = tomllib.load(_f)
-            api_key = _raw.get("server", {}).get("auth", {}).get("api_key", "")
-        except (FileNotFoundError, ImportError):
-            pass
-
-    from grandpa.server.auth_middleware import check_bind_safety
+        api_key = ""
+        console.print(
+            "[yellow]Warning:[/yellow] authentication is disabled. Any local "
+            "process can read memory and drive this desktop through the API."
+        )
+    elif not api_key:
+        api_key = _generate_and_persist_api_key(console)
 
     check_bind_safety(
         bind_host,

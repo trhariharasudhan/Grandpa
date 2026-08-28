@@ -98,8 +98,23 @@ def test_in_root_symlink_properties_match_legacy_behavior(tmp_path):
     expected = _legacy_properties("Show properties of linked.txt", tmp_path)
     actual = FileAutomation(roots=(tmp_path,)).handle("Show properties of linked.txt")
 
+    # Legacy parity is the point of this test and is unchanged.
     _assert_parity(actual, expected)
-    assert "- Type: folder" in actual.message
+
+    # The symlink above targets target.txt, a regular file, and the properties
+    # reporter resolves the link before classifying: metadata.py:32 computes
+    # `kind = "folder" if is_directory else (extension or "file")`, so the
+    # correct kind here is "txt".
+    #
+    # This previously asserted "- Type: folder", which could never hold for a
+    # file symlink. It went unnoticed because the assertion had never executed:
+    # creating a symlink on Windows needs SeCreateSymbolicLinkPrivilege, so on
+    # an unprivileged developer machine symlink_to raises WinError 1314 and the
+    # test skips at the guard above. GitHub's windows-latest runner does hold
+    # that privilege, so the body ran for the first time there and the bad
+    # expectation surfaced. The parity assertion passed on that same run, which
+    # is what confirms the reporter itself is behaving correctly.
+    assert "- Type: txt" in actual.message
 
 
 def test_missing_path_matches_legacy_error(tmp_path):

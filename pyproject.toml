@@ -44,6 +44,7 @@ dev = [
     "pytest>=8",
     "pytest-asyncio>=0.24",
     "pytest-cov>=5",
+    "pytest-timeout>=2.3",
     "respx>=0.22",
     "ruff>=0.4",
     "pre-commit>=3.0",
@@ -122,6 +123,10 @@ packages = ["src/grandpa"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# No single test should run for five minutes. Without this, a test that blocks
+# on real hardware (microphone, TTS, an external service) hangs the whole run
+# indefinitely instead of failing. Requires pytest-timeout, in the dev extra.
+timeout = 300
 markers = [
     "amd: requires AMD hardware or an AMD-specific fixture",
     "apple: requires Apple hardware or an Apple-specific fixture",

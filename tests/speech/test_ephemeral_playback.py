@@ -25,7 +25,9 @@ from grandpa.voice_service.post_processing import (
 )
 
 
-def _make_dummy_wav_bytes(sample_rate: int = 24_000, duration_seconds: float = 0.05) -> bytes:
+def _make_dummy_wav_bytes(
+    sample_rate: int = 24_000, duration_seconds: float = 0.05
+) -> bytes:
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
         wav_file.setnchannels(1)
@@ -38,12 +40,27 @@ def _make_dummy_wav_bytes(sample_rate: int = 24_000, duration_seconds: float = 0
 
 @pytest.fixture(autouse=True)
 def _ensure_speech_registered():
-    import importlib
-    import sys
+    """Re-register the TTS backends that conftest's registry reset clears.
 
+    This used to call ``importlib.reload`` on the backend modules. Reloading
+    re-executes them, which rebinds every module-level object — so
+    ``GrandpaVoiceUnavailableError`` became a *new* class while sibling test
+    modules still held a reference to the original. ``pytest.raises`` then
+    failed to catch an exception whose type name and message matched exactly,
+    breaking ``test_grandpa_voice.py::test_synthesize_service_failure``
+    whenever this file ran first (it sorts earlier). The reload also only
+    succeeded because the registry had just been cleared; run standalone it
+    raised "TTSRegistry already has an entry".
 
-    importlib.reload(sys.modules["grandpa.speech.grandpa_voice_tts"])
-    importlib.reload(sys.modules["grandpa.speech.kokoro_tts"])
+    Re-registering the already-imported classes has the same effect on the
+    registry and leaves module identity untouched.
+    """
+    from grandpa.core.registry import TTSRegistry
+    from grandpa.speech.grandpa_voice_tts import GrandpaVoiceTTSBackend
+    from grandpa.speech.kokoro_tts import KokoroTTSBackend
+
+    TTSRegistry.register_or_replace("grandpa_voice", GrandpaVoiceTTSBackend)
+    TTSRegistry.register_or_replace("kokoro", KokoroTTSBackend)
 
 
 def test_preferred_backend_is_grandpa_voice(monkeypatch):
@@ -148,7 +165,9 @@ def test_live_synthesis_leaves_no_persistent_wav_files(tmp_path, monkeypatch):
     monkeypatch.setattr(TTSRegistry, "get", lambda name: FakeGrandpaBackend)
     monkeypatch.setattr(TTSRegistry, "contains", lambda name: True)
 
-    monkeypatch.setattr("grandpa.voice.speech_output._play_audio_bytes", lambda b, e: None)
+    monkeypatch.setattr(
+        "grandpa.voice.speech_output._play_audio_bytes", lambda b, e: None
+    )
 
     outputs_dir = Path("D:/Grandpa/voice_runtime/outputs")
     initial_files = set(outputs_dir.glob("*.wav")) if outputs_dir.exists() else set()
@@ -161,7 +180,9 @@ def test_live_synthesis_leaves_no_persistent_wav_files(tmp_path, monkeypatch):
     final_files = set(outputs_dir.glob("*.wav")) if outputs_dir.exists() else set()
     new_files = final_files - initial_files
 
-    assert len(new_files) == 0, f"Live synthesis created persistent WAV files: {new_files}"
+    assert len(new_files) == 0, (
+        f"Live synthesis created persistent WAV files: {new_files}"
+    )
 
 
 def test_temporary_files_removed_after_successful_post_processing():
@@ -193,7 +214,9 @@ def test_temporary_files_removed_after_successful_post_processing():
     def fake_run(command):
         command = list(command)
         if command[-1] == "NUL":
-            return subprocess.CompletedProcess(command, 0, stdout="", stderr=json.dumps(measurement))
+            return subprocess.CompletedProcess(
+                command, 0, stdout="", stderr=json.dumps(measurement)
+            )
         output = Path(command[-1])
         output.write_bytes(source_bytes)
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
@@ -231,7 +254,9 @@ def test_temporary_files_removed_after_post_processing_failure():
             return self._td.__exit__(exc_type, exc_val, exc_tb)
 
     def failing_run(command):
-        return subprocess.CompletedProcess(list(command), 1, stdout="", stderr="FFmpeg filter error")
+        return subprocess.CompletedProcess(
+            list(command), 1, stdout="", stderr="FFmpeg filter error"
+        )
 
     with patch("tempfile.TemporaryDirectory", TrackedTempDir):
         processor = FFmpegCharacterVoiceProcessor(

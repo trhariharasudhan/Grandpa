@@ -1,3 +1,23 @@
+"""Voice operator loop behaviour: parsing, routing, exit, and error handling.
+
+Every ``run_voice_operator_loop`` call here passes ``no_tts=True``. That is
+required, not stylistic: without it the loop builds a real SpeechOutputEngine
+(operator.py:1245/1309) and speaks each reply (operator.py:1274 ->
+_speak_best_effort). On a machine with no audio device that reaches pyttsx3's
+SAPI5 driver at ``sapi5.startLoop``, which blocks indefinitely --
+GitHub's windows-latest runner hung there, and pytest-timeout's thread method
+cannot interrupt a blocking COM call, so the whole session wedged without ever
+printing a summary.
+
+None of these tests is about speech. They assert loop control flow, and their
+assertions read the ``output`` list fed by ``output_func``, which is
+independent of TTS. ``no_tts`` is a first-class parameter of
+run_voice_operator_loop -- exercised directly by
+test_voice_operator_no_tts_disables_speaker below -- so this is the API used as
+intended rather than a guard bolted on, and the tests keep running on every
+platform. Speech output itself is covered by tests/speech/.
+"""
+
 from types import SimpleNamespace
 
 from grandpa.voice.errors import MicrophoneUnavailableError, VoiceRecognitionError
@@ -156,6 +176,7 @@ def test_exit_command_stops_loop() -> None:
             ok=True, status="completed", message="done", approval_required=False
         ),
         prefer_voice=False,
+        no_tts=True,
     )
 
     assert code == 0
@@ -183,6 +204,7 @@ def test_empty_input_records_audio_in_voice_mode() -> None:
             approval_required=False,
         ),
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -207,6 +229,7 @@ def test_debug_prints_raw_and_normalized_transcript() -> None:
         ),
         prefer_voice=True,
         debug=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -225,6 +248,7 @@ def test_eof_exits_voice_operator_loop_gracefully() -> None:
         input_func=input_func,
         output_func=output.append,
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -239,6 +263,7 @@ def test_typed_mode_empty_input_repompts_without_stopping() -> None:
         input_func=lambda _prompt: next(inputs),
         output_func=output.append,
         prefer_voice=False,
+        no_tts=True,
     )
 
     assert code == 0
@@ -362,6 +387,7 @@ def test_typed_fallback_after_microphone_unavailable() -> None:
         listen_func=lambda: (_ for _ in ()).throw(MicrophoneUnavailableError()),
         action_runner=action_runner,
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -383,6 +409,7 @@ def test_stt_exception_allows_retry_or_typed_input() -> None:
             )
         ),
         prefer_voice=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -407,6 +434,7 @@ def test_voice_operator_routes_multistep_goal_to_executive_planner(monkeypatch) 
         action_runner=lambda payload: actions.append(payload),
         prefer_voice=False,
         dry_run=True,
+        no_tts=True,
     )
 
     assert code == 0
@@ -1044,7 +1072,9 @@ def test_voice_operator_inventory_canonical_fallback_and_missing_path_safety() -
     assert resp.status in {"blocked", "failed"}
 
 
-def test_voice_activity_detector_idle_silence_does_not_timeout_until_speech_starts() -> None:
+def test_voice_activity_detector_idle_silence_does_not_timeout_until_speech_starts() -> (
+    None
+):
     from grandpa.voice.vad import VoiceActivityConfig, VoiceActivityDetector
 
     config = VoiceActivityConfig(
@@ -1106,7 +1136,9 @@ def test_voice_session_silence_does_not_invoke_transcriber() -> None:
 
     mic = SilentMicrophone()
     stt = SpyTranscriber()
-    responder = SimpleNamespace(handle_user_input=lambda text: SimpleNamespace(text="hi"))
+    responder = SimpleNamespace(
+        handle_user_input=lambda text: SimpleNamespace(text="hi")
+    )
 
     session = VoiceSession(
         mic,
@@ -1126,8 +1158,18 @@ def test_faster_whisper_repetition_hallucination_filtered() -> None:
     from grandpa.speech.faster_whisper import _is_hallucinated_repetition
 
     # Degenerate hallucination loops must be identified
-    assert _is_hallucinated_repetition("I'm sorry. I'm sorry. I'm sorry. I'm sorry. I'm sorry.") is True
-    assert _is_hallucinated_repetition("Thank you. Thank you. Thank you. Thank you. Thank you.") is True
+    assert (
+        _is_hallucinated_repetition(
+            "I'm sorry. I'm sorry. I'm sorry. I'm sorry. I'm sorry."
+        )
+        is True
+    )
+    assert (
+        _is_hallucinated_repetition(
+            "Thank you. Thank you. Thank you. Thank you. Thank you."
+        )
+        is True
+    )
     assert _is_hallucinated_repetition("you you you you you you you") is True
 
     # Normal phrases must NOT be flagged
@@ -1308,7 +1350,9 @@ def test_voice_session_no_repeated_listening_on_polling_loops() -> None:
     assert len(listening_lines) == 1
 
 
-def test_voice_session_state_transitions_idle_to_capturing_to_processing_to_executing() -> None:
+def test_voice_session_state_transitions_idle_to_capturing_to_processing_to_executing() -> (
+    None
+):
     from grandpa.voice.cli_session import VoiceSession, VoiceSessionState
     from grandpa.voice.operator import VoiceOperatorResponder
 
@@ -1436,7 +1480,9 @@ def test_whisper_uses_greedy_beam_size_1_for_fast_inference() -> None:
     assert options["language"] == "en"
 
 
-def test_faster_whisper_speech_to_text_warm_model_reuse_without_reinstantiation() -> None:
+def test_faster_whisper_speech_to_text_warm_model_reuse_without_reinstantiation() -> (
+    None
+):
     from grandpa.voice.speech_input import SpeechInputEngine
     from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 
@@ -1582,5 +1628,3 @@ def test_voice_session_ctrl_c_immediate_shutdown() -> None:
 
     assert exit_code == 0
     assert any("Goodbye" in line for line in output)
-
-

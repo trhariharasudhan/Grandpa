@@ -64,7 +64,9 @@ class TestDoctorNativeDiagnostics:
         assert names["Selected native model"].status == "ok"
         assert "Ready (grandpa-mini" in names["Selected native model"].message
 
-    def test_native_diagnostics_with_missing_selected_model(self, tmp_path: Path) -> None:
+    def test_native_diagnostics_with_missing_selected_model(
+        self, tmp_path: Path
+    ) -> None:
         cfg = GrandpaConfig()
         cfg.engine.default = "native"
         cfg.engine.native.models_dir = str(tmp_path)
@@ -78,7 +80,9 @@ class TestDoctorNativeDiagnostics:
         assert "Selected native model" in names
         assert names["Selected native model"].status in ("warn", "fail")
 
-    def test_cli_doctor_runs_cleanly_with_native(self, tmp_path: Path, monkeypatch) -> None:
+    def test_cli_doctor_runs_cleanly_with_native(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
         runner = CliRunner()
         monkeypatch.setattr("grandpa.core.config.DEFAULT_CONFIG_DIR", tmp_path)
 

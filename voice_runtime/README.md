@@ -82,3 +82,19 @@ F5-TTS 1.1.22:
    without failing on training dependencies.
 
 The script is idempotent and refuses unknown source layouts or package versions.
+
+## Vendored FFmpeg (LGPL-3)
+
+`tools/ffmpeg-7.1-lgpl-shared/` is an unmodified prebuilt FFmpeg 7.1 LGPL
+shared build for win64, vendored so the voice runtime works without a separate
+FFmpeg install.
+
+- Upstream build: BtbN/FFmpeg-Builds, `ffmpeg-n7.1-latest-win64-lgpl-shared-7.1`
+  <https://github.com/BtbN/FFmpeg-Builds/releases>
+- Corresponding source: <https://github.com/FFmpeg/FFmpeg> at the `n7.1` tag
+- License: LGPL-3, full text at
+  `tools/ffmpeg-7.1-lgpl-shared/ffmpeg-n7.1-latest-win64-lgpl-shared-7.1/LICENSE.txt`
+
+Grandpa invokes `ffmpeg.exe` as a **separate process** via `subprocess`; it does
+not link against libavcodec, libavformat, or any other FFmpeg library. No FFmpeg
+source has been modified. See the repository `NOTICE` file.

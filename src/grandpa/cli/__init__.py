@@ -199,7 +199,11 @@ cli.add_command(
 )
 cli.add_command(_lazy("model", "grandpa.cli.model:model", short_help="Manage models."))
 cli.add_command(
-    _lazy("models", "grandpa.cli.model:models_cmd", short_help="Manage Grandpa model registry.")
+    _lazy(
+        "models",
+        "grandpa.cli.model:models_cmd",
+        short_help="Manage Grandpa model registry.",
+    )
 )
 cli.add_command(
     _lazy("memory", "grandpa.cli.memory_cmd:memory", short_help="Manage memory.")

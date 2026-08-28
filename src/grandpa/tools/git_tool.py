@@ -139,8 +139,8 @@ class GitStatusTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         repo_path = params.get("repo_path", ".")
-        _rust = get_rust_module()
         try:
+            _rust = get_rust_module()
             output = _rust.GitStatusTool().execute(repo_path)
             return ToolResult(
                 tool_name="git_status",
@@ -149,11 +149,9 @@ class GitStatusTool(BaseTool):
                 metadata={"returncode": 0},
             )
         except Exception as exc:
-            return ToolResult(
-                tool_name="git_status",
-                content=f"Git status error: {exc}",
-                success=False,
-            )
+            logger.debug("Rust git_status fallback to CLI: %s", exc)
+
+        return _run_git(["git", "status", "--porcelain"], cwd=repo_path)
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +206,9 @@ class GitDiffTool(BaseTool):
         staged = params.get("staged", False)
         file_path = params.get("path")
 
-        _rust = get_rust_module()
         if not staged and not file_path:
             try:
+                _rust = get_rust_module()
                 output = _rust.GitDiffTool().execute(repo_path)
                 return ToolResult(
                     tool_name="git_diff",
@@ -219,11 +217,7 @@ class GitDiffTool(BaseTool):
                     metadata={"returncode": 0},
                 )
             except Exception as exc:
-                return ToolResult(
-                    tool_name="git_diff",
-                    content=f"Git diff error: {exc}",
-                    success=False,
-                )
+                logger.debug("Rust git_diff fallback to CLI: %s", exc)
 
         cmd = ["git", "diff"]
         if staged:
@@ -371,8 +365,8 @@ class GitLogTool(BaseTool):
         count = params.get("count", 10)
         oneline = params.get("oneline", True)
 
-        _rust = get_rust_module()
         try:
+            _rust = get_rust_module()
             output = _rust.GitLogTool().execute(repo_path, count)
             return ToolResult(
                 tool_name="git_log",

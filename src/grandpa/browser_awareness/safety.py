@@ -1,8 +1,18 @@
-"""Safety helpers for read-only browser awareness."""
+"""Safety helpers for read-only browser awareness.
+
+Secret redaction is delegated to :func:`grandpa.screen.redaction
+.redact_screen_text`, the canonical routine shared with ``screen/``,
+``vision/``, ``browser_control`` and ``browser_intelligence``. The local
+patterns below run afterwards and cover shapes the canonical set does not,
+so neither loses coverage; adding a pattern to the canonical set improves
+every ingress path at once.
+"""
 
 from __future__ import annotations
 
 import re
+
+from grandpa.screen.redaction import redact_screen_text
 
 MAX_CAPTURED_TEXT_CHARS = 8000
 
@@ -18,7 +28,7 @@ SECRET_PATTERNS = (
 
 
 def sanitize_visible_text(text: str, *, limit: int = MAX_CAPTURED_TEXT_CHARS) -> str:
-    value = str(text or "")
+    value = redact_screen_text(str(text or "")).text
     for pattern in SECRET_PATTERNS:
         value = pattern.sub("[redacted]", value)
     value = re.sub(r"\s+", " ", value).strip()

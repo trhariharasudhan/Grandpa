@@ -259,8 +259,7 @@ def _is_hallucinated_repetition(text: str) -> bool:
     if len(words) >= 6:
         for n in (1, 2, 3):
             chunks = [
-                " ".join(words[i : i + n])
-                for i in range(0, len(words) - n + 1, n)
+                " ".join(words[i : i + n]) for i in range(0, len(words) - n + 1, n)
             ]
             if len(chunks) >= 3:
                 most_common = max(set(chunks), key=chunks.count)

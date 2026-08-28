@@ -40,6 +40,47 @@ CONFIG_RECOVERY_FAILED_MESSAGE = (
 )
 _CONFIG_RECOVERY_WARNINGS: list[str] = []
 
+#: Config keys that were accepted but never read by any code path, mapped to
+#: what actually governs the behaviour now. They are removed rather than left
+#: in place: a security option that looks configurable and does nothing is
+#: worse than no option at all. Loading a config that still sets one emits a
+#: warning through :func:`consume_config_recovery_warnings` so the setting is
+#: not silently dropped.
+REMOVED_CONFIG_KEYS: dict[str, str] = {
+    "security.enforce_tool_confirmation": (
+        "never read; tool confirmation is decided per-tool by "
+        "ToolSpec.requires_confirmation and the executor's confirm_callback"
+    ),
+    "security.merkle_audit": "never read; the audit log has no Merkle mode",
+    "security.signing_key_path": "never read; skill signing loads its own key",
+    "security.ssrf_protection": (
+        "never read; SSRF checks are unconditional in the http_request, "
+        "browser and web_search tools and cannot be disabled"
+    ),
+    "security.rate_limit_enabled": (
+        "never read; no request path consults the rate limiter"
+    ),
+    "security.rate_limit_rpm": "never read; see security.rate_limit_enabled",
+    "security.rate_limit_burst": "never read; see security.rate_limit_enabled",
+    "security.local_engine_bypass": "never read; no engine path consults it",
+    "security.local_tool_bypass": "never read; no tool path consults it",
+    "security.vault_key_path": (
+        "never read; the vault always uses ~/.grandpa/.vault_key"
+    ),
+}
+
+
+def _warn_about_removed_keys(data: Dict[str, Any]) -> None:
+    """Queue a warning for each removed key still present in *data*."""
+    for dotted, reason in REMOVED_CONFIG_KEYS.items():
+        section, _, key = dotted.partition(".")
+        values = data.get(section)
+        if isinstance(values, dict) and key in values:
+            _CONFIG_RECOVERY_WARNINGS.append(
+                f"Ignoring removed config key '{dotted}' — {reason}. "
+                "Delete it from config.toml to silence this warning."
+            )
+
 
 def _ensure_config_dir() -> Path:
     """Ensure the config directory exists with restrictive permissions."""
@@ -493,6 +534,17 @@ class AgentConfig:
 
 
 @dataclass(slots=True)
+class ServerAuthConfig:
+    """Local API authentication settings.
+
+    ``grandpa serve`` requires a bearer key by default. When this is empty a
+    key is generated on first run and written back here.
+    """
+
+    api_key: str = ""
+
+
+@dataclass(slots=True)
 class ServerConfig:
     """API server settings."""
 
@@ -502,6 +554,7 @@ class ServerConfig:
     model: str = ""
     workers: int = 1
     cors_origins: list = field(default_factory=list)
+    auth: ServerAuthConfig = field(default_factory=ServerAuthConfig)
 
 
 @dataclass(slots=True)
@@ -536,7 +589,16 @@ class CapabilitiesConfig:
 
 @dataclass(slots=True)
 class SecurityConfig:
-    """Security guardrails settings."""
+    """Security guardrails settings.
+
+    Every field here is read by :func:`grandpa.security.setup_security` or the
+    doctor. Options that no code consulted were removed rather than left
+    looking configurable — see :data:`REMOVED_CONFIG_KEYS`.
+
+    Note that SSRF protection is *not* configurable: ``check_ssrf`` is applied
+    unconditionally by the http_request, browser and web_search tools. It has
+    no off switch by design.
+    """
 
     enabled: bool = True
     scan_input: bool = True
@@ -545,17 +607,7 @@ class SecurityConfig:
     secret_scanner: bool = True
     pii_scanner: bool = True
     audit_log_path: str = str(DEFAULT_CONFIG_DIR / "audit.db")
-    enforce_tool_confirmation: bool = True
-    merkle_audit: bool = True
-    signing_key_path: str = ""
-    ssrf_protection: bool = True
-    rate_limit_enabled: bool = True
-    rate_limit_rpm: int = 60
-    rate_limit_burst: int = 10
-    local_engine_bypass: bool = False
-    local_tool_bypass: bool = False
     profile: str = ""
-    vault_key_path: str = str(DEFAULT_CONFIG_DIR / ".vault_key")
     capabilities: CapabilitiesConfig = field(default_factory=CapabilitiesConfig)
 
 
@@ -564,40 +616,20 @@ class SecurityConfig:
 # ---------------------------------------------------------------------------
 
 _SECURITY_PROFILES: Dict[str, Dict[str, Dict[str, Any]]] = {
+    # Only keys that some code path actually reads. The profiles previously
+    # also set rate_limit_* and local_*_bypass, none of which were ever
+    # consulted — see REMOVED_CONFIG_KEYS.
     "personal": {
-        "security": {
-            "mode": "redact",
-            "rate_limit_enabled": True,
-            "local_engine_bypass": False,
-            "local_tool_bypass": False,
-        },
-        "server": {
-            "host": "127.0.0.1",
-        },
+        "security": {"mode": "redact"},
+        "server": {"host": "127.0.0.1"},
     },
     "shared": {
-        "security": {
-            "mode": "redact",
-            "rate_limit_enabled": True,
-            "local_engine_bypass": False,
-            "local_tool_bypass": False,
-        },
-        "server": {
-            "host": "127.0.0.1",
-        },
+        "security": {"mode": "redact"},
+        "server": {"host": "127.0.0.1"},
     },
     "server": {
-        "security": {
-            "mode": "block",
-            "rate_limit_enabled": True,
-            "rate_limit_rpm": 30,
-            "rate_limit_burst": 5,
-            "local_engine_bypass": False,
-            "local_tool_bypass": False,
-        },
-        "server": {
-            "host": "0.0.0.0",
-        },
+        "security": {"mode": "block"},
+        "server": {"host": "0.0.0.0"},
     },
 }
 
@@ -1071,6 +1103,10 @@ def load_config(path: Optional[Path] = None) -> GrandpaConfig:
 
         # Run backward-compat migrations before applying
         _migrate_toml_data(data, cfg)
+
+        # Tell the user about keys that are accepted-but-ignored, rather than
+        # dropping them silently in _apply_toml_section's hasattr() check.
+        _warn_about_removed_keys(data)
 
         # All supported top-level sections.
         top_sections = (
