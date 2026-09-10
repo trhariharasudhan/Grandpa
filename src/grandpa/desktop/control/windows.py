@@ -13,7 +13,7 @@ class WindowControlService:
     name: str = "windows"
 
     def execute_alias(self, request: Any, action: str):
-        from grandpa.pc_control import LocalActionRequest
+        from grandpa.policy.models import LocalActionRequest
 
         return self.execute(
             LocalActionRequest(f"{action}_window", request.target, request.args),
@@ -21,7 +21,7 @@ class WindowControlService:
         )
 
     def execute(self, request: Any, action: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
         from grandpa.windows_window_control import control_window, list_open_windows
 
         if action == "list_windows":

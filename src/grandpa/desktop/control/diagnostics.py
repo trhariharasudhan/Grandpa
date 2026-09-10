@@ -19,7 +19,7 @@ class DesktopDiagnosticsService:
             list_processes,
             pc_control_diagnostics,
         )
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if action == "active_process":
             result = get_active_process()

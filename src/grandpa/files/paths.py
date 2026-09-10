@@ -6,6 +6,24 @@ import os
 from pathlib import Path
 
 MAX_SEARCH_RESULTS = 20
+
+#: Hard ceilings on how much of a safe root a single search may traverse.
+#:
+#: ``MAX_SEARCH_RESULTS`` bounds how many *matches* are collected, but nothing
+#: bounded how many entries were *examined*: a query matching nothing walked
+#: every safe root to completion. ``safe_roots()`` includes the whole user
+#: profile, so a filename that does not exist froze the caller -- measured at
+#: over 20 seconds before being killed, with the stack pinned inside ``_walk``.
+#: That is reached from file-argument validation, so dry runs hung too.
+#:
+#: The shape follows ``apps/scanner.py`` (``MAX_DISCOVERED_APPS``,
+#: ``MAX_PROGRAM_FILES_CANDIDATES``): an in-loop cap on entries examined, plus a
+#: depth limit so one deep branch cannot consume the whole budget. Hitting
+#: either ceiling ends traversal of that root and moves to the next. Neither
+#: widens access -- traversal still starts only from ``safe_roots()``.
+MAX_SEARCH_ENTRIES = 20000
+MAX_SEARCH_DEPTH = 6
+
 SKIP_DIR_NAMES = {
     ".git",
     ".hg",
@@ -139,17 +157,44 @@ def describe_path(path: Path) -> str:
     return f"`{path}`"
 
 
-def _walk(root: Path):
+def _walk(
+    root: Path,
+    *,
+    max_entries: int = MAX_SEARCH_ENTRIES,
+    max_depth: int = MAX_SEARCH_DEPTH,
+):
+    """Yield entries under *root*, bounded by entry count and directory depth.
+
+    Traversal stops once ``max_entries`` entries have been yielded or a branch
+    reaches ``max_depth``, whichever comes first. Without these ceilings a query
+    that matches nothing walks the entire safe root -- see the note on
+    ``MAX_SEARCH_ENTRIES``.
+    """
+    root_depth = len(root.parts)
+    yielded = 0
     for current, dirs, names in os.walk(root):
-        dirs[:] = [
-            name
-            for name in dirs
-            if name.casefold() not in SKIP_DIR_NAMES and not name.startswith(".")
-        ]
+        current_path = Path(current)
+        depth = len(current_path.parts) - root_depth
+        if depth >= max_depth:
+            # Do not descend further; the entries already at this level are
+            # still reported below.
+            dirs[:] = []
+        else:
+            dirs[:] = [
+                name
+                for name in dirs
+                if name.casefold() not in SKIP_DIR_NAMES and not name.startswith(".")
+            ]
         for name in names:
-            yield Path(current) / name
+            yield current_path / name
+            yielded += 1
+            if yielded >= max_entries:
+                return
         for name in dirs:
-            yield Path(current) / name
+            yield current_path / name
+            yielded += 1
+            if yielded >= max_entries:
+                return
 
 
 def _matches_query(path: Path, needle: str) -> bool:

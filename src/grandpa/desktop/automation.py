@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from grandpa.desktop.applications import resolve_application
+from grandpa.desktop.applications import names_one_application, resolve_application
 from grandpa.desktop.folders import folder_path, resolve_folder
 from grandpa.desktop.power import resolve_power_action
 from grandpa.desktop.volume import clamp_volume
@@ -120,6 +120,14 @@ class DesktopParser:
         if command.startswith("show "):
             return None
         app = resolve_application(target)
+        # An unrecognised name is normally passed through for the launcher to
+        # resolve, which is what let "open chrome and go to gmail" become an
+        # application called "chrome and go to gmail". A known alias still
+        # wins even if it reads like several clauses; only the guess is
+        # refused, so a multi-clause phrase falls through to a resolver that
+        # can take more than one instruction.
+        if app is None and not names_one_application(target):
+            return None
         app_id, label = app if app is not None else (target, _label_from_target(target))
         args = {"new_instance": True} if new_instance else {}
         return DesktopAction("open_app", "open_app", app_id, label, args)
@@ -273,8 +281,14 @@ class DesktopParser:
 class DesktopExecutor:
     """Execute parsed actions through PC-control."""
 
-    def __init__(self, runner: ActionRunner | None = None) -> None:
+    def __init__(
+        self,
+        runner: ActionRunner | None = None,
+        *,
+        origin: str = "direct",
+    ) -> None:
         self.runner = runner
+        self.origin = origin
 
     def execute(
         self, action: DesktopAction, *, dry_run: bool = False
@@ -286,6 +300,13 @@ class DesktopExecutor:
             "args": action.args,
             "dry_run": dry_run,
             "require_approval": action.requires_confirmation,
+            # Provenance (AD-022). This payload had no origin at all, so every
+            # application launch was audited as "direct" -- including the ones
+            # a person asked for out loud, which is the most attributable
+            # action Grandpa performs. The default keeps genuinely direct
+            # callers exactly as they were; pc_control normalises anything it
+            # does not recognise back to "direct".
+            "origin": self.origin,
         }
         if action.action_type == "app_inventory":
             return _execute_app_inventory_action(action)
@@ -327,10 +348,11 @@ def handle_desktop_command(
     dry_run: bool = False,
     confirm: ConfirmationCallback | None = None,
     runner: ActionRunner | None = None,
+    origin: str = "direct",
 ) -> DesktopAutomationResult:
     """Convenience wrapper used by chat and voice command paths."""
 
-    return DesktopAutomation(executor=DesktopExecutor(runner)).handle(
+    return DesktopAutomation(executor=DesktopExecutor(runner, origin=origin)).handle(
         text, dry_run=dry_run, confirm=confirm
     )
 

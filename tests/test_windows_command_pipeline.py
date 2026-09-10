@@ -19,23 +19,34 @@ def test_pipeline_routes_desktop_command_and_returns_canonical_status(
         "grandpa.screen.handle_screen_command",
         lambda _text: SimpleNamespace(should_fallback=True),
     )
-    monkeypatch.setattr(
-        "grandpa.desktop.automation.handle_desktop_command",
-        lambda _text, dry_run=False: SimpleNamespace(
+    forwarded: list[dict] = []
+
+    def fake_desktop(_text, dry_run=False, runner=None, origin="direct", **_kwargs):
+        forwarded.append({"runner": runner, "origin": origin})
+        return SimpleNamespace(
             should_fallback=False,
             status="handled",
             message="Notepad opened.",
             action=SimpleNamespace(action_type="open_app", target="notepad"),
-        ),
+        )
+
+    monkeypatch.setattr(
+        "grandpa.desktop.automation.handle_desktop_command", fake_desktop
     )
+    runner = object()
     pipeline = WindowsCommandPipeline(
         automation_service=NoMatchAutomation(),
         source="voice",
         session_id="voice-1",
+        action_runner=runner,
+        origin="voice",
     )
 
     result = pipeline.handle("open Notepad")
 
+    # The pipeline's own actuator and provenance reach the desktop facade;
+    # before they were threaded, a launch ignored both.
+    assert forwarded == [{"runner": runner, "origin": "voice"}]
     assert result.status == "success"
     assert result.legacy_status == "handled"
     assert result.kind == "desktop"
@@ -61,7 +72,7 @@ def test_pipeline_pins_verified_notepad_document_from_launch_evidence(
     )
     monkeypatch.setattr(
         "grandpa.desktop.automation.handle_desktop_command",
-        lambda _text, dry_run=False: SimpleNamespace(
+        lambda _text, dry_run=False, runner=None, origin="direct": SimpleNamespace(
             should_fallback=False,
             status="handled",
             message="Opened and verified a new Notepad document.",

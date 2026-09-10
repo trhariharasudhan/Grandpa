@@ -36,6 +36,20 @@ from grandpa.server.models import (
 
 router = APIRouter()
 
+#: Confirmation phrases this surface refuses to forward into Funnel A.
+#:
+#: Mirrors ``local_actions._handle_confirmation_command``'s approval set. It is
+#: stated here rather than imported because the decision is the HTTP surface's:
+#: what a network caller may not say is a property of the boundary, not of the
+#: parser. ``tests/test_http_confirmation_containment.py`` fails if the two
+#: drift apart.
+#:
+#: Only the *approval* phrases are listed. Denial ("no", "cancel") executes
+#: nothing, so there is no reason to withhold it from a remote caller.
+_CONFIRMATION_PHRASES_NOT_ACCEPTED_OVER_HTTP = frozenset(
+    {"yes", "confirm", "approve", "run it", "do it"}
+)
+
 
 def _to_messages(chat_messages) -> list[Message]:
     """Convert Pydantic ChatMessage objects to core Message objects."""
@@ -277,7 +291,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             )
 
         from grandpa.file_assistant import handle_file_command
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local_actions import _normalise, handle_local_action
         from grandpa.memory_context import handle_memory_command
         from grandpa.task_scheduler import handle_scheduler_command
 
@@ -292,8 +306,27 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 )
             return _local_action_response(model, memory_result, complexity_info)
 
-        action_result = handle_local_action(effective_user_text)
-        if not action_result.should_fallback:
+        # A confirmation phrase is not forwarded to Funnel A from HTTP.
+        #
+        # ``_handle_confirmation_command`` runs before the ``execute`` gate and
+        # approves ``latest_pending()`` -- no action id, no out-of-band code. So
+        # "yes" over this route approves whatever happens to be pending, blind.
+        # The local operator's "yes" is unaffected: the CLI and the voice
+        # assistant call ``handle_local_action`` directly, and that function is
+        # unchanged (4.12J containment; the id-bearing routes stay open until
+        # 4.13 adds the out-of-band code).
+        #
+        # ``_normalise`` is Funnel A's own normaliser, reused rather than
+        # reimplemented so casing, punctuation and filler words cannot open a
+        # gap between what this guard rejects and what Funnel A would accept.
+        if (
+            _normalise(effective_user_text)
+            in _CONFIRMATION_PHRASES_NOT_ACCEPTED_OVER_HTTP
+        ):
+            action_result = None
+        else:
+            action_result = handle_local_action(effective_user_text)
+        if action_result is not None and not action_result.should_fallback:
             _record_brain_result(brain_analysis, action_result)
             if request_body.stream:
                 return await _handle_local_action_stream(
@@ -303,7 +336,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 )
             return _local_action_response(model, action_result, complexity_info)
 
-        file_result = handle_file_command(effective_user_text)
+        # D-5: this is the HTTP chat surface, so the file action it triggers is
+        # api-originated, not direct. Same reasoning as /api/local-action.
+        file_result = handle_file_command(effective_user_text, origin="api")
         if not file_result.should_fallback:
             _record_brain_result(brain_analysis, file_result)
             if request_body.stream:
@@ -1163,7 +1198,24 @@ async def run_structured_local_action(payload: dict[str, Any]):
     """Run or stage a structured local PC action."""
     from grandpa.pc_control import run_local_action
 
-    return run_local_action(payload).to_dict()
+    # Provenance is stamped by the server, never taken from the body (AD-022).
+    #
+    # This route passed the request through untouched, and _coerce_request
+    # reads "origin" from it -- so a client could send {"origin": "voice"} and
+    # have its action recorded as spoken by the user. Nothing keys on origin
+    # today, so that is a truthfulness problem rather than a privilege one; it
+    # stops being cosmetic the moment Q-10 is answered "yes" and provenance
+    # starts selecting an approval threshold. Provenance the subject can set is
+    # not provenance.
+    #
+    # D-5: this stamped "direct" until the vocabulary gained "api". "direct"
+    # was defensible -- an API caller is a programmatic caller -- but it was not
+    # distinguishing: it made a remote HTTP client indistinguishable from
+    # someone typing at this machine, which is the pair the trail most needs to
+    # separate. The key is overwritten rather than rejected: a client sending
+    # one is not making an error worth failing the request over, it simply does
+    # not get a say.
+    return run_local_action({**payload, "origin": "api"}).to_dict()
 
 
 @router.get("/api/local-action/pending")
@@ -1276,9 +1328,33 @@ async def pending_local_actions():
 
 
 @router.post("/v1/local-actions/{action_id}/approve")
-async def approve_local_action(action_id: str):
-    """Approve and run a pending local action."""
-    from grandpa.local_actions import approve_pending_action
+async def approve_local_action(action_id: str, payload: dict[str, Any] | None = None):
+    """Approve and run a pending local action.
+
+    Requires the out-of-band approval code logged to the Grandpa console when
+    the action was staged. Supply it as ``{"approval_token": "..."}`` -- an
+    ``action_id`` alone does not authorise, and neither does any other field.
+
+    The code is deliberately not obtainable over HTTP: it appears in no pending
+    listing, no response and no user-visible field, so the caller that stages an
+    action cannot be the caller that approves it. Five wrong codes exhaust a
+    pending action permanently.
+
+    Not carried in the URL: a credential in a query string ends up in access
+    logs and browser history, which is the opposite of out-of-band.
+    """
+    from grandpa.local_actions import LocalActionApprovalStore, approve_pending_action
+
+    supplied = str((payload or {}).get("approval_token", "") or "")
+    if not LocalActionApprovalStore().authorize_approval(action_id, supplied):
+        # One category for every refusal -- wrong code, missing code, unbound
+        # legacy row, expired, already decided, unknown id, budget spent. A
+        # caller learns that the approval did not happen and nothing else;
+        # distinguishing the cases would tell an attacker which ids are live.
+        raise HTTPException(
+            status_code=403,
+            detail="Approval failed: invalid or unavailable approval code.",
+        )
 
     result = approve_pending_action(action_id)
     return {

@@ -23,10 +23,16 @@ class AutomationExecutor:
         runner: ActionRunner | None = None,
         locator: ScreenElementLocator | None = None,
         highlighter: HighlightOverlay | None = None,
+        origin: str = "direct",
     ) -> None:
         self.runner = runner or _default_runner
         self.locator = locator or ScreenElementLocator()
         self.highlighter = highlighter or HighlightOverlay()
+        #: Who asked for these actions (AD-022). "direct" is
+        #: ``pc_control.DEFAULT_ACTION_ORIGIN``, spelled out rather than
+        #: imported because the kernel baseline guard counts every reference to
+        #: that module; a test pins the two together.
+        self.origin = origin
 
     def execute(
         self,
@@ -41,7 +47,23 @@ class AutomationExecutor:
                 return self._locate(action, started)
             point, element = self._resolve_point(action)
             payload = self._payload(action, point)
-            payload.update({"dry_run": dry_run, "require_approval": require_approval})
+            payload.update(
+                {
+                    "dry_run": dry_run,
+                    "require_approval": require_approval,
+                    # Provenance (AD-022), from the caller rather than assumed.
+                    #
+                    # This read ``payload.get("origin", "voice")``, which looks
+                    # like a fallback and was not one: no payload builder sets
+                    # an origin, so every keyboard, mouse and window action was
+                    # recorded as spoken -- including ones typed into chat or
+                    # issued from the CLI. An audit trail that asserts the
+                    # wrong provenance is worse than one that admits it does
+                    # not know, so the default is now "direct" and a caller
+                    # that is a voice says so.
+                    "origin": self.origin,
+                }
+            )
             response = self.runner(payload)
             return _result_from_response(action, response, element, started)
         except SensitiveScreenDetectedError as exc:
@@ -162,16 +184,26 @@ def _result_from_response(
     message = str(getattr(response, "message", "") or _friendly_success(action))
     if status == "handled" and raw_status != "dry_run":
         message = _friendly_success(action)
+    data: dict[str, Any] = {
+        "duration_ms": _elapsed_ms(started),
+        "window": getattr(element, "window_title", "") if element else "",
+    }
+    # Carry the actuator's verification outcome upward. This dict is rebuilt
+    # from scratch here, so the evidence pc_control attached was being dropped
+    # on the floor -- and with it any chance for a multi-step plan to say
+    # whether its steps actually took effect. Nothing is verified here; the
+    # existing result is simply passed along, and a response without one adds
+    # no key at all.
+    evidence = getattr(response, "evidence", None)
+    if isinstance(evidence, dict) and "verification" in evidence:
+        data["verification"] = evidence["verification"]
     return AutomationResult(
         status,  # type: ignore[arg-type]
         message,
         action,
         element,
         getattr(response, "action_id", None),
-        {
-            "duration_ms": _elapsed_ms(started),
-            "window": getattr(element, "window_title", "") if element else "",
-        },
+        data,
     )
 
 

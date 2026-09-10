@@ -115,7 +115,7 @@ Tag legend is in `CURRENT_ARCHITECTURE.md`. Dispositions:
 | `credential_stripper.py` | 31 | — | **KEEP, EXTEND** — apply to uvicorn/FastAPI loggers too |
 | `types.py`, `file_utils.py`, `_stubs.py` | 175 | — | **KEEP** |
 | `injection_scanner.py` | 167 | 1 (a JSON converter) | **WIRE** — into `policy/` ingress; it has never run on anything |
-| `rate_limiter.py` | 113 | **0** | **WIRE** — into `policy/`; `rate_limit_enabled = True` already ships |
+| `rate_limiter.py` | 113 | **0** | **DELETE** (AD-027) — zero consumers; the `rate_limit_*` config keys are already in `REMOVED_CONFIG_KEYS`, so the premise for wiring is gone. No runtime rate limiting is introduced |
 | `subprocess_sandbox.py` | 143 | **0** | **DELETE** — zero consumers, uses `shell=True` in a module named "sandbox" |
 | `severity_policy.py` | 22 | **0** | **DELETE** |
 | `merkle` (audit variant) | — | **0** | **DELETE or WIRE** — `merkle_audit` is one of the 9 inert config keys |

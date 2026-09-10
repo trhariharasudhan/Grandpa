@@ -28,9 +28,12 @@ class ScreenAutomationService:
         executor: AutomationExecutor | None = None,
         confirmations: ConfirmationManager | None = None,
         window_targets: WindowTargetController | None = None,
+        origin: str = "direct",
     ) -> None:
         self.planner = planner or AutomationPlanner()
-        self.executor = executor or AutomationExecutor()
+        # An injected executor already carries the origin its builder chose,
+        # so it is left alone; only the one built here needs telling.
+        self.executor = executor or AutomationExecutor(origin=origin)
         self.confirmations = confirmations or ConfirmationManager()
         self.window_targets = window_targets or WindowTargetController()
         self._last_confirmation_token: str | None = None

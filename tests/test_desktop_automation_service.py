@@ -148,6 +148,8 @@ def test_handle_desktop_command_runs_through_pc_control_payload() -> None:
             "args": {},
             "dry_run": False,
             "require_approval": False,
+            # Provenance (AD-022). A caller that states nothing is direct.
+            "origin": "direct",
         }
     ]
 

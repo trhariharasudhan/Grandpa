@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -56,10 +57,26 @@ class WindowsCommandPipeline:
         automation_service: ScreenAutomationService | None = None,
         source: str = "local",
         session_id: str = "",
+        action_runner: Callable[[dict[str, Any]], Any] | None = None,
+        origin: str = "direct",
     ) -> None:
-        self.automation_service = automation_service or ScreenAutomationService()
+        self.automation_service = automation_service or ScreenAutomationService(
+            origin=origin
+        )
         self.source = source
         self.session_id = session_id
+        # The actuator to run desktop commands through, and who asked for them.
+        #
+        # The desktop branch below builds its own facade rather than going
+        # through the automation service, so a runner injected by the caller
+        # never reached it: application launches went to the module-default
+        # actuator whatever the caller had substituted. That is not only a test
+        # hazard -- it is a sandbox the caller believed it had and did not.
+        #
+        # Both default to today's behaviour: no runner means the desktop
+        # facade's own default, and no origin means "direct".
+        self.action_runner = action_runner
+        self.origin = origin
 
     def handle(
         self,
@@ -119,7 +136,12 @@ class WindowsCommandPipeline:
 
         from grandpa.desktop.automation import handle_desktop_command
 
-        desktop = handle_desktop_command(text, dry_run=dry_run)
+        desktop = handle_desktop_command(
+            text,
+            dry_run=dry_run,
+            runner=self.action_runner,
+            origin=self.origin,
+        )
         if not desktop.should_fallback:
             action = desktop.action
             launch_target = _desktop_launch_target(
@@ -127,17 +149,23 @@ class WindowsCommandPipeline:
             )
             if launch_target is not None:
                 self.automation_service.pin_target(launch_target)
+            metadata: dict[str, Any] = {}
+            if action and action.action_type == "open_app":
+                metadata["target_verified"] = launch_target is not None
+            # Application launches take this branch rather than screen
+            # automation, so the actuator's verification outcome has to survive
+            # here too or a plan that opens something can never report whether
+            # it opened. Only the existing evidence is copied across.
+            verification = _desktop_verification(getattr(desktop, "pc_response", None))
+            if verification is not None:
+                metadata["verification"] = verification
             return CommandExecutionResult(
                 _canonical_status(desktop.status),
                 desktop.message,
                 "desktop",
                 action.action_type if action else "",
                 action.target if action else "",
-                data=self._metadata(
-                    {"target_verified": launch_target is not None}
-                    if action and action.action_type == "open_app"
-                    else None
-                ),
+                data=self._metadata(metadata or None),
             )
 
         return CommandExecutionResult(
@@ -164,6 +192,14 @@ def _canonical_status(status: str) -> ExecutionStatus:
         "error": "failed",
         "no_match": "unsupported",
     }.get(status, status)  # type: ignore[return-value]
+
+
+def _desktop_verification(response: object) -> object | None:
+    """The verification outcome a desktop response carries, if it carries one."""
+    evidence = getattr(response, "evidence", None)
+    if not isinstance(evidence, dict):
+        return None
+    return evidence.get("verification")
 
 
 def _desktop_launch_target(response: object) -> object | None:

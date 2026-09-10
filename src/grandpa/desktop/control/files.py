@@ -15,7 +15,7 @@ class FileControlService:
     name: str = "files"
 
     def execute(self, request: Any, action: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         target = self.resolve_path(request.target)
         destination = (

@@ -473,12 +473,37 @@ repository. **Extend, never restructure.**
 nowhere outside `core/config.py`. `rate_limit_enabled` and
 `enforce_tool_confirmation` ship as `True`.
 
+**[CORRECTED for `rate_limit_*`]** That description is no longer accurate for
+the three rate-limit keys. `security.rate_limit_enabled`,
+`security.rate_limit_rpm` and `security.rate_limit_burst` are now listed in
+`REMOVED_CONFIG_KEYS` (`core/config.py:60-64`) — they are absent from
+`SecurityConfig`, none ships as `True`, and a config still setting one gets a
+warning on load. Pinned by `tests/security/test_network_defaults.py` and
+`tests/core/test_config.py`. The remaining six keys are unaffected by this
+correction.
+
 **Why this matters more than it looks.** An operator reading the config concludes
 protections are active that are not. That is worse than an absent key.
 
 **Target.** Every key wired or deleted. **No third state.**
 
 **Blocked on** Q-6 for `rate_limit_*` (wiring changes runtime behaviour).
+
+**[RESOLVED for the rate limiter — AD-027.]** Two separate questions sat under
+this gap and both are now answered for `rate_limit_*`:
+
+* **The config keys** — satisfied through **deletion**, which is this gap's own
+  "wired or deleted" target taken on its delete branch. Already done; see the
+  correction above.
+* **The module** — `security/rate_limiter.py` has zero production consumers and
+  was in the third state AD-013 forbids. AD-027 resolves it as **DELETE**. **No
+  runtime rate limiting is introduced**, and no `PolicyEngine` wiring is
+  authorised.
+
+**Q-6 stays OPEN.** It covers `rate_limiter` **and** `injection_scanner`, and
+only the rate-limiter half is answered. `injection_scanner` remains **WIRE** in
+`MODULE_OWNERSHIP.md` and has never run on any ingress, so neither Q-6 nor
+GAP-19 as a whole is closed by AD-027.
 
 ---
 

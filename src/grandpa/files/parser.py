@@ -68,7 +68,16 @@ class FileParser:
         return None
 
     def _parse_delete(self, command: str) -> FileAction | None:
-        match = re.fullmatch(r"(?:delete|remove) (.+)", command)
+        # The optional noun phrase is what ``_parse_move`` has always stripped
+        # ("move file X to Y"); delete was the one verb that did not, so
+        # "delete the file report.pdf" went looking for a file literally called
+        # "the file report.pdf".
+        #
+        # "the" is only consumed as part of "the file"/"the folder", never on
+        # its own: "delete the report" still means a file called "the report".
+        match = re.fullmatch(
+            r"(?:delete|remove)(?: (?:the )?(?:folder|file))? (.+)", command
+        )
         if match:
             return FileAction("delete", source=match.group(1).strip())
         return None

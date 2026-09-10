@@ -345,10 +345,10 @@ highest-value and highest-risk phase.
 | 4.9 | Migrate the 3 bypass surfaces | `voice/session.py`, `task_scheduler.py`, `cli/jarvis_cmd.py` | GAP-02 |
 | 4.10 | End-to-end test per surface asserting **identical** capability sets | `tests/dispatch/test_parity.py` **(new)** | GAP-22 |
 | 4.11 | Introduce `grandpa/policy/` merging both funnels | `policy/{engine,models,store}.py` **(new)**, `local_actions.py`, `desktop/kernel/risk.py` | GAP-03 |
-| 4.12 | **AD-022:** add `origin` to `ActionRequest`; thread it from every call site; record in audit | `policy/models.py`, all 24 funnel call sites, `security/taint.py`, `core/events.py` | AD-022 |
+| 4.12 | **AD-022:** add `origin` to `ActionRequest`; thread it from every call site; record in audit. **Partly done by D-5**: the six-value vocabulary is canonical in `policy/models.py`, and the HTTP (`api`) and skill (`skill`) boundaries stamp it. What remains is the Funnel-A call sites — `handle_local_action` takes no `origin`, which is why `scheduler` is an approved value with no caller yet | `policy/models.py`, all 24 funnel call sites, `security/taint.py`, `core/events.py` | AD-022 |
 | 4.13 | One approval store, out-of-band code | `local_action_approvals.db` + `pc_control_approvals.db` → one | GAP-03 |
-| 4.14 | Wire `rate_limiter` into `PolicyEngine` | `security/rate_limiter.py`, `policy/engine.py` | GAP-19 |
-| 4.15 | Break `pc_control ↔ desktop` (27/16) | `pc_control.py` → thin surface over `policy/` + `desktop/` | GAP-10 |
+| 4.14 | ~~Wire `rate_limiter` into `PolicyEngine`~~ **CLOSED — obsolete (AD-027).** The `rate_limit_*` config keys were already removed and `security/rate_limiter.py` has zero production consumers, so the module is deleted rather than wired. **No runtime rate limiting is introduced and no `PolicyEngine` wiring is authorised.** Q-6 stays open for `injection_scanner` | `security/rate_limiter.py` (delete) | GAP-19 |
+| 4.15 | Break `pc_control ↔ desktop` — **OPEN.** The complete measurement is **41 `desktop → pc_control` import statements**: 17 of the form `from grandpa.pc_control import …` and **24 of the form `from grandpa import pc_control`**, the latter concentrated in `desktop/kernel/` and reaching into `pc_control`'s risk classifier, policy tables, approval lifecycle, emergency-stop state, request coercion and execution. **The dependency on 4.11 stands** for that policy-ownership portion. AD-028's type relocation (`LocalActionRequest`/`LocalActionResponse` → `policy/models.py`, re-exported) is an already-authorised independent preparatory slice and **does not make 4.15 independent of 4.11**; AD-028's "mostly type location" characterisation was measured on an incomplete count and is corrected there | `pc_control.py` → thin surface over `policy/` + `desktop/` | GAP-10 |
 | 4.16 | CI dependency-direction check (rules D1–D8) | `.github/workflows/ci.yml`, `tests/architecture/test_imports.py` **(new)** | GAP-10 |
 
 **Dependencies.**
@@ -356,7 +356,7 @@ highest-value and highest-risk phase.
 - 4.5 → 4.6 → 4.7 → 4.8 → 4.9 is strictly ordered, smallest to largest.
 - 4.11 depends on 4.4 (the dispatcher is where policy is invoked).
 - 4.12 depends on 4.11.
-- 4.15 depends on 4.11 (the cycle exists *because* `pc_control` holds policy).
+- 4.15 depends on 4.11 (the cycle exists *because* `pc_control` holds policy). **Confirmed by the complete measurement**: 24 of the 41 `desktop → pc_control` import statements are `desktop/kernel/` reaching into `pc_control`'s policy and execution internals. AD-028's type relocation is an independent preparatory slice and does not remove this dependency; an earlier re-scoping of this line, based on an incomplete 17-statement count, is corrected in AD-028.
 - 4.2 should land before 4.4 — you cannot unify chains that speak different types.
 
 **Risk.** **H.** The three specific dangers:
@@ -375,9 +375,9 @@ highest-value and highest-risk phase.
 | 4.5–4.9 | After each migration, the corresponding characterisation test must pass **unchanged** |
 | 4.10 | **Parity test:** assert all surfaces expose the same handler set (modulo declared filters). This is what makes GAP-02 unfixable-by-regression. |
 | 4.11 | For every action in both original tables, assert the merged engine produces a decision **at least as strict** as the stricter original |
-| 4.12 | Assert an action from `origin=skill` and one from `origin=user` are distinguishable in the audit record; assert the `SkillTool` → `_pc_action` path tags `origin=skill` |
+| 4.12 | Assert an action from `origin=skill` and one from `origin=direct` are distinguishable in the audit record; assert the `SkillTool` → `_pc_action` path tags `origin=skill`. **The `origin=skill` half is already satisfied** — D-5 tagged that path and `tests/test_agent_provenance.py` pins it; `origin=direct` replaces an earlier `origin=user`, which was never a runtime value |
 | 4.13 | Assert an action staged over channel A cannot be approved without the out-of-band code |
-| 4.14 | Assert throttling engages at the configured threshold |
+| 4.14 | ~~Assert throttling engages at the configured threshold~~ **RETIRED with row 4.14 (AD-027)** — unsatisfiable: there is no configured threshold, because the keys that would have carried one are in `REMOVED_CONFIG_KEYS`, and no throttling will exist to assert |
 | 4.16 | Assert zero package import cycles; assert `core/` imports nothing from `grandpa.*` |
 
 **Rollback.** Each surface migration (4.5–4.9) is an independent PR revertible on
@@ -389,8 +389,8 @@ mode logging disagreements before the switch. 4.13 is the hardest to roll back
 
 **Expected result.** All six surfaces plus the three bypasses resolve through one
 dispatcher and expose the same capability set, proven by a parity test. All
-actions classify through one origin-aware policy engine into one approval store.
-Zero package import cycles, CI-enforced.
+actions classify through one policy engine, on one risk vocabulary, into one
+approval store. Zero package import cycles, CI-enforced.
 
 **Breaking change?** **Yes.**
 - Surfaces gain handlers they did not have (`ask` gains 9, HTTP gains 10). That
@@ -554,7 +554,7 @@ purely a repository-size decision (207.6 MB, 91.6% of the pack).
 | 4.4 `IntentDispatcher` | **3.7 green**, 4.1, 4.2 | Windows surfaces; baseline; shared types |
 | 4.11 `PolicyEngine` | 4.4 | The dispatcher is where policy is invoked |
 | 4.12 origin tagging | 4.11 | `origin` lives on `ActionRequest` |
-| 4.15 break `pc_control ↔ desktop` | 4.11 | The cycle exists because `pc_control` holds policy |
+| 4.15 break `pc_control ↔ desktop` | 4.11 | The cycle exists because `pc_control` holds policy — 24 of the 41 back-edge statements are `desktop/kernel/` calling its policy and execution internals |
 | 5.1 `VoiceSession` | 4.8, 3.7 | Voice paths are dispatch chains |
 | 5.2 browser merge | **1.1** | Redaction must not wait on the merge |
 | 5.6 absorb `agent/` | AD-020 ratified | Scope excludes `agent/development/` |
@@ -593,7 +593,7 @@ purely a repository-size decision (207.6 MB, 91.6% of the pack).
 - [ ] `windows-latest` **and** `ubuntu-latest` green on the full deterministic suite
 - [ ] `pytest` terminates and exits 0
 - [ ] One dispatcher; all surfaces expose the same capability set, proven by a parity test
-- [ ] One origin-aware policy engine; one risk vocabulary; one approval store with out-of-band codes
+- [ ] One policy engine; one risk vocabulary; one approval store with out-of-band codes
 - [ ] Every action's origin is recorded in the audit trail
 - [ ] Zero package import cycles, CI-enforced
 - [ ] Zero duplicate domain class names
@@ -710,12 +710,12 @@ contract.
 | **A-4** | **Execute AD-021 database dispositions** | Touches `~/.grandpa/`. Audit complete; execution still needs a go-ahead. | 2.11 |
 | **A-5** | **Purge ffmpeg from git history** | History rewrite; invalidates every clone and fork. **Not required for licence compliance.** | 7.10 |
 | **A-6** | **AD-019 NOTICE wording** | A public statement about the project's provenance | 0.4 |
-| **A-7** | **Wire `rate_limiter`** (Q-6) | Requests that succeed today may be throttled | 4.14 |
+| **A-7** | ~~**Wire `rate_limiter`** (Q-6)~~ **VOID (AD-027)** | ~~Requests that succeed today may be throttled~~ — deletion throttles nothing; no behavioural risk remains | 4.14 |
 | **A-8** | **Wire `injection_scanner`** (Q-6) | Needs a defined flag response | 1.2 |
 | **A-9** | **Capability RBAC fail-closed** | Deliberately breaks partial policies | 1.3 |
 | **A-10** | **Any change to a §6.1 invariant** | These are the safety model | Any |
 | **A-11** | **The final risk-tier table in `PolicyEngine`** | AD-006 fixes the mechanism; the tiers are a security decision | 4.11 |
-| **A-12** | **Origin-based approval thresholds** (Q-10) | Whether agent/skill actions need approval sooner than user actions | 4.12 |
+| ~~**A-12**~~ | ~~**Origin-based approval thresholds**~~ (Q-10) | **RESOLVED — no sign-off needed.** Q-10 answered: policy is provenance-agnostic and origin is audit-only, so no origin-based threshold exists to approve. See AD-023. | — |
 | **A-13** | **Gating or removing the MCP server** (Q-2) | Changes third-party integration capability | 2.4 |
 | **A-14** | **Removing or renaming any CLI command** | 51 commands are a user-facing contract | Any |
 | **A-15** | **SDK stability contract** (Q-1) | Public API or internal seam | 3 |

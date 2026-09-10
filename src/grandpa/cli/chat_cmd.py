@@ -350,13 +350,13 @@ def _handle_files_slash_command(command: str) -> str | None:
     if action == "recent":
         from grandpa.file_assistant import handle_file_command
 
-        return handle_file_command("show recent files").message
+        return handle_file_command("show recent files", origin="direct").message
     command_text = _files_slash_to_natural(action, argument)
     if command_text is None:
         return "Unknown file command. Try /files help."
     from grandpa.file_assistant import handle_file_command
 
-    return handle_file_command(command_text).message
+    return handle_file_command(command_text, origin="direct").message
 
 
 def _files_slash_to_natural(action: str, argument: str) -> str | None:
@@ -1902,7 +1902,7 @@ def chat(
 
             from grandpa.file_assistant import handle_file_command
 
-            file_action = handle_file_command(effective_user_input)
+            file_action = handle_file_command(effective_user_input, origin="direct")
             if not file_action.should_fallback:
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(

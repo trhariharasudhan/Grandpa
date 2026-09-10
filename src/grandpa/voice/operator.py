@@ -7,6 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from grandpa.desktop.applications import names_one_application
 from grandpa.pc_control import run_local_action
 from grandpa.voice.errors import (
     MicrophoneUnavailableError,
@@ -100,6 +101,26 @@ APP_PHRASE_ALIASES = {
 }
 
 
+def is_dangerous_command(text: str) -> bool:
+    """Whether *text* matches a pattern that must never reach an executor.
+
+    Both the spoken words and their normalised form are checked. Normalisation
+    rewrites the launch verbs -- "run" becomes "open" -- so "run command"
+    reached this check as "open command" and slipped past the ``run command``
+    pattern entirely, ending up as an attempt to launch an application called
+    "command". Reading the raw text as well closes that without touching the
+    pattern list, and it can only ever add matches, never remove one.
+    """
+    raw = str(text or "").strip().casefold()
+    normalized = normalize_voice_operator_transcript(text)
+    return any(
+        re.search(pattern, candidate)
+        for pattern in DANGEROUS_PATTERNS
+        for candidate in (normalized, raw)
+        if candidate
+    )
+
+
 def parse_voice_operator_command(
     text: str,
     *,
@@ -123,10 +144,28 @@ def parse_voice_operator_command(
         return VoiceOperatorIntent(
             "exit", status="exit", message="Voice Operator Mode stopped."
         )
-    if any(re.search(pattern, command) for pattern in DANGEROUS_PATTERNS):
+    if is_dangerous_command(raw_command):
         return VoiceOperatorIntent(
             "blocked", status="blocked", message="I blocked that command for safety."
         )
+
+    # Natural phrasings for actions pc_control already implements. Runs after
+    # the safety check so it can never claim a blocked phrase, and before the
+    # rest of the chain so a recognised phrase is not first mangled into an
+    # application name -- "open google.com" used to resolve to open_app with the
+    # target "google com".
+    from grandpa.voice.action_phrases import resolve_action_phrase
+
+    phrase_action = resolve_action_phrase(command)
+    if phrase_action is not None:
+        return VoiceOperatorIntent(
+            "local_action",
+            phrase_action.action_type,
+            phrase_action.target,
+            dict(phrase_action.args or {}),
+            message=f"Handling {phrase_action.action_type.replace('_', ' ')}.",
+        )
+
     from grandpa.automation import AutomationPlanner
 
     is_pending_conf = (
@@ -521,7 +560,7 @@ def parse_voice_operator_command(
 
     if command.startswith("open "):
         target = command[len("open ") :].strip()
-        if target:
+        if target and names_one_application(target):
             return VoiceOperatorIntent(
                 "local_action", "open_app", target, message=f"Opening {target}."
             )
@@ -572,19 +611,27 @@ def _looks_like_file_operator_command(command: str) -> bool:
         "copy ",
         "duplicate ",
         "move ",
-        "delete file ",
-        "delete folder ",
-        "delete the file ",
-        "delete the folder ",
-        "remove file ",
-        "remove folder ",
+        # Deleting is reached by name as well as by noun phrase: "delete
+        # report.pdf" is how people ask, and admitting only "delete file ..."
+        # meant the plain form was never routed here at all.
+        #
+        # This widens what the file layer claims, so phrases meant for another
+        # domain ("delete that email") can land here too. Two things already
+        # contain that: the notes, calendar and downloads parsers are matched
+        # earlier in the chain and keep their own phrases, and no delete ever
+        # acts without a confirmation naming the resolved path -- a wrong match
+        # ends as a question, not as a deletion.
+        #
+        # Only the bare verbs are listed. This is a prefix test, so "delete
+        # file ..." and "delete the folder ..." are already matched by
+        # "delete "; spelling them out again reads like extra coverage while
+        # matching nothing new. The same goes for "find ".
+        "delete ",
+        "remove ",
         "find ",
         "search for ",
-        "find files containing ",
         "search files containing ",
         "show recent pdfs",
-        "find recent pdfs",
-        "find latest screenshot",
         "open latest ",
         "open the folder containing ",
         "zip ",
@@ -619,9 +666,9 @@ def execute_voice_operator_intent(
 
         service = automation_service or ScreenAutomationService(
             executor=(
-                AutomationExecutor()
+                AutomationExecutor(origin="voice")
                 if action_runner is run_local_action
-                else AutomationExecutor(runner=action_runner)
+                else AutomationExecutor(runner=action_runner, origin="voice")
             )
         )
         result = service.handle(
@@ -779,7 +826,8 @@ def execute_voice_operator_intent(
         from grandpa.browser import handle_browser_command
 
         result = handle_browser_command(
-            str((intent.args or {}).get("command") or intent.target)
+            str((intent.args or {}).get("command") or intent.target),
+            origin="voice",
         )
         status: OperatorStatus = (
             "handled" if result.status == "handled" else _coerce_status(result.status)
@@ -795,9 +843,22 @@ def execute_voice_operator_intent(
             },
         )
     if intent.kind == "file_automation":
-        from grandpa.files import handle_file_automation
+        from grandpa.composition import build_file_automation
 
-        result = handle_file_automation(
+        # Spoken file mutations were reaching shutil and pathlib directly, with
+        # no risk tier, approval gate, emergency stop, audit record or
+        # verification. Handing the file layer this turn's actuator routes them
+        # through the same boundary as every other spoken action.
+        #
+        # This turn's runner is passed rather than the module default: under
+        # test it is a recorder, and process_voice_operator_turn's callers
+        # thread it through every other branch here. Composition is
+        # request-scoped and configured once, so a turn's runner and provenance
+        # cannot leak into the next one.
+        automation = build_file_automation(
+            mutation_runner=action_runner, origin="voice", dry_run=dry_run
+        )
+        result = automation.handle(
             str((intent.args or {}).get("command") or intent.target)
         )
         status: OperatorStatus = (
@@ -888,6 +949,9 @@ def execute_voice_operator_intent(
         "args": intent.args or {},
         "dry_run": dry_run,
         "require_approval": intent.requires_confirmation,
+        # Provenance for the audit trail (AD-022). Everything reaching here was
+        # spoken or typed by the user at the operator prompt.
+        "origin": "voice",
     }
     response = action_runner(payload)
     status: OperatorStatus = (
@@ -899,9 +963,54 @@ def execute_voice_operator_intent(
     return VoiceOperatorResult(
         status=status,
         message=message,
-        spoken_text=message,
+        spoken_text=spoken_text_for_verification(response, message),
         action=payload,
         requires_confirmation=bool(getattr(response, "approval_required", False)),
+    )
+
+
+def spoken_text_for_verification(response: Any, message: str) -> str:
+    """Phrase the spoken reply according to what verification actually found.
+
+    ``_apply_verification`` (pc_control) records whether an action was
+    confirmed to have taken effect, but until this existed the user heard the
+    same sentence either way -- the field was machine-readable and inaudible.
+    Someone operating by voice has no screen to check, so "Volume set to 50%"
+    has to stop being said when nothing moved.
+
+    Three states, three different things to say:
+
+    ``verified``
+        The concise success message, unchanged. It has been confirmed, so there
+        is nothing to hedge.
+    ``failed``
+        Lead with the failure. The underlying message reads "Window maximized.
+        However, I could not confirm..." -- accurate, but the first two words
+        sound like success, and in speech the opening is what gets heard.
+    ``unknown``
+        Say that it ran and that confirmation was not available. Not a failure,
+        and not a claim of success.
+
+    A response carrying no verification evidence is returned untouched, so
+    every existing caller and every action without a verifier keeps its current
+    wording. Malformed evidence is treated the same way rather than raising --
+    a reporting layer must not be able to break the action path.
+    """
+    evidence = getattr(response, "evidence", None)
+    if not isinstance(evidence, dict):
+        return message
+    verification = evidence.get("verification")
+    if not isinstance(verification, dict):
+        return message
+
+    # The three phrasings live with the verification module, so the plan path
+    # says the same things about the same three states.
+    from grandpa.desktop.control.verification import verification_sentence
+
+    return verification_sentence(
+        str(verification.get("status") or "").strip().lower(),
+        str(verification.get("detail") or ""),
+        message,
     )
 
 
@@ -934,7 +1043,7 @@ class VoiceOperatorResponder:
             from grandpa.automation.service import ScreenAutomationService
 
             self.automation_service = ScreenAutomationService(
-                executor=AutomationExecutor(runner=self.action_runner)
+                executor=AutomationExecutor(runner=self.action_runner, origin="voice")
             )
 
     def handle_user_input(self, text: str) -> VoiceOperatorTurnResponse:
@@ -966,7 +1075,7 @@ def process_voice_operator_turn(
         from grandpa.automation.service import ScreenAutomationService
 
         automation_service = ScreenAutomationService(
-            executor=AutomationExecutor(runner=action_runner)
+            executor=AutomationExecutor(runner=action_runner, origin="voice")
         )
 
     raw_text = str(text or "").strip()
@@ -1034,6 +1143,100 @@ def process_voice_operator_turn(
             exit_requested=(result.status == "exit"),
         )
 
+    # Resolution order is: multi-step planner, then deterministic device
+    # commands, then conversational classification.
+    #
+    # The executive planner stays first because it claims only genuine
+    # multi-step goals -- planner/routing.py:38 returns None for anything that
+    # decomposes to fewer than two steps -- so it cannot swallow a single
+    # device command, and putting the device parser ahead of it would steal
+    # goals like "open chrome and search for fastapi" that it handles properly.
+    #
+    # classify_intent then moves *after* the device parser. It matches greeting
+    # words anywhere in an utterance, so while it ran first "type hello world",
+    # "type hi there", "open hello.txt" and "search for hello.txt" were all
+    # classified GREETING and answered with a chat reply while no actuator ran
+    # at all -- the user heard something friendly and nothing happened.
+    #
+    # parse_voice_operator_command is the discriminator: every conversational
+    # phrase ("hello", "thanks", "how are you", "what time is it") parses to
+    # kind == "none", while device commands parse to a concrete kind. Safety is
+    # unaffected -- DANGEROUS_PATTERNS still yields kind == "blocked" here, and
+    # execute_voice_operator_intent short-circuits blocked/unsupported/exit at
+    # its top -- so this reorders resolution without widening what may run.
+    # Safety comes before every resolver, including the planner.
+    #
+    # The dangerous-command check lives inside parse_voice_operator_command,
+    # which the turn only reaches once the planner has declined -- so a phrase
+    # the planner *claimed* was executed without the check ever running. That
+    # is not hypothetical: "open cmd and search for fastapi" decomposes to a
+    # four-step plan whose first step launches cmd.
+    #
+    # The check is made on the raw words. Normalisation rewrites the launch
+    # verbs, turning "run command" into "open command", and the parser is
+    # handed the normalised text below -- so by the time it runs its own check
+    # the dangerous phrasing is already gone. Blocking here is the only place
+    # that still sees what the user actually said.
+    #
+    # The response itself is the parser's, so there is one blocked message and
+    # one blocked status in the codebase, not a second copy living here.
+    if is_dangerous_command(raw_text):
+        blocked = parse_voice_operator_command(raw_text)
+        result = execute_voice_operator_intent(
+            blocked,
+            dry_run=dry_run,
+            action_runner=action_runner,
+            screen_reader=screen_reader,
+            automation_service=automation_service,
+        )
+        return VoiceOperatorTurnResponse(
+            text=result.message,
+            status=result.status,
+            spoken_text=result.spoken_text,
+        )
+
+    from grandpa.planner.routing import handle_executive_goal
+
+    planned = handle_executive_goal(
+        normalized_text,
+        automation_service=automation_service,
+        source="voice_operator",
+        # The plan's own steps end at the same actuator this turn was given,
+        # and are attributed to the person who spoke (AD-022) rather than
+        # appearing in the audit trail as anonymous direct calls.
+        action_runner=action_runner,
+        origin="voice",
+    )
+    if planned is not None:
+        return VoiceOperatorTurnResponse(
+            text=planned,
+            status="handled",
+            spoken_text=planned,
+        )
+
+    intent = parse_voice_operator_command(
+        normalized_text,
+        has_pending_confirmation=automation_service.has_pending_confirmation,
+        has_pending_window_choice=automation_service.has_pending_window_choice,
+        has_pending_dialog=automation_service.has_pending_dialog,
+    )
+    if intent.kind != "none":
+        result = execute_voice_operator_intent(
+            intent,
+            dry_run=dry_run,
+            action_runner=action_runner,
+            screen_reader=screen_reader,
+            automation_service=automation_service,
+        )
+        return VoiceOperatorTurnResponse(
+            text=result.message,
+            status=result.status,
+            spoken_text=result.spoken_text,
+            action=result.action,
+            requires_confirmation=result.requires_confirmation,
+            exit_requested=(result.status == "exit"),
+        )
+
     # Unified assistant routing
     from grandpa.agent.context import classify_intent
     from grandpa.agent.models import AgentIntent
@@ -1065,26 +1268,9 @@ def process_voice_operator_turn(
             exit_requested=exit_requested,
         )
 
-    from grandpa.planner.routing import handle_executive_goal
-
-    planned = handle_executive_goal(
-        normalized_text,
-        automation_service=automation_service,
-        source="voice_operator",
-    )
-    if planned is not None:
-        return VoiceOperatorTurnResponse(
-            text=planned,
-            status="handled",
-            spoken_text=planned,
-        )
-
-    intent = parse_voice_operator_command(
-        normalized_text,
-        has_pending_confirmation=automation_service.has_pending_confirmation,
-        has_pending_window_choice=automation_service.has_pending_window_choice,
-        has_pending_dialog=automation_service.has_pending_dialog,
-    )
+    # Nothing claimed this: not the planner, not the device parser, not
+    # conversational routing. Run the already-parsed intent so the caller still
+    # gets the operator's own "I don't know that command" reply, not silence.
     result = execute_voice_operator_intent(
         intent,
         dry_run=dry_run,
@@ -1477,9 +1663,19 @@ def _speak_best_effort(
 
 
 def _match_app(command: str, *, prefixes: tuple[str, ...]) -> str | None:
+    """The application named after one of *prefixes*, or None.
+
+    "open chrome and go to gmail" used to yield the application name "chrome
+    and go to gmail". Nothing resolves to that, so the turn reported a
+    successful launch and no window appeared. A phrase joined by a clause word
+    is several instructions, not one application, and this refuses it -- the
+    same refusal ``planner/decomposer.py`` makes, kept in step with it.
+    """
     for prefix in prefixes:
         if command.startswith(prefix):
             raw = command[len(prefix) :].strip()
+            if raw not in APP_ALIASES and not names_one_application(raw):
+                return None
             return APP_ALIASES.get(raw, raw)
     return None
 
@@ -1609,5 +1805,6 @@ __all__ = [
     "normalize_voice_operator_transcript",
     "parse_voice_operator_command",
     "process_voice_operator_turn",
+    "spoken_text_for_verification",
     "run_voice_operator_loop",
 ]

@@ -1,12 +1,15 @@
-"""ApprovalStore — SQLite-backed store for proactive agent action approvals.
+"""ApprovalStore — SQLite-backed store for pending action approvals.
 
-Two tables:
-- ``pending_actions``: actions proposed by the proactive agent awaiting user decision
-- ``permission_memory``: remembered user decisions keyed by action pattern
+One table, ``pending_actions``: proposals awaiting a user decision, and the
+decision once made.
 
-Permission key format: ``"{action_type}:{fingerprint}"``
-e.g. ``"email_delete:domain:noreply.github.com"``
-     ``"sms_draft_reply:contact:+15551234567"``
+A second table, ``permission_memory``, and the API over it were retired by
+AD-031. They were the store half of the proactive-agent feature that arrived in
+``4652b6e8`` and whose consumer was deleted in ``c40b58ab``; the store outlived
+it and was later reused for patch proposals. Nothing read or wrote the
+remembered decisions in between. Existing databases keep the table as an
+orphan -- AD-031 g deliberately authorises no ``DROP TABLE`` and no migration,
+because nothing reads it.
 """
 
 from __future__ import annotations
@@ -20,12 +23,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # ---------------------------------------------------------------------------
-# Decision constants
+# Status constants
 # ---------------------------------------------------------------------------
-
-DECISION_ALWAYS_APPROVE = "always_approve"
-DECISION_ALWAYS_DENY = "always_deny"
-DECISION_ASK = "ask"
 
 STATUS_PENDING = "pending"
 STATUS_APPROVED = "approved"
@@ -35,14 +34,14 @@ STATUS_EXECUTED = "executed"
 
 # Tiers govern default ask behavior
 TIER_TRIVIAL = "trivial"  # Execute immediately, no ask
-TIER_LOW = "low"  # Ask once, then remember
-TIER_MEDIUM = "medium"  # Ask each time unless remembered
-TIER_HIGH = "high"  # Always ask, never auto-remember
+TIER_LOW = "low"
+TIER_MEDIUM = "medium"
+TIER_HIGH = "high"
 
 
 @dataclass
 class PendingAction:
-    """An action proposed by the proactive agent."""
+    """An action awaiting a user decision."""
 
     id: str
     action_type: str
@@ -101,49 +100,8 @@ class PendingAction:
         )
 
 
-@dataclass
-class PermissionRule:
-    """A remembered user decision for a permission pattern."""
-
-    permission_key: str
-    decision: str  # always_approve | always_deny
-    times_approved: int = 0
-    times_denied: int = 0
-    last_updated: str = ""
-    notes: str = ""
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "permission_key": self.permission_key,
-            "decision": self.decision,
-            "times_approved": self.times_approved,
-            "times_denied": self.times_denied,
-            "last_updated": self.last_updated,
-            "notes": self.notes,
-        }
-
-    @classmethod
-    def from_row(cls, row: tuple) -> PermissionRule:
-        (
-            permission_key,
-            decision,
-            times_approved,
-            times_denied,
-            last_updated,
-            notes,
-        ) = row
-        return cls(
-            permission_key=permission_key,
-            decision=decision,
-            times_approved=times_approved,
-            times_denied=times_denied,
-            last_updated=last_updated or "",
-            notes=notes or "",
-        )
-
-
 class ApprovalStore:
-    """SQLite store for proactive agent action approvals and permission memory."""
+    """SQLite store for pending action approvals."""
 
     def __init__(self, db_path: str = "") -> None:
         if not db_path:
@@ -169,15 +127,6 @@ class ApprovalStore:
                 expires_at TEXT NOT NULL,
                 notification_sent INTEGER NOT NULL DEFAULT 0,
                 decision_at TEXT
-            );
-
-            CREATE TABLE IF NOT EXISTS permission_memory (
-                permission_key TEXT PRIMARY KEY,
-                decision TEXT NOT NULL,
-                times_approved INTEGER NOT NULL DEFAULT 0,
-                times_denied INTEGER NOT NULL DEFAULT 0,
-                last_updated TEXT NOT NULL,
-                notes TEXT NOT NULL DEFAULT ''
             );
         """)
 
@@ -292,95 +241,6 @@ class ApprovalStore:
         self._conn.commit()
         return cur.rowcount
 
-    # -- Permission memory -----------------------------------------------------
-
-    def get_permission(self, permission_key: str) -> Optional[PermissionRule]:
-        row = self._conn.execute(
-            "SELECT permission_key, decision, times_approved, times_denied, "
-            "last_updated, notes FROM permission_memory WHERE permission_key = ?",
-            (permission_key,),
-        ).fetchone()
-        return PermissionRule.from_row(row) if row else None
-
-    def set_permission(
-        self,
-        permission_key: str,
-        decision: str,
-        *,
-        approved: bool = False,
-        notes: str = "",
-    ) -> None:
-        """Upsert a permission rule, incrementing the relevant counter."""
-        now = datetime.now(timezone.utc).isoformat()
-        existing = self.get_permission(permission_key)
-        if existing:
-            times_approved = existing.times_approved + (1 if approved else 0)
-            times_denied = existing.times_denied + (0 if approved else 1)
-            self._conn.execute(
-                "UPDATE permission_memory SET decision = ?, times_approved = ?, "
-                "times_denied = ?, last_updated = ?, notes = ? "
-                "WHERE permission_key = ?",
-                (
-                    decision,
-                    times_approved,
-                    times_denied,
-                    now,
-                    notes or existing.notes,
-                    permission_key,
-                ),
-            )
-        else:
-            self._conn.execute(
-                "INSERT INTO permission_memory "
-                "(permission_key, decision, times_approved, times_denied, "
-                "last_updated, notes) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    permission_key,
-                    decision,
-                    1 if approved else 0,
-                    0 if approved else 1,
-                    now,
-                    notes,
-                ),
-            )
-        self._conn.commit()
-
-    def clear_permission(self, permission_key: str) -> None:
-        self._conn.execute(
-            "DELETE FROM permission_memory WHERE permission_key = ?",
-            (permission_key,),
-        )
-        self._conn.commit()
-
-    def list_permissions(self) -> List[PermissionRule]:
-        rows = self._conn.execute(
-            "SELECT permission_key, decision, times_approved, times_denied, "
-            "last_updated, notes FROM permission_memory ORDER BY last_updated DESC"
-        ).fetchall()
-        return [PermissionRule.from_row(r) for r in rows]
-
-    def get_seen_ids(self) -> set:
-        """Return all doc_ids and message_ids previously queued (any status).
-
-        Used by ``ProactiveAgent`` to skip items it has already proposed so
-        they don't resurface on every run while still unread/unanswered.
-        """
-        seen: set = set()
-        rows = self._conn.execute("SELECT payload FROM pending_actions").fetchall()
-        for (payload_json,) in rows:
-            try:
-                payload = json.loads(payload_json) if payload_json else {}
-            except json.JSONDecodeError:
-                continue
-            doc_id = payload.get("doc_id", "")
-            if doc_id:
-                seen.add(doc_id)
-            msg_id = payload.get("message_id", "")
-            if msg_id:
-                seen.add(f"gmail:{msg_id}")
-        return seen
-
     def close(self) -> None:
         self._conn.close()
 
@@ -388,10 +248,6 @@ class ApprovalStore:
 __all__ = [
     "ApprovalStore",
     "PendingAction",
-    "PermissionRule",
-    "DECISION_ALWAYS_APPROVE",
-    "DECISION_ALWAYS_DENY",
-    "DECISION_ASK",
     "STATUS_PENDING",
     "STATUS_APPROVED",
     "STATUS_DENIED",

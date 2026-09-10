@@ -356,6 +356,8 @@ def _route_voice_request(
         automation_service=automation_service,
         source="voice_api",
         session_id=session_id,
+        # Spoken through the API rather than the terminal, but still spoken.
+        origin="voice",
     ).handle(command_text, spoken=True)
     if not pipeline_result.should_fallback:
         return {

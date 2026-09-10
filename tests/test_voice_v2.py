@@ -439,116 +439,143 @@ def test_voice_api_routes(monkeypatch, tmp_path):
 
 
 def test_voice_command_routes_desktop_action_to_confirmation(voice_client):
+    """Staging vehicle changed by 4.14P; the contract under test is unchanged.
+
+    This used ``type hello in notepad``, which AD-025 retired along with the rest
+    of the duplicate Funnel-A automation parser. ``close notepad`` is still a
+    confirmation-requiring desktop action, so the two-step approval contract --
+    stage here, approve through ``/v1/local-actions/{id}/approve`` with the
+    console code -- is exercised exactly as before.
+    """
     response = voice_client.post(
         "/v1/voice/command",
-        json={"transcript": "type hello in notepad"},
+        json={"transcript": "close notepad"},
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["transcript"] == "type hello in notepad"
+    assert body["transcript"] == "close notepad"
     assert body["action"]["type"] == "desktop"
     assert body["action"]["status"] == "needs_confirmation"
     assert body["action"]["message"] == "This action needs confirmation."
-    assert body["confirmation_token"] == body["action"]["pending_action"]["id"]
-    assert body["action"]["kind"] == "automation"
-    assert body["action"]["target"] == "focus|notepad||type|hello"
+    # ``confirmation_token`` is gone (M4 4.13E). It was the pending action's id
+    # handed back to the caller that staged the action, which made the requester
+    # and the approver the same party -- not an out-of-band credential. The id
+    # itself stays: it identifies the action for ``/v1/local-actions/{id}/approve``,
+    # which requires the console code.
+    assert "confirmation_token" not in body
+    assert "confirmation_token" not in body["action"]
+    assert body["action"]["pending_action"]["id"]
+    assert body["action"]["kind"] == "window"
+    assert body["action"]["target"] == "close|notepad"
     assert body["action"]["pending_action"]["id"]
 
 
 def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
-    monkeypatch,
     voice_client,
 ):
-    calls: list[str] = []
+    """A confirmation-required action executes only through the confirm step.
 
-    monkeypatch.setattr(local_actions.sys, "platform", "win32")
+    **Amended by M4 4.12K-DEC, which superseded the previous contract.** This
+    test used to assert that ``{"confirmed": true}`` on ``/v1/voice/command``
+    executed the action in that same request. 4.12K-DEC found that field to be a
+    self-asserted approval: the requester and the confirming party were the same
+    untrusted HTTP caller and nothing server-side was consulted.
 
-    def fake_execute_automation(spec: str):
-        from grandpa.desktop_automation import AutomationResult
+    The endpoint's own manual-QA documentation already required the opposite:
+    "confirmation-required desktop actions must still use the existing local
+    action approval flow" (docs/testing/push-to-talk-manual-qa.md).
 
-        calls.append(spec)
-        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
+    **Scaffolding removed by M4 4.14R.** The name still says "mocked automation"
+    because this test once patched ``desktop_automation.execute_automation`` and
+    asserted the recorder stayed empty. AD-025 retired that path: nothing can
+    reach it, so the recorder could no longer fail and the assertion proved
+    nothing. It is removed rather than left as decoration.
 
-    monkeypatch.setattr(
-        "grandpa.desktop_automation.execute_automation",
-        fake_execute_automation,
-    )
-
+    What that costs, stated plainly: this test no longer carries its own
+    evidence that *nothing actuated* -- only that the response is
+    ``needs_confirmation``. Recording ``pc_control.run_local_action`` would
+    restore that half against the path ``close notepad`` actually takes, and is
+    left to a slice that can scope it properly.
+    """
     response = voice_client.post(
         "/v1/voice/command",
-        json={"transcript": "type hello in notepad", "confirmed": True},
+        json={"transcript": "close notepad", "confirmed": True},
     )
 
     assert response.status_code == 200
     body = response.json()
     assert body["action"]["type"] == "desktop"
-    assert body["action"]["status"] == "handled"
-    assert body["assistant_text"] == "Done."
-    assert calls == ["focus|notepad||type|hello"]
+    # The flag no longer authorises anything: same outcome as omitting it.
+    assert body["action"]["status"] == "needs_confirmation"
+
+    # The action stays staged and identifiable. Approving it is now
+    # ``POST /v1/local-actions/{id}/approve`` with the console code -- covered by
+    # ``tests/test_local_action_approve_endpoint.py``, not from here, because
+    # this client cannot read that code.
+    assert body["action"]["pending_action"]["id"]
+    assert "confirmation_token" not in body
 
 
-def test_voice_confirm_token_executes_with_mocked_automation(monkeypatch, voice_client):
-    calls: list[str] = []
-    monkeypatch.setattr(local_actions.sys, "platform", "win32")
+def test_voice_confirm_route_is_removed(voice_client):
+    """M4 4.13E removed ``POST /v1/voice/confirm``.
 
-    def fake_execute_automation(spec: str):
-        from grandpa.desktop_automation import AutomationResult
+    It replaced ``test_voice_confirm_token_executes_with_mocked_automation`` and
+    ``test_voice_confirm_token_cannot_be_reused``, both of which pinned the
+    route's behaviour. The route could not be secured: the "token" it consumed
+    was the pending action's id, handed to the caller in the same response that
+    staged the action, so the requester and the approver were one party. An
+    out-of-band code cannot be delivered over the channel it is meant to guard.
 
-        calls.append(spec)
-        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
-
-    monkeypatch.setattr(
-        "grandpa.desktop_automation.execute_automation",
-        fake_execute_automation,
-    )
-
-    pending = voice_client.post(
-        "/v1/voice/command",
-        json={"transcript": "type hello in notepad"},
-    ).json()
-
+    The single-use property the reuse test protected is not lost -- it moved to
+    where the credential actually lives:
+    ``tests/test_local_action_approve_endpoint.py::...::test_replaying_the_code_is_refused``
+    and ``tests/test_approval_execution_race.py``.
+    """
     response = voice_client.post(
         "/v1/voice/confirm",
-        json={"confirmation_token": pending["confirmation_token"]},
+        json={"confirmation_token": "anything"},
     )
 
-    assert response.status_code == 200
-    body = response.json()
-    assert body["action"]["status"] == "handled"
-    assert body["assistant_text"] == "Done."
-    assert calls == ["focus|notepad||type|hello"]
+    assert response.status_code == 404
 
 
-def test_voice_confirm_token_cannot_be_reused(monkeypatch, voice_client):
-    monkeypatch.setattr(local_actions.sys, "platform", "win32")
+def test_no_id_based_confirmation_route_replaced_it(voice_client):
+    """The route was removed, not renamed.
 
-    def fake_execute_automation(spec: str):
-        from grandpa.desktop_automation import AutomationResult
+    A substitute that approved on an identifier would reintroduce exactly the
+    defect, so the absence is asserted rather than assumed.
+    """
+    for path in ("/v1/voice/confirm", "/v1/voice/approve", "/v1/voice/confirmation"):
+        assert (
+            voice_client.post(path, json={"confirmation_token": "x"}).status_code == 404
+        ), path
 
-        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
 
-    monkeypatch.setattr(
-        "grandpa.desktop_automation.execute_automation",
-        fake_execute_automation,
-    )
-    pending = voice_client.post(
+def test_the_voice_router_exposes_no_confirm_endpoint():
+    """Structural: nothing is registered under a confirm path."""
+    from grandpa.server.api_routes import voice_router
+
+    paths = {route.path for route in voice_router.routes}
+
+    assert not any("confirm" in path for path in paths), paths
+
+
+def test_staged_actions_are_still_approvable_by_the_secure_route(voice_client):
+    """The workflow is not removed, only the insecure door.
+
+    ``/v1/voice/command`` still stages and still identifies the action; the code
+    that approves it is read from the console, so this HTTP client cannot finish
+    the flow -- which is the point.
+    """
+    body = voice_client.post(
         "/v1/voice/command",
-        json={"transcript": "type hello in notepad"},
+        json={"transcript": "close notepad"},
     ).json()
 
-    first = voice_client.post(
-        "/v1/voice/confirm",
-        json={"confirmation_token": pending["confirmation_token"]},
-    )
-    second = voice_client.post(
-        "/v1/voice/confirm",
-        json={"confirmation_token": pending["confirmation_token"]},
-    )
-
-    assert first.json()["action"]["status"] == "handled"
-    assert second.json()["action"]["status"] == "blocked"
-    assert second.json()["assistant_text"] == "That action is blocked for safety."
+    assert body["action"]["status"] == "needs_confirmation"
+    assert body["action"]["pending_action"]["id"]
+    assert "confirmation_token" not in body
 
 
 def test_voice_command_blocked_command_returns_blocked(voice_client):

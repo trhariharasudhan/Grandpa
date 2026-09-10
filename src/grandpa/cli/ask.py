@@ -669,159 +669,91 @@ def ask(
         process_user_message,
         record_assistant_outcome,
     )
-    from grandpa.memory_context import handle_memory_command, remember_conversation
+    from grandpa.memory_context import remember_conversation
 
     remember_conversation("user", query_text)
     brain_analysis = process_user_message(query_text)
     effective_query_text = brain_analysis.effective_text
 
-    memory_result = handle_memory_command(effective_query_text)
+    # One ordered handler chain, asked once, instead of five inline blocks.
+    #
+    # Precedence is unchanged -- datetime, memory, local_action, file,
+    # scheduler -- and so is the property that matters underneath it: each
+    # handler is invoked exactly once. Four of the five act while deciding
+    # whether they claim (memory writes, local_action audits and actuates,
+    # file reaches the mutation boundary, scheduler upserts), which is why the
+    # dispatcher contract is a single ``try_handle`` rather than a
+    # claims/handle pair.
+    #
+    # The dispatcher selects and nothing more. Every gate -- the dangerous
+    # filter, approval staging, the emergency stop, delete confirmation, the
+    # mutation boundary -- stays inside the handler it already lived in.
+    #
+    # Built per invocation, never at module scope: a shared dispatcher would
+    # be shared mutable state across requests for no benefit.
+    from grandpa.composition.ask_handlers import build_ask_dispatcher
+    from grandpa.dispatch import RequestContext
 
-    from grandpa.core.runtime_context import handle_datetime_intent
+    dispatch_result = build_ask_dispatcher().dispatch(
+        RequestContext(
+            text=effective_query_text,
+            origin="direct",
+            dry_run=False,
+        )
+    )
 
-    dt_resp = handle_datetime_intent(effective_query_text)
-    if dt_resp:
-        remember_conversation("assistant", dt_resp)
+    if dispatch_result.claimed:
+        claimed = dispatch_result.result
+        handler = dispatch_result.handler_name
+
+        # Three record shapes, preserved exactly as the five blocks had them.
+        #
+        # ``datetime`` returns a bare string, so its outcome fields are stated
+        # rather than read. ``file`` and ``scheduler`` read theirs defensively
+        # with a per-handler default. Unifying these would change what is
+        # recorded, which is the one thing this migration must not do.
+        if handler == "datetime":
+            message, kind, target, status = claimed, "local", None, "handled"
+        elif handler in {"file", "scheduler"}:
+            default_kind = "file" if handler == "file" else "routine"
+            message = claimed.message
+            kind = getattr(claimed, "kind", default_kind)
+            target = getattr(claimed, "target", None)
+            status = claimed.status
+        else:
+            message = claimed.message
+            kind = claimed.kind
+            target = claimed.target
+            status = claimed.status
+
+        remember_conversation("assistant", message)
         record_assistant_outcome(
             brain_analysis,
-            assistant_text=dt_resp,
-            kind="local",
-            target=None,
-            status="handled",
+            assistant_text=message,
+            kind=kind,
+            target=target,
+            status=status,
         )
         if output_json:
+            # The payload reads plain attributes for the four object handlers,
+            # exactly as before -- only the record used ``getattr``.
+            local_action_payload = (
+                {"status": "handled", "kind": "local", "target": None}
+                if handler == "datetime"
+                else {
+                    "status": claimed.status,
+                    "kind": claimed.kind,
+                    "target": claimed.target,
+                }
+            )
             click.echo(
                 json_mod.dumps(
-                    {
-                        "content": dt_resp,
-                        "local_action": {
-                            "status": "handled",
-                            "kind": "local",
-                            "target": None,
-                        },
-                    },
+                    {"content": message, "local_action": local_action_payload},
                     indent=2,
                 )
             )
         else:
-            click.echo(dt_resp)
-        return
-
-    if not memory_result.should_fallback:
-        remember_conversation("assistant", memory_result.message)
-        record_assistant_outcome(
-            brain_analysis,
-            assistant_text=memory_result.message,
-            kind=memory_result.kind,
-            target=memory_result.target,
-            status=memory_result.status,
-        )
-        if output_json:
-            click.echo(
-                json_mod.dumps(
-                    {
-                        "content": memory_result.message,
-                        "local_action": {
-                            "status": memory_result.status,
-                            "kind": memory_result.kind,
-                            "target": memory_result.target,
-                        },
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            click.echo(memory_result.message)
-        return
-
-    from grandpa.local_actions import handle_local_action
-
-    local_action = handle_local_action(effective_query_text)
-    if not local_action.should_fallback:
-        remember_conversation("assistant", local_action.message)
-        record_assistant_outcome(
-            brain_analysis,
-            assistant_text=local_action.message,
-            kind=local_action.kind,
-            target=local_action.target,
-            status=local_action.status,
-        )
-        if output_json:
-            click.echo(
-                json_mod.dumps(
-                    {
-                        "content": local_action.message,
-                        "local_action": {
-                            "status": local_action.status,
-                            "kind": local_action.kind,
-                            "target": local_action.target,
-                        },
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            click.echo(local_action.message)
-        return
-
-    from grandpa.file_assistant import handle_file_command
-
-    file_action = handle_file_command(effective_query_text)
-    if not file_action.should_fallback:
-        remember_conversation("assistant", file_action.message)
-        record_assistant_outcome(
-            brain_analysis,
-            assistant_text=file_action.message,
-            kind=getattr(file_action, "kind", "file"),
-            target=getattr(file_action, "target", None),
-            status=file_action.status,
-        )
-        if output_json:
-            click.echo(
-                json_mod.dumps(
-                    {
-                        "content": file_action.message,
-                        "local_action": {
-                            "status": file_action.status,
-                            "kind": file_action.kind,
-                            "target": file_action.target,
-                        },
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            click.echo(file_action.message)
-        return
-
-    from grandpa.task_scheduler import handle_scheduler_command
-
-    scheduler_action = handle_scheduler_command(effective_query_text)
-    if not scheduler_action.should_fallback:
-        remember_conversation("assistant", scheduler_action.message)
-        record_assistant_outcome(
-            brain_analysis,
-            assistant_text=scheduler_action.message,
-            kind=getattr(scheduler_action, "kind", "routine"),
-            target=getattr(scheduler_action, "target", None),
-            status=scheduler_action.status,
-        )
-        if output_json:
-            click.echo(
-                json_mod.dumps(
-                    {
-                        "content": scheduler_action.message,
-                        "local_action": {
-                            "status": scheduler_action.status,
-                            "kind": scheduler_action.kind,
-                            "target": scheduler_action.target,
-                        },
-                    },
-                    indent=2,
-                )
-            )
-        else:
-            click.echo(scheduler_action.message)
+            click.echo(message)
         return
 
     wall_start = time.monotonic() if enable_profile else None

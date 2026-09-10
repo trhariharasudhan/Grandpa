@@ -25,6 +25,13 @@ class GoalDecompositionError(ValueError):
     """Raised when a goal cannot be decomposed without guessing."""
 
 
+#: Fragments shared by the "open <app> and <clause>" patterns, so every one of
+#: them accepts the same verbs, the same connectors and the same shape of name.
+_OPEN = r"(?:open|launch|start)"
+_CONNECTOR = r"(?:and|then)"
+_NAME = r"[\w .+-]+?"
+
+
 class DeterministicDecomposer:
     """Recognize bounded multi-step patterns while preserving literal payloads."""
 
@@ -38,8 +45,8 @@ class DeterministicDecomposer:
             r"(?:open|launch|start)\s+(?P<app>[\w .+-]+?)\s+(?:and|then)\s+search(?:\s+(?P<provider>google|bing|duckduckgo))?\s*(?:for\s+)?(?P<query>.+)",
             normalized,
         )
-        if match:
-            app = _app(match.group("app"))
+        app = _app_name(match.group("app")) if match else None
+        if match and app is not None:
             query = _literal_slice(text, match.start("query"), match.end("query"))
             return _chain(
                 (
@@ -347,6 +354,76 @@ class DeterministicDecomposer:
                 ),
             )
 
+        # "open <app> and go to <site> and search for <query>". Ordered before
+        # the two-clause navigation pattern below, whose destination would
+        # otherwise swallow "github and search for fastapi" whole.
+        match = re.fullmatch(
+            rf"{_OPEN}\s+(?P<app>{_NAME})\s+{_CONNECTOR}\s+(?:go|navigate)\s+to\s+"
+            rf"(?P<dest>{_NAME})\s+{_CONNECTOR}\s+search"
+            r"(?:\s+(?P<provider>google|bing|duckduckgo))?\s*(?:for\s+)?(?P<query>.+)",
+            normalized,
+        )
+        if match:
+            app = _app_name(match.group("app"))
+            dest = _clause_free(match.group("dest"))
+            if app is not None and dest is not None:
+                query = _literal_slice(text, match.start("query"), match.end("query"))
+                return _chain(
+                    *_open_and_focus(app),
+                    ("navigate_url", f"Go to {dest}", {"url": dest}, "URL_matches"),
+                    (
+                        "browser_search",
+                        f"Search for {query}",
+                        {
+                            "query": query,
+                            "provider": match.group("provider") or "google",
+                        },
+                        "browser_results_visible",
+                    ),
+                )
+
+        # "open <app> and go to <site>". The destination is passed through as
+        # spoken: navigate_url hands it to the browser command handler, which
+        # already resolves both bare site names ("gmail") and literal URLs, so
+        # there is no URL to invent here.
+        match = re.fullmatch(
+            rf"{_OPEN}\s+(?P<app>{_NAME})\s+{_CONNECTOR}\s+"
+            rf"(?:go|navigate)\s+to\s+(?P<dest>.+)",
+            normalized,
+        )
+        if match:
+            app = _app_name(match.group("app"))
+            dest = _clause_free(match.group("dest"))
+            if app is not None and dest is not None:
+                return _chain(
+                    *_open_and_focus(app),
+                    ("navigate_url", f"Go to {dest}", {"url": dest}, "URL_matches"),
+                )
+
+        # "open <app> and type <text>". The payload is terminal and taken from
+        # the original text, so its capitalisation survives and a connector
+        # inside it ("type salt and pepper") stays part of what gets typed
+        # rather than being read as another clause.
+        match = re.fullmatch(
+            rf"{_OPEN}\s+(?P<app>{_NAME})\s+{_CONNECTOR}\s+type\s+(?P<payload>.+)",
+            normalized,
+        )
+        if match:
+            app = _app_name(match.group("app"))
+            if app is not None:
+                payload = _literal_slice(
+                    text, match.start("payload"), match.end("payload")
+                )
+                return _chain(
+                    *_open_and_focus(app),
+                    (
+                        "type_text",
+                        "Type the requested literal text",
+                        {"text": payload, "window": app},
+                        "typed_text_present",
+                    ),
+                )
+
         return _single_step(normalized)
 
 
@@ -478,9 +555,16 @@ def _chain(*specs: tuple[str, str, dict[str, Any], str]) -> list[PlanStep]:
 
 
 def _single_step(command: str) -> list[PlanStep] | None:
-    match = re.fullmatch(r"(?:open|launch|start)\s+([\w .+-]+)", command)
+    match = re.fullmatch(rf"{_OPEN}\s+([\w .+-]+)", command)
     if match:
-        app = _app(match.group(1))
+        # Without the clause check this matched "open chrome and go to gmail"
+        # and returned one step for an application called "chrome and go to
+        # gmail" -- and because routing declines any plan under two steps
+        # (planner/routing.py:47), that single bogus step was also what stopped
+        # the goal reaching the planner at all.
+        app = _app_name(match.group(1))
+        if app is None:
+            return None
         return _chain(
             (
                 "launch_application",
@@ -506,6 +590,61 @@ def _single_step(command: str) -> list[PlanStep] | None:
             ("describe_screen", "Describe the visible screen", {}, "execution_success")
         )
     return None
+
+
+def _open_and_focus(app: str) -> tuple[tuple[str, str, dict[str, Any], str], ...]:
+    """The launch-wait-focus preamble every "open <app> and ..." goal shares."""
+    return (
+        (
+            "launch_application",
+            f"Open {app.title()}",
+            {"app": app},
+            "application_window_exists",
+        ),
+        (
+            "wait_for_window",
+            f"Wait for {app.title()}",
+            {"app": app},
+            "application_window_exists",
+        ),
+        (
+            "focus_window",
+            f"Focus {app.title()}",
+            {"app": app},
+            "application_window_focused",
+        ),
+    )
+
+
+#: Words that begin a new clause rather than continue a name. A goal is a
+#: sequence of clauses, so text containing one of these is never a single
+#: application or destination -- "chrome and go to gmail" is two instructions,
+#: not an application called "chrome and go to gmail".
+#:
+#: Matched on word boundaries so ordinary names survive: "command prompt"
+#: contains the letters of "and" but not the word.
+_CLAUSE_WORDS = re.compile(r"\b(?:and|then|go to|navigate to)\b")
+
+
+def _clause_free(value: str) -> str | None:
+    """Return *value* stripped, or None when it is really several clauses.
+
+    Returning None makes the pattern decline. That matters more than it looks:
+    a decomposer that guesses here produces a plan to launch an application
+    named "chrome and go to gmail", which cannot exist, so the user is told
+    their command succeeded while nothing happens. Declining sends the goal on
+    to the next resolver, and if nothing claims it the operator says so.
+    """
+    name = value.strip()
+    if not name or _CLAUSE_WORDS.search(name):
+        return None
+    return name
+
+
+def _app_name(value: str) -> str | None:
+    """The application a clause names, or None when the text is not one."""
+    name = _clause_free(value)
+    return None if name is None else _app(name)
 
 
 def _app(value: str) -> str:

@@ -88,7 +88,15 @@ def _desktop_context() -> dict[str, Any]:
     from grandpa.pc_control import run_local_action
 
     result = run_local_action(
-        {"action_type": "desktop_summary", "target": "desktop", "dry_run": True}
+        {
+            "action_type": "desktop_summary",
+            "target": "desktop",
+            "dry_run": True,
+            # The agent is reading its own context, so the audit trail records
+            # it as agent-originated (AD-022) rather than as an anonymous
+            # direct call.
+            "origin": "agent",
+        }
     )
     return {
         "available": True,

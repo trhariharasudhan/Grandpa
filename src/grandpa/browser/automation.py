@@ -14,9 +14,11 @@ class BrowserAutomation:
         self,
         parser: BrowserParser | None = None,
         executor: BrowserExecutor | None = None,
+        *,
+        origin: str = "direct",
     ) -> None:
         self.parser = parser or BrowserParser()
-        self.executor = executor or BrowserExecutor()
+        self.executor = executor or BrowserExecutor(origin=origin)
 
     def handle(self, text: str) -> BrowserOperationResult:
         action = self.parser.parse(text)
@@ -30,10 +32,13 @@ def handle_browser_command(
     *,
     opener: OpenCallback | None = None,
     hotkey_runner: HotkeyCallback | None = None,
+    origin: str = "direct",
 ) -> BrowserOperationResult:
     """Convenience wrapper used by chat and voice command paths."""
 
-    executor = BrowserExecutor(opener=opener, hotkey_runner=hotkey_runner)
+    executor = BrowserExecutor(
+        opener=opener, hotkey_runner=hotkey_runner, origin=origin
+    )
     return BrowserAutomation(executor=executor).handle(text)
 
 

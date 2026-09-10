@@ -12,15 +12,27 @@ def classify(request: Any) -> str:
 
 
 def requires_approval(request: Any) -> bool:
-    from grandpa import pc_control
+    """Whether the boundary would stage this request for approval.
 
-    risk = classify(request)
-    action = pc_control._normalise_action_type(getattr(request, "action_type", ""))
-    return bool(
-        getattr(request, "require_approval", False)
-        or risk == "HIGH"
-        or action in pc_control.APPROVAL_REQUIRED_ACTIONS
-    )
+    A *view* of the policy, not a second implementation of it. Enforcement
+    stays inline in ``pc_control._run_local_action_impl``; this reports what
+    that gate would decide, and every clause here mirrors one of its.
+
+    The sensitive-launch clause is what keeps them in step. Without it this
+    answered ``False`` for ``open_app terminal`` while the gate staged it --
+    the HIGH tier was covered, the MEDIUM half of ``SENSITIVE_APP_RISK`` was
+    not. A predicate that looks authoritative and is more permissive than
+    enforcement is worse than no predicate at all.
+
+    Delegates to ``grandpa.policy.engine``, on the same terms as ``classify``
+    above: the rule moved, the policy did not. The tables still travel as an
+    argument because ``policy`` imports nothing from ``pc_control``, so this
+    keeps holding the data while ``policy`` states what to do with it.
+    """
+    from grandpa import pc_control
+    from grandpa.policy.engine import requires_approval as _policy_requires_approval
+
+    return _policy_requires_approval(request, pc_control._risk_tables())
 
 
 def readiness() -> dict[str, Any]:

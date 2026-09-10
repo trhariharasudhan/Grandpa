@@ -196,43 +196,57 @@ def test_purchase_browser_command_is_blocked():
     assert result.message == BLOCKED_MESSAGE
 
 
-def test_type_command_is_allowlisted_without_execution():
-    result = handle_local_action("type hello", execute=False)
-
-    assert result.status == "requires_confirmation"
-    assert result.permission == "requires_confirmation"
-    assert result.kind == "automation"
-    assert result.target == "type|hello"
-    assert result.pending_action
-    assert "typing into the active app" in result.message
-    assert "Permission:" not in result.message
-
-
-def test_type_in_notepad_command_focuses_app_before_typing():
-    result = handle_local_action("type hello in notepad", execute=False)
-
-    assert result.status == "requires_confirmation"
-    assert result.permission == "requires_confirmation"
-    assert result.kind == "automation"
-    assert result.target == "focus|notepad||type|hello"
-    assert result.pending_action
-    assert "controlling the active app" in result.message
+# ``test_type_command_is_allowlisted_without_execution``,
+# ``test_type_in_notepad_command_focuses_app_before_typing``,
+# ``test_enter_command_is_allowlisted_without_execution`` and
+# ``test_copy_selected_text_is_allowlisted_without_execution`` were retired by
+# AD-025 (M4 4.14P). Each asserted that ``_parse_automation_action`` minted a
+# ``kind="automation"`` result for ``type hello``, ``type hello in notepad``,
+# ``press enter`` and ``copy selected text``. That parser is gone: the duplicate
+# Funnel-A automation path was retired in favour of ``grandpa/automation/``,
+# which serves the same intents through ``pc_control``.
+#
+# What each stopped protecting: the allowlist shape of a parser that no longer
+# exists. What replaced it: ``test_the_retired_automation_commands_no_longer_
+# match`` below, which pins that these commands now fall through rather than
+# reaching some other actuator.
 
 
-def test_enter_command_is_allowlisted_without_execution():
-    result = handle_local_action("press enter", execute=False)
+@pytest.mark.parametrize(
+    "command",
+    [
+        "type hello",
+        "type hello in notepad",
+        "press enter",
+        "press tab",
+        "press escape",
+        "copy selected text",
+        "paste",
+        "scroll down",
+        "scroll up",
+        "move mouse to center",
+        "click the center of the screen",
+        "click the highlighted button",
+    ],
+)
+def test_the_retired_automation_commands_no_longer_match(command):
+    """AD-025: the duplicate parser is gone and nothing else claimed them.
 
-    assert result.status == "requires_confirmation"
-    assert result.kind == "automation"
-    assert result.target == "press|enter"
+    Falling through is the intended outcome -- AD-026 accepted the removal of
+    the three that used to actuate. What must not happen is a silent hand-off to
+    a different actuator, which is what the ``kind`` assertion rules out.
+    """
+    result = handle_local_action(command, execute=False)
+
+    assert result.status == "no_match", command
+    assert result.kind != "automation"
 
 
-def test_copy_selected_text_is_allowlisted_without_execution():
-    result = handle_local_action("copy selected text", execute=False)
-
-    assert result.status == "requires_confirmation"
-    assert result.kind == "automation"
-    assert result.target == "hotkey|ctrl+c"
+def test_window_owned_commands_stay_window_owned():
+    """The two shadowed commands were never automation's; they must not move."""
+    for command in ("focus chrome", "close notepad"):
+        result = handle_local_action(command, execute=False)
+        assert result.kind == "window", command
 
 
 def test_destructive_desktop_command_is_blocked():
@@ -244,7 +258,7 @@ def test_destructive_desktop_command_is_blocked():
 
 def test_pending_action_can_be_denied(_approval_store_fixture):
     store = _approval_store_fixture
-    pending = handle_local_action("type hello", execute=False)
+    pending = handle_local_action("close notepad", execute=False)
     denied = handle_local_action("cancel")
 
     assert pending.status == "requires_confirmation"
@@ -254,7 +268,7 @@ def test_pending_action_can_be_denied(_approval_store_fixture):
 
 def test_expired_pending_action_is_not_approved(_approval_store_fixture):
     store = _approval_store_fixture
-    pending = handle_local_action("type hello", execute=False)
+    pending = handle_local_action("close notepad", execute=False)
     store.expire_old(now=pending.pending_action["expires_at"] + 1)
     approved = local_actions.approve_pending_action(pending.pending_action["id"])
 

@@ -137,7 +137,10 @@ class AutomationPlanner:
         return None
 
     def _parse_keyboard(self, raw: str, command: str) -> AutomationAction | None:
-        if command.startswith("type "):
+        # "write ..." is the same request as "type ...". Handled here rather
+        # than in a separate table so both phrasings take one path to
+        # keyboard_type instead of reaching it through two different executors.
+        if command.startswith(("type ", "write ")):
             text = raw.strip()[len(raw.strip().split(maxsplit=1)[0]) :].strip()
             return AutomationAction("type", args={"text": text})
         if command in {"paste", "paste here"}:
