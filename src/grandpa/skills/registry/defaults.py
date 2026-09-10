@@ -15,15 +15,75 @@ from grandpa.skills.runtime import (
 _REGISTERED = False
 
 
+#: How a skill execution's ``source`` maps onto ``ActionOrigin`` for the audit
+#: trail. ``_pc_action`` is a *mechanism* for reaching ``run_local_action``, not
+#: a claim about who asked: 4.12E-2 established that stamping every caller
+#: ``skill`` records the executor rather than the initiator.
+#:
+#: Only sources whose initiator is unambiguous appear here. The autonomous agent
+#: plans its own steps from ``planner/engine.decompose_multi_step_task``, which
+#: returns hardcoded ``PlannerStep`` literals -- so neither clause of ``skill``
+#: ("invoked through ``SkillTool``, carrying model-chosen parameters") holds,
+#: while both clauses of ``agent`` do. The retry is the same actor.
+#:
+#: ``intent_router`` is deliberately absent. Route 1 is a person typing a phrase
+#: that a static table maps onto a skill; its truthful origin is whatever
+#: Funnel-A caller asked, and ``handle_local_action`` does not carry one. Until
+#: that is settled it keeps the fallback rather than gaining a second wrong
+#: answer.
+#:
+#: Provenance remains audit-only (Q-10): nothing here reaches risk, approval,
+#: the digest or the token.
+_SOURCE_ORIGINS: dict[str, str] = {
+    "autonomous-agent-v2": "agent",
+    "autonomous-agent-v2-retry": "agent",
+}
+
+
+def _origin_for(context: SkillExecutionContext) -> str:
+    """The audit origin for a skill execution, from its context.
+
+    Unrecognised and absent sources keep ``skill``: it is what every caller
+    recorded before this mapping existed, so an unlisted source is unchanged
+    rather than guessed at.
+    """
+    return _SOURCE_ORIGINS.get(getattr(context, "source", "") or "", "skill")
+
+
 def _pc_action(action_type: str, target: str = ""):
+    """Build a skill executor pinned to exactly one PC-control action.
+
+    ``action_type`` is fixed at registration and cannot be overridden by params.
+    It used to be ``params.get("action_type", action_type)``, which let a caller
+    turn any registered skill into any other action: a skill declared
+    ``risk_level="LOW", approval_required=False`` could be driven to a MEDIUM or
+    HIGH action, so the metadata the agent sees no longer described what ran.
+
+    Enforcement was never bypassed -- ``run_local_action`` recomputes risk from
+    the action itself and blocks what policy blocks -- so this closes a
+    truth-in-advertising gap rather than a privilege escalation. It matters more
+    now that many skills route through here: each skill's declared risk must be
+    the risk that actually applies.
+    """
+
     def _execute(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
         from grandpa.pc_control import run_local_action
 
         payload = {
-            "action_type": params.get("action_type", action_type),
+            "action_type": action_type,
             "target": params.get("target", params.get("text", target)),
             "args": params.get("args", {}),
             "dry_run": bool(params.get("dry_run", context.dry_run)),
+            # Who asked, derived from the execution context rather than
+            # assumed (4.12E-3). See ``_SOURCE_ORIGINS`` above for why.
+            #
+            # D-5: this said "agent" until the vocabulary gained "skill". Both
+            # are automated, but they are not the same claim -- an agent reading
+            # its own context passes literals it wrote, while a skill reached
+            # through SkillTool can be handed arguments a model produced. That
+            # difference is what AD-022 exists to make visible, so the more
+            # specific label belongs here -- for the callers it is true of.
+            "origin": _origin_for(context),
         }
         response = run_local_action(payload)
         return SkillResult(
@@ -41,6 +101,239 @@ def _pc_action(action_type: str, target: str = ""):
         )
 
     return _execute
+
+
+#: Agent-reachable PC-control actions.
+#:
+#: Every entry routes through ``_pc_action`` -> ``run_local_action``, which is
+#: the same entry the voice operator uses, so voice and agent share one
+#: actuator surface rather than two implementations.
+#:
+#: ``risk`` and ``approval`` below are not enforcement -- ``run_local_action``
+#: recomputes both from the action itself -- they are the declared metadata the
+#: agent sees, kept in step with what policy will actually do.
+#:
+#: Deliberately absent: ``shell_run`` and ``script_run`` (BLOCKED by policy),
+#: ``file_delete`` and ``file_permanent_delete`` (destructive),
+#: ``system_shutdown`` and ``system_restart`` (blocked from voice already, and
+#: not something a model should reach for), and every ``browser_*`` action
+#: (the browser has its own richer surface and belongs in a later slice).
+#: There is no screenshot action type in pc_control, so none is registered.
+_DESKTOP_ACTUATORS: tuple[tuple[str, str, str, str, bool, tuple[str, ...]], ...] = (
+    # (action_type, skill suffix, description, risk, approval, aliases)
+    (
+        "open_app",
+        "open_app",
+        "Launch an application by name through the PC control layer.",
+        "LOW",
+        False,
+        ("open app", "launch app"),
+    ),
+    (
+        "close_app",
+        "close_app",
+        "Close an application by name.",
+        "MEDIUM",
+        False,
+        ("close app",),
+    ),
+    (
+        "open_folder",
+        "open_folder",
+        "Open a folder in the file explorer.",
+        "LOW",
+        False,
+        ("open folder",),
+    ),
+    (
+        "list_windows",
+        "list_windows",
+        "List the currently open windows.",
+        "LOW",
+        False,
+        ("list windows",),
+    ),
+    (
+        "focus_window",
+        "focus_window",
+        "Bring a window to the foreground by title.",
+        "MEDIUM",
+        False,
+        ("focus window",),
+    ),
+    (
+        "maximize_window",
+        "maximize_window",
+        "Maximize a window.",
+        "MEDIUM",
+        False,
+        ("maximize window",),
+    ),
+    (
+        "minimize_window",
+        "minimize_window",
+        "Minimize a window.",
+        "MEDIUM",
+        False,
+        ("minimize window",),
+    ),
+    (
+        "restore_window",
+        "restore_window",
+        "Restore a minimized or maximized window.",
+        "MEDIUM",
+        False,
+        ("restore window",),
+    ),
+    (
+        "keyboard_hotkey",
+        "keyboard_hotkey",
+        "Press a keyboard shortcut such as ctrl+s through the approval-gated PC control layer.",
+        "MEDIUM",
+        True,
+        ("press key", "keyboard shortcut"),
+    ),
+    (
+        "mouse_click",
+        "mouse_click",
+        "Click the mouse at the current or given target, through the approval-gated PC control layer.",
+        "MEDIUM",
+        True,
+        ("mouse click",),
+    ),
+    (
+        "mouse_move",
+        "mouse_move",
+        "Move the mouse pointer.",
+        "MEDIUM",
+        False,
+        ("mouse move",),
+    ),
+    (
+        "mouse_scroll",
+        "mouse_scroll",
+        "Scroll the mouse wheel up or down.",
+        "MEDIUM",
+        False,
+        ("scroll",),
+    ),
+    (
+        "clipboard_read",
+        "clipboard_read",
+        "Read the current clipboard contents.",
+        "LOW",
+        False,
+        ("read clipboard",),
+    ),
+    (
+        "clipboard_write",
+        "clipboard_write",
+        "Write text to the clipboard.",
+        "LOW",
+        False,
+        ("write clipboard",),
+    ),
+    (
+        "clipboard_clear",
+        "clipboard_clear",
+        "Clear the clipboard.",
+        "LOW",
+        False,
+        ("clear clipboard",),
+    ),
+    (
+        "volume_up",
+        "volume_up",
+        "Increase the system volume one step.",
+        "LOW",
+        False,
+        ("volume up", "louder"),
+    ),
+    (
+        "volume_down",
+        "volume_down",
+        "Decrease the system volume one step.",
+        "LOW",
+        False,
+        ("volume down", "quieter"),
+    ),
+    (
+        "volume_mute",
+        "volume_mute",
+        "Mute the system volume.",
+        "LOW",
+        False,
+        ("mute",),
+    ),
+    (
+        "volume_unmute",
+        "volume_unmute",
+        "Unmute the system volume.",
+        "LOW",
+        False,
+        ("unmute",),
+    ),
+    (
+        "volume_set",
+        "volume_set",
+        "Set the system volume to a percentage between 0 and 100.",
+        "LOW",
+        False,
+        ("set volume",),
+    ),
+    (
+        "brightness_get",
+        "brightness_get",
+        "Report the current display brightness.",
+        "LOW",
+        False,
+        ("get brightness",),
+    ),
+    (
+        "brightness_set",
+        "brightness_set",
+        "Set the display brightness to a percentage between 0 and 100.",
+        "LOW",
+        False,
+        ("set brightness",),
+    ),
+    (
+        "system_lock",
+        "system_lock",
+        "Lock the workstation.",
+        "LOW",
+        False,
+        ("lock pc", "lock the computer"),
+    ),
+)
+
+
+def _desktop_actuator_skills() -> list[RuntimeSkill]:
+    """Register the agent-reachable subset of the PC-control actuator surface.
+
+    These exist so the agent reaches the computer through the same
+    ``run_local_action`` boundary the voice operator already uses, instead of a
+    parallel automation path. Each skill is pinned to one action type by
+    ``_pc_action`` and inherits risk classification, approval gating,
+    emergency-stop handling, dry-run and audit from that boundary.
+    """
+    return [
+        RuntimeSkill(
+            name=f"desktop.{suffix}",
+            description=description,
+            category="desktop",
+            risk_level=risk,  # type: ignore[arg-type]
+            approval_required=approval,
+            parameters=(
+                SkillParameter("target", "Target for the action", required=False),
+                SkillParameter("args", "Extra action arguments", required=False),
+            ),
+            dry_run_supported=True,
+            executor=_pc_action(action_type),
+            aliases=aliases,
+        )
+        for action_type, suffix, description, risk, approval, aliases in _DESKTOP_ACTUATORS
+    ]
 
 
 def _browser_diagnostics(
@@ -356,6 +649,11 @@ def _clipboard_history(
             "action_type": "clipboard_history",
             "target": "clipboard",
             "args": {"limit": limit},
+            # This skill builds its payload by hand rather than through
+            # ``_pc_action``, so it has to state the provenance ``_pc_action``
+            # would have added. It is agent-invocable like every other skill,
+            # which under D-5 is recorded as "skill" rather than "agent".
+            "origin": "skill",
         }
     )
     return SkillResult(
@@ -1256,6 +1554,7 @@ def ensure_default_skills_registered() -> None:
             executor=_pc_action("keyboard_type"),
             aliases=("type text",),
         ),
+        *_desktop_actuator_skills(),
     ]
     for skill in skills:
         register_skill(skill)

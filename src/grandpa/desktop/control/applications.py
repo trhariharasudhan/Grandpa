@@ -45,8 +45,19 @@ class ApplicationControlService:
     def app_id(self, name: str) -> str | None:
         return SAFE_APP_ALIASES.get(name.strip().lower())
 
-    def execute(self, request: Any, action: str):
+    def execute(self, request: Any, action: str, *, launch_path: str = ""):
+        """Launch or detect an application.
+
+        ``launch_path`` is passed by the approval path only. It names the
+        program an approval was bound to, already resolved and verified, so the
+        launch skips inventory resolution entirely -- otherwise the approved
+        identity and the executed one could differ by whatever changed in
+        between. Empty means the ordinary path: resolve as usual.
+        """
         from grandpa.pc_control import LocalActionResponse, _is_protected_path
+
+        if launch_path and action == "open_app":
+            return self._execute_approved_path(request, launch_path)
 
         app_id = self.app_id(request.target)
         if not app_id:
@@ -197,9 +208,56 @@ class ApplicationControlService:
             error=None if ok else launch.status,
         )
 
+    def _execute_approved_path(self, request: Any, launch_path: str):
+        """Start exactly the program an approval was bound to.
+
+        No resolution: the path was fixed when the action was staged and
+        checked again when it was approved. Safety at the leaf still applies --
+        ``launch_application`` refuses a target the executable denylist covers,
+        and an approval has never been permission to bypass that.
+        """
+        from pathlib import Path as _Path
+
+        from grandpa.apps.inventory import AppInventoryRecord, launch_inventory_app
+        from grandpa.policy.models import LocalActionResponse
+
+        target = _Path(launch_path)
+        record = AppInventoryRecord(
+            target.stem, target.stem.lower(), str(target), "approved", (), 0.0
+        )
+        evidence = {"approved_launch_path": str(target), "resolution": "approved"}
+        try:
+            message = launch_inventory_app(record)
+        except ValueError:
+            return LocalActionResponse(
+                False,
+                None,
+                "blocked",
+                "I blocked that app launch because the target is not a safe "
+                "executable or shortcut.",
+                False,
+                "BLOCKED",
+                evidence=evidence,
+                error="dangerous_launch_target",
+            )
+        except OSError as exc:
+            return LocalActionResponse(
+                False,
+                None,
+                "failed",
+                f"I could not start that application: {exc}",
+                False,
+                "LOW",
+                evidence=evidence,
+                error="launch_failed",
+            )
+        return LocalActionResponse(
+            True, None, "completed", message, False, "LOW", evidence
+        )
+
     def _execute_inventory_app(self, request: Any, action: str):
         from grandpa.apps.inventory import find_app, launch_inventory_app
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if action == "detect_app":
             result = find_app(request.target)

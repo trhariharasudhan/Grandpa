@@ -7,6 +7,7 @@ import shutil
 import zipfile
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
+from typing import Any
 
 from grandpa.files.metadata import format_properties_message, inspect_path_metadata
 from grandpa.files.models import FileAction, FileOperationResult
@@ -19,9 +20,78 @@ from grandpa.files.paths import (
     safe_roots,
 )
 from grandpa.files.safety import FileSafetyPolicy
+from grandpa.policy.boundary import MutationBoundary
 
 ConfirmationCallback = Callable[[FileAction, Path | None, Path | None], bool]
 OpenCallback = Callable[[Path], None]
+
+#: A substitute for direct filesystem mutation, taking the same payload as
+#: ``run_local_action`` and returning its response.
+#:
+#: Named by ``grandpa.policy`` rather than here. The seam is unchanged -- same
+#: callable, same payload, same response -- but the layer that owns the
+#: boundary now owns its name, which is what lets this package depend on
+#: ``policy`` instead of on the execution module. The old alias is kept because
+#: it is part of this module's public surface.
+MutationRunner = MutationBoundary
+
+#: The actions whose mutation can be routed through the actuator boundary, and
+#: the existing pc_control action type each maps to.
+#:
+#: Every mutating action is here; the read-only ones -- ``search``,
+#: ``properties``, ``open`` and the rest -- are absent because they have no
+#: mutation to route, not because they route somewhere else.
+#:
+#: Routing is opt-in: it happens only when a caller supplies a
+#: ``mutation_runner``, and what is routed is the *mutation alone*. Alias
+#: resolution, ``_blocked_path``, ``blocks_recursive_delete`` and the overwrite
+#: and delete confirmations all run first and are not replaced by anything
+#: behind the boundary.
+#:
+#: Production entry surfaces get a runner from ``grandpa.composition``. A
+#: caller that supplies none mutates the disk here, which is the compatibility
+#: contract direct capability callers rely on.
+_BOUNDARY_ACTION_TYPES: dict[str, str] = {
+    "create_file": "file_create",
+    "create_folder": "file_create",
+    "copy": "file_copy",
+    "delete": "file_delete",
+    "move": "file_move",
+    "rename": "file_rename",
+}
+BOUNDARY_ROUTED_ACTIONS = frozenset(_BOUNDARY_ACTION_TYPES)
+
+
+def _result_from_response(
+    action: FileAction,
+    response: Any,
+    target: Path,
+    destination: Path | None,
+    success: str,
+) -> FileOperationResult:
+    """Present a ``LocalActionResponse`` in this module's own result shape.
+
+    The boundary's statuses map onto the ones callers already handle, so a
+    staged approval reads as ``needs_confirmation`` and a policy refusal as
+    ``blocked`` -- the same words this module used for the same outcomes.
+    """
+    status = str(getattr(response, "status", "error"))
+    mapped = {
+        "completed": "handled",
+        "dry_run": "handled",
+        "approval_required": "needs_confirmation",
+        "blocked": "blocked",
+        "unsupported": "unsupported",
+    }.get(status, "error")
+    message = str(getattr(response, "message", "") or "")
+    return FileOperationResult(
+        mapped,  # type: ignore[arg-type]
+        success if mapped == "handled" and success else message,
+        action,
+        target,
+        destination,
+        requires_confirmation=mapped == "needs_confirmation",
+    )
 
 
 class FileExecutor:
@@ -33,10 +103,20 @@ class FileExecutor:
         roots: tuple[Path, ...] = (),
         safety: FileSafetyPolicy | None = None,
         opener: OpenCallback | None = None,
+        mutation_runner: MutationRunner | None = None,
+        origin: str = "direct",
+        dry_run: bool = False,
     ) -> None:
         self.roots = roots or safe_roots()
         self.safety = safety or FileSafetyPolicy()
         self.opener = opener or _default_open
+        # Request-scoped configuration, set once here and never reassigned.
+        # An instance is built per request, so this state cannot outlive or
+        # escape the request it was made for -- which is why the caller
+        # replaces the executor rather than reconfiguring a shared one.
+        self.mutation_runner = mutation_runner
+        self.origin = origin
+        self.dry_run = dry_run
 
     def execute(
         self, action: FileAction, *, confirm: ConfirmationCallback | None = None
@@ -77,6 +157,44 @@ class FileExecutor:
             "unsupported", "This file action is not supported yet.", action
         )
 
+    def _route(
+        self,
+        action: FileAction,
+        action_type: str,
+        target: Path,
+        *,
+        args: dict[str, Any] | None = None,
+        destination: Path | None = None,
+        success: str = "",
+    ) -> FileOperationResult | None:
+        """Perform this mutation through the actuator, or None to do it here.
+
+        Returns None when no runner was configured, which is every caller that
+        has not opted in -- their behaviour is untouched.
+
+        Only the mutation moves. Alias resolution, ``_blocked_path``,
+        ``blocks_recursive_delete`` and the overwrite confirmation have all
+        already run by the time this is reached, because they are file-domain
+        safety with no equivalent inside ``run_local_action`` and routing must
+        not quietly drop them.
+
+        Reads configuration; never writes it.
+        """
+        if self.mutation_runner is None or action.action not in BOUNDARY_ROUTED_ACTIONS:
+            return None
+        payload: dict[str, Any] = {
+            "action_type": action_type,
+            "target": str(target),
+            "args": dict(args or {}),
+            "origin": self.origin,
+            "dry_run": self.dry_run,
+            "require_approval": False,
+        }
+        if destination is not None:
+            payload["args"]["destination"] = str(destination)
+        response = self.mutation_runner(payload)
+        return _result_from_response(action, response, target, destination, success)
+
     def _create(self, action: FileAction, *, folder: bool) -> FileOperationResult:
         path = self._resolve_new_path(action.source)
         blocked = self._blocked_path(path, action)
@@ -90,15 +208,29 @@ class FileExecutor:
                 path,
                 requires_confirmation=True,
             )
+        label = "Folder" if folder else "File"
+        # Both kinds route. The folder branch used to return here, one line
+        # after the overwrite check and before ``_route`` was ever reached, so
+        # a folder appeared on disk without the tier, stop, dry run, audit or
+        # provenance every other file mutation gets. The boundary's
+        # ``file_create`` already understands ``kind``, so this needed no new
+        # action type and no new tier.
+        routed = self._route(
+            action,
+            "file_create",
+            path,
+            args={"kind": "folder" if folder else "file", "content": ""},
+            success=f"{label} created: {describe_path(path)}",
+        )
+        if routed is not None:
+            return routed
         if folder:
             path.mkdir(parents=True, exist_ok=action.overwrite)
-            return FileOperationResult(
-                "handled", f"Folder created: {describe_path(path)}", action, path
-            )
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("", encoding="utf-8")
+        else:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("", encoding="utf-8")
         return FileOperationResult(
-            "handled", f"File created: {describe_path(path)}", action, path
+            "handled", f"{label} created: {describe_path(path)}", action, path
         )
 
     def _rename(self, action: FileAction) -> FileOperationResult:
@@ -150,6 +282,11 @@ class FileExecutor:
                 source,
                 requires_confirmation=True,
             )
+        routed = self._route(
+            action, "file_delete", source, success=f"Deleted: {describe_path(source)}"
+        )
+        if routed is not None:
+            return routed
         if source.is_dir():
             shutil.rmtree(source)
         else:
@@ -331,6 +468,22 @@ class FileExecutor:
                 destination,
                 requires_confirmation=True,
             )
+        # Copies route as well as moves. The ``if move:`` that used to guard
+        # this meant a copy fell straight through to ``shutil.copy2`` -- a
+        # mutation with no tier, no stop, no dry run and no audit, while the
+        # move a line below it had all four. ``file_copy`` already exists at
+        # MEDIUM, so this is routing, not a policy change.
+        routed = self._route(
+            action,
+            _BOUNDARY_ACTION_TYPES.get(
+                action.action, "file_move" if move else "file_copy"
+            ),
+            source,
+            destination=destination,
+            success=f"File {label} to {describe_path(destination)}.",
+        )
+        if routed is not None:
+            return routed
         destination.parent.mkdir(parents=True, exist_ok=True)
         if move:
             shutil.move(str(source), str(destination))

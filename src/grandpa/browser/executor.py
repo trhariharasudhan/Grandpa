@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import webbrowser
 from collections.abc import Callable
+from functools import partial
+from typing import Any
 
 from grandpa.browser.models import BrowserAction, BrowserOperationResult
 from grandpa.browser.safety import validate_browser_url
@@ -37,9 +39,15 @@ class BrowserExecutor:
         self,
         opener: OpenCallback | None = None,
         hotkey_runner: HotkeyCallback | None = None,
+        *,
+        origin: str = "direct",
     ) -> None:
         self.opener = opener or _default_open
-        self.hotkey_runner = hotkey_runner or _default_hotkey
+        #: Who asked for these browser actions (AD-022). Bound into the default
+        #: hotkey runner so the callback contract stays ``(keys) -> bool`` for
+        #: callers that substitute their own.
+        self.origin = origin
+        self.hotkey_runner = hotkey_runner or partial(_default_hotkey, origin=origin)
 
     def execute(self, action: BrowserAction) -> BrowserOperationResult:
         if action.action == "open_url":
@@ -136,11 +144,50 @@ class BrowserExecutor:
         return BrowserOperationResult("handled", messages[action.action], action)
 
 
+def run_browser_action(
+    action_type: str,
+    target: str,
+    *,
+    origin: str = "direct",
+    runner: Callable[[dict[str, Any]], Any] | None = None,
+    dry_run: bool = False,
+) -> Any:
+    """Run a browser action through the one actuator boundary.
+
+    Browser execution in this module opens URLs directly with
+    ``webbrowser.open``, which is a real side effect with no risk tier,
+    approval gate, emergency stop, dry-run or audit record. Callers that need
+    those -- the executive planner first among them, because its steps can be
+    reached by voice -- come through here instead.
+
+    ``action_type`` must already exist in the pc_control risk table;
+    ``browser_open`` and ``browser_search`` do. Nothing is classified here: the
+    boundary recomputes risk from the action whatever a caller passes.
+
+    ``runner`` lets a caller substitute the actuator, exactly as the desktop
+    path allows, so a test can prove what would have run without running it.
+    It defaults to the real one, so existing callers are unaffected.
+    """
+    payload = {
+        "action_type": action_type,
+        "target": target,
+        "args": {},
+        "dry_run": dry_run,
+        "require_approval": False,
+        "origin": origin,
+    }
+    if runner is not None:
+        return runner(payload)
+    from grandpa.pc_control import run_local_action
+
+    return run_local_action(payload)
+
+
 def _default_open(url: str) -> bool:
     return bool(webbrowser.open(url, new=2))
 
 
-def _default_hotkey(keys: tuple[str, ...]) -> bool:
+def _default_hotkey(keys: tuple[str, ...], origin: str = "direct") -> bool:
     from grandpa.pc_control import run_local_action
 
     response = run_local_action(
@@ -148,9 +195,21 @@ def _default_hotkey(keys: tuple[str, ...]) -> bool:
             "action_type": "keyboard_hotkey",
             "target": "+".join(keys),
             "args": {"keys": list(keys)},
+            # Provenance (AD-022). Browser shortcuts are MEDIUM risk and
+            # approval-gated, and this payload stated nothing -- so a shortcut
+            # a person spoke was filed as an anonymous direct call. "direct"
+            # is pc_control.DEFAULT_ACTION_ORIGIN, spelled out because the
+            # kernel baseline guard counts references to that module.
+            "origin": origin,
         }
     )
     return bool(getattr(response, "ok", False))
 
 
-__all__ = ["BrowserExecutor", "HOTKEYS", "OpenCallback", "PAGE_URLS"]
+__all__ = [
+    "BrowserExecutor",
+    "HOTKEYS",
+    "OpenCallback",
+    "PAGE_URLS",
+    "run_browser_action",
+]

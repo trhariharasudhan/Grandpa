@@ -91,10 +91,6 @@ class VoiceCommandRequest(BaseModel):
     confirmed: bool = False
 
 
-class VoiceConfirmRequest(BaseModel):
-    confirmation_token: str
-
-
 class VoiceWakeWordTestRequest(BaseModel):
     text: str
 
@@ -1683,46 +1679,6 @@ async def voice_command(req: VoiceCommandRequest, request: Request):
     return result
 
 
-@voice_router.post("/confirm")
-async def voice_confirm(req: VoiceConfirmRequest, request: Request):
-    """Confirm a previously returned voice command confirmation token."""
-    from grandpa.local_actions import approve_pending_action
-
-    token = req.confirmation_token.strip()
-    if not token:
-        raise HTTPException(status_code=400, detail="confirmation_token is required")
-
-    result = approve_pending_action(token)
-    action_status = _voice_action_status(result.status)
-    if action_status == "unsupported":
-        action_status = "blocked"
-    assistant_text = _friendly_voice_message(action_status, result.message)
-    payload = _voice_command_response(
-        transcript=result.pending_action.get("source_text", "")
-        if result.pending_action
-        else "",
-        command_text=result.pending_action.get("source_text", "")
-        if result.pending_action
-        else "",
-        assistant_text=assistant_text,
-        action_type="desktop",
-        action_status=action_status,
-        detail=result.message or assistant_text,
-        spoken=False,
-        extra={
-            "local_action": {
-                "status": result.status,
-                "kind": result.kind,
-                "target": result.target,
-                "permission": result.permission,
-                "pending_action": result.pending_action,
-            }
-        },
-    )
-    _record_voice_history(request, payload)
-    return payload
-
-
 def _route_voice_command_text(
     command_text: str,
     request: Request,
@@ -1758,7 +1714,19 @@ def _route_voice_command_text(
     return _with_conversation_context_metadata(
         _handle_voice_local_action(
             command_text,
-            confirmed=confirmed,
+            # Confirmation is established by server-side approval state, never
+            # asserted by the requester (M4 4.12K-DEC). This forwarded the
+            # caller's own flag, which staged *and* approved a confirmation-
+            # required action in one request -- no action id, no second call,
+            # nothing server-side consulted. The requester and the confirming
+            # party were the same untrusted HTTP caller.
+            #
+            # ``_handle_voice_local_action`` keeps its parameter: the
+            # in-process voice assistant is a separate path and is not changed
+            # here. Approval over HTTP is
+            # ``POST /v1/local-actions/{id}/approve`` with the console code;
+            # ``/v1/voice/confirm`` was removed in 4.13E.
+            confirmed=False,
             context_message_count=context_message_count,
         ),
         context_message_count,
@@ -1941,12 +1909,13 @@ def _voice_command_response(
         local_action = extra.get("local_action")
         if isinstance(local_action, dict):
             pending_action = local_action.get("pending_action")
-            confirmation_token = (
-                pending_action.get("id")
-                if action_status == "needs_confirmation"
-                and isinstance(pending_action, dict)
-                else None
-            )
+            # ``confirmation_token`` was removed here (M4 4.13E). It was the
+            # pending action's id returned to the caller that staged the action,
+            # which made the requester and the approver the same party -- an
+            # identifier dressed as a credential. ``pending_action`` stays: the
+            # id still names the action for
+            # ``POST /v1/local-actions/{id}/approve``, which requires the
+            # out-of-band code logged to the console.
             payload["action"].update(
                 {
                     "kind": local_action.get("kind"),
@@ -1955,9 +1924,6 @@ def _voice_command_response(
                     "pending_action": pending_action,
                 }
             )
-            if confirmation_token:
-                payload["confirmation_token"] = confirmation_token
-                payload["action"]["confirmation_token"] = confirmation_token
     return payload
 
 
@@ -2182,11 +2148,6 @@ def _raise_for_expected_voice_error(result: dict[str, Any]) -> None:
 
 def include_all_routes(app) -> None:
     """Include all extended API routers in a FastAPI app."""
-    from grandpa.server.approval_routes import (
-        router as approval_router,  # noqa: PLC0415
-    )
-
-    app.include_router(approval_router)
     app.include_router(agents_router)
     app.include_router(memory_router)
     app.include_router(traces_router)

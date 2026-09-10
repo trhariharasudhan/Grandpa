@@ -25,8 +25,12 @@ auto-start, or desktop automation bypasses.
 
 - `what is my voice status`
 - `open notepad`
-- `type hello in notepad`
+- `close notepad` (exercises the Confirm Action flow above)
 - `remind me tomorrow at 7 PM to call Arjun`
+
+`type hello in notepad` was listed here until AD-025 retired the duplicate
+keyboard/mouse parser behind this route. It now answers `unsupported`, so it no
+longer exercises the confirmation flow; `close notepad` does.
 
 ## Failure Cases
 

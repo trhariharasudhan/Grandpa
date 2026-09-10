@@ -61,7 +61,7 @@ class AutomationControlService:
     name: str = "automation"
 
     def execute(self, request: Any, action: str, *, platform: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if platform != "win32":
             return LocalActionResponse(

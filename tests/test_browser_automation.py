@@ -182,17 +182,24 @@ def test_voice_operator_parses_browser_command() -> None:
 
 
 def test_voice_operator_executes_browser_command(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "grandpa.browser.handle_browser_command",
-        lambda command: SimpleNamespace(
+    forwarded: list[str] = []
+
+    def fake_browser_command(command, *, origin="direct", **_kwargs):
+        forwarded.append(origin)
+        return SimpleNamespace(
             status="handled",
             message=f"handled {command}",
             should_fallback=False,
-        ),
-    )
+        )
+
+    monkeypatch.setattr("grandpa.browser.handle_browser_command", fake_browser_command)
     intent = parse_voice_operator_command("search Google for FastAPI tutorials")
 
     result = execute_voice_operator_intent(intent)
+
+    # The voice operator states its provenance, so a spoken browser shortcut is
+    # audited as voice rather than as an anonymous direct call (AD-022).
+    assert forwarded == ["voice"]
 
     assert result.status == "handled"
     assert result.message == "handled search google for fastapi tutorials"

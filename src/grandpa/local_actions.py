@@ -8,12 +8,10 @@ strings.
 from __future__ import annotations
 
 import logging
-import os
 import platform
 import re
 import sys
 import urllib.parse
-import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -386,7 +384,36 @@ def approve_pending_action(action_id: str | None = None) -> LocalActionResult:
             permission="unsupported",
             pending_action=_pending_metadata(pending),
         )
-    store.mark(pending["id"], "approved")
+    # Claim ownership before doing anything, and believe the answer.
+    #
+    # The status read above is not enough: two confirmers can both see
+    # "pending". 4.13D made the transition atomic, so the row only ever moves
+    # once -- but this call used to discard that result, and every racer walked
+    # past it into ``_execute``. The row moved once; the desktop moved N times.
+    #
+    # ``claim_pending`` is the primitive that answers "did I win". ``mark``
+    # cannot: when two callers both ask for "approved" it hands them identical
+    # rows, so the loser looks exactly like the winner. Ownership needs a
+    # boolean, not a row. Denial keeps using ``mark`` -- it executes nothing, so
+    # it has no ownership to establish.
+    if not store.claim_pending(pending["id"], "approved"):
+        return LocalActionResult(
+            status="unsupported",
+            kind=pending["kind"],
+            target=pending["target"],
+            message="That pending local action is no longer available.",
+            tts_text="That pending action is no longer available.",
+            permission="unsupported",
+            pending_action=_pending_metadata(pending),
+        )
+    store.audit(
+        action_id=pending["id"],
+        decision="approved",
+        source_text=pending["source_text"],
+        kind=pending["kind"],
+        target=pending["target"],
+        detail=None,
+    )
     result = LocalActionResult(
         status="handled",
         kind=pending["kind"],
@@ -537,14 +564,6 @@ def _confirmation_message(
 def _confirmation_summary(command: str, result: LocalActionResult) -> str:
     if result.kind == "window" and result.target.startswith("close|"):
         return f"Confirmation required before closing {_target_label(result.target)}."
-    if result.kind == "automation":
-        if result.target.startswith("type|"):
-            return "Confirmation required before typing into the active app."
-        if result.target.startswith("hotkey|ctrl+v"):
-            return "Confirmation required before pasting into the active app."
-        if result.target.startswith("click|"):
-            return "Confirmation required before clicking the screen."
-        return "Confirmation required before controlling the active app."
     if result.kind == "folder":
         return "Confirmation required before opening that folder."
     if result.kind == "url":
@@ -570,8 +589,6 @@ def _target_label(target: str) -> str:
 
 
 def classify_permission(command: str, result: LocalActionResult) -> PermissionStatus:
-    if result.kind == "automation":
-        return "requires_confirmation"
     if result.kind == "window" and result.target == "close|task_manager":
         return "blocked"
     if result.kind == "window" and result.target.startswith("close|"):
@@ -756,10 +773,6 @@ def _parse_safe_action(command: str) -> LocalActionResult:
     screen_result = _parse_screen_action(command)
     if screen_result.status != "no_match":
         return screen_result
-
-    automation_result = _parse_automation_action(command)
-    if automation_result.status != "no_match":
-        return automation_result
 
     pc_control_result = _parse_pc_control_action(command)
     if pc_control_result.status != "no_match":
@@ -1109,123 +1122,6 @@ def _parse_agent_plan_action(command: str) -> LocalActionResult:
             message="Building a safe local execution plan.",
             tts_text="Building a safe local execution plan.",
         )
-    return LocalActionResult(status="no_match")
-
-
-def _parse_automation_action(command: str) -> LocalActionResult:
-    match = re.fullmatch(r"type (.+?) in (notepad)", command)
-    if match:
-        text = match.group(1).strip()
-        app = match.group(2).strip()
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target=f"focus|{app}||type|{text}",
-            message=f'Typing "{text}" in {app.title()}.',
-            tts_text=f"Typing that in {app.title()}.",
-        )
-
-    match = re.fullmatch(r"type (.+)", command)
-    if match:
-        text = match.group(1).strip()
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target=f"type|{text}",
-            message=f'Typing "{text}".',
-            tts_text="Typing that.",
-        )
-
-    press_map = {
-        "press enter": ("press|enter", "Pressed enter."),
-        "press tab": ("press|tab", "Pressed tab."),
-        "press escape": ("press|escape", "Pressed escape."),
-        "press esc": ("press|escape", "Pressed escape."),
-    }
-    if command in press_map:
-        target, message = press_map[command]
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target=target,
-            message=message,
-            tts_text=message,
-        )
-
-    if command in {"scroll down", "scroll up"}:
-        direction = "down" if command.endswith("down") else "up"
-        message = f"Scrolled {direction}."
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target=f"scroll|{direction}",
-            message=message,
-            tts_text=message,
-        )
-
-    if command in {"copy selected text", "copy selection"}:
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target="hotkey|ctrl+c",
-            message="Copied the selected text.",
-            tts_text="Copied the selected text.",
-        )
-
-    if command == "paste":
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target="hotkey|ctrl+v",
-            message="Pasted from the clipboard.",
-            tts_text="Pasted from the clipboard.",
-        )
-
-    if command == "switch window":
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target="hotkey|alt+tab",
-            message="Switched window.",
-            tts_text="Switched window.",
-        )
-
-    if command == "focus chrome":
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target="focus|chrome",
-            message="Trying to focus Chrome.",
-            tts_text="Trying to focus Chrome.",
-        )
-
-    if command == "click the center of the screen":
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target="click_center",
-            message="Clicked the center of the screen.",
-            tts_text="Clicked the center of the screen.",
-        )
-
-    if command == "move mouse to center":
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target="move_center",
-            message="Moved the mouse to the center of the screen.",
-            tts_text="Moved the mouse to the center.",
-        )
-
-    if command == "click the highlighted button":
-        return LocalActionResult(
-            status="handled",
-            kind="automation",
-            target="click_highlighted",
-            message="Clicking highlighted buttons is not enabled yet.",
-            tts_text="Highlighted button clicking is not enabled yet.",
-        )
-
     return LocalActionResult(status="no_match")
 
 
@@ -1687,6 +1583,179 @@ def _system_info_message() -> str:
     return "\n".join(lines)
 
 
+#: LocalAction kinds that execute through ``pc_control`` rather than beside it.
+#:
+#: Only kinds that map onto existing ``pc_control`` vocabulary *and* are LOW
+#: risk there, so neither gains a second approval prompt on top of the
+#: ``local_actions`` confirmation it may already have passed (M4 4.14A).
+#:
+#: ``window`` is absent from *this* mapping because it encodes verb and target
+#: in one field; it routes through the seam by the separate map below (4.14D).
+#: ``automation`` is absent because it no longer exists: AD-025 retired the
+#: duplicate Funnel-A automation path in favour of ``grandpa/automation/``.
+#: ``agent_plan`` and ``chrome_profile`` have no ``pc_control`` action type, and
+#: inventing one is a separate decision.
+#:
+#: ``app`` was in this list and was removed before landing:
+#: ``tests/test_windows_app_resolver.py::test_local_action_open_app_uses_resolver``
+#: pins that an app launch returns the *resolved* executable path as its target,
+#: which ``pc_control``'s application service does not surface the same way. The
+#: contract is real product behaviour, not a stale assertion, so ``app`` needs
+#: its own slice rather than a silent change here.
+_PC_CONTROL_ROUTED_KINDS: dict[str, str] = {
+    "folder": "open_folder",
+    "url": "browser_open",
+}
+
+
+#: Window verbs that execute through ``pc_control`` (M4 4.14D).
+#:
+#: ``window`` encodes verb and target in one field -- ``close|chrome`` -- so it
+#: cannot use the flat kind-to-action_type mapping above; the target is split
+#: and the verb suffixed. Each maps onto an existing ``pc_control`` action, and
+#: all five are MEDIUM but none is approval-required, so the existing
+#: confirmation for ``close|*`` remains the only prompt (4.14C).
+#:
+#: ``list`` is absent on purpose. It is a read, and routing it would let the
+#: emergency stop block *querying* windows as well as changing them -- a
+#: behaviour change with no security benefit.
+_WINDOW_ROUTED_VERBS: frozenset[str] = frozenset(
+    {"close", "focus", "minimize", "maximize", "restore"}
+)
+
+#: A window operation's own status, mapped onto a ``LocalActionResult`` status.
+#:
+#: Preserved verbatim from the pre-4.14D branch. ``not_found`` and
+#: ``multiple_matches`` are deliberately *not* errors -- a window that is not
+#: open is an answer -- and ``pc_control`` flattens both into a failed response,
+#: so the window's own status is recovered from the evidence rather than lost.
+_WINDOW_STATUS_MAP: dict[str, ActionStatus] = {
+    "handled": "handled",
+    "blocked": "blocked",
+    "unsupported": "unsupported",
+    "not_found": "handled",
+    "multiple_matches": "handled",
+    "error": "error",
+}
+
+
+#: Browser verb -> the ``pc_control`` action type it routes through (4.14E).
+#:
+#: Eight read-only observations. Every one is LOW risk and none is
+#: approval-required, so a routed call carries exactly the gates the direct call
+#: carried, plus the emergency stop, risk classification and an audit line.
+#:
+#: What is absent matters more than what is here. ``back``, ``forward``,
+#: ``reload``, ``focus_search`` and ``click`` are terminal stubs:
+#: ``execute_browser_action`` answers ``requires_confirmation`` and returns
+#: without touching a browser. Routing them would gate nothing and would flatten
+#: that status into ``unsupported``, the only word ``pc_control`` has for it.
+#: ``form_fill`` and ``download`` are the same stub *and* sit in
+#: ``APPROVAL_REQUIRED_ACTIONS``, so they would additionally demand a second
+#: out-of-band code from the other approval store. ``diagnostics`` is claimed
+#: earlier by the runtime skill registry and never reaches the branch at all.
+_BROWSER_ROUTED_VERBS: dict[str, str] = {
+    "buttons": "browser_buttons",
+    "context": "browser_context",
+    "headings": "browser_headings",
+    "links": "browser_links",
+    "media": "browser_media",
+    "summary": "browser_summary",
+    "tabs": "browser_tabs",
+    "task": "browser_task",
+}
+
+
+def _execute_via_pc_control(
+    result: LocalActionResult,
+    *,
+    action_type: str = "",
+    target: str | None = None,
+    status_evidence_key: str = "",
+    status_map: dict[str, ActionStatus] | None = None,
+) -> LocalActionResult:
+    """Run *result* through the ``pc_control`` boundary and map the response.
+
+    What this buys, none of which applied to these kinds before: the emergency
+    stop, risk classification, protected-path checks and a ``pc_control`` audit
+    line. The actuators underneath are unchanged -- ``open_folder`` still ends
+    at ``os.startfile`` and ``browser_open`` at ``webbrowser.open`` -- so this
+    adds gates rather than swapping mechanisms.
+
+    There is deliberately no fallback to the raw actuator. A boundary you can
+    step around is not a boundary; if ``pc_control`` refuses, the refusal is
+    what the user gets.
+
+    ``require_approval`` is not set: both kinds are LOW risk, and letting the
+    caller assert it could only raise the gate, never lower it (the
+    ``pc_control`` invariant). Provenance is unchanged -- this module still
+    passes none, exactly as the existing bridge below does, so AD-023's deferred
+    gap is neither closed nor widened here.
+    """
+    from grandpa.pc_control import run_local_action
+
+    response = run_local_action(
+        {
+            "action_type": action_type or _PC_CONTROL_ROUTED_KINDS[result.kind],
+            "target": result.target if target is None else target,
+        }
+    )
+    status: ActionStatus = (
+        "handled"
+        if response.ok
+        else response.status
+        if response.status in {"blocked", "unsupported"}
+        else "error"
+    )
+    # A kind whose own vocabulary is richer than ok/blocked/unsupported restores
+    # it from the evidence, so routing does not flatten a friendly answer into
+    # an error. Only ``window`` needs this today.
+    if status_map and status_evidence_key:
+        raw = str((response.evidence or {}).get(status_evidence_key, ""))
+        if raw in status_map:
+            status = status_map[raw]
+    return LocalActionResult(
+        status=status,
+        kind=result.kind,
+        target=result.target,
+        message=response.message,
+        tts_text=response.message,
+        permission=result.permission,
+        pending_action=result.pending_action,
+    )
+
+
+def _route_browser(result: LocalActionResult) -> LocalActionResult | None:
+    """Send the browser targets that have exact ``pc_control`` vocabulary.
+
+    Returns ``None`` for everything else, so the branch below keeps serving the
+    carve-outs unchanged instead of being replaced by this.
+
+    Two non-pipe targets route. ``about:blank`` maps to ``browser_new_tab``, and
+    a Google search to ``browser_search`` -- which takes the *query*, not the
+    URL, so the query is unpacked here exactly as the direct call unpacked it. A
+    YouTube search deliberately falls through: ``pc_control`` has no action type
+    for ``youtube_search``, and adding one is a separate decision.
+    """
+    verb, separator, suffix = result.target.partition("|")
+    if separator:
+        action_type = _BROWSER_ROUTED_VERBS.get(verb)
+        if action_type is None:
+            return None
+        return _execute_via_pc_control(result, action_type=action_type, target=suffix)
+    if result.target == "about:blank":
+        return _execute_via_pc_control(
+            result, action_type="browser_new_tab", target="about:blank"
+        )
+    if "google.com/search" in result.target:
+        parsed = urllib.parse.urlparse(result.target)
+        query = urllib.parse.parse_qs(parsed.query).get("q", [""])[0]
+        return _execute_via_pc_control(
+            result, action_type="browser_search", target=query
+        )
+    return None
+
+
 def _execute(result: LocalActionResult) -> LocalActionResult:
     if result.kind == "time" or result.kind == "system_info":
         return result
@@ -1802,36 +1871,24 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
             tts_text="Screenshot captured." if info.supported else info.message,
         )
 
-    if result.kind == "automation":
-        from grandpa.desktop_automation import execute_automation
-
-        automation = execute_automation(result.target)
-        return LocalActionResult(
-            status=automation.status,
-            kind="automation",
-            target=result.target,
-            message=automation.message,
-            tts_text=automation.tts_text or automation.message,
-        )
-
     if result.kind == "window":
-        from grandpa.windows_window_control import control_window, list_open_windows
-
         action, _, target = result.target.partition("|")
-        if action == "list":
-            window_result = list_open_windows()
-        else:
-            window_result = control_window(action, target or "active")
-        status = {
-            "handled": "handled",
-            "blocked": "blocked",
-            "unsupported": "unsupported",
-            "not_found": "handled",
-            "multiple_matches": "handled",
-            "error": "error",
-        }.get(window_result.status, "error")
+        if action in _WINDOW_ROUTED_VERBS:
+            return _execute_via_pc_control(
+                result,
+                action_type=f"{action}_window",
+                target=target or "active",
+                status_evidence_key="window_status",
+                status_map=_WINDOW_STATUS_MAP,
+            )
+
+        # ``list`` only. Read-only, so it stays on the direct lister rather than
+        # acquiring a mutation boundary it does not need (4.14D).
+        from grandpa.windows_window_control import list_open_windows
+
+        window_result = list_open_windows()
         return LocalActionResult(
-            status=status,
+            status=_WINDOW_STATUS_MAP.get(window_result.status, "error"),
             kind="window",
             target=result.target,
             message=window_result.message,
@@ -1930,23 +1987,16 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
         )
 
     if result.kind == "folder":
-        path = Path(result.target)
-        if not path.exists():
-            return LocalActionResult(
-                status="error",
-                kind="folder",
-                target=result.target,
-                message=f"I could not find {result.target}.",
-                tts_text="I could not find that folder.",
-            )
-        os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606
-        return result
+        return _execute_via_pc_control(result)
 
     if result.kind == "url":
-        webbrowser.open(result.target)
-        return result
+        return _execute_via_pc_control(result)
 
     if result.kind == "browser":
+        routed = _route_browser(result)
+        if routed is not None:
+            return routed
+
         from grandpa.browser_control import execute_browser_action
 
         if "|" in result.target:

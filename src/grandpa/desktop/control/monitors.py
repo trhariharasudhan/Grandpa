@@ -14,7 +14,7 @@ class MonitorControlService:
 
     def execute(self, request: Any, action: str):
         from grandpa.desktop_context import list_monitors
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         result = list_monitors()
         monitors = result.evidence.get("monitors", [])

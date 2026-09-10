@@ -34,7 +34,18 @@ def run_agent_goal_from_body(body: dict[str, Any]) -> dict[str, Any]:
     task = run_agent_goal(
         text,
         execute=bool(body.get("execute", False)),
-        source=str(body.get("source") or "api"),
+        # Provenance is stamped by the server, never taken from the body
+        # (AD-022). This read the body's own provenance key, which was inert
+        # while ``_pc_action`` recorded every caller as "skill" -- and stopped
+        # being inert the moment 4.12E-3 mapped two source values onto "agent".
+        # A client could then name one of those in the body and have its steps
+        # audited as agent-originated. Provenance the subject can set is not
+        # provenance.
+        #
+        # "api" is not a new value: it is what this call already produced
+        # whenever a body omitted the key, so well-behaved clients see no
+        # change and only the forging channel is gone.
+        source="api",
     )
     return task.to_dict()
 

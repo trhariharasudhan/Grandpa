@@ -20,7 +20,7 @@ class ClipboardControlService:
             read_clipboard_history,
             record_clipboard_metadata,
         )
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if action == "clipboard_read":
             text = pyperclip.paste()

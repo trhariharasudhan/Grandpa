@@ -17,17 +17,26 @@ class PlannerStepExecutor:
         *,
         session_id: str,
         automation_service: ScreenAutomationService | None = None,
-        browser_handler: Callable[[str], Any] | None = None,
         vision_engine: Any | None = None,
+        action_runner: Callable[[dict[str, Any]], Any] | None = None,
+        origin: str = "direct",
     ) -> None:
         self.session_id = session_id
         self.automation_service = automation_service or ScreenAutomationService()
+        # Held here as well as passed to the pipeline: the browser branch calls
+        # the actuator directly rather than through a command facade.
+        self.action_runner = action_runner
+        self.origin = origin
+        # A plan step that launches an application runs through the pipeline's
+        # desktop branch, so the caller's actuator and provenance have to reach
+        # it here or they are lost for the whole plan.
         self.pipeline = WindowsCommandPipeline(
             automation_service=self.automation_service,
             source="planner",
             session_id=session_id,
+            action_runner=action_runner,
+            origin=origin,
         )
-        self._browser_handler = browser_handler
         self._vision_engine = vision_engine
         self.diagnostics: list[dict[str, Any]] = []
         self._launched_apps: set[str] = set()
@@ -417,11 +426,72 @@ class PlannerStepExecutor:
         return converted
 
     def _browser(self, step: PlanStep, command: str) -> StepResult:
-        if self._browser_handler is None:
-            from grandpa.browser import handle_browser_command
+        """Open a URL or run a search through the one actuator boundary.
 
-            self._browser_handler = handle_browser_command
-        return _generic_result(step, self._browser_handler(command))
+        This used to call ``handle_browser_command``, which ends at
+        ``webbrowser.open`` -- a real side effect with no risk tier, approval
+        gate, emergency stop, dry-run, audit record or verification, reachable
+        by voice through ``navigate_url``. ``browser_open`` and
+        ``browser_search`` already exist in the risk table, so the fix is to
+        route the execution rather than to add anything.
+
+        Parsing and URL validation stay on this side, because neither is
+        actuation and both would otherwise be lost: ``BrowserParser`` resolves
+        "gmail" to https://mail.google.com, where the pc_control path would
+        open "https://gmail"; and ``validate_browser_url`` has no equivalent
+        inside ``run_local_action``.
+
+        A command this cannot resolve is reported unsupported. It is never
+        handed to the old path, because a fallback is how the bypass would
+        come back.
+        """
+        from grandpa.browser.executor import run_browser_action
+        from grandpa.browser.parser import BrowserParser
+        from grandpa.browser.safety import validate_browser_url
+        from grandpa.browser.urls import search_url
+
+        action = BrowserParser().parse(command)
+        if action is None:
+            return StepResult(
+                "unsupported", "That browser command is not supported.", step.step_id
+            )
+
+        if action.action == "open_url":
+            action_type = "browser_open"
+            raw_url = action.url or action.target
+            payload_target = raw_url
+        elif action.action == "search":
+            resolved = search_url(action.provider, action.query)
+            if resolved is None:
+                return StepResult(
+                    "unsupported",
+                    "That search provider is not supported yet.",
+                    step.step_id,
+                )
+            action_type = "browser_search"
+            raw_url = resolved[1]
+            # browser_search builds its own URL from the query, and for the
+            # providers this parser accepts it builds the same one -- asserted
+            # in tests, so the URL recorded below is the URL opened.
+            payload_target = action.query
+        else:
+            return StepResult(
+                "unsupported", "That browser action is not supported yet.", step.step_id
+            )
+
+        ok, normalized, message = validate_browser_url(raw_url)
+        if not ok:
+            return StepResult("failed", message, step.step_id, {"verified": False})
+        if action.action == "open_url":
+            payload_target = normalized
+
+        response = run_browser_action(
+            action_type,
+            payload_target,
+            origin=self.origin,
+            runner=self.action_runner,
+        )
+        return _browser_step_result(step, response, normalized)
 
     def _find(self, step: PlanStep, *, wait: bool) -> StepResult:
         timeout = min(
@@ -795,6 +865,31 @@ def _step_confirmation_message(step: PlanStep) -> str:
         if choice == "save":
             return "Notepad has unsaved changes. Do you want me to save this document?"
     return f"This step needs confirmation: {step.description}"
+
+
+def _browser_step_result(step: PlanStep, response: Any, url: str) -> StepResult:
+    """Turn a ``LocalActionResponse`` into a browser ``StepResult``.
+
+    ``StepVerifier`` decides whether a browser step actually navigated by
+    reading ``data["url"]`` (see ``test_executive_planner.py``), so the
+    resolved URL has to survive here exactly as it did when this path built its
+    own result. Any evidence the actuator attached is carried alongside it.
+    """
+    status = str(getattr(response, "status", "failed"))
+    mapped = {
+        "completed": "success",
+        "dry_run": "success",
+        "approval_required": "confirmation_required",
+        "blocked": "blocked",
+        "unsupported": "unsupported",
+    }.get(status, "failed")
+    data: dict[str, Any] = {"verified": mapped == "success", "url": url}
+    evidence = getattr(response, "evidence", None)
+    if isinstance(evidence, dict):
+        data.update(evidence)
+    return StepResult(
+        mapped, str(getattr(response, "message", "") or ""), step.step_id, data
+    )
 
 
 def _generic_result(step: PlanStep, result: Any) -> StepResult:

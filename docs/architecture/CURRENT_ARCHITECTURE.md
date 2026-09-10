@@ -714,7 +714,7 @@ for the cost of moving to the target state.
 | `security/guardrails.py` | 317 | **0** external | Only reachable via `setup_security()` internal wiring |
 | `security/injection_scanner.py` | 167 | 1 (a JSON converter) | Never runs on any ingress |
 | `security/subprocess_sandbox.py` | 143 | **0** | Uses `shell=True` |
-| `security/rate_limiter.py` | 113 | **0** | `rate_limit_enabled = True` ships as a default and does nothing |
+| `security/rate_limiter.py` | 113 | **0** | The `rate_limit_*` keys were removed (`REMOVED_CONFIG_KEYS`); no production consumer and no runtime rate limiting. **DELETE** per AD-027 |
 | `security/severity_policy.py` | 22 | **0** | |
 | `templates/`, `daemon/` | 149 | **0** | |
 | `.dockerignore` | — | — | No Dockerfile exists anywhere in the tree |

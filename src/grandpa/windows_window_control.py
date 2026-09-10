@@ -167,6 +167,19 @@ class WindowInfo:
     process_id: int = 0
     document_id: str = ""
     document_title: str = ""
+    #: Show-state read from IsZoomed / IsIconic. ``None`` means the state could
+    #: not be read -- an unreadable window is not the same as a normal one, so
+    #: post-action verification reports "unknown" instead of guessing. Both
+    #: default, so every existing construction site keeps working unchanged.
+    maximized: bool | None = None
+    minimized: bool | None = None
+
+    @property
+    def restored(self) -> bool | None:
+        """True when the window is neither maximized nor minimized."""
+        if self.maximized is None or self.minimized is None:
+            return None
+        return not self.maximized and not self.minimized
 
 
 @dataclass(frozen=True)
@@ -517,7 +530,13 @@ def _list_windows_pywin32() -> list[WindowInfo]:
             title = win32gui.GetWindowText(hwnd).strip()
             if title:
                 windows.append(
-                    WindowInfo(hwnd, title, process_id=_window_process_id(hwnd))
+                    WindowInfo(
+                        hwnd,
+                        title,
+                        process_id=_window_process_id(hwnd),
+                        maximized=_is_window_maximized(hwnd),
+                        minimized=_is_window_minimized(hwnd),
+                    )
                 )
         return True
 
@@ -540,6 +559,8 @@ def _list_windows_ctypes() -> list[WindowInfo]:
                         int(hwnd),
                         title,
                         process_id=_window_process_id(int(hwnd)),
+                        maximized=_is_window_maximized(int(hwnd)),
+                        minimized=_is_window_minimized(int(hwnd)),
                     )
                 )
         return True
@@ -555,6 +576,70 @@ def _get_foreground_window() -> int:
         return int(win32gui.GetForegroundWindow())
     except Exception:
         return int(ctypes.windll.user32.GetForegroundWindow())
+
+
+def _is_window_maximized(hwnd: int) -> bool | None:
+    """Whether *hwnd* is maximized, or None when the state cannot be read.
+
+    Mirrors the pywin32-then-ctypes fallback the rest of this module uses, so
+    it works on both backends and needs no new dependency.
+    """
+    if not hwnd:
+        return None
+    try:
+        import win32gui  # type: ignore
+
+        return bool(win32gui.IsZoomed(hwnd))
+    except Exception:
+        pass
+    try:
+        return bool(ctypes.windll.user32.IsZoomed(hwnd))
+    except Exception:
+        return None
+
+
+def _is_window_minimized(hwnd: int) -> bool | None:
+    """Whether *hwnd* is minimized, or None when the state cannot be read."""
+    if not hwnd:
+        return None
+    try:
+        import win32gui  # type: ignore
+
+        return bool(win32gui.IsIconic(hwnd))
+    except Exception:
+        pass
+    try:
+        return bool(ctypes.windll.user32.IsIconic(hwnd))
+    except Exception:
+        return None
+
+
+def read_window_state(target: str = "active") -> dict[str, object] | None:
+    """Return the current show-state of *target*, or None when unavailable.
+
+    The read seam used by post-action verification. It resolves the target
+    through the existing ``_resolve_window`` -- so "active" and title matching
+    behave exactly as they do for the actions themselves -- and reads state
+    fresh rather than trusting anything captured earlier, because a window can
+    change or vanish between acting and checking.
+
+    Returns None when the window cannot be resolved, which the caller reports
+    as "unknown" rather than as a failed action.
+    """
+    resolved = _resolve_window(str(target or "active"))
+    if not isinstance(resolved, WindowInfo):
+        return None
+    handle = resolved.handle
+    maximized = _is_window_maximized(handle)
+    minimized = _is_window_minimized(handle)
+    if maximized is None and minimized is None:
+        return None
+    return {
+        "handle": handle,
+        "title": resolved.title,
+        "maximized": maximized,
+        "minimized": minimized,
+    }
 
 
 def _get_window_title(hwnd: int) -> str:

@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from grandpa.composition import DEFAULT_FILE_ORIGIN
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
 DEFAULT_FILE_DB = DEFAULT_CONFIG_DIR / "file_assistant.db"
@@ -111,16 +112,36 @@ class FileAssistantStore:
 
 
 def handle_file_command(
-    text: str, *, store: FileAssistantStore | None = None
+    text: str,
+    *,
+    store: FileAssistantStore | None = None,
+    origin: str = DEFAULT_FILE_ORIGIN,
 ) -> FileAssistantResult:
+    """Handle one file command on behalf of an entry surface.
+
+    *origin* is the provenance of the surface that asked, stamped on every
+    mutation this command sends to the actuator boundary. It is the caller's to
+    state because only the caller knows: the CLI and the HTTP route are direct
+    programmatic callers, the voice paths are not. The default is the
+    least-privileged label, so a surface that says nothing cannot accidentally
+    claim to be one of the others.
+    """
     command = _normalise(text)
     if not command:
         return _fallback()
     store = store or FileAssistantStore()
 
-    from grandpa.files import handle_file_automation
+    from grandpa.composition import build_file_automation
 
-    automation = handle_file_automation(text, roots=tuple(_safe_roots()))
+    # Built through composition rather than constructed here. The default
+    # construction supplies no mutation runner, so every file mutation typed
+    # into the CLI, posted to the chat route or spoken to the assistant went
+    # straight to ``shutil`` and ``pathlib`` -- no risk tier, no approval gate,
+    # no emergency stop, no audit record. The helper is the one place that
+    # knows the concrete actuator; this layer only says who is asking.
+    automation = build_file_automation(
+        roots=tuple(_safe_roots()), origin=origin
+    ).handle(text)
     if not automation.should_fallback:
         if automation.status == "handled" and automation.path is not None:
             store.record(

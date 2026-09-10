@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from grandpa.files.executor import ConfirmationCallback, FileExecutor, OpenCallback
-from grandpa.files.kernel_adapter import KernelFileAutomationAdapter
 from grandpa.files.models import FileOperationResult
 from grandpa.files.parser import FileParser
 from grandpa.files.safety import FileSafetyPolicy
@@ -26,23 +25,22 @@ class FileAutomation:
         self.executor = executor or FileExecutor(
             roots=roots, safety=FileSafetyPolicy(), opener=opener
         )
-        self._read_only_kernel = (
-            None
-            if executor is not None
-            else KernelFileAutomationAdapter(roots=tuple(self.executor.roots))
-        )
 
     def handle(
         self, text: str, *, confirm: ConfirmationCallback | None = None
     ) -> FileOperationResult:
+        # One executor, every action. ``search``, ``properties``,
+        # ``create_folder`` and ``copy`` were routed to a compatibility adapter
+        # over the legacy kernel, which re-parsed the raw text through a second
+        # intent classifier and returned a translated result. ``FileExecutor``
+        # implements all four and was shown to agree with it on every
+        # observable -- status, message, path and resulting filesystem -- so
+        # the adapter was a second implementation of settled behaviour, not a
+        # capability. Removing it also removes the interception that stopped
+        # those two mutations reaching the mutation boundary.
         action = self.parser.parse(text)
         if action is None:
             return FileOperationResult("no_match", "")
-        if (
-            action.action in {"search", "properties", "create_folder", "copy"}
-            and self._read_only_kernel is not None
-        ):
-            return self._read_only_kernel.handle(text, action)
         return self.executor.execute(action, confirm=confirm)
 
 

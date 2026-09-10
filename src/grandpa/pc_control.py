@@ -8,6 +8,7 @@ mocked OS calls so dangerous operations never run during validation.
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import logging
 import os
@@ -17,11 +18,22 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
+from grandpa.policy.models import (
+    ACTION_ORIGINS,
+    DEFAULT_ACTION_ORIGIN,
+    ActionOrigin,
+    LocalActionRequest,
+    LocalActionResponse,
+)
+
+if TYPE_CHECKING:
+    from grandpa.policy.engine import RiskTables
 
 logger = logging.getLogger(__name__)
 
@@ -199,13 +211,33 @@ DEFAULT_RETENTION_POLICY = {
 }
 
 
-@dataclass(frozen=True)
-class LocalActionRequest:
-    action_type: str
-    target: str = ""
-    args: dict[str, Any] = field(default_factory=dict)
-    require_approval: bool = False
-    dry_run: bool = False
+#: Who asked for an action. AD-022 (RESOLVED) makes provenance first-class:
+#: agent-invocable skills are a designed feature, so model-chosen parameters do
+#: reach this layer, and the audit trail could not previously tell a user-typed
+#: action from a model-selected one.
+#:
+#: Re-exported, not defined. ``grandpa.policy.models`` is the canonical home
+#: (D-5): it imports nothing from this package, so any layer can name a
+#: provenance without depending on the execution module. These names stay
+#: importable from ``pc_control`` because callers and tests already bind to
+#: them here, and breaking that would be a change to a public surface for no
+#: benefit.
+#:
+#: ``direct`` is the default so every existing caller keeps working unchanged.
+#: Recording origin does not by itself change any decision -- risk is still
+#: computed from the action, never from who asked -- but it is what a future
+#: origin-aware policy (Q-10, still open) would key on.
+#: (Imported at the top of the module with the other package imports; the
+#: comment lives here because this is where the definitions used to be and
+#: where a reader looks for them.)
+
+
+#: ``LocalActionRequest`` and ``LocalActionResponse`` are re-exported, not
+#: defined. ``grandpa.policy.models`` is the canonical home (AD-028), on the same
+#: terms as ``ActionOrigin`` above: it imports nothing from this package, so
+#: ``desktop/`` can name the executor's types without depending on the executor.
+#: They stay importable from ``pc_control`` because callers and tests already
+#: bind to them here.
 
 
 @dataclass(frozen=True)
@@ -220,30 +252,9 @@ class PendingLocalAction:
     decision_timestamp: float | None = None
     # Out-of-band approval code; never surfaced through the HTTP API.
     approval_token: str = ""
-
-
-@dataclass
-class LocalActionResponse:
-    ok: bool
-    action_id: str | None
-    status: ActionStatus
-    message: str
-    approval_required: bool
-    risk_level: RiskLevel
-    evidence: dict[str, Any] = field(default_factory=dict)
-    error: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "ok": self.ok,
-            "action_id": self.action_id,
-            "status": self.status,
-            "message": self.message,
-            "approval_required": self.approval_required,
-            "risk_level": self.risk_level,
-            "evidence": self.evidence,
-            "error": self.error,
-        }
+    # Fingerprint of the action as staged. Empty means "written before
+    # approvals were bound", which is refused rather than trusted.
+    action_digest: str = ""
 
 
 def run_local_action(
@@ -307,6 +318,9 @@ def _run_local_action_impl(
         request.require_approval
         or risk == "HIGH"
         or _normalise_action_type(request.action_type) in APPROVAL_REQUIRED_ACTIONS
+        # HIGH is already staged by the rule above; this is what makes the
+        # MEDIUM tier of SENSITIVE_APP_RISK ask before it runs.
+        or _launch_needs_approval(request)
     ):
         action_id = _create_pending(request)
         response = LocalActionResponse(
@@ -321,12 +335,24 @@ def _run_local_action_impl(
         _audit(request, response, approval_status="pending")
         return response
 
-    if _EMERGENCY_STOP_ACTIVE and risk in {"MEDIUM", "HIGH"}:
+    # A stop stops everything that acts.
+    #
+    # This read ``risk in {"MEDIUM", "HIGH"}``, which let the 36 LOW actions
+    # carry on -- including open_app, open_folder, file_create, system_lock and
+    # twelve browser_* actions. Risk tiers rank consequence, not whether
+    # something is an action, so filtering by tier answers a question the user
+    # did not ask: someone who hits stop wants the assistant to stop touching
+    # the machine, not to pause the dangerous half of it.
+    #
+    # Dry run is checked above and is deliberately still allowed: it actuates
+    # nothing, and previewing is the safest thing available while a stop is in
+    # force.
+    if _EMERGENCY_STOP_ACTIVE:
         response = LocalActionResponse(
             ok=False,
             action_id=None,
             status="blocked",
-            message="Emergency stop is active. Medium and high risk local actions are paused.",
+            message="Emergency stop is active. Local actions are paused.",
             approval_required=False,
             risk_level=risk,
             error="emergency_stop_active",
@@ -334,7 +360,13 @@ def _run_local_action_impl(
         _audit(request, response, approval_status="blocked")
         return response
 
+    # Relative actions are judged against the state before they ran, so the
+    # baseline is taken here -- after every policy gate, so a blocked or
+    # dry-run request never reaches a device, and immediately before the
+    # actuator so nothing can drift in between.
+    pre_state = _capture_pre_state(request)
     response = _execute(request, risk)
+    response = _apply_verification(request, response, pre_state)
     _audit(request, response, approval_status="none")
     return response
 
@@ -377,6 +409,60 @@ def _approve_local_action_impl(action_id: str, token: str = "") -> LocalActionRe
             )
             _audit(request, response, approval_status="invalid_token")
             return response
+        # The binding check. The token above proved *who* may approve; this
+        # proves *what* was approved. Two separate questions, deliberately two
+        # separate checks: a correct code for an action that has since changed
+        # meaning is not an authorisation for the new one.
+        #
+        # Ordered after the token so an attacker without the code learns
+        # nothing about the inventory, and before expiry only in the sense that
+        # both refuse -- neither runs anything.
+        current_executable, current_launch_path = _canonical_launch_identity(request)
+        current_digest = _action_digest(
+            request, current_executable, current_launch_path
+        )
+        if not pending.action_digest:
+            # Written before approvals carried a binding. Missing is not valid:
+            # recomputing one now from today's inventory would manufacture the
+            # authorisation this check exists to test. Pending rows live
+            # ``PENDING_TTL_SECONDS``, so existing expiry clears them.
+            _mark_pending_decision(
+                action_id, status="cancelled", decision="binding_missing"
+            )
+            response = LocalActionResponse(
+                ok=False,
+                action_id=action_id,
+                status="blocked",
+                message=(
+                    "This pending action predates approval identity binding and "
+                    "was not run. Ask again to stage a fresh one."
+                ),
+                approval_required=False,
+                risk_level=risk,
+                error="approval_binding_missing",
+            )
+            _audit(request, response, approval_status="binding_missing")
+            return response
+        if not secrets.compare_digest(current_digest, pending.action_digest):
+            _mark_pending_decision(
+                action_id, status="cancelled", decision="action_changed"
+            )
+            response = LocalActionResponse(
+                ok=False,
+                action_id=action_id,
+                status="blocked",
+                message=(
+                    "What this action refers to changed after it was staged, so "
+                    "it was not run. Ask again to stage it against the current "
+                    "application."
+                ),
+                approval_required=False,
+                risk_level=risk,
+                error="approved_action_changed",
+                evidence={"binding": "mismatch"},
+            )
+            _audit(request, response, approval_status="action_changed")
+            return response
         if pending.expires_at <= time.time():
             _mark_pending_decision(action_id, status="expired", decision="expired")
             response = LocalActionResponse(
@@ -390,7 +476,7 @@ def _approve_local_action_impl(action_id: str, token: str = "") -> LocalActionRe
             )
             _audit(request, response, approval_status="expired")
             return response
-        if _EMERGENCY_STOP_ACTIVE and risk in {"MEDIUM", "HIGH"}:
+        if _EMERGENCY_STOP_ACTIVE:
             _mark_pending_decision(
                 action_id, status="cancelled", decision="emergency_stop"
             )
@@ -405,9 +491,24 @@ def _approve_local_action_impl(action_id: str, token: str = "") -> LocalActionRe
             )
             _audit(request, response, approval_status="approved_blocked")
             return response
-        _mark_pending_decision(action_id, status="approved", decision="approved")
+        approved_launch_path = current_launch_path
+        # Claiming the row is what authorises execution, and the claim can
+        # fail. ``_mark_pending_decision`` updates only while the row is still
+        # pending and reports whether it won, so exactly one caller can take
+        # it -- SQLite settles that, which matters because ``_STORE_LOCK`` is
+        # a thread lock and the approval database is shared across processes.
+        #
+        # Discarding the answer meant two approvers could both pass the token
+        # and the identity binding, both claim, and both run: an approved
+        # delete executed twice with both callers reporting success. The loser
+        # gets the response this module already had for an action that is no
+        # longer pending.
+        if not _mark_pending_decision(
+            action_id, status="approved", decision="approved"
+        ):
+            return _missing_or_decided_action(action_id)
 
-    if _EMERGENCY_STOP_ACTIVE and risk in {"MEDIUM", "HIGH"}:
+    if _EMERGENCY_STOP_ACTIVE:
         response = LocalActionResponse(
             ok=False,
             action_id=action_id,
@@ -419,7 +520,17 @@ def _approve_local_action_impl(action_id: str, token: str = "") -> LocalActionRe
         )
         _audit(request, response, approval_status="approved_blocked")
         return response
-    response = _execute(request, risk)
+    # Relative actions are judged against the state before they ran, so the
+    # baseline is taken here -- after every policy gate, so a blocked or
+    # dry-run request never reaches a device, and immediately before the
+    # actuator so nothing can drift in between.
+    pre_state = _capture_pre_state(request)
+    # Execution consumes the identity the binding just verified rather than
+    # asking the inventory again. Re-resolving here would reopen the window
+    # this whole check exists to close, between "the answer matched" and "the
+    # program started".
+    response = _execute(request, risk, launch_path=approved_launch_path)
+    response = _apply_verification(request, response, pre_state)
     response.action_id = action_id
     if response.ok:
         _set_approval_status(action_id, status="completed", decision="approved")
@@ -442,7 +553,18 @@ def _reject_local_action_impl(action_id: str) -> LocalActionResponse:
         if pending is None:
             return _missing_or_decided_action(action_id)
         request = pending.request
-        _mark_pending_decision(action_id, status="rejected", decision="rejected")
+        # The same claim the approve path makes, and the same reason to read
+        # its answer: the row can be taken by another process between the read
+        # above and this write, and only one caller can have it.
+        #
+        # Reporting success regardless was worse than an error. A person who
+        # pressed reject was told the action had been stopped while an approver
+        # elsewhere won the row and ran it -- an acknowledged safety decision
+        # that never took effect, and no signal to look again.
+        if not _mark_pending_decision(
+            action_id, status="rejected", decision="rejected"
+        ):
+            return _missing_or_decided_action(action_id)
     response = LocalActionResponse(
         ok=True,
         action_id=action_id,
@@ -693,30 +815,199 @@ def _read_recent_audit_entries_impl(limit: int = 100) -> list[dict[str, Any]]:
     return entries
 
 
+#: Applications whose launch is more consequential than an ordinary one.
+#:
+#: ``shell_run`` and ``script_run`` are BLOCKED, but *launching the shell
+#: application* was not gated at all: ``open_app`` is LOW, risk was computed
+#: from the action type alone, and the surface denylist that was doing the work
+#: matched ``\bcmd\b`` while missing "command prompt", "terminal", "regedit"
+#: and "task manager". Matching more phrases would not fix that -- the tier has
+#: to depend on what is being launched.
+#:
+#: Keys are canonical application ids where the launcher has one, and the
+#: spoken or typed name where it does not. Every entry raises the tier; none
+#: lowers it, and nothing outside this table is affected.
+#:
+#: Every spelling of one program needs its own key, because a launch is
+#: classified from the exact string the caller passed and nothing normalises
+#: ``wt`` into "terminal" beforehand. So the executable name sits beside the
+#: spoken one: ``taskmgr.exe`` is Task Manager, ``wt`` is what the app resolver
+#: itself calls Windows Terminal, ``pwsh`` is the shell this project records as
+#: the preferred one. Each of those was an ordinary LOW launch until it was
+#: listed here.
+#:
+#: Being listed here decides whether Grandpa *asks*, which is not the same
+#: question as whether a launch can succeed. ``is_safe_launch_target`` refuses
+#: cmd.exe, powershell.exe, pwsh.exe, regedit.exe and diskpart.exe at the
+#: launch leaf regardless, so for those five this table only means the user is
+#: asked before being refused. The ones where it is the sole gate are the
+#: launchable ones -- wt.exe and taskmgr.exe are in no denylist.
+#:
+#: Inventory display names ("Command Prompt (Admin)") are still out of reach;
+#: see ``_sensitive_app_risk`` for why resolution cannot move ahead of
+#: classification here.
+SENSITIVE_APP_RISK: dict[str, RiskLevel] = {
+    # Shells: a command prompt is a general-purpose execution surface, which is
+    # the same reason shell_run is blocked outright.
+    "cmd": "MEDIUM",
+    "cmd.exe": "MEDIUM",
+    "command prompt": "MEDIUM",
+    "powershell": "MEDIUM",
+    "powershell.exe": "MEDIUM",
+    "windows powershell": "MEDIUM",
+    "pwsh": "MEDIUM",
+    "pwsh.exe": "MEDIUM",
+    "terminal": "MEDIUM",
+    "wt": "MEDIUM",
+    "wt.exe": "MEDIUM",
+    "windowsterminal": "MEDIUM",
+    # Process control.
+    "task_manager": "MEDIUM",
+    "task manager": "MEDIUM",
+    "taskmgr": "MEDIUM",
+    "taskmgr.exe": "MEDIUM",
+    # The registry editor can change how the machine boots.
+    "regedit": "HIGH",
+    "regedit.exe": "HIGH",
+    "registry editor": "HIGH",
+    # Partitioning: diskpart can repartition or wipe a disk outright.
+    "diskpart": "HIGH",
+    "diskpart.exe": "HIGH",
+}
+
+
+#: Applications recognised by the executable that actually runs, rather than by
+#: the name a shortcut or a user gave them.
+#:
+#: Deliberately tiny. Every entry must be an executable this system can
+#: actually identify today, and the evidence for adding one is that the program
+#: is a general-purpose command surface -- the same reason ``cmd`` and
+#: ``powershell`` are MEDIUM in ``SENSITIVE_APP_RISK``.
+#:
+#: ``git-bash.exe`` is here because an inventory row backed by that executable
+#: is reachable directly, with no shortcut in the way, and was classified as an
+#: ordinary launch. Shells reached only through a ``.lnk`` are not listed: their
+#: executable identity cannot currently be recovered, so an entry for them would
+#: be unreachable and untestable, which is coverage in appearance only.
+#:
+#: This is not the launch denylist. ``BLOCKED_EXECUTABLE_NAMES`` refuses a
+#: launch outright; this decides the tier, and therefore whether to ask first.
+SENSITIVE_EXECUTABLE_RISK: dict[str, RiskLevel] = {
+    "git-bash.exe": "MEDIUM",
+}
+
+
+def _sensitive_app_risk(target: str) -> RiskLevel | None:
+    """The raised tier for launching *target*, or None for an ordinary app.
+
+    Resolved through ``SAFE_APP_ALIASES`` -- the same table the launcher itself
+    uses -- so "windows terminal" and "terminal" are recognised as one
+    application rather than as two strings to match.
+
+    Delegates to ``grandpa.policy.engine`` so the approval gate and the
+    classifier read the same rules from the same place. Before this it held a
+    second copy of the lookup, which meant an executable could be MEDIUM to the
+    classifier and invisible to ``_launch_needs_approval``.
+
+    Deliberately no inventory lookup. Classification runs before execution and
+    several times per request, so it must stay cheap and side-effect free,
+    while the inventory is a JSON read. The consequence is a known limit: a
+    shell reachable only under an inventory display name, or behind a shortcut
+    whose target cannot be read, is still classified as an ordinary launch.
+    Closing that needs resolution to move ahead of classification, which is a
+    larger change than this.
+    """
+    from grandpa.policy.engine import sensitive_app_risk as _policy_lookup
+
+    return _policy_lookup(target, _risk_tables())
+
+
+def _launch_needs_approval(request: LocalActionRequest) -> bool:
+    """Whether this is the launch of an application that must be confirmed.
+
+    Separate from the risk tier because the approval gate keys on the action
+    type, and ``open_app`` as a whole must not become approval-gated -- that
+    would ask before opening a browser.
+    """
+    # Read defensively: this is reached from the kernel facade as well as the
+    # gate, and that facade has always answered rather than raised for a
+    # request too malformed to classify. Such a request is not a launch.
+    action = _normalise_action_type(str(getattr(request, "action_type", "") or ""))
+    if action != "open_app":
+        return False
+    return _sensitive_app_risk(str(getattr(request, "target", "") or "")) is not None
+
+
 def classify_risk(request: LocalActionRequest) -> RiskLevel:
     from grandpa.desktop.kernel.risk import classify
 
     return classify(request)  # type: ignore[return-value]
 
 
+def _risk_tables() -> RiskTables:
+    """The data classification reads, gathered here and passed to the engine.
+
+    ``grandpa.policy`` deliberately imports nothing from this module, so the
+    tables travel as an argument rather than as an import. That keeps the
+    dependency pointing one way -- pc_control -> policy -- and leaves the alias
+    table where the launcher already owns it.
+    """
+    from grandpa.policy.engine import RiskTables as _RiskTables
+
+    try:
+        from grandpa.desktop.control.applications import SAFE_APP_ALIASES
+
+        aliases: Mapping[str, str] = SAFE_APP_ALIASES
+    except Exception:
+        # Unchanged from the original lookup: an unavailable alias table means
+        # names are matched as typed, not that classification fails.
+        aliases = {}
+    return _RiskTables(
+        blocked=BLOCKED_ACTIONS,
+        high=HIGH_RISK_ACTIONS,
+        medium=MEDIUM_RISK_ACTIONS,
+        low=LOW_RISK_ACTIONS,
+        sensitive_apps=SENSITIVE_APP_RISK,
+        sensitive_executables=SENSITIVE_EXECUTABLE_RISK,
+        aliases=aliases,
+        approval_required=APPROVAL_REQUIRED_ACTIONS,
+    )
+
+
 def _classify_risk_impl(request: LocalActionRequest) -> RiskLevel:
-    action = _normalise_action_type(request.action_type)
-    if action in BLOCKED_ACTIONS:
-        return "BLOCKED"
-    if action in HIGH_RISK_ACTIONS:
-        return "HIGH"
-    if action in MEDIUM_RISK_ACTIONS:
-        return "MEDIUM"
-    if action in LOW_RISK_ACTIONS:
-        return "LOW"
-    return "BLOCKED"
+    """Delegates to ``grandpa.policy.engine``; the logic moved, not the policy.
+
+    The engine reproduces the previous ordering exactly -- BLOCKED first, then
+    the sensitive-application raise for ``open_app`` only, then HIGH/MEDIUM/LOW
+    by action type, then default deny. Parity across every action type and
+    every sensitive key is held by ``tests/test_policy_engine_parity.py``.
+
+    Only classification moved. The approval gate, the emergency stop, dry run,
+    provenance, verification and execution all remain in this module.
+    """
+    from grandpa.policy.engine import classify_risk as _policy_classify
+
+    return _policy_classify(request, _risk_tables()).risk_level  # type: ignore[arg-type]
 
 
-def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionResponse:
+def _execute(
+    request: LocalActionRequest,
+    risk: RiskLevel,
+    *,
+    launch_path: str = "",
+) -> LocalActionResponse:
+    """Run *request*.
+
+    ``launch_path`` is supplied only by the approval path, where the program to
+    start has already been resolved and verified against the staged binding.
+    Passing it through means execution starts the application that was
+    approved, not whatever the inventory resolves to a moment later. The direct
+    path leaves it empty and resolves as it always has.
+    """
     try:
         action = _normalise_action_type(request.action_type)
         if action in {"open_app", "detect_app"}:
-            return _execute_app(request, action)
+            return _execute_app(request, action, launch_path=launch_path)
         if action == "open_folder":
             return _execute_open_folder(request)
         if action == "close_app":
@@ -776,10 +1067,12 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
     )
 
 
-def _execute_app(request: LocalActionRequest, action: str) -> LocalActionResponse:
+def _execute_app(
+    request: LocalActionRequest, action: str, *, launch_path: str = ""
+) -> LocalActionResponse:
     from grandpa.desktop.control import get_application_service
 
-    return get_application_service().execute(request, action)
+    return get_application_service().execute(request, action, launch_path=launch_path)
 
 
 def _execute_open_folder(request: LocalActionRequest) -> LocalActionResponse:
@@ -1091,7 +1384,9 @@ def _connect_approval_db() -> sqlite3.Connection:
             approval_required INTEGER NOT NULL,
             decision TEXT NOT NULL,
             decision_timestamp REAL,
-            approval_token TEXT NOT NULL DEFAULT ''
+            approval_token TEXT NOT NULL DEFAULT '',
+            action_digest TEXT NOT NULL DEFAULT '',
+            origin TEXT NOT NULL DEFAULT ''
         )
         """
     )
@@ -1104,6 +1399,22 @@ def _connect_approval_db() -> sqlite3.Connection:
         conn.execute(
             "ALTER TABLE pc_control_approvals "
             "ADD COLUMN approval_token TEXT NOT NULL DEFAULT ''"
+        )
+    # Migrate databases created before approvals were bound to an identity.
+    # Rows written then carry an empty digest, and an empty digest is refused
+    # rather than recomputed -- see ``_approve_local_action_impl``.
+    if "action_digest" not in columns:
+        conn.execute(
+            "ALTER TABLE pc_control_approvals "
+            "ADD COLUMN action_digest TEXT NOT NULL DEFAULT ''"
+        )
+    # Migrate databases created before provenance was persisted (AD-022). Rows
+    # written then carry an empty origin, which ``_coerce_origin`` reads as
+    # ``direct`` -- the least-privileged label, never a trusted one.
+    if "origin" not in columns:
+        conn.execute(
+            "ALTER TABLE pc_control_approvals "
+            "ADD COLUMN origin TEXT NOT NULL DEFAULT ''"
         )
     return conn
 
@@ -1147,6 +1458,18 @@ def _request_from_row(row: sqlite3.Row) -> LocalActionRequest:
         args=args,
         require_approval=bool(row["approval_required"]),
         dry_run=False,
+        # AD-022. Without this the request was rebuilt with the default and
+        # every approved action was audited as ``direct``, whoever had asked --
+        # so the trail lost provenance exactly for the actions important enough
+        # to need a human decision.
+        #
+        # Coerced rather than trusted: the value is read back from a database,
+        # and a row predating this column, or one edited outside the
+        # application, must not be able to name an origin that does not exist.
+        # Unknown becomes ``direct``, the least-privileged label.
+        origin=_coerce_origin(
+            row["origin"] if "origin" in row.keys() else DEFAULT_ACTION_ORIGIN
+        ),
     )
 
 
@@ -1164,6 +1487,9 @@ def _pending_from_row(row: sqlite3.Row) -> PendingLocalAction:
         else None,
         approval_token=str(
             row["approval_token"] if "approval_token" in row.keys() else ""
+        ),
+        action_digest=str(
+            row["action_digest"] if "action_digest" in row.keys() else ""
         ),
     )
 
@@ -1268,6 +1594,73 @@ def _missing_or_decided_action(action_id: str) -> LocalActionResponse:
     )
 
 
+def _canonical_launch_identity(request: LocalActionRequest) -> tuple[str, str]:
+    """The executable and launch path *this* request would start, or two empty
+    strings when the action does not name an application.
+
+    One inventory read. Only ``open_app`` resolves: every other action carries
+    its own target, so there is nothing to look up and nothing that could drift
+    between staging and approval.
+
+    A failure to resolve is an empty identity rather than an exception. That is
+    deliberate: an approval staged against a resolvable application and later
+    meeting an unresolvable one must *fail the comparison*, which is a refusal,
+    not crash the approve path.
+    """
+    if _normalise_action_type(str(getattr(request, "action_type", "") or "")) != (
+        "open_app"
+    ):
+        return "", ""
+    target = str(getattr(request, "target", "") or "")
+    if not target:
+        return "", ""
+    try:
+        from grandpa.apps.inventory import find_app
+
+        result = find_app(target)
+        if result.status != "found" or not result.matches:
+            return "", ""
+        path = result.matches[0].path
+    except Exception:
+        return "", ""
+    return Path(path).name.lower(), str(path)
+
+
+def _action_digest(
+    request: LocalActionRequest, executable: str, launch_path: str
+) -> str:
+    """A deterministic fingerprint of *what* this action would do.
+
+    Covers the action type, the target as asked, the arguments, and the
+    program the target resolved to. Sorted keys and separator-tight JSON make
+    it independent of dictionary ordering, so the same action written two ways
+    fingerprints identically.
+
+    Excludes ``origin``, ``require_approval``, ``dry_run``, the approval token,
+    the risk tier and every timestamp. The digest answers "what was approved",
+    not "who asked", "when", or "what did policy think of it" -- and folding
+    those in would make an approval fail for reasons that have nothing to do
+    with the action changing.
+    """
+    payload = {
+        "action_type": _normalise_action_type(
+            str(getattr(request, "action_type", "") or "")
+        ),
+        "target": str(getattr(request, "target", "") or ""),
+        "args": getattr(request, "args", None) or {},
+        "executable": executable,
+        "launch_path": launch_path,
+    }
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _create_pending(request: LocalActionRequest) -> str:
     _expire_pending()
     now = time.time()
@@ -1277,6 +1670,11 @@ def _create_pending(request: LocalActionRequest) -> str:
     # receives this; it is emitted only to the local operator's console/log, so
     # possession of an action_id alone cannot authorise execution.
     token = secrets.token_hex(4).upper()
+    # Resolved once, here, and fingerprinted: this is the identity a person is
+    # about to be shown and asked to approve. Approval recomputes it and
+    # refuses if it has moved.
+    executable, launch_path = _canonical_launch_identity(request)
+    digest = _action_digest(request, executable, launch_path)
     args_json = json.dumps(request.args, ensure_ascii=True, sort_keys=True, default=str)
     with _connect_approval_db() as conn:
         conn.execute(
@@ -1284,8 +1682,8 @@ def _create_pending(request: LocalActionRequest) -> str:
             INSERT INTO pc_control_approvals (
                 action_id, action_type, target, args_json, risk_level, created_at,
                 expires_at, status, approval_required, decision, decision_timestamp,
-                approval_token
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending', NULL, ?)
+                approval_token, action_digest, origin
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'pending', NULL, ?, ?, ?)
             """,
             (
                 action_id,
@@ -1302,6 +1700,8 @@ def _create_pending(request: LocalActionRequest) -> str:
                     in APPROVAL_REQUIRED_ACTIONS
                 ),
                 token,
+                digest,
+                request.origin,
             ),
         )
     logger.warning(
@@ -1412,6 +1812,15 @@ def _audit(
         "approval_status": approval_status,
         "ok": response.ok,
         "action_id": response.action_id,
+        # AD-022 consequence 3: the trail must distinguish a user-typed action
+        # from a model-selected one. Without this the audit log cannot answer
+        # "who asked for this?" after the fact.
+        "origin": request.origin,
+        # Whether the action was confirmed to have taken effect. "unknown"
+        # means it could not be checked, not that it went wrong.
+        "verification": (response.evidence or {})
+        .get("verification", {})
+        .get("status", "unknown"),
     }
     with path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=True) + "\n")
@@ -1438,7 +1847,81 @@ def _coerce_request(payload: dict[str, Any] | LocalActionRequest) -> LocalAction
         args=dict(payload.get("args") or {}),
         require_approval=bool(payload.get("require_approval", False)),
         dry_run=bool(payload.get("dry_run", False)),
+        origin=_coerce_origin(payload.get("origin")),
     )
+
+
+def _capture_pre_state(request: LocalActionRequest) -> dict[str, Any] | None:
+    """Take the baseline a relative action will be judged against.
+
+    Returns None -- touching no device at all -- for every action that does not
+    need one, which is all but ``volume_up`` and ``volume_down``. The scoping
+    decision lives in the verification module so the set of actions that pay
+    for a pre-read sits next to the verifiers that consume it.
+
+    A baseline that cannot be taken means "unverifiable", never a failed
+    action, and never a failed request.
+    """
+    from grandpa.desktop.control.verification import capture_pre_state
+
+    try:
+        return capture_pre_state(request)
+    except Exception:
+        return None
+
+
+def _apply_verification(
+    request: LocalActionRequest,
+    response: LocalActionResponse,
+    pre_state: dict[str, Any] | None = None,
+) -> LocalActionResponse:
+    """Read state back after a successful execute and record what was seen.
+
+    Runs between ``_execute`` and ``_audit`` so the audit record carries the
+    verification outcome. Only successful executions are checked -- an actuator
+    that already reported failure is left exactly as it is.
+
+    A ``failed`` verification downgrades the response, because reporting
+    success for an action that demonstrably did not happen is the behaviour
+    this exists to prevent. ``unknown`` never downgrades: it means the action
+    could not be checked, which is not evidence that it went wrong.
+
+    Verification is observational. It never touches ``risk_level`` or
+    ``approval_required``, so it cannot widen or narrow a policy decision.
+    """
+    if not response.ok or response.status != "completed":
+        return response
+
+    from grandpa.desktop.control.verification import verify_action
+
+    outcome = verify_action(request, response, pre_state)
+    evidence = dict(response.evidence or {})
+    evidence["verification"] = outcome.to_dict()
+    response.evidence = evidence
+
+    if outcome.status == "failed":
+        response.ok = False
+        response.status = "failed"
+        response.error = "verification_failed"
+        response.message = (
+            f"{response.message} However, I could not confirm it took effect: "
+            f"{outcome.detail}."
+        ).strip()
+    return response
+
+
+def _coerce_origin(value: Any) -> ActionOrigin:
+    """Normalise an origin, falling back to ``direct`` for anything unknown.
+
+    Unrecognised values fall back rather than raise: origin is provenance for
+    the audit trail, and a caller passing something unexpected should not turn
+    into a failed action. The fallback is the least-privileged label, so an
+    unknown caller is never recorded as a trusted one.
+    """
+    candidate = str(value or "").strip().lower()
+    if candidate in ACTION_ORIGINS:
+        return candidate  # type: ignore[return-value]
+    return DEFAULT_ACTION_ORIGIN
 
 
 def _normalise_action_type(value: str) -> str:

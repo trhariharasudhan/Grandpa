@@ -13,7 +13,7 @@ class PowerControlService:
     name: str = "power"
 
     def execute_volume(self, request: Any, action: str, *, platform: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if platform != "win32":
             return LocalActionResponse(
@@ -42,7 +42,7 @@ class PowerControlService:
         )
 
     def _execute_volume_set(self, request: Any, *, platform: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if platform != "win32":
             return LocalActionResponse(
@@ -85,7 +85,7 @@ class PowerControlService:
         )
 
     def execute_brightness(self, request: Any, action: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         try:
             import screen_brightness_control as sbc  # type: ignore
@@ -123,7 +123,7 @@ class PowerControlService:
         )
 
     def execute_system(self, action: str, *, platform: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if platform != "win32":
             return LocalActionResponse(
@@ -167,7 +167,7 @@ class PowerControlService:
         )
 
     def execute_empty_recycle_bin(self, *, platform: str):
-        from grandpa.pc_control import LocalActionResponse
+        from grandpa.policy.models import LocalActionResponse
 
         if platform != "win32":
             return LocalActionResponse(

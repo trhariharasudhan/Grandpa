@@ -105,6 +105,11 @@ Plus three surfaces that bypass dispatch entirely and reach actuation directly:
    cli/ask.py · cli/chat_cmd.py · server/routes.py · server/api_routes.py
    voice/assistant.py ×3 · voice/session.py · task_scheduler.py
    burnin.py ×2 · cli/doctor_cmd.py
+
+   **[CORRECTED by AD-023]** "ALL user-originated" holds for nine of the twelve.
+   `burnin.py` (×2) and `cli/doctor_cmd.py` pass program-authored static
+   literals. No model-generated text enters Funnel A from any of the twelve,
+   so the safety property AD-022 states is unaffected.
                                    │
               _normalise → _is_dangerous (37 regex) → allowlist parse
               → classify_permission {allowed|confirm|blocked}
@@ -181,8 +186,52 @@ invariant is:
 Two corollaries the target must satisfy:
 
 - **P1a — Provenance is carried, not inferred.** Every `ActionRequest` carries
-  `origin ∈ {user, skill, agent, api, scheduler, test}`. The policy table may
-  key on it. The audit record must contain it.
+  an `origin`. The policy table may key on it. The audit record must contain it.
+
+  **The shipped vocabulary is exactly these six values** (D-5), defined once in
+  `grandpa/policy/models.py` and re-exported by `pc_control`:
+
+  | Value | Conceptual category | What it identifies |
+  |---|---|---|
+  | `voice` | human | spoken interaction |
+  | `direct` | human | local interactive use — the CLI |
+  | `api` | — | the HTTP/API boundary |
+  | `agent` | automated | autonomous-agent execution, parameters it wrote itself |
+  | `skill` | automated | `SkillTool`/model-selected skill execution |
+  | `scheduler` | automated | scheduled or background execution |
+
+  **`voice` and `direct` are not renamed to `user`.** *human* is a useful
+  conceptual category and this document keeps it, but it is not a runtime
+  value. The two runtime values distinguish modalities with different security
+  properties — speech is ambient and can be triggered by anything audible —
+  and `direct` additionally serves as the least-privilege coercion fallback.
+
+  **`skill` is distinct from `agent`, and must stay so.** That difference is
+  what AD-022 is about: an agent reading its own context passes literals it
+  wrote, while a skill reached through `SkillTool` can be handed arguments a
+  model produced.
+
+  **Origin values are append-only.** Adding one is a compatible change: the
+  value is written to a SQLite column and read back through `_coerce_origin`,
+  which already tolerates values it does not know. Renaming or removing one is
+  *not* the mirror image of adding one — every historical row carrying the old
+  value would silently coerce to `direct` on read, rewriting audit history
+  rather than failing. Any future change to this vocabulary should therefore
+  add, never rename.
+
+  **Direction of travel.** The six values mix two axes: `voice` and `direct` are
+  one initiator (a human) through two surfaces, while `api` names a surface and
+  says nothing about who is behind it. `RequestContext` already carries both an
+  `origin` and a `surface` field, and the eventual separation is to let
+  `surface` hold modality so `origin` can be initiator-pure. That is a
+  direction, not a scheduled change: reaching it means collapsing `voice` and
+  `direct`, which is exactly the rename the paragraph above rules out without a
+  migration for persisted rows.
+
+  There is **no `test` origin.** An earlier draft of this section listed one;
+  no such value ships, and D-5 explicitly declined to invent provenance for
+  burn-in and readiness probes, on the grounds that a value with no truthful
+  caller puts noise in the audit trail.
 - **P1b — Deterministic-first is preserved on the NL path.** The property that
   makes Funnel A strong — user text is parsed by an allowlist, never by the
   model — stays exactly as it is.
@@ -293,8 +342,8 @@ dependencies.
 ║  PolicyEngine                        ║  ║  + MCP client tools               ║
 ║   • ONE risk table — Funnel A + B    ║  ║  + SkillTool  ──────────┐         ║
 ║   • ONE vocabulary                   ║  ║  + memory facade context│         ║
-║   • origin-aware  {user|skill|agent| ║  ║  GuardrailsEngine       │         ║
-║      api|scheduler}          [P1a]   ║  ╚═════════════════════════│═════════╝
+║   • origin AUDITED, never keyed on   ║  ║  GuardrailsEngine       │         ║
+║     [P1a, Q-10] not a policy input   ║  ╚═════════════════════════│═════════╝
 ║   • ONE approval store, out-of-band  ║                            │
 ║     confirmation code required       ║   ⚠ AD-022: skills carry   │
 ║   • capability RBAC, FAIL-CLOSED     ║   model-chosen params ──────┘
@@ -457,7 +506,7 @@ class ActionRequest:
     action_type: str
     target: str
     args: Mapping[str, Any]
-    origin: Origin                 # P1a — user | skill | agent | api | scheduler
+    origin: Origin                 # P1a — voice|direct|api|agent|skill|scheduler
     dry_run: bool = False
 
 class PolicyEngine:

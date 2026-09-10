@@ -379,7 +379,13 @@ def _observe(goal: AgentGoal, store: AgentGoalStore) -> None:
         from grandpa.pc_control import run_local_action
 
         desktop = run_local_action(
-            {"action_type": "desktop_summary", "target": "desktop", "dry_run": True}
+            {
+                "action_type": "desktop_summary",
+                "target": "desktop",
+                "dry_run": True,
+                # Observed by the agent while working a goal (AD-022).
+                "origin": "agent",
+            }
         )
         observations.append({"type": "desktop", "data": desktop.to_dict()})
     except Exception as exc:

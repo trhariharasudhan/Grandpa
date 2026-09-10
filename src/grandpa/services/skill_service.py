@@ -64,7 +64,17 @@ def execute_skill_from_body(body: dict[str, Any]) -> dict[str, Any]:
         user_request=str(body.get("user_request") or ""),
         dry_run=bool(body.get("dry_run", False)),
         approval_state=str(body.get("approval_state") or "none"),
-        source=str(body.get("source") or "api"),
+        # Provenance is stamped by the server, never taken from the request
+        # (AD-022). This read the caller's own provenance key, which was inert
+        # while ``_pc_action`` recorded every caller as "skill" -- and stopped
+        # being inert once 4.12E-3 mapped two source values onto "agent". Since
+        # this route also lets a caller pick the skill, the parameters and
+        # ``dry_run``, a forged label reached the persisted audit record of a
+        # real execution. Provenance the subject can set is not provenance.
+        #
+        # "api" is not a new value: it is what this call already produced
+        # whenever the key was absent, so well-behaved callers see no change.
+        source="api",
         timeout=float(body["timeout"]) if body.get("timeout") is not None else None,
         metadata=body.get("metadata") if isinstance(body.get("metadata"), dict) else {},
     )

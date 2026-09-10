@@ -39,11 +39,15 @@ visible in the suite rather than only in a document.
 
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+
 import pytest
 
 from grandpa.desktop.kernel.requests import coerce_request
 from grandpa.desktop.kernel.risk import classify, requires_approval
 from grandpa.pc_control import (
+    ACTION_ORIGINS,
     APPROVAL_REQUIRED_ACTIONS,
     BLOCKED_ACTIONS,
     HIGH_RISK_ACTIONS,
@@ -244,31 +248,358 @@ class TestNaturalLanguageFunnelStillTakesOnlyUserText:
         assert result.status in {"no_match", "blocked"}
 
 
-class TestOriginIsNotYetCarried:
-    """Documents the Phase 4 gap: actions carry no provenance.
+class TestOriginIsCarried:
+    """``origin`` has landed on ``LocalActionRequest`` (AD-022).
 
-    The target architecture requires an explicit ``origin`` on every
-    ``ActionRequest``, with no default, failing closed when absent, so the
-    policy table can gate on it and the audit trail can record it. None of that
-    exists yet.
+    This class replaces ``TestOriginIsNotYetCarried``, which pinned the absence
+    of provenance and instructed that its failure was the signal to update this
+    module rather than a regression. That signal has now fired.
 
-    These tests pin the current state deliberately. When Phase 4 adds ``origin``
-    they are expected to fail, and that failure is the signal to update this
-    module rather than a regression.
+    One deliberate deviation from what that note asked for. It said origin
+    should be "required, with no default, failing closed when absent", matching
+    ACTION_ORIGIN_AUDIT.md recommendation 3. It ships with a default of
+    ``direct`` instead, because a required field with no default is a breaking
+    change for every existing construction site and payload, and this slice was
+    scoped to preserve backward compatibility.
+
+    The safety consequence is bounded: origin is currently provenance only. No
+    policy decision reads it, so a defaulted origin cannot grant anything -- and
+    ``direct`` is the least-privileged label, so an untagged caller is never
+    recorded as a trusted one. Making it required is a separate, deliberate
+    breaking change, and Q-10 (should agent-origin actions face a lower approval
+    threshold?) is still open.
     """
 
-    def test_request_has_no_origin_field_today(self):
+    def test_request_carries_origin(self):
         request = coerce_request(_skill_payload("open_app", target="notepad"))
-        assert not hasattr(request, "origin"), (
-            "origin now exists -- Phase 4 has landed. Update this module to "
-            "assert that origin is required, has no default, and that a "
-            "missing origin fails closed."
+        assert hasattr(request, "origin")
+
+    def test_origin_defaults_to_direct_for_untagged_callers(self):
+        request = coerce_request(_skill_payload("open_app", target="notepad"))
+        assert request.origin == "direct"
+
+    def test_origin_round_trips_through_coercion(self):
+        payload = dict(_skill_payload("open_app", target="notepad"))
+        payload["origin"] = "agent"
+        assert coerce_request(payload).origin == "agent"
+
+    def test_unknown_origin_is_downgraded_not_trusted(self):
+        payload = dict(_skill_payload("open_app", target="notepad"))
+        payload["origin"] = "kernel"
+        assert coerce_request(payload).origin == "direct"
+
+    def test_origin_does_not_change_the_policy_decision(self):
+        """Provenance is recorded, not yet acted on.
+
+        Risk must still be computed from the action alone -- the property the
+        original invariant suite exists to protect. If a future origin-aware
+        policy lands (Q-10), this is the test that must be revisited
+        deliberately rather than drift.
+        """
+        as_user = run_local_action(
+            {**_skill_payload("open_folder", target="."), "origin": "voice"}
+        )
+        as_agent = run_local_action(
+            {**_skill_payload("open_folder", target="."), "origin": "agent"}
+        )
+        assert as_user.risk_level == as_agent.risk_level
+        assert as_user.approval_required == as_agent.approval_required
+
+
+# ---------------------------------------------------------------------------
+# Q-10 -- the provenance-agnostic invariant
+# ---------------------------------------------------------------------------
+
+#: Actions chosen to span every consequence tier the classifier produces and
+#: both approval states. ``open_app terminal`` is here deliberately: it is the
+#: sensitive-launch clause that ``requires_approval`` records as having once
+#: drifted out of step with enforcement, so it is the clause most worth holding
+#: still. The spread is asserted rather than assumed -- see the non-vacuity
+#: guards at the end of the class.
+ORIGIN_PROBE_ACTIONS = (
+    ("open_folder", "."),
+    ("open_app", "notepad"),
+    ("open_app", "terminal"),
+    ("file_delete", "x"),
+    ("shell_run", "x"),
+)
+
+
+def _probe(action_type: str, target: str, origin: str):
+    """A request differing from its siblings in ``origin`` and nothing else."""
+    return coerce_request(
+        {
+            "action_type": action_type,
+            "target": target,
+            "args": {},
+            "dry_run": True,
+            "origin": origin,
+        }
+    )
+
+
+class TestProvenanceIsAuditOnly:
+    """Q-10 ANSWERED: origin is recorded, never consumed by policy.
+
+    ``TestOriginIsCarried.test_origin_does_not_change_the_policy_decision``
+    already pins this for one pair of origins on one action, and is deliberately
+    left in place: its docstring is the marker saying which test must be
+    revisited if an origin-aware policy ever lands. This class is the
+    generalisation the Q-10 audit concluded should hold -- every value in the
+    vocabulary, across every consequence tier.
+
+    The policy path here is the real one. ``classify`` and ``requires_approval``
+    are the production predicates ``run_local_action`` itself calls; nothing is
+    stubbed and no constant is asserted against. The end-to-end case goes
+    through ``run_local_action`` on a LOW, non-staging action so the suite never
+    writes an approval record.
+
+    Q-10's answer is *no*: agent- and skill-originated actions do not face a
+    different threshold, and neither does any other origin. If that is ever
+    revisited, it must be by changing these tests deliberately.
+    """
+
+    @pytest.mark.parametrize("action_type,target", ORIGIN_PROBE_ACTIONS)
+    def test_risk_is_identical_for_every_origin(self, action_type, target) -> None:
+        tiers = {
+            origin: classify(_probe(action_type, target, origin))
+            for origin in ACTION_ORIGINS
+        }
+
+        assert len(set(tiers.values())) == 1, tiers
+
+    @pytest.mark.parametrize("action_type,target", ORIGIN_PROBE_ACTIONS)
+    def test_approval_requirement_is_identical_for_every_origin(
+        self, action_type, target
+    ) -> None:
+        gates = {
+            origin: requires_approval(_probe(action_type, target, origin))
+            for origin in ACTION_ORIGINS
+        }
+
+        assert len(set(gates.values())) == 1, gates
+
+    @pytest.mark.parametrize("origin", ACTION_ORIGINS)
+    def test_no_origin_can_clear_a_gate_the_action_sets(self, origin: str) -> None:
+        """The monotonicity precedent, extended to provenance.
+
+        ``test_require_approval_can_only_raise_never_lower`` pins that a
+        caller-supplied ``require_approval=False`` cannot clear a gate. The same
+        must hold for provenance: no origin may be a way in through the side.
+        """
+        request = coerce_request(
+            {
+                "action_type": "file_delete",
+                "target": "x",
+                "args": {},
+                "dry_run": True,
+                "require_approval": False,
+                "origin": origin,
+            }
         )
 
-    def test_a_skill_action_is_indistinguishable_from_a_user_action(self):
-        # Same payload, different real-world provenance, identical decision.
-        # This is exactly what origin tagging is meant to fix.
-        as_user = run_local_action(_skill_payload("open_folder", target="."))
-        as_skill = run_local_action(_skill_payload("open_folder", target="."))
-        assert as_user.risk_level == as_skill.risk_level
-        assert as_user.approval_required == as_skill.approval_required
+        assert requires_approval(request) is True
+
+    def test_run_local_action_reports_one_decision_for_every_origin(self) -> None:
+        """End to end, not just through the predicates.
+
+        ``open_folder`` is LOW and stages nothing, so this runs the full
+        boundary without creating a pending approval row.
+        """
+        responses = {
+            origin: run_local_action(
+                {
+                    "action_type": "open_folder",
+                    "target": ".",
+                    "args": {},
+                    "dry_run": True,
+                    "origin": origin,
+                }
+            )
+            for origin in ACTION_ORIGINS
+        }
+
+        assert len({r.risk_level for r in responses.values()}) == 1
+        assert len({r.approval_required for r in responses.values()}) == 1
+
+    # -- non-vacuity guards --------------------------------------------------
+    #
+    # The invariant above is an equality across origins. Equality holds
+    # trivially if the probe set collapses onto one tier, so the spread is
+    # asserted rather than trusted.
+
+    def test_the_probe_set_spans_more_than_one_risk_tier(self) -> None:
+        tiers = {
+            classify(_probe(action_type, target, "direct"))
+            for action_type, target in ORIGIN_PROBE_ACTIONS
+        }
+
+        assert len(tiers) >= 3, tiers
+
+    def test_the_probe_set_covers_both_approval_states(self) -> None:
+        gates = {
+            requires_approval(_probe(action_type, target, "direct"))
+            for action_type, target in ORIGIN_PROBE_ACTIONS
+        }
+
+        assert gates == {True, False}
+
+    def test_every_shipped_origin_is_exercised(self) -> None:
+        """If the vocabulary grows, these tests must grow with it."""
+        assert len(ACTION_ORIGINS) == 6
+        assert set(ACTION_ORIGINS) == {
+            "voice",
+            "agent",
+            "direct",
+            "api",
+            "scheduler",
+            "skill",
+        }
+
+
+class TestOriginIsNotForgeableByItsSubject:
+    """Provenance a caller can set is not provenance.
+
+    Neither boundary is a policy input today, which is exactly why both are
+    worth pinning now: they are cheap to preserve while origin is audit-only and
+    expensive to reintroduce if Q-10 is ever reversed. The route's own comment
+    makes the same argument -- it "stops being cosmetic the moment Q-10 is
+    answered yes".
+
+    Both tests substitute ``run_local_action`` and assert on the payload it was
+    handed, so nothing actuates, no request leaves the process, and no approval
+    record is written.
+    """
+
+    @staticmethod
+    def _capture(monkeypatch, seen: dict) -> None:
+        from grandpa import pc_control
+
+        def _fake(payload):
+            seen.update(payload)
+            return SimpleNamespace(
+                ok=True,
+                status="dry_run",
+                message="",
+                evidence={},
+                action_id=None,
+                risk_level="LOW",
+                approval_required=False,
+                error=None,
+                to_dict=lambda: {"ok": True},
+            )
+
+        monkeypatch.setattr(pc_control, "run_local_action", _fake)
+
+    # -- A. the HTTP boundary ------------------------------------------------
+
+    def test_http_route_overwrites_a_client_supplied_origin(self, monkeypatch) -> None:
+        from grandpa.server.routes import run_structured_local_action
+
+        seen: dict = {}
+        self._capture(monkeypatch, seen)
+
+        asyncio.run(
+            run_structured_local_action(
+                {
+                    "action_type": "open_folder",
+                    "target": ".",
+                    "dry_run": True,
+                    "origin": "voice",
+                }
+            )
+        )
+
+        assert seen["origin"] == "api"
+
+    def test_http_route_stamps_api_when_the_body_names_none(self, monkeypatch) -> None:
+        from grandpa.server.routes import run_structured_local_action
+
+        seen: dict = {}
+        self._capture(monkeypatch, seen)
+
+        asyncio.run(
+            run_structured_local_action(
+                {"action_type": "open_folder", "target": ".", "dry_run": True}
+            )
+        )
+
+        assert seen["origin"] == "api"
+
+    def test_http_route_passes_the_rest_of_the_body_through(self, monkeypatch) -> None:
+        """The overwrite is scoped to provenance and touches nothing else."""
+        from grandpa.server.routes import run_structured_local_action
+
+        seen: dict = {}
+        self._capture(monkeypatch, seen)
+
+        asyncio.run(
+            run_structured_local_action(
+                {
+                    "action_type": "open_folder",
+                    "target": "somewhere",
+                    "args": {"depth": 2},
+                    "dry_run": True,
+                    "origin": "voice",
+                }
+            )
+        )
+
+        assert seen["action_type"] == "open_folder"
+        assert seen["target"] == "somewhere"
+        assert seen["args"] == {"depth": 2}
+        assert seen["dry_run"] is True
+
+    # -- B. the skill boundary -----------------------------------------------
+
+    def test_skill_params_cannot_override_the_skill_origin(self, monkeypatch) -> None:
+        from grandpa.skills.registry.defaults import _pc_action
+        from grandpa.skills.runtime import SkillExecutionContext
+
+        seen: dict = {}
+        self._capture(monkeypatch, seen)
+
+        _pc_action("open_folder", target=".")(
+            {"origin": "direct", "target": "."},
+            SkillExecutionContext(dry_run=True),
+        )
+
+        assert seen["origin"] == "skill"
+
+    def test_skill_origin_is_stamped_when_params_name_none(self, monkeypatch) -> None:
+        from grandpa.skills.registry.defaults import _pc_action
+        from grandpa.skills.runtime import SkillExecutionContext
+
+        seen: dict = {}
+        self._capture(monkeypatch, seen)
+
+        _pc_action("open_folder", target=".")(
+            {"target": "."}, SkillExecutionContext(dry_run=True)
+        )
+
+        assert seen["origin"] == "skill"
+
+    def test_skill_still_honours_params_for_everything_it_owns(
+        self, monkeypatch
+    ) -> None:
+        """Pinning origin must not freeze the fields params legitimately set.
+
+        ``action_type`` stays fixed at registration -- that is a separate,
+        already-closed truth-in-advertising gap -- while ``target``, ``args``
+        and ``dry_run`` remain caller-supplied.
+        """
+        from grandpa.skills.registry.defaults import _pc_action
+        from grandpa.skills.runtime import SkillExecutionContext
+
+        seen: dict = {}
+        self._capture(monkeypatch, seen)
+
+        _pc_action("open_folder", target="default")(
+            {"target": "chosen", "args": {"depth": 3}, "dry_run": True},
+            SkillExecutionContext(dry_run=False),
+        )
+
+        assert seen["action_type"] == "open_folder"
+        assert seen["target"] == "chosen"
+        assert seen["args"] == {"depth": 3}
+        assert seen["dry_run"] is True

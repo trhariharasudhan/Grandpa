@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import webbrowser
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -123,6 +124,79 @@ def pytest_collection_modifyitems(
             continue
         if not marker_names.intersection({"optional", "environment", "slow", "live"}):
             item.add_marker(pytest.mark.core)
+
+
+#: Leaf actuators no test may reach. A census of the whole suite -- recording
+#: every call rather than blocking it -- found these are invoked exactly zero
+#: times, so refusing them costs nothing and closes a whole class of mistake:
+#: a test that patches the wrong namespace, never uses its own fake, and
+#: silently drives the real machine. That has happened, and it opened a browser
+#: on a developer's desktop.
+#:
+#: Deliberately absent, because the same census found them heavily and
+#: legitimately used -- guarding them would break pytest's own ``tmp_path``
+#: teardown: ``Path.unlink`` (1554 calls), ``subprocess.Popen`` (354),
+#: ``shutil.rmtree`` (145). Also absent: ``pyautogui``, since tests substitute
+#: ``sys.modules`` and a real-module guard would not fire reliably, and
+#: ``pc_control.run_local_action``, which twenty test files exercise as the
+#: system under test.
+#:
+#: The opt-out is the ``browser`` marker, mirroring how ``microphone`` above
+#: lets a test declare that it drives real hardware.
+_GUARDED_ACTUATOR_LEAVES = (
+    "webbrowser.open",
+    "webbrowser.open_new_tab",
+    "os.startfile",
+)
+
+
+def _refuse_actuator_leaf(name: str, node_id: str):
+    """Build the stand-in that fails instead of driving the real machine."""
+
+    def guard(target=None, *args, **kwargs):
+        raise AssertionError(
+            f"{name} was called with {target!r} by {node_id}. "
+            "No test may open a real browser or launch a real application; "
+            "substitute the actuator, or mark the test with "
+            "@pytest.mark.browser if it genuinely needs one."
+        )
+
+    guard._grandpa_actuator_guard = True
+    return guard
+
+
+@pytest.fixture(autouse=True)
+def _no_real_actuator_leaves(request: pytest.FixtureRequest) -> None:
+    """Stop any test reaching a real browser or application launcher.
+
+    Autouse so protection does not depend on the author remembering it -- the
+    failures this prevents were all cases where someone believed they had
+    substituted the actuator and had not.
+
+    A test that patches these itself still wins: this installs first, and the
+    test's own ``monkeypatch`` replaces it.
+    """
+    patcher = pytest.MonkeyPatch()
+    # One yield on every path: an early ``return`` here would make this a
+    # generator that yields nothing, and the fixture would fail to resolve.
+    if "browser" not in request.keywords:
+        node_id = request.node.nodeid
+        patcher.setattr(
+            webbrowser, "open", _refuse_actuator_leaf("webbrowser.open", node_id)
+        )
+        patcher.setattr(
+            webbrowser,
+            "open_new_tab",
+            _refuse_actuator_leaf("webbrowser.open_new_tab", node_id),
+        )
+        if hasattr(os, "startfile"):
+            patcher.setattr(
+                os, "startfile", _refuse_actuator_leaf("os.startfile", node_id)
+            )
+    try:
+        yield
+    finally:
+        patcher.undo()
 
 
 @pytest.fixture(autouse=True)

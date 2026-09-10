@@ -318,7 +318,7 @@ class VoiceCommandProcessor:
 
         from grandpa.browser import handle_browser_command
 
-        browser_action = handle_browser_command(effective_text)
+        browser_action = handle_browser_command(effective_text, origin="voice")
         if not browser_action.should_fallback:
             return VoiceAssistantResponse(
                 browser_action.message, status=browser_action.status, kind="browser"
@@ -326,7 +326,7 @@ class VoiceCommandProcessor:
 
         from grandpa.file_assistant import handle_file_command
 
-        file_action = handle_file_command(effective_text)
+        file_action = handle_file_command(effective_text, origin="voice")
         if not file_action.should_fallback:
             return VoiceAssistantResponse(
                 file_action.message,
