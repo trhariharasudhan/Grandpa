@@ -19,6 +19,9 @@ tool call was issued and refused.
 Exit codes: 0 = every probe PASS or SKIP, 1 = any FAIL, 2 = could not run.
 
 Usage: python scripts/verify_confirmation_enforcement.py [--model NAME]
+
+The sandbox, Ollama and CLI machinery is shared with the e2e suite in
+``tests/e2e/harness.py``.
 """
 
 from __future__ import annotations
@@ -27,20 +30,26 @@ import argparse
 import importlib.util
 import json
 import os
-import shutil
 import signal
-import subprocess
 import sys
-import tempfile
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = REPO_ROOT / "src"
-OLLAMA_URL = "http://localhost:11434"
+sys.path.insert(0, str(REPO_ROOT))
+
+from tests.e2e.harness import (  # noqa: E402
+    CLI_TIMEOUT,
+    OLLAMA_URL,
+    CouldNotRun,
+    OllamaServer,
+    Sandbox,
+    candidate_models,
+    run_cli,
+    run_python,
+    verify_checkout,
+)
 
 MARKER = "probemarker"
 TOOL_PROMPT = f"Call the shell_exec tool exactly once with the command: mkdir {MARKER}"
@@ -70,14 +79,7 @@ PRE_GATE_REJECTIONS = (
 # grandpa-coder 0/3. Any other installed model is still tried afterwards.
 PREFERRED_MODELS = ("grandpa-brain", "grandpa-mini", "qwen2.5", "qwen3", "llama3")
 
-CLI_TIMEOUT = 420
-OLLAMA_START_TIMEOUT = 60
-
 PASS, FAIL, SKIP, NORUN = "PASS", "FAIL", "SKIP", "COULD NOT RUN"
-
-
-class CouldNotRun(Exception):
-    """A prerequisite is missing; the probes cannot produce evidence."""
 
 
 @dataclass
@@ -85,196 +87,6 @@ class Verdict:
     probe: str
     status: str
     reason: str
-
-
-# --------------------------------------------------------------------------
-# Prerequisites
-# --------------------------------------------------------------------------
-
-
-def _ollama_models(timeout: float = 3.0) -> list[str] | None:
-    try:
-        with urllib.request.urlopen(f"{OLLAMA_URL}/api/tags", timeout=timeout) as resp:
-            data = json.load(resp)
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
-    return [m["name"] for m in data.get("models", []) if m.get("name")]
-
-
-class OllamaServer:
-    """Reuse a running Ollama, or start ``ollama serve`` and stop it afterwards."""
-
-    def __init__(self) -> None:
-        self.process: subprocess.Popen | None = None
-        self.models: list[str] = []
-
-    @property
-    def started_here(self) -> bool:
-        return self.process is not None
-
-    def __enter__(self) -> OllamaServer:
-        models = _ollama_models()
-        if models is not None:
-            self.models = models
-            return self
-        exe = shutil.which("ollama")
-        if exe is None:
-            raise CouldNotRun(
-                f"Ollama is not reachable at {OLLAMA_URL} and the `ollama` "
-                "executable is not on PATH."
-            )
-        flags = subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0
-        # Deliberately the real environment: Ollama locates its models via HOME.
-        self.process = subprocess.Popen(
-            [exe, "serve"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=flags,
-        )
-        deadline = time.monotonic() + OLLAMA_START_TIMEOUT
-        while time.monotonic() < deadline:
-            if self.process.poll() is not None:
-                code = self.process.returncode
-                self.process = None
-                raise CouldNotRun(
-                    f"`ollama serve` exited with code {code} before it became reachable."
-                )
-            models = _ollama_models()
-            if models is not None:
-                self.models = models
-                return self
-            time.sleep(1)
-        self.stop()
-        raise CouldNotRun(
-            f"`ollama serve` did not become reachable within {OLLAMA_START_TIMEOUT}s."
-        )
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.stop()
-
-    def stop(self) -> None:
-        if self.process is None or self.process.poll() is not None:
-            return
-        self.process.terminate()
-        try:
-            self.process.wait(timeout=15)
-        except subprocess.TimeoutExpired:
-            self.process.kill()
-            self.process.wait(timeout=15)
-
-
-# --------------------------------------------------------------------------
-# Sandbox and CLI invocation
-# --------------------------------------------------------------------------
-
-
-class Sandbox:
-    def __init__(self, keep: bool) -> None:
-        self.keep = keep
-        self.root = Path(tempfile.mkdtemp(prefix="grandpa-confirm-probe-"))
-        self.home = self.root / "home"
-        self.home.mkdir()
-        self._counter = 0
-
-    def workdir(self, label: str) -> Path:
-        self._counter += 1
-        path = self.root / f"{self._counter:02d}-{label}"
-        path.mkdir()
-        return path
-
-    def env(self) -> dict[str, str]:
-        env = dict(os.environ)
-        for key in list(env):
-            if key.upper() in {"GRANDPA_CONFIG", "GRANDPA_HOME"}:
-                del env[key]
-        existing = env.get("PYTHONPATH")
-        env.update(
-            HOME=str(self.home),
-            USERPROFILE=str(self.home),
-            GRANDPA_HOME=str(self.home / ".grandpa"),
-            PYTHONPATH=str(SRC_DIR) + (os.pathsep + existing if existing else ""),
-            PYTHONIOENCODING="utf-8",
-            NO_COLOR="1",
-        )
-        return env
-
-    def cleanup(self) -> None:
-        if not self.keep:
-            shutil.rmtree(self.root, ignore_errors=True)
-
-
-@dataclass
-class CliRun:
-    returncode: int | None
-    stdout: str
-    stderr: str
-    timed_out: bool = False
-
-    @property
-    def text(self) -> str:
-        return self.stdout + "\n" + self.stderr
-
-    def tail(self, limit: int = 240) -> str:
-        return " ".join(self.text.split())[-limit:]
-
-
-def run_python(
-    sandbox: Sandbox,
-    argv: list[str],
-    *,
-    cwd: Path,
-    stdin_text: str | None = None,
-    extra_env: dict[str, str] | None = None,
-) -> CliRun:
-    env = sandbox.env()
-    if extra_env:
-        env.update(extra_env)
-    kwargs: dict = (
-        {"input": stdin_text}
-        if stdin_text is not None
-        else {"stdin": subprocess.DEVNULL}
-    )
-    try:
-        proc = subprocess.run(
-            [sys.executable, *argv],
-            cwd=cwd,
-            env=env,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=CLI_TIMEOUT,
-            **kwargs,
-        )
-    except subprocess.TimeoutExpired as exc:
-        out = exc.stdout if isinstance(exc.stdout, str) else ""
-        err = exc.stderr if isinstance(exc.stderr, str) else ""
-        return CliRun(None, out, err, timed_out=True)
-    return CliRun(proc.returncode, proc.stdout, proc.stderr)
-
-
-def run_cli(sandbox: Sandbox, args: list[str], **kwargs) -> CliRun:
-    return run_python(sandbox, ["-m", "grandpa.cli", "--quiet", *args], **kwargs)
-
-
-def verify_checkout(sandbox: Sandbox) -> Path:
-    run = run_python(
-        sandbox,
-        ["-c", "import grandpa, sys; sys.stdout.write(grandpa.__file__)"],
-        cwd=sandbox.root,
-    )
-    if run.returncode != 0:
-        raise CouldNotRun(
-            f"grandpa is not importable with {sys.executable}: {run.tail()}"
-        )
-    imported = Path(run.stdout.strip()).resolve()
-    if SRC_DIR.resolve() not in imported.parents:
-        raise CouldNotRun(
-            f"The CLI subprocess imported grandpa from {imported}, not this checkout "
-            f"({SRC_DIR}); probing it would test different code."
-        )
-    return imported
 
 
 # --------------------------------------------------------------------------
@@ -322,33 +134,11 @@ def first_content(results: list[dict]) -> str:
 # --------------------------------------------------------------------------
 
 
-def candidate_models(available: list[str], requested: str | None) -> list[str]:
-    if requested:
-        if requested not in available:
-            raise CouldNotRun(
-                f"Requested model {requested!r} is not installed. Installed: {available}"
-            )
-        return [requested]
-    usable = [m for m in available if "embed" not in m.lower()]
-    if not usable:
-        raise CouldNotRun(
-            f"No chat model is installed in Ollama (found only: {available})."
-        )
-
-    def rank(name: str) -> tuple[int, str]:
-        for index, prefix in enumerate(PREFERRED_MODELS):
-            if name.lower().startswith(prefix):
-                return index, name
-        return len(PREFERRED_MODELS), name
-
-    return sorted(usable, key=rank)
-
-
 def select_model(
     sandbox: Sandbox, available: list[str], requested: str | None, log
 ) -> str:
     """Pick a model that demonstrably issues shell_exec calls through ``ask``."""
-    for model in candidate_models(available, requested)[:4]:
+    for model in candidate_models(available, requested, PREFERRED_MODELS)[:4]:
         for attempt in (1, 2):
             work = sandbox.workdir("preflight")
             run = run_cli(
@@ -720,7 +510,7 @@ def main() -> int:
     log(f"  checkout:   {REPO_ROOT}")
     log(f"  python:     {sys.executable}")
     verdicts: list[Verdict] = []
-    sandbox = Sandbox(keep=args.keep_sandbox)
+    sandbox = Sandbox(keep=args.keep_sandbox, prefix="grandpa-confirm-probe-")
     try:
         with OllamaServer() as ollama:
             log(
