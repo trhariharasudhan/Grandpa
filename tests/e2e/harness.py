@@ -265,6 +265,128 @@ def run_cli(sandbox: Sandbox, args: list[str], **kwargs) -> CliRun:
     return run_python(sandbox, ["-m", "grandpa.cli", "--quiet", *args], **kwargs)
 
 
+# --------------------------------------------------------------------------
+# A real console, typed into from outside (Windows)
+# --------------------------------------------------------------------------
+
+# Runs in the CLI process: make stdin the process's own console input, which is
+# what a person at a terminal has, then run the CLI unchanged.
+_CONSOLE_LAUNCHER = r"""
+import ctypes, msvcrt, os, runpy, sys
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+kernel32.CreateFileW.restype = ctypes.c_void_p
+kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                 ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+kernel32.SetStdHandle.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
+handle = kernel32.CreateFileW("CONIN$", 0xC0000000, 3, None, 3, 0, None)
+if not handle or handle == ctypes.c_void_p(-1).value:
+    sys.exit(f"e2e console launcher: no console input (error {ctypes.get_last_error()})")
+kernel32.SetStdHandle(0xFFFFFFF6, handle)  # STD_INPUT_HANDLE
+os.dup2(msvcrt.open_osfhandle(handle, os.O_RDONLY), 0)
+sys.stdin = open(0, "r", closefd=False)
+sys.argv = ["grandpa", "--quiet", *sys.argv[1:]]
+runpy.run_module("grandpa.cli", run_name="__main__")
+"""
+
+# Runs detached: attach to the CLI's console and put keystrokes in its input
+# buffer, exactly where a keyboard would.
+_CONSOLE_TYPIST = r"""
+import ctypes, sys, time
+from ctypes import wintypes
+pid, text = int(sys.argv[1]), sys.argv[2]
+kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+class KEY_EVENT_RECORD(ctypes.Structure):
+    _fields_ = [("bKeyDown", wintypes.BOOL), ("wRepeatCount", wintypes.WORD),
+                ("wVirtualKeyCode", wintypes.WORD), ("wVirtualScanCode", wintypes.WORD),
+                ("UnicodeChar", wintypes.WCHAR), ("dwControlKeyState", wintypes.DWORD)]
+
+class EVENT(ctypes.Union):
+    _fields_ = [("KeyEvent", KEY_EVENT_RECORD), ("_size", ctypes.c_byte * 16)]
+
+class INPUT_RECORD(ctypes.Structure):
+    _fields_ = [("EventType", wintypes.WORD), ("Event", EVENT)]
+
+kernel32.FreeConsole()
+deadline = time.monotonic() + 20
+while not kernel32.AttachConsole(pid):
+    if time.monotonic() > deadline:
+        sys.exit(f"AttachConsole({pid}) failed (error {ctypes.get_last_error()})")
+    time.sleep(0.05)
+kernel32.CreateFileW.restype = ctypes.c_void_p
+kernel32.CreateFileW.argtypes = [ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32,
+                                 ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p]
+handle = kernel32.CreateFileW("CONIN$", 0xC0000000, 3, None, 3, 0, None)
+records = (INPUT_RECORD * (2 * len(text)))()
+for index, char in enumerate(text):
+    for offset, down in enumerate((True, False)):
+        record = records[2 * index + offset]
+        record.EventType = 1  # KEY_EVENT
+        record.Event.KeyEvent.bKeyDown = down
+        record.Event.KeyEvent.wRepeatCount = 1
+        record.Event.KeyEvent.wVirtualKeyCode = 0x0D if char == "\r" else 0
+        record.Event.KeyEvent.UnicodeChar = char
+kernel32.WriteConsoleInputW.argtypes = [ctypes.c_void_p, ctypes.c_void_p, wintypes.DWORD,
+                                        ctypes.POINTER(wintypes.DWORD)]
+written = wintypes.DWORD()
+if not kernel32.WriteConsoleInputW(handle, records, len(records), ctypes.byref(written)):
+    sys.exit(f"WriteConsoleInputW failed (error {ctypes.get_last_error()})")
+"""
+
+
+def run_cli_at_console(
+    sandbox: Sandbox,
+    args: list[str],
+    *,
+    typed: str,
+    cwd: Path,
+    timeout: float = 120,
+) -> CliRun:
+    """Run the CLI with a real, windowless console as stdin and type ``typed`` into it.
+
+    Unlike piped stdin, this is what ``stdin_is_interactive()`` accepts, so it
+    exercises the path a person at a terminal takes. ``typed`` uses ``\\r`` for
+    Enter. Windows only.
+    """
+    if os.name != "nt":
+        raise NotImplementedError("run_cli_at_console needs a Windows console")
+    child = subprocess.Popen(
+        [sys.executable, "-c", _CONSOLE_LAUNCHER, *args],
+        cwd=cwd,
+        env=sandbox.env(),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    typist = subprocess.run(
+        [sys.executable, "-c", _CONSOLE_TYPIST, str(child.pid), typed],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        creationflags=subprocess.DETACHED_PROCESS,
+        timeout=60,
+    )
+    try:
+        stdout, stderr = child.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(child.pid)], capture_output=True
+        )
+        stdout, stderr = child.communicate()
+        return CliRun(None, stdout, stderr + _typist_note(typist), timed_out=True)
+    return CliRun(child.returncode, stdout, stderr + _typist_note(typist))
+
+
+def _typist_note(typist: subprocess.CompletedProcess) -> str:
+    if typist.returncode == 0:
+        return ""
+    return f"\n[e2e typist exit {typist.returncode}: {typist.stderr.strip()[-300:]}]"
+
+
 def verify_checkout(sandbox: Sandbox) -> Path:
     """Prove the CLI subprocess imports this checkout's grandpa, not another install."""
     run = run_python(

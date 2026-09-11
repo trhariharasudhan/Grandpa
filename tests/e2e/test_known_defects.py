@@ -1,8 +1,8 @@
-"""Defects found while building this suite, pinned as strict expected failures.
+"""Defects found while building this suite.
 
 These are not among the 20 command tests. Each one asserts the behaviour a user
-would expect. ``strict=True`` turns a fix into an XPASS failure, so whoever fixes
-the defect has to promote the test into the main suite.
+would expect. An unfixed defect is marked ``xfail(strict=True)``, so a fix turns
+into an XPASS failure; the fix removes the marker and the test keeps guarding it.
 """
 
 from __future__ import annotations
@@ -14,35 +14,31 @@ from tests.e2e.harness import chat_replies
 pytestmark = pytest.mark.e2e
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason='notes delete prints "Delete note ...? [y/N]" but never reads an answer',
-)
+# Fixed: notes delete printed "Delete note ...? [y/N]" and never read an answer.
 def test_answering_yes_at_the_notes_delete_prompt_deletes_the_note(
     cli, make_nonce
 ) -> None:
     title = make_nonce("e2eprompt")
     cli("notes", "create", title)
 
-    cli("notes", "delete", title, stdin="y\n")
+    answered = cli.at_terminal("notes", "delete", title, answer="y")
 
+    assert f'Delete note "{title}"? [y/N]' in answered.stdout, answered.text
+    assert f'Note deleted: "{title}".' in answered.stdout, answered.text
     assert title not in cli("notes", "list").text
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason='downloads delete prints "Delete 1 download? [y/N]" but never reads an answer',
-)
+# Fixed: downloads delete printed "Delete 1 download? [y/N]" and never read an answer.
 def test_answering_yes_at_the_downloads_delete_prompt_deletes_the_file(
     cli, make_nonce
 ) -> None:
     target = cli.home / "Downloads" / f"{make_nonce('prompt-')}.pdf"
     target.write_bytes(b"%PDF")
 
-    cli("downloads", "delete", target.name, stdin="y\n")
+    answered = cli.at_terminal("downloads", "delete", target.name, answer="y")
 
+    assert "Delete 1 download (4 B)? [y/N]" in answered.stdout, answered.text
+    assert "Deleted 1 download." in answered.stdout, answered.text
     assert not target.exists()
 
 

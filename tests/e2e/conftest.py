@@ -29,6 +29,7 @@ from tests.e2e.harness import (
     ollama_generate,
     ollama_models,
     run_cli,
+    run_cli_at_console,
     verify_checkout,
 )
 
@@ -177,6 +178,21 @@ class Cli:
             list(args),
             cwd=self.sandbox.root,
             stdin_text=stdin,
+            timeout=timeout,
+        )
+        if run.timed_out:
+            raise AssertionError(f"`grandpa {' '.join(args)}` timed out: {run.tail()}")
+        return run
+
+    def at_terminal(self, *args: str, answer: str, timeout: float = 120) -> CliRun:
+        """Run at a real console and type ``answer`` then Enter, as a person would."""
+        if os.name != "nt":
+            pytest.skip("typing into a real console is implemented for Windows only")
+        run = run_cli_at_console(
+            self.sandbox,
+            list(args),
+            typed=answer + "\r",
+            cwd=self.sandbox.root,
             timeout=timeout,
         )
         if run.timed_out:

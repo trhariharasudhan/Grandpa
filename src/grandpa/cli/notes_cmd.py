@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import click
 
+from grandpa.cli._tty import TerminalConfirmation
 from grandpa.notes import handle_notes_command
+from grandpa.notes.automation import _confirmation_message
 
 
 @click.group(name="notes")
@@ -60,9 +62,11 @@ def rename(old_name: str, new_name: tuple[str, ...]) -> None:
 @click.argument("name", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm note deletion.")
 def delete(name: tuple[str, ...], yes: bool) -> None:
-    click.echo(
-        handle_notes_command("delete note " + " ".join(name), confirmed=yes).message
+    confirm = TerminalConfirmation(_confirmation_message)
+    result = handle_notes_command(
+        "delete note " + " ".join(name), confirmed=yes, confirm=confirm
     )
+    confirm.finish(result.message, cancelled="Note deletion cancelled.")
 
 
 @notes.command("archive")

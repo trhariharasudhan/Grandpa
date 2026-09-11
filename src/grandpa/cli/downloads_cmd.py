@@ -4,12 +4,23 @@ from __future__ import annotations
 
 import click
 
+from grandpa.cli._tty import TerminalConfirmation
 from grandpa.downloads import handle_downloads_command
+from grandpa.downloads.formatter import format_operation_plan
 
 
 @click.group(name="downloads")
 def downloads() -> None:
     """Inspect and organize the local Downloads folder."""
+
+
+def _confirmed(command: str, yes: bool) -> None:
+    """Run a Downloads change, asking on the terminal unless --yes was given."""
+    confirm = TerminalConfirmation(
+        lambda action, items: format_operation_plan(action.action, items)
+    )
+    result = handle_downloads_command(command, confirmed=yes, confirm=confirm)
+    confirm.finish(result.message, cancelled="Downloads change cancelled.")
 
 
 @downloads.command("recent")
@@ -51,31 +62,21 @@ def duplicates() -> None:
 @downloads.command("organize")
 @click.option("--yes", is_flag=True, help="Confirm organization.")
 def organize(yes: bool) -> None:
-    click.echo(
-        handle_downloads_command("organize my downloads folder", confirmed=yes).message
-    )
+    _confirmed("organize my downloads folder", yes)
 
 
 @downloads.command("delete")
 @click.argument("selector", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm deletion.")
 def delete(selector: tuple[str, ...], yes: bool) -> None:
-    click.echo(
-        handle_downloads_command(
-            "downloads delete " + " ".join(selector), confirmed=yes
-        ).message
-    )
+    _confirmed("downloads delete " + " ".join(selector), yes)
 
 
 @downloads.command("archive")
 @click.argument("selector", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm archive.")
 def archive(selector: tuple[str, ...], yes: bool) -> None:
-    click.echo(
-        handle_downloads_command(
-            "downloads archive " + " ".join(selector), confirmed=yes
-        ).message
-    )
+    _confirmed("downloads archive " + " ".join(selector), yes)
 
 
 @downloads.command("info")

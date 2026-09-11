@@ -61,12 +61,20 @@ def test_notes_delete_needs_yes_and_then_really_deletes(cli, make_nonce) -> None
     cli("notes", "create", title)
     assert len(_note_files(cli.grandpa_home, title)) == 1
 
-    unconfirmed = cli("notes", "delete", title)
+    # A piped "y" is not a person answering: it must be refused, not obeyed.
+    unconfirmed = cli("notes", "delete", title, stdin="y\n")
 
     assert _note_files(cli.grandpa_home, title), (
         f"note deleted without --yes: {unconfirmed.tail()}"
     )
-    assert f'Delete note "{title}"?' in unconfirmed.text, unconfirmed.text
+    assert unconfirmed.returncode == 1, unconfirmed.text
+    assert "stdin is not interactive" in unconfirmed.stderr, unconfirmed.text
+
+    declined = cli.at_terminal("notes", "delete", title, answer="n")
+
+    assert f'Delete note "{title}"? [y/N]' in declined.stdout, declined.text
+    assert "Note deletion cancelled." in declined.stdout, declined.text
+    assert _note_files(cli.grandpa_home, title), "note deleted after answering n"
 
     confirmed = cli("notes", "delete", title, "--yes")
 
@@ -106,10 +114,17 @@ def test_downloads_delete_needs_yes_and_then_deletes_only_the_target(
     target.write_bytes(b"%PDF target")
     bystander.write_bytes(b"%PDF bystander")
 
-    unconfirmed = cli("downloads", "delete", target.name)
+    unconfirmed = cli("downloads", "delete", target.name, stdin="y\n")
 
     assert target.exists(), f"deleted without --yes: {unconfirmed.tail()}"
-    assert "Delete 1 download" in unconfirmed.text, unconfirmed.text
+    assert unconfirmed.returncode == 1, unconfirmed.text
+    assert "stdin is not interactive" in unconfirmed.stderr, unconfirmed.text
+
+    declined = cli.at_terminal("downloads", "delete", target.name, answer="n")
+
+    assert "Delete 1 download (11 B)? [y/N]" in declined.stdout, declined.text
+    assert "Downloads change cancelled." in declined.stdout, declined.text
+    assert target.exists(), "deleted after answering n"
 
     confirmed = cli("downloads", "delete", target.name, "--yes")
 
