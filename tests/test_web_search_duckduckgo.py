@@ -116,6 +116,42 @@ def test_recency_window_maps_to_ddgs_timelimit(no_search_keys, fake_ddgs) -> Non
     assert fake_ddgs[-1][1].get("timelimit") == "w"
 
 
+_BING_PAGE = (
+    '<ol><li class="b_algo"><h2><a href="https://packaging.python.org/">'
+    "The <strong>Python</strong> <strong>Packaging</strong> User Guide</a></h2>"
+    "<p>Welcome to the <strong>Python</strong> <strong>Packaging</strong> "
+    "<strong>User</strong> <strong>Guide</strong>, a collection of tutorials.</p>"
+    "</li></ol>"
+)
+
+
+def test_search_results_keep_the_spaces_around_highlighted_words(monkeypatch) -> None:
+    """`search web` printed "thePythonPackagingUserGuide": ddgs glued text nodes."""
+    base = pytest.importorskip("ddgs.base")
+    bing = pytest.importorskip("ddgs.engines.bing")
+    import grandpa.web_search.duckduckgo as duckduckgo
+
+    engine_cls = base.BaseSearchEngine
+    monkeypatch.setattr(engine_cls, "extract_tree", engine_cls.extract_tree)
+    monkeypatch.setattr(engine_cls, "extract_results", engine_cls.extract_results)
+    monkeypatch.setattr(duckduckgo, "_ddgs_whitespace_fix_applied", False)
+    engine = bing.Bing.__new__(bing.Bing)
+
+    (unfixed,) = engine.extract_results(_BING_PAGE)
+    if "the Python Packaging" in unfixed.body:
+        pytest.skip("ddgs keeps whitespace itself now; remove the duckduckgo.py shim")
+    assert "thePythonPackagingUserGuide" in unfixed.body
+
+    duckduckgo._keep_whitespace_between_tags()
+    (fixed,) = engine.extract_results(_BING_PAGE)
+
+    assert fixed.title == "The Python Packaging User Guide"
+    assert fixed.body == (
+        "Welcome to the Python Packaging User Guide, a collection of tutorials."
+    )
+    assert fixed.href == "https://packaging.python.org/"
+
+
 @pytest.mark.environment
 @pytest.mark.skipif(
     os.environ.get("GRANDPA_RUN_NETWORK_TESTS") != "1",
