@@ -79,12 +79,17 @@ class SmartNavigator:
                 "message": res.message,
             }
         elif rtype == "heading":
-            res = execute_browser_action("scroll", target="down")
+            # browser_control has no scroll action (it falls through to its
+            # "not supported yet" branch), so report that instead of claiming
+            # a scroll that never happened.
             return {
-                "status": res.status,
+                "status": "unsupported",
                 "action": "scroll",
                 "target": target_val,
-                "message": f"Scrolled page towards heading '{target_val}'.",
+                "message": (
+                    f"Heading '{target_val}' is on the page, but scrolling to it "
+                    "is not implemented."
+                ),
             }
 
         return {
@@ -97,21 +102,27 @@ class SmartNavigator:
     def scroll_until_heading(
         self, heading_name: str, max_attempts: int = 5
     ) -> dict[str, Any]:
-        """Scroll visible page until specified heading is reached."""
-        for attempt in range(1, max_attempts + 1):
-            page = read_current_browser_page()
-            for h in page.headings:
-                if heading_name.lower() in h.text.lower():
-                    return {
-                        "status": "handled",
-                        "heading": h.text,
-                        "attempts": attempt,
-                        "message": f"Found heading '{h.text}' after {attempt} scroll(s).",
-                    }
-            execute_browser_action("scroll", target="down")
+        """Report whether a heading is on the current page.
+
+        Scrolling is not implemented (browser_control has no scroll action),
+        so this reads the page once and fails loudly rather than claiming
+        scrolls. ``max_attempts`` is kept for API compatibility.
+        """
+        page = read_current_browser_page()
+        for h in page.headings:
+            if heading_name.lower() in h.text.lower():
+                return {
+                    "status": "handled",
+                    "heading": h.text,
+                    "attempts": 0,
+                    "message": f"Heading '{h.text}' is on the current page.",
+                }
         return {
-            "status": "partially_handled",
+            "status": "unsupported",
             "heading": heading_name,
-            "attempts": max_attempts,
-            "message": f"Scrolled {max_attempts} times, heading '{heading_name}' not yet visible.",
+            "attempts": 0,
+            "message": (
+                f"Heading '{heading_name}' is not on the current page, and "
+                "scrolling to find it is not implemented."
+            ),
         }

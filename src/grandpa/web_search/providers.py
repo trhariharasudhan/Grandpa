@@ -19,20 +19,31 @@ class WebSearchProviderConfig:
         return os.environ.get(self.api_key_env, "").strip()
 
 
+KEYLESS_PROVIDER = "duckduckgo"
+_KEYED_PROVIDERS = (
+    ("brave", "BRAVE_SEARCH_API_KEY"),
+    ("bing", "BING_SEARCH_API_KEY"),
+    ("serper", "SERPER_API_KEY"),
+)
+
+
 def default_provider_config() -> WebSearchProviderConfig:
-    provider = (
-        os.environ.get("GRANDPA_WEB_SEARCH_PROVIDER", "brave").strip().lower()
-        or "brave"
-    )
-    env_by_provider = {
-        "brave": "BRAVE_SEARCH_API_KEY",
-        "bing": "BING_SEARCH_API_KEY",
-        "serper": "SERPER_API_KEY",
-    }
-    api_key_env = os.environ.get(
-        "GRANDPA_WEB_SEARCH_API_KEY_ENV",
-        env_by_provider.get(provider, "BRAVE_SEARCH_API_KEY"),
-    )
+    env_by_provider = dict(_KEYED_PROVIDERS)
+    explicit = os.environ.get("GRANDPA_WEB_SEARCH_PROVIDER", "").strip().lower()
+    key_env_override = os.environ.get("GRANDPA_WEB_SEARCH_API_KEY_ENV", "").strip()
+    if explicit:
+        provider = explicit
+    elif key_env_override:
+        # A custom key variable implies a keyed provider; keep the old default.
+        provider = "brave"
+    else:
+        # Use a keyed provider whose API key is present; otherwise fall back to
+        # keyless DuckDuckGo so search works without any setup.
+        provider = next(
+            (name for name, env in _KEYED_PROVIDERS if os.environ.get(env, "").strip()),
+            KEYLESS_PROVIDER,
+        )
+    api_key_env = key_env_override or env_by_provider.get(provider, "")
     max_results = _int_env("GRANDPA_WEB_SEARCH_MAX_RESULTS", 8)
     timeout_seconds = _int_env("GRANDPA_WEB_SEARCH_TIMEOUT_SECONDS", 10)
     cache_minutes = _int_env("GRANDPA_WEB_SEARCH_CACHE_MINUTES", 15)
@@ -69,6 +80,7 @@ class WebSearchTimeoutError(WebSearchProviderError):
 
 
 __all__ = [
+    "KEYLESS_PROVIDER",
     "WebSearchAuthError",
     "WebSearchNotConfiguredError",
     "WebSearchProviderConfig",

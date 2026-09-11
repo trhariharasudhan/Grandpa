@@ -12,6 +12,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **`grandpa ask --research`** and its companion flag **`--knowledge-db`**.
+  The flag imported `grandpa.agents.research_loop`, a module that never
+  existed, so every use crashed with `ModuleNotFoundError`. The unused
+  `tests/server/test_optional_research_router.py` was removed with it; no
+  `/api/research` route ever existed.
+- **`grandpa workflow`** and its subcommands **`workflow list`**,
+  **`workflow run`**, and **`workflow status`**. `list` could never find a
+  workflow, `run` printed "Workflow '<name>' started." without executing
+  anything, and `status` printed a hardcoded string.
+  `grandpa.workflow.engine` remains as a library with no CLI.
+- `grandpa.desktop_automation.emergency_stop_placeholder()`, a stub. The real
+  emergency stop is in `grandpa.pc_control`.
+- The `react` and `monitor` entries from the builtin agent import list; neither
+  module existed. `react` is still available as an alias of `native_react`.
+
+### Changed
+
+- `grandpa search` and chat web search use DuckDuckGo (through the bundled
+  `ddgs` dependency) when no Brave, Bing, or Serper API key is set, instead of
+  reporting "not configured". A keyed provider is still used when its key is
+  present, and `GRANDPA_WEB_SEARCH_PROVIDER` still selects one explicitly.
+- A builtin agent that fails to import now logs a warning instead of being
+  skipped silently.
+
+### Fixed
+
+- Browser smart navigation no longer reports "Scrolled page towards heading…"
+  or "Scrolled N times…". Scrolling is not implemented, and those paths now
+  return `unsupported`.
+- "click the highlighted button" now returns `unsupported`. Previously its
+  parser reported `handled`, so the command asked for confirmation and queued
+  an approval for an action that cannot run.
+
 ## [1.0.1] - 2026-05-17
 
 A patch release that closes the auto-update gap so the analytics

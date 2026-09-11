@@ -117,13 +117,11 @@ class WebSearchTool(BaseTool):
 
     def _duckduckgo_search(self, query: str, max_results: int) -> str:
         """Search using DuckDuckGo as fallback."""
-        from ddgs import DDGS
+        from grandpa.web_search.duckduckgo import duckduckgo_text_search
 
-        ddgs = DDGS()
-        results = list(ddgs.text(query, max_results=max_results))
+        results = duckduckgo_text_search(query, max_results=max_results)
         formatted = "\n\n".join(
-            f"**{r.get('title', 'Untitled')}**\n"
-            f"{r.get('href', '')}\n{r.get('body', '')}"
+            f"**{r['title'] or 'Untitled'}**\n{r['url']}\n{r['snippet']}"
             for r in results
         )
         return formatted

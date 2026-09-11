@@ -45,13 +45,6 @@ def test_plain_typing_requires_confirmation():
     assert desktop_automation.requires_confirmation("type|hello")
 
 
-def test_emergency_stop_placeholder_exists():
-    text = desktop_automation.emergency_stop_placeholder()
-
-    assert "Emergency stop" in text
-    assert "failsafe" in text
-
-
 def test_chained_pyautogui_actions_execute_in_order():
     fake = FakePyAutoGUI()
 

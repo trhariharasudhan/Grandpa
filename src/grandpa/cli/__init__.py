@@ -107,14 +107,8 @@ def cli(
     ctx.obj["fullscreen"] = fullscreen
     setup_logging(verbose=verbose, quiet=quiet)
 
-    # Check for updates on interactive commands. The banner is noise in
-    # demo recordings of ``Grandpa ask --research``, so skip it whenever
-    # the research flag is in argv (cheap argv sniff — Click hasn't
-    # parsed the subcommand's args yet at this point).
-    import sys
-
-    research_mode_active = "--research" in sys.argv
-    if not quiet and ctx.invoked_subcommand and not research_mode_active:
+    # Check for updates on interactive commands.
+    if not quiet and ctx.invoked_subcommand:
         from grandpa.cli._version_check import check_for_updates
 
         check_for_updates(ctx.invoked_subcommand)
@@ -316,9 +310,6 @@ cli.add_command(
         "grandpa.cli.agent_run_cmd:agent_group",
         short_help="Grandpa Agent Runtime V1.",
     )
-)
-cli.add_command(
-    _lazy("workflow", "grandpa.cli.workflow_cmd:workflow", short_help="Run workflows.")
 )
 cli.add_command(
     _lazy("skill", "grandpa.cli.skill_cmd:skill", short_help="Manage skills.")

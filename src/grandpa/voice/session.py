@@ -375,9 +375,13 @@ def _route_voice_request(
         }
 
     try:
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local_actions import handle_local_action, refuse_confirmation
 
-        result = handle_local_action(command_text, execute=True)
+        # Voice has no synchronous spoken yes/no, so synthetic keyboard/mouse
+        # input is refused explicitly rather than approved by default.
+        result = handle_local_action(
+            command_text, execute=True, confirm=refuse_confirmation
+        )
         if not result.should_fallback and result.status != "error":
             return {
                 "status": result.status,

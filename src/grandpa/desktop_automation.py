@@ -151,13 +151,6 @@ def classify_automation_permission(spec: str) -> AutomationPermission:
     return "safe"
 
 
-def emergency_stop_placeholder() -> str:
-    return (
-        "Emergency stop design: move the mouse to a screen corner to trigger "
-        "pyautogui failsafe; future UI can expose a persistent stop button."
-    )
-
-
 def _execute_with_pyautogui(
     pyautogui,
     spec: str,
@@ -378,7 +371,6 @@ def _log_automation(spec: str, result: AutomationResult) -> None:
 __all__ = [
     "AutomationResult",
     "classify_automation_permission",
-    "emergency_stop_placeholder",
     "execute_automation",
     "requires_confirmation",
 ]

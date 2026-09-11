@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import urllib.error
 import urllib.parse
@@ -10,6 +11,7 @@ from typing import Any
 
 from grandpa.web_search.models import WebSearchQuery, WebSearchResult
 from grandpa.web_search.providers import (
+    KEYLESS_PROVIDER,
     WebSearchAuthError,
     WebSearchNotConfiguredError,
     WebSearchProviderConfig,
@@ -33,6 +35,16 @@ class WebSearchClient:
         self.safety = safety or WebSearchSafetyPolicy()
 
     def status(self) -> tuple[str, str]:
+        if self.config.provider == KEYLESS_PROVIDER:
+            if importlib.util.find_spec("ddgs") is None:
+                return (
+                    "not_configured",
+                    "Web search needs the ddgs package. Install it with: pip install ddgs",
+                )
+            return (
+                "ready",
+                "Web search provider ready: duckduckgo (no API key needed).",
+            )
         if self.config.provider not in {"brave", "bing", "serper"}:
             return (
                 "not_configured",
@@ -49,6 +61,8 @@ class WebSearchClient:
         status, message = self.status()
         if status != "ready":
             raise WebSearchNotConfiguredError(message)
+        if self.config.provider == KEYLESS_PROVIDER:
+            return self._search_duckduckgo(query)
         if self.config.provider == "brave":
             return self._search_brave(query)
         if self.config.provider == "bing":
@@ -58,6 +72,36 @@ class WebSearchClient:
         raise WebSearchNotConfiguredError(
             f"Unsupported web search provider: {self.config.provider}"
         )
+
+    def _search_duckduckgo(self, query: WebSearchQuery) -> tuple[WebSearchResult, ...]:
+        from grandpa.web_search.duckduckgo import duckduckgo_text_search
+
+        try:
+            from ddgs.exceptions import RatelimitException, TimeoutException
+        except ImportError:
+            RatelimitException = TimeoutException = ()  # type: ignore[assignment,misc]
+
+        try:
+            items = duckduckgo_text_search(
+                query.text,
+                max_results=min(query.max_results, self.config.max_results),
+                timelimit=_ddgs_timelimit(query.recency_days),
+            )
+        except ImportError as exc:
+            raise WebSearchNotConfiguredError(
+                "Web search needs the ddgs package. Install it with: pip install ddgs"
+            ) from exc
+        except RatelimitException as exc:
+            raise WebSearchRateLimitError(
+                "Web search provider rate limit reached."
+            ) from exc
+        except TimeoutException as exc:
+            raise WebSearchTimeoutError("Web search provider timed out.") from exc
+        except Exception as exc:
+            raise WebSearchProviderError(
+                f"DuckDuckGo search failed: {type(exc).__name__}: {exc}"
+            ) from exc
+        return tuple(self._result(item) for item in items)
 
     def _search_brave(self, query: WebSearchQuery) -> tuple[WebSearchResult, ...]:
         params = {
@@ -158,6 +202,19 @@ class WebSearchClient:
             source=self.safety.domain(url),
             published_at=published,
         )
+
+
+def _ddgs_timelimit(recency_days: int | None) -> str | None:
+    """Map a recency window in days onto the ddgs timelimit buckets."""
+    if recency_days is None:
+        return None
+    if recency_days <= 1:
+        return "d"
+    if recency_days <= 7:
+        return "w"
+    if recency_days <= 31:
+        return "m"
+    return "y"
 
 
 __all__ = ["WebSearchClient"]

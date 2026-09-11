@@ -115,9 +115,14 @@ class VoiceCommandProcessor:
             user_input_lower = user_input.lower().rstrip(".?!,")
             if user_input_lower in {"yes", "y", "yeah", "sure", "ok", "okay"}:
                 remember_conversation("user", user_input)
-                from grandpa.local_actions import handle_local_action
+                from grandpa.local_actions import (
+                    handle_local_action,
+                    refuse_confirmation,
+                )
 
-                result = handle_local_action(pending["command"], execute=True)
+                result = handle_local_action(
+                    pending["command"], execute=True, confirm=refuse_confirmation
+                )
                 remember_conversation("assistant", result.message)
                 return VoiceAssistantResponse(
                     result.message,
@@ -238,9 +243,11 @@ class VoiceCommandProcessor:
             "switch ",
         )
         if lower.startswith(local_prefixes):
-            from grandpa.local_actions import handle_local_action
+            from grandpa.local_actions import handle_local_action, refuse_confirmation
 
-            local_action = handle_local_action(effective_text)
+            local_action = handle_local_action(
+                effective_text, confirm=refuse_confirmation
+            )
             if not local_action.should_fallback:
                 if local_action.status == "pending_confirmation":
                     self._pending_action = local_action.pending_action
@@ -344,9 +351,9 @@ class VoiceCommandProcessor:
                 kind=getattr(scheduler_action, "kind", "routine"),
             )
 
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local_actions import handle_local_action, refuse_confirmation
 
-        local_action = handle_local_action(effective_text)
+        local_action = handle_local_action(effective_text, confirm=refuse_confirmation)
         if not local_action.should_fallback:
             if local_action.status == "pending_confirmation":
                 self._pending_action = local_action.pending_action

@@ -1,5 +1,7 @@
 """WorkflowEngine — executes a WorkflowGraph against a GrandpaSystem."""
 
+# No CLI surface: `grandpa workflow` was removed because it never executed workflows.
+
 from __future__ import annotations
 
 import concurrent.futures

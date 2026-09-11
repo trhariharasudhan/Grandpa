@@ -201,6 +201,18 @@ _DANGEROUS_PATTERNS = (
 )
 
 
+def refuse_confirmation(spec: str, permission: str) -> bool:
+    """Confirm callback for callers that cannot ask the user mid-execution.
+
+    Always returns ``False``, so the confirm-required tier in
+    ``desktop_automation.py:37-45`` refuses. The voice layer uses this: its
+    only confirmation is turn-based (the next utterance), which cannot
+    answer synchronously inside ``execute_automation``. Signature matches
+    ``desktop_automation.ConfirmationCallback``.
+    """
+    return False
+
+
 def handle_local_action(
     text: str, *, execute: bool = True, confirm: ConfirmationCallback | None = None
 ) -> LocalActionResult:
@@ -281,6 +293,12 @@ def handle_local_action(
         return result
 
     if result.status == "pending_confirmation":
+        _log_attempt(command, result)
+        return result
+
+    # Unimplemented actions fail here, before _with_permission, which would
+    # otherwise queue an approval for an action that cannot run.
+    if result.status == "unsupported":
         _log_attempt(command, result)
         return result
 
@@ -1235,11 +1253,12 @@ def _parse_automation_action(command: str) -> LocalActionResult:
 
     if command == "click the highlighted button":
         return LocalActionResult(
-            status="handled",
+            status="unsupported",
             kind="automation",
             target="click_highlighted",
             message="Clicking highlighted buttons is not enabled yet.",
             tts_text="Highlighted button clicking is not enabled yet.",
+            permission="unsupported",
         )
 
     return LocalActionResult(status="no_match")

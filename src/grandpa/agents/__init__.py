@@ -13,10 +13,8 @@ _BUILTINS = (
     "simple",
     "orchestrator",
     "native_react",
-    "react",
     "rlm",
     "operative",
-    "monitor",
     "monitor_operative",
 )
 _builtins_loaded = False
@@ -31,7 +29,7 @@ def load_builtin_agents() -> None:
         try:
             importlib.import_module(f"grandpa.agents.{module}")
         except ImportError as exc:
-            logger.debug("Optional agent %s unavailable: %s", module, exc)
+            logger.warning("Builtin agent %s failed to import: %s", module, exc)
     from grandpa.core.registry import AgentRegistry
 
     if AgentRegistry.contains("native_react") and not AgentRegistry.contains("react"):
