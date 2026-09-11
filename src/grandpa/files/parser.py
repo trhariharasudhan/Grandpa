@@ -74,6 +74,13 @@ class FileParser:
         return None
 
     def _parse_search(self, command: str) -> FileAction | None:
+        match = re.fullmatch(
+            r"(?:find|search for) (?:my |all |the )?files? (?:named|called) (.+)"
+            r"|search (?:my |all )?files for (.+)",
+            command,
+        )
+        if match:
+            return FileAction("search", query=(match.group(1) or match.group(2)).strip())
         match = re.fullmatch(r"(?:find|search for) (.+)", command)
         if match:
             query = match.group(1).strip()

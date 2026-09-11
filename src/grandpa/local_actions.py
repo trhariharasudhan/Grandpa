@@ -56,6 +56,11 @@ ActionKind = Literal[
 BLOCKED_MESSAGE = "I blocked this action for safety."
 CONFIRMATION_PREFIX = "Confirmation required before I run this action."
 CANCELLED_MESSAGE = "Cancelled the pending local action."
+# "search <anything>" is a Google search, except the explicit google/youtube
+# forms and "search my files for X", which belongs to the file assistant.
+_WEB_SEARCH_PATTERN = (
+    r"search (?!google for\b)(?!youtube for\b)(?!(?:my |all )?files for\b)(.+)"
+)
 
 
 @dataclass(frozen=True)
@@ -372,7 +377,7 @@ def _prefer_deterministic_browser_route(command: str) -> bool:
     if command in exact:
         return True
     return bool(
-        re.fullmatch(r"search (?!google for\b)(?!youtube for\b)(.+)", command)
+        re.fullmatch(_WEB_SEARCH_PATTERN, command)
         or re.fullmatch(r"search google for (.+)", command)
         or re.fullmatch(r"open youtube and search(?: for)? (.+)", command)
         or re.fullmatch(r"fill (?:the )?(.+?) (?:field )?with (.+)", command)
@@ -1636,7 +1641,7 @@ def _parse_browser_action(command: str) -> LocalActionResult:
             tts_text=f"Searching Google for {query}.",
         )
 
-    match = re.fullmatch(r"search (?!google for\b)(?!youtube for\b)(.+)", command)
+    match = re.fullmatch(_WEB_SEARCH_PATTERN, command)
     if match:
         query = match.group(1).strip()
         url = "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)

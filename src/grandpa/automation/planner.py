@@ -33,6 +33,12 @@ _SENSITIVE_TERMS = {
     "sign in",
     "login",
 }
+# "find files named report" is a file search, not a visible control to locate.
+# "find the file menu" still is one.
+_FILE_SEARCH_TARGET = re.compile(
+    r"(?:my |all )?(?:files?|documents?)"
+    r"(?: (?:named|called|about|containing|matching) .+)?"
+)
 _KEYS = {
     "enter": ["enter"],
     "return": ["enter"],
@@ -71,7 +77,7 @@ class AutomationPlanner:
         if match:
             return AutomationAction("locate", _clean_element_target(match.group(1)))
         match = re.fullmatch(r"find (?:the )?(.+)", command)
-        if match:
+        if match and not _FILE_SEARCH_TARGET.fullmatch(match.group(1)):
             return AutomationAction("locate", _clean_element_target(match.group(1)))
         match = re.fullmatch(r"highlight (?:the )?(.+)", command)
         if match:

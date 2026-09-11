@@ -42,11 +42,7 @@ def test_answering_yes_at_the_downloads_delete_prompt_deletes_the_file(
     assert not target.exists()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="chat sends 'find files named X' to screen automation, which searches the screen",
-)
+# Fixed: chat sent "find files named X" to screen automation, which searched the screen.
 def test_chat_find_files_finds_a_file_in_documents(cli, e2e_model, make_nonce) -> None:
     stem = make_nonce("quarterly")
     (cli.home / "Documents" / f"{stem}.txt").write_text("numbers", encoding="utf-8")
@@ -55,6 +51,20 @@ def test_chat_find_files_finds_a_file_in_documents(cli, e2e_model, make_nonce) -
 
     reply = chat_replies(run.text)[0]
     assert f"{stem}.txt" in reply, reply
+
+
+# Fixed alongside it: "search my files for X" opened a Google search instead.
+def test_chat_search_my_files_finds_a_file_and_opens_no_browser(
+    cli, e2e_model, make_nonce
+) -> None:
+    stem = make_nonce("budget")
+    (cli.home / "Documents" / f"{stem}.txt").write_text("numbers", encoding="utf-8")
+
+    run = cli.chat(e2e_model, f"search my files for {stem}")
+
+    reply = chat_replies(run.text)[0]
+    assert f"{stem}.txt" in reply, reply
+    assert "google" not in reply.lower(), reply
 
 
 @pytest.mark.xfail(
