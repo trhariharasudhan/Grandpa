@@ -105,10 +105,26 @@ def test_scheduler_create_list_cancel_round_trip_through_the_store(
     assert task["id"] in created.text
     assert task["id"] in cli("scheduler", "list").text
 
-    cancelled = cli("scheduler", "cancel", task["id"])
+    def status() -> str:
+        (row,) = [
+            r for r in sqlite_rows(db, "scheduled_tasks") if r["id"] == task["id"]
+        ]
+        return row["status"]
+
+    # Cancelling asks first: a piped "y" is refused and "n" at a terminal keeps it.
+    piped = cli("scheduler", "cancel", task["id"], stdin="y\n")
+    assert piped.returncode == 1 and "stdin is not interactive" in piped.stderr, (
+        piped.text
+    )
+    declined = cli.at_terminal("scheduler", "cancel", task["id"], answer="n")
+    assert "Task cancellation aborted." in declined.stdout, declined.text
+    assert status() == "active"
+
+    cancelled = cli.at_terminal("scheduler", "cancel", task["id"], answer="y")
 
     assert cancelled.returncode == 0, cancelled.text
-    (after,) = [r for r in sqlite_rows(db, "scheduled_tasks") if r["id"] == task["id"]]
-    assert after["status"] == "cancelled", (
-        f"task still {after['status']!r} after cancel; CLI said: {cancelled.tail()}"
+    assert status() == "cancelled", (
+        f"task still {status()!r} after cancel; CLI said: {cancelled.tail()}"
     )
+    missing = cli("scheduler", "cancel", "no-such-task", "--yes")
+    assert missing.returncode == 1 and "Task not found" in missing.text, missing.text

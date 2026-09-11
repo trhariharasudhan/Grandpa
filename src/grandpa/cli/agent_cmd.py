@@ -191,11 +191,28 @@ def resume(agent_id: str) -> None:
 
 @agent.command("delete")
 @click.argument("agent_id")
-def delete(agent_id: str) -> None:
+@click.option("--yes", is_flag=True, help="Archive without prompting for confirmation.")
+def delete(agent_id: str, yes: bool) -> None:
     """Archive (soft-delete) an agent."""
+    from grandpa.cli._tty import require_confirmation
+
     console = Console(stderr=True)
     try:
         mgr = _get_manager()
+        found = mgr.get_agent(agent_id)
+    except Exception as exc:
+        console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
+    if found is None:
+        console.print(f"[red]Agent not found: {agent_id}[/red]")
+        raise SystemExit(1)
+    if not require_confirmation(
+        f"Archive agent {agent_id} ({found['name']})?",
+        yes=yes,
+        cancelled="Agent archive cancelled.",
+    ):
+        return
+    try:
         mgr.delete_agent(agent_id)
         console.print(f"[dim]Archived agent {agent_id}[/dim]")
     except Exception as exc:

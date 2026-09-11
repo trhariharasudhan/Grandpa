@@ -10,6 +10,8 @@ import re
 
 import pytest
 
+from tests.e2e.harness import sqlite_rows
+
 pytestmark = pytest.mark.e2e
 
 
@@ -45,6 +47,35 @@ def test_downloads_moves_ask_and_move_only_on_yes(
     assert (downloads / "Archives" / target.name).read_bytes() == b"PK e2e", (
         accepted.text
     )
+
+
+def test_agents_delete_asks_and_archives_only_on_yes(cli, make_nonce) -> None:
+    name = make_nonce("e2e-archive-")
+    created = cli("agents", "create", "--name", name, "--type", "simple")
+    agent_id = re.search(r"Created agent: (\w+)", created.text).group(1)
+    db = cli.grandpa_home / "agents.db"
+
+    def status() -> str:
+        (agent,) = sqlite_rows(db, "managed_agents")
+        return agent["status"]
+
+    piped = cli("agents", "delete", agent_id, stdin="y\n")
+    assert piped.returncode == 1 and "stdin is not interactive" in piped.stderr, (
+        piped.text
+    )
+    assert status() == "idle"
+
+    declined = cli.at_terminal("agents", "delete", agent_id, answer="n")
+    assert f"Archive agent {agent_id} ({name})? [y/N]" in declined.stdout, declined.text
+    assert "Agent archive cancelled." in declined.stdout, declined.text
+    assert status() == "idle"
+
+    accepted = cli.at_terminal("agents", "delete", agent_id, answer="y")
+    assert accepted.returncode == 0, accepted.text
+    assert status() == "archived", accepted.text
+
+    missing = cli("agents", "delete", "no-such-agent", "--yes")
+    assert missing.returncode == 1 and "Agent not found" in missing.text, missing.text
 
 
 @pytest.mark.parametrize(

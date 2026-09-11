@@ -164,16 +164,26 @@ def scheduler_resume(task_id: str) -> None:
 
 @scheduler.command("cancel")
 @click.argument("task_id")
-def scheduler_cancel(task_id: str) -> None:
+@click.option("--yes", is_flag=True, help="Cancel without prompting for confirmation.")
+def scheduler_cancel(task_id: str, yes: bool) -> None:
     """Cancel a scheduled task."""
+    from grandpa.cli._tty import require_confirmation
+
     console = Console()
     store = _get_store()
     try:
-        sched = _get_scheduler(store)
-        sched.cancel_task(task_id)
+        task = store.get_task(task_id)
+        if task is None:
+            console.print(f"[red]Task not found: {task_id}[/red]")
+            raise SystemExit(1)
+        if not require_confirmation(
+            f"Cancel scheduled task {task_id} ({task['prompt']!r})?",
+            yes=yes,
+            cancelled="Task cancellation aborted.",
+        ):
+            return
+        _get_scheduler(store).cancel_task(task_id)
         console.print(f"[red]Task {task_id} cancelled[/red]")
-    except KeyError:
-        console.print(f"[red]Task not found: {task_id}[/red]")
     finally:
         store.close()
 
