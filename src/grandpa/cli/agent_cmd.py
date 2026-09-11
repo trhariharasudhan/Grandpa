@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 from typing import Optional
 
@@ -641,10 +642,11 @@ def errors():
 @click.option(
     "--yes/--no-yes",
     "auto_approve",
-    default=True,
+    default=False,
     help="Auto-approve tool execution that would otherwise need confirmation. "
-    "Default: on (suits non-interactive CLI use). Pass --no-yes to require a "
-    "TTY prompt for tools whose ToolSpec sets requires_confirmation=True.",
+    "Default: off. Tools whose ToolSpec sets requires_confirmation=True "
+    "prompt on a TTY, and are refused when there is no TTY. Pass --yes to "
+    "approve them unattended.",
 )
 def ask(agent_id, message, auto_approve):
     """Ask an agent a question (immediate response)."""
@@ -660,12 +662,17 @@ def ask(agent_id, message, auto_approve):
     # run tools whose ToolSpec sets requires_confirmation=True (e.g. shell_exec,
     # git_*). `executor` is the AgentExecutor; the callback is read in
     # _invoke_agent and propagated to the constructed agent via agent_kwargs.
+    # Leaving it unset is the safe outcome: the ToolExecutor's default at
+    # tools/_stubs.py:209-219 then refuses those tools.
     if auto_approve:
+        click.echo("--yes: auto-approving tool execution without prompting.", err=True)
         executor._confirm_callback = lambda _prompt: True
-    else:
+    elif sys.stdin.isatty():
         executor._confirm_callback = lambda prompt: click.confirm(
             f"\n{prompt}", default=False
         )
+    else:
+        executor._confirm_callback = None
     executor.execute_tick(agent_id)
     msgs = manager.list_messages(agent_id)
     responses = [m for m in msgs if m["direction"] == "agent_to_user"]

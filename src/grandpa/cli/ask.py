@@ -364,6 +364,37 @@ def _build_tools(
     return tools
 
 
+def _resolve_confirm_callback(auto_approve: bool):
+    """Return the tool-confirmation callback for ``Grandpa ask``, or ``None``.
+
+    Mirrors the policy ``Grandpa chat`` already applies at
+    ``cli/chat_cmd.py:1342-1351``: prompt the user per tool call on a TTY.
+    When there is no TTY and ``--yes`` was not passed, return ``None`` so the
+    ToolExecutor's safe default (``tools/_stubs.py:209-219``) refuses tools
+    whose ToolSpec sets ``requires_confirmation=True``.
+    """
+    console = Console(stderr=True)
+
+    if auto_approve:
+        console.print(
+            "[yellow]--yes: auto-approving tool execution without prompting.[/yellow]"
+        )
+        return lambda _prompt: True
+
+    if not sys.stdin.isatty():
+        return None
+
+    def _confirm(prompt: str) -> bool:
+        console.print(
+            f"[yellow]Confirm:[/yellow] {prompt} [y/N] ",
+            end="",
+        )
+        ans = input().strip().lower()
+        return ans in ("y", "yes")
+
+    return _confirm
+
+
 def _run_agent(
     agent_name: str,
     query_text: str,
@@ -375,6 +406,7 @@ def _run_agent(
     temperature: float,
     max_tokens: int,
     capability_policy=None,
+    auto_approve: bool = False,
 ):
     """Instantiate and run an agent, returning the AgentResult."""
     # Import agents to trigger registration
@@ -410,8 +442,10 @@ def _run_agent(
     if getattr(agent_cls, "accepts_tools", False):
         agent_kwargs["tools"] = tools
         agent_kwargs["max_turns"] = config.agent.max_turns
-        agent_kwargs["interactive"] = True
-        agent_kwargs["confirm_callback"] = lambda prompt: True
+        confirm_callback = _resolve_confirm_callback(auto_approve)
+        if confirm_callback is not None:
+            agent_kwargs["interactive"] = True
+            agent_kwargs["confirm_callback"] = confirm_callback
     if capability_policy is not None:
         agent_kwargs["capability_policy"] = capability_policy
 
@@ -645,6 +679,14 @@ def _print_profile(
         "(default: ~/.grandpa/knowledge.db)."
     ),
 )
+@click.option(
+    "-y",
+    "--yes",
+    "auto_approve",
+    is_flag=True,
+    default=False,
+    help="Auto-approve tool execution without prompting.",
+)
 def ask(
     query: tuple[str, ...],
     model_name: str | None,
@@ -659,6 +701,7 @@ def ask(
     enable_profile: bool,
     research_mode: bool,
     knowledge_db: str | None,
+    auto_approve: bool,
 ) -> None:
     """Ask Grandpa a question."""
     console = Console(stderr=True)
@@ -1031,6 +1074,7 @@ def ask(
                 temperature,
                 max_tokens,
                 capability_policy=sec.capability_policy,
+                auto_approve=auto_approve,
             )
         except EngineConnectionError as exc:
             console.print(f"[red]Engine error:[/red] {exc}")

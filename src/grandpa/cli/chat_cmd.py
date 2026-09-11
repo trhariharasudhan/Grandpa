@@ -1353,6 +1353,23 @@ def chat(
         except Exception as exc:
             console.print(f"[yellow]Agent '{agent_key}' failed: {exc}[/yellow]")
 
+    def _confirm_desktop_action(spec: str, permission: str) -> bool:
+        """Prompt before Grandpa sends synthetic keyboard/mouse input.
+
+        Handed to ``handle_local_action`` so the confirm-required tier in
+        ``desktop_automation.py:37-45`` can be satisfied instead of always
+        cancelling. Signature matches that module's ConfirmationCallback.
+        """
+        console.print(
+            f"[yellow]Confirm desktop action:[/yellow] {spec} ({permission}) [y/N] ",
+            end="",
+        )
+        try:
+            ans = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return ans in ("y", "yes")
+
     history: List[Message] = []
     if system_prompt:
         history.append(Message(role=Role.SYSTEM, content=system_prompt))
@@ -1883,7 +1900,9 @@ def chat(
 
             from grandpa.local_actions import handle_local_action
 
-            local_action = handle_local_action(effective_user_input)
+            local_action = handle_local_action(
+                effective_user_input, confirm=_confirm_desktop_action
+            )
             if not local_action.should_fallback:
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(

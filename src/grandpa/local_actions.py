@@ -17,9 +17,12 @@ import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from grandpa.local_action_approvals import LocalActionApprovalStore
+
+if TYPE_CHECKING:  # pragma: no cover - typing only
+    from grandpa.desktop_automation import ConfirmationCallback
 
 logger = logging.getLogger(__name__)
 
@@ -198,11 +201,18 @@ _DANGEROUS_PATTERNS = (
 )
 
 
-def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult:
+def handle_local_action(
+    text: str, *, execute: bool = True, confirm: ConfirmationCallback | None = None
+) -> LocalActionResult:
     """Parse and execute a safe local action if ``text`` asks for one.
 
     Returns ``no_match`` when the normal assistant pipeline should handle the
     query.
+
+    ``confirm`` is the caller's confirmation prompt, forwarded to
+    ``desktop_automation.execute_automation`` so its confirm-required tier
+    (``desktop_automation.py:37-45``) can actually be satisfied. Callers that
+    pass nothing keep the previous refuse-only behaviour.
     """
     command = _normalise(text)
     if not command:
@@ -225,7 +235,7 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
             tts_text="Acknowledged.",
         )
 
-    confirmation_result = _handle_confirmation_command(command)
+    confirmation_result = _handle_confirmation_command(command, confirm=confirm)
     if confirmation_result.status != "no_match":
         return confirmation_result
 
@@ -297,7 +307,7 @@ def handle_local_action(text: str, *, execute: bool = True) -> LocalActionResult
         return unsupported
 
     try:
-        executed = _execute(result)
+        executed = _execute(result, confirm=confirm)
     except Exception:  # pragma: no cover - defensive edge
         executed = LocalActionResult(
             status="error",
@@ -364,7 +374,11 @@ def _route_with_intent_router(command: str) -> LocalActionResult | None:
         return None
 
 
-def approve_pending_action(action_id: str | None = None) -> LocalActionResult:
+def approve_pending_action(
+    action_id: str | None = None,
+    *,
+    confirm: ConfirmationCallback | None = None,
+) -> LocalActionResult:
     store = LocalActionApprovalStore()
     pending = store.get_pending(action_id) if action_id else store.latest_pending()
     if not pending:
@@ -408,7 +422,7 @@ def approve_pending_action(action_id: str | None = None) -> LocalActionResult:
         )
     else:
         try:
-            executed = _execute(result)
+            executed = _execute(result, confirm=confirm)
             result = LocalActionResult(
                 status=executed.status,
                 kind=executed.kind,
@@ -458,9 +472,11 @@ def deny_pending_action(action_id: str | None = None) -> LocalActionResult:
     return result
 
 
-def _handle_confirmation_command(command: str) -> LocalActionResult:
+def _handle_confirmation_command(
+    command: str, *, confirm: ConfirmationCallback | None = None
+) -> LocalActionResult:
     if command in {"yes", "confirm", "approve", "run it", "do it"}:
-        return approve_pending_action()
+        return approve_pending_action(confirm=confirm)
     if command in {"no", "cancel", "deny", "stop", "don't", "do not"}:
         return deny_pending_action()
     return LocalActionResult(status="no_match")
@@ -1687,7 +1703,11 @@ def _system_info_message() -> str:
     return "\n".join(lines)
 
 
-def _execute(result: LocalActionResult) -> LocalActionResult:
+def _execute(
+    result: LocalActionResult,
+    *,
+    confirm: ConfirmationCallback | None = None,
+) -> LocalActionResult:
     if result.kind == "time" or result.kind == "system_info":
         return result
 
@@ -1805,7 +1825,7 @@ def _execute(result: LocalActionResult) -> LocalActionResult:
     if result.kind == "automation":
         from grandpa.desktop_automation import execute_automation
 
-        automation = execute_automation(result.target)
+        automation = execute_automation(result.target, confirm_callback=confirm)
         return LocalActionResult(
             status=automation.status,
             kind="automation",

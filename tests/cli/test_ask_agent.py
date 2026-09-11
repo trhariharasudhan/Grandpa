@@ -277,9 +277,13 @@ class TestAskAgentOption:
         agent_setup.config.tools.enabled = tools_enabled
         agent_setup.config.agent.tools = agent_tools
 
+        # `dangerous` sets requires_confirmation=True, and `ask` no longer
+        # auto-approves such tools on a non-tty stdin. --yes keeps this test
+        # about tool *resolution* from config rather than the confirmation
+        # policy, which tests/security/test_confirmation_enforcement.py owns.
         result = runner.invoke(
             cli,
-            ["ask", "--agent", "confirming_agent", "Hello"],
+            ["ask", "--yes", "--agent", "confirming_agent", "Hello"],
         )
 
         assert result.exit_code == 0
