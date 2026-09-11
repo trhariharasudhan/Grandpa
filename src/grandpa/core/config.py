@@ -422,7 +422,6 @@ class IntelligenceConfig:
     default_model: str = "grandpa-mini:latest"
     fallback_model: str = ""
     model_path: str = ""  # Local weights (HF repo, GGUF file, etc.)
-    checkpoint_path: str = ""  # Checkpoint/adapter path
     quantization: str = "none"  # none, fp8, int8, int4, gguf_q4, gguf_q8
     preferred_engine: str = ""  # Reserved; Ollama is the supported runtime.
     provider: str = "local"
@@ -432,7 +431,6 @@ class IntelligenceConfig:
     top_p: float = 0.9
     top_k: int = 40
     repetition_penalty: float = 1.0
-    stop_sequences: str = ""  # Comma-separated stop strings
 
 
 @dataclass(slots=True)
@@ -490,9 +488,6 @@ class BrowserConfig:
     """Browser automation settings (Playwright)."""
 
     headless: bool = True
-    timeout_ms: int = 30000
-    viewport_width: int = 1280
-    viewport_height: int = 720
 
 
 @dataclass(slots=True)
@@ -512,7 +507,6 @@ class AgentConfig:
     default_agent: str = "simple"
     max_turns: int = 10
     tools: str = ""  # comma-separated tool names
-    objective: str = ""  # concise purpose for routing/learning/docs
     system_prompt: str = ""  # inline system prompt (takes precedence if set)
     system_prompt_path: str = ""  # path to system prompt file (.txt, .md)
     context_from_memory: bool = True  # inject relevant memory context into prompts
@@ -563,12 +557,7 @@ class TelemetryConfig:
 
     enabled: bool = True
     db_path: str = str(DEFAULT_CONFIG_DIR / "telemetry.db")
-    gpu_metrics: bool = False
-    gpu_poll_interval_ms: int = 50
     energy_vendor: str = ""  # auto-detect or force "nvidia"/"amd"/"apple"/"cpu_rapl"
-    warmup_samples: int = 0
-    steady_state_window: int = 5
-    steady_state_threshold: float = 0.05
 
 
 @dataclass(slots=True)
@@ -697,19 +686,11 @@ class SessionConfig:
 
 
 @dataclass(slots=True)
-class A2AConfig:
-    """Agent-to-Agent protocol settings."""
-
-    enabled: bool = False
-
-
-@dataclass(slots=True)
 class OperatorsConfig:
     """Operator lifecycle settings."""
 
     enabled: bool = False
     manifests_dir: str = "~/.grandpa/operators"
-    auto_activate: str = ""  # Comma-separated operator IDs
 
 
 @dataclass(slots=True)
@@ -752,8 +733,6 @@ class GrandpaVoiceConfig:
     true_peak_db: float = -1.0
     compression: bool = True
     eq_profile: str = "grandpa_deep_clear"
-    runtime_python: str = ""
-    model_cache: str = ""
 
 
 @dataclass(slots=True)
@@ -771,7 +750,6 @@ class MemoryFilesConfig:
     soul_path: str = "~/.grandpa/SOUL.md"
     memory_path: str = "~/.grandpa/MEMORY.md"
     user_path: str = "~/.grandpa/USER.md"
-    nudge_interval: int = 10
 
 
 @dataclass(slots=True)
@@ -801,7 +779,6 @@ class SkillsConfig:
     enabled: bool = True
     skills_dir: str = "~/.grandpa/skills/"
     active: str = "*"
-    auto_discover: bool = True
     max_depth: int = 5
 
 
@@ -835,7 +812,6 @@ class GrandpaConfig:
     scheduler: SchedulerConfig = field(default_factory=SchedulerConfig)
     workflow: WorkflowConfig = field(default_factory=WorkflowConfig)
     sessions: SessionConfig = field(default_factory=SessionConfig)
-    a2a: A2AConfig = field(default_factory=A2AConfig)
     operators: OperatorsConfig = field(default_factory=OperatorsConfig)
     speech: SpeechConfig = field(default_factory=SpeechConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
@@ -1122,7 +1098,6 @@ def load_config(path: Optional[Path] = None) -> GrandpaConfig:
             "scheduler",
             "workflow",
             "sessions",
-            "a2a",
             "operators",
             "speech",
             "tts",
@@ -1295,7 +1270,6 @@ poll_interval = 60
 
 
 __all__ = [
-    "A2AConfig",
     "AgentConfig",
     "AgentManagerConfig",
     "BrowserConfig",

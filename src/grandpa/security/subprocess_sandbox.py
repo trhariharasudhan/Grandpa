@@ -1,5 +1,10 @@
 """Subprocess sandbox — secure process execution with environment isolation."""
 
+# Currently unused: nothing imports this module. It was written to run tool
+# subprocesses (shell_exec in particular) with an allowlisted environment, a
+# timeout and process-tree cleanup, but shell_exec and code_interpreter still
+# call subprocess.run directly. Kept deliberately; see docs/audit/DEFERRED.md.
+
 from __future__ import annotations
 
 import logging

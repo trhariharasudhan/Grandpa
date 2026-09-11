@@ -46,7 +46,11 @@ class TestModelsListCmd:
     def test_models_list_filter_by_family(self, monkeypatch) -> None:
         cfg = GrandpaConfig()
         monkeypatch.setattr("grandpa.cli.model.load_config", lambda: cfg)
-        monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [])
+        # `models` is now an alias of `model`, whose `list` requires an engine.
+        fake = _mock_engine()
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_engines", lambda c: [("mock", fake)]
+        )
         monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {})
 
         ModelRegistry.clear()
@@ -77,7 +81,11 @@ class TestModelsListCmd:
     def test_models_list_filter_by_capability(self, monkeypatch) -> None:
         cfg = GrandpaConfig()
         monkeypatch.setattr("grandpa.cli.model.load_config", lambda: cfg)
-        monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [])
+        # `models` is now an alias of `model`, whose `list` requires an engine.
+        fake = _mock_engine()
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_engines", lambda c: [("mock", fake)]
+        )
         monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {})
 
         ModelRegistry.clear()
@@ -98,7 +106,11 @@ class TestModelsListCmd:
     def test_models_list_json_output(self, monkeypatch) -> None:
         cfg = GrandpaConfig()
         monkeypatch.setattr("grandpa.cli.model.load_config", lambda: cfg)
-        monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [])
+        # `models` is now an alias of `model`, whose `list` requires an engine.
+        fake = _mock_engine()
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_engines", lambda c: [("mock", fake)]
+        )
         monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {})
 
         ModelRegistry.clear()
@@ -118,7 +130,11 @@ class TestModelsListCmd:
     def test_models_list_no_matches(self, monkeypatch) -> None:
         cfg = GrandpaConfig()
         monkeypatch.setattr("grandpa.cli.model.load_config", lambda: cfg)
-        monkeypatch.setattr("grandpa.cli.model.discover_engines", lambda c: [])
+        # `models` is now an alias of `model`, whose `list` requires an engine.
+        fake = _mock_engine()
+        monkeypatch.setattr(
+            "grandpa.cli.model.discover_engines", lambda c: [("mock", fake)]
+        )
         monkeypatch.setattr("grandpa.cli.model.discover_models", lambda e: {})
 
         result = _runner().invoke(

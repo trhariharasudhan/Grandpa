@@ -1,8 +1,0 @@
-[tool]
-name = "date_info"
-description = "Get current date and time information."
-[tool.parameters]
-type = "object"
-[tool.action]
-type = "python"
-expression = "str(input) if input else 'no input'"

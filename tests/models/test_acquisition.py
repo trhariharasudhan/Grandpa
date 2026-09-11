@@ -11,7 +11,7 @@ import pytest
 import respx
 from click.testing import CliRunner
 
-from grandpa.cli.model import models_cmd
+from grandpa.cli.model import model  # `grandpa models` is an alias of this group
 from grandpa.core.registry import ModelRegistry
 from grandpa.core.types import ModelSpec
 from grandpa.models.manager import NativeModelManager, discover_native_models
@@ -285,7 +285,7 @@ class TestCLIModelAcquisition:
         monkeypatch.setattr("grandpa.core.config.DEFAULT_CONFIG_DIR", tmp_path)
 
         result = self.runner.invoke(
-            models_cmd,
+            model,
             [
                 "pull",
                 "test/repo/model.gguf",
@@ -308,7 +308,7 @@ class TestCLIModelAcquisition:
         monkeypatch.setattr("grandpa.core.config.DEFAULT_CONFIG_DIR", tmp_path)
 
         result = self.runner.invoke(
-            models_cmd,
+            model,
             ["remove", "target-model"],
         )
 

@@ -50,8 +50,6 @@ def test_grandpa_voice_config_defaults():
     assert cfg.grandpa_voice.true_peak_db == -1.0
     assert cfg.grandpa_voice.compression is True
     assert cfg.grandpa_voice.eq_profile == "grandpa_deep_clear"
-    assert cfg.grandpa_voice.runtime_python == ""
-    assert cfg.grandpa_voice.model_cache == ""
 
 
 def test_voice_configuration_loads_from_toml(tmp_path):
@@ -80,6 +78,7 @@ target_lufs = -14.0
 true_peak_db = -1.5
 compression = false
 eq_profile = "grandpa_deep"
+# Removed keys: a legacy config that still sets them must keep loading.
 runtime_python = "D:/Grandpa/voice_runtime/.venv/Scripts/python.exe"
 model_cache = "D:/Grandpa/voice_runtime/models_or_cache/huggingface/hub"
 """.strip(),
@@ -107,8 +106,6 @@ model_cache = "D:/Grandpa/voice_runtime/models_or_cache/huggingface/hub"
     assert config.grandpa_voice.true_peak_db == -1.5
     assert config.grandpa_voice.compression is False
     assert config.grandpa_voice.eq_profile == "grandpa_deep"
-    assert config.grandpa_voice.runtime_python.endswith("Scripts/python.exe")
-    assert config.grandpa_voice.model_cache.endswith("huggingface/hub")
 
 
 def test_old_config_without_voice_sections_remains_compatible(tmp_path):

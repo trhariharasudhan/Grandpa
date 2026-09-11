@@ -18,7 +18,6 @@ class TestAgentConfig:
         assert cfg.max_turns == 10
         assert cfg.tools == ""
         assert cfg.default_tools == ""  # backward-compat property
-        assert cfg.objective == ""
         assert cfg.system_prompt == ""
         assert cfg.system_prompt_path == ""
         assert cfg.context_from_memory is True
@@ -59,7 +58,6 @@ class TestGrandpaConfig:
         cfg = GrandpaConfig()
         assert hasattr(cfg.agent, "default_tools")  # backward-compat property
         assert hasattr(cfg.agent, "tools")
-        assert hasattr(cfg.agent, "objective")
         assert hasattr(cfg.agent, "system_prompt")
         assert hasattr(cfg.agent, "context_from_memory")
 

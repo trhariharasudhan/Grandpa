@@ -294,87 +294,6 @@ def _render_models_status(
 # ---------------------------------------------------------------------------
 
 
-@click.group("models")
-def models_cmd() -> None:
-    """Manage Grandpa model registry and metadata."""
-
-
-@models_cmd.command("list")
-@click.option(
-    "--capability",
-    "-c",
-    default=None,
-    help="Filter by capability (e.g. chat, code, image, embeddings).",
-)
-@click.option(
-    "--family",
-    "-f",
-    default=None,
-    help="Filter by model family (e.g. qwen, llama, deepseek).",
-)
-@click.option(
-    "--backend",
-    "-b",
-    default=None,
-    help="Filter by backend (e.g. ollama, local, llamacpp).",
-)
-@click.option(
-    "--status",
-    "-s",
-    default=None,
-    help="Filter by status (e.g. available, downloading).",
-)
-@click.option(
-    "--json",
-    "as_json",
-    is_flag=True,
-    default=False,
-    help="Output results in JSON format.",
-)
-def models_list(
-    capability: str | None,
-    family: str | None,
-    backend: str | None,
-    status: str | None,
-    as_json: bool,
-) -> None:
-    """List all registered models in the Grandpa registry."""
-    console = Console()
-    _render_models_list(
-        console,
-        capability=capability,
-        family=family,
-        backend=backend,
-        status=status,
-        as_json=as_json,
-    )
-
-
-@models_cmd.command("info")
-@click.argument("model_name")
-@click.option(
-    "--json", "as_json", is_flag=True, default=False, help="Output in JSON format."
-)
-def models_info(model_name: str, as_json: bool) -> None:
-    """Show detailed metadata for a registered model."""
-    console = Console()
-    _render_model_info(console, model_name, as_json=as_json)
-
-
-@models_cmd.command("status")
-@click.option(
-    "--json",
-    "as_json",
-    is_flag=True,
-    default=False,
-    help="Output status in JSON format.",
-)
-def models_status(as_json: bool) -> None:
-    """Show current model registry and active backend status."""
-    console = Console()
-    _render_models_status(console, as_json=as_json)
-
-
 def _handle_pull(
     model_name: str,
     *,
@@ -483,53 +402,9 @@ def _handle_remove(model_name: str, console: Console) -> None:
     sys.exit(1)
 
 
-@models_cmd.command("pull")
-@click.argument("model_name")
-@click.option("--filename", "-f", default=None, help="GGUF filename in repository.")
-@click.option(
-    "--backend",
-    "-b",
-    type=click.Choice(["native", "ollama"], case_sensitive=False),
-    default=None,
-    help="Target engine backend.",
-)
-@click.option("--model-id", default=None, help="Custom identifier for ModelRegistry.")
-@click.option(
-    "--sha256", default=None, help="Expected SHA-256 checksum for verification."
-)
-@click.option("--revision", default="main", help="Repository revision/branch.")
-def models_pull(
-    model_name: str,
-    filename: str | None,
-    backend: str | None,
-    model_id: str | None,
-    sha256: str | None,
-    revision: str,
-) -> None:
-    """Download and install a model from Hugging Face (GGUF) or Ollama."""
-    console = Console()
-    _handle_pull(
-        model_name,
-        filename=filename,
-        backend=backend,
-        model_id=model_id,
-        sha256=sha256,
-        revision=revision,
-        console=console,
-    )
-
-
-@models_cmd.command("remove")
-@click.argument("model_name")
-def models_remove(model_name: str) -> None:
-    """Remove a locally installed model."""
-    console = Console()
-    _handle_remove(model_name, console)
-
-
 @click.group("model")
 def model() -> None:
-    """Manage language models (alias for 'grandpa models')."""
+    """Manage language models. Also available as 'grandpa models'."""
 
 
 @model.command("list")
@@ -682,6 +557,5 @@ def remove(model_name: str) -> None:
 __all__ = [
     "find_model_spec",
     "model",
-    "models_cmd",
     "ollama_pull",
 ]

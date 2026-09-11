@@ -825,7 +825,6 @@ class TestOperatorsConfig:
         cfg = OperatorsConfig()
         assert cfg.enabled is False
         assert "operators" in cfg.manifests_dir
-        assert cfg.auto_activate == ""
 
     def test_config_in_Grandpa_config(self):
         from grandpa.core.config import GrandpaConfig
