@@ -38,6 +38,22 @@ class AgentResult:
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 
+def config_sampling_kwargs() -> dict[str, float]:
+    """Return ``top_p`` / ``repeat_penalty`` from config for engine calls.
+
+    Returns an empty dict when config cannot be loaded, leaving the engine's
+    own defaults in place.
+    """
+    try:
+        intelligence = load_config().intelligence
+    except Exception:
+        return {}
+    return {
+        "top_p": intelligence.top_p,
+        "repeat_penalty": intelligence.repetition_penalty,
+    }
+
+
 class BaseAgent(ABC):
     """Base class for all agent implementations.
 
@@ -70,6 +86,10 @@ class BaseAgent(ABC):
         self._engine = engine
         self._model = model
         self._bus = bus
+        # Sampling knobs always come from config. Callers such as `ask` pass
+        # temperature and max_tokens explicitly, which skips the config lookup
+        # below, but they have no per-call top_p or repetition penalty.
+        self._sampling_kwargs = config_sampling_kwargs()
         self._prompt_builder = prompt_builder
 
         # Three-tier resolution: explicit arg > config > class default > hardcoded
@@ -183,7 +203,7 @@ class BaseAgent(ABC):
             model=self._model,
             temperature=self._temperature,
             max_tokens=self._max_tokens,
-            **extra_kwargs,
+            **{**getattr(self, "_sampling_kwargs", {}), **extra_kwargs},
         )
 
         if self._bus and not getattr(self._engine, "_publishes_events", False):

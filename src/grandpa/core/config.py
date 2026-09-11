@@ -430,7 +430,8 @@ class IntelligenceConfig:
     max_tokens: int = 1024
     top_p: float = 0.9
     top_k: int = 40
-    repetition_penalty: float = 1.0
+    # Matches the repeat_penalty the Ollama adapter has always sent.
+    repetition_penalty: float = 1.08
 
 
 @dataclass(slots=True)

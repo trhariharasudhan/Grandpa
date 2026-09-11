@@ -65,6 +65,10 @@ def _generation_options(
         "num_ctx": kwargs.get("num_ctx", 8192),
         "repeat_penalty": kwargs.get("repeat_penalty", 1.08),
     }
+    # Only send top_p when a caller sets it, so Ollama keeps its own default.
+    top_p = kwargs.get("top_p")
+    if top_p is not None:
+        options["top_p"] = top_p
     stop = kwargs.get("stop", _DEFAULT_STOP_SEQUENCES)
     if isinstance(stop, str):
         stop = [stop]

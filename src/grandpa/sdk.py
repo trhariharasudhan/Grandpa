@@ -311,6 +311,8 @@ class Grandpa:
             model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            top_p=self._config.intelligence.top_p,
+            repeat_penalty=self._config.intelligence.repetition_penalty,
         )
 
         return {
@@ -355,6 +357,8 @@ class Grandpa:
             model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            top_p=self._config.intelligence.top_p,
+            repeat_penalty=self._config.intelligence.repetition_penalty,
         ):
             yield token
 
@@ -400,6 +404,8 @@ class Grandpa:
             model=model_name,
             temperature=temperature,
             max_tokens=max_tokens,
+            top_p=self._config.intelligence.top_p,
+            repeat_penalty=self._config.intelligence.repetition_penalty,
         ):
             parts.append(token)
             yield {"token": token, "index": i}

@@ -963,6 +963,8 @@ def ask(
                 model=model_name,
                 temperature=temperature,
                 max_tokens=max_tokens,
+                top_p=config.intelligence.top_p,
+                repeat_penalty=config.intelligence.repetition_penalty,
             )
     except EngineConnectionError as exc:
         console.print(f"[red]Engine error:[/red] {exc}")
@@ -988,6 +990,8 @@ def ask(
                         model=fallback_model,
                         temperature=temperature,
                         max_tokens=max_tokens,
+                        top_p=config.intelligence.top_p,
+                        repeat_penalty=config.intelligence.repetition_penalty,
                     )
                 used_fallback_model = fallback_model
                 break

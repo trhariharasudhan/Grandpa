@@ -285,6 +285,7 @@ class RLMAgent(ToolUsingAgent):
             model=self._sub_model,
             temperature=self._sub_temperature,
             max_tokens=self._sub_max_tokens,
+            **getattr(self, "_sampling_kwargs", {}),
         )
 
         # Single-turn tool resolution
@@ -321,6 +322,7 @@ class RLMAgent(ToolUsingAgent):
                 model=self._sub_model,
                 temperature=self._sub_temperature,
                 max_tokens=self._sub_max_tokens,
+                **getattr(self, "_sampling_kwargs", {}),
             )
             return followup.get("content", "")
 
