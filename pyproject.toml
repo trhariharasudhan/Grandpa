@@ -132,6 +132,7 @@ markers = [
     "apple: requires Apple hardware or an Apple-specific fixture",
     "browser: requires a real browser runtime",
     "core: core deterministic unit/smoke test",
+    "e2e: runs the real CLI as a subprocess in a sandbox; deselected unless -m selects e2e (see scripts/run_e2e.py)",
     "environment: depends on machine-specific local state, credentials, devices, or services",
     "integration: cross-component integration test",
     "live: requires running inference engine",
