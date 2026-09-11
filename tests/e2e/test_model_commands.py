@@ -34,12 +34,23 @@ def _note_titles(grandpa_home) -> list[str]:
 
 
 # 1 ---------------------------------------------------------------------------
-def test_ask_returns_what_the_model_generated(cli, e2e_model, make_nonce) -> None:
+# Plain `ask` goes through the configured default agent; `--agent ""` goes
+# straight to the engine. They print from different code, so both are covered.
+@pytest.mark.parametrize(
+    "mode", [(), ("--agent", "")], ids=["default-agent", "direct-engine"]
+)
+def test_ask_returns_what_the_model_generated(cli, e2e_model, make_nonce, mode) -> None:
     outputs = []
     for _ in range(ATTEMPTS):
         token = make_nonce("zebra")
         run = cli.run_model(
-            "ask", "--no-context", "--no-stream", "-m", e2e_model, echo_prompt(token)
+            "ask",
+            *mode,
+            "--no-context",
+            "--no-stream",
+            "-m",
+            e2e_model,
+            echo_prompt(token),
         )
         assert run.returncode == 0, run.text
         if token.lower() in run.stdout.lower():
