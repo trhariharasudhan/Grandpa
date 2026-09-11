@@ -93,7 +93,7 @@ class AgentExecutor:
         )
         return agent.run(input_text)
 
-    def execute_tick(self, agent_id: str, *, lock_already_held: bool = False) -> None:
+    def execute_tick(self, agent_id: str, *, lock_already_held: bool = False) -> bool:
         """Run one tick for the given agent.
 
         1. Acquire concurrency guard (start_tick)
@@ -116,12 +116,12 @@ class AgentExecutor:
                 self._set_activity(agent_id, "Preparing tick...")
             except ValueError:
                 logger.warning("Agent %s already running, skipping tick", agent_id)
-                return
+                return False
 
         agent = self._manager.get_agent(agent_id)
         if agent is None:
             logger.error("Agent %s not found", agent_id)
-            return
+            return False
 
         self._bus.publish(
             EventType.AGENT_TICK_START,
@@ -205,6 +205,10 @@ class AgentExecutor:
                     trace_steps,
                 )
 
+        # True only when the tick ran to completion. Callers such as
+        # `agents ask` rely on this to exit non-zero instead of silently.
+        return error_info is None
+
     def _run_with_retries(self, agent: dict) -> AgentResult:
         """Invoke the agent, retrying on RetryableError up to _MAX_RETRIES."""
         last_error: AgentTickError | None = None
@@ -246,7 +250,12 @@ class AgentExecutor:
 
     def _invoke_agent(self, agent: dict) -> AgentResult:
         """Invoke the actual agent run. Tests mock this method."""
-        from grandpa.agents import AgentRegistry
+        from grandpa.agents import AgentRegistry, load_builtin_agents
+
+        # Builtin agent classes register themselves on import, and nothing else
+        # on the `agents ask` / `agents run` path imports them. Without this
+        # every tick failed with "AgentRegistry does not have an entry for ...".
+        load_builtin_agents()
 
         agent_type = agent.get("agent_type", "monitor_operative")
         agent_cls = AgentRegistry.get(agent_type)

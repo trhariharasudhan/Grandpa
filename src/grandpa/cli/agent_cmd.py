@@ -679,7 +679,11 @@ def ask(agent_id, message, auto_approve):
         executor._confirm_callback = _confirm
     else:
         executor._confirm_callback = None
-    executor.execute_tick(agent_id)
+    if not executor.execute_tick(agent_id):
+        detail = (manager.get_agent(agent_id) or {}).get("summary_memory") or ""
+        detail = detail.removeprefix("ERROR: ") or "see the agent logs"
+        click.echo(f"\nAgent tick failed: {detail}", err=True)
+        raise SystemExit(1)
     msgs = manager.list_messages(agent_id)
     responses = [m for m in msgs if m["direction"] == "agent_to_user"]
     if responses:
