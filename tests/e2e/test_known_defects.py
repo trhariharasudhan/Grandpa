@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.e2e.harness import chat_replies
+from tests.e2e.harness import chat_replies, sqlite_rows
 
 pytestmark = pytest.mark.e2e
 
@@ -67,11 +67,8 @@ def test_chat_search_my_files_finds_a_file_and_opens_no_browser(
     assert "google" not in reply.lower(), reply
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="'remember that ...' is stored in core_brain.db; recall reads personal_memory.db",
-)
+# Fixed: "remember that ..." was saved to memory.db (MemoryService), but chat
+# recalls from personal_memory.db. (The xfail reason wrongly said core_brain.db.)
 def test_chat_remember_that_is_recalled(cli, e2e_model, make_nonce) -> None:
     colour = make_nonce("teal")
 
@@ -83,3 +80,5 @@ def test_chat_remember_that_is_recalled(cli, e2e_model, make_nonce) -> None:
 
     replies = chat_replies(run.text)
     assert len(replies) == 2 and colour in replies[1], replies
+    stored = sqlite_rows(cli.grandpa_home / "personal_memory.db", "memories")
+    assert ("favorite_color", colour) in [(r["key"], r["value"]) for r in stored]

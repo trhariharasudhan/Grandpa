@@ -440,3 +440,27 @@ def test_voice_operator_loop_integration(
     # Confirm it executed properly
     assert any("Chrome" in out for out in outputs)
     assert any("Forgot" in out for out in outputs)
+
+
+def test_remember_that_fact_round_trips_through_one_store(
+    setup_temp_memory_integration: MemoryService, tmp_path: Path
+) -> None:
+    """Chat saved "remember that ..." to memory.db but recalled from personal_memory.db."""
+    from grandpa.memory_context import MemoryStore, handle_memory_command
+
+    phrase = "remember that my favorite color is teal"
+
+    # MemoryService leaves plain facts to the personal store chat recalls from...
+    assert _handle_natural_memory_intent(phrase) is None
+    assert setup_temp_memory_integration.list_memories() == []
+
+    # ...where the later memory handler stores and recalls it.
+    personal = MemoryStore(tmp_path / "personal_memory.db")
+    handle_memory_command(phrase, store=personal)
+    recalled = handle_memory_command("what is my favorite color", store=personal)
+    assert recalled.message == "Your favorite color is teal."
+
+    # Preferences keep their MemoryService route and recall.
+    assert "preferred_shell" in _handle_natural_memory_intent(
+        "Remember that I prefer PowerShell"
+    )

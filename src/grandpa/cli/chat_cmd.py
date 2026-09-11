@@ -899,6 +899,11 @@ def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
                 else "D:\\Grandpa",
             )
             return f"Saved project memory for {route.project_name or 'Grandpa'}."
+        if route.action_type == "save_knowledge":
+            # Plain "remember that ..." facts belong in the personal memory store
+            # that chat recalls from and injects as context. Leave them to
+            # memory_context.handle_memory_command later in the chain.
+            return None
         if route.target_value:
             item = svc.remember_explicit(
                 text=route.target_value,
