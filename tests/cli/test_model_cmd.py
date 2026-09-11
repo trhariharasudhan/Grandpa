@@ -42,6 +42,30 @@ class TestModelList:
         assert result.exit_code == 0
         assert "model-a" in result.output
 
+    def test_list_marks_only_engine_reported_models_installed(
+        self, monkeypatch
+    ) -> None:
+        """Catalog entries used to show as "available" whether installed or not."""
+        import json
+
+        cfg = GrandpaConfig()
+        monkeypatch.setattr(_model_mod, "load_config", lambda: cfg)
+        fake = _mock_engine()
+        monkeypatch.setattr(_model_mod, "discover_engines", lambda c: [("mock", fake)])
+        monkeypatch.setattr(
+            _model_mod, "discover_models", lambda e: {"mock": ["model-a:latest"]}
+        )
+
+        result = CliRunner().invoke(cli, ["model", "list", "--json"])
+
+        assert result.exit_code == 0, result.output
+        rows = json.loads(result.output[result.output.index("[") :])
+        installed = {row["model_id"] for row in rows if row["installed"]}
+        assert installed == {"model-a:latest"}
+        assert len(rows) > 1, "catalog entries should still be listed"
+        assert _model_mod._is_installed("model-a", {"model-a:latest"})
+        assert not _model_mod._is_installed("model-b", {"model-a:latest"})
+
     def test_no_engines_message(self, monkeypatch) -> None:
         cfg = GrandpaConfig()
         monkeypatch.setattr(_model_mod, "load_config", lambda: cfg)

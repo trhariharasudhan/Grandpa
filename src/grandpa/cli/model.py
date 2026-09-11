@@ -22,8 +22,12 @@ from grandpa.intelligence.grandpa_models import get_model_role
 from grandpa.intelligence.model_catalog import BUILTIN_MODELS
 
 
-def _populate_registry() -> Any:
-    """Populate ModelRegistry with built-in models and runtime discovered models."""
+def _populate_registry(installed: set[str] | None = None) -> Any:
+    """Populate ModelRegistry with built-in models and runtime discovered models.
+
+    When ``installed`` is given, it is filled with the model ids the running
+    engines actually reported, as opposed to catalog entries.
+    """
     register_builtin_models()
     try:
         from grandpa.models.manager import discover_native_models
@@ -37,9 +41,18 @@ def _populate_registry() -> Any:
         all_models = discover_models(engines)
         for ek, model_ids in all_models.items():
             merge_discovered_models(ek, model_ids)
+            if installed is not None:
+                installed.update(model_ids)
         return config
     except Exception:
         return None
+
+
+def _is_installed(model_id: str, installed: set[str]) -> bool:
+    """Match catalog ids against engine tags, where "name" means "name:latest"."""
+    if model_id in installed or f"{model_id}:latest" in installed:
+        return True
+    return model_id.endswith(":latest") and model_id[: -len(":latest")] in installed
 
 
 def _resolve_spec(model_name: str) -> ModelSpec | None:
@@ -74,7 +87,8 @@ def _render_models_list(
     status: str | None = None,
     as_json: bool = False,
 ) -> None:
-    _populate_registry()
+    installed: set[str] = set()
+    _populate_registry(installed)
 
     specs = ModelRegistry.list_models()
 
@@ -101,7 +115,10 @@ def _render_models_list(
         specs = [s for s in specs if s.status.lower().strip() == st]
 
     if as_json:
-        payload = [s.to_dict() for s in specs]
+        payload = [
+            {**s.to_dict(), "installed": _is_installed(s.model_id, installed)}
+            for s in specs
+        ]
         console.print(json.dumps(payload, indent=2))
         return
 
@@ -109,7 +126,10 @@ def _render_models_list(
         console.print("[yellow]No models found matching query criteria.[/yellow]")
         return
 
-    table = Table(title=f"Grandpa Model Registry ({len(specs)} models)")
+    installed_count = sum(_is_installed(s.model_id, installed) for s in specs)
+    table = Table(
+        title=f"Grandpa Model Registry ({len(specs)} models, {installed_count} installed)"
+    )
     table.add_column("Model ID", style="cyan")
     table.add_column("Display Name", style="green")
     table.add_column("Family", style="magenta")
@@ -117,7 +137,10 @@ def _render_models_list(
     table.add_column("Backend", style="yellow")
     table.add_column("Params", justify="right")
     table.add_column("Context", justify="right")
-    table.add_column("Status", style="dim")
+    # Installed replaces the registry status column, which reads "available"
+    # for every catalog entry whether or not it is installed. The registry
+    # status is still in --json, `model info`, and the --status filter.
+    table.add_column("Installed")
 
     for spec in specs:
         params = f"{spec.parameter_count_b}B" if spec.parameter_count_b else "-"
@@ -131,10 +154,14 @@ def _render_models_list(
             spec.backend or "local",
             params,
             ctx,
-            spec.status or "available",
+            "yes" if _is_installed(spec.model_id, installed) else "no",
         )
 
     console.print(table)
+    console.print(
+        '[dim]"Installed" means a running engine reported the model; other rows '
+        "are catalog entries you can pull.[/dim]"
+    )
 
 
 def _render_model_info(

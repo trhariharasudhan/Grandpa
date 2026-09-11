@@ -7,11 +7,12 @@ is at fault and the test FAILS rather than reporting COULD NOT RUN.
 
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
 
-from tests.e2e.harness import chat_replies, sqlite_rows
+from tests.e2e.harness import chat_replies, ollama_models, sqlite_rows
 
 pytestmark = pytest.mark.e2e
 
@@ -59,6 +60,24 @@ def test_ask_returns_what_the_model_generated(cli, e2e_model, make_nonce, mode) 
     pytest.fail(
         f"ask never returned the nonce {e2e_model} was asked to repeat: {outputs}"
     )
+
+
+def test_model_list_marks_exactly_the_installed_models(cli, ollama) -> None:
+    """`model list` called catalog entries "available" though they were not installed."""
+    run = cli("model", "list", "--json", timeout=300)
+
+    assert run.returncode == 0, run.text
+    rows = json.loads(run.stdout[run.stdout.index("[") :])
+    marked = {row["model_id"] for row in rows if row["installed"]}
+    tags = set(ollama_models() or [])
+    assert marked == tags, (
+        f"installed per CLI {sorted(marked)} vs Ollama {sorted(tags)}"
+    )
+    listed_but_absent = [row["model_id"] for row in rows if not row["installed"]]
+    assert all(model not in tags for model in listed_but_absent)
+
+    table = cli("model", "list", timeout=300)
+    assert f"{len(tags)} installed" in table.stdout, table.text
 
 
 # 2 ---------------------------------------------------------------------------
