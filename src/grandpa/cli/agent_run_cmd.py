@@ -296,6 +296,7 @@ def rollback(execution_id: str, workspace: str) -> None:
     from pathlib import Path
 
     restored = []
+    failed = []
 
     for p in Path(workspace).rglob("*.bak"):
         orig = p.with_suffix("")
@@ -304,11 +305,17 @@ def rollback(execution_id: str, workspace: str) -> None:
             p.unlink(missing_ok=True)
             restored.append(str(orig.relative_to(Path(workspace))))
         except Exception as exc:
+            failed.append(str(orig))
             console.print(f"[red]Failed to restore '{orig}': {exc}[/red]")
 
     if restored:
         console.print(
             f"[green]Successfully rolled back changes in: {', '.join(restored)}[/green]"
         )
-    else:
+    elif not failed:
         console.print("[yellow]No backups found for rollback.[/yellow]")
+    if failed:
+        console.print(
+            f"[red]Rollback incomplete: {len(failed)} file(s) could not be restored.[/red]"
+        )
+        raise SystemExit(1)

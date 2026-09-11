@@ -88,6 +88,7 @@ def list_agents() -> None:
         console.print(table)
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("create")
@@ -108,6 +109,7 @@ def create_agent(name: str, template: Optional[str], agent_type: str) -> None:
         )
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("info")
@@ -120,7 +122,7 @@ def info(agent_id: str) -> None:
         a = mgr.get_agent(agent_id)
         if not a:
             console.print(f"[red]Agent not found: {agent_id}[/red]")
-            return
+            raise SystemExit(1)
         console.print(f"[bold]{a['name']}[/bold] ({a['id']})")
         console.print(f"  Type:   {a['agent_type']}")
         console.print(f"  Status: {a['status']}")
@@ -133,6 +135,7 @@ def info(agent_id: str) -> None:
                 console.print(f"    [{t['status']}] {t['description'][:60]}")
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("tasks")
@@ -155,6 +158,7 @@ def tasks(agent_id: str) -> None:
         console.print(table)
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("pause")
@@ -168,6 +172,7 @@ def pause(agent_id: str) -> None:
         console.print(f"[yellow]Paused agent {agent_id}[/yellow]")
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("resume")
@@ -181,6 +186,7 @@ def resume(agent_id: str) -> None:
         console.print(f"[green]Resumed agent {agent_id}[/green]")
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("delete")
@@ -194,6 +200,7 @@ def delete(agent_id: str) -> None:
         console.print(f"[dim]Archived agent {agent_id}[/dim]")
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("search")
@@ -212,7 +219,7 @@ def search(agent_id: str, query: str, limit: int) -> None:
         agent = mgr.get_agent(agent_id)
         if not agent:
             console.print(f"[red]Agent not found: {agent_id}[/red]")
-            return
+            raise SystemExit(1)
         store = TraceStore(config.traces.db_path or "~/.grandpa/traces.db")
         results = store.search(query, agent=agent["name"], limit=limit)
         if not results:
@@ -227,6 +234,7 @@ def search(agent_id: str, query: str, limit: int) -> None:
         console.print(table)
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 @agent.command("templates")
@@ -255,6 +263,7 @@ def templates() -> None:
         console.print(table)
     except Exception as exc:
         console.print(f"[red]Error: {exc}[/red]")
+        raise SystemExit(1)
 
 
 def _get_system():
@@ -378,11 +387,16 @@ def run_agent(agent_id):
         click.echo("Executor not available", err=True)
         raise SystemExit(1)
     try:
-        executor.execute_tick(agent_id)
+        completed = executor.execute_tick(agent_id)
     except Exception as exc:
         click.echo(f"Tick failed: {exc}", err=True)
         raise SystemExit(1)
     updated = manager.get_agent(agent_id)
+    if not completed:
+        detail = (updated or {}).get("summary_memory") or ""
+        detail = detail.removeprefix("ERROR: ") or "see the agent logs"
+        click.echo(f"Tick failed: {detail}", err=True)
+        raise SystemExit(1)
     runs = updated.get("total_runs", 0)
     click.echo(f"Tick complete. Status: {updated['status']}, runs: {runs}")
 
