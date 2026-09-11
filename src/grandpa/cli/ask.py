@@ -203,7 +203,9 @@ def _resolve_confirm_callback(auto_approve: bool):
         )
         return lambda _prompt: True
 
-    if not sys.stdin.isatty():
+    from grandpa.cli._tty import stdin_is_interactive
+
+    if not stdin_is_interactive():
         return None
 
     def _confirm(prompt: str) -> bool:
@@ -211,7 +213,10 @@ def _resolve_confirm_callback(auto_approve: bool):
             f"[yellow]Confirm:[/yellow] {prompt} [y/N] ",
             end="",
         )
-        ans = input().strip().lower()
+        try:
+            ans = input().strip().lower()
+        except EOFError:
+            return False
         return ans in ("y", "yes")
 
     return _confirm

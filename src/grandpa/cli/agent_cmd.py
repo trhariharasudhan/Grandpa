@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import sys
 import threading
 from typing import Optional
 
 import click
 from rich.console import Console
 from rich.table import Table
+
+from grandpa.cli._tty import stdin_is_interactive
 
 
 def _get_manager():
@@ -667,10 +668,15 @@ def ask(agent_id, message, auto_approve):
     if auto_approve:
         click.echo("--yes: auto-approving tool execution without prompting.", err=True)
         executor._confirm_callback = lambda _prompt: True
-    elif sys.stdin.isatty():
-        executor._confirm_callback = lambda prompt: click.confirm(
-            f"\n{prompt}", default=False
-        )
+    elif stdin_is_interactive():
+
+        def _confirm(prompt: str) -> bool:
+            try:
+                return click.confirm(f"\n{prompt}", default=False)
+            except click.Abort:
+                return False
+
+        executor._confirm_callback = _confirm
     else:
         executor._confirm_callback = None
     executor.execute_tick(agent_id)
