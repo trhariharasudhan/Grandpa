@@ -7,6 +7,30 @@ Python: 3.11.14 (`D:\Grandpa\.venv`, the venv with Grandpa installed; the machin
 `python` is 3.12.10 and does **not** have Grandpa importable)
 OS: Windows 11 Home Single Language 10.0.26200
 
+> **Status annotation, 2026-09-11.** The audit below describes the code at `7371e357` and is
+> left as written. §6 now opens with a status table. The commits since then:
+>
+> - `bacffe0b`: findings 1, 7 and 6. For 6 the premise was corrected: the chat path was a
+>   dead end, not a bypass.
+> - `b6376c14`: findings 2, 4, 14 and 27. It also removed the false scroll messages in 10,
+>   and the phantom agent names and `emergency_stop_placeholder` in 28. Its commit message
+>   says it fixes 10, but the other browser stubs remain, so 10 stays OPEN.
+> - `9485cb8f`: hardening for 1 and 7. NUL stdin on Windows had counted as a TTY.
+> - `c0f5ab47`: `scripts/verify_confirmation_enforcement.py`, an end-to-end probe for 1 and 7.
+> - `881c5c9a`: findings 16 and 21. It also removed 16 of the 19 keys in 26, and in 28 the
+>   duplicate `models` group and most §3.1 modules.
+> - `20d02f6b`: the rest of 26. `intelligence.top_p` and `repetition_penalty` now reach Ollama.
+>   `grandpa_voice.character_voice` was kept because
+>   `voice_runtime/scripts/run_service.py` reads it.
+> - `24b320e4`: synced the Rust `grandpa-core` config with the keys removed for 26.
+>
+> Found after the audit and fixed:
+>
+> - `6105e9e3`: `agents ask` ticks failed because builtin agents were never loaded.
+> - `e07853dc`: ten agent CLI commands exited 0 on failure.
+> - `6d0a6380`: the voice processor's own "yes" block is dead code. A spoken "yes" still
+>   works through `local_actions`. This is pinned by a test; the code was not changed.
+
 ## 0. How this audit was run (and one correction to the brief)
 
 `python -m grandpa --help` **does not work**, for two separate reasons:
@@ -477,6 +501,40 @@ command can redeem** (§2.4, finding 3). They are safe by accident, not by desig
 ---
 
 ## 6. Findings, ranked
+
+Status as of 2026-09-11: 10 FIXED, 16 OPEN, 2 DEFERRED. The findings themselves are unchanged
+below.
+
+| # | Finding | Status | Closed by / note |
+|---|---------|--------|------------------|
+| 1 | `ask --tools` auto-approves tools | FIXED | `bacffe0b`, `9485cb8f` |
+| 2 | `ask --research` crashes | FIXED | `b6376c14` (flag removed) |
+| 3 | HIGH-risk approval flow is a dead end | OPEN | No CLI command redeems approval codes yet |
+| 4 | `grandpa workflow` is fake | FIXED | `b6376c14` (CLI group removed; `workflow/engine.py` kept) |
+| 5 | `skill list` never finds the 43 skills | OPEN | |
+| 6 | Synthetic input skips its confirmation tier | FIXED | `bacffe0b` (premise corrected: dead end, not bypass) |
+| 7 | `agents ask` auto-approves by default | FIXED | `bacffe0b`, `9485cb8f` |
+| 8 | Volume/brightness/clipboard/process control have no entry point | OPEN | |
+| 9 | `grandpa jarvis` understands one command | OPEN | |
+| 10 | Browser control stubs report success | OPEN | Partly: false scroll messages removed in `b6376c14`; click/back/forward/reload/focus_search/form_fill/download remain stubs |
+| 11 | Reminders never fire on a default install | OPEN | |
+| 12 | One-shot reminders become daily | OPEN | |
+| 13 | Planner invents application names | OPEN | |
+| 14 | `grandpa search` unusable without a key | FIXED | `b6376c14` (keyless DuckDuckGo default) |
+| 15 | `python -m grandpa` does not work | OPEN | |
+| 16 | Seven empty skill sub-packages | FIXED | `881c5c9a` |
+| 17 | `file_assistant` misroutes clipboard requests | OPEN | |
+| 18 | Six parallel desktop-control stacks | DEFERRED | Consolidation batch |
+| 19 | `desktop/kernel/*` circular layer | DEFERRED | Consolidation batch |
+| 20 | Symlink-escape tests skip on Windows | OPEN | |
+| 21 | `a2a` imported by nothing | FIXED | `881c5c9a` |
+| 22 | MCP has no CLI surface | OPEN | |
+| 23 | Ten slash commands do nothing | OPEN | |
+| 24 | Default TTS needs an unstartable sidecar | OPEN | |
+| 25 | Browser page reading needs a foreground browser | OPEN | |
+| 26 | Nineteen config keys never read | FIXED | `881c5c9a` removed 16; `20d02f6b` wired `top_p`/`repetition_penalty`; `24b320e4` Rust sync; `character_voice` is read |
+| 27 | Stub reported as a handled action | FIXED | `b6376c14` |
+| 28 | Assorted smaller defects | OPEN | Partly: agent names and placeholder (`b6376c14`), `models` alias and most §3.1 modules (`881c5c9a`); five unimported tool modules, `page_reader` URL, `embeddings_placeholder`, duplicate notes remain |
 
 1. **`grandpa ask --tools <any tool>` hardcodes unconditional tool auto-approval.**
    `src/grandpa/cli/ask.py:413-414` sets `confirm_callback = lambda prompt: True` with no
