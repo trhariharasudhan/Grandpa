@@ -267,8 +267,6 @@ pub struct IntelligenceConfig {
     pub fallback_model: String,
     #[serde(default)]
     pub model_path: String,
-    #[serde(default)]
-    pub checkpoint_path: String,
     #[serde(default = "default_quantization_str")]
     pub quantization: String,
     #[serde(default)]
@@ -285,8 +283,6 @@ pub struct IntelligenceConfig {
     pub top_k: i64,
     #[serde(default = "default_repetition_penalty")]
     pub repetition_penalty: f64,
-    #[serde(default)]
-    pub stop_sequences: String,
 }
 
 fn default_quantization_str() -> String { "none".into() }
@@ -294,7 +290,7 @@ fn default_temperature() -> f64 { 0.7 }
 fn default_max_tokens() -> i64 { 1024 }
 fn default_top_p() -> f64 { 0.9 }
 fn default_top_k() -> i64 { 40 }
-fn default_repetition_penalty() -> f64 { 1.0 }
+fn default_repetition_penalty() -> f64 { 1.08 }
 
 impl Default for IntelligenceConfig {
     fn default() -> Self {
@@ -302,7 +298,6 @@ impl Default for IntelligenceConfig {
             default_model: String::new(),
             fallback_model: String::new(),
             model_path: String::new(),
-            checkpoint_path: String::new(),
             quantization: default_quantization_str(),
             preferred_engine: String::new(),
             provider: String::new(),
@@ -311,7 +306,6 @@ impl Default for IntelligenceConfig {
             top_p: default_top_p(),
             top_k: default_top_k(),
             repetition_penalty: default_repetition_penalty(),
-            stop_sequences: String::new(),
         }
     }
 }
@@ -519,25 +513,12 @@ impl Default for MCPConfig {
 pub struct BrowserConfig {
     #[serde(default = "default_true_val")]
     pub headless: bool,
-    #[serde(default = "default_browser_timeout")]
-    pub timeout_ms: i64,
-    #[serde(default = "default_viewport_width")]
-    pub viewport_width: i64,
-    #[serde(default = "default_viewport_height")]
-    pub viewport_height: i64,
 }
-
-fn default_browser_timeout() -> i64 { 30000 }
-fn default_viewport_width() -> i64 { 1280 }
-fn default_viewport_height() -> i64 { 720 }
 
 impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
             headless: true,
-            timeout_ms: default_browser_timeout(),
-            viewport_width: default_viewport_width(),
-            viewport_height: default_viewport_height(),
         }
     }
 }
@@ -567,8 +548,6 @@ pub struct AgentConfig {
     #[serde(default)]
     pub tools: String,
     #[serde(default)]
-    pub objective: String,
-    #[serde(default)]
     pub system_prompt: String,
     #[serde(default)]
     pub system_prompt_path: String,
@@ -585,7 +564,6 @@ impl Default for AgentConfig {
             default_agent: default_simple(),
             max_turns: default_max_turns(),
             tools: String::new(),
-            objective: String::new(),
             system_prompt: String::new(),
             system_prompt_path: String::new(),
             context_from_memory: true,
@@ -635,35 +613,17 @@ pub struct TelemetryConfig {
     #[serde(default = "default_telemetry_db")]
     pub db_path: String,
     #[serde(default)]
-    pub gpu_metrics: bool,
-    #[serde(default = "default_gpu_poll")]
-    pub gpu_poll_interval_ms: i64,
-    #[serde(default)]
     pub energy_vendor: String,
-    #[serde(default)]
-    pub warmup_samples: i64,
-    #[serde(default = "default_ss_window")]
-    pub steady_state_window: i64,
-    #[serde(default = "default_ss_threshold")]
-    pub steady_state_threshold: f64,
 }
 
 fn default_telemetry_db() -> String { format!("{}/telemetry.db", default_config_dir_str()) }
-fn default_gpu_poll() -> i64 { 50 }
-fn default_ss_window() -> i64 { 5 }
-fn default_ss_threshold() -> f64 { 0.05 }
 
 impl Default for TelemetryConfig {
     fn default() -> Self {
         Self {
             enabled: true,
             db_path: default_telemetry_db(),
-            gpu_metrics: false,
-            gpu_poll_interval_ms: default_gpu_poll(),
             energy_vendor: String::new(),
-            warmup_samples: 0,
-            steady_state_window: default_ss_window(),
-            steady_state_threshold: default_ss_threshold(),
         }
     }
 }
@@ -856,8 +816,6 @@ pub struct OperatorsConfig {
     pub enabled: bool,
     #[serde(default = "default_operators_dir")]
     pub manifests_dir: String,
-    #[serde(default)]
-    pub auto_activate: String,
 }
 
 fn default_operators_dir() -> String { "~/.grandpa/operators".into() }
