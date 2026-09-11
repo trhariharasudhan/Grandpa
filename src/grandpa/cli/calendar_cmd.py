@@ -5,6 +5,8 @@ from __future__ import annotations
 import click
 
 from grandpa.calendar import CalendarAuthManager, handle_calendar_command
+from grandpa.calendar.automation import _confirmation_message
+from grandpa.cli._tty import TerminalConfirmation
 
 
 @click.group(name="calendar")
@@ -75,24 +77,25 @@ def search(query: tuple[str, ...]) -> None:
     )
 
 
+def _confirmed(command: str, yes: bool) -> None:
+    """Run a Calendar change, asking on the terminal unless --yes was given."""
+    confirm = TerminalConfirmation(_confirmation_message)
+    result = handle_calendar_command(command, confirmed=yes, confirm=confirm)
+    confirm.finish(result.message, cancelled="Calendar change cancelled.")
+
+
 @calendar.command("create")
 @click.argument("detail", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm event creation.")
 def create(detail: tuple[str, ...], yes: bool) -> None:
-    result = handle_calendar_command(
-        "create a meeting " + " ".join(detail), confirmed=yes
-    )
-    click.echo(result.message)
+    _confirmed("create a meeting " + " ".join(detail), yes)
 
 
 @calendar.command("update")
 @click.argument("detail", nargs=-1)
 @click.option("--yes", is_flag=True, help="Confirm event update.")
 def update(detail: tuple[str, ...], yes: bool) -> None:
-    result = handle_calendar_command(
-        "move my meeting to " + " ".join(detail), confirmed=yes
-    )
-    click.echo(result.message)
+    _confirmed("move my meeting to " + " ".join(detail), yes)
 
 
 @calendar.command("delete")
@@ -100,8 +103,7 @@ def update(detail: tuple[str, ...], yes: bool) -> None:
 @click.option("--yes", is_flag=True, help="Confirm event deletion.")
 def delete(detail: tuple[str, ...], yes: bool) -> None:
     command = "cancel meeting " + " ".join(detail) if detail else "cancel meeting"
-    result = handle_calendar_command(command, confirmed=yes)
-    click.echo(result.message)
+    _confirmed(command, yes)
 
 
 __all__ = ["calendar"]
