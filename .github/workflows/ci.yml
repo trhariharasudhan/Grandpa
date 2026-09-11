@@ -5,9 +5,19 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Manual runs (Actions > CI > Run workflow) are the only trigger for the
+  # e2e job below, which needs a local model.
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Ollama model for the e2e suite
+        required: true
+        default: qwen2.5:0.5b
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Keyed by event too, so a manual e2e run and a push to the same ref do not
+  # cancel each other.
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -143,6 +153,58 @@ jobs:
         # GRANDPA_RUN_MICROPHONE_TESTS=1; pytest-timeout (timeout = 300 in
         # pyproject.toml) bounds any test that blocks anyway.
         run: uv run pytest -m "not live and not cloud" --tb=short -q
+
+  e2e:
+    # The real CLI end to end (tests/e2e): subprocesses in sandboxes, asserting
+    # on files, database rows and model output. It needs Ollama and a model,
+    # so it runs only on manual dispatch, never on push or pull_request.
+    # Exit code 2 means some tests could not run; that is not a pass.
+    name: e2e (windows, on demand)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v8.0.0
+
+      - name: Install dependencies
+        run: uv sync --extra dev --extra server --extra voice --extra screen
+
+      - name: Install Ollama
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP "ollama"
+          Invoke-WebRequest -Uri "https://github.com/ollama/ollama/releases/latest/download/ollama-windows-amd64.zip" -OutFile "$dir.zip"
+          Expand-Archive -Path "$dir.zip" -DestinationPath $dir
+          Add-Content -Path $env:GITHUB_PATH -Value $dir
+
+      - name: Start Ollama and pull the model
+        shell: pwsh
+        env:
+          E2E_MODEL: ${{ inputs.model }}
+        run: |
+          Start-Process -FilePath ollama -ArgumentList "serve" -WindowStyle Hidden
+          $deadline = (Get-Date).AddSeconds(60)
+          while ($true) {
+            try { Invoke-RestMethod -Uri "http://localhost:11434/api/tags" | Out-Null; break }
+            catch {
+              if ((Get-Date) -gt $deadline) { throw "Ollama did not start within 60s" }
+              Start-Sleep -Seconds 1
+            }
+          }
+          ollama pull $env:E2E_MODEL
+
+      - name: Run e2e suite
+        env:
+          E2E_MODEL: ${{ inputs.model }}
+        run: uv run python scripts/run_e2e.py --model "$env:E2E_MODEL"
 
   rust:
     runs-on: ubuntu-latest
