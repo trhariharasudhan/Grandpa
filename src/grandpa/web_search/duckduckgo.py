@@ -7,6 +7,7 @@ The single place Grandpa calls ``ddgs``. Used by ``WebSearchClient`` (the
 from __future__ import annotations
 
 import logging
+import warnings
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,16 @@ def _keep_whitespace_between_tags() -> None:
         return
     originals = (BaseSearchEngine.extract_tree, BaseSearchEngine.extract_results)
     if any(getattr(method, "__module__", None) != "ddgs.base" for method in originals):
-        logger.debug("ddgs extraction changed; not applying the whitespace fix")
+        # Do not fail quietly: without the shim, results come back with words
+        # glued together, which looks like a Grandpa bug. See docs/audit/DEFERRED.md.
+        _ddgs_whitespace_fix_applied = True
+        message = (
+            "ddgs no longer has the extraction methods the whitespace fix patches "
+            "(see docs/audit/DEFERRED.md). Search results may have words glued "
+            "together; remove the shim if ddgs now keeps whitespace itself."
+        )
+        logger.warning(message)
+        warnings.warn(message, RuntimeWarning, stacklevel=2)
         return
 
     parser = HTMLParser(remove_comments=True, remove_pis=True, collect_ids=False)
