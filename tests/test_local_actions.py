@@ -35,9 +35,11 @@ def test_safe_app_command_is_recognized_without_execution():
 def test_safe_url_command_is_recognized_without_execution():
     result = handle_local_action("open youtube", execute=False)
 
-    assert result.status == "handled"
+    # Opening a site is a browser action: parsed, then held for confirmation.
+    assert result.status == "requires_confirmation"
     assert result.kind == "url"
     assert result.target == "https://www.youtube.com"
+    assert "https://www.youtube.com" in result.message
 
 
 def test_dangerous_command_is_blocked():
@@ -68,7 +70,7 @@ def test_windows_launcher_action_is_unsupported_off_windows(monkeypatch):
 def test_google_search_command_is_allowlisted_without_execution():
     result = handle_local_action("Search Google for FastAPI", execute=False)
 
-    assert result.status == "handled"
+    assert result.status == "requires_confirmation"
     assert result.kind == "browser"
     assert result.target == "https://www.google.com/search?q=fastapi"
 
@@ -79,7 +81,7 @@ def test_youtube_search_command_is_allowlisted_without_execution():
         execute=False,
     )
 
-    assert result.status == "handled"
+    assert result.status == "requires_confirmation"
     assert result.kind == "browser"
     assert result.target.endswith("search_query=python+tutorials")
 

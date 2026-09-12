@@ -153,10 +153,11 @@ def test_profile_reset_requires_confirmation_and_resets_onboarding(
     assert load_profile(path).memory_enabled is False
 
 
-def test_profile_reset_can_be_cancelled(tmp_path: Path) -> None:
+def test_profile_reset_can_be_cancelled(monkeypatch, tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     atomic_update_profile(path, username="Hari", onboarding_completed=True)
     load_config.cache_clear()
+    monkeypatch.setattr("grandpa.cli._tty.stdin_is_interactive", lambda: True)
 
     result = CliRunner().invoke(
         profile,
@@ -167,6 +168,24 @@ def test_profile_reset_can_be_cancelled(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "cancelled" in result.output.lower()
+    assert load_profile(path).onboarding_completed is True
+
+
+def test_profile_reset_refuses_a_piped_answer(tmp_path: Path) -> None:
+    """Without a terminal there is no one to answer, so --yes is required."""
+    path = tmp_path / "config.toml"
+    atomic_update_profile(path, username="Hari", onboarding_completed=True)
+    load_config.cache_clear()
+
+    result = CliRunner().invoke(
+        profile,
+        ["reset"],
+        input="y\n",
+        env={"Grandpa_CONFIG": str(path)},
+    )
+
+    assert result.exit_code == 1
+    assert "stdin is not interactive" in result.output
     assert load_profile(path).onboarding_completed is True
 
 

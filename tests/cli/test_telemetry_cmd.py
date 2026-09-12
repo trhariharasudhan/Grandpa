@@ -145,10 +145,20 @@ class TestTelemetryClear:
         assert result.exit_code == 0
         assert "Deleted 3" in result.output
 
-    def test_clear_abort_without_yes(self, tmp_path: Path) -> None:
+    def test_clear_abort_without_yes(self, monkeypatch, tmp_path: Path) -> None:
         patch, db_path = _patch_config(tmp_path)
         _populate_db(db_path)
+        monkeypatch.setattr("grandpa.cli._tty.stdin_is_interactive", lambda: True)
         with patch:
             result = CliRunner().invoke(cli, ["telemetry", "clear"], input="n\n")
         assert result.exit_code == 0
         assert "Aborted" in result.output
+
+    def test_clear_refuses_a_piped_answer(self, tmp_path: Path) -> None:
+        """Without a terminal, a piped "y" is not an answer."""
+        patch, db_path = _patch_config(tmp_path)
+        _populate_db(db_path)
+        with patch:
+            result = CliRunner().invoke(cli, ["telemetry", "clear"], input="y\n")
+        assert result.exit_code == 1
+        assert "stdin is not interactive" in result.output
