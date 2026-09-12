@@ -104,7 +104,70 @@ def test_calendar_changes_read_the_answer_to_their_prompt(cli, args, prompt) -> 
     accepted = cli.at_terminal(*args, answer="y")
     assert f"{prompt} [y/N]" in accepted.stdout, accepted.text
     assert "cancelled" not in accepted.stdout, accepted.text
-    # The answer was acted on: the change went ahead and hit the missing account.
+    # The answer was acted on: the change went ahead and hit the missing account,
+    # and a change that did not happen exits non-zero.
     assert re.search(r"Calendar action failed|not configured", accepted.stdout, re.I), (
         accepted.text
     )
+    assert accepted.returncode == 1, accepted.text
+
+
+@pytest.mark.parametrize(
+    ("phrase", "cancelled", "done"),
+    [
+        ("delete note {name}", "Note deletion cancelled.", 'Note deleted: "{name}".'),
+        (
+            "downloads delete {name}.pdf",
+            "Downloads change cancelled.",
+            "Deleted 1 download.",
+        ),
+    ],
+    ids=["notes", "downloads"],
+)
+def test_chat_delete_prompts_read_the_answer(
+    cli, e2e_model, make_nonce, phrase, cancelled, done
+) -> None:
+    """Chat printed "...? [y/N]" and sent the answer to the model instead."""
+    from tests.e2e.harness import chat_replies
+
+    name = make_nonce("chatprompt")
+    is_note = phrase.startswith("delete note")
+
+    def present() -> bool:
+        if is_note:
+            return any((cli.grandpa_home / "notes").glob(f"{name}*.md"))
+        return (cli.home / "Downloads" / f"{name}.pdf").exists()
+
+    def setup() -> None:
+        if is_note:
+            cli("notes", "create", name)
+        else:
+            (cli.home / "Downloads" / f"{name}.pdf").write_bytes(b"%PDF")
+
+    setup()
+    declined = cli.chat(e2e_model, phrase.format(name=name), "n")
+    assert cancelled in chat_replies(declined.text)[0], declined.tail(400)
+    assert present(), "deleted after answering n"
+
+    accepted = cli.chat(e2e_model, phrase.format(name=name), "y")
+    assert done.format(name=name) in chat_replies(accepted.text)[0], accepted.tail(400)
+    assert not present(), "still there after answering y"
+
+
+def test_memory_delete_refuses_a_piped_answer(cli, make_nonce) -> None:
+    """These prompts used to accept a piped "y" as if a person had typed it."""
+    fact = f"e2e keepsake {make_nonce('')}"
+    cli("memory", "remember", fact)
+    key = fact.replace(" ", "_")
+
+    piped = cli("memory", "delete", key, stdin="y\n")
+
+    assert piped.returncode == 1 and "stdin is not interactive" in piped.stderr, (
+        piped.text
+    )
+    assert fact in cli("memory", "search", fact.split()[-1]).text
+
+    accepted = cli.at_terminal("memory", "delete", key, answer="y")
+
+    assert accepted.returncode == 0, accepted.text
+    assert fact not in cli("memory", "search", fact.split()[-1]).text

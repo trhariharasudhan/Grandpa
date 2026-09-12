@@ -802,6 +802,31 @@ def _unknown_slash_command_message(command: str) -> str:
     return unknown_command_message(command)
 
 
+class _ChatConfirmation:
+    """A handler ``confirm=`` callback that asks in the chat session.
+
+    Chat printed the handler's "...? [y/N]" message and then sent the answer to
+    the model. This asks with the same prompt chat already uses for desktop and
+    browser actions, and remembers the answer so a declined action can say so.
+    """
+
+    def __init__(self, ask, prompt_for) -> None:
+        self._ask = ask
+        self._prompt_for = prompt_for
+        self.asked = False
+        self.approved = False
+
+    def __call__(self, *args) -> bool:
+        self.asked = True
+        self.approved = self._ask(self._prompt_for(*args), "requires_confirmation")
+        return self.approved
+
+    def message_for(self, message: str, *, cancelled: str) -> str:
+        if self.asked and not self.approved:
+            return cancelled
+        return message
+
+
 def _desktop_action_confirmer(browser_confirm):
     """Adapt chat's (prompt, tier) callback to desktop_automation's (action)."""
     if browser_confirm is None:
@@ -1408,6 +1433,10 @@ def chat(
         """Prompt before Grandpa navigates the user's real browser."""
         return _confirm_chat_action(spec, permission, label="Confirm browser action")
 
+    def _confirm_local_change(spec: str, permission: str) -> bool:
+        """Prompt before Grandpa deletes or changes something local."""
+        return _confirm_chat_action(spec, permission, label="Confirm")
+
     history: List[Message] = []
     if system_prompt:
         history.append(Message(role=Role.SYSTEM, content=system_prompt))
@@ -1759,42 +1788,71 @@ def chat(
 
             from grandpa.notes import handle_notes_command
 
-            notes_action = handle_notes_command(effective_user_input)
+            notes_confirm = _ChatConfirmation(
+                _confirm_local_change,
+                lambda action: _notes_confirmation_message(action).removesuffix(
+                    " [y/N]"
+                ),
+            )
+            from grandpa.downloads.formatter import (
+                format_operation_plan as _downloads_operation_plan,
+            )
+            from grandpa.notes.automation import (
+                _confirmation_message as _notes_confirmation_message,
+            )
+
+            notes_action = handle_notes_command(
+                effective_user_input, confirm=notes_confirm
+            )
+            notes_action_message = notes_confirm.message_for(
+                notes_action.message, cancelled="Note deletion cancelled."
+            )
             if not notes_action.should_fallback:
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(
-                    Message(role=Role.ASSISTANT, content=notes_action.message)
+                    Message(role=Role.ASSISTANT, content=notes_action_message)
                 )
-                remember_conversation("assistant", notes_action.message)
+                remember_conversation("assistant", notes_action_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=notes_action.message,
+                    assistant_text=notes_action_message,
                     kind="notes",
                     target=notes_action.action.query if notes_action.action else None,
                     status=notes_action.status,
                 )
-                render_assistant_response(console, Markdown(notes_action.message))
+                render_assistant_response(console, Markdown(notes_action_message))
                 continue
 
             from grandpa.downloads import handle_downloads_command
 
-            downloads_action = handle_downloads_command(effective_user_input)
+            downloads_confirm = _ChatConfirmation(
+                _confirm_local_change,
+                lambda action, items: _downloads_operation_plan(
+                    action.action, items
+                ).removesuffix(" [y/N]"),
+            )
+            downloads_action = handle_downloads_command(
+                effective_user_input, confirm=downloads_confirm
+            )
+            downloads_action_message = downloads_confirm.message_for(
+                downloads_action.message, cancelled="Downloads change cancelled."
+            )
             if not downloads_action.should_fallback:
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(
-                    Message(role=Role.ASSISTANT, content=downloads_action.message)
+                    Message(role=Role.ASSISTANT, content=downloads_action_message)
                 )
-                remember_conversation("assistant", downloads_action.message)
+                remember_conversation("assistant", downloads_action_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=downloads_action.message,
+                    assistant_text=downloads_action_message,
                     kind="downloads",
                     target=downloads_action.action.query
                     if downloads_action.action
                     else None,
                     status=downloads_action.status,
                 )
-                render_assistant_response(console, Markdown(downloads_action.message))
+                render_assistant_response(console, Markdown(downloads_action_message))
                 continue
 
             from grandpa.web_search import handle_web_search_command
