@@ -8,6 +8,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from grandpa.cli._tty import require_confirmation
 from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
 from grandpa.reminders import (
     ReminderSchedulerService,
@@ -121,11 +122,12 @@ def reminders_clear(status: ReminderStatus | None, clear_all: bool, yes: bool) -
         raise click.ClickException("Use either --status or --all, not both.")
     store = ReminderStore()
     if clear_all:
-        if not yes:
-            click.confirm(
-                "This will delete all reminders, including pending reminders. Continue?",
-                abort=True,
-            )
+        if not require_confirmation(
+            "This will delete all reminders, including pending reminders. Continue?",
+            yes=yes,
+            cancelled="Reminder clear cancelled.",
+        ):
+            return
         deleted = store.delete()
         _print_deleted(console, deleted, None)
         return

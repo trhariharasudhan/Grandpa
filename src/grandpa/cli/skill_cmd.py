@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from grandpa.cli._tty import require_confirmation
 from grandpa.core.events import EventBus
 from grandpa.skills.manager import SkillManager
 
@@ -146,8 +147,7 @@ def remove(skill_name: str, yes: bool) -> None:
     console.print(f"[bold]Will remove {len(paths)} location(s):[/bold]")
     for path in paths:
         console.print(f"  - {path}")
-    if not yes and not click.confirm("Proceed?", default=False):
-        console.print("[dim]Aborted.[/dim]")
+    if not require_confirmation("Proceed?", yes=yes, cancelled="Aborted."):
         return
 
     try:

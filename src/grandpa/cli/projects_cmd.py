@@ -8,6 +8,7 @@ from pathlib import Path
 
 import click
 
+from grandpa.cli._tty import require_confirmation
 from grandpa.projects.commands import _format_info
 from grandpa.projects.errors import ProjectError
 from grandpa.projects.service import ProjectService
@@ -98,8 +99,12 @@ def open_cmd(project: str, target: str | None) -> None:
 
 
 def _lifecycle(action: str, project: str, yes: bool = False) -> None:
-    if action in {"stop", "restart"} and not yes:
-        click.confirm(f"{action.title()} {project}?", abort=True, default=False)
+    if action in {"stop", "restart"} and not require_confirmation(
+        f"{action.title()} {project}?",
+        yes=yes,
+        cancelled=f"{action.title()} cancelled.",
+    ):
+        return
     _guard(lambda: click.echo(_service().lifecycle(project, action).message))
 
 
@@ -172,8 +177,10 @@ def logs(project: str, tail: int, open_file: bool) -> None:
 @click.argument("project")
 @click.option("--yes", is_flag=True, help="Skip confirmation.")
 def unregister(project: str, yes: bool) -> None:
-    if not yes:
-        click.confirm(f"Unregister {project}?", abort=True, default=False)
+    if not require_confirmation(
+        f"Unregister {project}?", yes=yes, cancelled="Unregister cancelled."
+    ):
+        return
 
     def run() -> None:
         removed = _service().unregister(project)

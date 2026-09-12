@@ -5,6 +5,7 @@ from __future__ import annotations
 import click
 from rich.console import Console
 
+from grandpa.cli._tty import require_confirmation
 from grandpa.profile import (
     configure_profile,
     format_profile,
@@ -63,9 +64,9 @@ def edit_profile() -> None:
 def reset_profile_command(yes: bool) -> None:
     """Reset onboarding while preserving current local preferences."""
 
-    confirmed = yes or click.confirm("Reset local profile?", default=False)
-    if not confirmed:
-        click.echo("Profile reset cancelled.")
+    if not require_confirmation(
+        "Reset local profile?", yes=yes, cancelled="Profile reset cancelled."
+    ):
         return
     reset_profile(confirmed=True)
     click.echo("Profile reset. Onboarding will run at the next interactive launch.")

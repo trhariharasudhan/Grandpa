@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.progress import track
 from rich.table import Table
 
+from grandpa.cli._tty import require_confirmation
 from grandpa.core.config import load_config
 from grandpa.core.registry import MemoryRegistry
 from grandpa.memory.models import redact_sensitive
@@ -351,10 +352,12 @@ def update_cmd(id_or_key: str, text: str) -> None:
 def delete_cmd(id_or_key: str, yes: bool) -> None:
     """Delete a memory item."""
     console = Console()
-    if not yes:
-        click.confirm(
-            f"Are you sure you want to delete memory '{id_or_key}'?", abort=True
-        )
+    if not require_confirmation(
+        f"Are you sure you want to delete memory '{id_or_key}'?",
+        yes=yes,
+        cancelled="Memory deletion cancelled.",
+    ):
+        return
 
     svc = MemoryService.get_instance()
     success = svc.delete(id_or_key)
@@ -373,8 +376,12 @@ def clear_cmd(category: str | None, yes: bool) -> None:
     target_desc = (
         f"all memories in category '{category}'" if category else "ALL stored memories"
     )
-    if not yes:
-        click.confirm(f"⚠️  Are you sure you want to clear {target_desc}?", abort=True)
+    if not require_confirmation(
+        f"⚠️  Are you sure you want to clear {target_desc}?",
+        yes=yes,
+        cancelled="Memory clear cancelled.",
+    ):
+        return
 
     svc = MemoryService.get_instance()
     count = svc.clear(category=category, confirm=True)

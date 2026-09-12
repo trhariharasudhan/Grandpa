@@ -10,6 +10,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from grandpa.cli._tty import require_confirmation
 from grandpa.core.config import load_config
 from grandpa.telemetry.aggregator import TelemetryAggregator
 
@@ -219,10 +220,10 @@ def export(fmt: str, output_path: str | None) -> None:
 )
 def clear(confirmed: bool) -> None:
     """Delete all telemetry records."""
-    if not confirmed:
-        if not click.confirm("Delete all telemetry records?"):
-            click.echo("Aborted.")
-            return
+    if not require_confirmation(
+        "Delete all telemetry records?", yes=confirmed, cancelled="Aborted."
+    ):
+        return
 
     agg = _get_aggregator()
     try:
