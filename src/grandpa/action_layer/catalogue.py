@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+from enum import Enum
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -35,6 +36,7 @@ from grandpa.action_layer.model import RiskLevel
 
 __all__ = [
     "ActionSpec",
+    "Binding",
     "CATALOGUE",
     "EXCLUSIONS",
     "counts_by_risk",
@@ -116,6 +118,127 @@ def _integer(description: str, **extra: Any) -> dict[str, Any]:
 _NO_PARAMS = _schema()
 
 
+class Binding(str, Enum):
+    """The argument shape an implementation expects.
+
+    ``pc_control._execute`` hides six different calling conventions behind one
+    dispatch. The layer cannot, so the catalogue names which one each entry
+    needs and the executor has one adapter per shape. ``self`` is supplied by
+    the executor: every dotted path that names a method is resolved to its
+    class, which is constructed with no arguments.
+    """
+
+    REQUEST_ACTION = "request_action"
+    """``method(request, action)`` -- applications, windows, clipboard,
+    monitors, diagnostics, files, brightness."""
+
+    REQUEST_ACTION_PLATFORM = "request_action_platform"
+    """``method(request, action, platform=...)`` -- volume and synthetic
+    input."""
+
+    ACTION_PLATFORM = "action_platform"
+    """``method(action, platform=...)`` -- system power. Takes no request."""
+
+    PLATFORM_ONLY = "platform_only"
+    """``method(platform=...)`` -- emptying the Recycle Bin."""
+
+    REQUEST_ONLY = "request_only"
+    """``function(request)`` -- open_folder, still inline in pc_control."""
+
+    ACTION_TARGET = "action_target"
+    """``function(action, target)`` -- browser_control.execute_browser_action,
+    which takes its own shorter sub-action names."""
+
+
+@dataclass(frozen=True, slots=True)
+class _Call:
+    """How to call one entry's implementation."""
+
+    binding: Binding
+    target: str | None = None
+    """Which schema property becomes the request's ``.target``. Everything
+    else in the parameters becomes ``.args``."""
+
+    alias: str | None = None
+    """The name the implementation expects, when it differs from the catalogue
+    name -- ``close_app`` arrives at the window service as ``close``, and every
+    browser action has a shorter sub-action name."""
+
+
+_R_A = Binding.REQUEST_ACTION
+_R_A_P = Binding.REQUEST_ACTION_PLATFORM
+
+# One row per catalogue entry. A missing row is an import-time error, so an
+# entry cannot be added without saying how it is called.
+_CALLS: dict[str, _Call] = {
+    # applications and windows
+    "open_app": _Call(_R_A, target="app"),
+    "detect_app": _Call(_R_A, target="app"),
+    "open_folder": _Call(Binding.REQUEST_ONLY, target="path"),
+    "close_app": _Call(_R_A, target="app", alias="close"),
+    "list_windows": _Call(_R_A, target="window"),
+    "focus_window": _Call(_R_A, target="window"),
+    "minimize_window": _Call(_R_A, target="window"),
+    "maximize_window": _Call(_R_A, target="window"),
+    "restore_window": _Call(_R_A, target="window"),
+    "close_window": _Call(_R_A, target="window"),
+    # volume, brightness, power
+    "volume_up": _Call(_R_A_P),
+    "volume_down": _Call(_R_A_P),
+    "volume_mute": _Call(_R_A_P),
+    "volume_unmute": _Call(_R_A_P),
+    "volume_set": _Call(_R_A_P),
+    "brightness_get": _Call(_R_A),
+    "brightness_set": _Call(_R_A),
+    "system_lock": _Call(Binding.ACTION_PLATFORM),
+    "system_sleep": _Call(Binding.ACTION_PLATFORM),
+    "system_restart": _Call(Binding.ACTION_PLATFORM),
+    "system_shutdown": _Call(Binding.ACTION_PLATFORM),
+    "empty_recycle_bin": _Call(Binding.PLATFORM_ONLY),
+    # clipboard, monitors, desktop context
+    "clipboard_read": _Call(_R_A),
+    "clipboard_write": _Call(_R_A),
+    "clipboard_clear": _Call(_R_A),
+    "clipboard_inspect": _Call(_R_A),
+    "clipboard_history": _Call(_R_A),
+    "list_monitors": _Call(_R_A, target="monitor"),
+    "monitor_info": _Call(_R_A, target="monitor"),
+    "active_process": _Call(_R_A),
+    "list_processes": _Call(_R_A),
+    "desktop_summary": _Call(_R_A),
+    "pc_diagnostics": _Call(_R_A),
+    # files
+    "file_create": _Call(_R_A, target="path"),
+    "file_rename": _Call(_R_A, target="path"),
+    "file_move": _Call(_R_A, target="path"),
+    "file_copy": _Call(_R_A, target="path"),
+    "file_delete": _Call(_R_A, target="path"),
+    # synthetic input
+    "keyboard_type": _Call(_R_A_P),
+    "keyboard_hotkey": _Call(_R_A_P),
+    "mouse_move": _Call(_R_A_P),
+    "mouse_click": _Call(_R_A_P),
+    "mouse_scroll": _Call(_R_A_P),
+    "mouse_drag": _Call(_R_A_P),
+    "desktop_navigate": _Call(_R_A_P),
+    # browser
+    "browser_open": _Call(Binding.ACTION_TARGET, target="url", alias="open"),
+    "browser_search": _Call(Binding.ACTION_TARGET, target="query", alias="search"),
+    "browser_new_tab": _Call(Binding.ACTION_TARGET, target="url", alias="new_tab"),
+    "browser_context": _Call(Binding.ACTION_TARGET, target="scope", alias="context"),
+    "browser_tabs": _Call(Binding.ACTION_TARGET, target="scope", alias="tabs"),
+    "browser_summary": _Call(Binding.ACTION_TARGET, target="scope", alias="summary"),
+    "browser_headings": _Call(Binding.ACTION_TARGET, target="scope", alias="headings"),
+    "browser_links": _Call(Binding.ACTION_TARGET, target="scope", alias="links"),
+    "browser_buttons": _Call(Binding.ACTION_TARGET, target="scope", alias="buttons"),
+    "browser_media": _Call(Binding.ACTION_TARGET, target="scope", alias="media"),
+    "browser_diagnostics": _Call(
+        Binding.ACTION_TARGET, target="scope", alias="diagnostics"
+    ),
+    "browser_task": _Call(Binding.ACTION_TARGET, target="task", alias="task"),
+}
+
+
 @dataclass(frozen=True, slots=True)
 class ActionSpec:
     """One catalogued action: what it is, how risky, and who performs it."""
@@ -141,6 +264,15 @@ class ActionSpec:
     notes: str = ""
     """Anything a caller should know that the description cannot carry."""
 
+    binding: Binding = Binding.REQUEST_ACTION
+    """Which argument shape :data:`implementation` expects."""
+
+    target_parameter: str | None = None
+    """Which parameter becomes the request's ``.target``, if any."""
+
+    action_alias: str | None = None
+    """The name the implementation expects, when it differs from ``name``."""
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "parameters", MappingProxyType(dict(self.parameters)))
 
@@ -153,6 +285,7 @@ def _spec(
     parameters: Mapping[str, Any] = _NO_PARAMS,
     notes: str = "",
 ) -> ActionSpec:
+    call = _CALLS[name]  # KeyError: a new entry must say how it is called
     return ActionSpec(
         name=name,
         description=description,
@@ -161,6 +294,9 @@ def _spec(
         requires_confirmation=_confirmation_for(name, risk),
         implementation=implementation,
         notes=notes,
+        binding=call.binding,
+        target_parameter=call.target,
+        action_alias=call.alias,
     )
 
 
@@ -171,7 +307,11 @@ _HIGH = RiskLevel.HIGH
 _APP = _string("Application name or path, e.g. 'notepad' or 'vs code'.")
 _WINDOW = _string("Window title to match. Defaults to the active window.")
 _LEVEL = _integer("Percentage from 0 to 100.", minimum=0, maximum=100)
-_BROWSER_TARGET = _string("What to act on. Meaning depends on the action.")
+
+
+def _browser_scope(default: str) -> dict[str, Any]:
+    """What the browser action reads. pc_control passes these same defaults."""
+    return _string("Which part of the visible browser to read.", default=default)
 
 
 # --- applications and windows ------------------------------------------------
@@ -592,7 +732,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "Open a new browser tab.",
         _BROWSER,
-        _schema({"url": _string("Address for the new tab. Blank opens about:blank.")}),
+        _schema({"url": _string("Address for the new tab.", default="about:blank")}),
         notes="execute_browser_action('new_tab', url). Opens a real tab.",
     ),
     _spec(
@@ -600,7 +740,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "Report what the visible browser window is showing.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("active")}),
         notes="execute_browser_action('context', 'active').",
     ),
     _spec(
@@ -608,7 +748,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "List recently seen browser tabs.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("recent")}),
         notes="execute_browser_action('tabs', 'recent').",
     ),
     _spec(
@@ -616,7 +756,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "Summarise the readable text of the visible page.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('summary', 'visible'). Reports that page "
         "text is unavailable when the DOM cannot be read.",
     ),
@@ -625,7 +765,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "List the headings on the visible page.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('headings', 'visible').",
     ),
     _spec(
@@ -633,7 +773,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "List the links on the visible page.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('links', 'visible').",
     ),
     _spec(
@@ -641,7 +781,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "List the buttons on the visible page.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('buttons', 'visible').",
     ),
     _spec(
@@ -649,7 +789,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "Report the media playing in the visible browser window.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('media', 'visible').",
     ),
     _spec(
@@ -657,7 +797,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "Report what browser awareness can currently see.",
         _BROWSER,
-        _schema({"scope": _BROWSER_TARGET}),
+        _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('diagnostics', 'visible').",
     ),
     _spec(
