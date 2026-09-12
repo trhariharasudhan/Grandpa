@@ -5,7 +5,7 @@ The list is built from the audit's feature table
 tables in ``grandpa.pc_control``. Two rules decide what is in it:
 
 * **Only what exists.** Every entry names the function that performs it, and
-  ``tests/actions/test_catalogue_coverage.py`` resolves that dotted path. There
+  ``tests/action_layer/test_catalogue_coverage.py`` resolves that dotted path. There
   are no entries for capabilities Grandpa does not have (process kill, software
   install, registry write) and none for the stubs the audit found -- those are
   in :data:`EXCLUSIONS` with a reason.
@@ -31,7 +31,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from grandpa.actions.model import RiskLevel
+from grandpa.action_layer.model import RiskLevel
 
 __all__ = [
     "ActionSpec",

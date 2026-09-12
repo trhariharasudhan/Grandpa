@@ -66,7 +66,7 @@ class RiskLevel(str, Enum):
     (``src/grandpa/pc_control.py``), backed there by ``LOW_RISK_ACTIONS``,
     ``MEDIUM_RISK_ACTIONS``, ``HIGH_RISK_ACTIONS`` and ``BLOCKED_ACTIONS``.
     This is a mirror, not a new scale: the names and the values match, and
-    ``tests/actions/test_catalogue_coverage.py`` fails if the two ever disagree
+    ``tests/action_layer/test_catalogue_coverage.py`` fails if the two ever disagree
     about a given action.
 
     It is mirrored rather than imported because importing ``pc_control`` would

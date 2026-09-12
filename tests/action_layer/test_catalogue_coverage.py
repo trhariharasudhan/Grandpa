@@ -22,8 +22,8 @@ from typing import Any
 import pytest
 
 from grandpa import pc_control
-from grandpa.actions.catalogue import CATALOGUE, EXCLUSIONS, ActionSpec
-from grandpa.actions.model import RiskLevel
+from grandpa.action_layer.catalogue import CATALOGUE, EXCLUSIONS, ActionSpec
+from grandpa.action_layer.model import RiskLevel
 
 # pc_control's four risk tables, flattened into action -> tier.
 PC_CONTROL_RISK: dict[str, str] = {

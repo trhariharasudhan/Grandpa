@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-from grandpa.actions.catalogue import CATALOGUE, EXCLUSIONS
-from grandpa.actions.tool_schema import as_tool_definition, as_tool_definitions
+from grandpa.action_layer.catalogue import CATALOGUE, EXCLUSIONS
+from grandpa.action_layer.tool_schema import as_tool_definition, as_tool_definitions
 
 # OpenAI's constraint on a function name, which Ollama inherits.
 _NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from grandpa.actions.catalogue import CATALOGUE, ActionSpec
+from grandpa.action_layer.catalogue import CATALOGUE, ActionSpec
 
 __all__ = ["as_tool_definition", "as_tool_definitions"]
 
