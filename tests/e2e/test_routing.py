@@ -110,8 +110,18 @@ def test_automation_click_prompts_and_sends_nothing_when_declined(cli) -> None:
         stdin="n\n",
     )
 
-    if "could not find an open" in declined.text.lower():
-        raise CouldNotRun(f"no desktop shell window to target: {declined.tail()}")
+    # Two ways this machine's desktop can refuse to host the probe: the shell
+    # window is not there at all, or something else has focus so the CLI will
+    # not confirm it as active. Neither says anything about the confirmation
+    # prompt, which is what the test is here to check.
+    unreachable = (
+        "could not find an open",
+        "could not be confirmed as the active window",
+    )
+    if any(reason in declined.text.lower() for reason in unreachable):
+        raise CouldNotRun(
+            f"no focusable desktop shell window to target: {declined.tail()}"
+        )
     assert "Continue? [y/N]" in declined.text, (
         f"no confirmation prompt: {declined.text}"
     )
