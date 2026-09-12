@@ -39,6 +39,7 @@ PUBLIC_MODULES = (
     "grandpa.action_layer.catalogue",
     "grandpa.action_layer.tool_schema",
     "grandpa.action_layer.executor",
+    "grandpa.action_layer.loop",
 )
 
 _PROBE = """
