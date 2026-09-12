@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Optional
 from unittest.mock import MagicMock, patch
-
-import pytest
 
 from grandpa.browser_intelligence.models import PageContent
 from grandpa.browser_intelligence.summarizer import LocalPageSummarizer

@@ -17,7 +17,7 @@ from grandpa.runtime.exceptions import (
     RuntimeModelLoadError,
     RuntimeModelNotFoundError,
 )
-from grandpa.runtime.interface import ModelRuntime, ResponseFormat, StreamChunk
+from grandpa.runtime.interface import ModelRuntime, StreamChunk
 from grandpa.runtime.manager import get_runtime
 from grandpa.runtime.native_adapter import NativeBackendAdapter
 
