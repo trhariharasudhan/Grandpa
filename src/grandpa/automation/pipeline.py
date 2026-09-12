@@ -56,10 +56,14 @@ class WindowsCommandPipeline:
         automation_service: ScreenAutomationService | None = None,
         source: str = "local",
         session_id: str = "",
+        confirm=None,
     ) -> None:
         self.automation_service = automation_service or ScreenAutomationService()
         self.source = source
         self.session_id = session_id
+        # Forwarded to handle_desktop_command so launching a browser can be
+        # confirmed by the caller (chat) instead of just happening.
+        self.confirm = confirm
 
     def handle(
         self,
@@ -119,7 +123,7 @@ class WindowsCommandPipeline:
 
         from grandpa.desktop.automation import handle_desktop_command
 
-        desktop = handle_desktop_command(text, dry_run=dry_run)
+        desktop = handle_desktop_command(text, dry_run=dry_run, confirm=self.confirm)
         if not desktop.should_fallback:
             action = desktop.action
             launch_target = _desktop_launch_target(

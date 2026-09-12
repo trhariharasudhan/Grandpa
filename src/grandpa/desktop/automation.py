@@ -316,6 +316,22 @@ class DesktopAutomation:
         action = self.parser.parse(text)
         if action is None:
             return DesktopAutomationResult("no_match", "")
+        if _is_browser_launch(action):
+            # Starting a browser is a browser action: ask, and refuse when
+            # there is no one to ask, as browser navigation does.
+            if confirm is None:
+                return DesktopAutomationResult(
+                    "needs_confirmation",
+                    f"Confirmation required before I open {action.label}.",
+                    action,
+                )
+            if not confirm(action):
+                return DesktopAutomationResult(
+                    "needs_confirmation",
+                    f"Cancelled: I did not open {action.label}.",
+                    action,
+                )
+            return self.executor.execute(action, dry_run=dry_run)
         if action.requires_confirmation and confirm is not None and not confirm(action):
             return DesktopAutomationResult("needs_confirmation", "Cancelled.", action)
         return self.executor.execute(action, dry_run=dry_run)
@@ -332,6 +348,23 @@ def handle_desktop_command(
 
     return DesktopAutomation(executor=DesktopExecutor(runner)).handle(
         text, dry_run=dry_run, confirm=confirm
+    )
+
+
+_BROWSER_APPS = frozenset(
+    {"chrome", "msedge", "edge", "firefox", "brave", "opera", "vivaldi"}
+)
+
+
+def _is_browser_launch(action: DesktopAction) -> bool:
+    """True when this action starts a web browser."""
+    if action.action_type != "open_app":
+        return False
+    target = str(action.target or "").casefold()
+    label = str(action.label or "").casefold()
+    return any(
+        name in target.split("_") or name in label.split() or name == target
+        for name in _BROWSER_APPS
     )
 
 

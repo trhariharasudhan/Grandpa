@@ -381,6 +381,84 @@ def run_cli_at_console(
     return CliRun(child.returncode, stdout, stderr + _typist_note(typist))
 
 
+# Runs inside the CLI process: record anything that would open a browser or
+# launch a program, and let nothing actually start. Browser launches raise, as
+# a blocked executable would.
+_LAUNCH_RECORDER = r"""
+import json, os, runpy, subprocess, sys, webbrowser
+
+log_path = os.environ["GRANDPA_E2E_LAUNCH_LOG"]
+
+
+def _record(kind, value):
+    with open(log_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"kind": kind, "value": str(value)}) + "\n")
+
+
+def _opener(name):
+    def _open(target, *args, **kwargs):
+        _record(name, target)
+        return True
+
+    return _open
+
+
+webbrowser.open = _opener("webbrowser.open")
+webbrowser.open_new = _opener("webbrowser.open")
+webbrowser.open_new_tab = _opener("webbrowser.open")
+if hasattr(os, "startfile"):
+    os.startfile = _opener("os.startfile")
+
+_real_popen = subprocess.Popen
+
+
+class _RecordingPopen(_real_popen):
+    def __init__(self, args, *rest, **kwargs):
+        text = " ".join(map(str, args)) if isinstance(args, (list, tuple)) else str(args)
+        if any(name in text.lower() for name in ("chrome", "msedge", "firefox", "http")):
+            _record("launch", text)
+            raise OSError("e2e: launch recorded, not started")
+        super().__init__(args, *rest, **kwargs)
+
+
+subprocess.Popen = _RecordingPopen
+sys.argv = ["grandpa", "--quiet", *sys.argv[1:]]
+runpy.run_module("grandpa.cli", run_name="__main__")
+"""
+
+
+def run_cli_recording_launches(
+    sandbox: Sandbox,
+    args: list[str],
+    *,
+    cwd: Path,
+    stdin_text: str | None = None,
+    timeout: float = CLI_TIMEOUT,
+) -> tuple[CliRun, list[dict]]:
+    """Run the CLI with browser opening and program launching recorded, not done.
+
+    Returns the run and the list of ``{"kind", "value"}`` attempts, so a test can
+    assert that answering "n" opened nothing and "y" opened exactly one address.
+    """
+    log = sandbox.root / f"launches-{secrets.token_hex(4)}.jsonl"
+    run = run_python(
+        sandbox,
+        ["-c", _LAUNCH_RECORDER, *args],
+        cwd=cwd,
+        stdin_text=stdin_text,
+        extra_env={"GRANDPA_E2E_LAUNCH_LOG": str(log)},
+        timeout=timeout,
+    )
+    attempts = []
+    if log.exists():
+        attempts = [
+            json.loads(line)
+            for line in log.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+    return run, attempts
+
+
 def _typist_note(typist: subprocess.CompletedProcess) -> str:
     if typist.returncode == 0:
         return ""

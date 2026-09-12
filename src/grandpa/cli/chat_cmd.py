@@ -384,7 +384,7 @@ def _files_slash_to_natural(action: str, argument: str) -> str | None:
     return None
 
 
-def _handle_browser_slash_command(command: str) -> str | None:
+def _handle_browser_slash_command(command: str, *, confirm=None) -> str | None:
     if not command.startswith("/browser"):
         return None
     parts = command.split(maxsplit=3)
@@ -423,7 +423,7 @@ def _handle_browser_slash_command(command: str) -> str | None:
         return "Unknown browser command. Try /browser help."
     from grandpa.browser import handle_browser_command
 
-    return handle_browser_command(automation_text).message
+    return handle_browser_command(automation_text, confirm=confirm).message
 
 
 def _browser_slash_to_awareness(command: str) -> str | None:
@@ -802,6 +802,17 @@ def _unknown_slash_command_message(command: str) -> str:
     return unknown_command_message(command)
 
 
+def _desktop_action_confirmer(browser_confirm):
+    """Adapt chat's (prompt, tier) callback to desktop_automation's (action)."""
+    if browser_confirm is None:
+        return None
+
+    def _confirm(action) -> bool:
+        return browser_confirm(f"open {action.label}", "requires_confirmation")
+
+    return _confirm
+
+
 def _handle_natural_assistant_intent(
     text: str,
     *,
@@ -809,6 +820,7 @@ def _handle_natural_assistant_intent(
     reminder_store=None,
     spoken: bool = False,
     automation_service=None,
+    browser_confirm=None,
 ) -> str | None:
     from grandpa.planner.routing import handle_executive_goal
 
@@ -821,7 +833,7 @@ def _handle_natural_assistant_intent(
         return planned
     from grandpa.browser import handle_browser_command
 
-    browser_result = handle_browser_command(text)
+    browser_result = handle_browser_command(text, confirm=browser_confirm)
     if not browser_result.should_fallback:
         return browser_result.message
     from grandpa.automation import WindowsCommandPipeline
@@ -829,6 +841,7 @@ def _handle_natural_assistant_intent(
     pipeline_result = WindowsCommandPipeline(
         automation_service=automation_service,
         source="chat",
+        confirm=_desktop_action_confirmer(browser_confirm),
     ).handle(text, spoken=spoken)
     if not pipeline_result.should_fallback:
         return pipeline_result.message
@@ -1375,6 +1388,26 @@ def chat(
             return False
         return ans in ("y", "yes")
 
+    def _confirm_chat_action(spec: str, permission: str, *, label: str) -> bool:
+        """Ask in the chat session before something happens for real.
+
+        Same shape as _confirm_desktop_action. What would happen is shown in
+        full first: in chat it was the model, not the user, that chose it.
+        """
+        console.print(
+            f"[yellow]{label}:[/yellow] {spec} ({permission}) [y/N] ",
+            end="",
+        )
+        try:
+            ans = input().strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return False
+        return ans in ("y", "yes")
+
+    def _confirm_browser_action(spec: str, permission: str) -> bool:
+        """Prompt before Grandpa navigates the user's real browser."""
+        return _confirm_chat_action(spec, permission, label="Confirm browser action")
+
     history: List[Message] = []
     if system_prompt:
         history.append(Message(role=Role.SYSTEM, content=system_prompt))
@@ -1622,7 +1655,9 @@ def chat(
             elif cmd.startswith("/browser"):
                 render_assistant_response(
                     console,
-                    _handle_browser_slash_command(user_input)
+                    _handle_browser_slash_command(
+                        user_input, confirm=_confirm_browser_action
+                    )
                     or "Unknown browser command.",
                 )
                 continue
@@ -1689,6 +1724,7 @@ def chat(
             natural_intent_message = _handle_natural_assistant_intent(
                 effective_user_input,
                 automation_service=automation_service,
+                browser_confirm=_confirm_browser_action,
             )
             if natural_intent_message is not None:
                 history.append(Message(role=Role.USER, content=user_input))
@@ -1862,7 +1898,9 @@ def chat(
 
             from grandpa.browser import handle_browser_command
 
-            browser_action = handle_browser_command(effective_user_input)
+            browser_action = handle_browser_command(
+                effective_user_input, confirm=_confirm_browser_action
+            )
             if not browser_action.should_fallback:
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(
@@ -1884,7 +1922,10 @@ def chat(
 
             from grandpa.desktop.automation import handle_desktop_command
 
-            desktop_action = handle_desktop_command(effective_user_input)
+            desktop_action = handle_desktop_command(
+                effective_user_input,
+                confirm=_desktop_action_confirmer(_confirm_browser_action),
+            )
             if not desktop_action.should_fallback:
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(

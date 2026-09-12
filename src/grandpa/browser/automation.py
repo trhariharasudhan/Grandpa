@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from grandpa.browser.executor import BrowserExecutor, HotkeyCallback, OpenCallback
+from grandpa.browser.executor import (
+    BrowserExecutor,
+    ConfirmationCallback,
+    HotkeyCallback,
+    OpenCallback,
+)
 from grandpa.browser.models import BrowserOperationResult
 from grandpa.browser.parser import BrowserParser
+from grandpa.browser.safety import configured_trusted_domains
 
 
 class BrowserAutomation:
@@ -30,10 +36,27 @@ def handle_browser_command(
     *,
     opener: OpenCallback | None = None,
     hotkey_runner: HotkeyCallback | None = None,
+    confirm: ConfirmationCallback | None = None,
+    confirmed: bool = False,
+    trusted_domains: tuple[str, ...] | None = None,
 ) -> BrowserOperationResult:
-    """Convenience wrapper used by chat and voice command paths."""
+    """Convenience wrapper used by chat and voice command paths.
 
-    executor = BrowserExecutor(opener=opener, hotkey_runner=hotkey_runner)
+    Navigating actions need ``confirmed=True`` or a ``confirm`` callback that
+    approves, unless the domain is in ``tools.browser.trusted_domains``. With
+    no callback the action is refused rather than performed, as tool execution
+    is in ``tools/_stubs.py``.
+    """
+
+    executor = BrowserExecutor(
+        opener=opener,
+        hotkey_runner=hotkey_runner,
+        confirm=confirm,
+        confirmed=confirmed,
+        trusted_domains=(
+            configured_trusted_domains() if trusted_domains is None else trusted_domains
+        ),
+    )
     return BrowserAutomation(executor=executor).handle(text)
 
 

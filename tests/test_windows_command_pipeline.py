@@ -21,7 +21,7 @@ def test_pipeline_routes_desktop_command_and_returns_canonical_status(
     )
     monkeypatch.setattr(
         "grandpa.desktop.automation.handle_desktop_command",
-        lambda _text, dry_run=False: SimpleNamespace(
+        lambda _text, dry_run=False, confirm=None: SimpleNamespace(
             should_fallback=False,
             status="handled",
             message="Notepad opened.",
@@ -61,7 +61,7 @@ def test_pipeline_pins_verified_notepad_document_from_launch_evidence(
     )
     monkeypatch.setattr(
         "grandpa.desktop.automation.handle_desktop_command",
-        lambda _text, dry_run=False: SimpleNamespace(
+        lambda _text, dry_run=False, confirm=None: SimpleNamespace(
             should_fallback=False,
             status="handled",
             message="Opened and verified a new Notepad document.",

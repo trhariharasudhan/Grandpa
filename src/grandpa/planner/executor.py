@@ -157,10 +157,14 @@ class PlannerStepExecutor:
         if action == "wait_for_window":
             return self._wait_for_window(step)
         if action == "navigate_url":
-            return self._browser(step, f"open {parameters['url']}")
+            return self._browser(step, f"open {parameters['url']}", confirmed=confirmed)
         if action == "browser_search":
             provider = parameters.get("provider", "google")
-            return self._browser(step, f"search {provider} for {parameters['query']}")
+            return self._browser(
+                step,
+                f"search {provider} for {parameters['query']}",
+                confirmed=confirmed,
+            )
         if action == "open_file":
             return self._pipeline(step, f"open {parameters['path']}")
         if action == "open_folder":
@@ -416,12 +420,17 @@ class PlannerStepExecutor:
             )
         return converted
 
-    def _browser(self, step: PlanStep, command: str) -> StepResult:
+    def _browser(
+        self, step: PlanStep, command: str, *, confirmed: bool = False
+    ) -> StepResult:
         if self._browser_handler is None:
             from grandpa.browser import handle_browser_command
 
             self._browser_handler = handle_browser_command
-        return _generic_result(step, self._browser_handler(command))
+        # The plan already asked about this step, so do not ask twice.
+        return _generic_result(
+            step, self._browser_handler(command, confirmed=confirmed)
+        )
 
     def _find(self, step: PlanStep, *, wait: bool) -> StepResult:
         timeout = min(
@@ -784,7 +793,22 @@ def _window_choice_message(app: str, candidates: tuple[WindowIdentity, ...]) -> 
     return f"I found multiple {app.title()} windows. Choose one:\n{choices}"
 
 
+def _browser_step_target(step: PlanStep) -> str:
+    """The address a browser step would open, for the confirmation prompt."""
+    if step.action == "navigate_url":
+        return str(step.parameters.get("url") or "")
+    from grandpa.browser.urls import search_url
+
+    provider = str(step.parameters.get("provider") or "google")
+    found = search_url(provider, str(step.parameters.get("query") or ""))
+    return found[1] if found else ""
+
+
 def _step_confirmation_message(step: PlanStep) -> str:
+    if step.action in {"browser_search", "navigate_url"}:
+        return (
+            f"This step opens {_browser_step_target(step)} in your browser. Continue?"
+        )
     if step.action == "invoke_verified_dialog_action":
         choice = str(step.parameters.get("choice") or "").casefold()
         if choice == "discard":

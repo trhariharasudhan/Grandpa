@@ -489,6 +489,10 @@ class BrowserConfig:
     """Browser automation settings (Playwright)."""
 
     headless: bool = True
+    # Domains that may be opened without confirmation, comma-separated (TOML
+    # arrays are accepted). Empty means every browser action is confirmed.
+    # A domain also covers its subdomains: "python.org" allows "docs.python.org".
+    trusted_domains: str = ""
 
 
 @dataclass(slots=True)
@@ -499,6 +503,9 @@ class ToolsConfig:
     mcp: MCPConfig = field(default_factory=MCPConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     enabled: str = ""  # comma-separated default tools
+    # Extra directory that file search may read, on top of the user's own
+    # folders. Empty means user folders and the working directory only.
+    workspace: str = ""
 
 
 @dataclass

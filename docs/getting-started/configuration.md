@@ -65,6 +65,29 @@ Permission policy and confirmation settings should be changed through supported
 configuration commands. Grandpa does not support remote skill marketplaces,
 cloud inference fallback, social messaging channels, or external analytics.
 
+### Browser actions
+
+Opening a URL or a site, running a web search, opening an internal browser page
+(`chrome://…`), starting a browser, and browser steps inside a plan all ask
+first and show the exact address. In chat that address comes from the model, so
+nothing navigates your browser until you answer. Answering anything but `y`
+opens nothing, and with no one to ask (a non-interactive run) the action is
+refused.
+
+Domains you trust can skip the prompt. The list is empty by default, so
+everything is confirmed:
+
+```toml
+[tools.browser]
+# Comma-separated, or a TOML array. A domain covers its subdomains, so
+# "python.org" also allows "docs.python.org".
+trusted_domains = "python.org, github.com"
+```
+
+```powershell
+Grandpa config set tools.browser.trusted_domains "python.org,github.com"
+```
+
 ## Environment Variables
 
 Grandpa reads environment variables straight from the process environment. It

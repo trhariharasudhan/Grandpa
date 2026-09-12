@@ -6,11 +6,17 @@ import webbrowser
 from collections.abc import Callable
 
 from grandpa.browser.models import BrowserAction, BrowserOperationResult
-from grandpa.browser.safety import validate_browser_url
+from grandpa.browser.safety import (
+    confirmation_prompt,
+    needs_confirmation,
+    validate_browser_url,
+)
 from grandpa.browser.urls import search_url
 
 OpenCallback = Callable[[str], bool]
 HotkeyCallback = Callable[[tuple[str, ...]], bool]
+# Same shape as desktop_automation's: (what would happen, tier) -> approved.
+ConfirmationCallback = Callable[[str, str], bool]
 
 PAGE_URLS = {
     "history": "chrome://history",
@@ -37,9 +43,32 @@ class BrowserExecutor:
         self,
         opener: OpenCallback | None = None,
         hotkey_runner: HotkeyCallback | None = None,
+        *,
+        confirm: ConfirmationCallback | None = None,
+        confirmed: bool = False,
+        trusted_domains: tuple[str, ...] = (),
     ) -> None:
         self.opener = opener or _default_open
         self.hotkey_runner = hotkey_runner or _default_hotkey
+        self.confirm = confirm
+        self.confirmed = confirmed
+        self.trusted_domains = trusted_domains
+
+    def _refused(
+        self, action: BrowserAction, url: str, label: str
+    ) -> BrowserOperationResult | None:
+        """Ask before navigating, or refuse when nobody can be asked."""
+        if self.confirmed or not needs_confirmation(action, url, self.trusted_domains):
+            return None
+        prompt = confirmation_prompt(action, url, label)
+        if self.confirm is not None and self.confirm(prompt, "requires_confirmation"):
+            return None
+        message = (
+            f"Confirmation required before I {prompt}."
+            if self.confirm is None
+            else f"Cancelled: I did not {prompt}."
+        )
+        return BrowserOperationResult("needs_confirmation", message, action, url)
 
     def execute(self, action: BrowserAction) -> BrowserOperationResult:
         if action.action == "open_url":
@@ -62,6 +91,9 @@ class BrowserExecutor:
         ok, normalized, message = validate_browser_url(url)
         if not ok:
             return BrowserOperationResult("blocked", message, action, error=message)
+        refused = self._refused(action, normalized, label)
+        if refused is not None:
+            return refused
         try:
             opened = self.opener(normalized)
         except Exception as exc:
@@ -94,6 +126,9 @@ class BrowserExecutor:
             return BrowserOperationResult(
                 "unsupported", "That browser page is not supported yet.", action
             )
+        refused = self._refused(action, url, action.target)
+        if refused is not None:
+            return refused
         try:
             opened = self.opener(url)
         except Exception as exc:

@@ -198,15 +198,24 @@ ACTION_CATALOG: dict[str, ActionDefinition] = {
         verify=("element_visible",),
         vision=True,
     ),
+    # Browser navigation is MEDIUM: it sends the user's real browser to an
+    # address the plan chose, so the plan pauses for confirmation.
     "navigate_url": _action(
-        "navigate_url", required=("url",), verify=("URL_matches",), mandatory=True
+        "navigate_url",
+        required=("url",),
+        risk=RiskLevel.MEDIUM,
+        verify=("URL_matches",),
+        mandatory=True,
+        confirm=True,
     ),
     "browser_search": _action(
         "browser_search",
         required=("query",),
         optional=("provider",),
+        risk=RiskLevel.MEDIUM,
         verify=("browser_results_visible",),
         mandatory=True,
+        confirm=True,
         literal=("query",),
     ),
     "open_file": _action(

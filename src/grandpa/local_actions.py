@@ -586,6 +586,8 @@ def _confirmation_summary(command: str, result: LocalActionResult) -> str:
         return "Confirmation required before controlling the active app."
     if result.kind == "folder":
         return "Confirmation required before opening that folder."
+    if result.kind in {"url", "browser"} and _is_browser_navigation(result.target):
+        return f"Confirmation required before opening {result.target} in your browser."
     if result.kind == "url":
         return "Confirmation required before opening that URL."
     if result.kind == "browser":
@@ -617,8 +619,12 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
         return "requires_confirmation"
     if result.kind == "folder" and not _is_known_safe_folder(result.target):
         return "requires_confirmation"
-    if result.kind == "url" and not _is_known_safe_url(result.target):
-        return "requires_confirmation"
+    if result.kind in {"url", "browser"} and _is_browser_navigation(result.target):
+        return (
+            "allowed"
+            if _is_trusted_navigation(result.target)
+            else "requires_confirmation"
+        )
     if result.kind == "browser" and result.target.startswith("click|"):
         if any(
             word in result.target.lower()
@@ -678,8 +684,16 @@ def _audit_decision(command: str, result: LocalActionResult, decision: str) -> N
         logger.debug("Failed to audit local action decision", exc_info=True)
 
 
-def _is_known_safe_url(url: str) -> bool:
-    return url in {value[0] for value in _URL_ALLOWLIST.values()}
+def _is_browser_navigation(target: str) -> bool:
+    """True when acting on this target navigates the browser somewhere new."""
+    return target.startswith(("http://", "https://", "chrome://", "about:"))
+
+
+def _is_trusted_navigation(target: str) -> bool:
+    """True only for domains in tools.browser.trusted_domains (default none)."""
+    from grandpa.browser.safety import configured_trusted_domains, is_trusted_url
+
+    return is_trusted_url(target, configured_trusted_domains())
 
 
 def _is_known_safe_folder(path: str) -> bool:

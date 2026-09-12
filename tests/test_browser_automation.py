@@ -117,7 +117,7 @@ def test_executor_opens_website_with_mocked_opener() -> None:
     assert action is not None
 
     result = BrowserExecutor(
-        opener=lambda url: opened.append(url) is None or True
+        opener=lambda url: opened.append(url) is None or True, confirmed=True
     ).execute(action)
 
     assert result.status == "handled"
@@ -131,7 +131,7 @@ def test_executor_generates_search_url_with_mocked_opener() -> None:
     assert action is not None
 
     result = BrowserExecutor(
-        opener=lambda url: opened.append(url) is None or True
+        opener=lambda url: opened.append(url) is None or True, confirmed=True
     ).execute(action)
 
     assert result.status == "handled"
@@ -154,7 +154,7 @@ def test_executor_browser_hotkeys_are_mockable() -> None:
 
 def test_unsafe_url_returns_friendly_blocked_error() -> None:
     result = handle_browser_command(
-        "open javascript:alert(1)", opener=lambda _url: True
+        "open javascript:alert(1)", opener=lambda _url: True, confirmed=True
     )
 
     assert result.status == "blocked"
@@ -167,7 +167,10 @@ def test_browser_slash_routes_to_automation(monkeypatch) -> None:
         "webbrowser.open", lambda url, new=0: opened.append(url) is None or True
     )
 
-    message = _handle_browser_slash_command("/browser search youtube Python automation")
+    message = _handle_browser_slash_command(
+        "/browser search youtube Python automation",
+        confirm=lambda _prompt, _tier: True,
+    )
 
     assert message == "Searching YouTube for Python automation."
     assert opened == ["https://www.youtube.com/results?search_query=Python+automation"]
@@ -184,7 +187,7 @@ def test_voice_operator_parses_browser_command() -> None:
 def test_voice_operator_executes_browser_command(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.browser.handle_browser_command",
-        lambda command: SimpleNamespace(
+        lambda command, **_kwargs: SimpleNamespace(
             status="handled",
             message=f"handled {command}",
             should_fallback=False,
@@ -211,7 +214,7 @@ def test_chat_browser_command_does_not_call_llm(monkeypatch) -> None:
     monkeypatch.setattr("grandpa.intelligence.register_builtin_models", lambda: None)
     monkeypatch.setattr(
         "grandpa.browser.handle_browser_command",
-        lambda _text: SimpleNamespace(
+        lambda _text, **_kwargs: SimpleNamespace(
             status="handled",
             message="YouTube opened.",
             url="https://www.youtube.com",

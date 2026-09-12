@@ -119,6 +119,8 @@ class PlanValidator:
                 )
             if _risk_rank(definition.risk) > _risk_rank(step.risk):
                 step.risk = definition.risk
+            if step.action in {"browser_search", "navigate_url"}:
+                step.requires_confirmation = True
             if step.action == "save_document" or (
                 step.action == "invoke_verified_dialog_action"
                 and str(step.parameters.get("choice") or "").casefold() != "cancel"

@@ -21,6 +21,7 @@ BrowserActionType = Literal[
 BrowserActionStatus = Literal[
     "handled",
     "blocked",
+    "needs_confirmation",
     "unsupported",
     "no_match",
     "error",

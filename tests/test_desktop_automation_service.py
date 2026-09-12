@@ -137,7 +137,10 @@ def test_handle_desktop_command_runs_through_pc_control_payload() -> None:
         payloads.append(payload)
         return FakePcResponse(message="Opening Chrome.")
 
-    result = handle_desktop_command("Open Chrome", runner=fake_runner)
+    # Starting a browser now needs confirmation; approve it here.
+    result = handle_desktop_command(
+        "Open Chrome", runner=fake_runner, confirm=lambda _action: True
+    )
 
     assert result.status == "handled"
     assert result.message == "Chrome opened."
