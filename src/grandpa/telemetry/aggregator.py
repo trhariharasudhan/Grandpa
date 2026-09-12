@@ -88,9 +88,14 @@ class TelemetryAggregator:
     """Read-only query layer over the telemetry SQLite database."""
 
     def __init__(self, db_path: str | Path) -> None:
+        from grandpa.telemetry.store import _CREATE_TABLE
+
         self._db_path = str(db_path)
         self._conn = sqlite3.connect(self._db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
+        # A home where nothing has been recorded yet has no telemetry table, and
+        # every query raised "no such table: telemetry".
+        self._conn.executescript(_CREATE_TABLE)
 
     @staticmethod
     def _time_filter(

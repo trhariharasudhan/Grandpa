@@ -21,6 +21,20 @@ SKIP_DIR_NAMES = {
 }
 
 
+def configured_workspace() -> Path | None:
+    """``tools.workspace`` from config, when it is set and exists."""
+    try:
+        from grandpa.core.config import load_config
+
+        value = str(load_config().tools.workspace or "").strip()
+    except Exception:
+        return None
+    if not value:
+        return None
+    path = Path(value).expanduser()
+    return path if path.exists() else None
+
+
 def user_folder_aliases() -> dict[str, Path]:
     home = Path.home()
     return {
@@ -38,9 +52,7 @@ def user_folder_aliases() -> dict[str, Path]:
         "videos": home / "Videos",
         "videos folder": home / "Videos",
         "project": Path.cwd(),
-        "grandpa project": Path("D:/Grandpa")
-        if Path("D:/Grandpa").exists()
-        else Path.cwd(),
+        "workspace": configured_workspace() or Path.cwd(),
     }
 
 
@@ -59,8 +71,7 @@ def safe_roots(extra_roots: tuple[Path, ...] = ()) -> tuple[Path, ...]:
         Path.home() / "Pictures",
         Path.home() / "Music",
         Path.home() / "Videos",
-        Path("D:/Grandpa"),
-        Path("D:/Projects"),
+        *((configured_workspace(),) if configured_workspace() else ()),
         *env_roots,
         *extra_roots,
     )

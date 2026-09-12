@@ -82,6 +82,9 @@ def _confirmed(command: str, yes: bool) -> None:
     confirm = TerminalConfirmation(_confirmation_message)
     result = handle_calendar_command(command, confirmed=yes, confirm=confirm)
     confirm.finish(result.message, cancelled="Calendar change cancelled.")
+    if result.status in {"error", "blocked", "not_configured", "unsupported"}:
+        # The change did not happen; exit 0 made failures look like successes.
+        raise SystemExit(1)
 
 
 @calendar.command("create")

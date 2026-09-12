@@ -197,8 +197,10 @@ def handle_file_command(
         return _summarize_named_document(match.group(1).strip(), store)
 
     if command == "open my vs code project":
-        workspace = Path("D:/Grandpa")
-        if workspace.exists():
+        from grandpa.files.paths import configured_workspace
+
+        workspace = configured_workspace()
+        if workspace is not None:
             return _open_path(workspace, store)
         return FileAssistantResult(
             "unsupported",
@@ -584,13 +586,17 @@ def _iter_safe_files() -> list[Path]:
 
 
 def _safe_roots() -> list[Path]:
+    from grandpa.files.paths import configured_workspace
+
     home = Path.home()
     roots = [
         home / "Downloads",
         home / "Documents",
         home / "Desktop",
-        Path("D:/Grandpa"),
     ]
+    workspace = configured_workspace()
+    if workspace is not None:
+        roots.append(workspace)
     return _dedupe_paths(roots)
 
 
