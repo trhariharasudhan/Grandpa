@@ -496,6 +496,23 @@ def _print_profile(
     default=False,
     help="Auto-approve tool execution without prompting.",
 )
+@click.option(
+    "--tool-loop",
+    "tool_loop",
+    is_flag=True,
+    default=False,
+    help=(
+        "Experimental: answer the goal with the action layer's tool loop "
+        "instead of the usual path. Requires a model that can call tools."
+    ),
+)
+@click.option(
+    "--tool-loop-steps",
+    "tool_loop_steps",
+    type=int,
+    default=None,
+    help="Model turns the tool loop may take before it stops (default: 8).",
+)
 def ask(
     query: tuple[str, ...],
     model_name: str | None,
@@ -509,10 +526,29 @@ def ask(
     tool_names: str | None,
     enable_profile: bool,
     auto_approve: bool,
+    tool_loop: bool,
+    tool_loop_steps: int | None,
 ) -> None:
     """Ask Grandpa a question."""
     console = Console(stderr=True)
     query_text = " ".join(query)
+
+    if tool_loop:
+        # The action layer's proving ground: a separate path that shares
+        # nothing with the code below. Off unless asked for.
+        from grandpa.action_layer.loop import DEFAULT_STEP_LIMIT
+        from grandpa.cli._tool_loop import run_tool_loop
+
+        sys.exit(
+            run_tool_loop(
+                query_text,
+                model_name=model_name,
+                engine_key=engine_key,
+                auto_approve=auto_approve,
+                output_json=output_json,
+                step_limit=tool_loop_steps or DEFAULT_STEP_LIMIT,
+            )
+        )
 
     from grandpa.core_ai_brain import (
         build_brain_context,
