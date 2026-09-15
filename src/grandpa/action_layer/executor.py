@@ -273,10 +273,10 @@ def _call_google(
     the sentence, because only it knows which event or message was matched.
     """
     if spec.binding is Binding.CALENDAR_ACTION:
-        from grandpa.calendar.automation import _confirmation_message as plan_for
+        from grandpa.calendar.automation import confirmation_message as plan_for
         from grandpa.calendar.models import CalendarAction as DomainAction
     else:
-        from grandpa.gmail.automation import _confirmation_message as plan_for
+        from grandpa.gmail.automation import confirmation_message as plan_for
         from grandpa.gmail.models import GmailAction as DomainAction
 
     domain_action = DomainAction(action=action, **dict(parameters))

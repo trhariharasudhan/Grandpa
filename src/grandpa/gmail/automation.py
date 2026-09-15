@@ -298,4 +298,12 @@ def _confirmation_message(action: GmailAction) -> str:
     return "Confirm Gmail action? [y/N]"
 
 
-__all__ = ["GmailAutomation", "handle_gmail_command"]
+confirmation_message = _confirmation_message
+"""The sentence this domain asks before a change it cannot undo.
+
+The action layer renders it verbatim for a Confirmation.DOMAIN
+action, so it is part of this domain's interface rather than a
+private detail, and is named accordingly.
+"""
+
+__all__ = ["GmailAutomation", "confirmation_message", "handle_gmail_command"]

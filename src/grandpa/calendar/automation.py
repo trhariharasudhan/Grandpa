@@ -239,4 +239,12 @@ def _confirmation_message(action: CalendarAction) -> str:
     return "Confirm Calendar action? [y/N]"
 
 
-__all__ = ["CalendarAutomation", "handle_calendar_command"]
+confirmation_message = _confirmation_message
+"""The sentence this domain asks before a change it cannot undo.
+
+The action layer renders it verbatim for a Confirmation.DOMAIN
+action, so it is part of this domain's interface rather than a
+private detail, and is named accordingly.
+"""
+
+__all__ = ["CalendarAutomation", "confirmation_message", "handle_calendar_command"]
