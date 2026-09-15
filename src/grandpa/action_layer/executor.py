@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from grandpa.action_layer.catalogue import ActionSpec, Binding, get
+from grandpa.action_layer.catalogue import ActionSpec, Binding, Confirmation, get
 from grandpa.action_layer.model import ActionRequest, ActionResult, RiskLevel
 
 __all__ = ["ConfirmCallback", "audit_log_path", "execute"]
@@ -183,12 +183,13 @@ def _call_notes(
     owner: Any,
     action: str,
     parameters: Mapping[str, Any],
+    confirmed: bool,
 ) -> Any:
     """Call ``NotesAutomation.execute`` with a real NotesAction.
 
-    ``confirmed=True`` is not a bypass: the executor has already asked, because
-    the only notes action that needs asking is ``notes_delete`` and the
-    catalogue rates it HIGH, so it cannot reach here unconfirmed. Passing it
+    ``confirmed`` is the consent the executor already obtained. It is not a
+    bypass: the only notes action that needs asking is ``notes_delete``, the
+    catalogue rates it HIGH, so it cannot reach here without a yes. Passing it
     stops notes prompting a second time for consent the layer already holds --
     the double prompt that made chat's old notes branch print a question and
     then send the answer to the model.
@@ -205,16 +206,81 @@ def _call_notes(
 
     notes_action = NotesAction(action=action, **fields)
     instance = owner() if owner is not None else None
-    return implementation(instance, notes_action, confirmed=True)
+    return implementation(instance, notes_action, confirmed=confirmed)
 
 
-def _call(spec: ActionSpec, parameters: Mapping[str, Any]) -> Any:
+def _call_downloads(
+    spec: ActionSpec,
+    implementation: Any,
+    owner: Any,
+    action: str,
+    parameters: Mapping[str, Any],
+    confirmed: bool,
+    confirm_callback: ConfirmCallback | None,
+) -> Any:
+    """Call ``DownloadsAutomation.execute`` with a real DownloadAction.
+
+    Downloads asks for itself (:data:`Confirmation.DOMAIN`), so the layer's
+    callback is handed over rather than used up front. Downloads calls it with
+    the action and the files it found, which is the only point at which
+    "Archive 1 download (6 B)?" can be written -- and the only point at which
+    "one file, do not bother asking" can be decided.
+    """
+    from grandpa.downloads.models import DownloadAction
+
+    fields = dict(parameters)
+    if spec.target_parameter and fields.get(spec.target_parameter):
+        fields.setdefault("selector", fields[spec.target_parameter])
+        fields.pop(spec.target_parameter, None)
+
+    download_action = DownloadAction(action=action, **fields)
+    instance = owner() if owner is not None else None
+
+    forwarded = None
+    if confirm_callback is not None and not confirmed:
+
+        def forwarded(asked_action: Any, items: Any) -> bool:
+            from grandpa.downloads.formatter import format_operation_plan
+
+            plan = format_operation_plan(asked_action.action, items).removesuffix(
+                " [y/N]"
+            )
+            # The domain's own sentence, asked with the layer's callback, so
+            # the wording a user sees does not change with the migration.
+            return bool(
+                confirm_callback(
+                    spec.name, {**dict(parameters), "_plan": plan}, spec.risk
+                )
+            )
+
+    return implementation(
+        instance, download_action, confirmed=confirmed, confirm=forwarded
+    )
+
+
+def _call(
+    spec: ActionSpec,
+    parameters: Mapping[str, Any],
+    *,
+    confirmed: bool = False,
+    confirm_callback: ConfirmCallback | None = None,
+) -> Any:
     """Adapt the layer's parameters to whatever shape the implementation wants."""
     implementation, owner = _resolve(spec.implementation)
     action = spec.action_alias or spec.name
 
     if spec.binding is Binding.NOTES_ACTION:
-        return _call_notes(spec, implementation, owner, action, parameters)
+        return _call_notes(spec, implementation, owner, action, parameters, confirmed)
+    if spec.binding is Binding.DOWNLOADS_ACTION:
+        return _call_downloads(
+            spec,
+            implementation,
+            owner,
+            action,
+            parameters,
+            confirmed,
+            confirm_callback,
+        )
 
     target = ""
     args = dict(parameters)
@@ -377,7 +443,24 @@ def execute(
 
     # The catalogue decides, and a caller may only be stricter, never looser.
     confirmed: bool | None = None
-    if spec.requires_confirmation or request.requires_confirmation:
+    needs = spec.requires_confirmation or request.requires_confirmation
+    asks_itself = spec.confirmation is Confirmation.DOMAIN
+
+    if needs and asks_itself:
+        # The domain will ask, but only if it has something to ask with. No
+        # callback means no one to ask, and that refuses here rather than
+        # letting the domain quietly proceed or print a question to nobody.
+        if confirm_callback is None:
+            result = ActionResult.failed(
+                CONFIRMATION_REQUIRED,
+                message=(
+                    f"{spec.name} may need the user's confirmation and no way to "
+                    "ask for it was provided, so nothing was done."
+                ),
+            )
+            _audit(request, risk=spec.risk, confirmed=None, result=result)
+            return result
+    elif needs:
         if confirm_callback is None:
             result = ActionResult.failed(
                 CONFIRMATION_REQUIRED,
@@ -406,7 +489,12 @@ def execute(
             return result
 
     try:
-        returned = _call(spec, parameters)
+        returned = _call(
+            spec,
+            parameters,
+            confirmed=bool(confirmed),
+            confirm_callback=confirm_callback,
+        )
     except (ImportError, AttributeError, ModuleNotFoundError) as exc:
         result = ActionResult.failed(
             IMPLEMENTATION_UNAVAILABLE,

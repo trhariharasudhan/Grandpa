@@ -16,6 +16,10 @@ from rich.text import Text
 
 from grandpa.action_layer.executor import execute as execute_action
 from grandpa.cli._animation import TerminalAnimation
+from grandpa.cli._downloads_route import downloads_reply, downloads_status
+from grandpa.cli._downloads_route import (
+    downloads_request as build_downloads_request,
+)
 from grandpa.cli._notes_route import notes_reply, notes_status
 from grandpa.cli._notes_route import notes_request as build_notes_request
 from grandpa.cli._tool_names import resolve_tool_names
@@ -805,31 +809,6 @@ def _unknown_slash_command_message(command: str) -> str:
     return unknown_command_message(command)
 
 
-class _ChatConfirmation:
-    """A handler ``confirm=`` callback that asks in the chat session.
-
-    Chat printed the handler's "...? [y/N]" message and then sent the answer to
-    the model. This asks with the same prompt chat already uses for desktop and
-    browser actions, and remembers the answer so a declined action can say so.
-    """
-
-    def __init__(self, ask, prompt_for) -> None:
-        self._ask = ask
-        self._prompt_for = prompt_for
-        self.asked = False
-        self.approved = False
-
-    def __call__(self, *args) -> bool:
-        self.asked = True
-        self.approved = self._ask(self._prompt_for(*args), "requires_confirmation")
-        return self.approved
-
-    def message_for(self, message: str, *, cancelled: str) -> str:
-        if self.asked and not self.approved:
-            return cancelled
-        return message
-
-
 def _desktop_action_confirmer(browser_confirm):
     """Adapt chat's (prompt, tier) callback to desktop_automation's (action)."""
     if browser_confirm is None:
@@ -1447,7 +1426,12 @@ def chat(
         chat turns that into the same sentence the notes handler printed, so a
         migrated domain reads no differently to the user.
         """
-        if action == "notes_delete":
+        plan = parameters.get("_plan")
+        if plan:
+            # A domain that asks for itself supplies the sentence, because only
+            # it knows what it found -- "Archive 1 download (6 B)?".
+            spec = str(plan)
+        elif action == "notes_delete":
             spec = f'Delete note "{parameters.get("title", "")}"?'
         else:
             detail = ", ".join(f"{k}={v!r}" for k, v in sorted(parameters.items()))
@@ -1803,10 +1787,6 @@ def chat(
                 render_assistant_response(console, Markdown(reminder_message))
                 continue
 
-            from grandpa.downloads.formatter import (
-                format_operation_plan as _downloads_operation_plan,
-            )
-
             # Notes is migrated: parsed here, but decided and performed by the
             # action layer, which rates the risk, asks, and audits.
             notes_request, parsed_note = build_notes_request(effective_user_input)
@@ -1826,36 +1806,25 @@ def chat(
                 render_assistant_response(console, Markdown(notes_message))
                 continue
 
-            from grandpa.downloads import handle_downloads_command
-
-            downloads_confirm = _ChatConfirmation(
-                _confirm_local_change,
-                lambda action, items: _downloads_operation_plan(
-                    action.action, items
-                ).removesuffix(" [y/N]"),
+            # Downloads is migrated. It asks for itself, through the layer's
+            # callback, because only the scan knows how many files are involved.
+            downloads_request, parsed_download = build_downloads_request(
+                effective_user_input
             )
-            downloads_action = handle_downloads_command(
-                effective_user_input, confirm=downloads_confirm
-            )
-            downloads_action_message = downloads_confirm.message_for(
-                downloads_action.message, cancelled="Downloads change cancelled."
-            )
-            if not downloads_action.should_fallback:
+            if downloads_request is not None:
+                downloads_result = execute_action(downloads_request, _confirm_action)
+                downloads_message = downloads_reply(downloads_result)
                 history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=downloads_action_message)
-                )
-                remember_conversation("assistant", downloads_action_message)
+                history.append(Message(role=Role.ASSISTANT, content=downloads_message))
+                remember_conversation("assistant", downloads_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=downloads_action_message,
+                    assistant_text=downloads_message,
                     kind="downloads",
-                    target=downloads_action.action.query
-                    if downloads_action.action
-                    else None,
-                    status=downloads_action.status,
+                    target=parsed_download.query if parsed_download else None,
+                    status=downloads_status(downloads_result),
                 )
-                render_assistant_response(console, Markdown(downloads_action_message))
+                render_assistant_response(console, Markdown(downloads_message))
                 continue
 
             from grandpa.web_search import handle_web_search_command

@@ -40,6 +40,7 @@ from grandpa.action_layer.model import RiskLevel
 __all__ = [
     "ActionSpec",
     "Binding",
+    "Confirmation",
     "CATALOGUE",
     "EXCLUSIONS",
     "LAYER_OWNED",
@@ -75,6 +76,7 @@ _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execu
 _BROWSER = "grandpa.browser_control.execute_browser_action"
 _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
 _NOTES = "grandpa.notes.automation.NotesAutomation.execute"
+_DOWNLOADS = "grandpa.downloads.automation.DownloadsAutomation.execute"
 
 
 # --- the one confirmation rule -----------------------------------------------
@@ -95,9 +97,38 @@ _ALWAYS_CONFIRM = frozenset(
 )
 
 
-def _confirmation_for(name: str, risk: RiskLevel) -> bool:
-    """Exactly pc_control's gate: HIGH, or on the approval-required list."""
-    return risk is RiskLevel.HIGH or name in _ALWAYS_CONFIRM
+class Confirmation(str, Enum):
+    """Who asks the user, when an action needs asking.
+
+    Notes only ever needed one answer to this: the executor asks before it
+    calls, because "delete this note" is fully described by its parameters.
+    Downloads is not like that. Its prompt is "Archive 1 download (6 B)?" --
+    a sentence that cannot exist until the folder has been scanned, and whether
+    it asks at all depends on how many files the scan found (a one-file move is
+    silent, a two-file move asks). The layer cannot know either thing before
+    calling.
+
+    So confirmation has three shapes, not two, and each entry says which.
+    """
+
+    NONE = "none"
+    """Nothing to ask. Reads, and changes small enough not to warrant it."""
+
+    LAYER = "layer"
+    """The executor asks before calling, from the parameters alone."""
+
+    DOMAIN = "domain"
+    """The domain asks, through the layer's callback, because only it knows
+    what is about to happen or whether it is worth asking about. The executor
+    still refuses outright when there is no callback to hand over, so "nobody
+    to ask" blocks here exactly as it does for LAYER."""
+
+
+def _confirmation_for(name: str, risk: RiskLevel) -> Confirmation:
+    """pc_control's gate: HIGH, or on the approval-required list."""
+    if risk is RiskLevel.HIGH or name in _ALWAYS_CONFIRM:
+        return Confirmation.LAYER
+    return Confirmation.NONE
 
 
 # --- schema helpers ----------------------------------------------------------
@@ -164,6 +195,14 @@ class Binding(str, Enum):
     ACTION_TARGET = "action_target"
     """``function(action, target)`` -- browser_control.execute_browser_action,
     which takes its own shorter sub-action names."""
+
+    DOWNLOADS_ACTION = "downloads_action"
+    """``method(DownloadAction, confirmed=, confirm=)`` -- grandpa.downloads.
+
+    Like the notes binding, but the callback is forwarded rather than consumed:
+    downloads decides whether to ask and writes the sentence itself, because
+    neither is knowable until it has scanned the folder.
+    """
 
     NOTES_ACTION = "notes_action"
     """``method(NotesAction, confirmed=True)`` -- grandpa.notes.
@@ -284,6 +323,26 @@ _CALLS: dict[str, _Call] = {
     "notes_restore": _Call(Binding.NOTES_ACTION, alias="restore", target="title"),
     "notes_pin": _Call(Binding.NOTES_ACTION, alias="pin", target="title"),
     "notes_unpin": _Call(Binding.NOTES_ACTION, alias="unpin", target="title"),
+    # downloads. `target` names the parameter that selects which files, which
+    # downloads reads as DownloadAction.selector.
+    "downloads_recent": _Call(Binding.DOWNLOADS_ACTION, alias="recent"),
+    "downloads_today": _Call(Binding.DOWNLOADS_ACTION, alias="today"),
+    "downloads_latest": _Call(Binding.DOWNLOADS_ACTION, alias="latest"),
+    "downloads_search": _Call(Binding.DOWNLOADS_ACTION, alias="search"),
+    "downloads_large": _Call(Binding.DOWNLOADS_ACTION, alias="large"),
+    "downloads_incomplete": _Call(Binding.DOWNLOADS_ACTION, alias="incomplete"),
+    "downloads_duplicates": _Call(Binding.DOWNLOADS_ACTION, alias="duplicates"),
+    "downloads_info": _Call(Binding.DOWNLOADS_ACTION, alias="info", target="which"),
+    "downloads_open": _Call(Binding.DOWNLOADS_ACTION, alias="open", target="which"),
+    "downloads_open_folder": _Call(
+        Binding.DOWNLOADS_ACTION, alias="open_folder", target="which"
+    ),
+    "downloads_move": _Call(Binding.DOWNLOADS_ACTION, alias="move", target="which"),
+    "downloads_organize": _Call(Binding.DOWNLOADS_ACTION, alias="organize"),
+    "downloads_archive": _Call(
+        Binding.DOWNLOADS_ACTION, alias="archive", target="which"
+    ),
+    "downloads_delete": _Call(Binding.DOWNLOADS_ACTION, alias="delete", target="which"),
 }
 
 
@@ -303,8 +362,8 @@ class ActionSpec:
     risk: RiskLevel
     """The tier ``pc_control`` assigns this action."""
 
-    requires_confirmation: bool
-    """Whether a human must approve before it runs."""
+    confirmation: Confirmation
+    """Whether a human must approve, and who does the asking."""
 
     implementation: str
     """Dotted path to the function that performs it. Never imported here."""
@@ -321,6 +380,11 @@ class ActionSpec:
     action_alias: str | None = None
     """The name the implementation expects, when it differs from ``name``."""
 
+    @property
+    def requires_confirmation(self) -> bool:
+        """Whether a human must approve, regardless of who asks."""
+        return self.confirmation is not Confirmation.NONE
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "parameters", MappingProxyType(dict(self.parameters)))
 
@@ -332,6 +396,7 @@ def _spec(
     implementation: str,
     parameters: Mapping[str, Any] = _NO_PARAMS,
     notes: str = "",
+    confirmation: Confirmation | None = None,
 ) -> ActionSpec:
     call = _CALLS[name]  # KeyError: a new entry must say how it is called
     return ActionSpec(
@@ -339,7 +404,7 @@ def _spec(
         description=description,
         parameters=parameters,
         risk=risk,
-        requires_confirmation=_confirmation_for(name, risk),
+        confirmation=confirmation or _confirmation_for(name, risk),
         implementation=implementation,
         notes=notes,
         binding=call.binding,
@@ -1008,6 +1073,124 @@ _NOTES_ACTIONS: tuple[ActionSpec, ...] = (
 )
 
 
+# --- downloads ----------------------------------------------------------------
+#
+# The second domain off the waterfall, and the one that showed confirmation has
+# three shapes rather than two. Downloads decides whether to ask *after*
+# scanning -- a one-file move is silent, a two-file move asks -- and its prompt
+# quotes what it found ("Archive 1 download (6 B)?"). Neither is knowable before
+# the call, so these use Confirmation.DOMAIN: the layer hands its callback over
+# instead of using it up front.
+#
+# Tiers follow the desktop file tiers again: listing is LOW, moving and
+# archiving are MEDIUM like file_move, deleting is HIGH like file_delete.
+
+_WHICH = _string(
+    "Which downloads: a filename or search term, 'latest', 'old', "
+    "or 'incomplete'. Defaults to the most recent download.",
+    default="latest",
+)
+_DAYS = _integer("How many days counts as old, for selector 'old'.", minimum=1)
+
+_DOWNLOADS_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec("downloads_recent", _LOW, "List recent downloads.", _DOWNLOADS),
+    _spec("downloads_today", _LOW, "List downloads from today.", _DOWNLOADS),
+    _spec(
+        "downloads_latest",
+        _LOW,
+        "Report the most recent download.",
+        _DOWNLOADS,
+        notes="Currently answers 'That Downloads action is not supported yet.' "
+        "-- the parser produces it and DownloadsAutomation._execute has no "
+        "branch for it. Catalogued so the honest refusal is preserved.",
+    ),
+    _spec(
+        "downloads_search",
+        _LOW,
+        "Search the downloads folder by name.",
+        _DOWNLOADS,
+        _schema({"query": _string("What to look for.")}, ("query",)),
+    ),
+    _spec("downloads_large", _LOW, "List the largest downloads.", _DOWNLOADS),
+    _spec(
+        "downloads_incomplete",
+        _LOW,
+        "List part-downloaded or temporary files.",
+        _DOWNLOADS,
+    ),
+    _spec(
+        "downloads_duplicates",
+        _LOW,
+        "List downloads that look like duplicates.",
+        _DOWNLOADS,
+    ),
+    _spec(
+        "downloads_info",
+        _LOW,
+        "Describe one download: size, type, when it arrived, whether it is safe.",
+        _DOWNLOADS,
+        _schema({"which": _WHICH}),
+    ),
+    _spec(
+        "downloads_open",
+        _MEDIUM,
+        "Open a download in its default application.",
+        _DOWNLOADS,
+        _schema({"which": _WHICH}),
+        notes="Refuses anything the safety policy rates unsafe to open.",
+    ),
+    _spec(
+        "downloads_open_folder",
+        _LOW,
+        "Open the folder containing a download.",
+        _DOWNLOADS,
+        _schema({"which": _WHICH}),
+    ),
+    _spec(
+        "downloads_move",
+        _MEDIUM,
+        "Move downloads somewhere else.",
+        _DOWNLOADS,
+        _schema(
+            {
+                "which": _WHICH,
+                "destination": _string("Where to move them."),
+                "days": _DAYS,
+            },
+            ("destination",),
+        ),
+        notes="Asks first when it would move more than one file; a single file "
+        "moves without a prompt, as it always has.",
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "downloads_organize",
+        _MEDIUM,
+        "Sort the downloads folder into subfolders by type.",
+        _DOWNLOADS,
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "downloads_archive",
+        _MEDIUM,
+        "Move downloads into the Archives folder.",
+        _DOWNLOADS,
+        _schema({"which": _WHICH, "days": _DAYS}),
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "downloads_delete",
+        _HIGH,
+        "Delete downloads.",
+        _DOWNLOADS,
+        _schema({"which": _WHICH, "days": _DAYS}),
+        notes="Deletes the files outright. Prefer downloads_archive to put "
+        "something aside instead.",
+        confirmation=Confirmation.DOMAIN,
+    ),
+)
+
+
 CATALOGUE: tuple[ActionSpec, ...] = (
     *_APPLICATION_ACTIONS,
     *_WINDOW_ACTIONS,
@@ -1021,6 +1204,7 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_INPUT_ACTIONS,
     *_BROWSER_ACTIONS,
     *_NOTES_ACTIONS,
+    *_DOWNLOADS_ACTIONS,
 )
 
 
@@ -1135,6 +1319,30 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "restore",
                 "pin",
                 "unpin",
+            )
+        },
+        **{
+            f"downloads_{action}": (
+                "Downloads is the second domain migrated off the waterfall. "
+                "pc_control never rated it; tiers follow pc_control's file "
+                "tiers, and confirmation stays where DownloadsSafetyPolicy "
+                "puts it -- including its count-dependent rule for move."
+            )
+            for action in (
+                "recent",
+                "today",
+                "latest",
+                "search",
+                "large",
+                "incomplete",
+                "duplicates",
+                "info",
+                "open",
+                "open_folder",
+                "move",
+                "organize",
+                "archive",
+                "delete",
             )
         },
     }
