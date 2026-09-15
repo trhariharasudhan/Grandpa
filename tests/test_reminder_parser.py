@@ -5,10 +5,9 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from click.testing import CliRunner
 
-from grandpa.cli.chat_cmd import _create_one_shot_reminder
 from grandpa.cli.reminders_cmd import reminders
 from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
-from grandpa.reminders import ReminderStore
+from grandpa.reminders import ReminderStore, execute_reminder_action
 
 pytestmark = pytest.mark.core
 
@@ -128,13 +127,15 @@ def test_chat_creates_one_shot_reminder_from_natural_text(
         lambda: UTC,
     )
 
-    message = _create_one_shot_reminder(
-        "remind me in 30 minutes to drink water", store=store
+    # This helper moved from cli/chat_cmd.py into the domain when reminders
+    # were migrated to the action layer. Same code, same effect, new home.
+    result = execute_reminder_action(
+        "create", store=store, subject="remind me in 30 minutes to drink water"
     )
 
     reminders = store.list()
-    assert message is not None
-    assert "Reminder created" in message
+    assert result.status == "handled"
+    assert "Reminder created" in result.message
     assert len(reminders) == 1
     assert reminders[0].message == "drink water"
     assert reminders[0].status == "pending"
