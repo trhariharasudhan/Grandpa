@@ -258,6 +258,70 @@ def _call_downloads(
     )
 
 
+def _call_google(
+    spec: ActionSpec,
+    implementation: Any,
+    owner: Any,
+    action: str,
+    parameters: Mapping[str, Any],
+    confirmed: bool,
+    confirm_callback: ConfirmCallback | None,
+) -> Any:
+    """Call calendar or gmail with their own parsed-action dataclass.
+
+    Same arrangement as downloads: the domain decides whether to ask and writes
+    the sentence, because only it knows which event or message was matched.
+    """
+    if spec.binding is Binding.CALENDAR_ACTION:
+        from grandpa.calendar.automation import _confirmation_message as plan_for
+        from grandpa.calendar.models import CalendarAction as DomainAction
+    else:
+        from grandpa.gmail.automation import _confirmation_message as plan_for
+        from grandpa.gmail.models import GmailAction as DomainAction
+
+    domain_action = DomainAction(action=action, **dict(parameters))
+    instance = owner() if owner is not None else None
+
+    forwarded = None
+    if confirm_callback is not None and not confirmed:
+
+        def forwarded(asked_action: Any) -> bool:
+            plan = str(plan_for(asked_action)).removesuffix(" [y/N]")
+            return bool(
+                confirm_callback(
+                    spec.name, {**dict(parameters), "_plan": plan}, spec.risk
+                )
+            )
+
+    return implementation(
+        instance, domain_action, confirmed=confirmed, confirm=forwarded
+    )
+
+
+def _call_web_search(
+    spec: ActionSpec,
+    implementation: Any,
+    owner: Any,
+    action: str,
+    parameters: Mapping[str, Any],
+) -> Any:
+    """Call WebSearchAutomation.execute with a real WebSearchAction.
+
+    The query is its own object, so a plain parameter mapping will not do.
+    """
+    from grandpa.web_search.models import WebSearchAction, WebSearchQuery
+
+    query = None
+    if parameters.get("query"):
+        query = WebSearchQuery(
+            text=str(parameters["query"]),
+            max_results=int(parameters.get("max_results", 5)),
+        )
+    search_action = WebSearchAction(action=action, query=query)
+    instance = owner() if owner is not None else None
+    return implementation(instance, search_action)
+
+
 def _call(
     spec: ActionSpec,
     parameters: Mapping[str, Any],
@@ -274,6 +338,20 @@ def _call(
     if spec.binding in {Binding.REMINDER_ACTION, Binding.SCHEDULER_ACTION}:
         # Module-level dispatchers, like memory's, with keyword parameters.
         return implementation(action, **dict(parameters))
+    if spec.binding in {Binding.CALENDAR_ACTION, Binding.GMAIL_ACTION}:
+        return _call_google(
+            spec,
+            implementation,
+            owner,
+            action,
+            parameters,
+            confirmed,
+            confirm_callback,
+        )
+    if spec.binding is Binding.FUNCTION_KWARGS:
+        return implementation(**dict(parameters))
+    if spec.binding is Binding.WEB_SEARCH_ACTION:
+        return _call_web_search(spec, implementation, owner, action, parameters)
     if spec.binding is Binding.MEMORY_ACTION:
         # A module-level function: no instance, and the parameters are keywords.
         return implementation(action, **dict(parameters))
@@ -328,6 +406,10 @@ def _as_result(spec: ActionSpec, returned: Any) -> ActionResult:
     """
     if isinstance(returned, ActionResult):
         return returned
+    if isinstance(returned, str):
+        # Some implementations are a plain formatter -- the clock is one. A
+        # string is the answer, and an answer is a success.
+        return ActionResult(success=True, message=returned)
 
     status = str(getattr(returned, "status", "") or "")
     ok = getattr(returned, "ok", None)

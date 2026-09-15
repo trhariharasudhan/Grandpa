@@ -209,6 +209,44 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     "routine_disable": ("MEDIUM", NONE),
     "routine_run": ("MEDIUM", NONE),
     "routine_create_reminder": ("MEDIUM", NONE),
+    # web search: reads the web, empties a cache. Nothing to ask about.
+    "web_search": ("LOW", NONE),
+    "web_sources": ("LOW", NONE),
+    "web_search_status": ("LOW", NONE),
+    "web_clear_cache": ("LOW", NONE),
+    # the clock
+    "datetime_now": ("LOW", NONE),
+    # calendar: reading is LOW, connecting and changing are MEDIUM, deleting an
+    # event is HIGH. Everything that changes asks through the domain, because
+    # the prompt quotes the event it matched.
+    "calendar_status": ("LOW", NONE),
+    "calendar_list": ("LOW", NONE),
+    "calendar_upcoming": ("LOW", NONE),
+    "calendar_search": ("LOW", NONE),
+    "calendar_read": ("LOW", NONE),
+    "calendar_freebusy": ("LOW", NONE),
+    "calendar_setup": ("MEDIUM", NONE),
+    "calendar_disconnect": ("MEDIUM", NONE),
+    "calendar_create": ("MEDIUM", DOMAIN),
+    "calendar_update": ("MEDIUM", DOMAIN),
+    "calendar_delete": ("HIGH", DOMAIN),
+    # mail: same shape. Sending cannot be recalled, so it asks; a draft is
+    # saved and not sent, so it does not.
+    "gmail_status": ("LOW", NONE),
+    "gmail_list": ("LOW", NONE),
+    "gmail_search": ("LOW", NONE),
+    "gmail_read": ("LOW", NONE),
+    "gmail_summarize": ("LOW", NONE),
+    "gmail_labels": ("LOW", NONE),
+    "gmail_draft": ("LOW", NONE),
+    "gmail_setup": ("MEDIUM", NONE),
+    "gmail_disconnect": ("MEDIUM", NONE),
+    "gmail_send": ("MEDIUM", DOMAIN),
+    "gmail_reply": ("MEDIUM", DOMAIN),
+    "gmail_forward": ("MEDIUM", DOMAIN),
+    "gmail_archive": ("MEDIUM", DOMAIN),
+    "gmail_label": ("MEDIUM", DOMAIN),
+    "gmail_trash": ("HIGH", DOMAIN),
 }
 
 
@@ -253,6 +291,15 @@ def test_confirmation_is_not_decoration() -> None:
         "downloads_organize",
         "downloads_archive",
         "memory_clear",
+        "calendar_create",
+        "calendar_update",
+        "calendar_delete",
+        "gmail_send",
+        "gmail_reply",
+        "gmail_forward",
+        "gmail_archive",
+        "gmail_label",
+        "gmail_trash",
     }, asking
 
 

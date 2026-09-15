@@ -123,8 +123,20 @@ def get_runtime_context_prompt() -> str:
     )
 
 
-def handle_datetime_intent(query: str) -> Optional[str]:
-    """Deterministically intercept and answer explicit date/time questions and disputes."""
+DATETIME_KINDS: tuple[str, ...] = ("dispute", "time", "date", "year", "month")
+"""What a date/time question can be asking for.
+
+The action layer catalogues these, which is why the regexes and the formatting
+are now two functions instead of one. Both halves are the originals, moved.
+"""
+
+
+def parse_datetime_intent(query: str) -> str | None:
+    """Which kind of date/time question this is, or ``None``.
+
+    The regexes below are unchanged, including the order they are tried in,
+    which is what decides a question that matches more than one.
+    """
     q = re.sub(r"[^\w\s\']", "", query.strip().lower())
 
     # 1. Day of the week / Date today patterns
@@ -175,9 +187,6 @@ def handle_datetime_intent(query: str) -> Optional[str]:
         r"\bthat date is wrong\b",
     ]
 
-    ctx = get_runtime_context()
-    now = get_now()
-
     is_day = any(re.search(pat, q) for pat in day_patterns)
     is_date = any(re.search(pat, q) for pat in date_patterns)
     is_time = any(re.search(pat, q) for pat in time_patterns)
@@ -189,21 +198,41 @@ def handle_datetime_intent(query: str) -> Optional[str]:
     if is_dispute and any(
         word in q for word in ("today", "date", "time", "year", "month", "now", "day")
     ):
+        return "dispute"
+    if is_time:
+        return "time"
+    if is_date or is_day:
+        return "date"
+    if is_year:
+        return "year"
+    if is_month:
+        return "month"
+    return None
+
+
+def answer_datetime(kind: str = "date") -> str:
+    """Answer one kind of date/time question from the system clock."""
+    ctx = get_runtime_context()
+    now = get_now()
+
+    if kind == "dispute":
         return (
             f"According to this computer's system clock, today is {ctx['local_date']}."
         )
-
-    if is_time:
+    if kind == "time":
         return f"It is {ctx['local_time']} on {ctx['local_date']}."
-
-    if is_date or is_day:
+    if kind == "date":
         return f"Today is {ctx['local_date']}."
-
-    if is_year:
+    if kind == "year":
         return f"The current year is {now.year}."
+    if kind == "month":
+        return f"The current month is {now.strftime('%B')}."
+    return f"Today is {ctx['local_date']}."
 
-    if is_month:
-        month_name = now.strftime("%B")
-        return f"The current month is {month_name}."
 
-    return None
+def handle_datetime_intent(query: str) -> Optional[str]:
+    """Deterministically intercept and answer explicit date/time questions and disputes."""
+    kind = parse_datetime_intent(query)
+    if kind is None:
+        return None
+    return answer_datetime(kind)

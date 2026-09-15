@@ -19,6 +19,9 @@ from grandpa.cli._downloads_route import downloads_reply, downloads_status
 from grandpa.cli._downloads_route import (
     downloads_request as build_downloads_request,
 )
+from grandpa.cli._google_route import calendar_request as build_calendar_request
+from grandpa.cli._google_route import gmail_request as build_gmail_request
+from grandpa.cli._google_route import google_reply, google_status
 from grandpa.cli._memory_route import memory_reply, memory_status, memory_target
 from grandpa.cli._memory_route import memory_request as build_memory_request
 from grandpa.cli._notes_route import notes_reply, notes_status
@@ -31,6 +34,10 @@ from grandpa.cli._reminders_route import (
     routine_request as build_routine_request,
 )
 from grandpa.cli._tool_names import resolve_tool_names
+from grandpa.cli._web_search_route import web_search_reply, web_search_status
+from grandpa.cli._web_search_route import (
+    web_search_request as build_web_search_request,
+)
 from grandpa.cli.input_ui import read_chat_input, select_from_list
 from grandpa.cli.slash_commands import (
     command_help_text,
@@ -1335,6 +1342,20 @@ def chat(
             return False
         return ans in ("y", "yes")
 
+    def _clock_request(kind: str):
+        """The clock action, rated from the catalogue like every other."""
+        from grandpa.action_layer.catalogue import get
+        from grandpa.action_layer.model import ActionRequest, Origin
+
+        spec = get("datetime_now")
+        return ActionRequest(
+            "datetime_now",
+            {"kind": kind},
+            origin=Origin.USER_CHAT,
+            risk=spec.risk,
+            requires_confirmation=spec.requires_confirmation,
+        )
+
     def _confirm_chat_action(spec: str, permission: str, *, label: str) -> bool:
         """Ask in the chat session before something happens for real.
 
@@ -1777,25 +1798,26 @@ def chat(
                 render_assistant_response(console, Markdown(downloads_message))
                 continue
 
-            from grandpa.web_search import handle_web_search_command
-
-            web_search_action = handle_web_search_command(effective_user_input)
-            if not web_search_action.should_fallback:
+            # Web search is migrated.
+            search_request, parsed_search = build_web_search_request(
+                effective_user_input
+            )
+            if search_request is not None:
+                search_result = execute_action(search_request, _confirm_action)
+                search_message = web_search_reply(search_result)
                 history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=web_search_action.message)
-                )
-                remember_conversation("assistant", web_search_action.message)
+                history.append(Message(role=Role.ASSISTANT, content=search_message))
+                remember_conversation("assistant", search_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=web_search_action.message,
+                    assistant_text=search_message,
                     kind="web_search",
-                    target=web_search_action.action.query.text
-                    if web_search_action.action and web_search_action.action.query
+                    target=parsed_search.query.text
+                    if parsed_search and parsed_search.query
                     else None,
-                    status=web_search_action.status,
+                    status=web_search_status(search_result),
                 )
-                render_assistant_response(console, Markdown(web_search_action.message))
+                render_assistant_response(console, Markdown(search_message))
                 continue
 
             # Memory is migrated. It had no structured seam, so one was
@@ -1817,44 +1839,42 @@ def chat(
                 render_assistant_response(console, Markdown(memory_message))
                 continue
 
-            from grandpa.calendar import handle_calendar_command
-
-            calendar_action = handle_calendar_command(effective_user_input)
-            if not calendar_action.should_fallback:
+            # Calendar is migrated. It asks for itself, like downloads.
+            calendar_request, parsed_event = build_calendar_request(
+                effective_user_input
+            )
+            if calendar_request is not None:
+                calendar_result = execute_action(calendar_request, _confirm_action)
+                calendar_message = google_reply(calendar_result, "calendar")
                 history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=calendar_action.message)
-                )
-                remember_conversation("assistant", calendar_action.message)
+                history.append(Message(role=Role.ASSISTANT, content=calendar_message))
+                remember_conversation("assistant", calendar_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=calendar_action.message,
+                    assistant_text=calendar_message,
                     kind="calendar",
-                    target=calendar_action.action.query
-                    if calendar_action.action
-                    else None,
-                    status=calendar_action.status,
+                    target=getattr(parsed_event, "query", None) or None,
+                    status=google_status(calendar_result),
                 )
-                render_assistant_response(console, Markdown(calendar_action.message))
+                render_assistant_response(console, Markdown(calendar_message))
                 continue
 
-            from grandpa.gmail import handle_gmail_command
-
-            gmail_action = handle_gmail_command(effective_user_input)
-            if not gmail_action.should_fallback:
+            # Mail is migrated, and asks for itself too.
+            gmail_request, parsed_mail = build_gmail_request(effective_user_input)
+            if gmail_request is not None:
+                gmail_result = execute_action(gmail_request, _confirm_action)
+                gmail_message = google_reply(gmail_result, "gmail")
                 history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=gmail_action.message)
-                )
-                remember_conversation("assistant", gmail_action.message)
+                history.append(Message(role=Role.ASSISTANT, content=gmail_message))
+                remember_conversation("assistant", gmail_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=gmail_action.message,
+                    assistant_text=gmail_message,
                     kind="gmail",
-                    target=gmail_action.action.query if gmail_action.action else None,
-                    status=gmail_action.status,
+                    target=getattr(parsed_mail, "query", None) or None,
+                    status=google_status(gmail_result),
                 )
-                render_assistant_response(console, Markdown(gmail_action.message))
+                render_assistant_response(console, Markdown(gmail_message))
                 continue
 
             from grandpa.browser_awareness import handle_browser_awareness_command
@@ -1985,9 +2005,14 @@ def chat(
                 render_assistant_response(console, Markdown(routine_message))
                 continue
 
-            from grandpa.core.runtime_context import handle_datetime_intent
+            # The clock is migrated: parsed here, answered by the layer.
+            from grandpa.core.runtime_context import parse_datetime_intent
 
-            dt_resp = handle_datetime_intent(effective_user_input)
+            dt_kind = parse_datetime_intent(effective_user_input)
+            dt_resp = None
+            if dt_kind is not None:
+                dt_result = execute_action(_clock_request(dt_kind), _confirm_action)
+                dt_resp = dt_result.message
             if dt_resp:
                 history.append(Message(role=Role.USER, content=effective_user_input))
                 history.append(Message(role=Role.ASSISTANT, content=dt_resp))

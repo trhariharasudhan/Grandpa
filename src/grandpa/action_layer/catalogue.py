@@ -84,7 +84,43 @@ _DOWNLOADS = "grandpa.downloads.automation.DownloadsAutomation.execute"
 _MEMORY = "grandpa.memory_context.execute_memory_action"
 _REMINDERS = "grandpa.reminders.execute_reminder_action"
 _SCHEDULER = "grandpa.task_scheduler.execute_scheduler_action"
+_WEB_SEARCH = "grandpa.web_search.automation.WebSearchAutomation.execute"
+_CLOCK = "grandpa.core.runtime_context.answer_datetime"
+_CALENDAR = "grandpa.calendar.automation.CalendarAutomation.execute"
+_GMAIL = "grandpa.gmail.automation.GmailAutomation.execute"
 
+
+CALENDAR_NAMES: tuple[str, ...] = (
+    "status",
+    "setup",
+    "disconnect",
+    "list",
+    "upcoming",
+    "search",
+    "read",
+    "freebusy",
+    "create",
+    "update",
+    "delete",
+)
+
+GMAIL_NAMES: tuple[str, ...] = (
+    "status",
+    "setup",
+    "disconnect",
+    "list",
+    "search",
+    "read",
+    "summarize",
+    "labels",
+    "draft",
+    "send",
+    "reply",
+    "forward",
+    "archive",
+    "label",
+    "trash",
+)
 
 # --- the one confirmation rule -----------------------------------------------
 
@@ -202,6 +238,20 @@ class Binding(str, Enum):
     ACTION_TARGET = "action_target"
     """``function(action, target)`` -- browser_control.execute_browser_action,
     which takes its own shorter sub-action names."""
+
+    CALENDAR_ACTION = "calendar_action"
+    """``method(CalendarAction, confirmed=, confirm=)`` -- grandpa.calendar."""
+
+    GMAIL_ACTION = "gmail_action"
+    """``method(GmailAction, confirmed=, confirm=)`` -- grandpa.gmail."""
+
+    FUNCTION_KWARGS = "function_kwargs"
+    """``function(**parameters)`` -- a plain function whose arguments are the
+    action's parameters, with no action name and no request object."""
+
+    WEB_SEARCH_ACTION = "web_search_action"
+    """``method(WebSearchAction)`` -- grandpa.web_search. No confirmation hook:
+    nothing it does changes the machine."""
 
     REMINDER_ACTION = "reminder_action"
     """``function(action, store=None, subject=...)`` -- grandpa.reminders."""
@@ -392,6 +442,41 @@ _CALLS: dict[str, _Call] = {
     "routine_create_reminder": _Call(
         Binding.SCHEDULER_ACTION, alias="create_recurring_reminder"
     ),
+    # web search
+    "web_search": _Call(Binding.WEB_SEARCH_ACTION, alias="search"),
+    "web_sources": _Call(Binding.WEB_SEARCH_ACTION, alias="sources"),
+    "web_search_status": _Call(Binding.WEB_SEARCH_ACTION, alias="status"),
+    "web_clear_cache": _Call(Binding.WEB_SEARCH_ACTION, alias="clear_cache"),
+    # the clock
+    "datetime_now": _Call(Binding.FUNCTION_KWARGS),
+    # calendar
+    "calendar_status": _Call(Binding.CALENDAR_ACTION, alias="status"),
+    "calendar_setup": _Call(Binding.CALENDAR_ACTION, alias="setup"),
+    "calendar_disconnect": _Call(Binding.CALENDAR_ACTION, alias="disconnect"),
+    "calendar_list": _Call(Binding.CALENDAR_ACTION, alias="list"),
+    "calendar_upcoming": _Call(Binding.CALENDAR_ACTION, alias="upcoming"),
+    "calendar_search": _Call(Binding.CALENDAR_ACTION, alias="search"),
+    "calendar_read": _Call(Binding.CALENDAR_ACTION, alias="read"),
+    "calendar_freebusy": _Call(Binding.CALENDAR_ACTION, alias="freebusy"),
+    "calendar_create": _Call(Binding.CALENDAR_ACTION, alias="create"),
+    "calendar_update": _Call(Binding.CALENDAR_ACTION, alias="update"),
+    "calendar_delete": _Call(Binding.CALENDAR_ACTION, alias="delete"),
+    # mail
+    "gmail_status": _Call(Binding.GMAIL_ACTION, alias="status"),
+    "gmail_setup": _Call(Binding.GMAIL_ACTION, alias="setup"),
+    "gmail_disconnect": _Call(Binding.GMAIL_ACTION, alias="disconnect"),
+    "gmail_list": _Call(Binding.GMAIL_ACTION, alias="list"),
+    "gmail_search": _Call(Binding.GMAIL_ACTION, alias="search"),
+    "gmail_read": _Call(Binding.GMAIL_ACTION, alias="read"),
+    "gmail_summarize": _Call(Binding.GMAIL_ACTION, alias="summarize"),
+    "gmail_labels": _Call(Binding.GMAIL_ACTION, alias="labels"),
+    "gmail_draft": _Call(Binding.GMAIL_ACTION, alias="draft"),
+    "gmail_send": _Call(Binding.GMAIL_ACTION, alias="send"),
+    "gmail_reply": _Call(Binding.GMAIL_ACTION, alias="reply"),
+    "gmail_forward": _Call(Binding.GMAIL_ACTION, alias="forward"),
+    "gmail_archive": _Call(Binding.GMAIL_ACTION, alias="archive"),
+    "gmail_label": _Call(Binding.GMAIL_ACTION, alias="label"),
+    "gmail_trash": _Call(Binding.GMAIL_ACTION, alias="trash"),
 }
 
 
@@ -1447,6 +1532,305 @@ _SCHEDULER_ACTIONS: tuple[ActionSpec, ...] = (
 )
 
 
+# --- web search ---------------------------------------------------------------
+#
+# The sixth domain, and the simplest so far: WebSearchAutomation.execute already
+# took a parsed action, so nothing needed extracting.
+#
+# One pre-existing quirk catalogued rather than fixed: "show sources" reads
+# WebSearchAutomation._last_results, which is instance state, and every caller
+# builds a fresh instance per command -- chat's handle_web_search_command does
+# too. So sources has always come back empty unless the search happened on the
+# same instance. Cataloguing it preserves that; fixing it means giving the
+# domain somewhere to keep results, which is its own task.
+
+_WEB_SEARCH_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec(
+        "web_search",
+        _LOW,
+        "Search the web and summarise what comes back.",
+        _WEB_SEARCH,
+        _schema(
+            {
+                "query": _string("What to search for."),
+                "max_results": _integer(
+                    "How many results to consider.", minimum=1, maximum=20
+                ),
+            },
+            ("query",),
+        ),
+    ),
+    _spec(
+        "web_sources",
+        _LOW,
+        "List the sources behind the last web search.",
+        _WEB_SEARCH,
+        notes="Reads instance state that every caller rebuilds per command, so "
+        "in practice this reports no sources unless the search ran in the same "
+        "call. Pre-existing; catalogued as it behaves.",
+    ),
+    _spec(
+        "web_search_status",
+        _LOW,
+        "Report whether web search is configured and which provider is used.",
+        _WEB_SEARCH,
+    ),
+    _spec(
+        "web_clear_cache",
+        _LOW,
+        "Empty the cached web search results.",
+        _WEB_SEARCH,
+        notes="Only discards a cache; the next search simply fetches again.",
+    ),
+)
+
+
+# --- the clock ----------------------------------------------------------------
+#
+# One action rather than five. The kinds are an enum on a single tool, because
+# every definition sent costs prompt tokens on a cold start and "what is the
+# date" versus "what year is it" is a parameter, not a different capability.
+#
+# handle_datetime_intent had to be split into parse_datetime_intent and
+# answer_datetime first -- the same regexes and the same formatting, moved.
+
+_CLOCK_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec(
+        "datetime_now",
+        _LOW,
+        "Report the current date, time, day, month or year from the system clock.",
+        _CLOCK,
+        _schema(
+            {
+                "kind": _string(
+                    "Which part to report.",
+                    enum=["date", "time", "year", "month", "dispute"],
+                    default="date",
+                )
+            }
+        ),
+        notes="'dispute' is the answer for someone insisting the date is wrong: "
+        "it says where the answer came from.",
+    ),
+)
+
+
+# --- calendar and mail --------------------------------------------------------
+#
+# Both already had execute(action, confirmed=, confirm=) -- the notes shape --
+# and both decide whether to ask from what they parsed, like downloads:
+# CalendarSafetyPolicy also asks for a recurring event, and both write the
+# prompt from the event or message they found. So the changing actions are
+# Confirmation.DOMAIN and the layer hands its callback over.
+#
+# Neither can be exercised without a Google account, so their e2e coverage is
+# thin and stays that way. What is catalogued is the shape, honestly: an action
+# with no credentials answers "not configured", and that is a real answer.
+
+_WHICH_EVENT = _string("Which event: a title, or enough of one to find it.")
+_WHICH_MESSAGE = _string("Which message: a sender, subject, or search term.")
+
+_CALENDAR_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec("calendar_status", _LOW, "Report whether Calendar is connected.", _CALENDAR),
+    _spec(
+        "calendar_setup",
+        _MEDIUM,
+        "Start connecting a Google Calendar account.",
+        _CALENDAR,
+    ),
+    _spec(
+        "calendar_disconnect",
+        _MEDIUM,
+        "Disconnect the Google Calendar account.",
+        _CALENDAR,
+    ),
+    _spec(
+        "calendar_list",
+        _LOW,
+        "List calendar events.",
+        _CALENDAR,
+        _schema({"date_range": _string("Which days, e.g. 'this week'.")}),
+    ),
+    _spec("calendar_upcoming", _LOW, "List the events coming up next.", _CALENDAR),
+    _spec(
+        "calendar_search",
+        _LOW,
+        "Search the calendar for an event.",
+        _CALENDAR,
+        _schema({"query": _string("What to look for.")}, ("query",)),
+    ),
+    _spec(
+        "calendar_read",
+        _LOW,
+        "Read one event in full.",
+        _CALENDAR,
+        _schema({"query": _WHICH_EVENT}, ("query",)),
+    ),
+    _spec(
+        "calendar_freebusy",
+        _LOW,
+        "Report when the calendar is free or busy.",
+        _CALENDAR,
+        _schema({"date_range": _string("Which days to check.")}),
+    ),
+    _spec(
+        "calendar_create",
+        _MEDIUM,
+        "Create a calendar event.",
+        _CALENDAR,
+        _schema(
+            {
+                "title": _string("What the event is called."),
+                "start_text": _string("When it starts, in words."),
+                "end_text": _string("When it ends, in words."),
+                "duration_minutes": _integer("How long it lasts.", minimum=1),
+                "timezone": _string("Timezone for the event."),
+            },
+            ("title",),
+        ),
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "calendar_update",
+        _MEDIUM,
+        "Change an existing calendar event.",
+        _CALENDAR,
+        _schema(
+            {
+                "query": _WHICH_EVENT,
+                "title": _string("A new title."),
+                "start_text": _string("A new start, in words."),
+                "end_text": _string("A new end, in words."),
+            },
+            ("query",),
+        ),
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "calendar_delete",
+        _HIGH,
+        "Delete a calendar event.",
+        _CALENDAR,
+        _schema({"query": _WHICH_EVENT}, ("query",)),
+        confirmation=Confirmation.DOMAIN,
+    ),
+)
+
+_GMAIL_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec("gmail_status", _LOW, "Report whether Gmail is connected.", _GMAIL),
+    _spec("gmail_setup", _MEDIUM, "Start connecting a Gmail account.", _GMAIL),
+    _spec("gmail_disconnect", _MEDIUM, "Disconnect the Gmail account.", _GMAIL),
+    _spec(
+        "gmail_list",
+        _LOW,
+        "List recent messages.",
+        _GMAIL,
+        _schema({"query": _string("Narrow the list, e.g. 'unread'.")}),
+    ),
+    _spec(
+        "gmail_search",
+        _LOW,
+        "Search the mailbox.",
+        _GMAIL,
+        _schema({"query": _string("What to look for.")}, ("query",)),
+    ),
+    _spec(
+        "gmail_read",
+        _LOW,
+        "Read one message.",
+        _GMAIL,
+        _schema({"selector": _WHICH_MESSAGE}, ("selector",)),
+    ),
+    _spec(
+        "gmail_summarize",
+        _LOW,
+        "Summarise a message.",
+        _GMAIL,
+        _schema({"selector": _WHICH_MESSAGE}, ("selector",)),
+    ),
+    _spec("gmail_labels", _LOW, "List the mailbox's labels.", _GMAIL),
+    _spec(
+        "gmail_draft",
+        _LOW,
+        "Write a draft without sending it.",
+        _GMAIL,
+        _schema(
+            {
+                "recipient": _string("Who it is to."),
+                "subject": _string("The subject line."),
+                "body": _string("What it says."),
+            },
+            ("recipient",),
+        ),
+        notes="A draft is saved, never sent. Sending is gmail_send.",
+    ),
+    _spec(
+        "gmail_send",
+        _MEDIUM,
+        "Send an email.",
+        _GMAIL,
+        _schema(
+            {
+                "recipient": _string("Who it is to."),
+                "subject": _string("The subject line."),
+                "body": _string("What it says."),
+            },
+            ("recipient",),
+        ),
+        notes="Sends on the user's behalf and cannot be recalled.",
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "gmail_reply",
+        _MEDIUM,
+        "Reply to a message.",
+        _GMAIL,
+        _schema(
+            {"selector": _WHICH_MESSAGE, "body": _string("What to say.")}, ("selector",)
+        ),
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "gmail_forward",
+        _MEDIUM,
+        "Forward a message to someone.",
+        _GMAIL,
+        _schema(
+            {"selector": _WHICH_MESSAGE, "recipient": _string("Who to forward to.")},
+            ("selector", "recipient"),
+        ),
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "gmail_archive",
+        _MEDIUM,
+        "Archive a message out of the inbox.",
+        _GMAIL,
+        _schema({"selector": _WHICH_MESSAGE}, ("selector",)),
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "gmail_label",
+        _MEDIUM,
+        "Put a label on a message.",
+        _GMAIL,
+        _schema(
+            {"selector": _WHICH_MESSAGE, "label": _string("Which label.")},
+            ("selector", "label"),
+        ),
+        confirmation=Confirmation.DOMAIN,
+    ),
+    _spec(
+        "gmail_trash",
+        _HIGH,
+        "Move a message to the bin.",
+        _GMAIL,
+        _schema({"selector": _WHICH_MESSAGE}, ("selector",)),
+        confirmation=Confirmation.DOMAIN,
+    ),
+)
+
+
 CATALOGUE: tuple[ActionSpec, ...] = (
     *_APPLICATION_ACTIONS,
     *_WINDOW_ACTIONS,
@@ -1464,6 +1848,10 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_MEMORY_ACTIONS,
     *_REMINDER_ACTIONS,
     *_SCHEDULER_ACTIONS,
+    *_WEB_SEARCH_ACTIONS,
+    *_CLOCK_ACTIONS,
+    *_CALENDAR_ACTIONS,
+    *_GMAIL_ACTIONS,
 )
 
 
@@ -1532,6 +1920,11 @@ EXCLUSIONS: Mapping[str, str] = MappingProxyType(
 
 
 # --- actions this layer owns --------------------------------------------------
+
+_GOOGLE_OWNED: tuple[str, ...] = tuple(
+    [f"calendar_{name}" for name in CALENDAR_NAMES]
+    + [f"gmail_{name}" for name in GMAIL_NAMES]
+)
 
 LAYER_OWNED: Mapping[str, str] = MappingProxyType(
     {
@@ -1645,6 +2038,31 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "routine_run",
                 "routine_create_reminder",
             )
+        },
+        **{
+            name: (
+                "Web search, migrated sixth. WebSearchAutomation.execute already "
+                "took a parsed action, so nothing had to be extracted first."
+            )
+            for name in (
+                "web_search",
+                "web_sources",
+                "web_search_status",
+                "web_clear_cache",
+            )
+        },
+        "datetime_now": (
+            "The system clock, migrated seventh. handle_datetime_intent was "
+            "split into parse_datetime_intent and answer_datetime first -- the "
+            "same regexes and formatting, moved."
+        ),
+        **{
+            name: (
+                "Calendar and mail, migrated eighth and ninth. Both already had "
+                "the notes shape, and both decide whether to ask from what they "
+                "parsed, so their changing actions ask through the domain."
+            )
+            for name in _GOOGLE_OWNED
         },
     }
 )
@@ -1780,6 +2198,15 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "memory_clear",
         ),
         "reminders": ("reminder_create", "reminder_list", "reminder_cancel"),
+        "clock": ("datetime_now",),
+        "calendar": tuple(f"calendar_{name}" for name in CALENDAR_NAMES),
+        "mail": tuple(f"gmail_{name}" for name in GMAIL_NAMES),
+        "web": (
+            "web_search",
+            "web_sources",
+            "web_search_status",
+            "web_clear_cache",
+        ),
         "routines": (
             "routine_create_morning",
             "routine_set_morning",
