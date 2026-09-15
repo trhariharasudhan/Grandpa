@@ -1333,12 +1333,14 @@ version = "1.0.1"
 source = { editable = "." }
 dependencies = [
     { name = "click" },
+    { name = "comtypes", marker = "sys_platform == 'win32'" },
     { name = "ddgs" },
     { name = "httpx" },
     { name = "pillow" },
     { name = "prompt-toolkit" },
     { name = "psutil" },
     { name = "pyautogui" },
+    { name = "pycaw", marker = "sys_platform == 'win32'" },
     { name = "pytesseract" },
     { name = "pyttsx3", marker = "sys_platform == 'win32'" },
     { name = "rich" },
@@ -1357,8 +1359,6 @@ calendar = [
     { name = "google-auth-oauthlib" },
 ]
 desktop-hardware = [
-    { name = "comtypes", marker = "sys_platform == 'win32'" },
-    { name = "pycaw", marker = "sys_platform == 'win32'" },
     { name = "screen-brightness-control" },
 ]
 dev = [
@@ -1452,7 +1452,7 @@ dev = [
 requires-dist = [
     { name = "click", specifier = ">=8" },
     { name = "colbert-ai", marker = "extra == 'memory-colbert'", specifier = ">=0.2" },
-    { name = "comtypes", marker = "sys_platform == 'win32' and extra == 'desktop-hardware'", specifier = ">=1.2" },
+    { name = "comtypes", marker = "sys_platform == 'win32'", specifier = ">=1.2" },
     { name = "croniter", marker = "extra == 'scheduler'", specifier = ">=2.0" },
     { name = "cryptography", marker = "extra == 'security-signing'", specifier = ">=43" },
     { name = "ddgs", specifier = ">=9.11.4" },
@@ -1489,7 +1489,7 @@ requires-dist = [
     { name = "prompt-toolkit", specifier = ">=3.0" },
     { name = "psutil", specifier = ">=7.2.2" },
     { name = "pyautogui", specifier = ">=0.9.54" },
-    { name = "pycaw", marker = "sys_platform == 'win32' and extra == 'desktop-hardware'", specifier = ">=20240210" },
+    { name = "pycaw", marker = "sys_platform == 'win32'", specifier = ">=20240210" },
     { name = "pydantic", marker = "extra == 'server'", specifier = ">=2.0" },
     { name = "pystray", marker = "extra == 'tray'", specifier = ">=0.19.5" },
     { name = "pytesseract", specifier = ">=0.3.13" },

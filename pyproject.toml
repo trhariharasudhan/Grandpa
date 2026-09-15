@@ -30,6 +30,12 @@ dependencies = [
     "pillow>=12.1.1",
     "pyautogui>=0.9.54",
     "prompt-toolkit>=3.0",
+    # Windows audio. Not optional: an assistant that cannot read or set its own
+    # volume on a default install is broken, and the failure mode is worse than
+    # absence -- before these were installed, a model asked "what is my volume"
+    # simply invented a number. Both are small and pure Python.
+    "pycaw>=20240210; sys_platform == 'win32'",
+    "comtypes>=1.2; sys_platform == 'win32'",
     "pyttsx3>=2.90; sys_platform == 'win32'",
     "pytesseract>=0.3.13",
     "rich>=13",
@@ -94,12 +100,11 @@ screen = [
     "mss>=9.0",
     "pywin32>=306; sys_platform == 'win32'",
 ]
-# Backends the desktop control layer already imports but nothing declared, so
-# volume_get / volume_set and brightness_get / brightness_set could only ever
-# report "optional backend missing" on a default install.
+# Brightness only. pycaw and comtypes moved into the base dependencies -- see
+# the comment there. screen-brightness-control stays optional because it needs
+# WMI or DDC/CI support that many external monitors and virtual machines simply
+# do not have, so a hard dependency would buy nothing on that hardware.
 desktop-hardware = [
-    "pycaw>=20240210; sys_platform == 'win32'",
-    "comtypes>=1.2; sys_platform == 'win32'",
     "screen-brightness-control>=0.23",
 ]
 voice = [

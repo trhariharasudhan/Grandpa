@@ -12,6 +12,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Volume control never worked with a current pycaw.** `volume_set` called
+  `AudioUtilities.GetSpeakers().Activate(...)`, but pycaw now returns an
+  `AudioDevice` wrapper with no `Activate` method, so every attempt raised
+  `AttributeError` — which the caller swallowed into "the optional pycaw
+  backend is missing". With pycaw installed and working, volume control still
+  reported itself as unavailable. Both shapes of the pycaw API are handled now,
+  and a genuine failure reports the real error instead of blaming an absent
+  package.
+
+### Added
+
+- **`pycaw` and `comtypes` are default dependencies on Windows.** They were an
+  optional extra, which meant a default install could not read or set its own
+  volume — and the failure was worse than absence, because a model asked "what
+  is my volume set to" simply invented a number. Both are small and pure
+  Python. `screen-brightness-control` stays in the `desktop-hardware` extra:
+  it needs WMI or DDC/CI support that many external monitors and virtual
+  machines do not have, so requiring it would buy nothing on that hardware.
+
 ### Removed
 
 - **`grandpa ask --research`** and its companion flag **`--knowledge-db`**.
