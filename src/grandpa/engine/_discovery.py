@@ -39,6 +39,9 @@ def _make_engine(key: str, config: GrandpaConfig) -> InferenceEngine:
         timeout = getattr(config.engine.ollama, "timeout", 0.0)
         if timeout:
             kwargs["timeout"] = timeout
+        keep_alive = getattr(config.engine.ollama, "keep_alive", "")
+        if keep_alive:
+            kwargs["keep_alive"] = keep_alive
         return cls(**kwargs)
 
     if key == "native":

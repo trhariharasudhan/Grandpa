@@ -395,6 +395,12 @@ class OllamaEngineConfig:
 
     host: str = ""
     num_ctx: int = 8192
+    keep_alive: str = ""
+    """How long Ollama holds the model in memory after a request. Empty uses
+    the adapter's default of 30m. Ollama's own default is 5 minutes, which is
+    short enough that a user who pauses to think pays the whole cold-start cost
+    again -- several minutes, with the action catalogue in the prompt."""
+
     timeout: float = 0.0
     """Seconds to wait for one response. 0 uses the adapter's measured default
     (``runtime.ollama_adapter.DEFAULT_OLLAMA_TIMEOUT``). Raise it when a large

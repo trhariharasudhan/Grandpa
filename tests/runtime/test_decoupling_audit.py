@@ -81,10 +81,14 @@ class TestApplicationDecoupling:
             url="https://example.com",
             domain="example.com",
             visible_text="This is a long webpage content that needs to be summarized by Grandpa in tests.",
-            paragraphs=["This is a long webpage content that needs to be summarized by Grandpa in tests."],
+            paragraphs=[
+                "This is a long webpage content that needs to be summarized by Grandpa in tests."
+            ],
         )
 
-        with patch("grandpa.engine.get_engine", return_value=("mock_engine", mock_engine)):
+        with patch(
+            "grandpa.engine.get_engine", return_value=("mock_engine", mock_engine)
+        ):
             result = summarizer.summarize_page(page)
             assert result == "This is a summarized page."
             mock_engine.generate.assert_called_once()

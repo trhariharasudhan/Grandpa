@@ -94,7 +94,9 @@ class TestNativeBackendAdapter:
 
     def test_missing_model_file_raises_not_found(self, tmp_path: Path) -> None:
         adapter = NativeBackendAdapter(models_dir=tmp_path)
-        with pytest.raises(RuntimeModelNotFoundError, match="Local GGUF model file not found"):
+        with pytest.raises(
+            RuntimeModelNotFoundError, match="Local GGUF model file not found"
+        ):
             adapter.resolve_model_path("non_existent_model:latest")
 
     def test_resolves_model_from_models_dir(self, tmp_path: Path) -> None:
@@ -240,7 +242,9 @@ class TestNativeBackendAdapter:
         assert runtime.models_dir == tmp_path
         assert runtime.n_ctx == 4096
 
-    def test_agent_operates_transparently_over_native_adapter(self, tmp_path: Path) -> None:
+    def test_agent_operates_transparently_over_native_adapter(
+        self, tmp_path: Path
+    ) -> None:
         gguf_file = tmp_path / "grandpa-mini.gguf"
         gguf_file.write_bytes(b"GGUF")
 

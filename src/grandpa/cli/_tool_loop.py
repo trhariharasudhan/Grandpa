@@ -21,7 +21,13 @@ from rich.console import Console
 from grandpa.action_layer.loop import DEFAULT_STEP_LIMIT, ToolsUnsupportedError, run
 from grandpa.action_layer.model import Origin, RiskLevel
 
-__all__ = ["run_tool_loop"]
+__all__ = ["run_tool_loop", "warn_if_cold"]
+
+# Measured on the development machine: evaluating the tool definitions runs at
+# roughly ten tokens a second, and the catalogue is a few thousand tokens. The
+# number is only used to set expectations, so a rough rate is enough.
+_PROMPT_TOKENS_PER_SECOND = 10.0
+_CHARS_PER_TOKEN = 4
 
 _RISK_COLOUR = {
     RiskLevel.LOW: "green",
@@ -69,6 +75,45 @@ def _confirm_callback(console: Console, auto_approve: bool):
     return confirm
 
 
+def warn_if_cold(console: Console, engine: object, model: str, tools: list) -> bool:
+    """Say so when the first request will be slow, instead of appearing hung.
+
+    Ollama evaluates the whole tool prompt on the first request after a model
+    loads, and caches the result alongside the model. That first evaluation is
+    minutes with a catalogue this size; every request afterwards is seconds,
+    which is what keep_alive is set for. Silence for four minutes reads as a
+    broken install, so this prints what is happening and roughly how long.
+
+    Returns whether it warned, so a caller can tell the two cases apart.
+    """
+    client = getattr(engine, "_client", None)
+    get = getattr(client, "get", None)
+    if not callable(get):
+        return False
+    try:
+        response = get("/api/ps")
+        response.raise_for_status()
+        loaded = {
+            str(entry.get("model") or entry.get("name") or "")
+            for entry in response.json().get("models", [])
+        }
+    except Exception:  # pragma: no cover - a probe, never a failure
+        return False
+    if model in loaded:
+        return False
+
+    tokens = len(json_mod.dumps(tools)) // _CHARS_PER_TOKEN
+    minutes = max(1, round(tokens / _PROMPT_TOKENS_PER_SECOND / 60))
+    console.print(
+        f"[yellow]{model} is not loaded yet.[/yellow] The first request reads "
+        f"{len(tools)} tool definitions (~{tokens} tokens), which takes about "
+        f"{minutes} minute{'s' if minutes != 1 else ''} on this machine. "
+        "Everything after it takes seconds: the model and its prompt stay "
+        "loaded."
+    )
+    return True
+
+
 def run_tool_loop(
     goal: str,
     *,
@@ -113,6 +158,10 @@ def run_tool_loop(
     def announce(entry) -> None:
         mark = "[green]ok[/green]" if entry.success else f"[red]{entry.error}[/red]"
         console.print(f"  · {entry.action} {mark}")
+
+    from grandpa.action_layer.tool_schema import as_tool_definitions
+
+    warn_if_cold(console, engine, model, as_tool_definitions())
 
     try:
         result = run(

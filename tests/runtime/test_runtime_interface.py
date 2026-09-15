@@ -75,7 +75,10 @@ class TestModelRuntimeInterface:
         assert isinstance(runtime, ModelRuntime)
         assert runtime.runtime_id == "mock_adapter"
         assert runtime.health() is True
-        assert runtime.list_models() == ["synthetic-model-1:latest", "synthetic-model-2:latest"]
+        assert runtime.list_models() == [
+            "synthetic-model-1:latest",
+            "synthetic-model-2:latest",
+        ]
 
     def test_mock_adapter_generate(self) -> None:
         runtime: ModelRuntime = MockBackendAdapter(["Hello from Grandpa runtime!"])
@@ -114,14 +117,18 @@ class TestModelRuntimeInterface:
 class TestAgentDecoupledFromOllama:
     def test_operative_agent_runs_with_pure_runtime_adapter(self) -> None:
         # Prove Grandpa agents can execute against pure ModelRuntime without Ollama
-        runtime = MockBackendAdapter(["I am an autonomous agent running on Grandpa runtime."])
+        runtime = MockBackendAdapter(
+            ["I am an autonomous agent running on Grandpa runtime."]
+        )
         agent = OperativeAgent(
             engine=runtime,
             model="grandpa-mini:latest",
         )
 
         response = agent.run("Hello Grandpa")
-        assert response.content == "I am an autonomous agent running on Grandpa runtime."
+        assert (
+            response.content == "I am an autonomous agent running on Grandpa runtime."
+        )
         assert response.turns >= 1
 
 

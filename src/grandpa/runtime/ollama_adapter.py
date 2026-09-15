@@ -63,6 +63,51 @@ the ``GRANDPA_OLLAMA_TIMEOUT`` environment variable for one run.
 _CONNECT_TIMEOUT = 10.0
 """Establishing the TCP connection is fast or not happening at all."""
 
+DEFAULT_KEEP_ALIVE = "30m"
+"""How long Ollama should hold the model in memory after a request.
+
+Ollama's own default is 5 minutes, and the adapter never set this, so a user
+who asked something, thought for six minutes and asked again paid the entire
+cold-start cost twice.
+
+That cost is not the model loading. Measured on the development machine with
+the action catalogue in the prompt:
+
+=========================================  =======  ======  ============
+request                                    wall     load    prompt eval
+=========================================  =======  ======  ============
+cold, no tools                              27.7s   19.5s    4.8s /   47 tok
+cold, 10 tools                              83.9s   21.7s   58.5s /  727 tok
+cold, 86 tools                             559.9s   17.8s  532.7s / 5306 tok
+warm, 86 tools                               8.2s    0.0s    0.8s / 5306 tok
+after 6m idle, keep_alive=30m                9.8s    0.0s    1.5s / 5306 tok
+=========================================  =======  ======  ============
+
+Loading the weights is ~20s regardless. The other ~530s is *evaluating the tool
+definitions*, at roughly ten tokens a second on this hardware -- and Ollama
+caches that evaluation alongside the loaded model, which is why the warm
+request costs 0.8s for the same 5306 tokens.
+
+So keep_alive is the fix for the repeated cost: the last row is the same
+request after longer than Ollama's own default would have kept it, and it is
+50x cheaper than the cold one. The first request of all still pays, which is
+what :func:`grandpa.cli._tool_loop.warn_if_cold` is for.
+
+Override with ``engine.ollama.keep_alive`` in config, or
+``GRANDPA_OLLAMA_KEEP_ALIVE`` for one run. "0" tells Ollama to unload
+immediately, which is the old behaviour and costs the full price every time.
+"""
+
+
+def resolve_keep_alive(keep_alive: str | None = None) -> str:
+    """``GRANDPA_OLLAMA_KEEP_ALIVE``, else the caller's value, else the default."""
+    raw = os.environ.get("GRANDPA_OLLAMA_KEEP_ALIVE", "").strip()
+    if raw:
+        return raw
+    if keep_alive:
+        return str(keep_alive)
+    return DEFAULT_KEEP_ALIVE
+
 
 def resolve_ollama_timeout(timeout: float | None = None) -> float:
     """``GRANDPA_OLLAMA_TIMEOUT``, else the caller's value, else the default."""
@@ -207,12 +252,14 @@ class OllamaBackendAdapter(BackendAdapter):
         *,
         timeout: float | None = None,
         num_ctx: int = 8192,
+        keep_alive: str | None = None,
     ) -> None:
         if host is None:
             env_host = os.environ.get("OLLAMA_HOST")
             host = env_host or self._DEFAULT_HOST
         self._host = normalize_ollama_host(host)
         self._timeout = resolve_ollama_timeout(timeout)
+        self._keep_alive = resolve_keep_alive(keep_alive)
         self._client = httpx.Client(
             base_url=self._host,
             timeout=httpx.Timeout(self._timeout, connect=_CONNECT_TIMEOUT),
@@ -275,6 +322,7 @@ class OllamaBackendAdapter(BackendAdapter):
                 {"num_ctx": self._num_ctx, **kwargs},
             ),
         }
+        payload["keep_alive"] = self._keep_alive
         if "think" not in kwargs:
             payload["think"] = False
         elif kwargs["think"] is not None:
@@ -394,6 +442,7 @@ class OllamaBackendAdapter(BackendAdapter):
                 {"num_ctx": self._num_ctx, **kwargs},
             ),
         }
+        payload["keep_alive"] = self._keep_alive
         if "think" not in kwargs:
             payload["think"] = False
         elif kwargs["think"] is not None:
