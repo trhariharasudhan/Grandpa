@@ -1,7 +1,8 @@
 # Migrating a handler to the action layer
 
-Five domains have now been moved off chat's keyword waterfall — notes,
-downloads, memory, one-shot reminders, and routines. This is the path they took,
+Nine domains have now been moved off chat's keyword waterfall — notes,
+downloads, memory, one-shot reminders, routines, web search, the clock,
+calendar and mail. This is the path they took,
 rewritten after the fact so it describes what actually recurred rather than what
 seemed likely after the first one.
 
@@ -36,26 +37,41 @@ Look for the function that takes a *structured* request rather than a string.
 |---|---|---|
 | notes | `NotesAutomation.execute(action, ...)` | none, it was there |
 | downloads | `DownloadsAutomation.execute(action, ...)` | none |
+| web search | `WebSearchAutomation.execute(action)` | none |
+| calendar | `CalendarAutomation.execute(action, ...)` | none |
+| mail | `GmailAutomation.execute(action, ...)` | none |
 | memory | — | split `handle_memory_command` into `parse_memory_command` + `execute_memory_action` |
 | routines | — | same split on `handle_scheduler_command` |
+| the clock | — | same split on `handle_datetime_intent` |
 | reminders | — | three private helpers **inside `chat_cmd.py`** moved into `reminders.py` |
 
-Two of five had a seam. Three did not, and one of those kept its operations in
+Five of nine had a seam. Four did not, and one of those kept its operations in
 the CLI module rather than the domain at all.
 
 The split is mechanical when it works, and it works when **every branch of the
 parser decides from the text alone**. Check that first: if a branch consults the
 store before deciding, parse and execute are genuinely entangled and the split
-is a design change, not an extraction. Memory's and the scheduler's chains were
-both pure, so the regexes lifted out whole.
+is a design change, not an extraction. Memory's, the scheduler's and the clock's
+chains were all pure, so the regexes lifted out whole every time.
 
 Do not move logic into the action layer to create a seam. Extract it into the
 domain.
 
-### 2. Catalogue every action the seam can produce
+### 2. Catalogue every action the seam can produce, and count the tokens
 
-Not just the common ones. Notes catalogued all twelve `NotesActionType` allows;
-downloads all fourteen. Leaving some behind means two routes to the same store,
+**A tool definition is not free.** The catalogue is served in two tiers (see
+`tool_schema.py`): twenty core actions always sent, everything else grouped by
+domain and fetched with `load_tools`. Adding a domain adds to the *deferred*
+tier, which costs nothing until a model asks for it — but adding to `CORE`
+costs prompt tokens on every cold start, so that list is budgeted at twenty and
+changing it is a decision, not a detail.
+
+Prefer one action with a parameter over several near-identical ones. The clock
+is one `datetime_now(kind)` rather than five actions, because "what year is it"
+is a parameter and not a capability.
+
+Otherwise, catalogue the whole vocabulary, not just the common parts. Notes
+catalogued all twelve `NotesActionType` allows; downloads all fourteen. Leaving some behind means two routes to the same store,
 which is the condition the migration removes.
 
 Catalogue actions that are **currently broken**, too, as long as you say so.
@@ -114,7 +130,7 @@ the check together.
 ### 5. Give the domain a calling convention
 
 The executor has one adapter per argument shape, named in `Binding` and chosen
-per entry in the `_CALLS` table. There are now eleven shapes. A new domain
+per entry in the `_CALLS` table. There are now seventeen shapes. A new domain
 usually needs one, and that is fine: it is a single reviewable row in one table,
 not a branch buried in a dispatch chain. A missing row is an import-time error.
 
@@ -125,6 +141,12 @@ shape; domains with a service class need their own.
 executor sets from the answer it already has. Drop that and notes answers
 "needs_confirmation" and the note survives an approved delete — the decorative
 prompt, reborn.
+
+**Check what the implementation returns.** `_as_result` reads results by
+attribute, and it grew a case for a plain string only when the clock became the
+first domain to return one — until then its answer was being reported as
+`execution_failed` and thrown away. If a domain returns something new, the
+wrapper needs to know.
 
 ### 6. Route the chat phrase and remove only that branch
 
@@ -175,12 +197,13 @@ the regression unattributable.
 
 ## What five migrations cost
 
-| | Before notes | After five |
+| | Before notes | After nine |
 |---|---|---|
-| `chat_cmd.py` | 2247 lines | 2219 lines |
-| Waterfall branches for these domains | 6 | 0 |
-| Catalogued actions | 57 | 108 |
-| Actions reachable by a model | 57 | 108 |
+| `chat_cmd.py` | 2247 lines | 2196 lines |
+| Waterfall branches migrated | 0 | 10 |
+| `should_fallback` left in the REPL waterfall | 10 | 5 |
+| Catalogued actions | 57 | 139 |
+| Tool tokens on a cold start | 9,372 | 1,665 |
 
 Line count barely moved, and that is the honest result: the route modules are
 about as long as the branches they replaced. The measure that matters is that
@@ -206,14 +229,16 @@ Remaining waterfall branches, in the order they are tried:
 
 | Branch | Difficulty | Why |
 |---|---|---|
-| web_search | easy | already `handle_web_search_command(text) -> result`, single store-free operation |
-| calendar / gmail | easy *if* credentials are out of scope | same shape; both need a network account, so their e2e coverage is thin |
-| file_action | medium | overlaps the `file_*` desktop actions already catalogued; decide which owns what before starting |
-| browser_awareness / browser_action | **hard** | the browser confirmation tier added in Wave 2 is a second approval mechanism; migrating means reconciling it with `Confirmation`, not just moving a branch |
-| desktop_action | **hard** | this is `pc_control` itself, already catalogued from the other side. The migration is deleting a path, not adding one, and it is where the six stacks finally collapse |
-| local_action | **hard** | `local_actions.py` is the legacy facade with ~46 branches; it should be last, and probably in pieces |
+| file_action | **blocked on a decision** | `grandpa.files` reimplements create / rename / copy / move / delete, which the catalogue already has pointing at `desktop.control.files`. Migrating it now would put two routes to the same operation in the catalogue — the exact thing this removes. Decide which implementation owns file operations first; that is a design task, not a migration |
+| browser_awareness / browser_action | **hard** | the browser confirmation tier added in Wave 2 is a second approval mechanism. `Confirmation.DOMAIN` now exists and is probably the answer, but reconciling them is the work, not moving the branch |
+| desktop_action | **hard** | this is `pc_control` itself, already catalogued from the other side. The migration is deleting a path, not adding one, and it is where the stacks finally collapse |
+| local_action | **hard** | `local_actions.py` is the legacy facade with ~46 branches; last, and in pieces |
 
-Do the three easy ones next and the shape of the hard ones will be clearer.
-Browser is the one to plan before touching: it has the only other approval
-mechanism in the codebase, and two approval systems is the problem this layer
-exists to end.
+The easy ones are done. What is left is the three genuinely hard branches plus
+one blocked on an ownership decision. Browser is the one to plan first: it has
+the only other approval mechanism in the codebase, and `Confirmation.DOMAIN`
+exists now precisely because a domain sometimes has to do the asking.
+
+Note also the three `should_fallback` sites in `_handle_natural_assistant_intent`.
+That is a *second* dispatch chain, used by voice, not the chat REPL. It will
+need the same treatment and has not been counted as part of the waterfall.
