@@ -159,9 +159,11 @@ def run_tool_loop(
         mark = "[green]ok[/green]" if entry.success else f"[red]{entry.error}[/red]"
         console.print(f"  · {entry.action} {mark}")
 
-    from grandpa.action_layer.tool_schema import as_tool_definitions
+    from grandpa.action_layer.tool_schema import core_tool_definitions
 
-    warn_if_cold(console, engine, model, as_tool_definitions())
+    # The first request carries the core block, not the whole catalogue, so
+    # that is what the estimate has to be based on.
+    warn_if_cold(console, engine, model, core_tool_definitions())
 
     try:
         result = run(
@@ -203,6 +205,7 @@ def run_tool_loop(
                     "content": result.text,
                     "steps": result.steps,
                     "stopped_at_limit": result.stopped_at_limit,
+                    "loaded_domains": list(result.loaded_domains),
                     "trace": [
                         {
                             "step": entry.step,

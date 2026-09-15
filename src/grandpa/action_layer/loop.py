@@ -21,10 +21,15 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from grandpa.action_layer.catalogue import CATALOGUE, ActionSpec, get
+from grandpa.action_layer.catalogue import CATALOGUE, DOMAINS, ActionSpec, get
 from grandpa.action_layer.executor import ConfirmCallback, execute
 from grandpa.action_layer.model import ActionRequest, ActionResult, Origin, RiskLevel
-from grandpa.action_layer.tool_schema import as_tool_definitions
+from grandpa.action_layer.tool_schema import (
+    LOAD_TOOLS,
+    as_tool_definitions,
+    domain_tool_definitions,
+    tool_definitions_for,
+)
 
 __all__ = [
     "DEFAULT_STEP_LIMIT",
@@ -56,7 +61,15 @@ what did not work. When the goal needs several steps, take them one at a time
 and check each result before the next. When you are finished, reply in plain
 words with what you did and what you found.
 
-If no tool can do what was asked, say so instead of pretending."""
+Your tool list is deliberately short. It holds the things people ask for most,
+and everything else is one step away: call load_tools with the subject you need
+-- notes, downloads, browser, files, windows, input, memory, reminders,
+routines, system, clipboard, display, diagnostics, apps, volume, brightness --
+and the tools for it appear. So before saying you cannot do something, check
+whether load_tools has it.
+
+If no tool can do what was asked, and load_tools has no subject for it, say so
+instead of pretending."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,6 +105,9 @@ class LoopResult:
     """True when the step limit ended the loop rather than the model."""
 
     model: str = ""
+
+    loaded_domains: tuple[str, ...] = ()
+    """Domains the model fetched with load_tools during this run."""
 
     @property
     def actions_taken(self) -> tuple[str, ...]:
@@ -199,6 +215,70 @@ def _request_for(action: str, parameters: Mapping[str, Any], origin: Origin):
     )
 
 
+def _load_domain(
+    parameters: Mapping[str, Any], loaded: list[str], tiered: bool
+) -> tuple[str, bool]:
+    """Add a domain's tools, and tell the model what it just gained.
+
+    Returns the tool-result text and whether anything actually changed, so the
+    caller only rebuilds the definitions when it must.
+    """
+    domain = str(parameters.get("domain") or "").strip().lower()
+
+    if not tiered:
+        return (
+            json.dumps(
+                {
+                    "success": True,
+                    "message": "Every tool is already available; call it directly.",
+                }
+            ),
+            False,
+        )
+    if domain not in DOMAINS:
+        return (
+            json.dumps(
+                {
+                    "success": False,
+                    "error": "unknown_domain",
+                    "message": f"There is no tool subject called {domain!r}.",
+                    "available": sorted(DOMAINS),
+                }
+            ),
+            False,
+        )
+    if domain in loaded:
+        return (
+            json.dumps(
+                {
+                    "success": True,
+                    "message": f"{domain} tools are already loaded.",
+                    "tools": [
+                        entry["function"]["name"]
+                        for entry in domain_tool_definitions(domain)
+                    ],
+                }
+            ),
+            False,
+        )
+
+    loaded.append(domain)
+    names = [entry["function"]["name"] for entry in domain_tool_definitions(domain)]
+    return (
+        json.dumps(
+            {
+                "success": True,
+                "message": (
+                    f"Loaded the {domain} tools. You can call these now, as well "
+                    "as everything you already had."
+                ),
+                "tools": names,
+            }
+        ),
+        True,
+    )
+
+
 def _tool_result_payload(result: ActionResult) -> str:
     payload: dict[str, Any] = {"success": result.success, "message": result.message}
     if result.error:
@@ -255,14 +335,26 @@ def run(
     actions: Iterable[ActionSpec] | None = None,
     temperature: float = 0.0,
     on_action: Callable[[ActionTrace], None] | None = None,
+    tiered: bool = True,
 ) -> LoopResult:
-    """Let the model pursue ``goal`` with the catalogue as its tools."""
+    """Let the model pursue ``goal`` with the catalogue as its tools.
+
+    ``tiered`` sends the core twenty plus ``load_tools`` and lets the model
+    fetch the rest, which is what makes a cold first request affordable. Pass
+    ``tiered=False`` (or an explicit ``actions`` list) to hand over everything
+    at once, which is right for a backend that does not pay per prompt token.
+    """
     from grandpa.core.types import Message, Role, ToolCall
 
     _require_tool_support(engine, model)
 
-    specs = tuple(CATALOGUE if actions is None else actions)
-    tools = as_tool_definitions(specs)
+    loaded: list[str] = []
+    if actions is not None:
+        tools = as_tool_definitions(tuple(actions))
+    elif tiered:
+        tools = tool_definitions_for(loaded)
+    else:
+        tools = as_tool_definitions(CATALOGUE)
     messages: list[Message] = [
         Message(role=Role.SYSTEM, content=system_prompt),
         Message(role=Role.USER, content=goal),
@@ -280,7 +372,7 @@ def run(
                     "The model ended the turn without an answer and without "
                     "calling a tool, so nothing was done."
                 )
-            return LoopResult(text, tuple(trace), step, False, model)
+            return LoopResult(text, tuple(trace), step, False, model, tuple(loaded))
 
         messages.append(
             Message(
@@ -301,6 +393,24 @@ def run(
             action = str(call.get("name") or "")
             call_id = str(call.get("id") or f"call_{index}")
             parameters, problem = _parse_arguments(call.get("arguments"))
+
+            if action == LOAD_TOOLS:
+                # Not an action: it changes what the model can see. Handled
+                # here so it never reaches the executor, which has no business
+                # rating or auditing a change to its own menu.
+                payload, added = _load_domain(parameters or {}, loaded, tiered)
+                if added:
+                    tools = tool_definitions_for(loaded)
+                messages.append(
+                    Message(
+                        role=Role.TOOL,
+                        content=payload,
+                        name=LOAD_TOOLS,
+                        tool_call_id=call_id,
+                    )
+                )
+                continue
+
             if parameters is None:
                 result = ActionResult.failed(
                     "invalid_arguments", message=f"{action}: {problem}"
@@ -344,6 +454,7 @@ def run(
         steps=limit,
         stopped_at_limit=True,
         model=model,
+        loaded_domains=tuple(loaded),
     )
 
 

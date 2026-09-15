@@ -42,9 +42,13 @@ __all__ = [
     "Binding",
     "Confirmation",
     "CATALOGUE",
+    "CORE_ACTIONS",
+    "DOMAINS",
     "EXCLUSIONS",
     "LAYER_OWNED",
     "counts_by_risk",
+    "domain_of",
+    "extended_actions",
     "get",
     "names",
 ]
@@ -1646,6 +1650,215 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
 )
 
 
+# --- tiers: what a model is handed, and when ---------------------------------
+#
+# The whole catalogue is ~9,400 tokens of tool definitions. On a machine
+# without a GPU, Ollama evaluates a cold prompt at roughly ten tokens a second,
+# so handing a model all 108 actions costs about sixteen minutes before it can
+# say anything. That is not a shippable first request.
+#
+# So the catalogue is served in two tiers. CORE is always sent and never
+# changes, which is what lets Ollama reuse its cached prefix; everything else
+# is grouped by domain and fetched on demand with the load_tools meta-tool.
+# Nothing becomes unreachable -- only deferred by one round trip.
+
+DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
+    {
+        "apps": ("open_app", "detect_app", "close_app", "open_folder"),
+        "windows": (
+            "list_windows",
+            "focus_window",
+            "minimize_window",
+            "maximize_window",
+            "restore_window",
+            "close_window",
+        ),
+        "system": (
+            "system_lock",
+            "system_sleep",
+            "system_restart",
+            "system_shutdown",
+            "empty_recycle_bin",
+        ),
+        "volume": (
+            "volume_get",
+            "volume_set",
+            "volume_up",
+            "volume_down",
+            "volume_mute",
+            "volume_unmute",
+        ),
+        "brightness": ("brightness_get", "brightness_set"),
+        "clipboard": (
+            "clipboard_read",
+            "clipboard_write",
+            "clipboard_clear",
+            "clipboard_inspect",
+            "clipboard_history",
+        ),
+        "display": ("list_monitors", "monitor_info"),
+        "diagnostics": (
+            "active_process",
+            "list_processes",
+            "desktop_summary",
+            "pc_diagnostics",
+            "screenshot_describe",
+        ),
+        "files": (
+            "file_read",
+            "file_create",
+            "file_rename",
+            "file_move",
+            "file_copy",
+            "file_delete",
+        ),
+        "input": (
+            "keyboard_type",
+            "keyboard_hotkey",
+            "mouse_move",
+            "mouse_click",
+            "mouse_scroll",
+            "mouse_drag",
+            "desktop_navigate",
+        ),
+        "browser": (
+            "browser_open",
+            "browser_search",
+            "browser_new_tab",
+            "browser_context",
+            "browser_tabs",
+            "browser_summary",
+            "browser_headings",
+            "browser_links",
+            "browser_buttons",
+            "browser_media",
+            "browser_diagnostics",
+            "browser_task",
+        ),
+        "notes": (
+            "notes_create",
+            "notes_list",
+            "notes_search",
+            "notes_read",
+            "notes_recent",
+            "notes_append",
+            "notes_rename",
+            "notes_delete",
+            "notes_archive",
+            "notes_restore",
+            "notes_pin",
+            "notes_unpin",
+        ),
+        "downloads": (
+            "downloads_recent",
+            "downloads_today",
+            "downloads_latest",
+            "downloads_search",
+            "downloads_large",
+            "downloads_incomplete",
+            "downloads_duplicates",
+            "downloads_info",
+            "downloads_open",
+            "downloads_open_folder",
+            "downloads_move",
+            "downloads_organize",
+            "downloads_archive",
+            "downloads_delete",
+        ),
+        "memory": (
+            "memory_remember",
+            "memory_recall",
+            "memory_profile",
+            "memory_preferences",
+            "memory_projects",
+            "memory_project_name",
+            "memory_attribute",
+            "memory_apps_today",
+            "memory_recent_activity",
+            "memory_continue_project",
+            "memory_forget",
+            "memory_clear",
+        ),
+        "reminders": ("reminder_create", "reminder_list", "reminder_cancel"),
+        "routines": (
+            "routine_create_morning",
+            "routine_set_morning",
+            "routine_list",
+            "routine_enable",
+            "routine_disable",
+            "routine_run",
+            "routine_create_reminder",
+        ),
+    }
+)
+"""Every catalogued action, grouped by the subject a person would name.
+
+The groups are what ``load_tools`` takes, so they are chosen to match how
+someone asks -- "my notes", "my downloads", "the browser" -- rather than which
+service class happens to implement them.
+"""
+
+CORE_ACTIONS: tuple[str, ...] = (
+    # Launching and looking: the two things a desktop assistant is asked for
+    # before anything else.
+    "open_app",
+    "list_windows",
+    "screenshot_describe",
+    # Volume is the most-asked hardware control, and the one the audit found
+    # orphaned. get/set answer any phrasing; up/down are what people say.
+    "volume_get",
+    "volume_set",
+    "volume_up",
+    "volume_down",
+    # Notes: writing something down and finding it again is the daily loop.
+    # Append and delete are deferred -- they follow a create or a search, by
+    # which point the domain is loaded.
+    "notes_create",
+    "notes_list",
+    "notes_search",
+    "notes_read",
+    # Memory: the two halves of "remember this" / "what do you know".
+    "memory_remember",
+    "memory_recall",
+    # Reminders: setting one and seeing them. Cancelling needs an id, which
+    # means listing first, which loads the domain.
+    "reminder_create",
+    "reminder_list",
+    # Files: reading and creating. Renaming, moving and deleting are rarer and
+    # riskier, so they are worth a deliberate round trip.
+    "file_read",
+    "file_create",
+    # The clipboard is how a user hands Grandpa something without typing it.
+    "clipboard_read",
+    # The web, for the two things anyone actually asks a browser to do.
+    "browser_open",
+    "browser_search",
+)
+"""The twenty actions sent on every request, in a fixed order.
+
+Chosen by what someone does daily, not by what is cheap to describe, and kept
+deliberately small: every action here is paid for on every cold start. The
+order is part of the contract -- it must not change, or Ollama's cached prefix
+is thrown away and the cold cost returns.
+"""
+
+
+def domain_of(action: str) -> str | None:
+    """Which domain an action belongs to, or ``None`` if it is not catalogued."""
+    return _DOMAIN_BY_ACTION.get(action)
+
+
+def extended_actions(domain: str) -> tuple[ActionSpec, ...]:
+    """The specs a domain adds beyond CORE, in catalogue order."""
+    wanted = set(DOMAINS.get(domain, ())) - set(CORE_ACTIONS)
+    return tuple(spec for spec in CATALOGUE if spec.name in wanted)
+
+
+_DOMAIN_BY_ACTION: Mapping[str, str] = MappingProxyType(
+    {action: domain for domain, actions in DOMAINS.items() for action in actions}
+)
+
+
 # --- lookups -----------------------------------------------------------------
 
 _BY_NAME: Mapping[str, ActionSpec] = MappingProxyType(
@@ -1679,6 +1892,23 @@ if len(_BY_NAME) != len(CATALOGUE):  # pragma: no cover - construction-time chec
     raise RuntimeError(
         "duplicate action names in the catalogue: "
         + ", ".join(sorted(name for name, count in _seen.items() if count > 1))
+    )
+
+# Every catalogued action belongs to exactly one domain, and no domain names
+# an action that does not exist. Without this the tiering silently drops things.
+_GROUPED = [action for actions in DOMAINS.values() for action in actions]
+if sorted(_GROUPED) != sorted(_BY_NAME):  # pragma: no cover - construction check
+    missing = sorted(set(_BY_NAME) - set(_GROUPED))
+    unknown = sorted(set(_GROUPED) - set(_BY_NAME))
+    raise RuntimeError(
+        f"DOMAINS does not cover the catalogue: missing={missing} unknown={unknown}"
+    )
+if len(_GROUPED) != len(set(_GROUPED)):  # pragma: no cover - construction check
+    raise RuntimeError("an action appears in more than one domain")
+if set(CORE_ACTIONS) - set(_BY_NAME):  # pragma: no cover - construction check
+    raise RuntimeError(
+        f"CORE_ACTIONS names actions that do not exist: "
+        f"{sorted(set(CORE_ACTIONS) - set(_BY_NAME))}"
     )
 
 # An action cannot be both catalogued and excluded.

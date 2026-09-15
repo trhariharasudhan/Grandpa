@@ -41,11 +41,23 @@ def test_every_definition_matches_the_function_calling_format(
 
     parameters = function["parameters"]
     assert parameters["type"] == "object", function["name"]
-    assert isinstance(parameters["properties"], dict), function["name"]
-    assert isinstance(parameters["required"], list), function["name"]
-    assert set(parameters["required"]) <= set(parameters["properties"]), function[
-        "name"
-    ]
+    # properties and required are optional in JSON Schema, and the renderer now
+    # omits them when they would be empty -- about a thousand tokens across the
+    # catalogue, saying nothing the model can use. Whatever is present must
+    # still be coherent, and an empty one must not be sent at all.
+    if "properties" in parameters:
+        assert isinstance(parameters["properties"], dict), function["name"]
+        assert parameters["properties"], (
+            f"{function['name']}: empty properties should be omitted, not sent"
+        )
+    if "required" in parameters:
+        assert isinstance(parameters["required"], list), function["name"]
+        assert parameters["required"], (
+            f"{function['name']}: an empty required should be omitted, not sent"
+        )
+        assert set(parameters["required"]) <= set(parameters["properties"]), function[
+            "name"
+        ]
 
 
 def test_the_whole_payload_serialises_as_json() -> None:
