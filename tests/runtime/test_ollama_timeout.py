@@ -32,10 +32,10 @@ def no_env_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_the_default_covers_a_cold_large_model() -> None:
-    """Measured: grandpa-brain's first request with 60 tool definitions took
-    439s on the development machine. A default below that is a guaranteed
-    failure on the project's own recommended model."""
-    assert DEFAULT_OLLAMA_TIMEOUT >= 439
+    """Measured twice, on the same cold path, with 60 tool definitions in the
+    prompt: 439s and over 600s. A default below the worst observation is a
+    first request lost to the clock, not a safety margin."""
+    assert DEFAULT_OLLAMA_TIMEOUT >= 700
 
 
 def test_precedence_is_env_then_caller_then_default(

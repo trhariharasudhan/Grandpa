@@ -35,21 +35,29 @@ _MAX_NUM_PREDICT = 2048
 _DEFAULT_STOP_SEQUENCES = ["<|im_end|>", "<|endoftext|>"]
 _DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
 
-DEFAULT_OLLAMA_TIMEOUT = 600.0
+DEFAULT_OLLAMA_TIMEOUT = 900.0
 """Seconds to wait for one Ollama response.
 
-Measured, not guessed. The old fixed 180s was below the cost of a *cold* first
-request: on the development machine, ``grandpa-brain`` answering with the action
-catalogue's 60 tool definitions in the prompt (21 KB) took **439 s** on its
-first call and 7.4 s once warm; ``grandpa-mini`` took 63 s cold and 0.8 s warm.
-Only 15 s of the 439 was model loading -- the rest was evaluating the prompt on
-this hardware. So 600 s leaves headroom over the worst case observed without
-being unbounded.
+Measured, not guessed, and revised once by measurement. The old fixed 180s was
+far below the cost of a *cold* first request. On the development machine, with
+the action catalogue's 60 tool definitions in the prompt (21 KB):
+
+===============  ==========  =========
+model            cold        warm
+===============  ==========  =========
+grandpa-brain    439s, 602s  7.4s
+grandpa-mini     63s         0.8s
+===============  ==========  =========
+
+Only 15s of the 439 was model loading; the rest was prompt evaluation. Two cold
+measurements of the same path came out 439s and over 600s, so a 600s default was
+still losing a first request to the clock. 900s covers both with margin.
 
 A long read timeout does not make a dead server slow to detect: the connect
 timeout stays at :data:`_CONNECT_TIMEOUT`, so an unreachable Ollama still fails
-in seconds. Override with ``engine.ollama.timeout`` in config, or the
-``GRANDPA_OLLAMA_TIMEOUT`` environment variable for one run.
+in seconds. The cost of a high read timeout is bounded to a model that is
+genuinely still working. Override with ``engine.ollama.timeout`` in config, or
+the ``GRANDPA_OLLAMA_TIMEOUT`` environment variable for one run.
 """
 
 _CONNECT_TIMEOUT = 10.0
