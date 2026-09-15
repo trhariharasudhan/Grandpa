@@ -70,6 +70,24 @@ Prefer one action with a parameter over several near-identical ones. The clock
 is one `datetime_now(kind)` rather than five actions, because "what year is it"
 is a parameter and not a capability.
 
+**A domain half in CORE is the worst place to be.** Measured on
+grandpa-brain, not assumed: given a goal needing a deferred action, the model
+called `load_tools` every time the subject was *wholly* absent from the core
+list (downloads, calendar, mail) and never once when part of it was already
+there. Asked to pin a note, with `notes_create`, `notes_list`, `notes_read` and
+`notes_search` in front of it, it answered "I cannot directly pin a note to the
+top" -- and with the whole catalogue sent it calls `notes_pin` immediately.
+Seeing four notes tools reads as having all the notes tools. Ten of the twenty
+domains are split this way, covering 51 deferred actions.
+
+Two prompt fixes were tried against this and neither moved it, so they were
+reverted rather than shipped as unmeasured tokens. Naming whole domains in
+CORE would fix it and costs 5,233 tokens against 1,665 -- three times the cold
+start to recover half the saving. It is an open trade-off, recorded here rather
+than decided: **if you add a partial domain to CORE, you are making its other
+actions harder for the model to find, not easier.**
+
+
 Otherwise, catalogue the whole vocabulary, not just the common parts. Notes
 catalogued all twelve `NotesActionType` allows; downloads all fourteen. Leaving some behind means two routes to the same store,
 which is the condition the migration removes.

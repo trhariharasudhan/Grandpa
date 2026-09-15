@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from grandpa.action_layer.catalogue import CATALOGUE, CORE_ACTIONS, get
+from grandpa.action_layer.catalogue import CATALOGUE, CORE_ACTIONS, DOMAINS, get
 from grandpa.action_layer.loop import run
 from grandpa.action_layer.tool_schema import LOAD_TOOLS, core_tool_definitions
 
@@ -260,3 +260,31 @@ def test_the_model_is_told_it_can_load_more() -> None:
     system = engine.requests[0]["messages"][0].content
     assert LOAD_TOOLS in system
     assert "cannot" in system.lower()
+
+
+def test_the_prompt_names_every_subject_load_tools_accepts() -> None:
+    """A subject the model is never told about is a subject it cannot ask for.
+
+    The list used to be typed by hand, and four domains -- the clock, calendar,
+    mail and web -- were added without it. Thirty-three catalogued actions were
+    loadable in principle and unreachable in practice, because the only way to
+    name the subject was to guess it.
+    """
+    engine = StubEngine({"content": "done"})
+
+    run("hello", engine=engine, model="stub")
+
+    system = engine.requests[0]["messages"][0].content
+    assert [domain for domain in DOMAINS if domain not in system] == []
+
+
+def test_the_prompt_is_the_same_bytes_every_run() -> None:
+    """It is the first thing in the cached prefix, so it must not vary."""
+    first, second = StubEngine({"content": "a"}), StubEngine({"content": "b"})
+
+    run("one", engine=first, model="stub")
+    run("two", engine=second, model="stub")
+
+    assert first.requests[0]["messages"][0].content == (
+        second.requests[0]["messages"][0].content
+    )

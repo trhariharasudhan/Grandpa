@@ -14,6 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Four tool subjects existed but could not be named.** The tiered catalogue
+  lets the model fetch a domain with `load_tools`, and the list of subjects it
+  could ask for was typed by hand into the system prompt. The clock, calendar,
+  mail and web were added to the catalogue without it, so 33 catalogued actions
+  were loadable in principle and reachable only by guessing the subject name.
+  The list is now generated from `DOMAINS` and sorted, which keeps it both
+  correct as the catalogue grows and byte-identical between requests, as the
+  prompt cache needs. Measured effect: with the subjects named, the model
+  loads `calendar` and `mail` correctly for goals it previously refused.
+
 - **Volume control never worked with a current pycaw.** `volume_set` called
   `AudioUtilities.GetSpeakers().Activate(...)`, but pycaw now returns an
   `AudioDevice` wrapper with no `Activate` method, so every attempt raised
