@@ -252,10 +252,28 @@ def test_volume_action_mocked(monkeypatch):
     assert calls == ["volumeup"]
 
 
-def test_volume_set_missing_backend_is_graceful(monkeypatch):
-    monkeypatch.setattr(pc_control.sys, "platform", "win32")
+def _without_audio_backend(monkeypatch):
+    """Make the pycaw import fail, as it does on a default install.
+
+    Poisoning "pycaw" alone stopped working once the desktop-hardware extra was
+    actually installed: the code imports ``pycaw.pycaw``, and that submodule was
+    already in sys.modules, so the import succeeded and the test drove the real
+    audio endpoint -- changing the machine's volume instead of testing a
+    refusal. The submodule has to be poisoned too.
+    """
     monkeypatch.setitem(sys.modules, "comtypes", None)
     monkeypatch.setitem(sys.modules, "pycaw", None)
+    monkeypatch.setitem(sys.modules, "pycaw.pycaw", None)
+
+
+def _without_brightness_backend(monkeypatch):
+    """Same, for screen_brightness_control."""
+    monkeypatch.setitem(sys.modules, "screen_brightness_control", None)
+
+
+def test_volume_set_missing_backend_is_graceful(monkeypatch):
+    monkeypatch.setattr(pc_control.sys, "platform", "win32")
+    _without_audio_backend(monkeypatch)
 
     result = run_local_action(
         {"action_type": "volume_set", "target": "50", "args": {"level": 50}}
@@ -266,14 +284,33 @@ def test_volume_set_missing_backend_is_graceful(monkeypatch):
     assert result.error == "missing_volume_backend"
 
 
-def test_brightness_unsupported_path():
+def test_brightness_unsupported_path(monkeypatch):
+    _without_brightness_backend(monkeypatch)
+
     result = run_local_action({"action_type": "brightness_get"})
 
     assert result.ok is False
     assert result.status == "unsupported"
 
 
-def test_brightness_set_is_allowed_but_truthful_when_unsupported():
+def test_brightness_get_reports_a_real_level_when_the_backend_is_there(monkeypatch):
+    """The other half, now that the backend can actually be installed."""
+    monkeypatch.setattr(
+        "screen_brightness_control.get_brightness", lambda *a, **k: [42]
+    )
+
+    result = run_local_action({"action_type": "brightness_get"})
+
+    assert result.ok is True
+    assert "42" in result.message, result.message
+    assert result.evidence["brightness"] == [42]
+
+
+def test_brightness_set_is_allowed_but_truthful_when_unsupported(monkeypatch):
+    # Never drive the real display from a test: it dimmed the developer's
+    # screen the first time this ran with the backend installed.
+    _without_brightness_backend(monkeypatch)
+
     result = run_local_action({"action_type": "brightness_set", "target": "50"})
 
     assert result.status in {"completed", "unsupported"}
