@@ -573,40 +573,112 @@ class MemoryStore:
         return scores
 
 
-def handle_memory_command(
-    text: str, *, store: MemoryStore | None = None
-) -> MemoryCommandResult:
-    """Handle explicit memory commands, returning fallback when not matched."""
+MEMORY_ACTIONS: tuple[str, ...] = (
+    "remember",
+    "forget",
+    "clear",
+    "recall",
+    "profile",
+    "preferences",
+    "projects",
+    "project_name",
+    "attribute",
+    "apps_today",
+    "recent_activity",
+    "continue_project",
+)
+"""Everything ``handle_memory_command``'s regexes can decide to do.
 
-    original = text.strip()
-    if not original:
-        return _fallback()
+This is the vocabulary the action layer catalogues. It exists because memory
+was the first domain migrated that had no structured seam of its own -- the
+dispatcher did the work inline.
+"""
+
+
+def execute_memory_action(
+    action: str,
+    *,
+    store: MemoryStore | None = None,
+    subject: str = "",
+) -> MemoryCommandResult:
+    """Perform one memory operation, already parsed.
+
+    Extracted from ``handle_memory_command`` so something other than a regex
+    can reach these. The bodies are unchanged.
+    """
     store = store or MemoryStore()
+    if action == "remember":
+        return _remember_fact(store, subject)
+    if action == "forget":
+        return _forget_matching(store, subject)
+    if action == "clear":
+        store.clear_all()
+        message = "I cleared Grandpa's local personal memory and recent activity."
+        return MemoryCommandResult("handled", "memory", "clear", message, message)
+    if action == "recall":
+        return _recall(store, subject)
+    if action == "profile":
+        return _profile_recall(store)
+    if action == "preferences":
+        return _preference_recall(store)
+    if action == "projects":
+        return _project_recall(store)
+    if action == "project_name":
+        return _recall_specific(
+            store, "project", "project", "I do not know your project yet."
+        )
+    if action == "attribute":
+        return _recall_personal_attribute(store, subject)
+    if action == "apps_today":
+        return _apps_opened_today(store)
+    if action == "recent_activity":
+        return _recent_activity(store)
+    if action == "continue_project":
+        return _continue_project(store, subject)
+    return MemoryCommandResult(
+        "unsupported", "memory", action, "That memory action is not supported."
+    )
+
+
+def _forget_matching(store: MemoryStore, target: str) -> MemoryCommandResult:
+    """The body that used to sit inline in handle_memory_command."""
+    removed = store.forget(target)
+    if not removed:
+        normalized_target = re.sub(r"^(my|the|a|an)\s+", "", target, flags=re.I).strip()
+        if normalized_target != target:
+            removed = store.forget(normalized_target)
+    message = (
+        f"I forgot {removed} matching memory item{'s' if removed != 1 else ''}."
+        if removed
+        else "I did not find a matching memory to forget."
+    )
+    return MemoryCommandResult("handled", "memory", target, message, message)
+
+
+def parse_memory_command(original_text: str) -> tuple[str, str] | None:
+    """Decide which memory action a phrase asks for, or ``None``.
+
+    Lifted out of ``handle_memory_command`` unchanged. Every branch below
+    decided from the text alone already -- none of them consulted the store --
+    which is what made the split possible without touching behaviour.
+
+    Returns ``(action, subject)`` where subject is the fact, query, attribute or
+    topic the action needs, and "" for the actions that take nothing.
+    """
+    original = original_text.strip()
+    if not original:
+        return None
     lower = original.lower().strip(" ?!.")
 
     remember_match = re.match(
         r"^(please\s+)?remember\s+(?:that\s+)?(.+)$", original, re.I
     )
     if remember_match:
-        fact = remember_match.group(2).strip()
-        return _remember_fact(store, fact)
+        return "remember", remember_match.group(2).strip()
 
     forget_match = re.match(r"^(please\s+)?forget\s+(?:that\s+)?(.+)$", original, re.I)
     if forget_match:
-        target = forget_match.group(2).strip()
-        removed = store.forget(target)
-        if not removed:
-            normalized_target = re.sub(
-                r"^(my|the|a|an)\s+", "", target, flags=re.I
-            ).strip()
-            if normalized_target != target:
-                removed = store.forget(normalized_target)
-        message = (
-            f"I forgot {removed} matching memory item{'s' if removed != 1 else ''}."
-            if removed
-            else "I did not find a matching memory to forget."
-        )
-        return MemoryCommandResult("handled", "memory", target, message, message)
+        return "forget", forget_match.group(2).strip()
 
     if lower in {
         "clear memory",
@@ -614,15 +686,13 @@ def handle_memory_command(
         "delete memory",
         "delete my memory",
     }:
-        store.clear_all()
-        message = "I cleared Grandpa's local personal memory and recent activity."
-        return MemoryCommandResult("handled", "memory", "clear", message, message)
+        return "clear", ""
 
     if lower.startswith("what do you remember"):
         query = re.sub(r"^what do you remember\s*(about|for)?\s*", "", lower).strip()
         if query in {"me", "myself", "about me"}:
-            return _profile_recall(store)
-        return _recall(store, query or original)
+            return "profile", ""
+        return "recall", query or original
 
     if lower in {
         "what do you know about me",
@@ -630,7 +700,7 @@ def handle_memory_command(
         "summarize my memory",
         "summarise my memory",
     }:
-        return _profile_recall(store)
+        return "profile", ""
 
     if lower in {
         "summarize my preferences",
@@ -638,14 +708,14 @@ def handle_memory_command(
         "what are my preferences",
         "what do i prefer",
     }:
-        return _preference_recall(store)
+        return "preferences", ""
 
     if lower in {
         "what projects am i working on",
         "what project am i working on",
         "what am i working on",
     }:
-        return _project_recall(store)
+        return "projects", ""
 
     project_questions = {
         "what is my project",
@@ -654,43 +724,48 @@ def handle_memory_command(
         "what's my project name",
     }
     if lower in project_questions:
-        return _recall_specific(
-            store, "project", "project", "I do not know your project yet."
-        )
+        return "project_name", ""
 
     if "project" in lower and (
         re.search(r"[\u0B80-\u0BFF]", original)
         or any(word in lower for word in {"enna", "yenna", "my", "namma"})
     ):
-        return _recall_specific(
-            store, "project", "project", "I do not know your project yet."
-        )
+        return "project_name", ""
 
     attribute_match = re.match(
         r"^(?:what(?:'s|\s+is)|tell\s+me)\s+my\s+(.+)$",
         lower,
     )
     if attribute_match:
-        attribute = attribute_match.group(1).strip()
-        return _recall_personal_attribute(store, attribute)
+        return "attribute", attribute_match.group(1).strip()
 
     if _looks_like_memory_recall(original):
-        return _recall(store, original)
+        return "recall", original
 
     if lower.startswith("what apps did i open"):
-        return _apps_opened_today(store)
+        return "apps_today", ""
 
     if lower.startswith("what did i do earlier") or lower.startswith(
         "what was i doing"
     ):
-        return _recent_activity(store)
+        return "recent_activity", ""
 
     continue_match = re.match(r"^continue\s+my\s+(.+?)\s+project\.?$", original, re.I)
     if continue_match:
-        topic = continue_match.group(1).strip()
-        return _continue_project(store, topic)
+        return "continue_project", continue_match.group(1).strip()
 
-    return _fallback()
+    return None
+
+
+def handle_memory_command(
+    text: str, *, store: MemoryStore | None = None
+) -> MemoryCommandResult:
+    """Handle explicit memory commands, returning fallback when not matched."""
+    parsed = parse_memory_command(text)
+    if parsed is None:
+        return _fallback()
+    action, subject = parsed
+    return execute_memory_action(action, store=store, subject=subject)
 
 
 def capture_natural_personal_fact(

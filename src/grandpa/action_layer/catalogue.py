@@ -77,6 +77,7 @@ _BROWSER = "grandpa.browser_control.execute_browser_action"
 _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
 _NOTES = "grandpa.notes.automation.NotesAutomation.execute"
 _DOWNLOADS = "grandpa.downloads.automation.DownloadsAutomation.execute"
+_MEMORY = "grandpa.memory_context.execute_memory_action"
 
 
 # --- the one confirmation rule -----------------------------------------------
@@ -195,6 +196,13 @@ class Binding(str, Enum):
     ACTION_TARGET = "action_target"
     """``function(action, target)`` -- browser_control.execute_browser_action,
     which takes its own shorter sub-action names."""
+
+    MEMORY_ACTION = "memory_action"
+    """``function(action, store=None, subject=...)`` -- grandpa.memory_context.
+
+    A plain module-level function rather than a service method, because memory
+    had no class to hang a seam on. Everything else is the notes shape.
+    """
 
     DOWNLOADS_ACTION = "downloads_action"
     """``method(DownloadAction, confirmed=, confirm=)`` -- grandpa.downloads.
@@ -343,6 +351,19 @@ _CALLS: dict[str, _Call] = {
         Binding.DOWNLOADS_ACTION, alias="archive", target="which"
     ),
     "downloads_delete": _Call(Binding.DOWNLOADS_ACTION, alias="delete", target="which"),
+    # memory. `alias` is the name execute_memory_action dispatches on.
+    "memory_remember": _Call(Binding.MEMORY_ACTION, alias="remember"),
+    "memory_recall": _Call(Binding.MEMORY_ACTION, alias="recall"),
+    "memory_profile": _Call(Binding.MEMORY_ACTION, alias="profile"),
+    "memory_preferences": _Call(Binding.MEMORY_ACTION, alias="preferences"),
+    "memory_projects": _Call(Binding.MEMORY_ACTION, alias="projects"),
+    "memory_project_name": _Call(Binding.MEMORY_ACTION, alias="project_name"),
+    "memory_attribute": _Call(Binding.MEMORY_ACTION, alias="attribute"),
+    "memory_apps_today": _Call(Binding.MEMORY_ACTION, alias="apps_today"),
+    "memory_recent_activity": _Call(Binding.MEMORY_ACTION, alias="recent_activity"),
+    "memory_continue_project": _Call(Binding.MEMORY_ACTION, alias="continue_project"),
+    "memory_forget": _Call(Binding.MEMORY_ACTION, alias="forget"),
+    "memory_clear": _Call(Binding.MEMORY_ACTION, alias="clear"),
 }
 
 
@@ -1191,6 +1212,97 @@ _DOWNLOADS_ACTIONS: tuple[ActionSpec, ...] = (
 )
 
 
+# --- memory -------------------------------------------------------------------
+#
+# The third domain, and the first that had no structured seam to migrate onto.
+# Notes and downloads both already had `execute(action, ...)` underneath their
+# parser; memory_context.handle_memory_command parsed and performed in one
+# function, with forget and clear written inline in the dispatcher rather than
+# as functions at all. So the seam was extracted first --
+# parse_memory_command + execute_memory_action, the same bodies moved -- and
+# these entries point at it.
+#
+# One deliberate behaviour change, flagged rather than hidden: memory_clear is
+# HIGH, so it now asks. Chat wiped the store on "clear my memory" without a
+# word. Rating an irreversible wipe as LOW to preserve a missing prompt would
+# have put a falsehood in the catalogue.
+
+_MEMORY_SUBJECT = _string("What the action is about: a fact, a query, a topic.")
+
+_MEMORY_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec(
+        "memory_remember",
+        _LOW,
+        "Remember a fact about the user.",
+        _MEMORY,
+        _schema({"subject": _string("The fact to remember.")}, ("subject",)),
+    ),
+    _spec(
+        "memory_recall",
+        _LOW,
+        "Recall what is remembered about a subject.",
+        _MEMORY,
+        _schema({"subject": _string("What to recall.")}, ("subject",)),
+    ),
+    _spec(
+        "memory_profile",
+        _LOW,
+        "Summarise everything remembered about the user.",
+        _MEMORY,
+    ),
+    _spec(
+        "memory_preferences", _LOW, "Summarise the user's stated preferences.", _MEMORY
+    ),
+    _spec(
+        "memory_projects", _LOW, "List the projects the user is working on.", _MEMORY
+    ),
+    _spec("memory_project_name", _LOW, "Report the user's current project.", _MEMORY),
+    _spec(
+        "memory_attribute",
+        _LOW,
+        "Recall one remembered attribute, such as a name or a birthday.",
+        _MEMORY,
+        _schema({"subject": _string("Which attribute.")}, ("subject",)),
+    ),
+    _spec(
+        "memory_apps_today",
+        _LOW,
+        "Report which applications were opened today.",
+        _MEMORY,
+    ),
+    _spec(
+        "memory_recent_activity",
+        _LOW,
+        "Report what the user was recently doing.",
+        _MEMORY,
+    ),
+    _spec(
+        "memory_continue_project",
+        _LOW,
+        "Pick a project back up from what is remembered about it.",
+        _MEMORY,
+        _schema({"subject": _string("Which project.")}, ("subject",)),
+    ),
+    _spec(
+        "memory_forget",
+        _MEDIUM,
+        "Forget what is remembered about one subject.",
+        _MEMORY,
+        _schema({"subject": _string("What to forget.")}, ("subject",)),
+        notes="Targeted, and does not ask -- as it has always behaved. Use "
+        "memory_recall first if you are unsure what would be removed.",
+    ),
+    _spec(
+        "memory_clear",
+        _HIGH,
+        "Erase all remembered personal facts and recent activity.",
+        _MEMORY,
+        notes="Irreversible and total. This now asks first; chat used to wipe "
+        "the store without a word.",
+    ),
+)
+
+
 CATALOGUE: tuple[ActionSpec, ...] = (
     *_APPLICATION_ACTIONS,
     *_WINDOW_ACTIONS,
@@ -1205,6 +1317,7 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_BROWSER_ACTIONS,
     *_NOTES_ACTIONS,
     *_DOWNLOADS_ACTIONS,
+    *_MEMORY_ACTIONS,
 )
 
 
@@ -1343,6 +1456,28 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "organize",
                 "archive",
                 "delete",
+            )
+        },
+        **{
+            f"memory_{action}": (
+                "Memory is the third domain migrated, and the first with no "
+                "structured seam of its own -- parse_memory_command and "
+                "execute_memory_action were extracted from the dispatcher "
+                "before it could be catalogued."
+            )
+            for action in (
+                "remember",
+                "recall",
+                "profile",
+                "preferences",
+                "projects",
+                "project_name",
+                "attribute",
+                "apps_today",
+                "recent_activity",
+                "continue_project",
+                "forget",
+                "clear",
             )
         },
     }

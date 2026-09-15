@@ -20,6 +20,8 @@ from grandpa.cli._downloads_route import downloads_reply, downloads_status
 from grandpa.cli._downloads_route import (
     downloads_request as build_downloads_request,
 )
+from grandpa.cli._memory_route import memory_reply, memory_status, memory_target
+from grandpa.cli._memory_route import memory_request as build_memory_request
 from grandpa.cli._notes_route import notes_reply, notes_status
 from grandpa.cli._notes_route import notes_request as build_notes_request
 from grandpa.cli._tool_names import resolve_tool_names
@@ -1431,6 +1433,8 @@ def chat(
             # A domain that asks for itself supplies the sentence, because only
             # it knows what it found -- "Archive 1 download (6 B)?".
             spec = str(plan)
+        elif action == "memory_clear":
+            spec = "Erase everything Grandpa remembers about you?"
         elif action == "notes_delete":
             spec = f'Delete note "{parameters.get("title", "")}"?'
         else:
@@ -1722,7 +1726,6 @@ def chat(
             from grandpa.memory_context import (
                 build_personal_memory_context,
                 capture_natural_personal_fact,
-                handle_memory_command,
                 remember_conversation,
             )
 
@@ -1848,21 +1851,23 @@ def chat(
                 render_assistant_response(console, Markdown(web_search_action.message))
                 continue
 
-            memory_result = handle_memory_command(effective_user_input)
-            if not memory_result.should_fallback:
+            # Memory is migrated. It had no structured seam, so one was
+            # extracted first; the parser is still memory_context's.
+            memory_request, memory_subject = build_memory_request(effective_user_input)
+            if memory_request is not None:
+                memory_result = execute_action(memory_request, _confirm_action)
+                memory_message = memory_reply(memory_result)
                 history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=memory_result.message)
-                )
-                remember_conversation("assistant", memory_result.message)
+                history.append(Message(role=Role.ASSISTANT, content=memory_message))
+                remember_conversation("assistant", memory_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=memory_result.message,
-                    kind=memory_result.kind,
-                    target=memory_result.target,
-                    status=memory_result.status,
+                    assistant_text=memory_message,
+                    kind="memory",
+                    target=memory_target(memory_result, memory_subject),
+                    status=memory_status(memory_result),
                 )
-                render_assistant_response(console, Markdown(memory_result.message))
+                render_assistant_response(console, Markdown(memory_message))
                 continue
 
             from grandpa.calendar import handle_calendar_command

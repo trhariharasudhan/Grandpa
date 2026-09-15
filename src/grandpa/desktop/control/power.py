@@ -6,6 +6,56 @@ from dataclasses import dataclass
 from typing import Any
 
 
+class VolumeBackendError(RuntimeError):
+    """The audio endpoint could not be reached, and why."""
+
+    def __init__(self, message: str, *, code: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _endpoint_volume():
+    """Return the Core Audio endpoint-volume interface for the default speakers.
+
+    pycaw changed shape: ``AudioUtilities.GetSpeakers()`` used to hand back a
+    raw ``IMMDevice`` you called ``.Activate`` on, and now returns an
+    ``AudioDevice`` wrapper that exposes ``.EndpointVolume`` directly and keeps
+    the raw device at ``._dev``. The old call raised
+    ``AttributeError: 'AudioDevice' object has no attribute 'Activate'``, which
+    the callers swallowed into "the optional pycaw backend is missing" -- so
+    with pycaw installed and working, volume control still reported itself as
+    unavailable. Both shapes are handled here, once.
+    """
+    try:
+        from pycaw.pycaw import AudioUtilities  # type: ignore
+    except ImportError as exc:
+        raise VolumeBackendError(
+            "Volume control needs the optional pycaw Windows audio backend "
+            "(install the 'desktop-hardware' extra).",
+            code="missing_volume_backend",
+        ) from exc
+
+    try:
+        speakers = AudioUtilities.GetSpeakers()
+        endpoint = getattr(speakers, "EndpointVolume", None)
+        if endpoint is not None:
+            return endpoint
+        # pycaw older than the AudioDevice wrapper.
+        from comtypes import CLSCTX_ALL  # type: ignore
+        from pycaw.pycaw import IAudioEndpointVolume  # type: ignore
+
+        device = getattr(speakers, "_dev", speakers)
+        interface = device.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+        return interface.QueryInterface(IAudioEndpointVolume)
+    except Exception as exc:
+        # Not "the backend is missing" -- it is here and it failed. Say which.
+        raise VolumeBackendError(
+            f"The Windows audio endpoint could not be opened: "
+            f"{type(exc).__name__}: {exc}",
+            code="volume_backend_failed",
+        ) from exc
+
+
 @dataclass(frozen=True)
 class PowerControlService:
     """System power and hardware controls behind facade approval checks."""
@@ -56,23 +106,17 @@ class PowerControlService:
             )
         level = max(0, min(100, int(request.args.get("level", request.target or 0))))
         try:
-            from comtypes import CLSCTX_ALL  # type: ignore
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume  # type: ignore
-
-            devices = AudioUtilities.GetSpeakers()
-            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            volume = interface.QueryInterface(IAudioEndpointVolume)
-            volume.SetMasterVolumeLevelScalar(level / 100, None)
-        except Exception:
+            _endpoint_volume().SetMasterVolumeLevelScalar(level / 100, None)
+        except VolumeBackendError as exc:
             return LocalActionResponse(
                 False,
                 None,
                 "unsupported",
-                "Volume percentage control requires the optional pycaw Windows audio backend.",
+                str(exc),
                 False,
                 "LOW",
                 {"level": level},
-                error="missing_volume_backend",
+                error=exc.code,
             )
         return LocalActionResponse(
             True,
@@ -87,9 +131,9 @@ class PowerControlService:
     def execute_volume_get(self, *, platform: str):
         """Read the current volume, so it can be reported instead of guessed.
 
-        The mirror of ``_execute_volume_set``, through the same pycaw endpoint:
-        there was a setter and no getter, which is why anything asking "what is
-        my volume set to" could only be answered by inventing a number.
+        The mirror of ``_execute_volume_set``, through the same endpoint: there
+        was a setter and no getter, which is why anything asking "what is my
+        volume set to" could only be answered by inventing a number.
         """
         from grandpa.pc_control import LocalActionResponse
 
@@ -104,23 +148,18 @@ class PowerControlService:
                 error="unsupported",
             )
         try:
-            from comtypes import CLSCTX_ALL  # type: ignore
-            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume  # type: ignore
-
-            devices = AudioUtilities.GetSpeakers()
-            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
-            volume = interface.QueryInterface(IAudioEndpointVolume)
-            level = int(round(volume.GetMasterVolumeLevelScalar() * 100))
-            muted = bool(volume.GetMute())
-        except Exception:
+            endpoint = _endpoint_volume()
+            level = int(round(endpoint.GetMasterVolumeLevelScalar() * 100))
+            muted = bool(endpoint.GetMute())
+        except VolumeBackendError as exc:
             return LocalActionResponse(
                 False,
                 None,
                 "unsupported",
-                "Reading the volume requires the optional pycaw Windows audio backend.",
+                str(exc),
                 False,
                 "LOW",
-                error="missing_volume_backend",
+                error=exc.code,
             )
         state = f"Volume is {level}%" + (" and muted." if muted else ".")
         return LocalActionResponse(
@@ -150,11 +189,21 @@ class PowerControlService:
             )
         if action == "brightness_get":
             value = sbc.get_brightness()
+            # sbc returns one reading per display. Put the number in the
+            # sentence too: "Brightness read." told a model nothing it could
+            # repeat back, which is how a read action ends up being guessed at.
+            levels = value if isinstance(value, (list, tuple)) else [value]
+            if len(levels) == 1:
+                summary = f"Brightness is {levels[0]}%."
+            else:
+                summary = "Brightness per display: " + ", ".join(
+                    f"{index}: {level}%" for index, level in enumerate(levels)
+                )
             return LocalActionResponse(
                 True,
                 None,
                 "completed",
-                "Brightness read.",
+                summary,
                 False,
                 "LOW",
                 {"brightness": value},
@@ -293,4 +342,4 @@ class PowerControlService:
         }
 
 
-__all__ = ["PowerControlService"]
+__all__ = ["PowerControlService", "VolumeBackendError"]

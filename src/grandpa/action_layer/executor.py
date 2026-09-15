@@ -271,6 +271,9 @@ def _call(
 
     if spec.binding is Binding.NOTES_ACTION:
         return _call_notes(spec, implementation, owner, action, parameters, confirmed)
+    if spec.binding is Binding.MEMORY_ACTION:
+        # A module-level function: no instance, and the parameters are keywords.
+        return implementation(action, **dict(parameters))
     if spec.binding is Binding.DOWNLOADS_ACTION:
         return _call_downloads(
             spec,
@@ -338,6 +341,12 @@ def _as_result(spec: ActionSpec, returned: Any) -> ActionResult:
         extra = getattr(returned, attribute, None)
         if isinstance(extra, Mapping):
             data.update(extra)
+    # Domain results also carry a couple of plain scalars a caller wants back --
+    # what the action was about, and which domain answered.
+    for attribute in ("target", "kind"):
+        value = getattr(returned, attribute, None)
+        if isinstance(value, str) and value:
+            data.setdefault(attribute, value)
     if not isinstance(returned, (str, bytes)) and not hasattr(returned, "status"):
         data["returned"] = repr(returned)
 

@@ -179,6 +179,22 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     "downloads_organize": ("MEDIUM", DOMAIN),
     "downloads_archive": ("MEDIUM", DOMAIN),
     "downloads_delete": ("HIGH", DOMAIN),
+    # memory: reading is LOW, forgetting one subject is MEDIUM and silent as it
+    # has always been, and clearing everything is HIGH -- which is the one
+    # deliberate behaviour change in the third migration, because chat used to
+    # wipe the store without asking.
+    "memory_remember": ("LOW", NONE),
+    "memory_recall": ("LOW", NONE),
+    "memory_profile": ("LOW", NONE),
+    "memory_preferences": ("LOW", NONE),
+    "memory_projects": ("LOW", NONE),
+    "memory_project_name": ("LOW", NONE),
+    "memory_attribute": ("LOW", NONE),
+    "memory_apps_today": ("LOW", NONE),
+    "memory_recent_activity": ("LOW", NONE),
+    "memory_continue_project": ("LOW", NONE),
+    "memory_forget": ("MEDIUM", NONE),
+    "memory_clear": ("HIGH", LAYER),
 }
 
 
@@ -222,6 +238,7 @@ def test_confirmation_is_not_decoration() -> None:
         "downloads_move",
         "downloads_organize",
         "downloads_archive",
+        "memory_clear",
     }, asking
 
 
