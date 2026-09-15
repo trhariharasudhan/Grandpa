@@ -22,7 +22,12 @@ from typing import Any
 import pytest
 
 from grandpa import pc_control
-from grandpa.action_layer.catalogue import CATALOGUE, EXCLUSIONS, ActionSpec
+from grandpa.action_layer.catalogue import (
+    CATALOGUE,
+    EXCLUSIONS,
+    LAYER_OWNED,
+    ActionSpec,
+)
 from grandpa.action_layer.model import RiskLevel
 
 # pc_control's four risk tables, flattened into action -> tier.
@@ -98,10 +103,41 @@ def test_every_pc_control_action_is_catalogued_or_excluded_with_a_reason(
 
 
 def test_the_catalogue_invents_no_actions() -> None:
-    """An entry for something pc_control has never heard of is a fiction."""
-    unknown = sorted(set(CATALOGUE_BY_NAME) - set(PC_CONTROL_RISK))
+    """Every entry is either pc_control's or declared as this layer's own.
 
-    assert not unknown, f"catalogued but absent from pc_control's tables: {unknown}"
+    An action in neither place is a fiction: nothing performs it, or nothing
+    decided what it is.
+    """
+    unknown = sorted(set(CATALOGUE_BY_NAME) - set(PC_CONTROL_RISK) - set(LAYER_OWNED))
+
+    assert not unknown, (
+        f"catalogued but absent from pc_control's tables and from LAYER_OWNED: "
+        f"{unknown}. Add it to a risk table, or declare it in LAYER_OWNED with "
+        "the reason it lives only in the layer."
+    )
+
+
+@pytest.mark.parametrize("action", sorted(LAYER_OWNED), ids=lambda name: name)
+def test_a_layer_owned_action_is_catalogued_and_has_a_reason(action: str) -> None:
+    assert action in CATALOGUE_BY_NAME, f"{action} is declared but not catalogued"
+    assert LAYER_OWNED[action].strip(), f"{action} is declared without a reason"
+
+
+@pytest.mark.parametrize("action", sorted(LAYER_OWNED), ids=lambda name: name)
+def test_layer_owned_cannot_hide_a_risk_disagreement(action: str) -> None:
+    """If pc_control does rate it, the contradiction check must apply."""
+    assert action not in PC_CONTROL_RISK, (
+        f"{action} is in a pc_control risk table, so it is not the layer's own "
+        "and must be held to pc_control's tier"
+    )
+
+
+def test_every_layer_owned_action_is_a_read() -> None:
+    """The layer has only added ways to look, so far. A write added here would
+    be a new capability with no risk table behind it -- say so deliberately."""
+    for action in LAYER_OWNED:
+        assert CATALOGUE_BY_NAME[action].risk is RiskLevel.LOW, action
+        assert CATALOGUE_BY_NAME[action].requires_confirmation is False, action
 
 
 def test_the_exclusion_list_excludes_only_real_actions() -> None:
@@ -113,7 +149,11 @@ def test_the_exclusion_list_excludes_only_real_actions() -> None:
 # --- 3. the two never disagree about risk ------------------------------------
 
 
-@pytest.mark.parametrize("spec", CATALOGUE, ids=lambda spec: spec.name)
+@pytest.mark.parametrize(
+    "spec",
+    [spec for spec in CATALOGUE if spec.name in PC_CONTROL_RISK],
+    ids=lambda spec: spec.name,
+)
 def test_no_entry_contradicts_pc_controls_risk_table(spec: ActionSpec) -> None:
     assert spec.risk.value == PC_CONTROL_RISK[spec.name], (
         f"{spec.name}: catalogue says {spec.risk.value}, pc_control says "

@@ -199,6 +199,10 @@ def _call(spec: ActionSpec, parameters: Mapping[str, Any]) -> Any:
     instance = owner() if owner is not None else None
     if spec.binding is Binding.REQUEST_ACTION:
         return implementation(instance, service_request, action)
+    if spec.binding is Binding.SERVICE_REQUEST:
+        return implementation(instance, service_request)
+    if spec.binding is Binding.SERVICE_ONLY:
+        return implementation(instance)
     if spec.binding is Binding.REQUEST_ACTION_PLATFORM:
         return implementation(instance, service_request, action, platform=sys.platform)
     if spec.binding is Binding.ACTION_PLATFORM:
@@ -228,9 +232,11 @@ def _as_result(spec: ActionSpec, returned: Any) -> ActionResult:
         error = status or EXECUTION_FAILED
 
     data: dict[str, Any] = {"status": status} if status else {}
-    evidence = getattr(returned, "evidence", None)
-    if isinstance(evidence, Mapping):
-        data.update(evidence)
+    # pc_control's responses carry "evidence"; the vision engine's carry "data".
+    for attribute in ("evidence", "data"):
+        extra = getattr(returned, attribute, None)
+        if isinstance(extra, Mapping):
+            data.update(extra)
     if not isinstance(returned, (str, bytes)) and not hasattr(returned, "status"):
         data["returned"] = repr(returned)
 

@@ -39,6 +39,7 @@ __all__ = [
     "Binding",
     "CATALOGUE",
     "EXCLUSIONS",
+    "LAYER_OWNED",
     "counts_by_risk",
     "get",
     "names",
@@ -60,10 +61,13 @@ _SYSTEM = "grandpa.desktop.control.power.PowerControlService.execute_system"
 _RECYCLE_BIN = (
     "grandpa.desktop.control.power.PowerControlService.execute_empty_recycle_bin"
 )
+_VOLUME_GET = "grandpa.desktop.control.power.PowerControlService.execute_volume_get"
 _CLIPBOARD = "grandpa.desktop.control.clipboard.ClipboardControlService.execute"
 _MONITORS = "grandpa.desktop.control.monitors.MonitorControlService.execute"
 _DIAGNOSTICS = "grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
 _FILES = "grandpa.desktop.control.files.FileControlService.execute"
+_FILE_READ = "grandpa.desktop.control.files.FileControlService.execute_read"
+_SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
 _BROWSER = "grandpa.browser_control.execute_browser_action"
 _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
@@ -145,6 +149,14 @@ class Binding(str, Enum):
     REQUEST_ONLY = "request_only"
     """``function(request)`` -- open_folder, still inline in pc_control."""
 
+    SERVICE_REQUEST = "service_request"
+    """``method(request)`` -- a service method that needs no action name
+    because it only does one thing, such as reading a file."""
+
+    SERVICE_ONLY = "service_only"
+    """``method()`` -- a service method that takes nothing at all, such as
+    describing what is on screen."""
+
     ACTION_TARGET = "action_target"
     """``function(action, target)`` -- browser_control.execute_browser_action,
     which takes its own shorter sub-action names."""
@@ -188,6 +200,7 @@ _CALLS: dict[str, _Call] = {
     "volume_mute": _Call(_R_A_P),
     "volume_unmute": _Call(_R_A_P),
     "volume_set": _Call(_R_A_P),
+    "volume_get": _Call(Binding.PLATFORM_ONLY),
     "brightness_get": _Call(_R_A),
     "brightness_set": _Call(_R_A),
     "system_lock": _Call(Binding.ACTION_PLATFORM),
@@ -207,12 +220,14 @@ _CALLS: dict[str, _Call] = {
     "list_processes": _Call(_R_A),
     "desktop_summary": _Call(_R_A),
     "pc_diagnostics": _Call(_R_A),
+    "screenshot_describe": _Call(Binding.SERVICE_ONLY),
     # files
     "file_create": _Call(_R_A, target="path"),
     "file_rename": _Call(_R_A, target="path"),
     "file_move": _Call(_R_A, target="path"),
     "file_copy": _Call(_R_A, target="path"),
     "file_delete": _Call(_R_A, target="path"),
+    "file_read": _Call(Binding.SERVICE_REQUEST, target="path"),
     # synthetic input
     "keyboard_type": _Call(_R_A_P),
     "keyboard_hotkey": _Call(_R_A_P),
@@ -423,6 +438,14 @@ _VOLUME_ACTIONS: tuple[ActionSpec, ...] = (
         _VOLUME,
         _schema({"level": _LEVEL}, ("level",)),
     ),
+    _spec(
+        "volume_get",
+        _LOW,
+        "Report the current system volume and whether it is muted.",
+        _VOLUME_GET,
+        notes="Needs the optional pycaw backend (the 'desktop-hardware' extra); "
+        "without it this says so rather than returning a number.",
+    ),
 )
 
 _BRIGHTNESS_ACTIONS: tuple[ActionSpec, ...] = (
@@ -520,6 +543,14 @@ _CONTEXT_ACTIONS: tuple[ActionSpec, ...] = (
         "Report machine health: CPU, memory, disk, and which controls are ready.",
         _DIAGNOSTICS,
     ),
+    _spec(
+        "screenshot_describe",
+        _LOW,
+        "Describe what is on the screen right now: window, buttons, fields, text.",
+        _SCREEN_DESCRIBE,
+        notes="Reads the screen; it does not save an image. Refuses outright on "
+        "a screen that looks like it holds passwords or payment details.",
+    ),
 )
 
 
@@ -577,6 +608,26 @@ _FILE_ACTIONS: tuple[ActionSpec, ...] = (
         _schema({"path": _PATH}, ("path",)),
         notes="Deletes outright (unlink / rmtree). It does not go to the "
         "Recycle Bin, so there is nothing to restore.",
+    ),
+    _spec(
+        "file_read",
+        _LOW,
+        "Read the text of a file.",
+        _FILE_READ,
+        _schema(
+            {
+                "path": _PATH,
+                "max_bytes": _integer(
+                    "Refuse a file larger than this. Capped at 262144.",
+                    minimum=1,
+                    maximum=262144,
+                ),
+            },
+            ("path",),
+        ),
+        notes="Only reads inside the folders file search already walks "
+        "(grandpa.files.paths.safe_roots), and refuses a file over the byte "
+        "limit rather than putting it all in the prompt.",
     ),
 )
 
@@ -886,6 +937,36 @@ EXCLUSIONS: Mapping[str, str] = MappingProxyType(
         ),
         "browser_download": (
             "Stub: always returns requires_confirmation; no code starts the download."
+        ),
+    }
+)
+
+
+# --- actions this layer owns --------------------------------------------------
+
+LAYER_OWNED: Mapping[str, str] = MappingProxyType(
+    {
+        # pc_control's tables are the authority on every action it dispatches,
+        # and the coverage test still holds the catalogue to them. But the layer
+        # now grows capabilities of its own, and an action that pc_control has
+        # never heard of would otherwise look like an invention. Naming them
+        # here keeps both properties: nothing silently appears, and nothing in
+        # this list may also be in a pc_control table, so it cannot be used to
+        # hide a disagreement about risk.
+        "volume_get": (
+            "There was a volume setter and no getter, which is why 'what is my "
+            "volume set to' could only be answered by inventing a number. Added "
+            "as PowerControlService.execute_volume_get; read-only, so LOW."
+        ),
+        "file_read": (
+            "Every other file action writes. Added as "
+            "FileControlService.execute_read, bounded by size and restricted to "
+            "the roots file search already walks; read-only, so LOW."
+        ),
+        "screenshot_describe": (
+            "The vision engine could already describe the screen "
+            "(VisionEngine.describe) but no risk table named it, so no action "
+            "layer could offer it. Read-only, so LOW."
         ),
     }
 )

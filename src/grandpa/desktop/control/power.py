@@ -84,6 +84,55 @@ class PowerControlService:
             {"level": level},
         )
 
+    def execute_volume_get(self, *, platform: str):
+        """Read the current volume, so it can be reported instead of guessed.
+
+        The mirror of ``_execute_volume_set``, through the same pycaw endpoint:
+        there was a setter and no getter, which is why anything asking "what is
+        my volume set to" could only be answered by inventing a number.
+        """
+        from grandpa.pc_control import LocalActionResponse
+
+        if platform != "win32":
+            return LocalActionResponse(
+                False,
+                None,
+                "unsupported",
+                "Volume control is only supported on Windows desktop.",
+                False,
+                "LOW",
+                error="unsupported",
+            )
+        try:
+            from comtypes import CLSCTX_ALL  # type: ignore
+            from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume  # type: ignore
+
+            devices = AudioUtilities.GetSpeakers()
+            interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
+            volume = interface.QueryInterface(IAudioEndpointVolume)
+            level = int(round(volume.GetMasterVolumeLevelScalar() * 100))
+            muted = bool(volume.GetMute())
+        except Exception:
+            return LocalActionResponse(
+                False,
+                None,
+                "unsupported",
+                "Reading the volume requires the optional pycaw Windows audio backend.",
+                False,
+                "LOW",
+                error="missing_volume_backend",
+            )
+        state = f"Volume is {level}%" + (" and muted." if muted else ".")
+        return LocalActionResponse(
+            True,
+            None,
+            "completed",
+            state,
+            False,
+            "LOW",
+            {"level": level, "muted": muted},
+        )
+
     def execute_brightness(self, request: Any, action: str):
         from grandpa.pc_control import LocalActionResponse
 
@@ -226,6 +275,7 @@ class PowerControlService:
                 "volume_mute": "LOW",
                 "volume_unmute": "LOW",
                 "volume_set": "LOW",
+                "volume_get": "LOW",
                 "brightness_get": "LOW",
                 "brightness_set": "LOW",
                 "system_sleep": "HIGH",

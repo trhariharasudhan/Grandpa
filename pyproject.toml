@@ -94,6 +94,14 @@ screen = [
     "mss>=9.0",
     "pywin32>=306; sys_platform == 'win32'",
 ]
+# Backends the desktop control layer already imports but nothing declared, so
+# volume_get / volume_set and brightness_get / brightness_set could only ever
+# report "optional backend missing" on a default install.
+desktop-hardware = [
+    "pycaw>=20240210; sys_platform == 'win32'",
+    "comtypes>=1.2; sys_platform == 'win32'",
+    "screen-brightness-control>=0.23",
+]
 voice = [
     "faster-whisper>=1.0",
     "numpy>=1.24",
