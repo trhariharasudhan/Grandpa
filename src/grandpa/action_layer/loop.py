@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -33,6 +34,7 @@ from grandpa.action_layer.tool_schema import (
 
 __all__ = [
     "DEFAULT_STEP_LIMIT",
+    "tiering_enabled",
     "ActionTrace",
     "LoopResult",
     "ToolsUnsupportedError",
@@ -41,6 +43,22 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def tiering_enabled(default: bool = True) -> bool:
+    """Whether to send the core tier or the whole catalogue.
+
+    ``GRANDPA_TOOL_TIERS=0`` restores the old all-at-once behaviour, which is
+    what the before/after timings compare against -- a switch beats a
+    reconstruction from memory.
+    """
+    raw = os.environ.get("GRANDPA_TOOL_TIERS", "").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    return default
+
 
 DEFAULT_STEP_LIMIT = 8
 """Model turns, not actions -- one turn may call several tools.
@@ -335,7 +353,7 @@ def run(
     actions: Iterable[ActionSpec] | None = None,
     temperature: float = 0.0,
     on_action: Callable[[ActionTrace], None] | None = None,
-    tiered: bool = True,
+    tiered: bool | None = None,
 ) -> LoopResult:
     """Let the model pursue ``goal`` with the catalogue as its tools.
 
@@ -348,6 +366,7 @@ def run(
 
     _require_tool_support(engine, model)
 
+    tiered = tiering_enabled() if tiered is None else tiered
     loaded: list[str] = []
     if actions is not None:
         tools = as_tool_definitions(tuple(actions))

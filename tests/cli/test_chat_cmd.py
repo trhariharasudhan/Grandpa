@@ -1623,7 +1623,12 @@ class TestChatOllamaUnavailable:
             patch("grandpa.cli.chat_cmd.load_config", return_value=config),
             patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
-            patch("grandpa.cli.chat_cmd._generation_log_path", return_value=log_path),
+            # The log path moved to grandpa.engine.messages with the rest of the
+            # engine error handling; same function, new home.
+            patch(
+                "grandpa.engine.messages._generation_log_path",
+                return_value=log_path,
+            ),
         ):
             result = CliRunner().invoke(
                 chat,
@@ -1676,7 +1681,12 @@ class TestChatOllamaUnavailable:
             patch("grandpa.cli.chat_cmd.load_config", return_value=config),
             patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
-            patch("grandpa.cli.chat_cmd._generation_log_path", return_value=log_path),
+            # The log path moved to grandpa.engine.messages with the rest of the
+            # engine error handling; same function, new home.
+            patch(
+                "grandpa.engine.messages._generation_log_path",
+                return_value=log_path,
+            ),
         ):
             result = CliRunner().invoke(
                 chat,

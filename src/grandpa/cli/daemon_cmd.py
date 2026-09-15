@@ -20,6 +20,12 @@ from grandpa.core.config import DEFAULT_CONFIG_DIR, load_config
 _PID_FILE = DEFAULT_CONFIG_DIR / "server.pid"
 _LOG_FILE = DEFAULT_CONFIG_DIR / "server.log"
 
+# Public names, because grandpa.projects asks whether the server is running and
+# was reaching in for the private ones. The PID handling itself stays here --
+# moving it would mean relocating seventy lines of ctypes, which is a
+# restructure rather than an import fix.
+LOG_FILE = _LOG_FILE
+
 
 def _state_file() -> Path:
     return _PID_FILE.with_name("server-state.json")
@@ -97,6 +103,11 @@ def _write_pid(pid: int) -> None:
     """Write PID to pid file."""
     DEFAULT_CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     _PID_FILE.write_text(str(pid))
+
+
+def read_server_pid() -> int | None:
+    """The running server's PID, or None. Public counterpart of _read_pid."""
+    return _read_pid()
 
 
 def _pid_alive(pid: int | None) -> bool:

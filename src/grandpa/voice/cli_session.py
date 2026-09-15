@@ -168,7 +168,9 @@ class VoiceSession:
                     EngineModelLoadError,
                     EngineModelNotFoundError,
                 ) as exc:
-                    from grandpa.cli.chat_cmd import _engine_unavailable_message
+                    from grandpa.engine.messages import (
+                        engine_unavailable_message as _engine_unavailable_message,
+                    )
 
                     msg = (
                         _engine_unavailable_message("ollama", exc)
@@ -415,7 +417,9 @@ class VoiceSession:
             EngineModelLoadError,
             EngineModelNotFoundError,
         ) as exc:
-            from grandpa.cli.chat_cmd import _engine_unavailable_message
+            from grandpa.engine.messages import (
+                engine_unavailable_message as _engine_unavailable_message,
+            )
 
             msg = (
                 _engine_unavailable_message("ollama", exc)

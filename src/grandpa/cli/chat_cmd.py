@@ -6,7 +6,6 @@ import asyncio
 import logging
 import re
 import sys
-from pathlib import Path
 from typing import Any, List, Optional
 
 import click
@@ -62,6 +61,13 @@ from grandpa.engine._base import (
     EngineModelNotFoundError,
     EngineModelPullError,
 )
+from grandpa.engine.messages import (
+    engine_unavailable_message,
+    log_generation_exception,
+    model_load_failure_message,
+    model_not_found_message,
+    model_pull_guidance,
+)
 from grandpa.response_cleanup import (
     GENERATION_ERROR_MESSAGE,
     clean_assistant_response,
@@ -111,68 +117,14 @@ def _read_input(prompt: str = "> ") -> Optional[str]:
         return None
 
 
-def _engine_unavailable_message(engine_name: str, exc: EngineConnectionError) -> str:
-    text = str(exc)
-    if engine_name == "ollama" or "ollama" in text.lower():
-        return (
-            "Ollama is not available.\n"
-            "Start it with: ollama serve\n"
-            "Verify it with: ollama list\n"
-            "Then retry the command."
-        )
-    return f"Inference engine '{engine_name}' is not available. {text}"
-
-
-def _model_not_found_message(engine_name: str, exc: EngineModelNotFoundError) -> str:
-    model = exc.model
-    if engine_name == "ollama":
-        return f'Ollama is running, but model "{model}" is not installed.'
-    return f'Inference engine "{engine_name}" does not have model "{model}" installed.'
-
-
-def _model_pull_guidance(model: str) -> str:
-    return (
-        f"Install it with: ollama pull {model}\n"
-        "Verify it with: ollama list\n"
-        "Then retry the command."
-    )
-
-
-def _generation_log_path() -> Path:
-    return Path.home() / ".grandpa" / "server.log"
-
-
-def _log_generation_exception(exc: BaseException) -> None:
-    log_path = _generation_log_path()
-    try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        handler = logging.FileHandler(log_path, encoding="utf-8")
-        handler.setLevel(logging.ERROR)
-        handler.setFormatter(
-            logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s")
-        )
-        diagnostic_logger = logging.getLogger(f"{__name__}.generation")
-        diagnostic_logger.propagate = False
-        diagnostic_logger.addHandler(handler)
-        try:
-            diagnostic_logger.error(
-                "Chat generation failed",
-                exc_info=(type(exc), exc, exc.__traceback__),
-            )
-        finally:
-            diagnostic_logger.removeHandler(handler)
-            handler.close()
-    except Exception:
-        logger.debug("Failed to write chat generation diagnostics", exc_info=True)
-
-
-def _model_load_failure_message(exc: EngineModelLoadError) -> str:
-    if exc.low_memory:
-        return str(exc)
-    return clean_error_message(
-        exc,
-        fallback=f"Ollama could not load {exc.model}. Check `ollama serve` and try again.",
-    )
+# Engine error wording lives in grandpa.engine.messages now -- voice was
+# importing these from chat, which is backwards. Kept as module-level aliases
+# so chat's own call sites read the same.
+_engine_unavailable_message = engine_unavailable_message
+_model_not_found_message = model_not_found_message
+_model_pull_guidance = model_pull_guidance
+_log_generation_exception = log_generation_exception
+_model_load_failure_message = model_load_failure_message
 
 
 async def _stream_engine_response(

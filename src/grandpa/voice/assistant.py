@@ -7,19 +7,25 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from grandpa.automation import ScreenAutomationService
-from grandpa.cli.chat_cmd import (
-    _engine_unavailable_message,
-    _handle_natural_assistant_intent,
-    _log_generation_exception,
-    _model_load_failure_message,
-    _model_not_found_message,
-)
+from grandpa.cli.chat_cmd import _handle_natural_assistant_intent
 from grandpa.core.config import GrandpaConfig, load_config
 from grandpa.core.types import Message, Role
 from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
     EngineModelNotFoundError,
+)
+from grandpa.engine.messages import (
+    engine_unavailable_message as _engine_unavailable_message,
+)
+from grandpa.engine.messages import (
+    log_generation_exception as _log_generation_exception,
+)
+from grandpa.engine.messages import (
+    model_load_failure_message as _model_load_failure_message,
+)
+from grandpa.engine.messages import (
+    model_not_found_message as _model_not_found_message,
 )
 from grandpa.response_cleanup import (
     GENERATION_ERROR_MESSAGE,

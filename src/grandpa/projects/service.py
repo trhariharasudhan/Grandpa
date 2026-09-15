@@ -111,10 +111,11 @@ class ProjectService:
     def status(self, query: str) -> WorkflowResult:
         project = self.resolve(query)
         if project.metadata.get("grandpa_lifecycle"):
-            from grandpa.cli.daemon_cmd import _LOG_FILE, _read_pid
+            from grandpa.cli.daemon_cmd import LOG_FILE as _LOG_FILE
+            from grandpa.cli.daemon_cmd import read_server_pid
             from grandpa.core.config import load_config
 
-            pid = _read_pid()
+            pid = read_server_pid()
             config = load_config()
             if pid is None:
                 return WorkflowResult("stopped", "Grandpa server is not running.")
