@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from collections.abc import AsyncIterator, Sequence
 from typing import Any, Dict, List
 
@@ -33,6 +34,49 @@ logger = logging.getLogger(__name__)
 _MAX_NUM_PREDICT = 2048
 _DEFAULT_STOP_SEQUENCES = ["<|im_end|>", "<|endoftext|>"]
 _DEFAULT_OLLAMA_HOST = "http://127.0.0.1:11434"
+
+DEFAULT_OLLAMA_TIMEOUT = 600.0
+"""Seconds to wait for one Ollama response.
+
+Measured, not guessed. The old fixed 180s was below the cost of a *cold* first
+request: on the development machine, ``grandpa-brain`` answering with the action
+catalogue's 60 tool definitions in the prompt (21 KB) took **439 s** on its
+first call and 7.4 s once warm; ``grandpa-mini`` took 63 s cold and 0.8 s warm.
+Only 15 s of the 439 was model loading -- the rest was evaluating the prompt on
+this hardware. So 600 s leaves headroom over the worst case observed without
+being unbounded.
+
+A long read timeout does not make a dead server slow to detect: the connect
+timeout stays at :data:`_CONNECT_TIMEOUT`, so an unreachable Ollama still fails
+in seconds. Override with ``engine.ollama.timeout`` in config, or the
+``GRANDPA_OLLAMA_TIMEOUT`` environment variable for one run.
+"""
+
+_CONNECT_TIMEOUT = 10.0
+"""Establishing the TCP connection is fast or not happening at all."""
+
+
+def resolve_ollama_timeout(timeout: float | None = None) -> float:
+    """``GRANDPA_OLLAMA_TIMEOUT``, else the caller's value, else the default."""
+    raw = os.environ.get("GRANDPA_OLLAMA_TIMEOUT", "").strip()
+    if raw:
+        try:
+            parsed = float(raw)
+        except ValueError:
+            logger.warning(
+                "GRANDPA_OLLAMA_TIMEOUT=%r is not a number; using %.0fs",
+                raw,
+                timeout if timeout else DEFAULT_OLLAMA_TIMEOUT,
+            )
+        else:
+            if parsed > 0:
+                return parsed
+            logger.warning("GRANDPA_OLLAMA_TIMEOUT must be positive; ignoring %r", raw)
+    if timeout and timeout > 0:
+        return float(timeout)
+    return DEFAULT_OLLAMA_TIMEOUT
+
+
 _LOW_MEMORY_MARKERS = (
     "not enough memory",
     "out of memory",
@@ -153,16 +197,45 @@ class OllamaBackendAdapter(BackendAdapter):
         self,
         host: str | None = None,
         *,
-        timeout: float = 180.0,
+        timeout: float | None = None,
         num_ctx: int = 8192,
     ) -> None:
         if host is None:
             env_host = os.environ.get("OLLAMA_HOST")
             host = env_host or self._DEFAULT_HOST
         self._host = normalize_ollama_host(host)
-        self._client = httpx.Client(base_url=self._host, timeout=timeout)
+        self._timeout = resolve_ollama_timeout(timeout)
+        self._client = httpx.Client(
+            base_url=self._host,
+            timeout=httpx.Timeout(self._timeout, connect=_CONNECT_TIMEOUT),
+        )
         self._num_ctx = validate_ollama_num_ctx(num_ctx)
         self._last_stream_usage: Dict[str, int] = {}
+
+    def _transport_error(
+        self,
+        exc: Exception,
+        *,
+        model: str = "",
+        started: float | None = None,
+    ) -> RuntimeConnectionError:
+        """Say which model we were waiting on, and for how long.
+
+        "Ollama not reachable" was the same sentence whether the server was
+        down or a large model was still evaluating a long prompt, which made a
+        slow first request look like a broken install.
+        """
+        waited = f" after {time.monotonic() - started:.0f}s" if started else ""
+        subject = f"{model!r}" if model else "Ollama"
+        if isinstance(exc, httpx.TimeoutException):
+            return RuntimeConnectionError(
+                f"{subject} did not answer within the {self._timeout:.0f}s "
+                f"timeout{waited} at {self._host}. A large model's first request "
+                "can take minutes, especially with many tool definitions in the "
+                "prompt; raise engine.ollama.timeout in config or set "
+                "GRANDPA_OLLAMA_TIMEOUT for one run."
+            )
+        return RuntimeConnectionError(f"Ollama not reachable at {self._host}{waited}")
 
     def generate(
         self,
@@ -211,6 +284,7 @@ class OllamaBackendAdapter(BackendAdapter):
                 payload["format"] = "json"
             elif isinstance(response_format, dict):
                 payload["format"] = "json"
+        started = time.monotonic()
         try:
             resp = self._client.post("/api/chat", json=payload)
             if resp.status_code == 400 and tools:
@@ -218,9 +292,7 @@ class OllamaBackendAdapter(BackendAdapter):
                 resp = self._client.post("/api/chat", json=payload)
             resp.raise_for_status()
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            raise RuntimeConnectionError(
-                f"Ollama not reachable at {self._host}"
-            ) from exc
+            raise self._transport_error(exc, model=model, started=started) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500] if exc.response else ""
             if _is_model_not_found_error(exc.response.status_code, body):
@@ -500,8 +572,8 @@ class OllamaBackendAdapter(BackendAdapter):
                         )
                         break
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            raise RuntimeConnectionError(
-                f"Ollama not reachable at {self._host}"
+            raise self._transport_error(
+                exc, model=str(payload.get("model", ""))
             ) from exc
 
     def list_models(self) -> List[str]:
@@ -529,8 +601,8 @@ class OllamaBackendAdapter(BackendAdapter):
             resp = self._client.post("/api/pull", json=payload)
             resp.raise_for_status()
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            raise RuntimeConnectionError(
-                f"Ollama not reachable at {self._host}"
+            raise self._transport_error(
+                exc, model=str(payload.get("model", ""))
             ) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500] if exc.response else ""
@@ -557,9 +629,7 @@ class OllamaBackendAdapter(BackendAdapter):
             )
             resp.raise_for_status()
         except (httpx.ConnectError, httpx.TimeoutException) as exc:
-            raise RuntimeConnectionError(
-                f"Ollama not reachable at {self._host}"
-            ) from exc
+            raise self._transport_error(exc, model=model) from exc
         except httpx.HTTPStatusError as exc:
             body = exc.response.text[:500] if exc.response else ""
             raise RuntimeError(

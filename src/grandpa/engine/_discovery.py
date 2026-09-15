@@ -36,6 +36,9 @@ def _make_engine(key: str, config: GrandpaConfig) -> InferenceEngine:
         host = getattr(config.engine, "ollama_host", None) or config.engine.ollama.host
         if host:
             kwargs["host"] = host
+        timeout = getattr(config.engine.ollama, "timeout", 0.0)
+        if timeout:
+            kwargs["timeout"] = timeout
         return cls(**kwargs)
 
     if key == "native":
