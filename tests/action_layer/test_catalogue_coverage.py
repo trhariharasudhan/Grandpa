@@ -195,6 +195,20 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     "memory_continue_project": ("LOW", NONE),
     "memory_forget": ("MEDIUM", NONE),
     "memory_clear": ("HIGH", LAYER),
+    # one-shot reminders (reminders.db). Cancelling only stops a notification,
+    # so it is MEDIUM and silent, as it has always been.
+    "reminder_create": ("LOW", NONE),
+    "reminder_list": ("LOW", NONE),
+    "reminder_cancel": ("MEDIUM", NONE),
+    # routines and recurring reminders (scheduler.db). Running one opens real
+    # applications, so it is MEDIUM like the rest of the changes here.
+    "routine_create_morning": ("MEDIUM", NONE),
+    "routine_set_morning": ("MEDIUM", NONE),
+    "routine_list": ("LOW", NONE),
+    "routine_enable": ("MEDIUM", NONE),
+    "routine_disable": ("MEDIUM", NONE),
+    "routine_run": ("MEDIUM", NONE),
+    "routine_create_reminder": ("MEDIUM", NONE),
 }
 
 

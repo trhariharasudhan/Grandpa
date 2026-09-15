@@ -20,7 +20,6 @@ from grandpa.agents._stubs import (
 from grandpa.cli import input_ui, theme
 from grandpa.cli.chat_cmd import (
     ThinkingAnimation,
-    _create_one_shot_reminder,
     _handle_apps_slash_command,
     _handle_help_slash_command,
     _handle_memory_slash_command,
@@ -1265,12 +1264,16 @@ class TestChatSlashCommands:
             "grandpa.reminder_parser.default_reminder_timezone", lambda: UTC
         )
 
-        message = _create_one_shot_reminder(
-            "remind me in 30 minutes to drink water", store=store
+        # The helper moved out of chat_cmd and into the domain when reminders
+        # were migrated to the action layer. Same code, same effect, new home.
+        from grandpa.reminders import execute_reminder_action
+
+        result = execute_reminder_action(
+            "create", store=store, subject="remind me in 30 minutes to drink water"
         )
 
-        assert message is not None
-        assert "Reminder created" in message
+        assert result.status == "handled"
+        assert "Reminder created" in result.message
         assert store.list(status="pending")[0].message == "drink water"
 
     def test_show_my_memories_routes_locally(self, tmp_path) -> None:

@@ -24,6 +24,13 @@ from grandpa.cli._memory_route import memory_reply, memory_status, memory_target
 from grandpa.cli._memory_route import memory_request as build_memory_request
 from grandpa.cli._notes_route import notes_reply, notes_status
 from grandpa.cli._notes_route import notes_request as build_notes_request
+from grandpa.cli._reminders_route import reminder_reply, reminder_status
+from grandpa.cli._reminders_route import (
+    reminder_request as build_reminder_request,
+)
+from grandpa.cli._reminders_route import (
+    routine_request as build_routine_request,
+)
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.cli.input_ui import read_chat_input, select_from_list
 from grandpa.cli.slash_commands import (
@@ -233,27 +240,6 @@ def _get_available_models(engine: Any = None) -> list[str]:
 def _get_ollama_models() -> list[str]:
     """Deprecated alias for _get_available_models."""
     return _get_available_models()
-
-
-def _create_one_shot_reminder(text: str, *, store=None) -> str | None:
-    from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
-    from grandpa.reminders import ReminderStore
-
-    try:
-        parsed = parse_reminder_phrase(text)
-    except ReminderParseError:
-        return None
-    reminder_store = store or ReminderStore()
-    reminder = reminder_store.create(
-        parsed.message,
-        parsed.due_at,
-        source={
-            "cli": "grandpa chat",
-            "input": text,
-            "matched_expression": parsed.matched_expression,
-        },
-    )
-    return f"Reminder created: {reminder.message} at {reminder.due_at.isoformat()}."
 
 
 def _handle_memory_slash_command(command: str, *, store=None) -> str | None:
@@ -1775,7 +1761,16 @@ def chat(
                 render_assistant_response(console, Markdown(natural_intent_message))
                 continue
 
-            reminder_message = _create_one_shot_reminder(effective_user_input)
+            # Reminders are migrated. This branch stays first, as it always
+            # was: whichever parser claims the phrase decides which store it
+            # lands in, and changing that is a separate task.
+            reminder_request, reminder_subject = build_reminder_request(
+                effective_user_input
+            )
+            reminder_message = None
+            if reminder_request is not None:
+                reminder_result = execute_action(reminder_request, _confirm_action)
+                reminder_message = reminder_reply(reminder_result)
             if reminder_message is not None:
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(Message(role=Role.ASSISTANT, content=reminder_message))
@@ -2019,23 +2014,23 @@ def chat(
                 render_assistant_response(console, Markdown(file_action.message))
                 continue
 
-            from grandpa.task_scheduler import handle_scheduler_command
-
-            scheduler_action = handle_scheduler_command(effective_user_input)
-            if not scheduler_action.should_fallback:
+            # Routines and recurring reminders, migrated. A different store
+            # from the branch above; see cli/_reminders_route.py.
+            routine_request, routine_name = build_routine_request(effective_user_input)
+            if routine_request is not None:
+                routine_result = execute_action(routine_request, _confirm_action)
+                routine_message = reminder_reply(routine_result)
                 history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=scheduler_action.message)
-                )
-                remember_conversation("assistant", scheduler_action.message)
+                history.append(Message(role=Role.ASSISTANT, content=routine_message))
+                remember_conversation("assistant", routine_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=scheduler_action.message,
-                    kind=getattr(scheduler_action, "kind", "routine"),
-                    target=getattr(scheduler_action, "target", None),
-                    status=scheduler_action.status,
+                    assistant_text=routine_message,
+                    kind="routine",
+                    target=routine_name,
+                    status=reminder_status(routine_result),
                 )
-                render_assistant_response(console, Markdown(scheduler_action.message))
+                render_assistant_response(console, Markdown(routine_message))
                 continue
 
             from grandpa.core.runtime_context import handle_datetime_intent

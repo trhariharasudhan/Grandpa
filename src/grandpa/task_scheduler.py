@@ -391,18 +391,91 @@ class SchedulerStore:
         return [{key: row[key] for key in row.keys()} for row in rows]
 
 
-def handle_scheduler_command(
-    text: str,
+SCHEDULER_ACTIONS: tuple[str, ...] = (
+    "create_morning_routine",
+    "set_morning_routine",
+    "list_schedule",
+    "disable_routine",
+    "enable_routine",
+    "run_routine",
+    "create_recurring_reminder",
+)
+"""What handle_scheduler_command's regexes can decide to do.
+
+Two things worth knowing before using these, both found by the audit and left
+exactly as they are here:
+
+* ``create_recurring_reminder`` writes to **scheduler.db**, while the one-shot
+  reminders in :mod:`grandpa.reminders` live in **reminders.db**. "remind me"
+  reaches one or the other depending on which parser claims the phrase first.
+* "remind me to X at 5pm" is read by ``_parse_reminder`` as ``daily:17:00`` --
+  a reminder that repeats every day, not once. It only arrives here at all when
+  the one-shot parser has already declined the phrase.
+
+Splitting the stores and fixing the daily/one-shot confusion are their own
+tasks. Cataloguing them dishonestly would have hidden both.
+"""
+
+
+def parse_scheduler_command(text: str) -> tuple[str, dict[str, object]] | None:
+    """Decide which scheduler action a phrase asks for, or ``None``.
+
+    Lifted from ``handle_scheduler_command`` unchanged, including the order the
+    branches are tried in, which is what decides ambiguous phrases.
+    """
+    command = _normalise(text)
+    if not command:
+        return None
+
+    if command in {"create a morning routine", "create morning routine"}:
+        return "create_morning_routine", {}
+
+    match = re.fullmatch(r"every morning open (.+)", command)
+    if match:
+        return "set_morning_routine", {"targets": match.group(1)}
+
+    if command in {
+        "what routines do i have",
+        "list routines",
+        "show routines",
+        "what reminders do i have",
+        "show reminders",
+    }:
+        return "list_schedule", {}
+
+    match = re.fullmatch(r"(?:disable|turn off) (?:my )?(.+?)(?: routine)?", command)
+    if match:
+        return "disable_routine", {"name": match.group(1)}
+
+    match = re.fullmatch(r"(?:enable|turn on) (?:my )?(.+?)(?: routine)?", command)
+    if match:
+        return "enable_routine", {"name": match.group(1)}
+
+    match = re.fullmatch(r"(?:run|start) (?:my )?(.+?)(?: routine)?", command)
+    if match:
+        return "run_routine", {"name": match.group(1)}
+
+    reminder = _parse_reminder(command)
+    if reminder:
+        return "create_recurring_reminder", dict(reminder)
+
+    return None
+
+
+def execute_scheduler_action(
+    action: str,
     *,
     store: SchedulerStore | None = None,
     execute: bool = True,
+    targets: str = "",
+    name: str = "",
+    text: str = "",
+    schedule: str = "",
 ) -> SchedulerResult:
-    command = _normalise(text)
-    if not command:
-        return _fallback()
+    """Perform one scheduler operation, already parsed. Bodies unchanged."""
     store = store or SchedulerStore()
 
-    if command in {"create a morning routine", "create morning routine"}:
+    if action == "create_morning_routine":
         routine = store.upsert_routine(
             "morning routine",
             ["open chrome", "open vs code"],
@@ -420,9 +493,8 @@ def handle_scheduler_command(
             "Created your morning routine.",
         )
 
-    match = re.fullmatch(r"every morning open (.+)", command)
-    if match:
-        actions = _actions_from_open_list(match.group(1))
+    if action == "set_morning_routine":
+        actions = _actions_from_open_list(targets)
         if not actions:
             return _blocked(
                 "I blocked this routine because it did not contain safe open actions."
@@ -444,52 +516,36 @@ def handle_scheduler_command(
             "Updated your morning routine.",
         )
 
-    if command in {
-        "what routines do i have",
-        "list routines",
-        "show routines",
-        "what reminders do i have",
-        "show reminders",
-    }:
+    if action == "list_schedule":
         return _list_schedule(store)
 
-    match = re.fullmatch(r"(?:disable|turn off) (?:my )?(.+?)(?: routine)?", command)
-    if match:
-        name = _routine_name(match.group(1))
-        routine = store.set_routine_enabled(name, False)
+    if action in {"disable_routine", "enable_routine"}:
+        enabled = action == "enable_routine"
+        routine_name = _routine_name(name)
+        routine = store.set_routine_enabled(routine_name, enabled)
         if not routine:
             return SchedulerResult(
                 "handled",
                 "scheduler",
-                name,
-                f"I could not find a routine named {name}.",
+                routine_name,
+                f"I could not find a routine named {routine_name}.",
             )
-        _record_scheduler_activity("routine", "disable", name, None, "handled")
+        verb = "Enabled" if enabled else "Disabled"
+        _record_scheduler_activity(
+            "routine", "enable" if enabled else "disable", routine_name, None, "handled"
+        )
         return SchedulerResult(
-            "handled", "scheduler", name, f"Disabled {name}.", f"Disabled {name}."
+            "handled",
+            "scheduler",
+            routine_name,
+            f"{verb} {routine_name}.",
+            f"{verb} {routine_name}.",
         )
 
-    match = re.fullmatch(r"(?:enable|turn on) (?:my )?(.+?)(?: routine)?", command)
-    if match:
-        name = _routine_name(match.group(1))
-        routine = store.set_routine_enabled(name, True)
-        if not routine:
-            return SchedulerResult(
-                "handled",
-                "scheduler",
-                name,
-                f"I could not find a routine named {name}.",
-            )
-        _record_scheduler_activity("routine", "enable", name, None, "handled")
-        return SchedulerResult(
-            "handled", "scheduler", name, f"Enabled {name}.", f"Enabled {name}."
-        )
-
-    match = re.fullmatch(r"(?:run|start) (?:my )?(.+?)(?: routine)?", command)
-    if match:
-        name = _routine_name(match.group(1))
-        routine = store.get_routine(name)
-        if not routine and name == "work setup":
+    if action == "run_routine":
+        routine_name = _routine_name(name)
+        routine = store.get_routine(routine_name)
+        if not routine and routine_name == "work setup":
             routine = store.upsert_routine(
                 "work setup", ["open chrome", "open vs code"], enabled=True
             )
@@ -497,14 +553,13 @@ def handle_scheduler_command(
             return SchedulerResult(
                 "handled",
                 "scheduler",
-                name,
-                f"I could not find a routine named {name}.",
+                routine_name,
+                f"I could not find a routine named {routine_name}.",
             )
         return _run_routine(routine, execute=execute)
 
-    reminder = _parse_reminder(command)
-    if reminder:
-        item = store.add_reminder(reminder["text"], reminder["schedule"])
+    if action == "create_recurring_reminder":
+        item = store.add_reminder(text, schedule)
         _record_scheduler_activity(
             "reminder", "create", item["text"], item["schedule"], "handled"
         )
@@ -517,6 +572,19 @@ def handle_scheduler_command(
         )
 
     return _fallback()
+
+
+def handle_scheduler_command(
+    text: str,
+    *,
+    store: SchedulerStore | None = None,
+    execute: bool = True,
+) -> SchedulerResult:
+    parsed = parse_scheduler_command(text)
+    if parsed is None:
+        return _fallback()
+    action, parameters = parsed
+    return execute_scheduler_action(action, store=store, execute=execute, **parameters)
 
 
 def scheduler_summary() -> dict[str, Any]:

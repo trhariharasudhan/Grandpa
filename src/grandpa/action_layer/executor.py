@@ -271,6 +271,9 @@ def _call(
 
     if spec.binding is Binding.NOTES_ACTION:
         return _call_notes(spec, implementation, owner, action, parameters, confirmed)
+    if spec.binding in {Binding.REMINDER_ACTION, Binding.SCHEDULER_ACTION}:
+        # Module-level dispatchers, like memory's, with keyword parameters.
+        return implementation(action, **dict(parameters))
     if spec.binding is Binding.MEMORY_ACTION:
         # A module-level function: no instance, and the parameters are keywords.
         return implementation(action, **dict(parameters))

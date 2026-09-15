@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import platform
+import re
 import sqlite3
 import threading
 import time
@@ -420,10 +421,176 @@ def _row_to_reminder(row: sqlite3.Row) -> Reminder:
 __all__ = [
     "DEFAULT_REMINDER_DB",
     "OVERDUE_GRACE_PERIOD",
+    "REMINDER_ACTIONS",
     "NotificationResult",
     "Reminder",
+    "ReminderActionResult",
     "ReminderSchedulerService",
     "ReminderStatus",
     "ReminderStore",
     "WindowsToastNotifier",
+    "execute_reminder_action",
+    "format_reminder_list",
+    "parse_reminder_intent",
 ]
+
+
+# ---------------------------------------------------------------------------
+# The structured seam
+# ---------------------------------------------------------------------------
+
+REMINDER_ACTIONS: tuple[str, ...] = ("create", "list", "cancel")
+"""What chat could ask of one-shot reminders.
+
+These were three private helpers in ``cli/chat_cmd.py``. They live here now so
+the domain owns them and the action layer can call them, which is the first
+step of docs/architecture/MIGRATION-PATTERN.md.
+
+Note what is *not* here. Recurring reminders ("remind me to X every hour", and
+"remind me to X at 5pm", which becomes a daily rule) are a different store
+entirely -- ``task_scheduler.SchedulerStore`` on scheduler.db, while these sit
+in reminders.db. Both are catalogued, separately and honestly. Joining them is
+its own task.
+"""
+
+
+@dataclass(frozen=True)
+class ReminderActionResult:
+    """What one reminder operation did."""
+
+    status: str
+    message: str
+    target: str | None = None
+    error: str | None = None
+    kind: str = "reminder"
+
+
+def parse_reminder_intent(text: str) -> tuple[str, str] | None:
+    """Decide which reminder action a phrase asks for, or ``None``.
+
+    The list and cancel patterns are chat's, moved; creation defers to
+    :func:`grandpa.reminder_parser.parse_reminder_phrase`, which is the thing
+    that knows how to read "in 30 minutes".
+    """
+    from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
+
+    normalized = " ".join(text.lower().strip(" ?!.").split())
+    if _is_reminder_list_intent(normalized):
+        return "list", ""
+
+    cancel_match = re.match(r"^(cancel|delete|remove)\s+reminder\s+(.+)$", normalized)
+    if cancel_match:
+        return "cancel", cancel_match.group(2).strip()
+
+    try:
+        parse_reminder_phrase(text)
+    except ReminderParseError:
+        return None
+    return "create", text
+
+
+def execute_reminder_action(
+    action: str,
+    *,
+    store: "ReminderStore | None" = None,
+    subject: str = "",
+) -> ReminderActionResult:
+    """Perform one reminder operation, already parsed."""
+    from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
+
+    store = store or ReminderStore()
+
+    if action == "create":
+        try:
+            parsed = parse_reminder_phrase(subject)
+        except ReminderParseError as exc:
+            return ReminderActionResult(
+                "error", f"I could not read a time from that: {exc}", error="unparsed"
+            )
+        reminder = store.create(
+            parsed.message,
+            parsed.due_at,
+            source={
+                "cli": "grandpa chat",
+                "input": subject,
+                "matched_expression": parsed.matched_expression,
+            },
+        )
+        return ReminderActionResult(
+            "handled",
+            f"Reminder created: {reminder.message} at {reminder.due_at.isoformat()}.",
+            target=reminder.id,
+        )
+
+    if action == "list":
+        return ReminderActionResult(
+            "handled",
+            format_reminder_list(
+                store.list(status="pending"),
+                empty=(
+                    "No pending reminders found. You can create one with: "
+                    "remind me in 30 minutes to drink water"
+                ),
+            ),
+            target="pending",
+        )
+
+    if action == "cancel":
+        reminder = store.cancel(subject)
+        if reminder is None:
+            return ReminderActionResult(
+                "error",
+                "Reminder not found. Use /reminders list to see reminder IDs.",
+                target=subject,
+                error="not_found",
+            )
+        if reminder.status == "cancelled":
+            return ReminderActionResult(
+                "handled", "Reminder cancelled.", target=subject
+            )
+        return ReminderActionResult(
+            "handled", f"Reminder is already {reminder.status}.", target=subject
+        )
+
+    return ReminderActionResult(
+        "unsupported", "That reminder action is not supported.", target=action
+    )
+
+
+def format_reminder_list(items: list, *, empty: str) -> str:
+    """Chat's own formatting, moved verbatim so the output does not change."""
+    if not items:
+        return empty
+    lines = ["Reminders:"]
+    for reminder in items[:20]:
+        lines.append(
+            f"- {reminder.id} [{reminder.status}] {reminder.message} "
+            f"at {reminder.due_at.isoformat()}"
+        )
+    return "\n".join(lines)
+
+
+_REMINDER_LIST_INTENTS = frozenset(
+    {
+        "do i have any reminders",
+        "list my reminders",
+        "show me my reminders",
+        "show my reminders",
+        "what are my reminders",
+        "what reminder do i have",
+        "show reminders",
+        "list reminders",
+        "what reminders do i have",
+    }
+)
+
+
+def _is_reminder_list_intent(normalized: str) -> bool:
+    if normalized in _REMINDER_LIST_INTENTS:
+        return True
+    return bool(
+        re.fullmatch(r"(show|list)\s+(me\s+)?(my\s+)?reminders", normalized)
+        or re.fullmatch(r"what\s+reminders?\s+do\s+i\s+have", normalized)
+        or re.fullmatch(r"what\s+are\s+my\s+reminders", normalized)
+        or re.fullmatch(r"do\s+i\s+have\s+any\s+reminders", normalized)
+    )

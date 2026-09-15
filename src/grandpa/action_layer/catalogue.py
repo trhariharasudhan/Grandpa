@@ -78,6 +78,8 @@ _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
 _NOTES = "grandpa.notes.automation.NotesAutomation.execute"
 _DOWNLOADS = "grandpa.downloads.automation.DownloadsAutomation.execute"
 _MEMORY = "grandpa.memory_context.execute_memory_action"
+_REMINDERS = "grandpa.reminders.execute_reminder_action"
+_SCHEDULER = "grandpa.task_scheduler.execute_scheduler_action"
 
 
 # --- the one confirmation rule -----------------------------------------------
@@ -196,6 +198,12 @@ class Binding(str, Enum):
     ACTION_TARGET = "action_target"
     """``function(action, target)`` -- browser_control.execute_browser_action,
     which takes its own shorter sub-action names."""
+
+    REMINDER_ACTION = "reminder_action"
+    """``function(action, store=None, subject=...)`` -- grandpa.reminders."""
+
+    SCHEDULER_ACTION = "scheduler_action"
+    """``function(action, store=None, **parameters)`` -- task_scheduler."""
 
     MEMORY_ACTION = "memory_action"
     """``function(action, store=None, subject=...)`` -- grandpa.memory_context.
@@ -364,6 +372,22 @@ _CALLS: dict[str, _Call] = {
     "memory_continue_project": _Call(Binding.MEMORY_ACTION, alias="continue_project"),
     "memory_forget": _Call(Binding.MEMORY_ACTION, alias="forget"),
     "memory_clear": _Call(Binding.MEMORY_ACTION, alias="clear"),
+    # one-shot reminders (reminders.db)
+    "reminder_create": _Call(Binding.REMINDER_ACTION, alias="create"),
+    "reminder_list": _Call(Binding.REMINDER_ACTION, alias="list"),
+    "reminder_cancel": _Call(Binding.REMINDER_ACTION, alias="cancel"),
+    # routines and recurring reminders (scheduler.db)
+    "routine_create_morning": _Call(
+        Binding.SCHEDULER_ACTION, alias="create_morning_routine"
+    ),
+    "routine_set_morning": _Call(Binding.SCHEDULER_ACTION, alias="set_morning_routine"),
+    "routine_list": _Call(Binding.SCHEDULER_ACTION, alias="list_schedule"),
+    "routine_enable": _Call(Binding.SCHEDULER_ACTION, alias="enable_routine"),
+    "routine_disable": _Call(Binding.SCHEDULER_ACTION, alias="disable_routine"),
+    "routine_run": _Call(Binding.SCHEDULER_ACTION, alias="run_routine"),
+    "routine_create_reminder": _Call(
+        Binding.SCHEDULER_ACTION, alias="create_recurring_reminder"
+    ),
 }
 
 
@@ -1303,6 +1327,122 @@ _MEMORY_ACTIONS: tuple[ActionSpec, ...] = (
 )
 
 
+# --- reminders and routines ---------------------------------------------------
+#
+# The fourth and fifth domains, migrated together because chat treats them as
+# one subject and the user cannot tell them apart. They are not one thing:
+#
+#   reminder_*  one-shot reminders in reminders.db   (grandpa.reminders)
+#   routine_*   routines and recurring reminders in scheduler.db
+#               (grandpa.task_scheduler)
+#
+# Both are catalogued as they behave today, which includes two things the audit
+# found and this migration deliberately did not fix:
+#
+# * "remind me" reaches one store or the other depending on which parser claims
+#   the phrase first -- chat tries the one-shot parser before the scheduler.
+# * routine_create_reminder reads "remind me to X at 5pm" as daily:17:00. It
+#   repeats every day. A user asking for 5pm today gets a standing appointment.
+#
+# Splitting the stores, and deciding what "at 5pm" should mean, are their own
+# tasks. Describing them accurately here is what makes them fixable.
+
+_REMINDER_PHRASE = _string(
+    "The whole phrase, including when: 'in 30 minutes to drink water'."
+)
+
+_REMINDER_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec(
+        "reminder_create",
+        _LOW,
+        "Set a one-off reminder for a time you give.",
+        _REMINDERS,
+        _schema({"subject": _REMINDER_PHRASE}, ("subject",)),
+        notes="Stored in reminders.db. For anything recurring the scheduler "
+        "takes over -- see routine_create_reminder.",
+    ),
+    _spec(
+        "reminder_list",
+        _LOW,
+        "List the reminders that have not fired yet.",
+        _REMINDERS,
+    ),
+    _spec(
+        "reminder_cancel",
+        _MEDIUM,
+        "Cancel a pending reminder by its id.",
+        _REMINDERS,
+        _schema({"subject": _string("The reminder's id.")}, ("subject",)),
+        notes="Targeted and reversible in effect -- the reminder simply does "
+        "not fire -- so it does not ask, as it never has.",
+    ),
+)
+
+_ROUTINE_NAME = _string("Name of the routine, e.g. 'morning'.")
+
+_SCHEDULER_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec(
+        "routine_create_morning",
+        _MEDIUM,
+        "Create the default morning routine: open Chrome and VS Code at 9am.",
+        _SCHEDULER,
+    ),
+    _spec(
+        "routine_set_morning",
+        _MEDIUM,
+        "Replace what the morning routine opens.",
+        _SCHEDULER,
+        _schema(
+            {"targets": _string("Applications to open, as a list in words.")},
+            ("targets",),
+        ),
+        notes="Refuses anything that is not a safe 'open' action.",
+    ),
+    _spec("routine_list", _LOW, "List routines and recurring reminders.", _SCHEDULER),
+    _spec(
+        "routine_enable",
+        _MEDIUM,
+        "Turn a routine on.",
+        _SCHEDULER,
+        _schema({"name": _ROUTINE_NAME}, ("name",)),
+    ),
+    _spec(
+        "routine_disable",
+        _MEDIUM,
+        "Turn a routine off.",
+        _SCHEDULER,
+        _schema({"name": _ROUTINE_NAME}, ("name",)),
+    ),
+    _spec(
+        "routine_run",
+        _MEDIUM,
+        "Run a routine now.",
+        _SCHEDULER,
+        _schema({"name": _ROUTINE_NAME}, ("name",)),
+        notes="Performs the routine's actions immediately, which for the "
+        "default routines means opening applications.",
+    ),
+    _spec(
+        "routine_create_reminder",
+        _MEDIUM,
+        "Set a repeating reminder: every minute, every hour, or daily at a time.",
+        _SCHEDULER,
+        _schema(
+            {
+                "text": _string("What to be reminded of."),
+                "schedule": _string(
+                    "minutely, hourly, or daily:HH:MM.", default="hourly"
+                ),
+            },
+            ("text",),
+        ),
+        notes="Stored in scheduler.db, not reminders.db. Note that chat's "
+        "phrasing 'remind me to X at 5pm' arrives here as daily:17:00 -- it "
+        "repeats every day rather than firing once.",
+    ),
+)
+
+
 CATALOGUE: tuple[ActionSpec, ...] = (
     *_APPLICATION_ACTIONS,
     *_WINDOW_ACTIONS,
@@ -1318,6 +1458,8 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_NOTES_ACTIONS,
     *_DOWNLOADS_ACTIONS,
     *_MEMORY_ACTIONS,
+    *_REMINDER_ACTIONS,
+    *_SCHEDULER_ACTIONS,
 )
 
 
@@ -1478,6 +1620,26 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "continue_project",
                 "forget",
                 "clear",
+            )
+        },
+        **{
+            name: (
+                "Reminders and routines, migrated together because chat treats "
+                "them as one subject. They are two stores -- reminders.db and "
+                "scheduler.db -- and the catalogue says so rather than "
+                "pretending otherwise."
+            )
+            for name in (
+                "reminder_create",
+                "reminder_list",
+                "reminder_cancel",
+                "routine_create_morning",
+                "routine_set_morning",
+                "routine_list",
+                "routine_enable",
+                "routine_disable",
+                "routine_run",
+                "routine_create_reminder",
             )
         },
     }

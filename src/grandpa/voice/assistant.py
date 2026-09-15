@@ -8,7 +8,6 @@ from typing import Any
 
 from grandpa.automation import ScreenAutomationService
 from grandpa.cli.chat_cmd import (
-    _create_one_shot_reminder,
     _engine_unavailable_message,
     _handle_natural_assistant_intent,
     _log_generation_exception,
@@ -265,9 +264,17 @@ class VoiceCommandProcessor:
         if natural_intent_message is not None:
             return VoiceAssistantResponse(natural_intent_message, kind="local")
 
-        reminder_message = _create_one_shot_reminder(effective_text)
-        if reminder_message is not None:
-            return VoiceAssistantResponse(reminder_message, kind="reminder")
+        # Voice reached this through a private helper in chat_cmd; that helper
+        # moved into grandpa.reminders when reminders were migrated, so voice
+        # now calls the domain directly rather than borrowing chat's internals.
+        from grandpa.reminders import execute_reminder_action, parse_reminder_intent
+
+        reminder_intent = parse_reminder_intent(effective_text)
+        if reminder_intent is not None and reminder_intent[0] == "create":
+            reminder_result = execute_reminder_action(
+                "create", subject=reminder_intent[1]
+            )
+            return VoiceAssistantResponse(reminder_result.message, kind="reminder")
 
         from grandpa.calendar import handle_calendar_command
 
