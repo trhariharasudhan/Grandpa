@@ -177,10 +177,45 @@ def _resolved_parameters(
 # --- calling an implementation -----------------------------------------------
 
 
+def _call_notes(
+    spec: ActionSpec,
+    implementation: Any,
+    owner: Any,
+    action: str,
+    parameters: Mapping[str, Any],
+) -> Any:
+    """Call ``NotesAutomation.execute`` with a real NotesAction.
+
+    ``confirmed=True`` is not a bypass: the executor has already asked, because
+    the only notes action that needs asking is ``notes_delete`` and the
+    catalogue rates it HIGH, so it cannot reach here unconfirmed. Passing it
+    stops notes prompting a second time for consent the layer already holds --
+    the double prompt that made chat's old notes branch print a question and
+    then send the answer to the model.
+    """
+    from grandpa.notes.models import NotesAction
+
+    fields: dict[str, Any] = dict(parameters)
+    if "tags" in fields:
+        fields["tags"] = tuple(fields["tags"])
+    # Notes finds an existing note by ``query or title``, so whichever parameter
+    # identifies one has to arrive as both.
+    if spec.target_parameter and fields.get(spec.target_parameter):
+        fields["query"] = fields[spec.target_parameter]
+
+    notes_action = NotesAction(action=action, **fields)
+    instance = owner() if owner is not None else None
+    return implementation(instance, notes_action, confirmed=True)
+
+
 def _call(spec: ActionSpec, parameters: Mapping[str, Any]) -> Any:
     """Adapt the layer's parameters to whatever shape the implementation wants."""
     implementation, owner = _resolve(spec.implementation)
     action = spec.action_alias or spec.name
+
+    if spec.binding is Binding.NOTES_ACTION:
+        return _call_notes(spec, implementation, owner, action, parameters)
+
     target = ""
     args = dict(parameters)
     if spec.target_parameter is not None:

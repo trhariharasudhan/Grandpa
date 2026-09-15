@@ -14,7 +14,10 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.text import Text
 
+from grandpa.action_layer.executor import execute as execute_action
 from grandpa.cli._animation import TerminalAnimation
+from grandpa.cli._notes_route import notes_reply, notes_status
+from grandpa.cli._notes_route import notes_request as build_notes_request
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.cli.input_ui import read_chat_input, select_from_list
 from grandpa.cli.slash_commands import (
@@ -1437,6 +1440,20 @@ def chat(
         """Prompt before Grandpa deletes or changes something local."""
         return _confirm_chat_action(spec, permission, label="Confirm")
 
+    def _confirm_action(action: str, parameters, risk) -> bool:
+        """The action layer's confirm callback, worded as chat always worded it.
+
+        The layer hands over the action, its resolved parameters and its tier;
+        chat turns that into the same sentence the notes handler printed, so a
+        migrated domain reads no differently to the user.
+        """
+        if action == "notes_delete":
+            spec = f'Delete note "{parameters.get("title", "")}"?'
+        else:
+            detail = ", ".join(f"{k}={v!r}" for k, v in sorted(parameters.items()))
+            spec = action + (f" ({detail})" if detail else "")
+        return _confirm_local_change(spec, f"{risk.value} risk")
+
     history: List[Message] = []
     if system_prompt:
         history.append(Message(role=Role.SYSTEM, content=system_prompt))
@@ -1786,41 +1803,27 @@ def chat(
                 render_assistant_response(console, Markdown(reminder_message))
                 continue
 
-            from grandpa.notes import handle_notes_command
-
-            notes_confirm = _ChatConfirmation(
-                _confirm_local_change,
-                lambda action: _notes_confirmation_message(action).removesuffix(
-                    " [y/N]"
-                ),
-            )
             from grandpa.downloads.formatter import (
                 format_operation_plan as _downloads_operation_plan,
             )
-            from grandpa.notes.automation import (
-                _confirmation_message as _notes_confirmation_message,
-            )
 
-            notes_action = handle_notes_command(
-                effective_user_input, confirm=notes_confirm
-            )
-            notes_action_message = notes_confirm.message_for(
-                notes_action.message, cancelled="Note deletion cancelled."
-            )
-            if not notes_action.should_fallback:
+            # Notes is migrated: parsed here, but decided and performed by the
+            # action layer, which rates the risk, asks, and audits.
+            notes_request, parsed_note = build_notes_request(effective_user_input)
+            if notes_request is not None:
+                notes_result = execute_action(notes_request, _confirm_action)
+                notes_message = notes_reply(notes_result)
                 history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=notes_action_message)
-                )
-                remember_conversation("assistant", notes_action_message)
+                history.append(Message(role=Role.ASSISTANT, content=notes_message))
+                remember_conversation("assistant", notes_message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=notes_action_message,
+                    assistant_text=notes_message,
                     kind="notes",
-                    target=notes_action.action.query if notes_action.action else None,
-                    status=notes_action.status,
+                    target=parsed_note.query if parsed_note else None,
+                    status=notes_status(notes_result),
                 )
-                render_assistant_response(console, Markdown(notes_action_message))
+                render_assistant_response(console, Markdown(notes_message))
                 continue
 
             from grandpa.downloads import handle_downloads_command

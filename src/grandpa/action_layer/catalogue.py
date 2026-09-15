@@ -1,8 +1,11 @@
 """One entry per action Grandpa can actually perform today.
 
-The list is built from the audit's feature table
+The list started from the audit's feature table
 (``docs/audit/FEATURE-INVENTORY.md`` section 2) crossed with the four risk
-tables in ``grandpa.pc_control``. Two rules decide what is in it:
+tables in ``grandpa.pc_control``, and now also holds what the layer owns
+itself -- read actions those tables never had, and the domains migrated off
+chat's keyword waterfall, each declared in :data:`LAYER_OWNED` with its reason.
+Two rules decide what is in it:
 
 * **Only what exists.** Every entry names the function that performs it, and
   ``tests/action_layer/test_catalogue_coverage.py`` resolves that dotted path. There
@@ -71,6 +74,7 @@ _SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
 _BROWSER = "grandpa.browser_control.execute_browser_action"
 _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
+_NOTES = "grandpa.notes.automation.NotesAutomation.execute"
 
 
 # --- the one confirmation rule -----------------------------------------------
@@ -160,6 +164,20 @@ class Binding(str, Enum):
     ACTION_TARGET = "action_target"
     """``function(action, target)`` -- browser_control.execute_browser_action,
     which takes its own shorter sub-action names."""
+
+    NOTES_ACTION = "notes_action"
+    """``method(NotesAction, confirmed=True)`` -- grandpa.notes.
+
+    The notes package takes a structured ``NotesAction``, not a request, and has
+    its own confirmation step. The executor has already obtained consent by the
+    time it calls -- ``notes_delete`` is HIGH, so it cannot reach an
+    implementation unconfirmed -- so it passes ``confirmed=True`` rather than
+    letting notes ask a second time for the same thing.
+
+    A new domain will often need a new shape like this. That is the point of
+    keeping the conventions in one table: adding one is a single, reviewable
+    entry rather than a branch buried in a dispatch chain.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +269,21 @@ _CALLS: dict[str, _Call] = {
         Binding.ACTION_TARGET, target="scope", alias="diagnostics"
     ),
     "browser_task": _Call(Binding.ACTION_TARGET, target="task", alias="task"),
+    # notes. `alias` is the NotesAction action name; `target` names the
+    # parameter that identifies an existing note, which is mirrored into
+    # NotesAction.query because notes looks a note up by `query or title`.
+    "notes_list": _Call(Binding.NOTES_ACTION, alias="list"),
+    "notes_recent": _Call(Binding.NOTES_ACTION, alias="recent"),
+    "notes_search": _Call(Binding.NOTES_ACTION, alias="search"),
+    "notes_read": _Call(Binding.NOTES_ACTION, alias="open", target="title"),
+    "notes_create": _Call(Binding.NOTES_ACTION, alias="create"),
+    "notes_append": _Call(Binding.NOTES_ACTION, alias="append", target="title"),
+    "notes_rename": _Call(Binding.NOTES_ACTION, alias="rename", target="title"),
+    "notes_delete": _Call(Binding.NOTES_ACTION, alias="delete", target="title"),
+    "notes_archive": _Call(Binding.NOTES_ACTION, alias="archive", target="title"),
+    "notes_restore": _Call(Binding.NOTES_ACTION, alias="restore", target="title"),
+    "notes_pin": _Call(Binding.NOTES_ACTION, alias="pin", target="title"),
+    "notes_unpin": _Call(Binding.NOTES_ACTION, alias="unpin", target="title"),
 }
 
 
@@ -863,6 +896,118 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
 )
 
 
+# --- notes -------------------------------------------------------------------
+#
+# The first handler migrated off chat's keyword waterfall. All twelve actions
+# the notes parser can produce are here, not just the common six: leaving half
+# of them on the old path would mean two routes to the same store, which is the
+# thing the migration exists to remove.
+#
+# Tiers follow pc_control's own file tiers rather than a new opinion -- reading
+# and creating are LOW like file_create, changing existing content is MEDIUM
+# like file_rename, and deleting is HIGH like file_delete because
+# NotesStore.delete unlinks the file. Confirmation therefore falls exactly where
+# NotesSafetyPolicy.requires_confirmation already put it: on delete and nowhere
+# else.
+
+_NOTE_NAME = _string("Title of the note, or enough of it to identify one.")
+_NOTE_TEXT = _string("The note's text.")
+
+_NOTES_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec("notes_list", _LOW, "List the saved notes.", _NOTES),
+    _spec("notes_recent", _LOW, "List the notes touched most recently.", _NOTES),
+    _spec(
+        "notes_search",
+        _LOW,
+        "Search the notes for a word or phrase.",
+        _NOTES,
+        _schema({"query": _string("What to look for.")}, ("query",)),
+    ),
+    _spec(
+        "notes_read",
+        _LOW,
+        "Read one note back in full.",
+        _NOTES,
+        _schema({"title": _NOTE_NAME}, ("title",)),
+    ),
+    _spec(
+        "notes_create",
+        _LOW,
+        "Create a note.",
+        _NOTES,
+        _schema(
+            {
+                "title": _string("Title for the new note."),
+                "content": _NOTE_TEXT,
+                "tags": {
+                    "type": "array",
+                    "description": "Tags to file the note under.",
+                    "items": {"type": "string"},
+                },
+                "category": _string("Category to file the note under."),
+            },
+            ("title",),
+        ),
+    ),
+    _spec(
+        "notes_append",
+        _MEDIUM,
+        "Add text to the end of an existing note.",
+        _NOTES,
+        # content is not required: the notes store appends an empty line
+        # happily, and chat's parser can legitimately produce one.
+        _schema({"title": _NOTE_NAME, "content": _NOTE_TEXT}, ("title",)),
+    ),
+    _spec(
+        "notes_rename",
+        _MEDIUM,
+        "Rename a note.",
+        _NOTES,
+        _schema(
+            {"title": _NOTE_NAME, "new_title": _string("The new title.")},
+            ("title", "new_title"),
+        ),
+    ),
+    _spec(
+        "notes_delete",
+        _HIGH,
+        "Delete a note.",
+        _NOTES,
+        _schema({"title": _NOTE_NAME}, ("title",)),
+        notes="NotesStore.delete unlinks the file, so there is nothing to "
+        "restore afterwards. Use notes_archive to put one aside instead.",
+    ),
+    _spec(
+        "notes_archive",
+        _MEDIUM,
+        "Archive a note, hiding it from the normal list without deleting it.",
+        _NOTES,
+        _schema({"title": _NOTE_NAME}, ("title",)),
+    ),
+    _spec(
+        "notes_restore",
+        _MEDIUM,
+        "Bring an archived note back into the normal list.",
+        _NOTES,
+        _schema({"title": _NOTE_NAME}, ("title",)),
+    ),
+    _spec(
+        "notes_pin",
+        _LOW,
+        "Pin a note to the top of the list.",
+        _NOTES,
+        _schema({"title": _NOTE_NAME}, ("title",)),
+    ),
+    _spec(
+        "notes_unpin",
+        _LOW,
+        "Unpin a note.",
+        _NOTES,
+        _schema({"title": _NOTE_NAME}, ("title",)),
+    ),
+)
+
+
 CATALOGUE: tuple[ActionSpec, ...] = (
     *_APPLICATION_ACTIONS,
     *_WINDOW_ACTIONS,
@@ -875,6 +1020,7 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_FILE_ACTIONS,
     *_INPUT_ACTIONS,
     *_BROWSER_ACTIONS,
+    *_NOTES_ACTIONS,
 )
 
 
@@ -968,6 +1114,29 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
             "(VisionEngine.describe) but no risk table named it, so no action "
             "layer could offer it. Read-only, so LOW."
         ),
+        **{
+            f"notes_{action}": (
+                "Notes is the first handler migrated off chat's keyword "
+                "waterfall. pc_control's tables only ever covered desktop "
+                "control, so every notes action lives in the layer; the tiers "
+                "follow pc_control's file tiers and confirmation falls exactly "
+                "where NotesSafetyPolicy already put it."
+            )
+            for action in (
+                "list",
+                "recent",
+                "search",
+                "read",
+                "create",
+                "append",
+                "rename",
+                "delete",
+                "archive",
+                "restore",
+                "pin",
+                "unpin",
+            )
+        },
     }
 )
 

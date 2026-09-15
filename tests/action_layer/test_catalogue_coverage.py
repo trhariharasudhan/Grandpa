@@ -132,12 +132,57 @@ def test_layer_owned_cannot_hide_a_risk_disagreement(action: str) -> None:
     )
 
 
-def test_every_layer_owned_action_is_a_read() -> None:
-    """The layer has only added ways to look, so far. A write added here would
-    be a new capability with no risk table behind it -- say so deliberately."""
-    for action in LAYER_OWNED:
-        assert CATALOGUE_BY_NAME[action].risk is RiskLevel.LOW, action
-        assert CATALOGUE_BY_NAME[action].requires_confirmation is False, action
+# A second, independent statement of what each layer-owned action is rated.
+# pc_control's tables give the rest of the catalogue this property for free; the
+# layer's own actions need it written down somewhere the catalogue cannot also
+# change in the same edit, or "no contradictions" means nothing here.
+EXPECTED_LAYER_RISK: dict[str, tuple[str, bool]] = {
+    "volume_get": ("LOW", False),
+    "file_read": ("LOW", False),
+    "screenshot_describe": ("LOW", False),
+    # notes: reading and creating are LOW like file_create, changing existing
+    # content is MEDIUM like file_rename, deleting is HIGH like file_delete
+    # because NotesStore.delete unlinks the file.
+    "notes_list": ("LOW", False),
+    "notes_recent": ("LOW", False),
+    "notes_search": ("LOW", False),
+    "notes_read": ("LOW", False),
+    "notes_create": ("LOW", False),
+    "notes_pin": ("LOW", False),
+    "notes_unpin": ("LOW", False),
+    "notes_append": ("MEDIUM", False),
+    "notes_rename": ("MEDIUM", False),
+    "notes_archive": ("MEDIUM", False),
+    "notes_restore": ("MEDIUM", False),
+    "notes_delete": ("HIGH", True),
+}
+
+
+def test_the_expected_risk_table_covers_exactly_what_the_layer_owns() -> None:
+    assert set(EXPECTED_LAYER_RISK) == set(LAYER_OWNED), (
+        "a layer-owned action was added or removed without saying what it is "
+        "rated: "
+        f"{sorted(set(EXPECTED_LAYER_RISK) ^ set(LAYER_OWNED))}"
+    )
+
+
+@pytest.mark.parametrize("action", sorted(EXPECTED_LAYER_RISK), ids=lambda name: name)
+def test_a_layer_owned_action_is_rated_as_declared(action: str) -> None:
+    expected_risk, expected_confirmation = EXPECTED_LAYER_RISK[action]
+    spec = CATALOGUE_BY_NAME[action]
+
+    assert spec.risk.value == expected_risk, action
+    assert spec.requires_confirmation is expected_confirmation, action
+
+
+def test_only_destructive_layer_owned_actions_ask() -> None:
+    """Confirmation is not decoration: it belongs where something is lost."""
+    asking = {
+        name for name, spec in CATALOGUE_BY_NAME.items() if spec.requires_confirmation
+    }
+    layer_asking = asking & set(LAYER_OWNED)
+
+    assert layer_asking == {"notes_delete"}, layer_asking
 
 
 def test_the_exclusion_list_excludes_only_real_actions() -> None:

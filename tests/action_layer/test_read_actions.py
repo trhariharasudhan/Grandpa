@@ -195,5 +195,5 @@ def test_volume_get_needs_no_arguments() -> None:
 # --- what the layer owns ------------------------------------------------------
 
 
-def test_the_new_actions_are_declared_as_the_layers_own() -> None:
-    assert set(LAYER_OWNED) == {"volume_get", "file_read", "screenshot_describe"}
+def test_the_new_read_actions_are_declared_as_the_layers_own() -> None:
+    assert {"volume_get", "file_read", "screenshot_describe"} <= set(LAYER_OWNED)
