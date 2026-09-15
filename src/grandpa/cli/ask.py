@@ -838,7 +838,9 @@ def ask(
         for ek, model_ids in all_models.items():
             installed.extend(model_ids)
 
-        default_model = config.intelligence.default_model or "grandpa-mini:latest"
+        from grandpa.intelligence.grandpa_models import DEFAULT_MODEL_TAG
+
+        default_model = config.intelligence.default_model or DEFAULT_MODEL_TAG
 
         if any(k in q for k in image_keywords):
             target = "llava"

@@ -470,7 +470,9 @@ class Grandpa:
             "compare",
         ]
 
-        default_model = self._config.intelligence.default_model or "grandpa-mini:latest"
+        from grandpa.intelligence.grandpa_models import DEFAULT_MODEL_TAG
+
+        default_model = self._config.intelligence.default_model or DEFAULT_MODEL_TAG
 
         if any(k in q for k in image_keywords):
             target = "llava"

@@ -18,10 +18,16 @@ Install Python 3.10 or newer, [uv](https://docs.astral.sh/uv/), and
 git clone https://github.com/trhariharasudhan/Grandpa.git
 cd Grandpa
 uv sync --extra voice --extra screen --extra server
-ollama pull qwen2.5:3b
+ollama pull qwen3:8b
 uv run grandpa doctor
 uv run grandpa chat
 ```
+
+The default model is `grandpa-brain:latest` (Qwen3 8B), which needs about 6 GB
+of usable memory. On a smaller machine Grandpa recommends
+`grandpa-mini:latest` instead — see
+[docs/development/model-names.md](docs/development/model-names.md) for the
+tiers, why the default is what it is, and which roles can call tools.
 
 Start Ollama first if it is not already running:
 

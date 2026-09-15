@@ -40,7 +40,7 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         role="mini",
         ollama_tag="grandpa-mini:latest",
         display_name="Grandpa Mini",
-        description="Default / Fastest",
+        description="Fastest / Small machines",
         capabilities=frozenset({"text", "chat"}),
         base_family="Qwen2.5",
         parameter_count_b=0.5,
@@ -53,8 +53,8 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         role="fast",
         ollama_tag="grandpa-fast:latest",
         display_name="Grandpa Fast",
-        description="Better general responses",
-        capabilities=frozenset({"text", "chat"}),
+        description="Middle ground, also calls tools",
+        capabilities=frozenset({"text", "chat", "tools", "thinking"}),
         base_family="Qwen3",
         parameter_count_b=4.0,
         minimum_memory_gb=4.0,
@@ -62,6 +62,21 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         context_length=32768,
         fallback_role="mini",
         legacy_aliases=("qwen:latest", "grandpa-light:latest", "gemma3:4b"),
+    ),
+    GrandpaModelRole(
+        role="brain",
+        ollama_tag="grandpa-brain:latest",
+        display_name="Grandpa Brain",
+        description="Default / Reliable tool use",
+        # "tools" is what makes it the default: it is the capability the action
+        # layer needs, and Ollama reports it on /api/show for this model.
+        capabilities=frozenset({"text", "chat", "tools", "thinking"}),
+        base_family="Qwen3",
+        parameter_count_b=8.2,
+        minimum_memory_gb=6.0,
+        recommended_memory_gb=8.0,
+        context_length=32768,
+        fallback_role="fast",
     ),
     GrandpaModelRole(
         role="coder",
@@ -108,8 +123,17 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
     ),
 )
 
-DEFAULT_MODEL_ROLE = "mini"
-DEFAULT_MODEL_TAG = "grandpa-mini:latest"
+DEFAULT_MODEL_ROLE = "brain"
+DEFAULT_MODEL_TAG = "grandpa-brain:latest"
+
+SMALL_MACHINE_MODEL_ROLE = "mini"
+SMALL_MACHINE_MODEL_TAG = "grandpa-mini:latest"
+"""What a machine without the memory for the default gets instead.
+
+``core.config.recommend_model`` picks between them on available memory, so a
+small machine keeps working; it just cannot call tools reliably. Measured over
+five goals, three attempts each: grandpa-brain 15/15, grandpa-mini 0/15.
+"""
 EMBEDDING_MODEL_TAG = "nomic-embed-text:latest"
 VISION_MODEL_TAG = "grandpa-eyes:latest"
 
@@ -166,6 +190,8 @@ def user_visible_models(*, capability: str = "chat") -> tuple[GrandpaModelRole, 
 __all__ = [
     "DEFAULT_MODEL_ROLE",
     "DEFAULT_MODEL_TAG",
+    "SMALL_MACHINE_MODEL_ROLE",
+    "SMALL_MACHINE_MODEL_TAG",
     "EMBEDDING_MODEL_TAG",
     "GRANDPA_MODEL_ROLES",
     "GrandpaModelRole",

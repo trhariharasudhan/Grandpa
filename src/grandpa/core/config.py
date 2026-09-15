@@ -351,19 +351,32 @@ def _available_memory_gb(hw: HardwareInfo) -> float:
     return 0.0
 
 
+_MODEL_TIER_DEFAULT = "grandpa-brain:latest"
 _MODEL_TIER_FALLBACK = "grandpa-mini:latest"
+_MODEL_TIER_DEFAULT_MIN_GB = 6.0
+"""Memory needed for the default. grandpa-brain is 8.2B parameters and about
+5.2 GB on disk, so 6 GB usable is the floor; below that a machine gets
+grandpa-mini, which loads in 0.4 GB."""
 
 
 def recommend_model(hw: HardwareInfo, engine: str) -> str:
     """Suggest a default model for the selected engine and hardware.
 
-    Uses the canonical low-resource Grandpa Odin role for local Ollama.
+    The recommendation is now a choice rather than a constant. grandpa-brain is
+    the default because it is the only installed role that calls tools
+    reliably -- measured over five goals, three attempts each: 15/15 against
+    grandpa-mini's 0/15 -- but it needs memory grandpa-mini does not. A machine
+    below the floor still gets a working assistant, one that cannot drive the
+    action layer.
     """
     if engine != "ollama":
         return ""
-    if _available_memory_gb(hw) <= 0:
+    available = _available_memory_gb(hw)
+    if available <= 0:
         return ""
-    return _MODEL_TIER_FALLBACK
+    if available < _MODEL_TIER_DEFAULT_MIN_GB:
+        return _MODEL_TIER_FALLBACK
+    return _MODEL_TIER_DEFAULT
 
 
 def estimated_download_gb(parameter_count_b: float) -> float:
@@ -424,7 +437,7 @@ class EngineConfig:
 class IntelligenceConfig:
     """The model — identity, paths, quantization, and generation defaults."""
 
-    default_model: str = "grandpa-mini:latest"
+    default_model: str = "grandpa-brain:latest"
     fallback_model: str = ""
     model_path: str = ""  # Local weights (HF repo, GGUF file, etc.)
     quantization: str = "none"  # none, fp8, int8, int4, gguf_q4, gguf_q8

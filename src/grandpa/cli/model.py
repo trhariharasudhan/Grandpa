@@ -256,7 +256,9 @@ def _render_models_status(
     config = _populate_registry() or load_config()
     specs = ModelRegistry.list_models()
 
-    default_model = config.intelligence.default_model or "grandpa-mini:latest"
+    from grandpa.intelligence.grandpa_models import DEFAULT_MODEL_TAG
+
+    default_model = config.intelligence.default_model or DEFAULT_MODEL_TAG
     active_engine_key = config.engine.default or "ollama"
 
     resolved_engine = get_engine(config, active_engine_key)
