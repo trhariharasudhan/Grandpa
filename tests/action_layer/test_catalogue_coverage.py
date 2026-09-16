@@ -143,6 +143,15 @@ LAYER = Confirmation.LAYER
 DOMAIN = Confirmation.DOMAIN
 
 EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
+    # browser: navigation is confirmed by the domain, because whether to ask
+    # depends on the resolved URL and on tools.browser.trusted_domains, neither
+    # of which the layer can see. The hotkeys move the page but name no
+    # address, so they ask nothing.
+    "browser_page": ("MEDIUM", DOMAIN),
+    "browser_close_tab": ("LOW", NONE),
+    "browser_refresh": ("LOW", NONE),
+    "browser_reopen_closed_tab": ("LOW", NONE),
+    "browser_focus_address_bar": ("LOW", NONE),
     "volume_get": ("LOW", NONE),
     "file_read": ("LOW", NONE),
     "screenshot_describe": ("LOW", NONE),
@@ -300,6 +309,7 @@ def test_confirmation_is_not_decoration() -> None:
         "gmail_archive",
         "gmail_label",
         "gmail_trash",
+        "browser_page",
     }, asking
 
 

@@ -1399,6 +1399,9 @@ def chat(
         else:
             detail = ", ".join(f"{k}={v!r}" for k, v in sorted(parameters.items()))
             spec = action + (f" ({detail})" if detail else "")
+        if action.startswith("browser_"):
+            # Wave 2's wording, kept: a navigation prompt says so.
+            return _confirm_browser_action(spec, f"{risk.value} risk")
         return _confirm_local_change(spec, f"{risk.value} risk")
 
     history: List[Message] = []
@@ -1898,28 +1901,29 @@ def chat(
                 render_assistant_response(console, Markdown(browser_awareness.message))
                 continue
 
-            from grandpa.browser import handle_browser_command
+            # The browser, migrated. Parsed here, decided and performed by the
+            # layer; see cli/_browser_route.py.
+            from grandpa.cli._browser_route import build_browser_request
 
-            browser_action = handle_browser_command(
-                effective_user_input, confirm=_confirm_browser_action
+            browser_request, browser_parsed = build_browser_request(
+                effective_user_input
             )
-            if not browser_action.should_fallback:
+            if browser_request is not None:
+                browser_result = execute_action(browser_request, _confirm_action)
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(
-                    Message(role=Role.ASSISTANT, content=browser_action.message)
+                    Message(role=Role.ASSISTANT, content=browser_result.message)
                 )
-                remember_conversation("assistant", browser_action.message)
+                remember_conversation("assistant", browser_result.message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=browser_action.message,
+                    assistant_text=browser_result.message,
                     kind="browser",
-                    target=browser_action.url
-                    or (
-                        browser_action.action.target if browser_action.action else None
-                    ),
-                    status=browser_action.status,
+                    target=str(browser_result.data.get("url") or "")
+                    or (browser_parsed.target if browser_parsed else None),
+                    status=str(browser_result.data.get("status") or ""),
                 )
-                render_assistant_response(console, Markdown(browser_action.message))
+                render_assistant_response(console, Markdown(browser_result.message))
                 continue
 
             from grandpa.desktop.automation import handle_desktop_command

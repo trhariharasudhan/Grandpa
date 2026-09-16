@@ -80,7 +80,9 @@ class FileParser:
             command,
         )
         if match:
-            return FileAction("search", query=(match.group(1) or match.group(2)).strip())
+            return FileAction(
+                "search", query=(match.group(1) or match.group(2)).strip()
+            )
         match = re.fullmatch(r"(?:find|search for) (.+)", command)
         if match:
             query = match.group(1).strip()

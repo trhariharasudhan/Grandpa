@@ -80,6 +80,7 @@ _FILE_READ = _FILES
 _SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
 _BROWSER = "grandpa.browser_control.execute_browser_action"
+_BROWSER_NAV = "grandpa.browser.executor.BrowserExecutor.execute"
 _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
 _NOTES = "grandpa.notes.automation.NotesAutomation.execute"
 _DOWNLOADS = "grandpa.downloads.automation.DownloadsAutomation.execute"
@@ -247,6 +248,11 @@ class Binding(str, Enum):
     GMAIL_ACTION = "gmail_action"
     """``method(GmailAction, confirmed=, confirm=)`` -- grandpa.gmail."""
 
+    BROWSER_ACTION = "browser_action"
+    """``BrowserExecutor.execute(BrowserAction)`` -- the browser domain, which
+    owns navigation and the confirmation rules that go with it, including
+    tools.browser.trusted_domains."""
+
     FILE_ACTION = "file_action"
     """``FileExecutor.execute(FileAction, confirm=...)`` -- the files domain,
     which owns every file operation and applies its own safety policy to each
@@ -371,9 +377,20 @@ _CALLS: dict[str, _Call] = {
     "mouse_drag": _Call(_R_A_P),
     "desktop_navigate": _Call(_R_A_P),
     # browser
-    "browser_open": _Call(Binding.ACTION_TARGET, target="url", alias="open"),
-    "browser_search": _Call(Binding.ACTION_TARGET, target="query", alias="search"),
-    "browser_new_tab": _Call(Binding.ACTION_TARGET, target="url", alias="new_tab"),
+    "browser_open": _Call(Binding.BROWSER_ACTION, target="url", alias="open_url"),
+    "browser_search": _Call(Binding.BROWSER_ACTION, target="query", alias="search"),
+    "browser_page": _Call(Binding.BROWSER_ACTION, target="page", alias="open_page"),
+    "browser_new_tab": _Call(Binding.BROWSER_ACTION, alias="new_tab"),
+    "browser_close_tab": _Call(Binding.BROWSER_ACTION, alias="close_tab"),
+    "browser_refresh": _Call(Binding.BROWSER_ACTION, alias="refresh"),
+    "browser_back": _Call(Binding.BROWSER_ACTION, alias="back"),
+    "browser_forward": _Call(Binding.BROWSER_ACTION, alias="forward"),
+    "browser_reopen_closed_tab": _Call(
+        Binding.BROWSER_ACTION, alias="reopen_closed_tab"
+    ),
+    "browser_focus_address_bar": _Call(
+        Binding.BROWSER_ACTION, alias="focus_address_bar"
+    ),
     "browser_context": _Call(Binding.ACTION_TARGET, target="scope", alias="context"),
     "browser_tabs": _Call(Binding.ACTION_TARGET, target="scope", alias="tabs"),
     "browser_summary": _Call(Binding.ACTION_TARGET, target="scope", alias="summary"),
@@ -1003,27 +1020,103 @@ _INPUT_ACTIONS: tuple[ActionSpec, ...] = (
 _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
     _spec(
         "browser_open",
-        _LOW,
+        _MEDIUM,
         "Open a URL in the default browser.",
-        _BROWSER,
+        _BROWSER_NAV,
         _schema({"url": _string("Address to open. https:// is assumed.")}, ("url",)),
-        notes="execute_browser_action('open', url). Opens a real window.",
+        confirmation=Confirmation.DOMAIN,
+        notes="Navigates the real browser, so the browser domain decides: it "
+        "shows the resolved address and skips the question only for a host in "
+        "tools.browser.trusted_domains.",
     ),
     _spec(
         "browser_search",
-        _LOW,
+        _MEDIUM,
         "Search the web in the default browser.",
-        _BROWSER,
-        _schema({"query": _string("What to search for.")}, ("query",)),
-        notes="execute_browser_action('search', query). Opens a real window.",
+        _BROWSER_NAV,
+        _schema(
+            {
+                "query": _string("What to search for."),
+                "provider": _string(
+                    "Which search engine.",
+                    enum=["google", "youtube", "github", "stackoverflow"],
+                    default="google",
+                ),
+            },
+            ("query",),
+        ),
+        confirmation=Confirmation.DOMAIN,
+        notes="Same rule as browser_open; the search URL is built before the "
+        "question so the user is shown what will actually open.",
+    ),
+    _spec(
+        "browser_page",
+        _MEDIUM,
+        "Open one of the browser's own pages, such as history or downloads.",
+        _BROWSER_NAV,
+        _schema({"page": _string("Which page, e.g. 'history'.")}, ("page",)),
+        confirmation=Confirmation.DOMAIN,
+        notes="chrome://history and the like. Confirmed for the same reason: "
+        "it navigates the window the user is looking at.",
     ),
     _spec(
         "browser_new_tab",
         _LOW,
-        "Open a new browser tab.",
-        _BROWSER,
-        _schema({"url": _string("Address for the new tab.", default="about:blank")}),
-        notes="execute_browser_action('new_tab', url). Opens a real tab.",
+        "Open a new, empty browser tab.",
+        _BROWSER_NAV,
+        _schema({}),
+        notes="Ctrl+T. It opens nothing in particular, so there is no address "
+        "to show and nothing to confirm -- use browser_open for a URL. This is "
+        "narrower than the old execute_browser_action('new_tab', url), which "
+        "navigated; that behaviour is browser_open now.",
+    ),
+    _spec(
+        "browser_close_tab",
+        _LOW,
+        "Close the current browser tab.",
+        _BROWSER_NAV,
+        _schema({}),
+        notes="Ctrl+W.",
+    ),
+    _spec(
+        "browser_refresh",
+        _LOW,
+        "Reload the current page.",
+        _BROWSER_NAV,
+        _schema({}),
+        notes="Ctrl+R.",
+    ),
+    _spec(
+        "browser_back",
+        _MEDIUM,
+        "Go back one page.",
+        _BROWSER_NAV,
+        _schema({}),
+        notes="Alt+Left.",
+    ),
+    _spec(
+        "browser_forward",
+        _MEDIUM,
+        "Go forward one page.",
+        _BROWSER_NAV,
+        _schema({}),
+        notes="Alt+Right.",
+    ),
+    _spec(
+        "browser_reopen_closed_tab",
+        _LOW,
+        "Reopen the tab that was closed last.",
+        _BROWSER_NAV,
+        _schema({}),
+        notes="Ctrl+Shift+T.",
+    ),
+    _spec(
+        "browser_focus_address_bar",
+        _LOW,
+        "Put the cursor in the address bar.",
+        _BROWSER_NAV,
+        _schema({}),
+        notes="Ctrl+L.",
     ),
     _spec(
         "browser_context",
@@ -1902,14 +1995,6 @@ EXCLUSIONS: Mapping[str, str] = MappingProxyType(
             "Stub: maps to 'focus_search', which always returns "
             "requires_confirmation and is never completed."
         ),
-        "browser_back": (
-            "Stub: always returns requires_confirmation; no code navigates "
-            "the visible browser back."
-        ),
-        "browser_forward": (
-            "Stub: always returns requires_confirmation; no code navigates "
-            "the visible browser forward."
-        ),
         "browser_reload": (
             "Stub: always returns requires_confirmation; no code reloads the "
             "visible browser."
@@ -2058,6 +2143,26 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "web_clear_cache",
             )
         },
+        "browser_page": (
+            "The browser's own pages -- history, downloads, settings. "
+            "grandpa.browser knows the chrome:// URLs; pc_control never had an "
+            "entry for them. Confirmed like any other navigation."
+        ),
+        "browser_close_tab": (
+            "Ctrl+W through grandpa.browser. pc_control has no entry: its "
+            "browser_control stubs never touched the visible window."
+        ),
+        "browser_refresh": (
+            "Ctrl+R through grandpa.browser. pc_control's browser_reload was a "
+            "stub that always returned requires_confirmation and reloaded "
+            "nothing, so this is the capability appearing, not moving."
+        ),
+        "browser_reopen_closed_tab": (
+            "Ctrl+Shift+T through grandpa.browser. No pc_control equivalent."
+        ),
+        "browser_focus_address_bar": (
+            "Ctrl+L through grandpa.browser. No pc_control equivalent."
+        ),
         "datetime_now": (
             "The system clock, migrated seventh. handle_datetime_intent was "
             "split into parse_datetime_intent and answer_datetime first -- the "
@@ -2149,7 +2254,14 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
         "browser": (
             "browser_open",
             "browser_search",
+            "browser_page",
             "browser_new_tab",
+            "browser_close_tab",
+            "browser_refresh",
+            "browser_back",
+            "browser_forward",
+            "browser_reopen_closed_tab",
+            "browser_focus_address_bar",
             "browser_context",
             "browser_tabs",
             "browser_summary",

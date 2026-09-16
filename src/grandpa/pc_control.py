@@ -75,15 +75,13 @@ LOW_RISK_ACTIONS = {
     "desktop_summary",
     "pc_diagnostics",
     "file_create",
+    "browser_new_tab",
     "browser_context",
     "browser_tabs",
     "browser_summary",
     "browser_headings",
     "browser_links",
     "browser_buttons",
-    "browser_open",
-    "browser_search",
-    "browser_new_tab",
     "browser_diagnostics",
     "browser_media",
     "browser_task",
@@ -108,6 +106,8 @@ MEDIUM_RISK_ACTIONS = {
     "desktop_navigate",
     "browser_click",
     "browser_focus",
+    "browser_open",
+    "browser_search",
     "browser_back",
     "browser_forward",
     "browser_reload",
@@ -148,6 +148,8 @@ APPROVAL_REQUIRED_ACTIONS = {
     "mouse_drag",
     "browser_form_fill",
     "browser_download",
+    "browser_open",
+    "browser_search",
 }
 
 SAFE_APP_ALIASES = {
@@ -968,8 +970,67 @@ def _execute_system(request: LocalActionRequest, action: str) -> LocalActionResp
     return get_power_service().execute_system(action, platform=sys.platform)
 
 
+_BROWSER_NAVIGATION = {
+    "browser_open": "open_url",
+    "browser_search": "search",
+    "browser_new_tab": "new_tab",
+    "browser_back": "back",
+    "browser_forward": "forward",
+}
+"""Actions that move the window the user is looking at.
+
+These go to ``grandpa.browser``, the only place that knows the resolved address
+and the ``tools.browser.trusted_domains`` list. They used to go to
+``browser_control``, which called ``webbrowser.open`` straight away: chat asked
+before navigating and this path did not, for the same action name. back and
+forward were stubs there that never navigated at all; the domain sends a real
+hotkey.
+"""
+
+
+def _execute_browser_navigation(
+    request: LocalActionRequest, action: str
+) -> LocalActionResponse:
+    """Navigate through the browser domain, with approval already granted.
+
+    browser_open and browser_search are in APPROVAL_REQUIRED_ACTIONS, so the
+    operator has approved by the time this runs; consent is passed through
+    rather than asked for a second time.
+    """
+    from grandpa.browser.executor import BrowserExecutor
+    from grandpa.browser.models import BrowserAction
+    from grandpa.browser.safety import configured_trusted_domains
+
+    name = _BROWSER_NAVIGATION[action]
+    target = request.target or ""
+    if name == "open_url":
+        browser_action = BrowserAction(name, target=target, url=target)
+    elif name == "search":
+        browser_action = BrowserAction(name, provider="google", query=target)
+    else:
+        browser_action = BrowserAction(name)
+
+    result = BrowserExecutor(
+        confirmed=True, trusted_domains=configured_trusted_domains()
+    ).execute(browser_action)
+    ok = result.status == "handled"
+    return LocalActionResponse(
+        ok,
+        None,
+        "completed" if ok else ("blocked" if result.status == "blocked" else "failed"),
+        result.message,
+        False,
+        "MEDIUM",
+        {"url": result.url},
+        error=None if ok else (result.error or result.status),
+    )
+
+
 def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionResponse:
     from grandpa.browser_control import execute_browser_action
+
+    if action in _BROWSER_NAVIGATION:
+        return _execute_browser_navigation(request, action)
 
     mapping = {
         "browser_context": ("context", "active"),
@@ -978,16 +1039,11 @@ def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionRes
         "browser_headings": ("headings", "visible"),
         "browser_links": ("links", "visible"),
         "browser_buttons": ("buttons", "visible"),
-        "browser_open": ("open", request.target),
-        "browser_search": ("search", request.target),
-        "browser_new_tab": ("new_tab", request.target or "about:blank"),
         "browser_diagnostics": ("diagnostics", "browser"),
         "browser_media": ("media", request.target),
         "browser_task": ("task", request.target),
         "browser_click": ("click", request.target),
         "browser_focus": ("focus_search", request.target or "visible"),
-        "browser_back": ("back", "visible"),
-        "browser_forward": ("forward", "visible"),
         "browser_reload": ("reload", "visible"),
         "browser_form_fill": ("form_fill", request.target),
         "browser_download": ("download", request.target),

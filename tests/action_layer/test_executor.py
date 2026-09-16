@@ -274,17 +274,23 @@ def test_a_failing_service_response_is_reported_as_a_failure(
 def test_a_browser_style_result_is_read_by_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """BrowserActionResult has no .ok field, so success comes from its status."""
+    """BrowserActionResult has no .ok field, so success comes from its status.
+
+    Read through a browser *awareness* action: navigation moved to the
+    browser domain and its own binding when the two confirmation paths were
+    reconciled, and these read-only actions are what ACTION_TARGET still
+    serves.
+    """
 
     class _BrowserResult:
         status = "handled"
-        message = "Navigated browser to https://example.com."
+        message = "You are on an active browser page."
 
-    _patch(monkeypatch, "browser_open", _BrowserResult())
+    _patch(monkeypatch, "browser_context", _BrowserResult())
 
     result = execute(
         ActionRequest(
-            "browser_open", {"url": "https://example.com"}, requires_confirmation=False
+            "browser_context", {"scope": "active"}, requires_confirmation=False
         )
     )
 
@@ -295,15 +301,13 @@ def test_a_browser_style_result_is_read_by_status(
 def test_the_browser_binding_passes_the_short_sub_action_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    implementation = _patch(monkeypatch, "browser_search", _Response(status="handled"))
+    implementation = _patch(monkeypatch, "browser_tabs", _Response(status="handled"))
 
     execute(
-        ActionRequest(
-            "browser_search", {"query": "fastapi"}, requires_confirmation=False
-        )
+        ActionRequest("browser_tabs", {"scope": "recent"}, requires_confirmation=False)
     )
 
-    assert implementation.call_args.args == ("search", "fastapi")
+    assert implementation.call_args.args == ("tabs", "recent")
 
 
 def test_a_real_action_has_a_real_effect(tmp_path: Path) -> None:

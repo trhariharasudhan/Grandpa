@@ -298,6 +298,68 @@ def _call_google(
     )
 
 
+def _call_browser(
+    spec: ActionSpec,
+    implementation: Any,
+    owner: Any,
+    action: str,
+    parameters: Mapping[str, Any],
+    confirmed: bool,
+    confirm_callback: ConfirmCallback | None,
+) -> Any:
+    """Call the browser domain, and let it decide whether to ask.
+
+    Wave 2 gave the browser its own approval path, which left two mechanisms:
+    chat asked before navigating, and the action layer -- pointed at
+    ``browser_control.execute_browser_action`` -- called ``webbrowser.open``
+    with no question at all. The rule that matters lives in the domain, because
+    only it can decide: the answer depends on the *resolved* URL, which does
+    not exist until "example.com" has been normalised and a search phrase has
+    been turned into a query string, and it is skipped entirely for a host in
+    ``tools.browser.trusted_domains``. That is the definition of
+    :data:`Confirmation.DOMAIN`, so the layer hands its callback over rather
+    than asking up front.
+    """
+    from grandpa.browser.executor import BrowserExecutor
+    from grandpa.browser.models import BrowserAction
+    from grandpa.browser.safety import configured_trusted_domains
+
+    fields = dict(parameters)
+    target = str(fields.pop(spec.target_parameter or "", "") or "")
+
+    if action == "open_url":
+        browser_action = BrowserAction(action, target=target, url=target)
+    elif action == "search":
+        # An unknown provider is refused rather than guessed, and the
+        # parser always names one, so the default belongs here too.
+        browser_action = BrowserAction(
+            action, provider=str(fields.get("provider") or "google"), query=target
+        )
+    elif action == "open_page":
+        browser_action = BrowserAction(action, target=target)
+    else:
+        browser_action = BrowserAction(action)
+
+    forwarded = None
+    if confirm_callback is not None and not confirmed:
+
+        def forwarded(prompt: str, permission: str) -> bool:
+            # The domain writes the sentence -- "open https://example.com in
+            # your browser" -- because it is the one that resolved the address.
+            return bool(
+                confirm_callback(
+                    spec.name, {**dict(parameters), "_plan": str(prompt)}, spec.risk
+                )
+            )
+
+    executor = BrowserExecutor(
+        confirm=forwarded,
+        confirmed=confirmed,
+        trusted_domains=configured_trusted_domains(),
+    )
+    return executor.execute(browser_action)
+
+
 def _call_files(
     spec: ActionSpec,
     implementation: Any,
@@ -405,6 +467,16 @@ def _call(
             confirmed,
             confirm_callback,
         )
+    if spec.binding is Binding.BROWSER_ACTION:
+        return _call_browser(
+            spec,
+            implementation,
+            owner,
+            action,
+            parameters,
+            confirmed,
+            confirm_callback,
+        )
     if spec.binding is Binding.FILE_ACTION:
         return _call_files(
             spec,
@@ -501,7 +573,7 @@ def _as_result(spec: ActionSpec, returned: Any) -> ActionResult:
         # than inside an evidence mapping.
         data["content"] = contents
         data.setdefault("size", len(contents.encode("utf-8")))
-    for attribute in ("target", "kind"):
+    for attribute in ("target", "kind", "url"):
         value = getattr(returned, attribute, None)
         if isinstance(value, str) and value:
             data.setdefault(attribute, value)
