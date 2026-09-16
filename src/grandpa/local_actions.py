@@ -896,6 +896,22 @@ def _parse_safe_action(command: str) -> LocalActionResult:
             tts_text=f"Opening {label}.",
         )
 
+    if _looks_like_domain(open_target):
+        # "open google.com" is an address, not an application. It used to fall
+        # through to fuzzy app matching, which answered "Did you mean Google
+        # Chrome?" -- and "open example.com" matched nothing at all, so the same
+        # phrasing behaved differently depending on whether a similarly-named
+        # program happened to be installed. As a URL it goes through browser
+        # navigation, which confirms first.
+        url = f"https://{open_target}"
+        return LocalActionResult(
+            status="handled",
+            kind="url",
+            target=url,
+            message=f"Opening {url}.",
+            tts_text=f"Opening {open_target}.",
+        )
+
     folder = _folder_for(open_target)
     if folder is not None:
         return LocalActionResult(
@@ -1719,6 +1735,24 @@ def _parse_browser_action(command: str) -> LocalActionResult:
         )
 
     return LocalActionResult(status="no_match")
+
+
+_DOMAIN_RE = re.compile(
+    r"^(?!\d+\.\d+\.\d+\.\d+$)[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*"
+    r"\.(com|org|net|io|dev|co|edu|gov|uk|ai|app|me)(/\S*)?$",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_domain(value: str) -> bool:
+    """True when this names a website rather than an application.
+
+    Kept narrow on purpose -- a known suffix, no spaces. A bare IP address is
+    excluded: "open 192.168.1.1" is as likely to be a typo as an intention, and
+    guessing a URL from it is not an improvement on saying nothing.
+    """
+    candidate = str(value or "").strip()
+    return " " not in candidate and bool(_DOMAIN_RE.match(candidate))
 
 
 def _strip_open_prefix(command: str) -> str | None:

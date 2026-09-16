@@ -270,3 +270,92 @@ def test_unknown_url_requires_confirmation():
     assert result.status == "requires_confirmation"
     assert result.kind == "url"
     assert result.permission == "requires_confirmation"
+
+
+# --- a category is not an application -----------------------------------------
+#
+# A multi-word application name donates its last word as an alias, which is how
+# "Google Chrome" answers to "chrome". For a category word that is wrong: on a
+# real inventory "show my files" resolved to "VLC media player ... and cache
+# files" with full confidence and launched it without asking, "open my desktop"
+# resolved to Docker Desktop, and "show my apps" to "Documentation for Desktop
+# Apps".
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "show my windows",
+        "show windows",
+        "show my files",
+        "show my apps",
+        "show my screen",
+        "open my desktop",
+    ],
+)
+def test_a_category_word_does_not_resolve_to_an_application(phrase: str) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action(phrase, execute=False)
+
+    assert result.status == "no_match", result
+    assert result.kind != "app"
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected"),
+    [
+        ("open notepad", "notepad"),
+        ("open chrome", "chrome"),
+        ("open calculator", "calculator"),
+    ],
+)
+def test_real_applications_still_resolve(phrase: str, expected: str) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action(phrase, execute=False)
+
+    assert result.kind == "app"
+    assert expected in (result.target or "")
+
+
+def test_a_category_word_that_is_also_an_app_name_still_resolves() -> None:
+    """Settings is a real application, and the guard only skips the loose rules."""
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action("open settings", execute=False)
+
+    assert result.kind == "app"
+
+
+@pytest.mark.parametrize(
+    "phrase", ["open google.com", "open example.com", "open github.com"]
+)
+def test_a_domain_is_opened_as_an_address_not_guessed_as_an_app(phrase: str) -> None:
+    """It used to answer "Did you mean Google Chrome?" for google.com, and
+    nothing at all for example.com -- the same phrasing behaving differently
+    depending on what happened to be installed."""
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action(phrase, execute=False)
+
+    assert result.kind == "url"
+    assert result.target.startswith("https://")
+    assert result.permission == "requires_confirmation"
+
+
+def test_a_bare_ip_is_not_guessed_at() -> None:
+    from grandpa.local_actions import handle_local_action
+
+    assert handle_local_action("open 192.168.1.1", execute=False).status == "no_match"
+
+
+def test_generic_last_words_are_not_recorded_as_aliases() -> None:
+    from grandpa.apps.resolver import generate_aliases
+
+    assert "files" not in generate_aliases("VLC media player and cache files")
+    assert "desktop" not in generate_aliases("Docker Desktop")
+    assert "apps" not in generate_aliases("Documentation for Desktop Apps")
+    # ... while the ones that name a product still are.
+    assert "chrome" in generate_aliases("Google Chrome")
+    assert "studio" in generate_aliases("Android Studio")

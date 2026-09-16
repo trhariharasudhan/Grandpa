@@ -10,6 +10,56 @@ from grandpa.apps.models import ApplicationInfo, AppResolveResult
 
 FUZZY_THRESHOLD = 0.72
 
+_GENERIC_LAST_WORDS = frozenset(
+    {
+        "app",
+        "apps",
+        "application",
+        "applications",
+        "cache",
+        "center",
+        "centre",
+        "client",
+        "console",
+        "documentation",
+        "desktop",
+        "edition",
+        "editor",
+        "file",
+        "files",
+        "folder",
+        "folders",
+        "help",
+        "installer",
+        "keyboard",
+        "kit",
+        "manager",
+        "player",
+        "preferences",
+        "reader",
+        "screen",
+        "server",
+        "settings",
+        "setup",
+        "support",
+        "tool",
+        "tools",
+        "update",
+        "updater",
+        "utility",
+        "viewer",
+        "window",
+        "windows",
+    }
+)
+"""Trailing words that name a category rather than a product.
+
+A multi-word application name donates its last word as an alias, which is how
+"Google Chrome" answers to "chrome". These are the words for which that is
+wrong: they are what a user calls a *kind* of thing, so letting an installed
+program claim one means a question about the category launches that program.
+"""
+
 _CANONICAL_NAMES = {
     "chrome": "google chrome",
     "google chrome": "google chrome",
@@ -46,7 +96,13 @@ def generate_aliases(display_name: str, executable_name: str = "") -> tuple[str,
         aliases.update({"visual studio code", "vs code", "vscode", "code"})
     if "android studio" in aliases:
         aliases.add("studio")
-    if len(words) > 1:
+    if len(words) > 1 and words[-1] not in _GENERIC_LAST_WORDS:
+        # The last word is a good short name for a product -- "Chrome" for
+        # Google Chrome -- and a terrible one for a category. Without the guard,
+        # "VLC media player ... and cache files" claimed the alias "files",
+        # "Docker Desktop" claimed "desktop" and "Documentation for Desktop
+        # Apps" claimed "apps", so "show my files" resolved to VLC with full
+        # confidence and launched it without asking.
         aliases.add(words[-1])
     return tuple(sorted(alias for alias in aliases if alias))
 
@@ -94,6 +150,17 @@ def resolve_app(query: str, apps: list[ApplicationInfo]) -> AppResolveResult:
             )
         return AppResolveResult(
             "ambiguous", tuple(exact_name[:8]), _ambiguous_message(exact_name), 1.0
+        )
+
+    if normalized in _GENERIC_LAST_WORDS:
+        # Past the exact-name check, a category word matches nothing. Settings
+        # is an application and answers above; "files", "desktop", "apps" and
+        # "windows" are not, and every looser rule below would hand one of them
+        # to whichever installed program happened to end in that word. The
+        # alias guard in generate_aliases stops new inventories recording them;
+        # this stops an inventory already on disk from still answering.
+        return AppResolveResult(
+            "missing", (), f"I could not find an application called {query.strip()!r}."
         )
 
     exact_alias = [app for app in searchable if normalized in app.aliases]
