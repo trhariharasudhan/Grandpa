@@ -26,14 +26,13 @@ import click
 @click.option("--list", "list_pending", is_flag=True, help="Show what is waiting.")
 def approve(action_id: str | None, code: str, deny: bool, list_pending: bool) -> None:
     """Approve, deny, or list pending local actions."""
-    from grandpa.pc_control import (
-        approve_local_action,
-        list_pending_actions,
-        reject_local_action,
-    )
+    # Through the kernel's approval facade, not pc_control: a CLI module that
+    # imports the executor directly is a new route around the kernel, and the
+    # direct-executor baseline exists to stop exactly that.
+    from grandpa.desktop.kernel import approvals
 
     if list_pending or not action_id:
-        pending = list_pending_actions()
+        pending = approvals.pending()
         if not pending:
             click.echo("Nothing is waiting for approval.")
             return
@@ -47,14 +46,14 @@ def approve(action_id: str | None, code: str, deny: bool, list_pending: bool) ->
         return
 
     if deny:
-        response = reject_local_action(action_id)
+        response = approvals.reject(action_id)
     elif not code:
         raise click.UsageError(
             "An approval code is required. It was printed when the action was "
             "staged: grandpa approve <action-id> --code <code>"
         )
     else:
-        response = approve_local_action(action_id, code)
+        response = approvals.approve(action_id, code)
 
     click.echo(response.message)
     if not getattr(response, "ok", False):

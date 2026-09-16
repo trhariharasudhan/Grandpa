@@ -34,7 +34,7 @@ def test_pending_actions_are_listed(staged: str) -> None:
 
 
 def test_nothing_pending_says_so(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("grandpa.pc_control.list_pending_actions", lambda: [])
+    monkeypatch.setattr("grandpa.desktop.kernel.approvals.pending", lambda: [])
 
     result = CliRunner().invoke(approve, ["--list"])
 
