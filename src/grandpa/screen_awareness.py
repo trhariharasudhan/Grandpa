@@ -17,7 +17,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from grandpa.screen.redaction import is_sensitive_screen, redact_screen_text
+
 logger = logging.getLogger(__name__)
+
+SENSITIVE_SCREEN_MESSAGE = (
+    "That screen looks like it is showing credentials or payment details, so I "
+    "did not read it. Close it or switch windows and ask again."
+)
+"""Said instead of describing a screen that should not be described.
+
+The wording matches what the vision engine says for the same situation, because
+which of the two read the screen is not something a user should have to know.
+"""
 
 
 @dataclass(frozen=True)
@@ -191,6 +203,19 @@ def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
     if include_ocr and screenshot.screenshot_path:
         ocr = extract_ocr_result(screenshot.screenshot_path)
 
+    if is_sensitive_screen(title=window.window_title, text=ocr.text):
+        # A password manager, a UAC prompt, a banking or payment page. The
+        # vision engine refuses these outright rather than describing them, and
+        # so does this now: redaction removes the shapes it recognises, and a
+        # screen like this is exactly where the shape it does not recognise
+        # would be.
+        return ScreenContext(
+            supported=True,
+            window_title=window.window_title,
+            app_name=window.app_name,
+            message=SENSITIVE_SCREEN_MESSAGE,
+        )
+
     elements = detect_ui_elements(ocr.text)
     popup = classify_popup_or_error(ocr.text, window_title=window.window_title)
     suggestions = build_navigation_suggestions(elements, popup, window.app_name)
@@ -296,6 +321,13 @@ def extract_ocr_result(path: str) -> OcrResult:
                         best_lines = tuple(_clean_ocr_lines(text))
                 except Exception:
                     continue
+        # Redact before anything sees it. This is the boundary where pixels
+        # become text, and a screenshot contains whatever is on the display --
+        # a password manager, a terminal with a key in it, a payment form. The
+        # vision engine has always redacted its own reading of the screen; this
+        # path did not, and it is the one chat's "read my screen" uses.
+        best_text = redact_screen_text(best_text).text
+        best_lines = tuple(_clean_ocr_lines(best_text))
         return OcrResult(
             text=best_text,
             confidence=best_confidence,

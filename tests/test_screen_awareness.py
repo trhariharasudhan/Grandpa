@@ -170,3 +170,63 @@ def test_screen_diagnostics_route(monkeypatch):
 
     assert response.status_code == 200
     assert response.json()["supported"] is True
+
+
+# --- the screen is redacted at the OCR boundary --------------------------------
+
+
+def test_ocr_text_is_redacted_before_anyone_sees_it(monkeypatch) -> None:
+    """A screenshot contains whatever is on the display.
+
+    The vision engine has always redacted its own reading of the screen. This
+    path did not, and it is the one chat's "read my screen" uses, so a password
+    manager or a terminal with a key in it was described verbatim.
+    """
+    import grandpa.screen_awareness as sa
+
+    secrets = "Password: hunter2hunter2\napi_key: sk_live_ABCDEFGH12345678"
+    monkeypatch.setattr(
+        sa,
+        "capture_screenshot",
+        lambda: sa.ScreenContext(supported=True, screenshot_path="shot.png"),
+    )
+    monkeypatch.setattr(
+        sa,
+        "get_active_window_info",
+        lambda: sa.ScreenContext(supported=True, window_title="Notepad"),
+    )
+    monkeypatch.setattr(
+        sa,
+        "extract_ocr_result",
+        lambda _path: sa.OcrResult(text=sa.redact_screen_text(secrets).text),
+    )
+
+    message = sa.describe_screen().message
+
+    assert "hunter2hunter2" not in message
+    assert "sk_live_ABCDEFGH12345678" not in message
+    assert "[REDACTED_PASSWORD]" in message
+
+
+def test_a_credential_screen_is_not_described_at_all(monkeypatch) -> None:
+    """Redaction removes the shapes it knows; this is where the others live."""
+    import grandpa.screen_awareness as sa
+
+    monkeypatch.setattr(
+        sa,
+        "capture_screenshot",
+        lambda: sa.ScreenContext(supported=True, screenshot_path="shot.png"),
+    )
+    monkeypatch.setattr(
+        sa,
+        "get_active_window_info",
+        lambda: sa.ScreenContext(supported=True, window_title="Windows Security"),
+    )
+    monkeypatch.setattr(
+        sa, "extract_ocr_result", lambda _path: sa.OcrResult(text="Enter password")
+    )
+
+    context = sa.describe_screen()
+
+    assert context.message == sa.SENSITIVE_SCREEN_MESSAGE
+    assert context.ocr_text == ""
