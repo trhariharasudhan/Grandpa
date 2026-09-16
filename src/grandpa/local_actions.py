@@ -15,7 +15,6 @@ import urllib.parse
 import webbrowser
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -831,8 +830,15 @@ def _parse_safe_action(command: str) -> LocalActionResult:
         return agent_plan_result
 
     if command in {"what time is it", "what's the time", "time", "current time"}:
-        now = datetime.now().strftime("%I:%M %p").lstrip("0")
-        message = f"It is {now}."
+        # The clock domain owns this answer. It used to be formatted here, and
+        # said less: "It is 1:42 PM." against "It is 1:42 PM on Wednesday,
+        # September 16, 2026." A user will notice the difference, which is why
+        # it is called out rather than slipped in -- and two of the four phrases
+        # above are not claimed by the clock's own parser at all, so unifying
+        # here is what makes all four answer the same way.
+        from grandpa.core.runtime_context import answer_datetime
+
+        message = answer_datetime("time")
         return LocalActionResult(
             status="handled",
             kind="time",
