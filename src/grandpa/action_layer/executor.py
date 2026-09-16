@@ -395,7 +395,12 @@ def _call_files(
         destination = str(fields.pop("new_name", "") or "")
 
     file_action = FileAction(
-        action=action, source=target, destination=destination, args=fields
+        action=action,
+        # search names what to look for, not where to look.
+        source="" if action == "search" else target,
+        query=target if action == "search" else "",
+        destination=destination,
+        args=fields,
     )
 
     forwarded = None

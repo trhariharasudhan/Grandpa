@@ -368,6 +368,14 @@ _CALLS: dict[str, _Call] = {
     "file_copy": _Call(Binding.FILE_ACTION, target="path", alias="copy"),
     "file_delete": _Call(Binding.FILE_ACTION, target="path", alias="delete"),
     "file_read": _Call(Binding.FILE_ACTION, target="path", alias="read"),
+    "file_search": _Call(Binding.FILE_ACTION, target="query", alias="search"),
+    "file_open": _Call(Binding.FILE_ACTION, target="path", alias="open"),
+    "file_open_folder": _Call(
+        Binding.FILE_ACTION, target="path", alias="open_containing_folder"
+    ),
+    "file_properties": _Call(Binding.FILE_ACTION, target="path", alias="properties"),
+    "file_zip": _Call(Binding.FILE_ACTION, target="path", alias="zip"),
+    "file_extract": _Call(Binding.FILE_ACTION, target="path", alias="extract"),
     # synthetic input
     "keyboard_type": _Call(_R_A_P),
     "keyboard_hotkey": _Call(_R_A_P),
@@ -864,6 +872,55 @@ _FILE_ACTIONS: tuple[ActionSpec, ...] = (
         _schema({"path": _PATH}, ("path",)),
         notes="Deletes outright (unlink / rmtree). It does not go to the "
         "Recycle Bin, so there is nothing to restore.",
+    ),
+    _spec(
+        "file_search",
+        _LOW,
+        "Find files by name under the searchable folders.",
+        _FILES,
+        _schema({"query": _string("What to look for.")}, ("query",)),
+        notes="Walks grandpa.files.paths.safe_roots() and nothing wider.",
+    ),
+    _spec(
+        "file_open",
+        _LOW,
+        "Open a file with whatever application handles it.",
+        _FILES,
+        _schema({"path": _PATH}, ("path",)),
+        notes="os.startfile, the same tier as open_app and open_folder: it "
+        "hands the file to an application rather than changing it.",
+    ),
+    _spec(
+        "file_open_folder",
+        _LOW,
+        "Open the folder that contains a file.",
+        _FILES,
+        _schema({"path": _PATH}, ("path",)),
+    ),
+    _spec(
+        "file_properties",
+        _LOW,
+        "Report a file's size, type and dates.",
+        _FILES,
+        _schema({"path": _PATH}, ("path",)),
+    ),
+    _spec(
+        "file_zip",
+        _MEDIUM,
+        "Compress a file or folder into a zip archive.",
+        _FILES,
+        _schema({"path": _PATH, "destination": _DESTINATION}, ("path",)),
+        notes="Writes a new archive. The domain refuses rather than "
+        "overwriting one that already exists.",
+    ),
+    _spec(
+        "file_extract",
+        _MEDIUM,
+        "Extract a zip archive.",
+        _FILES,
+        _schema({"path": _PATH, "destination": _DESTINATION}, ("path",)),
+        notes="Writes many files at once, so it is rated with the other "
+        "actions that change what is on disk.",
     ),
     _spec(
         "file_read",
@@ -2143,6 +2200,29 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "web_clear_cache",
             )
         },
+        "file_search": (
+            "grandpa.files walks the searchable roots; pc_control has no "
+            "search of its own."
+        ),
+        "file_open": (
+            "os.startfile on a document. pc_control opens folders and apps "
+            "but never had an entry for opening a file."
+        ),
+        "file_open_folder": (
+            "Reveals a file in its folder. pc_control's open_folder takes a "
+            "folder, not a file to reveal."
+        ),
+        "file_properties": (
+            "Size, type and dates. A read, and pc_control has no equivalent."
+        ),
+        "file_zip": (
+            "Archive creation lives in grandpa.files; pc_control never had "
+            "it. MEDIUM like file_move: it writes something new."
+        ),
+        "file_extract": (
+            "The other half of zip, and the riskier one -- it writes many "
+            "files at once."
+        ),
         "browser_page": (
             "The browser's own pages -- history, downloads, settings. "
             "grandpa.browser knows the chrome:// URLs; pc_control never had an "
@@ -2236,6 +2316,12 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
         ),
         "files": (
             "file_read",
+            "file_search",
+            "file_open",
+            "file_open_folder",
+            "file_properties",
+            "file_zip",
+            "file_extract",
             "file_create",
             "file_rename",
             "file_move",

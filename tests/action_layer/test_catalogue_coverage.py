@@ -147,6 +147,14 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     # depends on the resolved URL and on tools.browser.trusted_domains, neither
     # of which the layer can see. The hotkeys move the page but name no
     # address, so they ask nothing.
+    # files: reading and listing are LOW, writing something new is MEDIUM,
+    # matching file_create and file_move in pc_control's own table.
+    "file_search": ("LOW", NONE),
+    "file_open": ("LOW", NONE),
+    "file_open_folder": ("LOW", NONE),
+    "file_properties": ("LOW", NONE),
+    "file_zip": ("MEDIUM", NONE),
+    "file_extract": ("MEDIUM", NONE),
     "browser_page": ("MEDIUM", DOMAIN),
     "browser_close_tab": ("LOW", NONE),
     "browser_refresh": ("LOW", NONE),

@@ -1971,6 +1971,33 @@ def chat(
                 render_assistant_response(console, Markdown(local_action.message))
                 continue
 
+            # File operations, migrated. grandpa.files owns them; the layer
+            # rates them and asks. See cli/_files_route.py.
+            from grandpa.cli._files_route import build_file_request
+
+            file_request, file_parsed = build_file_request(effective_user_input)
+            if file_request is not None:
+                file_result = execute_action(file_request, _confirm_action)
+                history.append(Message(role=Role.USER, content=user_input))
+                history.append(
+                    Message(role=Role.ASSISTANT, content=file_result.message)
+                )
+                remember_conversation("assistant", file_result.message)
+                record_assistant_outcome(
+                    brain_analysis,
+                    assistant_text=file_result.message,
+                    kind="file",
+                    target=str(file_result.data.get("path") or "")
+                    or (file_parsed.source if file_parsed else None),
+                    status=str(file_result.data.get("status") or ""),
+                )
+                render_assistant_response(console, Markdown(file_result.message))
+                continue
+
+            # What is left of the old file branch is not file *operations*: it
+            # is file_assistant's own intelligence -- recent files, document
+            # search, summaries. A separate domain, catalogued separately; see
+            # the phase report.
             from grandpa.file_assistant import handle_file_command
 
             file_action = handle_file_command(effective_user_input)
