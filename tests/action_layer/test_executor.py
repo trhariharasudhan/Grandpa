@@ -301,13 +301,17 @@ def test_a_browser_style_result_is_read_by_status(
 def test_the_browser_binding_passes_the_short_sub_action_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    implementation = _patch(monkeypatch, "browser_tabs", _Response(status="handled"))
-
-    execute(
-        ActionRequest("browser_tabs", {"scope": "recent"}, requires_confirmation=False)
+    implementation = _patch(
+        monkeypatch, "browser_headings", _Response(status="handled")
     )
 
-    assert implementation.call_args.args == ("tabs", "recent")
+    execute(
+        ActionRequest(
+            "browser_headings", {"scope": "visible"}, requires_confirmation=False
+        )
+    )
+
+    assert implementation.call_args.args == ("headings", "visible")
 
 
 def test_a_real_action_has_a_real_effect(tmp_path: Path) -> None:

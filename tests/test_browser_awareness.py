@@ -178,9 +178,12 @@ def test_chat_awareness_does_not_call_llm(monkeypatch) -> None:
         "grandpa.engine.get_engine", lambda *_args, **_kwargs: ("mock", engine)
     )
     monkeypatch.setattr("grandpa.intelligence.register_builtin_models", lambda: None)
+    # Chat reaches awareness through the action layer now, so the seam it calls
+    # is execute_awareness rather than the parse-and-answer facade. The claim
+    # under test is unchanged: the question is answered without asking a model.
     monkeypatch.setattr(
-        "grandpa.browser_awareness.handle_browser_awareness_command",
-        lambda _text: SimpleNamespace(
+        "grandpa.browser_awareness.automation.execute_awareness",
+        lambda _action, _query="": SimpleNamespace(
             status="handled",
             message="Current page:\nTitle: FastAPI Documentation",
             snapshot=SimpleNamespace(url="https://fastapi.tiangolo.com/"),

@@ -149,6 +149,12 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     # address, so they ask nothing.
     # files: reading and listing are LOW, writing something new is MEDIUM,
     # matching file_create and file_move in pc_control's own table.
+    # browser awareness: every one is a read of the visible page.
+    "browser_title": ("LOW", NONE),
+    "browser_url": ("LOW", NONE),
+    "browser_read": ("LOW", NONE),
+    "browser_selected_text": ("LOW", NONE),
+    "browser_find_text": ("LOW", NONE),
     "file_search": ("LOW", NONE),
     "file_open": ("LOW", NONE),
     "file_open_folder": ("LOW", NONE),

@@ -81,6 +81,7 @@ _SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
 _BROWSER = "grandpa.browser_control.execute_browser_action"
 _BROWSER_NAV = "grandpa.browser.executor.BrowserExecutor.execute"
+_AWARENESS = "grandpa.browser_awareness.automation.execute_awareness"
 _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
 _NOTES = "grandpa.notes.automation.NotesAutomation.execute"
 _DOWNLOADS = "grandpa.downloads.automation.DownloadsAutomation.execute"
@@ -253,6 +254,11 @@ class Binding(str, Enum):
     owns navigation and the confirmation rules that go with it, including
     tools.browser.trusted_domains."""
 
+    AWARENESS_ACTION = "awareness_action"
+    """execute_awareness(action, query) -- browser_awareness, which
+    captures the visible page, redacts it and answers from the snapshot.
+    """
+
     FILE_ACTION = "file_action"
     """``FileExecutor.execute(FileAction, confirm=...)`` -- the files domain,
     which owns every file operation and applies its own safety policy to each
@@ -399,11 +405,18 @@ _CALLS: dict[str, _Call] = {
     "browser_focus_address_bar": _Call(
         Binding.BROWSER_ACTION, alias="focus_address_bar"
     ),
-    "browser_context": _Call(Binding.ACTION_TARGET, target="scope", alias="context"),
-    "browser_tabs": _Call(Binding.ACTION_TARGET, target="scope", alias="tabs"),
-    "browser_summary": _Call(Binding.ACTION_TARGET, target="scope", alias="summary"),
+    "browser_context": _Call(Binding.AWARENESS_ACTION, alias="current"),
+    "browser_title": _Call(Binding.AWARENESS_ACTION, alias="title"),
+    "browser_url": _Call(Binding.AWARENESS_ACTION, alias="url"),
+    "browser_read": _Call(Binding.AWARENESS_ACTION, alias="read"),
+    "browser_selected_text": _Call(Binding.AWARENESS_ACTION, alias="selected_text"),
+    "browser_find_text": _Call(
+        Binding.AWARENESS_ACTION, target="query", alias="find_text"
+    ),
+    "browser_tabs": _Call(Binding.AWARENESS_ACTION, alias="tabs"),
+    "browser_summary": _Call(Binding.AWARENESS_ACTION, alias="summarize"),
     "browser_headings": _Call(Binding.ACTION_TARGET, target="scope", alias="headings"),
-    "browser_links": _Call(Binding.ACTION_TARGET, target="scope", alias="links"),
+    "browser_links": _Call(Binding.AWARENESS_ACTION, alias="links"),
     "browser_buttons": _Call(Binding.ACTION_TARGET, target="scope", alias="buttons"),
     "browser_media": _Call(Binding.ACTION_TARGET, target="scope", alias="media"),
     "browser_diagnostics": _Call(
@@ -1176,10 +1189,48 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         notes="Ctrl+L.",
     ),
     _spec(
+        "browser_title",
+        _LOW,
+        "Report the title of the page in the visible browser.",
+        _AWARENESS,
+        _schema({}),
+    ),
+    _spec(
+        "browser_url",
+        _LOW,
+        "Report the address of the page in the visible browser.",
+        _AWARENESS,
+        _schema({}),
+    ),
+    _spec(
+        "browser_read",
+        _LOW,
+        "Read the visible text of the page.",
+        _AWARENESS,
+        _schema({}),
+        notes="Redacted at the ingress boundary before it leaves the browser, "
+        "and capped -- page text goes to a model, so a key or a one-time code "
+        "on the page must not travel with it.",
+    ),
+    _spec(
+        "browser_selected_text",
+        _LOW,
+        "Report the text the user has selected in the browser.",
+        _AWARENESS,
+        _schema({}),
+    ),
+    _spec(
+        "browser_find_text",
+        _LOW,
+        "Find a phrase on the visible page.",
+        _AWARENESS,
+        _schema({"query": _string("What to look for.")}, ("query",)),
+    ),
+    _spec(
         "browser_context",
         _LOW,
         "Report what the visible browser window is showing.",
-        _BROWSER,
+        _AWARENESS,
         _schema({"scope": _browser_scope("active")}),
         notes="execute_browser_action('context', 'active').",
     ),
@@ -1187,7 +1238,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         "browser_tabs",
         _LOW,
         "List recently seen browser tabs.",
-        _BROWSER,
+        _AWARENESS,
         _schema({"scope": _browser_scope("recent")}),
         notes="execute_browser_action('tabs', 'recent').",
     ),
@@ -1195,7 +1246,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         "browser_summary",
         _LOW,
         "Summarise the readable text of the visible page.",
-        _BROWSER,
+        _AWARENESS,
         _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('summary', 'visible'). Reports that page "
         "text is unavailable when the DOM cannot be read.",
@@ -1212,7 +1263,7 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         "browser_links",
         _LOW,
         "List the links on the visible page.",
-        _BROWSER,
+        _AWARENESS,
         _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('links', 'visible').",
     ),
@@ -2200,6 +2251,19 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "web_clear_cache",
             )
         },
+        "browser_title": (
+            "browser_awareness reads the visible page. pc_control has no "
+            "entry for the page title."
+        ),
+        "browser_url": ("The address of the visible page. No pc_control entry."),
+        "browser_read": (
+            "The visible text, redacted and capped. No pc_control entry; its "
+            "browser_summary summarises rather than reading out."
+        ),
+        "browser_selected_text": (
+            "What the user has highlighted. No pc_control entry."
+        ),
+        "browser_find_text": ("Find a phrase on the page. No pc_control entry."),
         "file_search": (
             "grandpa.files walks the searchable roots; pc_control has no "
             "search of its own."
@@ -2349,6 +2413,11 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "browser_reopen_closed_tab",
             "browser_focus_address_bar",
             "browser_context",
+            "browser_title",
+            "browser_url",
+            "browser_read",
+            "browser_selected_text",
+            "browser_find_text",
             "browser_tabs",
             "browser_summary",
             "browser_headings",

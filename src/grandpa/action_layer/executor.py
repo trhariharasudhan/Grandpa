@@ -472,6 +472,12 @@ def _call(
             confirmed,
             confirm_callback,
         )
+    if spec.binding is Binding.AWARENESS_ACTION:
+        # Reading the page, never changing it: no confirmation to hand over.
+        # The domain captures and redacts before it answers.
+        return implementation(
+            action, str(dict(parameters).get(spec.target_parameter or "", "") or "")
+        )
     if spec.binding is Binding.BROWSER_ACTION:
         return _call_browser(
             spec,

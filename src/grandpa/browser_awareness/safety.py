@@ -1,11 +1,15 @@
 """Safety helpers for read-only browser awareness.
 
-Secret redaction is delegated to :func:`grandpa.screen.redaction
-.redact_screen_text`, the canonical routine shared with ``screen/``,
-``vision/``, ``browser_control`` and ``browser_intelligence``. The local
-patterns below run afterwards and cover shapes the canonical set does not,
-so neither loses coverage; adding a pattern to the canonical set improves
-every ingress path at once.
+Secret redaction is delegated twice over: to :func:`grandpa.screen.redaction
+.redact_screen_text`, the canonical routine shared with ``screen/`` and
+``vision/``, and then to ``browser_control``'s ``_SECRET_VALUE_RE``, which is
+the ingress boundary every browser-derived string already passes through.
+
+The patterns used to be copied here, and the copies drifted: this one carried a
+bare six-digit rule and the ingress did not, so an unlabelled one-time code was
+redacted when chat read the page and not when the action layer, pc_control or
+``browser_intelligence`` did. One list, held where the ingress is, is what stops
+that happening again.
 """
 
 from __future__ import annotations
@@ -16,20 +20,21 @@ from grandpa.screen.redaction import redact_screen_text
 
 MAX_CAPTURED_TEXT_CHARS = 8000
 
-SECRET_PATTERNS = (
-    re.compile(
-        r"(?i)\b(?:api[_-]?key|token|secret|password|passwd|bearer)\b\s*[:=]\s*['\"]?[\w\-\.]{8,}"
-    ),
-    re.compile(r"\b(?:sk|pk|xoxp|xoxb|ghp|gho|github_pat)_[A-Za-z0-9_\-]{10,}"),
-    re.compile(r"\b[A-Za-z0-9_\-]{24,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b"),
-    re.compile(r"\b(?:\d[ -]*?){13,19}\b"),
-    re.compile(r"\b\d{6}\b"),
-)
+
+def _secret_patterns() -> tuple[re.Pattern[str], ...]:
+    """The ingress boundary's own list, compiled.
+
+    Imported lazily: ``browser_control`` is heavy and imports back into this
+    package's capture, so taking it at module import would be a cycle.
+    """
+    from grandpa.browser_control import _SECRET_VALUE_RE
+
+    return tuple(re.compile(pattern) for pattern in _SECRET_VALUE_RE)
 
 
 def sanitize_visible_text(text: str, *, limit: int = MAX_CAPTURED_TEXT_CHARS) -> str:
     value = redact_screen_text(str(text or "")).text
-    for pattern in SECRET_PATTERNS:
+    for pattern in _secret_patterns():
         value = pattern.sub("[redacted]", value)
     value = re.sub(r"\s+", " ", value).strip()
     if len(value) > limit:

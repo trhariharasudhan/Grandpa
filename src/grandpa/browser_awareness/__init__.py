@@ -3,6 +3,7 @@
 from grandpa.browser_awareness.analyzer import BrowserPageAnalyzer
 from grandpa.browser_awareness.automation import (
     BrowserAwareness,
+    execute_awareness,
     handle_browser_awareness_command,
 )
 from grandpa.browser_awareness.capture import BrowserPageCapture
@@ -21,5 +22,6 @@ __all__ = [
     "BrowserPageAnalyzer",
     "BrowserPageCapture",
     "BrowserPageSnapshot",
+    "execute_awareness",
     "handle_browser_awareness_command",
 ]

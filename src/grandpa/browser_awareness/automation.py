@@ -29,6 +29,30 @@ class BrowserAwareness:
         return self.analyzer.analyze(action, snapshot)
 
 
+def execute_awareness(
+    action: str,
+    query: str = "",
+    *,
+    capture: BrowserPageCapture | CaptureProvider | None = None,
+) -> BrowserAwarenessResult:
+    """Answer one already-chosen awareness action.
+
+    The structured seam: ``handle`` parses and answers, which is what a chat
+    phrase needs; the action layer has already been told which action to take
+    and only needs the second half. Both go through the same capture and the
+    same analyzer, so the answer does not depend on which called.
+    """
+    from grandpa.browser_awareness.models import BrowserAwarenessAction
+
+    awareness = BrowserAwareness(capture=capture)
+    snapshot = (
+        awareness.capture()
+        if callable(awareness.capture)
+        else awareness.capture.capture()
+    )
+    return awareness.analyzer.analyze(BrowserAwarenessAction(action, query), snapshot)
+
+
 def handle_browser_awareness_command(
     text: str,
     *,
@@ -39,4 +63,8 @@ def handle_browser_awareness_command(
     return BrowserAwareness(capture=capture).handle(text)
 
 
-__all__ = ["BrowserAwareness", "handle_browser_awareness_command"]
+__all__ = [
+    "BrowserAwareness",
+    "execute_awareness",
+    "handle_browser_awareness_command",
+]

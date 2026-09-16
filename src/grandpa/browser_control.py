@@ -53,6 +53,15 @@ _SECRET_VALUE_RE = (
     r"\b(?:sk|pk|xoxp|xoxb|ghp|gho|github_pat)_[A-Za-z0-9_\-]{10,}",
     r"\b[A-Za-z0-9_\-]{24,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\b",
     r"\b(?:\d[ -]*?){13,19}\b",
+    # A bare six-digit run: how a one-time code actually appears on a page,
+    # with nothing next to it to say so. browser_awareness redacted this and
+    # this ingress did not, which meant the same page text was safe when chat
+    # read it and not when the action layer, pc_control or browser_intelligence
+    # did -- "Enter 483920 to continue" went through verbatim. The canonical
+    # screen redaction only catches a code that is labelled; this pass is
+    # browser text only, which is where an unlabelled code is worth losing a
+    # price to.
+    r"\b\d{6}\b",
 )
 
 BrowserActionStatus = Literal[

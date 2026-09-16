@@ -1880,25 +1880,27 @@ def chat(
                 render_assistant_response(console, Markdown(gmail_message))
                 continue
 
-            from grandpa.browser_awareness import handle_browser_awareness_command
+            # Reading the visible page, migrated. See cli/_awareness_route.py.
+            from grandpa.cli._awareness_route import build_awareness_request
 
-            browser_awareness = handle_browser_awareness_command(effective_user_input)
-            if not browser_awareness.should_fallback:
+            awareness_request, _awareness_parsed = build_awareness_request(
+                effective_user_input
+            )
+            if awareness_request is not None:
+                awareness_result = execute_action(awareness_request, _confirm_action)
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(
-                    Message(role=Role.ASSISTANT, content=browser_awareness.message)
+                    Message(role=Role.ASSISTANT, content=awareness_result.message)
                 )
-                remember_conversation("assistant", browser_awareness.message)
+                remember_conversation("assistant", awareness_result.message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=browser_awareness.message,
+                    assistant_text=awareness_result.message,
                     kind="browser_awareness",
-                    target=browser_awareness.snapshot.url
-                    if browser_awareness.snapshot
-                    else None,
-                    status=browser_awareness.status,
+                    target=str(awareness_result.data.get("url") or "") or None,
+                    status=str(awareness_result.data.get("status") or ""),
                 )
-                render_assistant_response(console, Markdown(browser_awareness.message))
+                render_assistant_response(console, Markdown(awareness_result.message))
                 continue
 
             # The browser, migrated. Parsed here, decided and performed by the
