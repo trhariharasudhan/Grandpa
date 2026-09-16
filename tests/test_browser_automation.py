@@ -237,3 +237,70 @@ def test_app_file_browser_ambiguity() -> None:
     assert BrowserParser().parse("open browser downloads").action == "open_page"  # type: ignore[union-attr]
     assert BrowserParser().parse("search invoice.pdf") is None
     assert BrowserParser().parse("search google for invoice templates") is not None
+
+
+# --- browser shortcuts: they run, and only into a browser ----------------------
+
+
+@pytest.fixture
+def recorded_keys(monkeypatch):
+    """Record the keys the automation service is asked to press; press nothing."""
+    import grandpa.desktop.control.automation as automation
+
+    pressed: list[str] = []
+
+    class _Ok:
+        ok = True
+        message = "Pressed hotkey."
+
+    monkeypatch.setattr(
+        automation.AutomationControlService,
+        "execute",
+        lambda self, request, action, platform: pressed.append(request.target) or _Ok(),
+    )
+    return pressed
+
+
+def test_a_shortcut_is_not_sent_to_a_window_that_is_not_a_browser(
+    monkeypatch, recorded_keys
+) -> None:
+    """Ctrl+W sent to a text editor closes the document, not a tab."""
+    from grandpa.browser.executor import BrowserExecutor
+    from grandpa.browser.models import BrowserAction
+
+    monkeypatch.setattr(
+        "grandpa.browser_control._find_visible_browser_window", lambda: None
+    )
+
+    result = BrowserExecutor().execute(BrowserAction("close_tab"))
+
+    assert result.status == "blocked"
+    assert result.error == "browser_not_in_front"
+    assert recorded_keys == []
+
+
+def test_a_shortcut_runs_when_a_browser_is_in_front(monkeypatch, recorded_keys) -> None:
+    """They used to be staged as a generic keyboard_hotkey approval and never ran."""
+    from grandpa.browser.executor import BrowserExecutor
+    from grandpa.browser.models import BrowserAction
+
+    monkeypatch.setattr(
+        "grandpa.browser_control._find_visible_browser_window",
+        lambda: (1, "Chrome", "Some Page"),
+    )
+    staged: list[str] = []
+    monkeypatch.setattr(
+        "grandpa.pc_control._create_pending",
+        lambda request: staged.append(request.action_type) or "never",
+    )
+
+    for name, keys in (
+        ("back", "alt+left"),
+        ("forward", "alt+right"),
+        ("new_tab", "ctrl+t"),
+    ):
+        result = BrowserExecutor().execute(BrowserAction(name))
+        assert result.status == "handled", result
+
+    assert recorded_keys == ["alt+left", "alt+right", "ctrl+t"]
+    assert staged == []

@@ -135,14 +135,21 @@ def execute_spec(
         message = "That desktop action is not supported."
         return AutomationResult("unsupported", spec, message, message)
 
-    if not confirmed:
+    name, key = mapped
+    # Ask exactly when pc_control would: its approval set is the one rule for
+    # synthetic input. Scrolling and focusing a window are deliberately outside
+    # it -- neither activates anything -- so they no longer prompt here either.
+    # Asking for everything looked stricter, but it taught a user to say yes
+    # without reading, which is the opposite of what a prompt is for.
+    from grandpa.pc_control import APPROVAL_REQUIRED_ACTIONS
+
+    if not confirmed and name in APPROVAL_REQUIRED_ACTIONS:
         if confirm_callback is None:
             message = "Confirmation required before controlling the active app."
             return AutomationResult("blocked", spec, message, message)
         if not confirm_callback(spec, "requires_confirmation"):
             return AutomationResult("cancelled", spec, "Cancelled.", "Cancelled.")
 
-    name, key = mapped
     argument = argument.strip()
     response = AutomationControlService().execute(
         _SpecRequest(target=argument, args={key: argument}),

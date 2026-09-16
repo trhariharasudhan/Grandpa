@@ -151,6 +151,14 @@ class BrowserExecutor:
         keys = HOTKEYS[action.action]
         try:
             ok = self.hotkey_runner(keys)
+        except BrowserNotInFrontError:
+            return BrowserOperationResult(
+                "blocked",
+                "The window in front is not a browser, so I did not send that "
+                "shortcut.",
+                action,
+                error="browser_not_in_front",
+            )
         except Exception as exc:
             return BrowserOperationResult(
                 "error", "Could not send that browser shortcut.", action, error=str(exc)
@@ -175,17 +183,51 @@ def _default_open(url: str) -> bool:
     return bool(webbrowser.open(url, new=2))
 
 
-def _default_hotkey(keys: tuple[str, ...]) -> bool:
-    from grandpa.pc_control import run_local_action
+class BrowserNotInFrontError(RuntimeError):
+    """The foreground window is not a browser, so a browser shortcut was not sent."""
 
-    response = run_local_action(
-        {
-            "action_type": "keyboard_hotkey",
-            "target": "+".join(keys),
-            "args": {"keys": list(keys)},
-        }
+
+class _HotkeyRequest:
+    def __init__(self, keys: tuple[str, ...]) -> None:
+        self.target = "+".join(keys)
+        self.args = {"keys": list(keys)}
+
+
+def _default_hotkey(keys: tuple[str, ...]) -> bool:
+    """Send one of this domain's fixed shortcuts to the browser in front.
+
+    This used to go through pc_control as a generic keyboard_hotkey, which is
+    in APPROVAL_REQUIRED_ACTIONS. So every browser shortcut the action layer
+    asked for -- back, forward, new tab, refresh, close tab -- was staged for an
+    approval that nothing redeemed, and reported "Could not send that browser
+    shortcut." They never ran.
+
+    That approval exists because keyboard_hotkey takes *arbitrary* keys, and a
+    model choosing keys can reach Win+R. These are a fixed allowlist -- Ctrl+T,
+    Ctrl+W, Ctrl+R, Alt+Left, Alt+Right, Ctrl+Shift+T, Ctrl+L -- none of which
+    opens anything. The risk they do carry is aim: Ctrl+W sent to a text editor
+    closes the document, not a tab. So the guard that matters is that the
+    foreground window is a browser, and that is checked first. The automation
+    service then applies its own denylist, protected-window check and cooldown.
+    """
+    import sys
+
+    from grandpa.browser_control import _find_visible_browser_window
+    from grandpa.desktop.control.automation import AutomationControlService
+
+    if _find_visible_browser_window() is None:
+        raise BrowserNotInFrontError("the foreground window is not a browser")
+
+    response = AutomationControlService().execute(
+        _HotkeyRequest(keys), "keyboard_hotkey", platform=sys.platform
     )
     return bool(getattr(response, "ok", False))
 
 
-__all__ = ["BrowserExecutor", "HOTKEYS", "OpenCallback", "PAGE_URLS"]
+__all__ = [
+    "BrowserExecutor",
+    "BrowserNotInFrontError",
+    "HOTKEYS",
+    "OpenCallback",
+    "PAGE_URLS",
+]

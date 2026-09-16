@@ -139,6 +139,12 @@ _ALWAYS_CONFIRM = frozenset(
         "keyboard_hotkey",
         "mouse_click",
         "mouse_drag",
+        # Closing ends something the user was using. WM_CLOSE lets most
+        # applications ask about unsaved work, but not all do: a console
+        # window takes its running process with it, and a model chose the
+        # target. close_app is close_window under another name, so both.
+        "close_app",
+        "close_window",
         # browser_form_fill and browser_download are in pc_control's set too,
         # but are excluded from this catalogue as stubs -- see EXCLUSIONS.
     }

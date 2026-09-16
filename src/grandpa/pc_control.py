@@ -142,6 +142,11 @@ BLOCKED_ACTIONS = {
 # ``mouse_move`` and ``mouse_scroll`` are deliberately excluded — moving the
 # cursor or scrolling cannot commit an action on its own.
 APPROVAL_REQUIRED_ACTIONS = {
+    # Closing ends a session the user may be relying on: not every
+    # application asks about unsaved work on WM_CLOSE, and a console takes
+    # its running process with it. close_app is close_window renamed.
+    "close_app",
+    "close_window",
     "keyboard_type",
     "keyboard_hotkey",
     "mouse_click",

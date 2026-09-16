@@ -159,3 +159,35 @@ def test_a_refusal_does_not_start_the_cooldown(monkeypatch: pytest.MonkeyPatch) 
     execute_spec("hotkey|win+r", confirm_callback=lambda *_: True)
 
     assert marked == []
+
+
+# --- asking exactly when pc_control would --------------------------------------
+
+
+def test_scrolling_does_not_ask(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pc_control excludes scrolling from approval: it cannot activate anything.
+
+    Asking anyway looked stricter, and taught a user to answer yes without
+    reading -- which is the opposite of what a prompt is for.
+    """
+    import grandpa.desktop.control.automation as automation
+
+    class _Ok:
+        ok = True
+        message = "Scrolled."
+
+    monkeypatch.setattr(
+        automation.AutomationControlService,
+        "execute",
+        lambda self, request, action, platform: _Ok(),
+    )
+    asked: list[str] = []
+
+    result = execute_spec("scroll|down", confirm_callback=lambda s, _t: asked.append(s))
+
+    assert result.status == "handled"
+    assert asked == []
+
+
+def test_typing_still_asks_and_refuses_without_anyone_to_ask() -> None:
+    assert execute_spec("type|hello").status == "blocked"
