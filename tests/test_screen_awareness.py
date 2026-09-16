@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -230,3 +233,81 @@ def test_a_credential_screen_is_not_described_at_all(monkeypatch) -> None:
 
     assert context.message == sa.SENSITIVE_SCREEN_MESSAGE
     assert context.ocr_text == ""
+
+
+# --- a credential screen is never written to disk -----------------------------
+#
+# capture_screenshot saved a full-screen image to ~/.grandpa/screenshots with no
+# check at all, and describe_screen -- where Phase 1.6 added the refusal -- only
+# checked after that image was already on disk, and left it there. So refusing
+# to describe a password manager still kept a picture of it.
+
+
+@pytest.fixture
+def temp_home(tmp_path, monkeypatch):
+    monkeypatch.setattr("pathlib.Path.home", classmethod(lambda cls: tmp_path))
+    return tmp_path / ".grandpa" / "screenshots"
+
+
+@pytest.fixture
+def recorded_grabs(monkeypatch):
+    from PIL import Image
+
+    grabs: list[int] = []
+    monkeypatch.setattr(
+        "PIL.ImageGrab.grab",
+        lambda *a, **k: grabs.append(1) or Image.new("RGB", (2, 2)),
+    )
+    return grabs
+
+
+def _window(monkeypatch, title: str) -> None:
+    import grandpa.screen_awareness as sa
+
+    monkeypatch.setattr(
+        sa,
+        "get_active_window_info",
+        lambda: sa.ScreenContext(supported=True, window_title=title, app_name=title),
+    )
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="capture is Windows-only")
+def test_a_credential_window_is_not_grabbed(monkeypatch, temp_home, recorded_grabs):
+    import grandpa.screen_awareness as sa
+
+    _window(monkeypatch, "Windows Security")
+
+    result = sa.capture_screenshot()
+
+    assert result.message == sa.SENSITIVE_SCREEN_MESSAGE
+    assert recorded_grabs == []
+    assert not temp_home.exists() or list(temp_home.glob("*.png")) == []
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="capture is Windows-only")
+def test_a_screen_sensitive_only_by_its_text_is_captured_then_removed(
+    monkeypatch, temp_home, recorded_grabs
+):
+    import grandpa.screen_awareness as sa
+
+    _window(monkeypatch, "Some App")
+    monkeypatch.setattr(
+        sa, "extract_ocr_result", lambda _p: sa.OcrResult(text="Recovery codes")
+    )
+
+    result = sa.describe_screen()
+
+    assert result.message == sa.SENSITIVE_SCREEN_MESSAGE
+    assert list(temp_home.glob("*.png")) == []
+
+
+def test_a_refusal_is_reported_as_blocked_not_handled(monkeypatch) -> None:
+    import grandpa.screen_awareness as sa
+
+    monkeypatch.setattr(
+        sa,
+        "capture_screenshot",
+        lambda: sa.ScreenContext(supported=True, message=sa.SENSITIVE_SCREEN_MESSAGE),
+    )
+
+    assert sa.capture_screen_answer().status == "blocked"

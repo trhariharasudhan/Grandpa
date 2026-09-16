@@ -89,6 +89,15 @@ MIGRATED: dict[tuple[str, str], MappedRequest | Callable[[str], MappedRequest]] 
     ("pc_control", "pc_diagnostics|diagnostics"): ("pc_diagnostics", {}),
     ("pc_control", "clipboard_inspect|clipboard"): ("clipboard_inspect", {}),
     ("pc_control", "clipboard_history|clipboard"): ("clipboard_history", {}),
+    # --- tranche 2: the screen, by OCR -----------------------------------
+    #
+    # Reads, but the most sensitive ones in the product: a screenshot is
+    # whatever is on the display. Guard compared, and one was missing on
+    # both routes -- see capture_screenshot.
+    ("screenshot", "screen"): ("screen_capture", {}),
+    ("screen", "screen_context"): ("screen_describe", {}),
+    ("screen", "active_window"): ("screen_active_window", {}),
+    ("screen", "screen_diagnostics"): ("screen_diagnostics", {}),
 }
 """Filled a tranche at a time; see the phase report for the order."""
 
@@ -203,7 +212,13 @@ def run_parsed(
         or str(result.data.get("status")) == "unsupported"
     ):
         status = "unsupported"
-    elif result.error in {"blocked_by_policy", "protected_path", "protected_window"}:
+    elif result.error in {
+        "blocked",
+        "blocked_by_policy",
+        "protected_path",
+        "protected_window",
+        "browser_not_in_front",
+    }:
         status = "blocked"
     else:
         status = "error"

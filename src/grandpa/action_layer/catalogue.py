@@ -387,6 +387,10 @@ _CALLS: dict[str, _Call] = {
     "desktop_summary": _Call(_R_A),
     "pc_diagnostics": _Call(_R_A),
     "system_info": _Call(_R_A),
+    "screen_capture": _Call(Binding.FUNCTION_KWARGS),
+    "screen_describe": _Call(Binding.FUNCTION_KWARGS),
+    "screen_active_window": _Call(Binding.FUNCTION_KWARGS),
+    "screen_diagnostics": _Call(Binding.FUNCTION_KWARGS),
     "screenshot_describe": _Call(Binding.SERVICE_ONLY),
     # files
     "file_create": _Call(Binding.FILE_ACTION, target="path", alias="create_file"),
@@ -2124,6 +2128,53 @@ _APPS_INVENTORY: tuple[ActionSpec, ...] = (
     ),
 )
 
+# --- the screen, read by OCR --------------------------------------------------
+#
+# screen_awareness, which Phase 1.6 kept alongside the vision engine because it
+# reads pixels rather than the accessibility tree. Its answers were formatted
+# inside local_actions._execute; they now live in screen_awareness, so these
+# point there.
+
+_SCREEN = "grandpa.screen_awareness"
+
+_SCREEN_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec(
+        "screen_capture",
+        _LOW,
+        "Take a screenshot and save it.",
+        f"{_SCREEN}.capture_screen_answer",
+        _schema({}),
+        notes="Writes an image to ~/.grandpa/screenshots, which the files "
+        "domain protects. Refuses a credential or payment screen by its title "
+        "before a pixel is grabbed -- until Phase 1.7 it wrote one to disk "
+        "and kept it.",
+    ),
+    _spec(
+        "screen_describe",
+        _LOW,
+        "Describe what is on the screen, reading its text.",
+        f"{_SCREEN}.describe_screen_answer",
+        _schema({}),
+        notes="OCR text is redacted where pixels become text. A screen that "
+        "shows credentials is refused, and the screenshot taken to find that "
+        "out is removed rather than kept.",
+    ),
+    _spec(
+        "screen_active_window",
+        _LOW,
+        "Name the window in front.",
+        f"{_SCREEN}.active_window_answer",
+        _schema({}),
+    ),
+    _spec(
+        "screen_diagnostics",
+        _LOW,
+        "Report what screen reading can do on this machine.",
+        f"{_SCREEN}.screen_diagnostics_answer",
+        _schema({}),
+    ),
+)
+
 
 CATALOGUE: tuple[ActionSpec, ...] = (
     *_APPLICATION_ACTIONS,
@@ -2138,6 +2189,7 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_INPUT_ACTIONS,
     *_BROWSER_ACTIONS,
     *_APPS_INVENTORY,
+    *_SCREEN_ACTIONS,
     *_NOTES_ACTIONS,
     *_DOWNLOADS_ACTIONS,
     *_MEMORY_ACTIONS,
@@ -2338,6 +2390,12 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "web_clear_cache",
             )
         },
+        "screen_capture": (
+            "screen_awareness grabs pixels; pc_control has no entry for it."
+        ),
+        "screen_describe": ("OCR of the screen. No pc_control entry."),
+        "screen_active_window": ("The window in front. No pc_control entry."),
+        "screen_diagnostics": ("Screen reading readiness. No pc_control entry."),
         "system_info": (
             "Platform facts. pc_control has no entry for them: the answer lived "
             "in a private helper in local_actions, so the layer could not give it "
@@ -2496,6 +2554,10 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "desktop_summary",
             "pc_diagnostics",
             "system_info",
+            "screen_capture",
+            "screen_describe",
+            "screen_active_window",
+            "screen_diagnostics",
             "screenshot_describe",
         ),
         "files": (

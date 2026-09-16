@@ -152,6 +152,12 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     # browser awareness: every one is a read of the visible page.
     # the application inventory: every one is a read.
     "system_info": ("LOW", NONE),
+    # the screen by OCR: reads, guarded by redaction and a refusal of
+    # credential screens rather than by asking.
+    "screen_capture": ("LOW", NONE),
+    "screen_describe": ("LOW", NONE),
+    "screen_active_window": ("LOW", NONE),
+    "screen_diagnostics": ("LOW", NONE),
     "apps_scan": ("LOW", NONE),
     "apps_list": ("LOW", NONE),
     "apps_search": ("LOW", NONE),

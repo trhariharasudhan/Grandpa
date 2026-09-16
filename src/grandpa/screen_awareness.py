@@ -156,6 +156,20 @@ def capture_screenshot() -> ScreenContext:
             message="Screenshot capture is not supported in this environment.",
         )
 
+    # Checked before a single pixel is grabbed. A screenshot is written to disk
+    # and kept, so refusing to *describe* a credential screen afterwards is too
+    # late: the image of it already exists. The title is all there is to go on
+    # before capture, and it is enough for the cases that matter -- Windows
+    # Security, a password manager, online banking, a payment form.
+    window = get_active_window_info()
+    if is_sensitive_screen(title=window.window_title):
+        return ScreenContext(
+            supported=True,
+            window_title=window.window_title,
+            app_name=window.app_name,
+            message=SENSITIVE_SCREEN_MESSAGE,
+        )
+
     target_dir = Path.home() / ".grandpa" / "screenshots"
     target_dir.mkdir(parents=True, exist_ok=True)
     path = target_dir / f"screen-{datetime.now().strftime('%Y%m%d-%H%M%S')}.png"
@@ -194,6 +208,16 @@ def capture_screenshot() -> ScreenContext:
         )
 
 
+def _discard_screenshot(path: str | None) -> None:
+    """Remove a screenshot that should not have been kept."""
+    if not path:
+        return
+    try:
+        Path(path).unlink(missing_ok=True)
+    except OSError:  # pragma: no cover - a locked file is logged, not raised
+        logger.warning("Could not remove a sensitive screenshot at %s", path)
+
+
 def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
     """Capture available screen context and extract local OCR text if possible."""
     window = get_active_window_info()
@@ -209,6 +233,13 @@ def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
         # so does this now: redaction removes the shapes it recognises, and a
         # screen like this is exactly where the shape it does not recognise
         # would be.
+        #
+        # capture_screenshot refuses a sensitive *title* before grabbing, but
+        # some screens only show what they are in their text. By the time OCR
+        # has found that, the image is on disk, so it is removed rather than
+        # left behind -- refusing to describe a screen while keeping a picture
+        # of it was the gap Phase 1.6 left.
+        _discard_screenshot(screenshot.screenshot_path)
         return ScreenContext(
             supported=True,
             window_title=window.window_title,
@@ -694,3 +725,69 @@ __all__ = [
     "get_visible_windows",
     "screen_diagnostics",
 ]
+
+
+# --- answers, for the action layer ------------------------------------------
+#
+# The sentences below were formatted inside local_actions._execute, which is why
+# nothing but local_actions could say them. They are moved here verbatim so the
+# catalogued actions and the old route give the same answer while both exist,
+# and so there is something left to say them once local_actions is gone.
+
+
+def _status(info: ScreenContext) -> str:
+    """A refusal is not a success, even though the screen could be read."""
+    if info.message == SENSITIVE_SCREEN_MESSAGE:
+        return "blocked"
+    return "handled" if info.supported else "unsupported"
+
+
+@dataclass(frozen=True)
+class ScreenAnswer:
+    """A screen action's result: whether it worked, and what to tell the user."""
+
+    status: str
+    message: str
+    screenshot_path: str = ""
+
+
+def capture_screen_answer() -> ScreenAnswer:
+    """Take a screenshot. Refuses a credential screen before grabbing it."""
+    info = capture_screenshot()
+    return ScreenAnswer(_status(info), info.message, info.screenshot_path or "")
+
+
+def describe_screen_answer() -> ScreenAnswer:
+    """Describe the screen, with OCR text redacted and credential screens refused."""
+    info = describe_screen(include_ocr=True)
+    return ScreenAnswer(_status(info), info.message)
+
+
+def active_window_answer() -> ScreenAnswer:
+    """Name the window in front."""
+    info = get_active_window_info()
+    if not info.supported:
+        return ScreenAnswer("unsupported", info.message)
+    title = info.window_title or "Unknown window"
+    app = f" ({info.app_name})" if info.app_name else ""
+    return ScreenAnswer("handled", f"The active window is: {title}{app}.")
+
+
+def screen_diagnostics_answer() -> ScreenAnswer:
+    """Report what screen awareness can do on this machine."""
+    diagnostics = screen_diagnostics()
+    screenshot = diagnostics.get("screenshot", {})
+    ocr = diagnostics.get("ocr", {})
+    active = diagnostics.get("active_window", {})
+    message = (
+        "Screen awareness diagnostics:\n"
+        f"- Platform: {diagnostics.get('platform')}\n"
+        f"- Active window: {'ready' if active.get('supported') else 'unavailable'}\n"
+        f"- Screenshot backends: {', '.join(screenshot.get('backends') or []) or 'none'}\n"
+        f"- OCR backend: {ocr.get('backend') or 'unavailable'}\n"
+        f"- Visible windows: {diagnostics.get('visible_window_count', 0)}\n"
+        "- Local only: yes"
+    )
+    return ScreenAnswer(
+        "handled" if diagnostics.get("supported") else "unsupported", message
+    )
