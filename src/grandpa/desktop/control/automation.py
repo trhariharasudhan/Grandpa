@@ -82,14 +82,26 @@ _SPEC_ACTIONS: dict[str, tuple[str, str]] = {
     "hotkey": ("keyboard_hotkey", "keys"),
     "click": ("mouse_click", "target"),
     "scroll": ("mouse_scroll", "direction"),
-    "focus": ("desktop_navigate", "target"),
+    "click_center": ("mouse_click", ""),
+    "move_center": ("mouse_move", ""),
 }
-"""``local_actions``' spec vocabulary, mapped to pc_control action names.
+"""Specs that are synthetic input. ``focus`` is not here: it is a window action.
 
-The specs are strings like ``"type|hello world"`` or ``"hotkey|ctrl+c"``. They
-used to be executed by a second implementation with its own policy; now they are
-translated here and executed by the one service.
+When this table replaced ``grandpa.desktop_automation`` in Phase 1.6, three of
+that module's specs were mapped wrongly or not at all. ``click_center`` and
+``move_center`` had no entry, so they answered "not supported" where they had
+worked. ``focus`` was sent to ``desktop_navigate``, which only moves a selection
+up, down, left or right and so refused every app name -- including the first
+half of "type hello in notepad".
 """
+
+_UNSUPPORTED_SPECS: dict[str, str] = {
+    "click_highlighted": (
+        "Clicking highlighted UI elements needs visual target detection, which is "
+        "not enabled yet."
+    ),
+}
+"""Specs that have always been refusals, kept as the same honest refusal."""
 
 
 @dataclass(frozen=True)
@@ -129,8 +141,38 @@ def execute_spec(
     """
     import sys
 
+    if "||" in spec:
+        # A chain, in order, stopping at the first step that does not complete.
+        # Each step is checked and confirmed on its own: approving the focus in
+        # "type hello in notepad" is not approving the typing.
+        messages: list[str] = []
+        for part in (piece.strip() for piece in spec.split("||")):
+            if not part:
+                continue
+            step = execute_spec(
+                part,
+                confirm_callback=confirm_callback,
+                confirmed=confirmed,
+                platform=platform,
+            )
+            if step.status != "handled":
+                return step
+            messages.append(step.message)
+        message = " ".join(messages)
+        return AutomationResult("handled", spec, message, message)
+
     action_name, _, argument = spec.partition("|")
-    mapped = _SPEC_ACTIONS.get(action_name.strip().casefold())
+    action_name = action_name.strip().casefold()
+    argument = argument.strip()
+
+    if action_name in _UNSUPPORTED_SPECS:
+        message = _UNSUPPORTED_SPECS[action_name]
+        return AutomationResult("unsupported", spec, message, message)
+
+    if action_name == "focus":
+        return _focus_window(spec, argument)
+
+    mapped = _SPEC_ACTIONS.get(action_name)
     if mapped is None:
         message = "That desktop action is not supported."
         return AutomationResult("unsupported", spec, message, message)
@@ -150,9 +192,11 @@ def execute_spec(
         if not confirm_callback(spec, "requires_confirmation"):
             return AutomationResult("cancelled", spec, "Cancelled.", "Cancelled.")
 
-    argument = argument.strip()
+    args: dict[str, Any] = {key: argument} if key else {}
+    if action_name in {"click_center", "move_center"}:
+        args.update(_screen_center())
     response = AutomationControlService().execute(
-        _SpecRequest(target=argument, args={key: argument}),
+        _SpecRequest(target=argument, args=args),
         name,
         platform=platform or sys.platform,
     )
@@ -166,6 +210,39 @@ def execute_spec(
         message,
         message,
     )
+
+
+def _screen_center() -> dict[str, int]:
+    """The primary screen's centre, from the system rather than a guess."""
+    try:
+        import ctypes
+
+        metrics = ctypes.windll.user32.GetSystemMetrics  # type: ignore[attr-defined]
+        return {"x": int(metrics(0)) // 2, "y": int(metrics(1)) // 2}
+    except Exception:
+        return {"x": 0, "y": 0}
+
+
+def _focus_window(spec: str, target: str) -> AutomationResult:
+    """Bring a named application's window to the front.
+
+    A window action, so it goes to the window domain. The deleted module handled
+    only ``focus|chrome``, by pressing Alt+Tab and hoping; every other name was
+    "not supported". Focusing does not activate anything in the window it
+    brings forward, so it does not ask.
+    """
+    from grandpa.desktop.control.windows import WindowControlService
+
+    if not target:
+        message = "Tell me which window to bring to the front."
+        return AutomationResult("unsupported", spec, message, message)
+
+    response = WindowControlService().execute(
+        _SpecRequest(target=target), "focus_window"
+    )
+    message = str(getattr(response, "message", "") or "")
+    status = "handled" if getattr(response, "ok", False) else "failed"
+    return AutomationResult(status, spec, message, message)
 
 
 def _cooldown_remaining() -> float:

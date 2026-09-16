@@ -191,3 +191,97 @@ def test_scrolling_does_not_ask(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_typing_still_asks_and_refuses_without_anyone_to_ask() -> None:
     assert execute_spec("type|hello").status == "blocked"
+
+
+# --- the three specs Phase 1.6 broke -------------------------------------------
+#
+# Deleting grandpa.desktop_automation, the report said local_actions never built
+# a chained spec. It does -- "type hello in notepad" becomes
+# focus|notepad||type|hello -- and the claim came from searching for ";" rather
+# than "||". click_center and move_center had no entry and answered "not
+# supported" where they had worked.
+
+
+@pytest.fixture
+def recorded(monkeypatch: pytest.MonkeyPatch):
+    import grandpa.desktop.control.automation as automation
+    import grandpa.desktop.control.windows as windows
+
+    calls: list[tuple[str, object]] = []
+
+    class _Ok:
+        ok = True
+        message = "done"
+        status = "completed"
+
+    monkeypatch.setattr(
+        automation.AutomationControlService,
+        "execute",
+        lambda self, request, action, platform: (
+            calls.append((action, dict(request.args))) or _Ok()
+        ),
+    )
+    monkeypatch.setattr(
+        windows.WindowControlService,
+        "execute",
+        lambda self, request, action: calls.append((action, request.target)) or _Ok(),
+    )
+    return calls
+
+
+def test_a_chain_runs_each_step_in_order(recorded) -> None:
+    result = execute_spec("focus|notepad||type|hello", confirm_callback=lambda *_: True)
+
+    assert result.status == "handled"
+    assert recorded == [
+        ("focus_window", "notepad"),
+        ("keyboard_type", {"text": "hello"}),
+    ]
+
+
+def test_each_step_of_a_chain_is_confirmed_on_its_own(recorded) -> None:
+    """Approving the focus is not approving the typing."""
+    asked: list[str] = []
+
+    result = execute_spec(
+        "focus|notepad||type|hello",
+        confirm_callback=lambda spec, _t: asked.append(spec) or False,
+    )
+
+    assert result.status == "cancelled"
+    assert asked == ["type|hello"]
+    assert ("keyboard_type", {"text": "hello"}) not in recorded
+
+
+def test_click_center_clicks_the_middle_of_the_screen(recorded) -> None:
+    result = execute_spec("click_center", confirm_callback=lambda *_: True)
+
+    assert result.status == "handled"
+    action, args = recorded[0]
+    assert action == "mouse_click"
+    assert set(args) == {"x", "y"}
+
+
+def test_move_center_does_not_ask(recorded) -> None:
+    asked: list[str] = []
+
+    result = execute_spec("move_center", confirm_callback=lambda s, _t: asked.append(s))
+
+    assert result.status == "handled"
+    assert asked == []
+    assert recorded[0][0] == "mouse_move"
+
+
+def test_focus_brings_a_window_forward_instead_of_being_refused(recorded) -> None:
+    result = execute_spec("focus|chrome")
+
+    assert result.status == "handled"
+    assert recorded == [("focus_window", "chrome")]
+
+
+def test_click_highlighted_is_still_an_honest_refusal(recorded) -> None:
+    result = execute_spec("click_highlighted", confirm_callback=lambda *_: True)
+
+    assert result.status == "unsupported"
+    assert "visual target detection" in result.message
+    assert recorded == []
