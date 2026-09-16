@@ -380,6 +380,7 @@ _CALLS: dict[str, _Call] = {
     "list_processes": _Call(_R_A),
     "desktop_summary": _Call(_R_A),
     "pc_diagnostics": _Call(_R_A),
+    "system_info": _Call(_R_A),
     "screenshot_describe": _Call(Binding.SERVICE_ONLY),
     # files
     "file_create": _Call(Binding.FILE_ACTION, target="path", alias="create_file"),
@@ -827,6 +828,16 @@ _CONTEXT_ACTIONS: tuple[ActionSpec, ...] = (
         _LOW,
         "Summarise what is on the desktop right now.",
         _DIAGNOSTICS,
+    ),
+    _spec(
+        "system_info",
+        _LOW,
+        "Report what kind of computer this is: OS, architecture, processor.",
+        _DIAGNOSTICS,
+        _schema({}),
+        notes="Platform facts only. Deliberately narrower than pc_diagnostics, "
+        "which discloses the username and paths, and than list_processes, "
+        "which adds every running executable.",
     ),
     _spec(
         "pc_diagnostics",
@@ -2321,6 +2332,11 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "web_clear_cache",
             )
         },
+        "system_info": (
+            "Platform facts. pc_control has no entry for them: the answer lived "
+            "in a private helper in local_actions, so the layer could not give it "
+            "without over-disclosing through pc_diagnostics, which names the user."
+        ),
         "apps_scan": (
             "The application inventory. pc_control has no entry for it: "
             "desktop/automation.py answered these itself, which is why the "
@@ -2473,6 +2489,7 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "list_processes",
             "desktop_summary",
             "pc_diagnostics",
+            "system_info",
             "screenshot_describe",
         ),
         "files": (

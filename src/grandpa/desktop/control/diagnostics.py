@@ -6,6 +6,29 @@ from dataclasses import dataclass
 from typing import Any
 
 
+def system_info_message() -> str:
+    """What kind of computer this is, and nothing about who uses it.
+
+    Moved here from a private helper in ``local_actions`` so that the question
+    has one answer. Deliberately the narrow one: platform, architecture,
+    processor and Python version. The neighbouring diagnostics actions --
+    list_processes in particular -- disclose the username, full paths and every
+    running executable, which is far more than someone asking "system info"
+    expects to hand over.
+    """
+    import platform
+
+    return "\n".join(
+        [
+            "Basic system info:",
+            f"- OS: {platform.platform()}",
+            f"- Machine: {platform.machine() or 'unknown'}",
+            f"- Processor: {platform.processor() or 'unknown'}",
+            f"- Python: {platform.python_version()}",
+        ]
+    )
+
+
 @dataclass(frozen=True)
 class DesktopDiagnosticsService:
     """Read-only desktop context and readiness diagnostics."""
@@ -13,6 +36,18 @@ class DesktopDiagnosticsService:
     name: str = "diagnostics"
 
     def execute(self, request: Any, action: str):
+        from grandpa.pc_control import LocalActionResponse as _Response
+
+        if action == "system_info":
+            return _Response(
+                True,
+                None,
+                "completed",
+                system_info_message(),
+                False,
+                "LOW",
+                {"disclosure": "platform only"},
+            )
         from grandpa.desktop_context import (
             desktop_session_summary,
             get_active_process,
@@ -58,6 +93,7 @@ class DesktopDiagnosticsService:
                 "service": self.name,
                 "ready": True,
                 "risk_levels": {
+                    "system_info": "LOW",
                     "active_process": "LOW",
                     "list_processes": "LOW",
                     "desktop_summary": "LOW",
@@ -73,4 +109,4 @@ class DesktopDiagnosticsService:
             }
 
 
-__all__ = ["DesktopDiagnosticsService"]
+__all__ = ["DesktopDiagnosticsService", "system_info_message"]

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import os
-import platform
 import re
 import sys
 import urllib.parse
@@ -1731,14 +1730,17 @@ def _folder_for(target: str) -> Path | None:
 
 
 def _system_info_message() -> str:
-    lines = [
-        "Basic system info:",
-        f"- OS: {platform.platform()}",
-        f"- Machine: {platform.machine() or 'unknown'}",
-        f"- Processor: {platform.processor() or 'unknown'}",
-        f"- Python: {platform.python_version()}",
-    ]
-    return "\n".join(lines)
+    """Ask the diagnostics domain, which owns this answer now.
+
+    The lines used to be built here, which meant the action layer had no way to
+    answer "system info" at all: its nearest catalogued action, pc_diagnostics,
+    discloses the username and full paths, and list_processes adds every
+    running executable. Someone asking what kind of computer this is should not
+    hand over who is using it.
+    """
+    from grandpa.desktop.control.diagnostics import system_info_message
+
+    return system_info_message()
 
 
 def _execute(

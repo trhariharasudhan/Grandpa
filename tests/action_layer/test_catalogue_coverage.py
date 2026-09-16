@@ -151,6 +151,7 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     # matching file_create and file_move in pc_control's own table.
     # browser awareness: every one is a read of the visible page.
     # the application inventory: every one is a read.
+    "system_info": ("LOW", NONE),
     "apps_scan": ("LOW", NONE),
     "apps_list": ("LOW", NONE),
     "apps_search": ("LOW", NONE),
