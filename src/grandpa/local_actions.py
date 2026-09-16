@@ -314,6 +314,17 @@ def handle_local_action(
         _log_attempt(command, result)
         return result
 
+    # Migrated shapes are performed by the action layer. This sits after every
+    # guard above -- session control, the pending-approval replies, the
+    # dangerous-text refusal -- and before _with_permission, which is where this
+    # module would otherwise write a pending approval of its own.
+    from grandpa.natural_actions import run_parsed
+
+    migrated = run_parsed(result.kind, result.target, confirm=confirm, execute=execute)
+    if migrated is not None:
+        _log_attempt(command, migrated)
+        return migrated
+
     result = _with_permission(command, result)
     if result.status == "requires_confirmation":
         _log_attempt(command, result)
