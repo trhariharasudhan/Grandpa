@@ -1,7 +1,22 @@
-"""Keyboard and mouse automation service for PC control."""
+"""Keyboard and mouse automation service for PC control.
+
+This is the one owner of synthetic input. There used to be two: this service,
+reached by the action layer and pc_control, and ``grandpa.desktop_automation``,
+reached by chat through ``local_actions``. Each blocked what the other allowed.
+This one refused Win+R, Win+X, Ctrl+Shift+Esc and Ctrl+Alt+Del outright and, via
+``pc_control._preflight_guard``, refused to type into a window that looks
+sensitive. That one refused *text* that named a shell -- powershell, cmd, format
+-- and rate-limited itself, but would press Win+R on a yes, which opens the Run
+dialog: the exact command-execution surface the first list exists to deny.
+
+All three guards live here now, so the weaker route cannot reappear by calling a
+different module.
+"""
 
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +44,130 @@ _BLOCKED_HOTKEYS = (
     frozenset({"ctrl", "shift", "esc"}),  # Task Manager
     frozenset({"ctrl", "alt", "delete"}),  # Secure attention sequence
 )
+
+# Text that must not be typed. Carried over from grandpa.desktop_automation,
+# which had these and no hotkey denylist. Pressing Win+R is blocked above, but a
+# launcher can also be reached by other means -- an already-open terminal, a
+# browser address bar -- and typing a shell name into one is the same capability
+# script_run and shell_run are BLOCKED to prevent.
+_BLOCKED_TEXT_PATTERNS = (
+    r"\bdelete\b.*\bsystem32\b",
+    r"\bformat\b",
+    r"\bwipe\b",
+    r"\brm\s+-",
+    r"\bdel\s+",
+    r"\bpowershell\b",
+    r"\bcmd(?:\.exe)?\b",
+)
+
+_ACTION_COOLDOWN_SECONDS = 0.35
+"""Smallest gap between two synthetic input actions.
+
+Also carried over. It is not a security control on its own -- it is what stops a
+runaway loop from driving the desktop faster than a person can interrupt it.
+"""
+
+_last_action_at = 0.0
+
+
+def is_blocked_text(value: Any) -> bool:
+    """True when this text names a shell or a destructive command."""
+    lowered = str(value or "").casefold()
+    return any(re.search(pattern, lowered) for pattern in _BLOCKED_TEXT_PATTERNS)
+
+
+_SPEC_ACTIONS: dict[str, tuple[str, str]] = {
+    "type": ("keyboard_type", "text"),
+    "press": ("keyboard_hotkey", "keys"),
+    "hotkey": ("keyboard_hotkey", "keys"),
+    "click": ("mouse_click", "target"),
+    "scroll": ("mouse_scroll", "direction"),
+    "focus": ("desktop_navigate", "target"),
+}
+"""``local_actions``' spec vocabulary, mapped to pc_control action names.
+
+The specs are strings like ``"type|hello world"`` or ``"hotkey|ctrl+c"``. They
+used to be executed by a second implementation with its own policy; now they are
+translated here and executed by the one service.
+"""
+
+
+@dataclass(frozen=True)
+class AutomationResult:
+    """What a spec run reports back, in ``local_actions``' shape."""
+
+    status: str
+    action: str
+    message: str
+    tts_text: str = ""
+
+
+@dataclass(frozen=True)
+class _SpecRequest:
+    """The request shape the service reads: ``.target`` and ``.args``."""
+
+    target: str = ""
+    args: dict[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "args", dict(self.args or {}))
+
+
+def execute_spec(
+    spec: str,
+    *,
+    confirm_callback: Any = None,
+    confirmed: bool = False,
+    platform: str | None = None,
+) -> AutomationResult:
+    """Run one ``"type|hello"`` style spec through this service.
+
+    Translation and nothing else. The blocked hotkeys, the blocked text, the
+    protected-window check and the cooldown all belong to ``execute`` -- which is
+    the point of there being one owner, rather than a second module that asked
+    politely about text and pressed Win+R on a yes.
+    """
+    import sys
+
+    action_name, _, argument = spec.partition("|")
+    mapped = _SPEC_ACTIONS.get(action_name.strip().casefold())
+    if mapped is None:
+        message = "That desktop action is not supported."
+        return AutomationResult("unsupported", spec, message, message)
+
+    if not confirmed:
+        if confirm_callback is None:
+            message = "Confirmation required before controlling the active app."
+            return AutomationResult("blocked", spec, message, message)
+        if not confirm_callback(spec, "requires_confirmation"):
+            return AutomationResult("cancelled", spec, "Cancelled.", "Cancelled.")
+
+    name, key = mapped
+    argument = argument.strip()
+    response = AutomationControlService().execute(
+        _SpecRequest(target=argument, args={key: argument}),
+        name,
+        platform=platform or sys.platform,
+    )
+    message = str(getattr(response, "message", "") or "")
+    if getattr(response, "ok", False):
+        return AutomationResult("handled", spec, message, message)
+    status = str(getattr(response, "status", "") or "blocked")
+    return AutomationResult(
+        status if status in {"unsupported", "blocked", "failed"} else "blocked",
+        spec,
+        message,
+        message,
+    )
+
+
+def _cooldown_remaining() -> float:
+    return max(0.0, _ACTION_COOLDOWN_SECONDS - (time.monotonic() - _last_action_at))
+
+
+def _mark_action() -> None:
+    global _last_action_at
+    _last_action_at = time.monotonic()
 
 
 def _normalise_hotkey(keys: Any) -> list[str]:
@@ -61,6 +200,12 @@ class AutomationControlService:
     name: str = "automation"
 
     def execute(self, request: Any, action: str, *, platform: str):
+        """Check, then actuate, then start the cooldown.
+
+        The order matters. A refusal must not start the cooldown, or one blocked
+        hotkey would make the next honest request fail too and the reason a user
+        was given would be the wrong one.
+        """
         from grandpa.pc_control import LocalActionResponse
 
         if platform != "win32":
@@ -73,11 +218,64 @@ class AutomationControlService:
                 "MEDIUM",
                 error="unsupported",
             )
+        # The window check runs for every input action, not just the ones
+        # pc_control's preflight covered: a caller reaching this service
+        # directly used to get no check at all.
+        from grandpa.desktop_context import active_window_is_protected
+
+        try:
+            if active_window_is_protected():
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "blocked",
+                    "I blocked this because the active window appears sensitive.",
+                    False,
+                    "HIGH",
+                    {"protected_window": True},
+                    error="protected_window",
+                )
+        except Exception:  # pragma: no cover - platform specific
+            pass
+
+        remaining = _cooldown_remaining()
+        if remaining > 0:
+            return LocalActionResponse(
+                False,
+                None,
+                "blocked",
+                "That was too fast after the last desktop action; try again.",
+                False,
+                "MEDIUM",
+                {"retry_after_seconds": round(remaining, 2)},
+                error="cooldown",
+            )
+
+        response = self._actuate(request, action)
+        if getattr(response, "ok", False):
+            _mark_action()
+        return response
+
+    def _actuate(self, request: Any, action: str):
         import pyautogui  # type: ignore
+
+        from grandpa.pc_control import LocalActionResponse
 
         pyautogui.FAILSAFE = True
         if action == "keyboard_type":
             text = str(request.args.get("text", request.target))
+            if is_blocked_text(text):
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "blocked",
+                    "I blocked this text because it names a shell or a "
+                    "destructive command.",
+                    False,
+                    "BLOCKED",
+                    {"characters": len(text)},
+                    error="blocked_by_policy",
+                )
             pyautogui.write(text, interval=0.01)
             return LocalActionResponse(
                 True,
@@ -258,4 +456,10 @@ class AutomationControlService:
         }
 
 
-__all__ = ["AutomationControlService"]
+__all__ = [
+    "AutomationResult",
+    "execute_spec",
+    "is_blocked_text",
+    "AutomationControlService",
+    "is_blocked_hotkey",
+]

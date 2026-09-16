@@ -244,18 +244,19 @@ class TestAgentsAskConfirmation:
 @pytest.fixture
 def recorded_automation(monkeypatch):
     """Record the kwargs ``execute_automation`` is invoked with."""
-    import grandpa.desktop_automation as desktop_automation
+    import grandpa.local_actions as local_actions
+    from grandpa.desktop.control.automation import AutomationResult
 
     calls: list[dict[str, Any]] = []
 
     def _fake_execute_automation(spec: str, **kwargs: Any):
         calls.append({"spec": spec, **kwargs})
-        return desktop_automation.AutomationResult(
+        return AutomationResult(
             status="handled", action=spec, message="ok", tts_text="ok"
         )
 
     monkeypatch.setattr(
-        desktop_automation, "execute_automation", _fake_execute_automation
+        local_actions, "execute_automation_spec", _fake_execute_automation
     )
     return calls
 

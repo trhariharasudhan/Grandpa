@@ -757,7 +757,7 @@ def _unknown_slash_command_message(command: str) -> str:
 
 
 def _desktop_action_confirmer(browser_confirm):
-    """Adapt chat's (prompt, tier) callback to desktop_automation's (action)."""
+    """Adapt chat's (prompt, tier) callback to the desktop handler's (action)."""
     if browser_confirm is None:
         return None
 
@@ -1329,7 +1329,7 @@ def chat(
         """Prompt before Grandpa sends synthetic keyboard/mouse input.
 
         Handed to ``handle_local_action`` so the confirm-required tier in
-        ``desktop_automation.py:37-45`` can be satisfied instead of always
+        the automation service can be satisfied instead of always
         cancelling. Signature matches that module's ConfirmationCallback.
         """
         console.print(

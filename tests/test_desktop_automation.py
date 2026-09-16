@@ -1,170 +1,161 @@
+"""Synthetic input, and the guards that now apply to every route to it.
+
+This file used to test ``grandpa.desktop_automation``, a second implementation
+of synthetic input reached by chat through ``local_actions``. It was deleted
+when the two were given one owner, and the claims that still hold were moved
+here to test the owner instead.
+
+The claim that changed is the important one. The deleted module rated Win+R as
+merely *confirm_required*: on a yes it opened the Run dialog. The surviving
+service blocks it outright, because approving "press Win+R" is approving shell
+access, which ``BLOCKED_ACTIONS`` exists to deny. Both directions are pinned
+below.
+"""
+
 from __future__ import annotations
 
 import pytest
 
-import grandpa.desktop_automation as desktop_automation
-
-pytestmark = pytest.mark.core
-
-
-class FakePyAutoGUI:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, object]] = []
-
-    def write(self, text: str, interval: float = 0.0) -> None:
-        self.calls.append(("write", text, interval))
-
-    def press(self, key: str) -> None:
-        self.calls.append(("press", key))
-
-    def hotkey(self, *keys: str) -> None:
-        self.calls.append(("hotkey", keys))
-
-    def size(self) -> tuple[int, int]:
-        self.calls.append(("size", None))
-        return (100, 80)
+from grandpa.desktop.control.automation import (
+    AutomationControlService,
+    execute_spec,
+    is_blocked_hotkey,
+    is_blocked_text,
+)
 
 
-def test_automation_unsupported_off_windows(monkeypatch):
-    monkeypatch.setattr(desktop_automation.sys, "platform", "linux")
-
-    result = desktop_automation.execute_automation("type|hello")
-
-    assert result.status == "unsupported"
-    assert "not supported" in result.message
+class _Request:
+    def __init__(self, target: str = "", **args: object) -> None:
+        self.target = target
+        self.args = dict(args)
 
 
-def test_sensitive_typing_is_blocked():
-    spec = "type|my password is secret"
-
-    assert not desktop_automation.requires_confirmation(spec)
-    assert desktop_automation.classify_automation_permission(spec) == "blocked"
-
-
-def test_plain_typing_requires_confirmation():
-    assert desktop_automation.requires_confirmation("type|hello")
-
-
-def test_chained_pyautogui_actions_execute_in_order():
-    fake = FakePyAutoGUI()
-
-    result = desktop_automation._execute_with_pyautogui(
-        fake,
-        "type|hello||press|enter",
-        confirmed=True,
+@pytest.fixture(autouse=True)
+def _no_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cooldown is real, and it is not what these tests are about."""
+    monkeypatch.setattr(
+        "grandpa.desktop.control.automation._cooldown_remaining", lambda: 0.0
     )
 
-    assert result.status == "handled"
-    assert result.action == "type|hello||press|enter"
-    assert result.message == 'Typed "hello". Pressed enter.'
-    assert result.tts_text == "Done."
-    assert fake.calls == [
-        ("write", "hello", 0.01),
-        ("press", "enter"),
-    ]
 
-
-def test_chained_pyautogui_actions_stop_on_unsupported_action():
-    fake = FakePyAutoGUI()
-
-    result = desktop_automation._execute_with_pyautogui(
-        fake,
-        "type|hello||dance|now||press|enter",
-        confirmed=True,
+@pytest.fixture(autouse=True)
+def _ordinary_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "grandpa.desktop_context.active_window_is_protected", lambda: False
     )
 
-    assert result.status == "unsupported"
-    assert result.action == "dance|now"
-    assert result.message == "That desktop automation action is not supported."
-    assert fake.calls == [("write", "hello", 0.01)]
 
-
-def test_safe_action_executes_without_confirmation():
-    fake = FakePyAutoGUI()
-
-    result = desktop_automation._execute_with_pyautogui(fake, "focus|chrome")
-
-    assert result.status == "handled"
-    assert result.message == "Tried to switch focus toward Chrome."
-    assert fake.calls == [("hotkey", ("alt", "tab"))]
+# --- the hotkeys the deleted module would have pressed -------------------------
 
 
 @pytest.mark.parametrize(
-    "spec",
-    [
-        "type|hello",
-        "click_center",
-        "press|enter",
-        "hotkey|ctrl+c",
-    ],
+    "keys", ["win+r", "win+x", "ctrl+shift+esc", "ctrl+alt+delete", "Windows+R"]
 )
-def test_risky_actions_require_confirmation(spec):
-    fake = FakePyAutoGUI()
+def test_command_execution_hotkeys_are_blocked_not_confirmed(keys: str) -> None:
+    """The regression this merge exists to prevent.
 
-    result = desktop_automation._execute_with_pyautogui(fake, spec)
+    grandpa.desktop_automation classified these as confirm_required, so chat
+    would press them on a yes. Approving a launcher is approving what it can
+    launch.
+    """
+    assert is_blocked_hotkey(keys)
+
+    result = execute_spec(f"hotkey|{keys}", confirm_callback=lambda *_: True)
+
+    assert result.status == "blocked"
+    assert "command-execution" in result.message
+
+
+def test_an_ordinary_hotkey_is_not_blocked() -> None:
+    assert not is_blocked_hotkey("ctrl+c")
+
+
+# --- the text the surviving service did not used to check ----------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["powershell", "cmd.exe", "format c:", "rm -rf /", "delete the system32 folder"],
+)
+def test_text_naming_a_shell_is_blocked(text: str) -> None:
+    """Carried over from the deleted module, which had this and no hotkey list."""
+    assert is_blocked_text(text)
+
+    result = execute_spec(f"type|{text}", confirm_callback=lambda *_: True)
+
+    assert result.status == "blocked"
+
+
+def test_ordinary_text_is_not_blocked() -> None:
+    assert not is_blocked_text("hello world")
+
+
+# --- confirmation, unchanged ---------------------------------------------------
+
+
+def test_typing_asks_first() -> None:
+    asked: list[str] = []
+
+    execute_spec("type|hello", confirm_callback=lambda spec, _tier: asked.append(spec))
+
+    assert asked == ["type|hello"]
+
+
+def test_declining_cancels_and_runs_nothing() -> None:
+    result = execute_spec("type|hello", confirm_callback=lambda *_: False)
 
     assert result.status == "cancelled"
-    assert result.action == spec
+
+
+def test_no_one_to_ask_means_no() -> None:
+    result = execute_spec("type|hello")
+
+    assert result.status == "blocked"
     assert "Confirmation required" in result.message
-    assert fake.calls == []
 
 
-def test_confirmed_risky_action_executes():
-    fake = FakePyAutoGUI()
+def test_an_unknown_spec_is_refused_rather_than_guessed() -> None:
+    result = execute_spec("teleport|home", confirm_callback=lambda *_: True)
 
-    result = desktop_automation._execute_with_pyautogui(
-        fake,
-        "type|hello",
-        confirm_callback=lambda spec, permission: permission == "confirm_required",
+    assert result.status == "unsupported"
+
+
+# --- the protected window check, which the deleted module never had ------------
+
+
+def test_a_sensitive_window_refuses_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "grandpa.desktop_context.active_window_is_protected", lambda: True
     )
 
-    assert result.status == "handled"
-    assert fake.calls == [("write", "hello", 0.01)]
-
-
-def test_denied_confirmation_returns_cancelled_result():
-    fake = FakePyAutoGUI()
-
-    result = desktop_automation._execute_with_pyautogui(
-        fake,
-        "click_center",
-        confirm_callback=lambda spec, permission: False,
+    response = AutomationControlService().execute(
+        _Request("hello", text="hello"), "keyboard_type", platform="win32"
     )
 
-    assert result.status == "cancelled"
-    assert fake.calls == []
+    assert response.ok is False
+    assert response.error == "protected_window"
 
 
-def test_chained_commands_stop_if_one_action_is_denied():
-    fake = FakePyAutoGUI()
-
-    def confirm(spec: str, permission: str) -> bool:
-        return spec != "press|enter"
-
-    result = desktop_automation._execute_with_pyautogui(
-        fake,
-        "type|hello||press|enter||type|world",
-        confirm_callback=confirm,
+def test_input_is_unsupported_off_windows() -> None:
+    response = AutomationControlService().execute(
+        _Request("hello", text="hello"), "keyboard_type", platform="linux"
     )
 
-    assert result.status == "cancelled"
-    assert result.action == "press|enter"
-    assert fake.calls == [("write", "hello", 0.01)]
+    assert response.ok is False
+    assert response.status == "unsupported"
 
 
-@pytest.mark.parametrize(
-    ("spec", "permission"),
-    [
-        ("shell|dir", "dangerous"),
-        ("delete|system32", "blocked"),
-        ("run_command|format d:", "blocked"),
-    ],
-)
-def test_unknown_or_dangerous_command_does_not_execute_silently(spec, permission):
-    fake = FakePyAutoGUI()
+# --- the cooldown --------------------------------------------------------------
 
-    result = desktop_automation._execute_with_pyautogui(fake, spec)
 
-    assert desktop_automation.classify_automation_permission(spec) == permission
-    assert result.status in {"blocked", "cancelled"}
-    assert fake.calls == []
+def test_a_refusal_does_not_start_the_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Otherwise one blocked hotkey makes the next honest request fail too."""
+    marked: list[bool] = []
+    monkeypatch.setattr(
+        "grandpa.desktop.control.automation._mark_action",
+        lambda: marked.append(True),
+    )
+
+    execute_spec("hotkey|win+r", confirm_callback=lambda *_: True)
+
+    assert marked == []

@@ -23,7 +23,6 @@ import pytest
 FORBIDDEN = (
     "grandpa.pc_control",
     "grandpa.local_actions",
-    "grandpa.desktop_automation",
     "grandpa.desktop_context",
     "grandpa.browser_control",
     "grandpa.actions",  # the legacy router this package was moved out of

@@ -13,15 +13,24 @@ import re
 import sys
 import urllib.parse
 import webbrowser
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import Any, Literal
 
 from grandpa.local_action_approvals import LocalActionApprovalStore
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
-    from grandpa.desktop_automation import ConfirmationCallback
+ConfirmationCallback = Callable[[str, str], bool]
+"""What a caller passes to be asked before synthetic input runs."""
+
+
+def execute_automation_spec(spec, *, confirm_callback=None, confirmed=False):
+    """Synthetic input, run by the service that owns it."""
+    from grandpa.desktop.control.automation import execute_spec
+
+    return execute_spec(spec, confirm_callback=confirm_callback, confirmed=confirmed)
+
 
 logger = logging.getLogger(__name__)
 
@@ -212,7 +221,7 @@ def refuse_confirmation(spec: str, permission: str) -> bool:
     ``desktop_automation.py:37-45`` refuses. The voice layer uses this: its
     only confirmation is turn-based (the next utterance), which cannot
     answer synchronously inside ``execute_automation``. Signature matches
-    ``desktop_automation.ConfirmationCallback``.
+    the automation service.
     """
     return False
 
@@ -226,8 +235,8 @@ def handle_local_action(
     query.
 
     ``confirm`` is the caller's confirmation prompt, forwarded to
-    ``desktop_automation.execute_automation`` so its confirm-required tier
-    (``desktop_automation.py:37-45``) can actually be satisfied. Callers that
+    the automation service so its confirm-required tier can actually be
+    satisfied. Callers that
     pass nothing keep the previous refuse-only behaviour.
     """
     command = _normalise(text)
@@ -1863,9 +1872,7 @@ def _execute(
         )
 
     if result.kind == "automation":
-        from grandpa.desktop_automation import execute_automation
-
-        automation = execute_automation(result.target, confirm_callback=confirm)
+        automation = execute_automation_spec(result.target, confirm_callback=confirm)
         return LocalActionResult(
             status=automation.status,
             kind="automation",

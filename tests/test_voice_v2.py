@@ -465,15 +465,15 @@ def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
 
     # Mirrors the real signature: local_actions._execute now forwards the
-    # caller's confirm callback down to desktop_automation.execute_automation.
+    # caller's confirm callback down to local_actions.execute_automation_spec.
     def fake_execute_automation(spec: str, *, confirm_callback=None):
-        from grandpa.desktop_automation import AutomationResult
+        from grandpa.desktop.control.automation import AutomationResult
 
         calls.append(spec)
         return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
 
     monkeypatch.setattr(
-        "grandpa.desktop_automation.execute_automation",
+        "grandpa.local_actions.execute_automation_spec",
         fake_execute_automation,
     )
 
@@ -495,15 +495,15 @@ def test_voice_confirm_token_executes_with_mocked_automation(monkeypatch, voice_
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
 
     # Mirrors the real signature: local_actions._execute now forwards the
-    # caller's confirm callback down to desktop_automation.execute_automation.
+    # caller's confirm callback down to local_actions.execute_automation_spec.
     def fake_execute_automation(spec: str, *, confirm_callback=None):
-        from grandpa.desktop_automation import AutomationResult
+        from grandpa.desktop.control.automation import AutomationResult
 
         calls.append(spec)
         return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
 
     monkeypatch.setattr(
-        "grandpa.desktop_automation.execute_automation",
+        "grandpa.local_actions.execute_automation_spec",
         fake_execute_automation,
     )
 
@@ -528,14 +528,14 @@ def test_voice_confirm_token_cannot_be_reused(monkeypatch, voice_client):
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
 
     # Mirrors the real signature: local_actions._execute now forwards the
-    # caller's confirm callback down to desktop_automation.execute_automation.
+    # caller's confirm callback down to local_actions.execute_automation_spec.
     def fake_execute_automation(spec: str, *, confirm_callback=None):
-        from grandpa.desktop_automation import AutomationResult
+        from grandpa.desktop.control.automation import AutomationResult
 
         return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
 
     monkeypatch.setattr(
-        "grandpa.desktop_automation.execute_automation",
+        "grandpa.local_actions.execute_automation_spec",
         fake_execute_automation,
     )
     pending = voice_client.post(
