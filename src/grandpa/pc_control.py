@@ -873,9 +873,87 @@ def _execute_clipboard(request: LocalActionRequest, action: str) -> LocalActionR
 
 
 def _execute_file(request: LocalActionRequest, action: str) -> LocalActionResponse:
-    from grandpa.desktop.control import get_file_service
+    """Hand a file operation to the files domain, which owns them all.
 
-    return get_file_service().execute(request, action)
+    pc_control used to carry its own file service. There were two
+    implementations of create/rename/move/copy/delete, with two protected-path
+    lists that had each drifted past the other, and the action layer reached the
+    second one directly -- around the preflight guard above, so file_delete ran
+    with no path check at all. One owner removes the question of which guard
+    applied.
+
+    The translation is mechanical: a LocalActionRequest names the action in
+    pc_control's vocabulary and carries its arguments in ``args``; a FileAction
+    names it in the domain's. Approval has already been granted by the time this
+    runs -- delete is in APPROVAL_REQUIRED_ACTIONS -- so consent is passed
+    through rather than asked for a second time.
+    """
+    from grandpa.files.executor import FileExecutor
+    from grandpa.files.models import FileAction
+
+    args = dict(request.args)
+    source = request.target
+    destination = str(args.pop("destination", "") or "")
+
+    if action == "file_create":
+        kind = str(args.get("kind", "file"))
+        domain_action = "create_folder" if kind == "folder" else "create_file"
+    elif action == "file_rename":
+        # pc_control has always accepted either a bare new name or a full
+        # destination path here, and a full path crossed directories -- the old
+        # service called Path.rename, which moves. The domain separates the two,
+        # so the distinction is made here rather than changing what a caller of
+        # pc_control can ask for.
+        new_name = str(args.pop("new_name", "") or "")
+        if destination and Path(destination).parent != Path("."):
+            domain_action = "move"
+        else:
+            domain_action = "rename"
+            destination = destination or new_name
+    elif action == "file_read":
+        domain_action = "read"
+    else:
+        domain_action = action.removeprefix("file_")
+
+    result = FileExecutor().execute(
+        FileAction(
+            action=domain_action,
+            source=source,
+            destination=destination,
+            args=args,
+        ),
+        confirm=lambda *_: True,
+    )
+
+    evidence: dict[str, Any] = {"path": str(result.path) if result.path else source}
+    if result.destination:
+        evidence["destination"] = str(result.destination)
+    if result.contents is not None:
+        evidence["content"] = result.contents
+        evidence["size"] = len(result.contents.encode("utf-8"))
+
+    ok = result.status == "handled"
+    return LocalActionResponse(
+        ok,
+        None,
+        "completed" if ok else ("blocked" if result.status == "blocked" else "failed"),
+        result.message,
+        False,
+        _FILE_RISK.get(action, "MEDIUM"),
+        evidence,
+        error=None if ok else (result.error or result.status),
+    )
+
+
+_FILE_RISK = {
+    "file_create": "LOW",
+    "file_read": "LOW",
+    "file_rename": "MEDIUM",
+    "file_move": "MEDIUM",
+    "file_copy": "MEDIUM",
+    "file_delete": "HIGH",
+}
+"""pc_control's own tiers, unchanged by the move."""
 
 
 def _execute_input(request: LocalActionRequest, action: str) -> LocalActionResponse:
@@ -1452,9 +1530,9 @@ def _app_id(name: str) -> str | None:
 
 
 def _resolve_path(path: str) -> Path:
-    from grandpa.desktop.control import get_file_service
+    from grandpa.files.paths import resolve_path
 
-    return get_file_service().resolve_path(path)
+    return resolve_path(path)
 
 
 def _is_protected_path(path: Path) -> bool:

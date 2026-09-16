@@ -19,6 +19,7 @@ FileActionType = Literal[
     "zip",
     "extract",
     "properties",
+    "read",
 ]
 
 FileActionStatus = Literal[
@@ -57,6 +58,8 @@ class FileOperationResult:
     matches: tuple[Path, ...] = ()
     requires_confirmation: bool = False
     error: str | None = None
+    contents: str | None = None
+    """What a read returned. None for every action that does not read."""
 
     @property
     def should_fallback(self) -> bool:

@@ -10,7 +10,6 @@ from grandpa.desktop.control.applications import ApplicationControlService
 from grandpa.desktop.control.automation import AutomationControlService
 from grandpa.desktop.control.clipboard import ClipboardControlService
 from grandpa.desktop.control.diagnostics import DesktopDiagnosticsService
-from grandpa.desktop.control.files import FileControlService
 from grandpa.desktop.control.monitors import MonitorControlService
 from grandpa.desktop.control.power import PowerControlService
 from grandpa.desktop.control.windows import WindowControlService
@@ -42,11 +41,6 @@ def get_diagnostics_service() -> DesktopDiagnosticsService:
 
 
 @lru_cache(maxsize=1)
-def get_file_service() -> FileControlService:
-    return FileControlService()
-
-
-@lru_cache(maxsize=1)
 def get_automation_service() -> AutomationControlService:
     return AutomationControlService()
 
@@ -64,7 +58,6 @@ def list_desktop_services(*, platform: str | None = None) -> list[dict[str, Any]
         get_clipboard_service().diagnostics(),
         get_monitor_service().diagnostics(),
         get_diagnostics_service().diagnostics(),
-        get_file_service().diagnostics(),
         get_automation_service().diagnostics(platform=platform),
         get_power_service().diagnostics(platform=platform),
     ]
@@ -97,7 +90,6 @@ __all__ = [
     "get_automation_service",
     "get_clipboard_service",
     "get_diagnostics_service",
-    "get_file_service",
     "get_monitor_service",
     "get_power_service",
     "get_window_service",

@@ -15,7 +15,8 @@ import pytest
 from grandpa.action_layer.catalogue import LAYER_OWNED, get
 from grandpa.action_layer.executor import execute
 from grandpa.action_layer.model import ActionRequest, RiskLevel
-from grandpa.desktop.control.files import MAX_READ_BYTES, FileControlService
+from grandpa.files.executor import MAX_READ_BYTES, FileExecutor
+from grandpa.files.models import FileAction
 
 
 @pytest.fixture(autouse=True)
@@ -138,17 +139,17 @@ def test_a_file_over_the_limit_is_refused_without_being_read(
 
 def test_the_ceiling_cannot_be_raised_by_asking(readable_root: Path) -> None:
     """max_bytes narrows the limit; it cannot widen it past MAX_READ_BYTES."""
-    service = FileControlService()
-
-    class _Request:
-        target = str(readable_root / "missing.txt")
-        args = {"max_bytes": MAX_READ_BYTES * 100}
-
-    response = service.execute_read(_Request())
+    result = FileExecutor(roots=(readable_root,)).execute(
+        FileAction(
+            action="read",
+            source=str(readable_root / "missing.txt"),
+            args={"max_bytes": MAX_READ_BYTES * 100},
+        )
+    )
 
     # It got past the size gate to the existence check, so the huge request was
     # clamped rather than honoured.
-    assert response.error == "missing_file"
+    assert result.error == "missing_file"
 
 
 def test_a_missing_file_says_so(readable_root: Path) -> None:

@@ -16,9 +16,13 @@ from grandpa.files.paths import (
     latest_by_suffix,
     resolve_destination,
     resolve_path,
-    safe_roots,
 )
 from grandpa.files.safety import FileSafetyPolicy
+
+MAX_READ_BYTES = 256 * 1024
+"""Ceiling on one file read. A quarter of a megabyte is a long document and
+still small enough to sit in a model's context without crowding out the
+conversation; anything bigger is a data file, not something to read aloud."""
 
 ConfirmationCallback = Callable[[FileAction, Path | None, Path | None], bool]
 OpenCallback = Callable[[Path], None]
@@ -34,7 +38,12 @@ class FileExecutor:
         safety: FileSafetyPolicy | None = None,
         opener: OpenCallback | None = None,
     ) -> None:
-        self.roots = roots or safe_roots()
+        # Looked up now rather than bound at import, so a caller that changes
+        # the searchable roots -- config, GRANDPA_FILE_SAFE_ROOTS, a test --
+        # is read by the executor instead of a stale module-level copy.
+        from grandpa.files import paths
+
+        self.roots = roots or paths.safe_roots()
         self.safety = safety or FileSafetyPolicy()
         self.opener = opener or _default_open
 
@@ -66,6 +75,8 @@ class FileExecutor:
                 return self._extract(action)
             if action.action == "properties":
                 return self._properties(action)
+            if action.action == "read":
+                return self._read(action)
         except OSError as exc:
             return FileOperationResult(
                 "error",
@@ -75,6 +86,68 @@ class FileExecutor:
             )
         return FileOperationResult(
             "unsupported", "This file action is not supported yet.", action
+        )
+
+    def _read(self, action: FileAction) -> FileOperationResult:
+        """Read a text file back, bounded and inside the searchable roots.
+
+        Moved here when file operations were given one owner; the two limits
+        are the ones it arrived with. It refuses anything outside
+        :func:`safe_roots` -- the same roots search already walks, so it reads
+        exactly what the user can already find -- and refuses a file over
+        ``max_bytes``, because a model that reads a 2 GB log puts it in the
+        prompt.
+        """
+        path = resolve_path(action.source, roots=self.roots)
+        blocked = self._blocked_path(path, action)
+        if blocked:
+            return blocked
+
+        limit = max(
+            1, min(int(action.args.get("max_bytes", MAX_READ_BYTES)), MAX_READ_BYTES)
+        )
+        if not any(_is_within(path, root) for root in self.roots):
+            listed = ", ".join(str(root) for root in self.roots[:4])
+            return FileOperationResult(
+                "blocked",
+                f"I only read files under {listed} and the other searchable folders.",
+                action,
+                path,
+                error="outside_safe_roots",
+            )
+        if not path.exists() or not path.is_file():
+            return FileOperationResult(
+                "error",
+                f"I could not find the file: {action.source}",
+                action,
+                path,
+                error="missing_file",
+            )
+        size = path.stat().st_size
+        if size > limit:
+            return FileOperationResult(
+                "blocked",
+                f"That file is {size} bytes, over the {limit}-byte read limit.",
+                action,
+                path,
+                error="file_too_large",
+            )
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            return FileOperationResult(
+                "unsupported",
+                "That file is not UTF-8 text, so there is nothing to read out.",
+                action,
+                path,
+                error="not_text",
+            )
+        return FileOperationResult(
+            "handled",
+            f"Read {size} bytes from {path.name}.",
+            action,
+            path,
+            contents=text,
         )
 
     def _create(self, action: FileAction, *, folder: bool) -> FileOperationResult:
@@ -96,7 +169,7 @@ class FileExecutor:
                 "handled", f"Folder created: {describe_path(path)}", action, path
             )
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text("", encoding="utf-8")
+        path.write_text(str(action.args.get("content", "")), encoding="utf-8")
         return FileOperationResult(
             "handled", f"File created: {describe_path(path)}", action, path
         )
@@ -411,6 +484,14 @@ class FileExecutor:
                 path,
             )
         return None
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root.resolve(strict=False))
+    except ValueError:
+        return False
+    return True
 
 
 def _default_open(path: Path) -> None:

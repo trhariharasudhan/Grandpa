@@ -75,8 +75,8 @@ _VOLUME_GET = "grandpa.desktop.control.power.PowerControlService.execute_volume_
 _CLIPBOARD = "grandpa.desktop.control.clipboard.ClipboardControlService.execute"
 _MONITORS = "grandpa.desktop.control.monitors.MonitorControlService.execute"
 _DIAGNOSTICS = "grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
-_FILES = "grandpa.desktop.control.files.FileControlService.execute"
-_FILE_READ = "grandpa.desktop.control.files.FileControlService.execute_read"
+_FILES = "grandpa.files.executor.FileExecutor.execute"
+_FILE_READ = _FILES
 _SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
 _BROWSER = "grandpa.browser_control.execute_browser_action"
@@ -247,6 +247,11 @@ class Binding(str, Enum):
     GMAIL_ACTION = "gmail_action"
     """``method(GmailAction, confirmed=, confirm=)`` -- grandpa.gmail."""
 
+    FILE_ACTION = "file_action"
+    """``FileExecutor.execute(FileAction, confirm=...)`` -- the files domain,
+    which owns every file operation and applies its own safety policy to each
+    one."""
+
     FUNCTION_KWARGS = "function_kwargs"
     """``function(**parameters)`` -- a plain function whose arguments are the
     action's parameters, with no action name and no request object."""
@@ -351,12 +356,12 @@ _CALLS: dict[str, _Call] = {
     "pc_diagnostics": _Call(_R_A),
     "screenshot_describe": _Call(Binding.SERVICE_ONLY),
     # files
-    "file_create": _Call(_R_A, target="path"),
-    "file_rename": _Call(_R_A, target="path"),
-    "file_move": _Call(_R_A, target="path"),
-    "file_copy": _Call(_R_A, target="path"),
-    "file_delete": _Call(_R_A, target="path"),
-    "file_read": _Call(Binding.SERVICE_REQUEST, target="path"),
+    "file_create": _Call(Binding.FILE_ACTION, target="path", alias="create_file"),
+    "file_rename": _Call(Binding.FILE_ACTION, target="path", alias="rename"),
+    "file_move": _Call(Binding.FILE_ACTION, target="path", alias="move"),
+    "file_copy": _Call(Binding.FILE_ACTION, target="path", alias="copy"),
+    "file_delete": _Call(Binding.FILE_ACTION, target="path", alias="delete"),
+    "file_read": _Call(Binding.FILE_ACTION, target="path", alias="read"),
     # synthetic input
     "keyboard_type": _Call(_R_A_P),
     "keyboard_hotkey": _Call(_R_A_P),
@@ -1944,7 +1949,7 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
         ),
         "file_read": (
             "Every other file action writes. Added as "
-            "FileControlService.execute_read, bounded by size and restricted to "
+            "the files domain, bounded by size and restricted to "
             "the roots file search already walks; read-only, so LOW."
         ),
         "screenshot_describe": (

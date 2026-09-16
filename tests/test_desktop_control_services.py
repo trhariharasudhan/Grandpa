@@ -29,7 +29,6 @@ def test_desktop_control_registry_lists_domain_services():
         "clipboard",
         "monitors",
         "diagnostics",
-        "files",
         "automation",
         "power",
     } <= names
@@ -136,5 +135,5 @@ def test_desktop_service_api_endpoints():
 
     assert diagnostics.status_code == 200
     assert services.status_code == 200
-    assert diagnostics.json()["service_count"] >= 8
+    assert diagnostics.json()["service_count"] >= 7
     assert services.json()["local_only"] is True

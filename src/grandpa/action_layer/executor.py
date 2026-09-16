@@ -298,6 +298,63 @@ def _call_google(
     )
 
 
+def _call_files(
+    spec: ActionSpec,
+    implementation: Any,
+    owner: Any,
+    action: str,
+    parameters: Mapping[str, Any],
+    confirmed: bool,
+    confirm_callback: ConfirmCallback | None,
+) -> Any:
+    """Call the files domain with a real FileAction.
+
+    Files owns every file operation, and its safety policy runs inside the
+    executor rather than in a caller -- which is why this binding exists. The
+    previous route went to a service whose only guard lived in
+    ``pc_control._preflight_guard``; the action layer does not go through
+    pc_control, so file_delete reached the filesystem with no protected-path
+    check at all. Calling the domain puts the check back on every path.
+
+    Deleting asks (:data:`Confirmation.DOMAIN`), because the domain resolves
+    "notes.txt" to a path -- and sometimes to several -- before there is
+    anything to describe.
+    """
+    from grandpa.files.executor import FileExecutor
+    from grandpa.files.models import FileAction
+
+    fields = dict(parameters)
+    target = str(fields.pop(spec.target_parameter or "path", "") or "")
+
+    if action == "create_file" and str(fields.pop("kind", "file")) == "folder":
+        action = "create_folder"
+    destination = str(fields.pop("destination", "") or "")
+    if action == "rename":
+        destination = str(fields.pop("new_name", "") or "")
+
+    file_action = FileAction(
+        action=action, source=target, destination=destination, args=fields
+    )
+
+    forwarded = None
+    if confirm_callback is not None and not confirmed:
+
+        def forwarded(asked: Any, path: Any, _destination: Any = None) -> bool:
+            # The domain's own sentence, asked with the layer's callback, so a
+            # migration does not change the words a user reads.
+            plan = f"{asked.action} {path}" if path is not None else asked.action
+            return bool(
+                confirm_callback(
+                    spec.name, {**dict(parameters), "_plan": plan}, spec.risk
+                )
+            )
+
+    executor = FileExecutor()
+    if confirmed:
+        return executor.execute(file_action, confirm=lambda *_: True)
+    return executor.execute(file_action, confirm=forwarded)
+
+
 def _call_web_search(
     spec: ActionSpec,
     implementation: Any,
@@ -340,6 +397,16 @@ def _call(
         return implementation(action, **dict(parameters))
     if spec.binding in {Binding.CALENDAR_ACTION, Binding.GMAIL_ACTION}:
         return _call_google(
+            spec,
+            implementation,
+            owner,
+            action,
+            parameters,
+            confirmed,
+            confirm_callback,
+        )
+    if spec.binding is Binding.FILE_ACTION:
+        return _call_files(
             spec,
             implementation,
             owner,
@@ -428,6 +495,12 @@ def _as_result(spec: ActionSpec, returned: Any) -> ActionResult:
             data.update(extra)
     # Domain results also carry a couple of plain scalars a caller wants back --
     # what the action was about, and which domain answered.
+    contents = getattr(returned, "contents", None)
+    if isinstance(contents, str):
+        # A read's payload. The files domain returns it as a field rather
+        # than inside an evidence mapping.
+        data["content"] = contents
+        data.setdefault("size", len(contents.encode("utf-8")))
     for attribute in ("target", "kind"):
         value = getattr(returned, attribute, None)
         if isinstance(value, str) and value:
