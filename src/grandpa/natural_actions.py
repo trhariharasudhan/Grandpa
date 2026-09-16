@@ -108,7 +108,27 @@ def _app_lookup(name: str) -> MappedRequest:
     return ("detect_app", {"app": name})
 
 
-_PREFIXED: dict[tuple[str, str], Callable[[str], MappedRequest]] = {}
+def _window(action: str) -> Callable[[str], MappedRequest]:
+    def build(target: str) -> MappedRequest:
+        return (action, {"window": target or "active"})
+
+    return build
+
+
+_PREFIXED: dict[tuple[str, str], Callable[[str], MappedRequest]] = {
+    # --- tranche 3: windows ---------------------------------------------------
+    #
+    # Both routes called the same control_window, which already refuses to
+    # close Task Manager, Windows Security, Registry Editor, an administrator
+    # shell or a terminal -- local_actions blocked "close task manager" a step
+    # earlier as well, but the function below it would have refused anyway. No
+    # hole. Closing asks on both routes since the tier decisions in this phase.
+    ("window", "focus|"): _window("focus_window"),
+    ("window", "minimize|"): _window("minimize_window"),
+    ("window", "maximize|"): _window("maximize_window"),
+    ("window", "restore|"): _window("restore_window"),
+    ("window", "close|"): _window("close_window"),
+}
 """Shapes matched by kind and target *prefix*, e.g. ("window", "focus|")."""
 
 _BY_KIND: dict[str, Callable[[str], MappedRequest]] = {

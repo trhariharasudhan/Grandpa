@@ -76,3 +76,68 @@ def test_a_migrated_phrase_is_performed_by_the_layer(monkeypatch) -> None:
 
     assert result.status == "handled"
     assert result.message == "Basic system info: probe"
+
+
+# --- tranche 3: windows ---------------------------------------------------------
+
+
+@pytest.fixture
+def window_calls(monkeypatch):
+    import grandpa.windows_window_control as wc
+
+    calls: list[tuple[str, str]] = []
+
+    class _Done:
+        status = "handled"
+        message = "done"
+
+    monkeypatch.setattr(
+        wc,
+        "control_window",
+        lambda action, target="active": calls.append((action, target)) or _Done(),
+    )
+    assert wc.control_window("probe", "x").status == "handled", "mock did not hold"
+    calls.clear()
+    return calls
+
+
+def test_focusing_a_window_does_not_ask(window_calls) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action("switch to chrome")
+
+    assert result.status == "handled"
+    assert window_calls == [("focus", "chrome")]
+
+
+def test_closing_asks_inline_and_no_closes_nothing(window_calls) -> None:
+    """The pending store used to hold this; the layer asks on the spot."""
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action("close notepad", confirm=lambda *_: False)
+
+    assert result.status == "cancelled"
+    assert window_calls == []
+
+
+def test_closing_proceeds_on_yes(window_calls) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action("close notepad", confirm=lambda *_: True)
+
+    assert result.status == "handled"
+    assert window_calls == [("close", "notepad")]
+
+
+def test_closing_task_manager_is_refused_without_asking(window_calls) -> None:
+    """A refusal that asks first is a yes that does nothing."""
+    from grandpa.local_actions import handle_local_action
+
+    asked: list[str] = []
+    result = handle_local_action(
+        "close task manager", confirm=lambda spec, _t: asked.append(spec) or True
+    )
+
+    assert result.status == "blocked"
+    assert asked == []
+    assert window_calls == []

@@ -320,6 +320,15 @@ def handle_local_action(
     # module would otherwise write a pending approval of its own.
     from grandpa.natural_actions import run_parsed
 
+    # classify_permission refuses some shapes outright, before anyone is asked:
+    # closing Task Manager, a browser click on "submit", "checkout", "payment",
+    # "buy" or "login". The layer would ask first and only then refuse -- or, for
+    # a click, not refuse at all -- so those refusals stay in front of it.
+    if classify_permission(command, result) == "blocked":
+        blocked = _with_permission(command, result)
+        _log_attempt(command, blocked)
+        return blocked
+
     migrated = run_parsed(result.kind, result.target, confirm=confirm, execute=execute)
     if migrated is not None:
         _log_attempt(command, migrated)
