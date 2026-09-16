@@ -509,7 +509,7 @@ below.
 |---|---------|--------|------------------|
 | 1 | `ask --tools` auto-approves tools | FIXED | `bacffe0b`, `9485cb8f` |
 | 2 | `ask --research` crashes | FIXED | `b6376c14` (flag removed) |
-| 3 | HIGH-risk approval flow is a dead end | OPEN | No CLI command redeems approval codes yet |
+| 3 | HIGH-risk approval flow is a dead end | CLOSED | Two halves. Chat no longer stages these at all: shut down, restart and empty-recycle-bin go through the action layer, which asks inline (Phase 1.5). And `grandpa approve <action-id> --code <code>` now redeems a staged action from the terminal, for the callers that still stage one. A wrong code is still refused, and an action id alone is still not an authorisation |
 | 4 | `grandpa workflow` is fake | FIXED | `b6376c14` (CLI group removed; `workflow/engine.py` kept) |
 | 5 | `skill list` never finds the 43 skills | OPEN | |
 | 6 | Synthetic input skips its confirmation tier | FIXED | `bacffe0b` (premise corrected: dead end, not bypass) |

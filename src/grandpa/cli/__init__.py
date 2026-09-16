@@ -132,6 +132,13 @@ cli.add_command(
 )
 cli.add_command(_lazy("ask", "grandpa.cli.ask:ask", short_help="Ask Grandpa once."))
 cli.add_command(
+    _lazy(
+        "approve",
+        "grandpa.cli.approve_cmd:approve",
+        short_help="Redeem an approval code for a staged action.",
+    )
+)
+cli.add_command(
     _lazy("chat", "grandpa.cli.chat_cmd:chat", short_help="Start chat mode.")
 )
 cli.add_command(
