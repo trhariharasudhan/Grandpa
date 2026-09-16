@@ -34,6 +34,7 @@ from grandpa.action_layer.catalogue import (
     ActionSpec,
     extended_actions,
     get,
+    loadable_domains,
 )
 
 __all__ = [
@@ -124,7 +125,7 @@ def _load_tools_definition() -> dict[str, Any]:
                     "domain": {
                         "type": "string",
                         "description": "Which subject's tools to load.",
-                        "enum": sorted(DOMAINS),
+                        "enum": list(loadable_domains()),
                     }
                 },
                 "required": ["domain"],

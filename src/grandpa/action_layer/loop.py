@@ -22,7 +22,14 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
-from grandpa.action_layer.catalogue import CATALOGUE, DOMAINS, ActionSpec, get
+from grandpa.action_layer.catalogue import (
+    CATALOGUE,
+    CORE_DOMAINS,
+    DOMAINS,
+    ActionSpec,
+    get,
+    loadable_domains,
+)
 from grandpa.action_layer.executor import ConfirmCallback, execute
 from grandpa.action_layer.model import ActionRequest, ActionResult, Origin, RiskLevel
 from grandpa.action_layer.tool_schema import (
@@ -71,15 +78,18 @@ grinding through a local GPU for minutes.
 
 
 def _subject_list() -> str:
-    """The load_tools subjects, named from DOMAINS rather than by hand.
+    """The load_tools subjects, named from the catalogue rather than by hand.
 
     The hand-written list went stale the moment four domains were added: the
     clock, calendar, mail and web were loadable but unnamed, so the only way to
     reach thirty-three catalogued actions was to guess the subject. Reading it
-    from DOMAINS keeps the prompt honest as the catalogue grows, and sorting
-    keeps it byte-identical between requests, which is what the cache needs.
+    from the catalogue keeps the prompt honest as that grows, and sorting keeps
+    it byte-identical between requests, which is what the cache needs.
+
+    Core subjects are left out: they are already sent whole, so naming them
+    would invite a round trip that adds nothing.
     """
-    return ", ".join(sorted(DOMAINS))
+    return ", ".join(loadable_domains())
 
 
 SYSTEM_PROMPT = f"""\
@@ -264,6 +274,22 @@ def _load_domain(
             ),
             False,
         )
+    if domain in CORE_DOMAINS:
+        # Sent whole already. Saying so is better than reporting success over an
+        # empty list, which reads to the model as "that subject has no tools".
+        return (
+            json.dumps(
+                {
+                    "success": True,
+                    "message": (
+                        f"You already have every {domain} tool -- that subject is "
+                        "always in your list. Call the action directly."
+                    ),
+                    "tools": list(DOMAINS[domain]),
+                }
+            ),
+            False,
+        )
     if domain not in DOMAINS:
         return (
             json.dumps(
@@ -271,7 +297,7 @@ def _load_domain(
                     "success": False,
                     "error": "unknown_domain",
                     "message": f"There is no tool subject called {domain!r}.",
-                    "available": sorted(DOMAINS),
+                    "available": list(loadable_domains()),
                 }
             ),
             False,

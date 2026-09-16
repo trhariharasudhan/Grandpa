@@ -43,12 +43,14 @@ __all__ = [
     "Confirmation",
     "CATALOGUE",
     "CORE_ACTIONS",
+    "CORE_DOMAINS",
     "DOMAINS",
     "EXCLUSIONS",
     "LAYER_OWNED",
     "counts_by_risk",
     "domain_of",
     "extended_actions",
+    "loadable_domains",
     "get",
     "names",
 ]
@@ -2225,54 +2227,60 @@ someone asks -- "my notes", "my downloads", "the browser" -- rather than which
 service class happens to implement them.
 """
 
-CORE_ACTIONS: tuple[str, ...] = (
-    # Launching and looking: the two things a desktop assistant is asked for
-    # before anything else.
-    "open_app",
-    "list_windows",
-    "screenshot_describe",
-    # Volume is the most-asked hardware control, and the one the audit found
-    # orphaned. get/set answer any phrasing; up/down are what people say.
-    "volume_get",
-    "volume_set",
-    "volume_up",
-    "volume_down",
-    # Notes: writing something down and finding it again is the daily loop.
-    # Append and delete are deferred -- they follow a create or a search, by
-    # which point the domain is loaded.
-    "notes_create",
-    "notes_list",
-    "notes_search",
-    "notes_read",
-    # Memory: the two halves of "remember this" / "what do you know".
-    "memory_remember",
-    "memory_recall",
-    # Reminders: setting one and seeing them. Cancelling needs an id, which
-    # means listing first, which loads the domain.
-    "reminder_create",
-    "reminder_list",
-    # Files: reading and creating. Renaming, moving and deleting are rarer and
-    # riskier, so they are worth a deliberate round trip.
-    "file_read",
-    "file_create",
-    # The clipboard is how a user hands Grandpa something without typing it.
-    "clipboard_read",
-    # The web, for the two things anyone actually asks a browser to do.
-    "browser_open",
-    "browser_search",
-)
-"""The twenty actions sent on every request, in a fixed order.
+CORE_DOMAINS: tuple[str, ...] = ("apps", "clock", "volume")
+"""The subjects sent in full on every request.
 
-Chosen by what someone does daily, not by what is cheap to describe, and kept
-deliberately small: every action here is paid for on every cold start. The
-order is part of the contract -- it must not change, or Ollama's cached prefix
-is thrown away and the cold cost returns.
+**Whole domains only, and that is the point.** Measured on grandpa-brain: the
+model calls ``load_tools`` for a subject that is wholly absent from its list,
+and does not when part of the subject is already in front of it. Asked to pin a
+note while holding notes_create, notes_list, notes_read and notes_search, it
+answered "I cannot directly pin a note to the top"; handed the whole catalogue
+it calls ``notes_pin`` at once. Seeing four notes tools reads as having all the
+notes tools. Splitting a domain therefore does not defer its other actions, it
+hides them.
+
+These three were chosen as the smallest set of whole domains covering what is
+asked most:
+
+* **apps** -- "open spotify", "close chrome", "open my downloads". The single
+  most frequent request, and the one where a round trip is most noticeable.
+* **volume** -- "turn it down", "mute". Constant, and six small definitions.
+* **clock** -- "what time is it". One action, 110 tokens, asked daily.
+
+Eleven actions and roughly 960 tokens with ``load_tools``, against 1,665 for
+the twenty split actions this replaces. Notes and browser are the next most
+common and cost twelve actions each; they are deferred deliberately, because
+with the split repaired a deferred domain costs one round trip rather than
+being unreachable.
+"""
+
+CORE_ACTIONS: tuple[str, ...] = tuple(
+    action for domain in CORE_DOMAINS for action in DOMAINS[domain]
+)
+"""The core actions, derived so that a domain cannot be half-included.
+
+Derivation is the guard: there is no hand-written list to fall out of step with
+DOMAINS, and adding a subject to core means adding all of it. The order follows
+CORE_DOMAINS and then each domain's own order, so the block stays byte-identical
+between requests -- which is what makes Ollama reuse the prefix instead of
+re-evaluating it.
 """
 
 
 def domain_of(action: str) -> str | None:
     """Which domain an action belongs to, or ``None`` if it is not catalogued."""
     return _DOMAIN_BY_ACTION.get(action)
+
+
+def loadable_domains() -> tuple[str, ...]:
+    """Subjects ``load_tools`` can add, sorted.
+
+    A core domain is sent whole, so asking for it would add nothing. It
+    is left out of the offer rather than accepted and silently ignored --
+    a round trip that buys no tools is the cost this tiering exists to
+    avoid.
+    """
+    return tuple(sorted(set(DOMAINS) - set(CORE_DOMAINS)))
 
 
 def extended_actions(domain: str) -> tuple[ActionSpec, ...]:

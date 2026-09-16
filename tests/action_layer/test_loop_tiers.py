@@ -14,7 +14,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from grandpa.action_layer.catalogue import CATALOGUE, CORE_ACTIONS, DOMAINS, get
+from grandpa.action_layer.catalogue import (
+    CATALOGUE,
+    CORE_ACTIONS,
+    get,
+    loadable_domains,
+)
 from grandpa.action_layer.loop import run
 from grandpa.action_layer.tool_schema import LOAD_TOOLS, core_tool_definitions
 
@@ -269,13 +274,16 @@ def test_the_prompt_names_every_subject_load_tools_accepts() -> None:
     mail and web -- were added without it. Thirty-three catalogued actions were
     loadable in principle and unreachable in practice, because the only way to
     name the subject was to guess it.
+
+    A core domain is deliberately not named: it is already sent whole, so asking
+    for it would spend a round trip on nothing.
     """
     engine = StubEngine({"content": "done"})
 
     run("hello", engine=engine, model="stub")
 
     system = engine.requests[0]["messages"][0].content
-    assert [domain for domain in DOMAINS if domain not in system] == []
+    assert [domain for domain in loadable_domains() if domain not in system] == []
 
 
 def test_the_prompt_is_the_same_bytes_every_run() -> None:
