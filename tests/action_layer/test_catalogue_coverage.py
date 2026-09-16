@@ -150,6 +150,13 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     # files: reading and listing are LOW, writing something new is MEDIUM,
     # matching file_create and file_move in pc_control's own table.
     # browser awareness: every one is a read of the visible page.
+    # the application inventory: every one is a read.
+    "apps_scan": ("LOW", NONE),
+    "apps_list": ("LOW", NONE),
+    "apps_search": ("LOW", NONE),
+    "apps_running": ("LOW", NONE),
+    "apps_is_running": ("LOW", NONE),
+    "apps_restart": ("LOW", NONE),
     "browser_title": ("LOW", NONE),
     "browser_url": ("LOW", NONE),
     "browser_read": ("LOW", NONE),

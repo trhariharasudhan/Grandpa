@@ -82,6 +82,7 @@ _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execu
 _BROWSER = "grandpa.browser_control.execute_browser_action"
 _BROWSER_NAV = "grandpa.browser.executor.BrowserExecutor.execute"
 _AWARENESS = "grandpa.browser_awareness.automation.execute_awareness"
+_APPS_INVENTORY_IMPL = "grandpa.apps.automation.execute_inventory"
 _OPEN_FOLDER = "grandpa.pc_control._execute_open_folder"
 _NOTES = "grandpa.notes.automation.NotesAutomation.execute"
 _DOWNLOADS = "grandpa.downloads.automation.DownloadsAutomation.execute"
@@ -254,6 +255,13 @@ class Binding(str, Enum):
     owns navigation and the confirmation rules that go with it, including
     tools.browser.trusted_domains."""
 
+    APPLICATION_ACTION = "application_action"
+    """``ApplicationControlService.execute(request, action, confirm=...)``.
+
+    Its own binding because launching a browser asks, and only the service
+    can tell that it is about to: the answer depends on resolving the name
+    the user said to an application."""
+
     AWARENESS_ACTION = "awareness_action"
     """execute_awareness(action, query) -- browser_awareness, which
     captures the visible page, redacts it and answers from the snapshot.
@@ -330,7 +338,13 @@ _R_A_P = Binding.REQUEST_ACTION_PLATFORM
 # entry cannot be added without saying how it is called.
 _CALLS: dict[str, _Call] = {
     # applications and windows
-    "open_app": _Call(_R_A, target="app"),
+    "open_app": _Call(Binding.APPLICATION_ACTION, target="app"),
+    "apps_scan": _Call(Binding.ACTION_TARGET),
+    "apps_list": _Call(Binding.ACTION_TARGET),
+    "apps_search": _Call(Binding.ACTION_TARGET, target="query"),
+    "apps_running": _Call(Binding.ACTION_TARGET),
+    "apps_is_running": _Call(Binding.ACTION_TARGET, target="query"),
+    "apps_restart": _Call(Binding.ACTION_TARGET, target="query"),
     "detect_app": _Call(_R_A, target="app"),
     "open_folder": _Call(Binding.REQUEST_ONLY, target="path"),
     "close_app": _Call(_R_A, target="app", alias="close"),
@@ -2038,6 +2052,61 @@ _GMAIL_ACTIONS: tuple[ActionSpec, ...] = (
     ),
 )
 
+# --- the application inventory -----------------------------------------------
+#
+# What is installed and what is running, as opposed to starting and stopping
+# things, which is _APPLICATION_ACTIONS above. The formatting moved out of
+# desktop/automation.py into the apps domain so that both the layer and that
+# handler say the same sentences.
+
+_APPS_INVENTORY: tuple[ActionSpec, ...] = (
+    _spec(
+        "apps_scan",
+        _LOW,
+        "Rebuild the list of installed applications.",
+        _APPS_INVENTORY_IMPL,
+        _schema({}),
+        notes="Walks the start menu and registry and saves a local database.",
+    ),
+    _spec(
+        "apps_list",
+        _LOW,
+        "List the applications installed on this computer.",
+        _APPS_INVENTORY_IMPL,
+        _schema({}),
+    ),
+    _spec(
+        "apps_search",
+        _LOW,
+        "Find an installed application by name.",
+        _APPS_INVENTORY_IMPL,
+        _schema({"query": _string("What to look for.")}, ("query",)),
+    ),
+    _spec(
+        "apps_running",
+        _LOW,
+        "List the applications running now.",
+        _APPS_INVENTORY_IMPL,
+        _schema({}),
+    ),
+    _spec(
+        "apps_is_running",
+        _LOW,
+        "Say whether one application is running.",
+        _APPS_INVENTORY_IMPL,
+        _schema({"query": _string("Which application.")}, ("query",)),
+    ),
+    _spec(
+        "apps_restart",
+        _LOW,
+        "Restart an application.",
+        _APPS_INVENTORY_IMPL,
+        _schema({"query": _string("Which application.")}, ("query",)),
+        notes="Catalogued as it behaves: it refuses and explains that it does "
+        "not restart anything automatically. Nothing performs it.",
+    ),
+)
+
 
 CATALOGUE: tuple[ActionSpec, ...] = (
     *_APPLICATION_ACTIONS,
@@ -2051,6 +2120,7 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_FILE_ACTIONS,
     *_INPUT_ACTIONS,
     *_BROWSER_ACTIONS,
+    *_APPS_INVENTORY,
     *_NOTES_ACTIONS,
     *_DOWNLOADS_ACTIONS,
     *_MEMORY_ACTIONS,
@@ -2251,6 +2321,19 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
                 "web_clear_cache",
             )
         },
+        "apps_scan": (
+            "The application inventory. pc_control has no entry for it: "
+            "desktop/automation.py answered these itself, which is why the "
+            "layer could not reach them at all."
+        ),
+        "apps_list": ("Installed applications. No pc_control entry."),
+        "apps_search": ("Find an installed application. No pc_control entry."),
+        "apps_running": ("Running applications. No pc_control entry."),
+        "apps_is_running": ("Is one application running. No pc_control entry."),
+        "apps_restart": (
+            "Catalogued as it behaves -- it refuses. Nothing restarts an "
+            "application; the honest refusal is better than a guess."
+        ),
         "browser_title": (
             "browser_awareness reads the visible page. pc_control has no "
             "entry for the page title."
@@ -2339,6 +2422,20 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
 DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
     {
         "apps": ("open_app", "detect_app", "close_app", "open_folder"),
+        # Kept out of "apps" deliberately. apps is a core domain, sent whole on
+        # every request, and core holds what someone does daily: starting and
+        # stopping programs. Asking what is installed is a different question
+        # and a rarer one, so it is its own subject and deferred -- putting it
+        # in apps would have grown the cold start from 953 tokens to 1,302 for
+        # six actions nobody asks for most days.
+        "inventory": (
+            "apps_scan",
+            "apps_list",
+            "apps_search",
+            "apps_running",
+            "apps_is_running",
+            "apps_restart",
+        ),
         "windows": (
             "list_windows",
             "focus_window",

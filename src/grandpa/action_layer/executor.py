@@ -298,6 +298,43 @@ def _call_google(
     )
 
 
+def _call_application(
+    spec: ActionSpec,
+    implementation: Any,
+    owner: Any,
+    action: str,
+    parameters: Mapping[str, Any],
+    confirmed: bool,
+    confirm_callback: ConfirmCallback | None,
+) -> Any:
+    """Call the application service, which asks before starting a browser.
+
+    The rule used to live in ``desktop/automation.py``, so it applied to chat
+    and to nothing else: open_app was catalogued LOW with no confirmation, and a
+    model could start a browser without a word while chat asked every time. It
+    now lives in the service every route calls, and this is how the layer's
+    callback reaches it.
+    """
+    args = dict(parameters)
+    target = str(args.pop(spec.target_parameter or "", "") or "")
+    request = _ServiceRequest(action_type=spec.name, target=target, args=args)
+
+    forwarded = None
+    if confirm_callback is not None and not confirmed:
+
+        def forwarded(plan: str) -> bool:
+            return bool(
+                confirm_callback(
+                    spec.name, {**dict(parameters), "_plan": plan}, spec.risk
+                )
+            )
+
+    instance = owner() if owner is not None else None
+    return implementation(
+        instance, request, action, confirm=forwarded, confirmed=confirmed
+    )
+
+
 def _call_browser(
     spec: ActionSpec,
     implementation: Any,
@@ -464,6 +501,16 @@ def _call(
         return implementation(action, **dict(parameters))
     if spec.binding in {Binding.CALENDAR_ACTION, Binding.GMAIL_ACTION}:
         return _call_google(
+            spec,
+            implementation,
+            owner,
+            action,
+            parameters,
+            confirmed,
+            confirm_callback,
+        )
+    if spec.binding is Binding.APPLICATION_ACTION:
+        return _call_application(
             spec,
             implementation,
             owner,

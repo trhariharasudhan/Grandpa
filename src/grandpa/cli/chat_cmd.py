@@ -1399,8 +1399,10 @@ def chat(
         else:
             detail = ", ".join(f"{k}={v!r}" for k, v in sorted(parameters.items()))
             spec = action + (f" ({detail})" if detail else "")
-        if action.startswith("browser_"):
-            # Wave 2's wording, kept: a navigation prompt says so.
+        if action.startswith("browser_") or action == "open_app":
+            # Wave 2's wording, kept: a navigation prompt says so. open_app is
+            # here because the only time it asks is a browser launch -- that is
+            # the rule the application service applies.
             return _confirm_browser_action(spec, f"{risk.value} risk")
         return _confirm_local_change(spec, f"{risk.value} risk")
 
@@ -1928,28 +1930,30 @@ def chat(
                 render_assistant_response(console, Markdown(browser_result.message))
                 continue
 
-            from grandpa.desktop.automation import handle_desktop_command
+            # The desktop, migrated. The parser already named a pc_control
+            # action; the catalogue has every one of them, so the executor path
+            # behind it was a second way of doing what the layer does. See
+            # cli/_desktop_route.py.
+            from grandpa.cli._desktop_route import build_desktop_request
 
-            desktop_action = handle_desktop_command(
-                effective_user_input,
-                confirm=_desktop_action_confirmer(_confirm_browser_action),
+            desktop_request, desktop_parsed = build_desktop_request(
+                effective_user_input
             )
-            if not desktop_action.should_fallback:
+            if desktop_request is not None:
+                desktop_result = execute_action(desktop_request, _confirm_action)
                 history.append(Message(role=Role.USER, content=user_input))
                 history.append(
-                    Message(role=Role.ASSISTANT, content=desktop_action.message)
+                    Message(role=Role.ASSISTANT, content=desktop_result.message)
                 )
-                remember_conversation("assistant", desktop_action.message)
+                remember_conversation("assistant", desktop_result.message)
                 record_assistant_outcome(
                     brain_analysis,
-                    assistant_text=desktop_action.message,
+                    assistant_text=desktop_result.message,
                     kind="desktop",
-                    target=desktop_action.action.target
-                    if desktop_action.action
-                    else None,
-                    status=desktop_action.status,
+                    target=desktop_parsed.target if desktop_parsed else None,
+                    status=str(desktop_result.data.get("status") or ""),
                 )
-                render_assistant_response(console, Markdown(desktop_action.message))
+                render_assistant_response(console, Markdown(desktop_result.message))
                 continue
 
             from grandpa.local_actions import handle_local_action

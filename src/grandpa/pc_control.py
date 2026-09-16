@@ -779,9 +779,19 @@ def _execute(request: LocalActionRequest, risk: RiskLevel) -> LocalActionRespons
 
 
 def _execute_app(request: LocalActionRequest, action: str) -> LocalActionResponse:
+    """Launch or focus an application, approval already settled.
+
+    The service refuses to start a browser without consent -- the rule moved
+    there so that every route obeys it, not just chat. pc_control carries the
+    answer rather than re-deriving it: a caller that has already asked says so
+    with ``args["confirmed"]``, and a caller that has not gets the refusal,
+    which is the right default for the server API.
+    """
     from grandpa.desktop.control import get_application_service
 
-    return get_application_service().execute(request, action)
+    return get_application_service().execute(
+        request, action, confirmed=bool(request.args.get("confirmed"))
+    )
 
 
 def _execute_open_folder(request: LocalActionRequest) -> LocalActionResponse:

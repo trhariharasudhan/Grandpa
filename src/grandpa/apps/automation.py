@@ -61,3 +61,49 @@ class ApplicationManager:
 
 
 __all__ = ["ApplicationManager"]
+
+
+def execute_inventory(action: str, target: str = "") -> str:
+    """Answer one application-inventory question, in words.
+
+    Moved here from ``desktop/automation.py`` when chat's desktop branch was
+    migrated. The sentences are the ones that handler produced, unchanged --
+    what moved is where they live, so the action layer and the desktop handler
+    say the same thing rather than each having a copy.
+    """
+    from grandpa.apps.process_manager import find_running_app, list_running_apps
+
+    manager = ApplicationManager()
+    label = str(target or "").strip()
+
+    if action == "apps_scan":
+        return f"Found {len(manager.scan())} applications. Database saved."
+    if action == "apps_list":
+        apps = manager.list()
+        if not apps:
+            return "No app inventory found. Run `grandpa apps scan` first."
+        names = ", ".join(app.display_name for app in apps[:10])
+        suffix = f" and {len(apps) - 10} more" if len(apps) > 10 else ""
+        return (
+            f"Installed applications ({len(apps)} total): {names}{suffix}. "
+            "Use `grandpa apps list` to browse them."
+        )
+    if action == "apps_search":
+        return manager.search(label).message
+    if action == "apps_running":
+        apps = list_running_apps()
+        if not apps:
+            return (
+                "No running applications detected, or process inspection is "
+                "unavailable."
+            )
+        names = ", ".join(app.display_name or app.name for app in apps[:10])
+        return f"Running applications: {names}."
+    if action == "apps_is_running":
+        process = find_running_app(label)
+        if process is None:
+            return f"{label} is not running."
+        return f"{label} is running as PID {process.pid}."
+    if action == "apps_restart":
+        return f"Restarting {label} requires confirmation and is not run automatically."
+    return "Unknown application inventory command."

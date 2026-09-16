@@ -144,11 +144,16 @@ def test_handle_desktop_command_runs_through_pc_control_payload() -> None:
 
     assert result.status == "handled"
     assert result.message == "Chrome opened."
+    # "confirmed" is the answer to the question this handler just asked,
+    # travelling with the request. The application service refuses to start a
+    # browser it has no consent for -- that rule moved there so every route
+    # obeys it -- and this is how an approval already given is carried down
+    # instead of being asked for twice.
     assert payloads == [
         {
             "action_type": "open_app",
             "target": "chrome",
-            "args": {},
+            "args": {"confirmed": True},
             "dry_run": False,
             "require_approval": False,
         }

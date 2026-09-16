@@ -331,6 +331,9 @@ class DesktopAutomation:
                     f"Cancelled: I did not open {action.label}.",
                     action,
                 )
+            # Carry the answer down. The application service refuses a browser
+            # launch it has no consent for, and this is the consent.
+            action.args["confirmed"] = True
             return self.executor.execute(action, dry_run=dry_run)
         if action.requires_confirmation and confirm is not None and not confirm(action):
             return DesktopAutomationResult("needs_confirmation", "Cancelled.", action)
@@ -457,69 +460,26 @@ def _friendly_message(action: DesktopAction, response: Any) -> str:
 
 
 def _execute_app_inventory_action(action: DesktopAction) -> DesktopAutomationResult:
-    from grandpa.apps.automation import ApplicationManager
-    from grandpa.apps.process_manager import list_running_apps
+    """Ask the apps domain, which owns these answers now.
 
-    manager = ApplicationManager()
-    if action.pc_action_type == "apps_scan":
-        apps = manager.scan()
-        return DesktopAutomationResult(
-            "handled", f"Found {len(apps)} applications. Database saved.", action
-        )
-    if action.pc_action_type == "apps_list":
-        apps = manager.list()
-        if not apps:
-            return DesktopAutomationResult(
-                "handled",
-                "No app inventory found. Run `grandpa apps scan` first.",
-                action,
-            )
-        names = ", ".join(app.display_name for app in apps[:10])
-        suffix = f" and {len(apps) - 10} more" if len(apps) > 10 else ""
-        return DesktopAutomationResult(
-            "handled",
-            f"Installed applications ({len(apps)} total): {names}{suffix}. Use `grandpa apps list` to browse them.",
-            action,
-        )
-    if action.pc_action_type == "apps_search":
-        result = manager.search(action.target)
-        return DesktopAutomationResult(
-            "handled" if result.status != "missing" else "unsupported",
-            result.message,
-            action,
-        )
-    if action.pc_action_type == "apps_running":
-        apps = list_running_apps()
-        if not apps:
-            return DesktopAutomationResult(
-                "handled",
-                "No running applications detected, or process inspection is unavailable.",
-                action,
-            )
-        names = ", ".join(app.display_name or app.name for app in apps[:10])
-        return DesktopAutomationResult(
-            "handled", f"Running applications: {names}.", action
-        )
-    if action.pc_action_type == "apps_is_running":
-        from grandpa.apps.process_manager import find_running_app
+    The formatting used to live here, which meant the action layer had no way
+    to reach it and chat had the only copy. It moved to
+    ``grandpa.apps.automation.execute_inventory``; this is the same sentences,
+    fetched rather than rebuilt.
+    """
+    from grandpa.apps.automation import execute_inventory
 
-        process = find_running_app(action.target)
-        if process is None:
-            return DesktopAutomationResult(
-                "handled", f"{action.label} is not running.", action
-            )
-        return DesktopAutomationResult(
-            "handled", f"{action.label} is running as PID {process.pid}.", action
-        )
-    if action.pc_action_type == "apps_restart":
-        return DesktopAutomationResult(
-            "needs_confirmation",
-            f"Restarting {action.label} requires confirmation and is not run automatically.",
-            action,
-        )
-    return DesktopAutomationResult(
-        "unsupported", "Unknown application inventory command.", action
-    )
+    message = execute_inventory(action.pc_action_type, action.target)
+    status: DesktopActionStatus = "handled"
+    if message == "Unknown application inventory command.":
+        status = "unsupported"
+    elif action.pc_action_type == "apps_restart":
+        status = "needs_confirmation"
+    elif action.pc_action_type == "apps_search" and message.strip().startswith(
+        "I could not find"
+    ):
+        status = "unsupported"
+    return DesktopAutomationResult(status, message, action)
 
 
 def _label_from_target(target: str) -> str:

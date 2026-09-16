@@ -36,6 +36,30 @@ SAFE_APP_ALIASES = {
 }
 
 
+BROWSER_APP_IDS = frozenset(
+    {"chrome", "msedge", "edge", "firefox", "brave", "opera", "vivaldi"}
+)
+"""Applications whose launch is a browser action.
+
+Moved here from ``desktop/automation.py`` when chat's desktop branch was
+migrated. The rule -- starting a browser asks first -- lived in that handler, so
+it applied to chat and not to the action layer: open_app was catalogued LOW with
+no confirmation, and a model could start a browser without a word while chat
+asked every time. The rule belongs with the implementation that launches, where
+every route reaches it.
+"""
+
+
+def is_browser_app(target: str, label: str = "") -> bool:
+    """True when this target names a web browser."""
+    values = (str(target or "").casefold(), str(label or "").casefold())
+    return any(
+        name in value.replace("_", " ").split() or name == value
+        for value in values
+        for name in BROWSER_APP_IDS
+    )
+
+
 @dataclass(frozen=True)
 class ApplicationControlService:
     """Resolve and launch allowlisted Windows applications."""
@@ -45,10 +69,40 @@ class ApplicationControlService:
     def app_id(self, name: str) -> str | None:
         return SAFE_APP_ALIASES.get(name.strip().lower())
 
-    def execute(self, request: Any, action: str):
+    def execute(
+        self,
+        request: Any,
+        action: str,
+        *,
+        confirm: Any = None,
+        confirmed: bool = False,
+    ):
         from grandpa.pc_control import LocalActionResponse, _is_protected_path
 
         app_id = self.app_id(request.target)
+        if (
+            action == "open_app"
+            and not confirmed
+            and is_browser_app(request.target, str(app_id or ""))
+        ):
+            # Starting a browser is a browser action: ask, and refuse when
+            # there is nobody to ask, exactly as navigation does.
+            label = str(request.target or app_id or "a browser")
+            if confirm is None or not confirm(f"open {label}"):
+                return LocalActionResponse(
+                    False,
+                    None,
+                    "needs_confirmation",
+                    (
+                        f"Confirmation required before I open {label}."
+                        if confirm is None
+                        else f"Cancelled: I did not open {label}."
+                    ),
+                    True,
+                    "MEDIUM",
+                    {"app": label, "browser_launch": True},
+                    error="needs_confirmation",
+                )
         if not app_id:
             return self._execute_inventory_app(request, action)
         from grandpa.windows_app_resolver import launch_app, resolve_app
@@ -320,7 +374,12 @@ class ApplicationControlService:
         }
 
 
-__all__ = ["ApplicationControlService", "SAFE_APP_ALIASES"]
+__all__ = [
+    "BROWSER_APP_IDS",
+    "ApplicationControlService",
+    "SAFE_APP_ALIASES",
+    "is_browser_app",
+]
 
 
 def _notepad_target_evidence(target: Any) -> dict[str, Any]:
