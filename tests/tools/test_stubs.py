@@ -118,7 +118,10 @@ class TestToolExecutor:
         result = executor.execute(call)
         assert result.success is True
         assert result.content == "hi"
-        assert result.latency_seconds > 0
+        # >= 0, not > 0: the echo tool can finish inside one tick of the clock,
+        # which measures exactly 0.0. What matters is that latency is recorded
+        # and is not negative, not that the tool was slow enough to notice.
+        assert result.latency_seconds >= 0
 
     def test_execute_unknown_tool(self):
         executor = ToolExecutor([_EchoTool()])
