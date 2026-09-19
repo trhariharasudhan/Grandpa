@@ -622,7 +622,8 @@ def execute_voice_operator_intent(
                 AutomationExecutor()
                 if action_runner is run_local_action
                 else AutomationExecutor(runner=action_runner)
-            )
+            ),
+            allow_input=False,
         )
         result = service.handle(
             _automation_command_from_intent(intent), dry_run=dry_run
@@ -934,7 +935,8 @@ class VoiceOperatorResponder:
             from grandpa.automation.service import ScreenAutomationService
 
             self.automation_service = ScreenAutomationService(
-                executor=AutomationExecutor(runner=self.action_runner)
+                executor=AutomationExecutor(runner=self.action_runner),
+                allow_input=False,
             )
 
     def handle_user_input(self, text: str) -> VoiceOperatorTurnResponse:
@@ -966,7 +968,8 @@ def process_voice_operator_turn(
         from grandpa.automation.service import ScreenAutomationService
 
         automation_service = ScreenAutomationService(
-            executor=AutomationExecutor(runner=action_runner)
+            executor=AutomationExecutor(runner=action_runner),
+            allow_input=False,
         )
 
     raw_text = str(text or "").strip()

@@ -159,6 +159,13 @@ class BrowserExecutor:
                 action,
                 error="browser_not_in_front",
             )
+        except BrowserInputRefusedError:
+            return BrowserOperationResult(
+                "blocked",
+                "I can't send keyboard shortcuts from here, so I did not.",
+                action,
+                error="input_refused",
+            )
         except Exception as exc:
             return BrowserOperationResult(
                 "error", "Could not send that browser shortcut.", action, error=str(exc)
@@ -181,6 +188,15 @@ class BrowserExecutor:
 
 def _default_open(url: str) -> bool:
     return bool(webbrowser.open(url, new=2))
+
+
+class BrowserInputRefusedError(RuntimeError):
+    """The caller cannot consent to synthetic input, so no shortcut is sent."""
+
+
+def refuse_hotkey(keys: tuple[str, ...]) -> bool:
+    """A hotkey runner for callers that must never send keys -- voice."""
+    raise BrowserInputRefusedError(f"refused to send {'+'.join(keys)}")
 
 
 class BrowserNotInFrontError(RuntimeError):
@@ -226,8 +242,10 @@ def _default_hotkey(keys: tuple[str, ...]) -> bool:
 
 __all__ = [
     "BrowserExecutor",
+    "BrowserInputRefusedError",
     "BrowserNotInFrontError",
     "HOTKEYS",
     "OpenCallback",
     "PAGE_URLS",
+    "refuse_hotkey",
 ]

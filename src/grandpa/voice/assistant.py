@@ -53,8 +53,10 @@ class VoiceCommandProcessor:
     engine_key: str | None = None
     model_name: str | None = None
     history: list[Message] = field(default_factory=list)
+    # Voice cannot consent to synthetic input, so its automation service
+    # refuses to type, click or scroll -- whichever gate would have asked.
     automation_service: ScreenAutomationService = field(
-        default_factory=ScreenAutomationService,
+        default_factory=lambda: ScreenAutomationService(allow_input=False),
         repr=False,
     )
     _engine_name: str = field(default="", init=False)
@@ -120,13 +122,10 @@ class VoiceCommandProcessor:
             user_input_lower = user_input.lower().rstrip(".?!,")
             if user_input_lower in {"yes", "y", "yeah", "sure", "ok", "okay"}:
                 remember_conversation("user", user_input)
-                from grandpa.local_actions import (
-                    handle_local_action,
-                    refuse_confirmation,
-                )
+                from grandpa.local_actions import handle_local_action
 
                 result = handle_local_action(
-                    pending["command"], execute=True, confirm=refuse_confirmation
+                    pending["command"], execute=True, deferred_origin="voice"
                 )
                 remember_conversation("assistant", result.message)
                 return VoiceAssistantResponse(

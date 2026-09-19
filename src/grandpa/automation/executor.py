@@ -116,21 +116,21 @@ class AutomationExecutor:
         return matches[0].bounds.center, matches[0]
 
     def _payload(self, action: AutomationAction, point: Point | None) -> dict[str, Any]:
-        if action.kind in {
-            "move",
-            "click",
-            "double_click",
-            "right_click",
-            "middle_click",
-            "scroll",
-            "drag",
-        }:
+        if action.kind in MOUSE_KINDS:
             return mouse_payload(action, point)
-        if action.kind in {"type", "paste", "press"}:
+        if action.kind in KEYBOARD_KINDS:
             return keyboard_payload(action)
         if action.kind in {"focus", "maximize", "minimize", "restore"}:
             return window_payload(action)
         raise ValueError(f"Unsupported automation action: {action.kind}")
+
+
+MOUSE_KINDS = frozenset(
+    {"move", "click", "double_click", "right_click", "middle_click", "scroll", "drag"}
+)
+KEYBOARD_KINDS = frozenset({"type", "paste", "press"})
+INPUT_KINDS = MOUSE_KINDS | KEYBOARD_KINDS | {"scroll_until"}
+"""Every kind that sends keyboard or mouse input; the rest locate or manage windows."""
 
 
 class LocatorResolutionError(RuntimeError):

@@ -787,7 +787,15 @@ def _handle_natural_assistant_intent(
         return planned
     from grandpa.browser import handle_browser_command
 
-    browser_result = handle_browser_command(text, confirm=browser_confirm)
+    # Browser shortcuts are keyboard input. Voice cannot consent to that, so
+    # spoken turns get a runner that refuses rather than one that presses.
+    from grandpa.browser.executor import refuse_hotkey
+
+    browser_result = handle_browser_command(
+        text,
+        confirm=browser_confirm,
+        hotkey_runner=refuse_hotkey if spoken else None,
+    )
     if not browser_result.should_fallback:
         return browser_result.message
     from grandpa.automation import WindowsCommandPipeline

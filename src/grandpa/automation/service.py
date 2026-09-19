@@ -28,7 +28,14 @@ class ScreenAutomationService:
         executor: AutomationExecutor | None = None,
         confirmations: ConfirmationManager | None = None,
         window_targets: WindowTargetController | None = None,
+        allow_input: bool = True,
     ) -> None:
+        # False for a caller that has no way to consent to synthetic input --
+        # voice. Its only question is the next utterance, and nothing that
+        # answers it may type, click or scroll. Refused in _execute, which every
+        # path that actuates goes through, whichever gate would otherwise have
+        # asked, and whether or not that gate asks at all.
+        self.allow_input = allow_input
         self.planner = planner or AutomationPlanner()
         self.executor = executor or AutomationExecutor()
         self.confirmations = confirmations or ConfirmationManager()
@@ -695,6 +702,15 @@ class ScreenAutomationService:
     def _execute(
         self, action: AutomationAction, *, dry_run: bool = False
     ) -> AutomationResult:
+        from grandpa.automation.executor import INPUT_KINDS
+
+        if not self.allow_input and action.kind in INPUT_KINDS:
+            logger.warning("screen_automation refused input action=%s", action.kind)
+            return AutomationResult(
+                "blocked",
+                "I can't type, click or scroll from here. No input was sent.",
+                action,
+            )
         result = self.executor.execute(action, dry_run=dry_run)
         point = result.element.bounds.center if result.element is not None else None
         x = point.x if point is not None else action.args.get("x")

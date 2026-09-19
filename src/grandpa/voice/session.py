@@ -50,8 +50,10 @@ class VoiceRuntime:
     speech_input: SpeechInputEngine = field(default_factory=SpeechInputEngine)
     speech_output: SpeechOutputEngine = field(default_factory=SpeechOutputEngine)
     conversation: VoiceConversation = field(default_factory=VoiceConversation)
+    # Voice cannot consent to synthetic input, so its automation service
+    # refuses to type, click or scroll -- whichever gate would have asked.
     automation_service: ScreenAutomationService = field(
-        default_factory=ScreenAutomationService,
+        default_factory=lambda: ScreenAutomationService(allow_input=False),
         repr=False,
     )
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
@@ -353,7 +355,8 @@ def _route_voice_request(
     from grandpa.automation import WindowsCommandPipeline
 
     pipeline_result = WindowsCommandPipeline(
-        automation_service=automation_service,
+        automation_service=automation_service
+        or ScreenAutomationService(allow_input=False),
         source="voice_api",
         session_id=session_id,
     ).handle(command_text, spoken=True)
