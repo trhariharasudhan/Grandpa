@@ -138,12 +138,17 @@ def test_voice_command_processor_confirmation_flow(monkeypatch):
         "Success",
     )
     # "open <app>" runs as the action layer's open_app now, whose application
-    # service passes launch arguments.
-    monkeypatch.setattr(war, "launch_app", lambda x, **_kwargs: mock_resolution)
+    # service passes launch arguments and reports the resolver's own message.
+    launched: list[str] = []
+    monkeypatch.setattr(
+        war,
+        "launch_app",
+        lambda x, **_kwargs: launched.append(x) or mock_resolution,
+    )
 
     resp_yes = proc.handle_user_input("yes")
     assert resp_yes.status == "handled"
-    assert "Calculator opened" in resp_yes.text
+    assert launched == ["calculator"]
 
 
 def test_window_resolution_priority(monkeypatch):
