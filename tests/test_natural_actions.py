@@ -7,6 +7,8 @@ hold before anything that matters is checked.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from grandpa.natural_actions import MIGRATED, request_for, run_parsed
@@ -153,3 +155,172 @@ def test_a_dry_run_of_an_action_that_asks_says_so() -> None:
 
 def test_a_dry_run_of_an_action_that_does_not_ask_is_handled() -> None:
     assert run_parsed("window", "focus|notepad", execute=False).status == "handled"
+
+
+# --- tranche 4: launching -------------------------------------------------------
+#
+# Every launcher is replaced by tests.security.input_recorder before anything
+# runs: this tranche's gates stand in front of starting programs and opening
+# folders, and a gate test with a live launcher is how Notepad got opened on a
+# real desktop in an earlier phase.
+
+
+@pytest.fixture
+def launches(monkeypatch):
+    import grandpa.windows_app_resolver as resolver
+    from tests.security.input_recorder import install
+
+    rec = install(monkeypatch)
+
+    def _found(name, **_kwargs):
+        return resolver.AppResolution(
+            app_id=str(name),
+            display_name=str(name).title(),
+            status="found",
+            launch_kind="executable",
+            launch_target=f"C:/Program Files/{name}/{name}.exe",
+            source="test",
+            message=f"{name} found.",
+        )
+
+    # Resolution is a read of this machine's installs; the tests should not
+    # depend on what is installed where they run.
+    monkeypatch.setattr(resolver, "resolve_app", _found)
+    return rec
+
+
+def _launched(rec) -> list[str]:
+    return [
+        name
+        for name in rec.actuated
+        if name
+        in {
+            "subprocess.Popen",
+            "os.startfile",
+            "launch_app",
+            "ShellExecuteW",
+            "ShellExecute",
+        }
+    ]
+
+
+@pytest.mark.parametrize("phrase", ["open chrome", "launch edge"])
+def test_starting_a_browser_with_no_one_to_ask_starts_nothing(launches, phrase) -> None:
+    """Hole: local_actions called launch_app itself, around the browser rule."""
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action(phrase)
+
+    assert result.status != "handled", result
+    assert _launched(launches) == []
+
+
+@pytest.mark.parametrize("phrase", ["open chrome", "launch edge"])
+def test_starting_a_browser_asks_and_no_starts_nothing(launches, phrase) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    asked: list[str] = []
+    handle_local_action(phrase, confirm=lambda spec, _t: asked.append(spec) or False)
+
+    assert len(asked) == 1, asked
+    assert _launched(launches) == []
+
+
+def test_starting_a_browser_on_yes_launches_it(launches) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    handle_local_action("open chrome", confirm=lambda *_a: True)
+
+    assert _launched(launches) == ["launch_app"]
+
+
+def test_voice_cannot_start_a_browser(launches) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    handle_local_action("open chrome", deferred_origin="voice")
+    handle_local_action("yes", deferred_origin="voice")
+
+    assert _launched(launches) == []
+
+
+def test_an_ordinary_app_starts_without_asking(launches) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    asked: list[str] = []
+    handle_local_action(
+        "open calculator", confirm=lambda spec, _t: asked.append(spec) or True
+    )
+
+    assert asked == []
+    assert _launched(launches) == ["launch_app"]
+
+
+@pytest.mark.parametrize(
+    "folder",
+    [
+        Path.home() / ".ssh",
+        Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data",
+    ],
+    ids=["ssh", "chrome-profile"],
+)
+def test_a_protected_folder_is_refused_before_anyone_is_asked(launches, folder) -> None:
+    """Hole: local_actions staged it, and opened it on a yes."""
+    from grandpa.local_actions import handle_local_action
+
+    asked: list[str] = []
+    result = handle_local_action(
+        f"open {folder}", confirm=lambda spec, _t: asked.append(spec) or True
+    )
+
+    assert result.status == "blocked", result
+    assert asked == []
+    assert _launched(launches) == []
+
+
+def test_a_protected_folder_is_not_staged_for_voice(launches) -> None:
+    from grandpa import pc_control
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action(
+        f"open {Path.home() / '.ssh'}", deferred_origin="voice"
+    )
+
+    assert result.status == "blocked"
+    with pc_control._connect_approval_db() as conn:
+        assert (
+            conn.execute("SELECT COUNT(*) FROM pc_control_approvals").fetchone()[0] == 0
+        )
+
+
+def test_an_unknown_folder_still_asks(launches, tmp_path) -> None:
+    """open_folder alone would not ask; local_actions did, and still does."""
+    from grandpa.local_actions import handle_local_action
+
+    asked: list[str] = []
+    declined = handle_local_action(
+        f"open {tmp_path}", confirm=lambda spec, _t: asked.append(spec) or False
+    )
+    assert declined.status == "cancelled"
+    assert _launched(launches) == []
+
+    handle_local_action(f"open {tmp_path}", confirm=lambda *_a: True)
+    assert len(asked) == 1
+    assert _launched(launches) == ["os.startfile"]
+
+
+def test_a_folder_the_old_rule_trusted_opens_without_asking(launches, tmp_path) -> None:
+    """Without require_consent, open_folder opens an ordinary folder unasked.
+
+    Through handle_local_action, the two folders local_actions trusts
+    (Downloads and the D: drive) are claimed earlier by the intent router, so
+    the mapping is checked here directly.
+    """
+    asked: list[str] = []
+    # The recorder refuses the launch after recording it, so the status is
+    # an error; what was attempted is the evidence.
+    run_parsed(
+        "folder", str(tmp_path), confirm=lambda spec, _t: asked.append(spec) or True
+    )
+
+    assert asked == []
+    assert _launched(launches) == ["os.startfile"]

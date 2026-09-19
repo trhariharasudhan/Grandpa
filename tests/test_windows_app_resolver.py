@@ -143,16 +143,32 @@ def test_launch_vscode_with_project_argument_uses_popen_without_shell(
 
 
 def test_local_action_open_app_uses_resolver(monkeypatch) -> None:
+    """Launches go through the resolver -- and a browser only after a yes.
+
+    This test used to expect "open chrome" to launch with nobody asked. That was
+    the hole: local_actions called launch_app itself, around the application
+    service's rule that starting a browser is a browser action.
+    """
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
+    launched: list[str] = []
+    found = AppResolution(
+        "chrome", "Chrome", "found", "path", "C:/Chrome/chrome.exe", "test", "found"
+    )
+    monkeypatch.setattr(windows_app_resolver, "resolve_app", lambda *_a, **_k: found)
     monkeypatch.setattr(
         windows_app_resolver,
         "launch_app",
-        lambda name: AppResolution(
-            name, "Chrome", "found", "path", "C:/Chrome/chrome.exe", "test", "found"
-        ),
+        lambda name, *_a, **_k: launched.append(name) or found,
     )
 
-    result = local_actions.handle_local_action("open chrome")
+    unasked = local_actions.handle_local_action("open chrome")
 
-    assert result.status == "handled"
-    assert result.target == "C:/Chrome/chrome.exe"
+    assert unasked.status != "handled"
+    assert launched == []
+
+    approved = local_actions.handle_local_action(
+        "open chrome", confirm=lambda *_a: True
+    )
+
+    assert approved.status == "handled"
+    assert launched == ["chrome"]

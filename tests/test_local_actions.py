@@ -64,7 +64,9 @@ def test_windows_launcher_action_is_unsupported_off_windows(monkeypatch):
 
     assert result.status == "unsupported"
     assert result.kind == "app"
-    assert "not supported" in result.message
+    # Worded by the application service since "open <app>" moved onto the
+    # action layer; what matters is that it says so and starts nothing.
+    assert "only supported on Windows" in result.message
 
 
 def test_google_search_command_is_allowlisted_without_execution():

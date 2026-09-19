@@ -131,9 +131,27 @@ _PREFIXED: dict[tuple[str, str], Callable[[str], MappedRequest]] = {
 }
 """Shapes matched by kind and target *prefix*, e.g. ("window", "focus|")."""
 
+
+def _open_app(name: str) -> MappedRequest:
+    # "open chrome". local_actions called launch_app itself, around the
+    # application service's rule that starting a browser asks first -- so
+    # "open chrome" from voice, the scheduler or the HTTP API just started it.
+    return ("open_app", {"app": name})
+
+
+def _open_folder(path: str) -> MappedRequest:
+    # "open C:\Users\...\.ssh". local_actions called os.startfile after a yes,
+    # with no protected-path check; open_folder refuses .ssh, the browser
+    # profile store, and the rest of pc_control's protected set.
+    return ("open_folder", {"path": path})
+
+
 _BY_KIND: dict[str, Callable[[str], MappedRequest]] = {
     # tranche 1
     "app_lookup": _app_lookup,
+    # tranche 4: launching
+    "app": _open_app,
+    "folder": _open_folder,
 }
 """Shapes matched by kind alone, when the target is the argument itself.
 
@@ -187,6 +205,7 @@ def run_parsed(
     deferred_origin: str | None = None,
     confirmed: bool = False,
     summary: str | None = None,
+    require_consent: bool = False,
 ) -> PhraseResult | None:
     """Perform a parsed phrase through the layer, or return None if not migrated.
 
@@ -205,6 +224,11 @@ def run_parsed(
     ``confirmed=True`` is for running an action whose consent was already given
     by an approval; ``execute=False`` describes what would happen and does
     nothing, as ``local_actions`` callers have always used it.
+
+    ``require_consent`` asks even where the catalogue would not. local_actions
+    passes it when its own rule was stricter -- an unknown folder asks there,
+    and open_folder does not -- so moving a phrase onto the layer never makes
+    it ask less than it did.
     """
     mapped = request_for(kind, target)
     if mapped is None:
@@ -216,7 +240,8 @@ def run_parsed(
 
     name, parameters = mapped
     spec = get(name)
-    permission = "requires_confirmation" if spec.requires_confirmation else "allowed"
+    needs_consent = spec.requires_confirmation or require_consent
+    permission = "requires_confirmation" if needs_consent else "allowed"
 
     if not execute:
         # A dry run says what *would* happen, and for an action that asks, what
@@ -224,7 +249,7 @@ def run_parsed(
         # "requires_confirmation" here; reporting "handled" for everything made a
         # confirmation-gated action look as if it would simply run.
         return PhraseResult(
-            status="requires_confirmation" if spec.requires_confirmation else "handled",
+            status="requires_confirmation" if needs_consent else "handled",
             kind=kind,
             target=target,
             message=f"Would run {name}.",
@@ -234,7 +259,7 @@ def run_parsed(
 
     wording = summary or f"Confirmation required before running {name}."
 
-    if spec.requires_confirmation and not confirmed and confirm is None:
+    if needs_consent and not confirmed and confirm is None:
         if not deferred_origin:
             # No one to ask and no opt-in: refuse, and stage nothing.
             return PhraseResult(
@@ -272,7 +297,7 @@ def run_parsed(
         dict(parameters),
         origin=Origin.USER_CHAT,
         risk=spec.risk,
-        requires_confirmation=spec.requires_confirmation,
+        requires_confirmation=needs_consent,
     )
     if confirmed:
         # Consent was given by an approval of exactly this action; passing it

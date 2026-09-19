@@ -355,6 +355,7 @@ def handle_local_action(
         execute=execute,
         deferred_origin=deferred_origin,
         summary=_confirmation_summary(command, result),
+        require_consent=classify_permission(command, result) == "requires_confirmation",
     )
     if migrated is not None:
         if not execute and migrated.status == "requires_confirmation":
@@ -366,6 +367,14 @@ def handle_local_action(
                 migrated,
                 message=_confirmation_summary(command, result),
                 tts_text=_confirmation_summary(command, result),
+            )
+        elif not execute and result.message:
+            # The parser's own sentence ("Opening Notepad."), which is what a
+            # dry run has always said, rather than the layer's "Would run ...".
+            migrated = replace(
+                migrated,
+                message=result.message,
+                tts_text=result.tts_text or result.message,
             )
         _log_attempt(command, migrated)
         return migrated
@@ -783,6 +792,10 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
         return "blocked"
     if result.kind == "window" and result.target.startswith("close|"):
         return "requires_confirmation"
+    if result.kind == "folder" and _is_protected_folder(result.target):
+        # Refused before anyone is asked: a yes to a folder that will then be
+        # blocked is a yes that does nothing.
+        return "blocked"
     if result.kind == "folder" and not _is_known_safe_folder(result.target):
         return "requires_confirmation"
     if result.kind in {"url", "browser"} and _is_browser_navigation(result.target):
@@ -862,6 +875,17 @@ def _is_trusted_navigation(target: str) -> bool:
     from grandpa.browser.safety import configured_trusted_domains, is_trusted_url
 
     return is_trusted_url(target, configured_trusted_domains())
+
+
+def _is_protected_folder(path: str) -> bool:
+    """pc_control's protected set -- the one open_folder enforces."""
+    from grandpa.pc_control import _is_protected_path, _resolve_path
+
+    try:
+        return _is_protected_path(_resolve_path(path))
+    except Exception:
+        # A path that cannot be resolved cannot be judged safe.
+        return True
 
 
 def _is_known_safe_folder(path: str) -> bool:
