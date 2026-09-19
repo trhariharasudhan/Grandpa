@@ -40,7 +40,10 @@ def test_window_close_command_requires_confirmation():
     assert result.kind == "window"
     assert result.target == "close|notepad"
     assert result.permission == "requires_confirmation"
-    assert result.pending_action
+    # A dry run reports what would be asked; it does not stage an approval.
+    # It used to, as a side effect, which left a pending action behind every
+    # time burnin or doctor dry-ran a confirmation-gated phrase.
+    assert result.pending_action is None
     assert "Confirmation required before closing Notepad." in result.message
     assert "Permission: requires_confirmation" not in result.message
 

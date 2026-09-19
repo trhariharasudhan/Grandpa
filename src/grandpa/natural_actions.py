@@ -203,8 +203,12 @@ def run_parsed(
     permission = "requires_confirmation" if spec.requires_confirmation else "allowed"
 
     if not execute:
+        # A dry run says what *would* happen, and for an action that asks, what
+        # would happen first is the question. local_actions has always answered
+        # "requires_confirmation" here; reporting "handled" for everything made a
+        # confirmation-gated action look as if it would simply run.
         return PhraseResult(
-            status="handled",
+            status="requires_confirmation" if spec.requires_confirmation else "handled",
             kind=kind,
             target=target,
             message=f"Would run {name}.",

@@ -14,7 +14,7 @@ import sys
 import urllib.parse
 import webbrowser
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Literal
 
@@ -331,6 +331,16 @@ def handle_local_action(
 
     migrated = run_parsed(result.kind, result.target, confirm=confirm, execute=execute)
     if migrated is not None:
+        if not execute and migrated.status == "requires_confirmation":
+            # The same sentence a dry run has always given. It does not stage
+            # an approval: legacy dry runs wrote a pending action as a side
+            # effect, which burnin and doctor -- both callers of execute=False
+            # -- would have left behind on every run. A dry run creates nothing.
+            migrated = replace(
+                migrated,
+                message=_confirmation_summary(command, result),
+                tts_text=_confirmation_summary(command, result),
+            )
         _log_attempt(command, migrated)
         return migrated
 

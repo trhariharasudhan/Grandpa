@@ -141,3 +141,15 @@ def test_closing_task_manager_is_refused_without_asking(window_calls) -> None:
     assert result.status == "blocked"
     assert asked == []
     assert window_calls == []
+
+
+def test_a_dry_run_of_an_action_that_asks_says_so() -> None:
+    """Reporting "handled" made a confirmation-gated action look like it would run."""
+    result = run_parsed("window", "close|notepad", execute=False)
+
+    assert result.status == "requires_confirmation"
+    assert result.permission == "requires_confirmation"
+
+
+def test_a_dry_run_of_an_action_that_does_not_ask_is_handled() -> None:
+    assert run_parsed("window", "focus|notepad", execute=False).status == "handled"
