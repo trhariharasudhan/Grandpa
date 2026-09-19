@@ -137,7 +137,9 @@ def test_voice_command_processor_confirmation_flow(monkeypatch):
         "allowlist",
         "Success",
     )
-    monkeypatch.setattr(war, "launch_app", lambda x: mock_resolution)
+    # "open <app>" runs as the action layer's open_app now, whose application
+    # service passes launch arguments.
+    monkeypatch.setattr(war, "launch_app", lambda x, **_kwargs: mock_resolution)
 
     resp_yes = proc.handle_user_input("yes")
     assert resp_yes.status == "handled"
