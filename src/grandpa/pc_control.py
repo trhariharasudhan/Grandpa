@@ -360,6 +360,25 @@ def _approve_local_action_impl(action_id: str, token: str = "") -> LocalActionRe
             return _missing_or_decided_action(action_id)
         request = pending.request
         risk = classify_risk(request)
+        if _consent_of(action_id) == DEFERRED:
+            # Staged for a spoken yes from the origin that asked. A code is not
+            # that yes, whoever holds it: this is the rule that stops an action
+            # staged by voice being approved over HTTP or from the CLI.
+            logger.warning(
+                "Refused a code approval for deferred-consent action %s", action_id
+            )
+            return LocalActionResponse(
+                ok=False,
+                action_id=action_id,
+                status="blocked",
+                message=(
+                    "That action is waiting for a yes from where it was asked, and "
+                    "cannot be approved with a code."
+                ),
+                approval_required=True,
+                risk_level=risk,
+                error="wrong_origin",
+            )
         # An action_id is not an authorisation. The approval code is delivered
         # out of band (operator console/log), so a caller that can only see the
         # HTTP response cannot approve what it staged. A wrong code is refused
@@ -446,7 +465,10 @@ def _reject_local_action_impl(action_id: str) -> LocalActionResponse:
     with _STORE_LOCK:
         _expire_pending()
         pending = _load_pending_record(action_id)
-        if pending is None:
+        if pending is None or _consent_of(action_id) == DEFERRED:
+            # A deferred row is resolved only by the origin that staged it --
+            # refusing it from here is as much a cross-origin decision as
+            # approving it would be.
             return _missing_or_decided_action(action_id)
         request = pending.request
         _mark_pending_decision(action_id, status="rejected", decision="rejected")
@@ -1254,7 +1276,177 @@ def _connect_approval_db() -> sqlite3.Connection:
             "ALTER TABLE pc_control_approvals "
             "ADD COLUMN approval_token TEXT NOT NULL DEFAULT ''"
         )
+    # Deferred consent shares this store rather than keeping its own. Rows
+    # staged before these columns existed were all pc_control token approvals,
+    # which is what the defaults say.
+    for column, declaration in (
+        ("origin", "TEXT NOT NULL DEFAULT 'pc_control'"),
+        ("consent", "TEXT NOT NULL DEFAULT 'token'"),
+        ("payload_json", "TEXT NOT NULL DEFAULT '{}'"),
+    ):
+        if column not in columns:
+            conn.execute(
+                f"ALTER TABLE pc_control_approvals ADD COLUMN {column} {declaration}"
+            )
     return conn
+
+
+# --- deferred consent ---------------------------------------------------------
+#
+# The same table, a second way in. pc_control's token approvals are for an
+# operator who is not present: the code goes to the console, and anyone who can
+# see the HTTP response still cannot approve. Deferred consent is for a caller
+# who is present but cannot be asked mid-action -- voice, whose only question is
+# the next thing the user says.
+#
+# Three rules, enforced here so no caller can forget them:
+#   * a deferred row is approvable only by the origin that staged it, and never
+#     with a token; a token row is never approvable by a deferred "yes"
+#   * it expires on PENDING_TTL_SECONDS, the same policy as every other row
+#   * one approval resolves one row. Staging a new deferred action supersedes
+#     that origin's earlier one, so there is never a queue for a "yes" to drain
+
+DEFERRED = "deferred"
+
+
+def _stage_deferred_impl(
+    *,
+    origin: str,
+    action: str,
+    target: str,
+    parameters: dict[str, Any],
+    payload: dict[str, Any],
+    risk_level: str,
+) -> dict[str, Any]:
+    if not origin:
+        raise ValueError("deferred consent needs an origin to bind the approval to")
+    _expire_pending()
+    now = time.time()
+    action_id = uuid.uuid4().hex
+    with _STORE_LOCK, _connect_approval_db() as conn:
+        conn.execute(
+            """
+            UPDATE pc_control_approvals
+            SET status = 'cancelled', decision = 'superseded', decision_timestamp = ?
+            WHERE status = 'pending' AND consent = ? AND origin = ?
+            """,
+            (now, DEFERRED, origin),
+        )
+        conn.execute(
+            """
+            INSERT INTO pc_control_approvals (
+                action_id, action_type, target, args_json, risk_level, created_at,
+                expires_at, status, approval_required, decision, decision_timestamp,
+                approval_token, origin, consent, payload_json
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, 'pending', NULL, '', ?, ?, ?)
+            """,
+            (
+                action_id,
+                action,
+                target,
+                json.dumps(parameters, ensure_ascii=True, sort_keys=True, default=str),
+                risk_level,
+                now,
+                now + PENDING_TTL_SECONDS,
+                origin,
+                DEFERRED,
+                json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str),
+            ),
+        )
+    return {
+        "id": action_id,
+        "action": action,
+        "origin": origin,
+        "expires_at": now + PENDING_TTL_SECONDS,
+    }
+
+
+def _claim_deferred_impl(
+    *, origin: str, decision: str = "approved", action_id: str | None = None
+) -> dict[str, Any] | None:
+    """Resolve this origin's one pending deferred row, or return None.
+
+    ``action_id`` narrows the claim to that row; it never widens it. A row
+    staged by another origin is not found, whatever id is given.
+
+    The claim is the UPDATE ... WHERE status = 'pending', so two approvals racing
+    for one row cannot both win.
+    """
+    if not origin:
+        return None
+    _expire_pending()
+    with _STORE_LOCK, _connect_approval_db() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM pc_control_approvals
+            WHERE status = 'pending' AND consent = ? AND origin = ?
+              AND (? IS NULL OR action_id = ?)
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (DEFERRED, origin, action_id, action_id),
+        ).fetchone()
+        if row is None:
+            return None
+        if float(row["expires_at"]) <= time.time():
+            return None
+        claimed = conn.execute(
+            """
+            UPDATE pc_control_approvals
+            SET status = ?, decision = ?, decision_timestamp = ?
+            WHERE action_id = ? AND status = 'pending'
+            """,
+            (
+                "approved" if decision == "approved" else "rejected",
+                decision,
+                time.time(),
+                row["action_id"],
+            ),
+        ).rowcount
+    if claimed != 1:
+        return None
+    return {
+        "id": str(row["action_id"]),
+        "action": str(row["action_type"]),
+        "origin": str(row["origin"]),
+        "parameters": json.loads(row["args_json"] or "{}"),
+        "payload": json.loads(row["payload_json"] or "{}"),
+    }
+
+
+def _list_deferred_impl(origin: str) -> list[dict[str, Any]]:
+    _expire_pending()
+    with _connect_approval_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT action_id, action_type, target, origin, created_at, expires_at,
+                   payload_json
+            FROM pc_control_approvals
+            WHERE status = 'pending' AND consent = ? AND origin = ?
+            ORDER BY created_at DESC
+            """,
+            (DEFERRED, origin),
+        ).fetchall()
+    return [
+        {
+            "id": str(row["action_id"]),
+            "action": str(row["action_type"]),
+            "target": str(row["target"]),
+            "origin": str(row["origin"]),
+            "created_at": float(row["created_at"]),
+            "expires_at": float(row["expires_at"]),
+            "payload": json.loads(row["payload_json"] or "{}"),
+        }
+        for row in rows
+    ]
+
+
+def _consent_of(action_id: str) -> str:
+    with _connect_approval_db() as conn:
+        row = conn.execute(
+            "SELECT consent FROM pc_control_approvals WHERE action_id = ?",
+            (action_id,),
+        ).fetchone()
+    return str(row["consent"]) if row is not None else ""
 
 
 def _approval_db_is_healthy() -> bool:

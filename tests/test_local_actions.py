@@ -124,7 +124,8 @@ def test_browser_click_requires_confirmation():
     assert result.status == "requires_confirmation"
     assert result.kind == "browser"
     assert result.permission == "requires_confirmation"
-    assert result.pending_action
+    # A dry run describes the question; it stages nothing to answer it.
+    assert result.pending_action is None
 
 
 @pytest.mark.parametrize(
@@ -145,7 +146,8 @@ def test_browser_workflow_actions_require_confirmation(command, target, message_
     assert result.kind == "browser"
     assert result.target == target
     assert result.permission == "requires_confirmation"
-    assert result.pending_action
+    # A dry run describes the question; it stages nothing to answer it.
+    assert result.pending_action is None
     assert message_part in result.message
 
 
@@ -205,7 +207,8 @@ def test_type_command_is_allowlisted_without_execution():
     assert result.permission == "requires_confirmation"
     assert result.kind == "automation"
     assert result.target == "type|hello"
-    assert result.pending_action
+    # A dry run describes the question; it stages nothing to answer it.
+    assert result.pending_action is None
     assert "typing into the active app" in result.message
     assert "Permission:" not in result.message
 
@@ -217,7 +220,8 @@ def test_type_in_notepad_command_focuses_app_before_typing():
     assert result.permission == "requires_confirmation"
     assert result.kind == "automation"
     assert result.target == "focus|notepad||type|hello"
-    assert result.pending_action
+    # A dry run describes the question; it stages nothing to answer it.
+    assert result.pending_action is None
     assert "controlling the active app" in result.message
 
 
@@ -244,24 +248,41 @@ def test_destructive_desktop_command_is_blocked():
     assert result.message == BLOCKED_MESSAGE
 
 
-def test_pending_action_can_be_denied(_approval_store_fixture):
-    store = _approval_store_fixture
-    pending = handle_local_action("type hello", execute=False)
-    denied = handle_local_action("cancel")
+def _deferred_rows():
+    from grandpa import pc_control
+
+    with pc_control._connect_approval_db() as conn:
+        return [
+            dict(row)
+            for row in conn.execute(
+                "SELECT action_id, status, decision, origin FROM pc_control_approvals "
+                "WHERE consent = 'deferred'"
+            ).fetchall()
+        ]
+
+
+def test_pending_action_can_be_denied():
+    pending = handle_local_action("type hello", deferred_origin="chat")
+    denied = handle_local_action("cancel", deferred_origin="chat")
 
     assert pending.status == "requires_confirmation"
     assert denied.status == "cancelled"
-    assert store.get_pending(pending.pending_action["id"])["status"] == "denied"
+    assert [(row["action_id"], row["status"]) for row in _deferred_rows()] == [
+        (pending.pending_action["id"], "rejected")
+    ]
 
 
-def test_expired_pending_action_is_not_approved(_approval_store_fixture):
-    store = _approval_store_fixture
-    pending = handle_local_action("type hello", execute=False)
-    store.expire_old(now=pending.pending_action["expires_at"] + 1)
-    approved = local_actions.approve_pending_action(pending.pending_action["id"])
+def test_expired_pending_action_is_not_approved(monkeypatch):
+    from grandpa import pc_control
+
+    pending = handle_local_action("type hello", deferred_origin="chat")
+    later = pending.pending_action["expires_at"] + 1
+    monkeypatch.setattr(pc_control.time, "time", lambda: later)
+    approved = local_actions.approve_pending_action(origin="chat")
 
     assert approved.status == "unsupported"
-    assert "no longer available" in approved.message
+    assert "no pending local action" in approved.message
+    assert [row["status"] for row in _deferred_rows()] == ["expired"]
 
 
 def test_unknown_url_requires_confirmation():

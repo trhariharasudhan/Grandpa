@@ -142,6 +142,20 @@ def _clean_registries() -> None:
     reset_event_bus()
 
 
+@pytest.fixture(autouse=True)
+def _private_approval_store(monkeypatch, tmp_path_factory) -> None:
+    """Give each test its own approval store.
+
+    Every action waiting for a yes -- a code approval or a deferred one -- lives
+    in pc_control's store. Shared across tests, a "yes" in one test could
+    resolve an action another test staged and left pending. A test that sets
+    its own path keeps it.
+    """
+    if not os.environ.get("GRANDPA_PC_CONTROL_DB"):
+        path = tmp_path_factory.mktemp("approvals") / "pc_control_approvals.db"
+        monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(path))
+
+
 # ---------------------------------------------------------------------------
 # Hardware fixtures
 # ---------------------------------------------------------------------------

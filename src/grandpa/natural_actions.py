@@ -184,11 +184,27 @@ def run_parsed(
     *,
     confirm: ConfirmCallback | None = None,
     execute: bool = True,
+    deferred_origin: str | None = None,
+    confirmed: bool = False,
+    summary: str | None = None,
 ) -> PhraseResult | None:
     """Perform a parsed phrase through the layer, or return None if not migrated.
 
-    ``execute=False`` describes what would happen without doing it, which is
-    what ``local_actions`` callers have always used it for.
+    How an action that needs consent gets it -- three cases, and only three:
+
+    * ``confirm`` given: the caller asks inline. Chat and the tool loop.
+    * no ``confirm``, ``deferred_origin`` given: the caller has opted into
+      deferred consent. The action is staged in the kernel's approval store,
+      bound to that origin, and runs only when that origin says yes on a later
+      turn. Voice opts in; nothing else does by default.
+    * neither: refused, and nothing is staged. Absence of a callback never
+      means "stage it and let something approve it later" -- that is the
+      property verify_confirmation_enforcement's P1 probe proves for the tool
+      path, and it holds here too.
+
+    ``confirmed=True`` is for running an action whose consent was already given
+    by an approval; ``execute=False`` describes what would happen and does
+    nothing, as ``local_actions`` callers have always used it.
     """
     mapped = request_for(kind, target)
     if mapped is None:
@@ -216,6 +232,41 @@ def run_parsed(
             permission=permission,
         )
 
+    wording = summary or f"Confirmation required before running {name}."
+
+    if spec.requires_confirmation and not confirmed and confirm is None:
+        if not deferred_origin:
+            # No one to ask and no opt-in: refuse, and stage nothing.
+            return PhraseResult(
+                status="blocked",
+                kind=kind,
+                target=target,
+                message=f"{wording} There is no way to ask for that here, so "
+                "nothing was run.",
+                tts_text="I need your confirmation for that, and cannot ask here.",
+                permission=permission,
+            )
+        from grandpa.desktop.kernel import approvals
+
+        staged = approvals.stage_deferred(
+            origin=deferred_origin,
+            action=name,
+            target=target,
+            parameters=dict(parameters),
+            payload={"kind": kind, "target": target},
+            risk_level=spec.risk.value,
+        )
+        return PhraseResult(
+            status="requires_confirmation",
+            kind=kind,
+            target=target,
+            message=f"{wording}\n\nReply with yes/confirm to approve, or cancel to "
+            f"deny.\nAction ID: {staged['id']}",
+            tts_text=wording,
+            permission=permission,
+            pending_action=staged,
+        )
+
     request = ActionRequest(
         name,
         dict(parameters),
@@ -223,7 +274,12 @@ def run_parsed(
         risk=spec.risk,
         requires_confirmation=spec.requires_confirmation,
     )
-    result = execute_action(request, _layer_confirm(confirm))
+    if confirmed:
+        # Consent was given by an approval of exactly this action; passing it
+        # through rather than asking a second time.
+        result = execute_action(request, lambda *_a, **_k: True)
+    else:
+        result = execute_action(request, _layer_confirm(confirm))
 
     if result.success:
         status = "handled"

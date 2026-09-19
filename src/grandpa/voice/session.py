@@ -375,12 +375,13 @@ def _route_voice_request(
         }
 
     try:
-        from grandpa.local_actions import handle_local_action, refuse_confirmation
+        from grandpa.local_actions import handle_local_action
 
-        # Voice has no synchronous spoken yes/no, so synthetic keyboard/mouse
-        # input is refused explicitly rather than approved by default.
+        # Voice has no synchronous spoken yes/no. It opts into deferred
+        # consent instead: an action that asks is staged, bound to "voice",
+        # and runs only when the next spoken turn is a yes.
         result = handle_local_action(
-            command_text, execute=True, confirm=refuse_confirmation
+            command_text, execute=True, deferred_origin="voice"
         )
         if not result.should_fallback and result.status != "error":
             return {

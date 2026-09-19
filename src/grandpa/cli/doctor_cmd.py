@@ -808,9 +808,11 @@ def _check_existing_sqlite_db(name: str, path: Path) -> CheckResult:
 
 
 def _check_approval_db_ready() -> CheckResult:
-    from grandpa.local_action_approvals import DEFAULT_APPROVAL_DB
+    # The one approval store: pc_control's, behind the kernel facade. The file
+    # local_actions used to keep pending actions in holds only its audit log.
+    from grandpa.desktop.kernel import approvals
 
-    return _check_existing_sqlite_db("Approval database ready", DEFAULT_APPROVAL_DB)
+    return _check_existing_sqlite_db("Approval database ready", approvals.db_path())
 
 
 def _check_memory_db_ready() -> CheckResult:

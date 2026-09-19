@@ -292,7 +292,10 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 )
             return _local_action_response(model, memory_result, complexity_info)
 
-        action_result = handle_local_action(effective_user_text)
+        # The HTTP API's consent is its own approve/deny endpoints below, so it
+        # opts into deferred consent under origin "http". An action staged here
+        # can be approved only over HTTP; one staged by voice or chat cannot.
+        action_result = handle_local_action(effective_user_text, deferred_origin="http")
         if not action_result.should_fallback:
             _record_brain_result(brain_analysis, action_result)
             if request_body.stream:
@@ -1269,10 +1272,10 @@ async def reject_structured_local_action(action_id: str):
 
 @router.get("/v1/local-actions/pending")
 async def pending_local_actions():
-    """List pending local actions awaiting user confirmation."""
-    from grandpa.local_action_approvals import LocalActionApprovalStore
+    """List pending local actions awaiting user confirmation over HTTP."""
+    from grandpa.desktop.kernel import approvals
 
-    return {"actions": LocalActionApprovalStore().list_pending()}
+    return {"actions": approvals.pending_deferred("http")}
 
 
 @router.post("/v1/local-actions/{action_id}/approve")
@@ -1280,7 +1283,7 @@ async def approve_local_action(action_id: str):
     """Approve and run a pending local action."""
     from grandpa.local_actions import approve_pending_action
 
-    result = approve_pending_action(action_id)
+    result = approve_pending_action(action_id, origin="http")
     return {
         "message": result.message,
         "local_action": {
@@ -1299,7 +1302,7 @@ async def deny_local_action(action_id: str):
     """Deny a pending local action."""
     from grandpa.local_actions import deny_pending_action
 
-    result = deny_pending_action(action_id)
+    result = deny_pending_action(action_id, origin="http")
     return {
         "message": result.message,
         "local_action": {

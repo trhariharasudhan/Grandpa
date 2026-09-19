@@ -190,6 +190,9 @@ class Sandbox:
                 "GRANDPA_CONFIG",
                 "GRANDPA_HOME",
                 "GRANDPA_DOWNLOADS_DIR",
+                # The unit suite gives each test a private approval store; the
+                # CLI under test must use the sandbox's own.
+                "GRANDPA_PC_CONTROL_DB",
             }:
                 del env[key]
         existing = env.get("PYTHONPATH")
@@ -381,10 +384,10 @@ def run_cli_at_console(
     return CliRun(child.returncode, stdout, stderr + _typist_note(typist))
 
 
-# Runs inside the CLI process: record anything that would open a browser or
-# launch a program, and let nothing actually start. Browser launches raise, as
-# a blocked executable would.
-_LAUNCH_RECORDER = r"""
+# Runs inside the CLI process: record anything that would open a browser,
+# launch a program or act on a window, and let nothing actually happen. Browser
+# launches raise, as a blocked executable would; window actions report success.
+_RECORDING_PRELUDE = r"""
 import json, os, runpy, subprocess, sys, webbrowser
 
 log_path = os.environ["GRANDPA_E2E_LAUNCH_LOG"]
@@ -422,9 +425,86 @@ class _RecordingPopen(_real_popen):
 
 
 subprocess.Popen = _RecordingPopen
+
+import grandpa.windows_window_control as _windows
+
+
+def _control_window(action, target="active"):
+    _record("window", f"{action}|{target}")
+    return _windows.WindowControlResult("handled", action, target, "Done.")
+
+
+_windows.control_window = _control_window
+
+# Chat's automation route pins the window before asking, so it needs one to
+# find: a stand-in Notepad that exists only in this process. Closing it is
+# recorded like any other window action.
+import grandpa.automation.windows as _targets
+
+_real_resolve = _targets.resolve_window
+
+
+def _resolve_window(target):
+    if "notepad" in str(target).lower():
+        return _targets.WindowIdentity(
+            handle=0xE2E,
+            title="Untitled - Notepad",
+            process_name="notepad.exe",
+            target="notepad",
+        )
+    return _real_resolve(target)
+
+
+def _close_window_identity(identity):
+    _record("window", f"close|{identity.target or identity.title}")
+    return _windows.WindowControlResult("handled", "close", identity.target, "Done.")
+
+
+_targets.resolve_window = _resolve_window
+_targets.close_window_identity = _close_window_identity
+"""
+
+_LAUNCH_RECORDER = (
+    _RECORDING_PRELUDE
+    + r"""
 sys.argv = ["grandpa", "--quiet", *sys.argv[1:]]
 runpy.run_module("grandpa.cli", run_name="__main__")
 """
+)
+
+
+def _read_attempts(log: Path) -> list[dict]:
+    if not log.exists():
+        return []
+    return [
+        json.loads(line)
+        for line in log.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+
+
+def run_script_recording_launches(
+    sandbox: Sandbox,
+    script: str,
+    *,
+    cwd: Path,
+    log: Path | None = None,
+    timeout: float = CLI_TIMEOUT,
+) -> tuple[CliRun, list[dict]]:
+    """Run ``script`` in a sandboxed process with launches and window actions recorded.
+
+    For flows no CLI command reaches with typed text -- the voice processor's
+    turns. Pass the same ``log`` to several runs to see their attempts together.
+    """
+    log = log or sandbox.root / f"launches-{secrets.token_hex(4)}.jsonl"
+    run = run_python(
+        sandbox,
+        ["-c", _RECORDING_PRELUDE + "\n" + script],
+        cwd=cwd,
+        extra_env={"GRANDPA_E2E_LAUNCH_LOG": str(log)},
+        timeout=timeout,
+    )
+    return run, _read_attempts(log)
 
 
 def run_cli_recording_launches(
@@ -449,14 +529,7 @@ def run_cli_recording_launches(
         extra_env={"GRANDPA_E2E_LAUNCH_LOG": str(log)},
         timeout=timeout,
     )
-    attempts = []
-    if log.exists():
-        attempts = [
-            json.loads(line)
-            for line in log.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
-    return run, attempts
+    return run, _read_attempts(log)
 
 
 def _typist_note(typist: subprocess.CompletedProcess) -> str:

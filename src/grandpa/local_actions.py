@@ -226,17 +226,28 @@ def refuse_confirmation(spec: str, permission: str) -> bool:
 
 
 def handle_local_action(
-    text: str, *, execute: bool = True, confirm: ConfirmationCallback | None = None
+    text: str,
+    *,
+    execute: bool = True,
+    confirm: ConfirmationCallback | None = None,
+    deferred_origin: str | None = None,
 ) -> LocalActionResult:
     """Parse and execute a safe local action if ``text`` asks for one.
 
     Returns ``no_match`` when the normal assistant pipeline should handle the
     query.
 
-    ``confirm`` is the caller's confirmation prompt, forwarded to
-    the automation service so its confirm-required tier can actually be
-    satisfied. Callers that
-    pass nothing keep the previous refuse-only behaviour.
+    An action that needs consent gets it one of three ways:
+
+    * ``confirm``: the caller's inline prompt, asked before the action runs.
+    * ``deferred_origin``: the caller opts into deferred consent. The action is
+      staged in the kernel's approval store, bound to that origin, and runs
+      when the same origin sends a "yes" on a later turn. Voice opts in, with
+      origin "voice"; nothing is opted in by default.
+    * neither: refused, and nothing is staged.
+
+    ``deferred_origin`` is also what a "yes" or "cancel" resolves against, so a
+    caller that never opted in has nothing to approve.
     """
     command = _normalise(text)
     if not command:
@@ -259,7 +270,9 @@ def handle_local_action(
             tts_text="Acknowledged.",
         )
 
-    confirmation_result = _handle_confirmation_command(command, confirm=confirm)
+    confirmation_result = _handle_confirmation_command(
+        command, confirm=confirm, origin=deferred_origin
+    )
     if confirmation_result.status != "no_match":
         return confirmation_result
 
@@ -280,7 +293,11 @@ def handle_local_action(
         result = _parse_desktop_operator_action(command)
         if result.status != "no_match":
             if result.permission == "requires_confirmation":
-                result = _with_permission(command, result)
+                # Staged or refused, never asked inline: these branches return
+                # without executing, so an inline yes would run nothing.
+                result = _with_permission(
+                    command, result, deferred_origin=deferred_origin
+                )
             _audit_decision(command, result, result.status)
             _log_attempt(command, result)
             return result
@@ -288,7 +305,9 @@ def handle_local_action(
     user_skill_result = _parse_user_skill_action(command)
     if user_skill_result.status != "no_match":
         if user_skill_result.permission == "requires_confirmation":
-            user_skill_result = _with_permission(command, user_skill_result)
+            user_skill_result = _with_permission(
+                command, user_skill_result, deferred_origin=deferred_origin
+            )
         _audit_decision(command, user_skill_result, user_skill_result.status)
         _log_attempt(command, user_skill_result)
         return user_skill_result
@@ -329,7 +348,14 @@ def handle_local_action(
         _log_attempt(command, blocked)
         return blocked
 
-    migrated = run_parsed(result.kind, result.target, confirm=confirm, execute=execute)
+    migrated = run_parsed(
+        result.kind,
+        result.target,
+        confirm=confirm,
+        execute=execute,
+        deferred_origin=deferred_origin,
+        summary=_confirmation_summary(command, result),
+    )
     if migrated is not None:
         if not execute and migrated.status == "requires_confirmation":
             # The same sentence a dry run has always given. It does not stage
@@ -344,12 +370,23 @@ def handle_local_action(
         _log_attempt(command, migrated)
         return migrated
 
-    result = _with_permission(command, result)
-    if result.status == "requires_confirmation":
-        _log_attempt(command, result)
-        return result
-
     if not execute:
+        # A dry run describes; it does not stage, ask, or refuse on anyone's
+        # behalf.
+        dry = _describe_permission(command, result)
+        _log_attempt(command, dry)
+        return dry
+
+    needs_consent = (
+        result.permission == "requires_confirmation"
+        or classify_permission(command, result) == "requires_confirmation"
+    )
+    result = _with_permission(
+        command, result, confirm=confirm, deferred_origin=deferred_origin
+    )
+    if result.status in {"requires_confirmation", "cancelled"} or (
+        needs_consent and result.permission != "allowed"
+    ):
         _log_attempt(command, result)
         return result
 
@@ -367,7 +404,7 @@ def handle_local_action(
         return unsupported
 
     try:
-        executed = _execute(result, confirm=confirm)
+        executed = _execute(result, confirm=confirm, consented=needs_consent)
     except Exception:  # pragma: no cover - defensive edge
         executed = LocalActionResult(
             status="error",
@@ -438,10 +475,23 @@ def approve_pending_action(
     action_id: str | None = None,
     *,
     confirm: ConfirmationCallback | None = None,
+    origin: str | None = None,
 ) -> LocalActionResult:
-    store = LocalActionApprovalStore()
-    pending = store.get_pending(action_id) if action_id else store.latest_pending()
-    if not pending:
+    """Run the one action ``origin`` staged, if there is one.
+
+    Approvals live in the kernel's store (``grandpa.desktop.kernel.approvals``),
+    bound to the origin that staged them. No origin, no approval: a "yes" from
+    a caller that never opted into deferred consent has nothing to approve, and
+    a "yes" from one origin cannot reach an action staged by another.
+    """
+    from grandpa.desktop.kernel import approvals
+
+    claimed = (
+        approvals.approve_deferred(origin=origin, action_id=action_id)
+        if origin
+        else None
+    )
+    if claimed is None:
         return LocalActionResult(
             status="unsupported",
             kind="blocked",
@@ -450,39 +500,30 @@ def approve_pending_action(
             tts_text="There is no pending action.",
             permission="unsupported",
         )
-    if pending["status"] != "pending":
-        return LocalActionResult(
-            status="unsupported",
-            kind=pending["kind"],
-            target=pending["target"],
-            message="That pending local action is no longer available.",
-            tts_text="That pending action is no longer available.",
-            permission="unsupported",
-            pending_action=_pending_metadata(pending),
-        )
-    store.mark(pending["id"], "approved")
-    result = LocalActionResult(
+    payload = claimed.get("payload") or {}
+    metadata = _pending_metadata(claimed, status="approved")
+    staged = LocalActionResult(
         status="handled",
-        kind=pending["kind"],
-        target=pending["target"],
-        message=pending["message"],
-        tts_text=pending["tts_text"],
+        kind=payload.get("kind"),
+        target=str(payload.get("target") or ""),
+        message=str(payload.get("message") or ""),
+        tts_text=str(payload.get("tts_text") or ""),
         permission="allowed",
-        pending_action=_pending_metadata(pending),
+        pending_action=metadata,
     )
-    if result.kind in {"app", "folder", "url", "browser"} and sys.platform != "win32":
+    if staged.kind in {"app", "folder", "url", "browser"} and sys.platform != "win32":
         result = LocalActionResult(
             status="unsupported",
-            kind=result.kind,
-            target=result.target,
+            kind=staged.kind,
+            target=staged.target,
             message="Windows local actions are not supported in this environment.",
             tts_text="Windows local actions are not supported here.",
             permission="unsupported",
-            pending_action=_pending_metadata(pending),
+            pending_action=metadata,
         )
     else:
         try:
-            executed = _execute(result, confirm=confirm)
+            executed = _execute(staged, confirm=confirm, consented=True)
             result = LocalActionResult(
                 status=executed.status,
                 kind=executed.kind,
@@ -490,26 +531,33 @@ def approve_pending_action(
                 message=executed.message,
                 tts_text=executed.tts_text,
                 permission="allowed",
-                pending_action=_pending_metadata(pending),
+                pending_action=metadata,
             )
         except Exception:  # pragma: no cover - defensive edge
             result = LocalActionResult(
                 status="error",
-                kind=pending["kind"],
-                target=pending["target"],
+                kind=staged.kind,
+                target=staged.target,
                 message="I couldn't complete that local action.",
                 tts_text="I could not complete that local action.",
                 permission="allowed",
-                pending_action=_pending_metadata(pending),
+                pending_action=metadata,
             )
-    _log_attempt(pending["source_text"], result)
+    source_text = str(payload.get("source_text") or staged.target)
+    _audit_decision(source_text, result, "approved")
+    _log_attempt(source_text, result)
     return result
 
 
-def deny_pending_action(action_id: str | None = None) -> LocalActionResult:
-    store = LocalActionApprovalStore()
-    pending = store.get_pending(action_id) if action_id else store.latest_pending()
-    if not pending:
+def deny_pending_action(
+    action_id: str | None = None, *, origin: str | None = None
+) -> LocalActionResult:
+    from grandpa.desktop.kernel import approvals
+
+    claimed = (
+        approvals.deny_deferred(origin=origin, action_id=action_id) if origin else None
+    )
+    if claimed is None:
         return LocalActionResult(
             status="unsupported",
             kind="blocked",
@@ -518,31 +566,42 @@ def deny_pending_action(action_id: str | None = None) -> LocalActionResult:
             tts_text="There is no pending action.",
             permission="unsupported",
         )
-    store.mark(pending["id"], "denied")
+    payload = claimed.get("payload") or {}
     result = LocalActionResult(
         status="cancelled",
-        kind=pending["kind"],
-        target=pending["target"],
+        kind=payload.get("kind"),
+        target=str(payload.get("target") or ""),
         message=CANCELLED_MESSAGE,
         tts_text=CANCELLED_MESSAGE,
         permission="requires_confirmation",
-        pending_action=_pending_metadata(pending),
+        pending_action=_pending_metadata(claimed, status="denied"),
     )
-    _log_attempt(pending["source_text"], result)
+    source_text = str(payload.get("source_text") or result.target)
+    _audit_decision(source_text, result, "denied")
+    _log_attempt(source_text, result)
     return result
 
 
 def _handle_confirmation_command(
-    command: str, *, confirm: ConfirmationCallback | None = None
+    command: str,
+    *,
+    confirm: ConfirmationCallback | None = None,
+    origin: str | None = None,
 ) -> LocalActionResult:
     if command in {"yes", "confirm", "approve", "run it", "do it"}:
-        return approve_pending_action(confirm=confirm)
+        return approve_pending_action(confirm=confirm, origin=origin)
     if command in {"no", "cancel", "deny", "stop", "don't", "do not"}:
-        return deny_pending_action()
+        return deny_pending_action(origin=origin)
     return LocalActionResult(status="no_match")
 
 
-def _with_permission(command: str, result: LocalActionResult) -> LocalActionResult:
+def _with_permission(
+    command: str,
+    result: LocalActionResult,
+    *,
+    confirm: ConfirmationCallback | None = None,
+    deferred_origin: str | None = None,
+) -> LocalActionResult:
     permission = (
         result.permission
         if result.permission == "requires_confirmation"
@@ -578,23 +637,93 @@ def _with_permission(command: str, result: LocalActionResult) -> LocalActionResu
         _audit_decision(command, blocked, "blocked")
         return blocked
 
-    pending = LocalActionApprovalStore().create_pending(
-        source_text=command,
-        kind=result.kind or "",
-        target=result.target,
-        message=result.message,
-        tts_text=result.tts_text,
-    )
-    message = _confirmation_message(command, result, pending["id"])
-    return LocalActionResult(
-        status="requires_confirmation",
+    summary = _confirmation_summary(command, result)
+    # The action needs consent. Three ways to get it, the same three the action
+    # layer has (natural_actions.run_parsed), with one difference in order: a
+    # caller that opted into deferred consent is staged even when it also has
+    # an inline prompt. That is chat, whose not-yet-migrated shapes have always
+    # been two-turn ("search python packaging", then "yes"); it goes away as
+    # those shapes move onto the layer.
+    if deferred_origin:
+        from grandpa.desktop.kernel import approvals
+
+        payload = {
+            "kind": result.kind,
+            "target": result.target,
+            "message": result.message,
+            "tts_text": result.tts_text,
+            "source_text": command,
+        }
+        staged = approvals.stage_deferred(
+            origin=deferred_origin,
+            action=f"local_{result.kind or 'action'}",
+            target=result.target,
+            parameters={},
+            payload=payload,
+            risk_level="medium",
+        )
+        return LocalActionResult(
+            status="requires_confirmation",
+            kind=result.kind,
+            target=result.target,
+            message=_confirmation_message(command, result, staged["id"]),
+            tts_text="Please confirm this local action.",
+            permission="requires_confirmation",
+            pending_action=_pending_metadata(
+                {**staged, "payload": payload}, status="pending"
+            ),
+        )
+    if confirm is not None:
+        if confirm(summary, "requires_confirmation"):
+            return LocalActionResult(
+                status=result.status,
+                kind=result.kind,
+                target=result.target,
+                message=result.message,
+                tts_text=result.tts_text,
+                permission="allowed",
+            )
+        cancelled = LocalActionResult(
+            status="cancelled",
+            kind=result.kind,
+            target=result.target,
+            message=CANCELLED_MESSAGE,
+            tts_text=CANCELLED_MESSAGE,
+            permission="requires_confirmation",
+        )
+        _audit_decision(command, cancelled, "denied")
+        return cancelled
+    # No one to ask and no opt-in: refused, and nothing is staged.
+    refused = LocalActionResult(
+        status="blocked",
         kind=result.kind,
         target=result.target,
-        message=message,
-        tts_text="Please confirm this local action.",
+        message=f"{summary} There is no way to ask for that here, so nothing was run.",
+        tts_text="I need your confirmation for that, and cannot ask here.",
         permission="requires_confirmation",
-        pending_action=_pending_metadata(pending),
     )
+    _audit_decision(command, refused, "refused")
+    return refused
+
+
+def _describe_permission(command: str, result: LocalActionResult) -> LocalActionResult:
+    """What a dry run reports: the permission, with nothing staged or asked."""
+    permission = (
+        result.permission
+        if result.permission == "requires_confirmation"
+        else classify_permission(command, result)
+    )
+    if permission == "requires_confirmation":
+        summary = _confirmation_summary(command, result)
+        return LocalActionResult(
+            status="requires_confirmation",
+            kind=result.kind,
+            target=result.target,
+            message=summary,
+            tts_text=summary,
+            permission="requires_confirmation",
+        )
+    return _with_permission(command, result)
 
 
 def _confirmation_message(
@@ -696,14 +825,16 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
     return "unsupported"
 
 
-def _pending_metadata(pending: dict[str, Any]) -> dict[str, Any]:
+def _pending_metadata(row: dict[str, Any], *, status: str) -> dict[str, Any]:
+    payload = row.get("payload") or {}
     return {
-        "id": pending["id"],
-        "status": pending["status"],
-        "kind": pending["kind"],
-        "target": pending["target"],
-        "source_text": pending["source_text"],
-        "expires_at": pending["expires_at"],
+        "id": row["id"],
+        "status": status,
+        "kind": payload.get("kind"),
+        "target": payload.get("target", ""),
+        "source_text": payload.get("source_text", ""),
+        "origin": row.get("origin"),
+        "expires_at": row.get("expires_at"),
     }
 
 
@@ -1826,7 +1957,32 @@ def _execute(
     result: LocalActionResult,
     *,
     confirm: ConfirmationCallback | None = None,
+    consented: bool = False,
 ) -> LocalActionResult:
+    """Perform a parsed action.
+
+    ``consented`` means the user already said yes to exactly this action --
+    inline, or by approving it when it was staged -- so it is not asked again.
+    """
+    from grandpa.natural_actions import request_for, run_parsed
+
+    performed = (
+        # A migrated shape staged before approval runs through the layer, like
+        # every other migrated shape.
+        run_parsed(result.kind, result.target, confirm=confirm, confirmed=consented)
+        if request_for(result.kind, result.target) is not None
+        else None
+    )
+    if performed is not None:
+        return LocalActionResult(
+            status=performed.status,
+            kind=performed.kind,
+            target=performed.target,
+            message=performed.message,
+            tts_text=performed.tts_text,
+            permission=performed.permission,
+        )
+
     if result.kind == "time" or result.kind == "system_info":
         return result
 
@@ -1942,6 +2098,9 @@ def _execute(
         )
 
     if result.kind == "automation":
+        # Not ``confirmed=consented``: synthetic input keeps its own gate, which
+        # asks at the moment it acts even after a staged approval (the
+        # enforcement probe's P5b). It moves onto the layer in a later tranche.
         automation = execute_automation_spec(result.target, confirm_callback=confirm)
         return LocalActionResult(
             status=automation.status,

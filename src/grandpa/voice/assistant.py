@@ -248,11 +248,12 @@ class VoiceCommandProcessor:
             "switch ",
         )
         if lower.startswith(local_prefixes):
-            from grandpa.local_actions import handle_local_action, refuse_confirmation
+            from grandpa.local_actions import handle_local_action
 
-            local_action = handle_local_action(
-                effective_text, confirm=refuse_confirmation
-            )
+            # Voice cannot be asked mid-action; its question is the next thing
+            # the user says. It opts into deferred consent: an action that asks
+            # is staged, bound to "voice", and runs on a spoken yes.
+            local_action = handle_local_action(effective_text, deferred_origin="voice")
             if not local_action.should_fallback:
                 if local_action.status == "pending_confirmation":
                     self._pending_action = local_action.pending_action
@@ -364,9 +365,11 @@ class VoiceCommandProcessor:
                 kind=getattr(scheduler_action, "kind", "routine"),
             )
 
-        from grandpa.local_actions import handle_local_action, refuse_confirmation
+        from grandpa.local_actions import handle_local_action
 
-        local_action = handle_local_action(effective_text, confirm=refuse_confirmation)
+        # Deferred consent, as above: a "yes" arriving here resolves the one
+        # action voice staged, and nothing staged anywhere else.
+        local_action = handle_local_action(effective_text, deferred_origin="voice")
         if not local_action.should_fallback:
             if local_action.status == "pending_confirmation":
                 self._pending_action = local_action.pending_action

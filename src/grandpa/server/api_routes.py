@@ -1692,7 +1692,7 @@ async def voice_confirm(req: VoiceConfirmRequest, request: Request):
     if not token:
         raise HTTPException(status_code=400, detail="confirmation_token is required")
 
-    result = approve_pending_action(token)
+    result = approve_pending_action(token, origin="http")
     action_status = _voice_action_status(result.status)
     if action_status == "unsupported":
         action_status = "blocked"
@@ -1826,13 +1826,17 @@ def _handle_voice_local_action(
     from grandpa.local_actions import approve_pending_action, handle_local_action
 
     try:
-        result = handle_local_action(command_text, execute=True)
+        # Staged under "http", so the confirmation token this returns can be
+        # redeemed at /voice/confirm and nowhere else.
+        result = handle_local_action(command_text, execute=True, deferred_origin="http")
         if (
             confirmed
             and result.status == "requires_confirmation"
             and result.pending_action
         ):
-            result = approve_pending_action(result.pending_action.get("id"))
+            result = approve_pending_action(
+                result.pending_action.get("id"), origin="http"
+            )
     except Exception as exc:
         assistant_text = "I couldn't process that desktop command."
         return _voice_command_response(

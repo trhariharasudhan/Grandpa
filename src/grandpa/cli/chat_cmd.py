@@ -1958,8 +1958,13 @@ def chat(
 
             from grandpa.local_actions import handle_local_action
 
+            # Migrated actions are asked inline, as the tool loop asks. Shapes
+            # still on the legacy dispatch keep chat's two-turn "yes" -- which
+            # is deferred consent, so chat opts in with its own origin.
             local_action = handle_local_action(
-                effective_user_input, confirm=_confirm_desktop_action
+                effective_user_input,
+                confirm=_confirm_desktop_action,
+                deferred_origin="chat",
             )
             if not local_action.should_fallback:
                 history.append(Message(role=Role.USER, content=user_input))
