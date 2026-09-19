@@ -324,3 +324,83 @@ def test_a_folder_the_old_rule_trusted_opens_without_asking(launches, tmp_path) 
 
     assert asked == []
     assert _launched(launches) == ["os.startfile"]
+
+
+# --- tranche 4: navigation ------------------------------------------------------
+
+NAVIGATION = [
+    ("open example.com", "https://example.com"),
+    ("search python packaging", "https://www.google.com/search?q=python+packaging"),
+    ("open youtube", "https://www.youtube.com"),
+]
+
+
+def _opened(rec) -> list[str]:
+    return [str(args[0]) for name, args, _kw in rec.calls if name == "webbrowser.open"]
+
+
+@pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
+def test_navigating_with_no_one_to_ask_opens_nothing(launches, phrase, address) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    result = handle_local_action(phrase)
+
+    assert result.status != "handled"
+    assert _opened(launches) == []
+
+
+@pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
+def test_navigating_shows_the_address_and_no_opens_nothing(
+    launches, phrase, address
+) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    asked: list[str] = []
+    handle_local_action(phrase, confirm=lambda spec, _t: asked.append(spec) or False)
+
+    assert len(asked) == 1, asked
+    assert address in asked[0], asked
+    assert _opened(launches) == []
+
+
+@pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
+def test_navigating_on_yes_opens_exactly_that_address(
+    launches, phrase, address
+) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    handle_local_action(phrase, confirm=lambda *_a: True)
+
+    assert _opened(launches) == [address]
+
+
+def test_voice_navigation_waits_for_its_own_yes(launches) -> None:
+    from grandpa.local_actions import handle_local_action
+
+    staged = handle_local_action("open example.com", deferred_origin="voice")
+    assert staged.status == "requires_confirmation"
+    assert _opened(launches) == []
+
+    handle_local_action("yes", deferred_origin="chat")
+    assert _opened(launches) == []
+
+    handle_local_action("yes", deferred_origin="voice")
+    assert _opened(launches) == ["https://example.com"]
+
+
+def test_a_trusted_domain_opens_without_asking(launches, monkeypatch) -> None:
+    import grandpa.local_actions as local_actions
+
+    # tools.browser.trusted_domains, as both local_actions and the browser
+    # domain read it.
+    monkeypatch.setattr(
+        "grandpa.browser.safety.configured_trusted_domains",
+        lambda *_a, **_k: ("example.com",),
+    )
+    asked: list[str] = []
+    local_actions.handle_local_action(
+        "open example.com", confirm=lambda spec, _t: asked.append(spec) or True
+    )
+
+    assert asked == []
+    assert _opened(launches) == ["https://example.com"]

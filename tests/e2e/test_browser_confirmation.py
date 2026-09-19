@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.e2e.harness import chat_replies, run_cli_recording_launches
+from tests.e2e.harness import run_cli_recording_launches
 
 pytestmark = pytest.mark.e2e
 
@@ -69,12 +69,16 @@ def test_chat_asks_before_starting_a_browser(cli, e2e_model) -> None:
 
 
 def test_chat_search_through_local_actions_waits_for_approval(cli, e2e_model) -> None:
-    """The other chat path: local_actions holds the search as a pending action."""
+    """The other chat path: local_actions' "search <words>".
+
+    It used to be held as a pending action and approved by a "yes" on the next
+    turn. Since navigation moved onto the action layer, chat asks inline, as it
+    does for every other browser action -- and still shows the address first.
+    """
     run, attempts = _chat(cli, e2e_model, "search python packaging", answer="no")
 
-    reply = chat_replies(run.text)[0]
-    assert "Confirmation required before opening" in reply, reply
-    assert "https://www.google.com/search?q=python+packaging" in reply, reply
+    assert "Confirm" in run.text, run.tail(400)
+    assert "https://www.google.com/search?q=python+packaging" in run.text, run.tail(400)
     assert attempts == [], f"search ran before approval: {attempts}"
 
     approved, attempts = _chat(cli, e2e_model, "search python packaging", answer="yes")

@@ -146,12 +146,47 @@ def _open_folder(path: str) -> MappedRequest:
     return ("open_folder", {"path": path})
 
 
-_BY_KIND: dict[str, Callable[[str], MappedRequest]] = {
+def _navigate(target: str) -> MappedRequest | None:
+    """A parsed address, as the browser domain's navigation.
+
+    Only real navigation moves. The parser's other browser shapes stay on the
+    legacy dispatch for now: back, forward, reload, focus_search and click were
+    stubs there (they returned "requires_confirmation" and nothing completed
+    them), and the layer's versions are real keystrokes -- moving them would
+    turn a no-op into input, which voice must never gain. about:blank is
+    Ctrl+T on the layer for the same reason.
+    """
+    import urllib.parse
+
+    if not target.startswith(("http://", "https://")):
+        return None
+    parsed = urllib.parse.urlparse(target)
+    query = urllib.parse.parse_qs(parsed.query)
+    host = parsed.netloc.lower()
+    if host.endswith("google.com") and parsed.path == "/search" and query.get("q"):
+        return ("browser_search", {"query": query["q"][0], "provider": "google"})
+    if (
+        host.endswith("youtube.com")
+        and parsed.path == "/results"
+        and query.get("search_query")
+    ):
+        return (
+            "browser_search",
+            {"query": query["search_query"][0], "provider": "youtube"},
+        )
+    return ("browser_open", {"url": target})
+
+
+_BY_KIND: dict[str, Callable[[str], MappedRequest | None]] = {
     # tranche 1
     "app_lookup": _app_lookup,
     # tranche 4: launching
     "app": _open_app,
     "folder": _open_folder,
+    # tranche 4: navigation. The browser domain shows the resolved address
+    # and asks, except for tools.browser.trusted_domains.
+    "url": _navigate,
+    "browser": _navigate,
 }
 """Shapes matched by kind alone, when the target is the argument itself.
 
