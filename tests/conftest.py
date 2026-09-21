@@ -6,6 +6,7 @@ import importlib.util
 import os
 from pathlib import Path
 from unittest.mock import MagicMock
+from uuid import uuid4
 
 import pytest
 
@@ -142,17 +143,32 @@ def _clean_registries() -> None:
     reset_event_bus()
 
 
+@pytest.fixture(scope="session")
+def _approval_store_root(tmp_path_factory) -> Path:
+    """One directory for every test's approval store.
+
+    A directory per test cost about as much as all the suite's other fixture
+    setup put together: creating one under the temp root got slower the more
+    the run had already created, ending above ten seconds each. One directory
+    and a file name per test is the same isolation for a single mkdir.
+    """
+    return tmp_path_factory.mktemp("approval-stores")
+
+
 @pytest.fixture(autouse=True)
-def _private_approval_store(monkeypatch, tmp_path_factory) -> None:
+def _private_approval_store(monkeypatch, _approval_store_root: Path) -> None:
     """Give each test its own approval store.
 
     Every action waiting for a yes -- a code approval or a deferred one -- lives
     in pc_control's store. Shared across tests, a "yes" in one test could
     resolve an action another test staged and left pending. A test that sets
     its own path keeps it.
+
+    The file itself is not created here: sqlite makes it when a test first
+    opens the store, so a test that never touches approvals writes nothing.
     """
     if not os.environ.get("GRANDPA_PC_CONTROL_DB"):
-        path = tmp_path_factory.mktemp("approvals") / "pc_control_approvals.db"
+        path = _approval_store_root / f"approvals-{uuid4().hex}.db"
         monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(path))
 
 
