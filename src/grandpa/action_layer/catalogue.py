@@ -79,6 +79,13 @@ _FILES = "grandpa.files.executor.FileExecutor.execute"
 _FILE_READ = _FILES
 _SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
+AUTOMATION_IMPLEMENTATION = _AUTOMATION
+"""Public name for the synthetic-input implementation.
+
+Callers that must treat keys and mouse differently from every other action
+-- deferred consent is never offered for them -- ask the catalogue which
+actions those are, rather than keeping a second list that can drift.
+"""
 _BROWSER = "grandpa.browser_control.execute_browser_action"
 _BROWSER_NAV = "grandpa.browser.executor.BrowserExecutor.execute"
 _AWARENESS = "grandpa.browser_awareness.automation.execute_awareness"

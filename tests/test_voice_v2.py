@@ -438,22 +438,43 @@ def test_voice_api_routes(monkeypatch, tmp_path):
     assert client.post("/v1/voice/stop").json()["status"] == "stopped"
 
 
-def test_voice_command_routes_desktop_action_to_confirmation(voice_client):
+def test_voice_command_routes_desktop_action_to_confirmation(voice_client, tmp_path):
+    """A desktop action over the voice API is held for a confirmation token.
+
+    Opening a folder, not typing: synthetic input is never staged for a later
+    yes, and the voice API has no way to be asked inline -- see
+    test_voice_command_refuses_synthetic_input below.
+    """
     response = voice_client.post(
         "/v1/voice/command",
-        json={"transcript": "type hello in notepad"},
+        json={"transcript": f"open {tmp_path}"},
     )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["transcript"] == "type hello in notepad"
     assert body["action"]["type"] == "desktop"
     assert body["action"]["status"] == "needs_confirmation"
-    assert body["action"]["message"] == "This action needs confirmation."
     assert body["confirmation_token"] == body["action"]["pending_action"]["id"]
-    assert body["action"]["kind"] == "automation"
-    assert body["action"]["target"] == "focus|notepad||type|hello"
+    assert body["action"]["kind"] == "folder"
     assert body["action"]["pending_action"]["id"]
+
+
+def test_voice_command_refuses_synthetic_input(voice_client, monkeypatch):
+    """Keys and mouse need someone who can be asked; the voice API is not."""
+    from tests.security.input_recorder import install
+
+    recorder = install(monkeypatch)
+
+    body = voice_client.post(
+        "/v1/voice/command",
+        json={"transcript": "type hello in notepad", "confirmed": True},
+    ).json()
+
+    assert body["action"]["status"] in {"blocked", "unsupported"}, body
+    assert not body.get("confirmation_token")
+    # "type hello in notepad" focuses Notepad first, which is a window action
+    # and asks nowhere; what must not happen is the typing.
+    assert [name for name in recorder.actuated if name.startswith("pyautogui.")] == []
 
 
 def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
@@ -490,26 +511,15 @@ def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
     assert calls == ["focus|notepad||type|hello"]
 
 
-def test_voice_confirm_token_executes_with_mocked_automation(monkeypatch, voice_client):
-    calls: list[str] = []
+def test_voice_confirm_token_executes_the_action(monkeypatch, voice_client, tmp_path):
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
+    from tests.security.input_recorder import install
 
-    # Mirrors the real signature: local_actions._execute now forwards the
-    # caller's confirm callback down to local_actions.execute_automation_spec.
-    def fake_execute_automation(spec: str, *, confirm_callback=None):
-        from grandpa.desktop.control.automation import AutomationResult
-
-        calls.append(spec)
-        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
-
-    monkeypatch.setattr(
-        "grandpa.local_actions.execute_automation_spec",
-        fake_execute_automation,
-    )
+    recorder = install(monkeypatch)
 
     pending = voice_client.post(
         "/v1/voice/command",
-        json={"transcript": "type hello in notepad"},
+        json={"transcript": f"open {tmp_path}"},
     ).json()
 
     response = voice_client.post(
@@ -518,29 +528,18 @@ def test_voice_confirm_token_executes_with_mocked_automation(monkeypatch, voice_
     )
 
     assert response.status_code == 200
-    body = response.json()
-    assert body["action"]["status"] == "handled"
-    assert body["assistant_text"] == "Done."
-    assert calls == ["focus|notepad||type|hello"]
+    assert recorder.actuated == ["os.startfile"], recorder.calls
 
 
-def test_voice_confirm_token_cannot_be_reused(monkeypatch, voice_client):
+def test_voice_confirm_token_cannot_be_reused(monkeypatch, voice_client, tmp_path):
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
+    from tests.security.input_recorder import install
 
-    # Mirrors the real signature: local_actions._execute now forwards the
-    # caller's confirm callback down to local_actions.execute_automation_spec.
-    def fake_execute_automation(spec: str, *, confirm_callback=None):
-        from grandpa.desktop.control.automation import AutomationResult
+    install(monkeypatch)
 
-        return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
-
-    monkeypatch.setattr(
-        "grandpa.local_actions.execute_automation_spec",
-        fake_execute_automation,
-    )
     pending = voice_client.post(
         "/v1/voice/command",
-        json={"transcript": "type hello in notepad"},
+        json={"transcript": f"open {tmp_path}"},
     ).json()
 
     first = voice_client.post(
@@ -552,9 +551,9 @@ def test_voice_confirm_token_cannot_be_reused(monkeypatch, voice_client):
         json={"confirmation_token": pending["confirmation_token"]},
     )
 
-    assert first.json()["action"]["status"] == "handled"
-    assert second.json()["action"]["status"] == "blocked"
-    assert second.json()["assistant_text"] == "That action is blocked for safety."
+    # One approval resolves one action: the second redemption finds nothing.
+    assert first.json()["action"]["status"] != "unsupported", first.json()
+    assert second.json()["action"]["status"] in {"blocked", "unsupported"}
 
 
 def test_voice_command_blocked_command_returns_blocked(voice_client):

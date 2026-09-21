@@ -29,7 +29,12 @@ class ScreenAutomationService:
         confirmations: ConfirmationManager | None = None,
         window_targets: WindowTargetController | None = None,
         allow_input: bool = True,
+        origin: str = "chat",
     ) -> None:
+        # Where a pending confirmation may be answered from. Its yes is bound
+        # to this origin in the kernel's approval store, so a question asked in
+        # chat cannot be answered over HTTP or by a spoken turn.
+        self.origin = origin
         # False for a caller that has no way to consent to synthetic input --
         # voice. Its only question is the next utterance, and nothing that
         # answers it may type, click or scroll. Refused in _execute, which every
@@ -38,7 +43,7 @@ class ScreenAutomationService:
         self.allow_input = allow_input
         self.planner = planner or AutomationPlanner()
         self.executor = executor or AutomationExecutor()
-        self.confirmations = confirmations or ConfirmationManager()
+        self.confirmations = confirmations or ConfirmationManager(origin=origin)
         self.window_targets = window_targets or WindowTargetController()
         self._last_confirmation_token: str | None = None
         self._target_window: WindowIdentity | None = None

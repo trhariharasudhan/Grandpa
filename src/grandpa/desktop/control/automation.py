@@ -139,7 +139,6 @@ def execute_spec(
     the point of there being one owner, rather than a second module that asked
     politely about text and pressed Win+R on a yes.
     """
-    import sys
 
     if "||" in spec:
         # A chain, in order, stopping at the first step that does not complete.
@@ -177,33 +176,119 @@ def execute_spec(
         message = "That desktop action is not supported."
         return AutomationResult("unsupported", spec, message, message)
 
-    name, key = mapped
-    # Ask exactly when pc_control would: its approval set is the one rule for
-    # synthetic input. Scrolling and focusing a window are deliberately outside
-    # it -- neither activates anything -- so they no longer prompt here either.
-    # Asking for everything looked stricter, but it taught a user to say yes
-    # without reading, which is the opposite of what a prompt is for.
-    from grandpa.pc_control import APPROVAL_REQUIRED_ACTIONS
+    name, _key = mapped
+    try:
+        parameters = _layer_parameters(name, action_name, argument)
+    except ValueError as exc:
+        return AutomationResult("unsupported", spec, str(exc), str(exc))
 
-    if not confirmed and name in APPROVAL_REQUIRED_ACTIONS:
-        if confirm_callback is None:
-            message = "Confirmation required before controlling the active app."
-            return AutomationResult("blocked", spec, message, message)
-        if not confirm_callback(spec, "requires_confirmation"):
-            return AutomationResult("cancelled", spec, "Cancelled.", "Cancelled.")
+    if confirm_callback is None and not confirmed:
+        # Synthetic input needs someone who *can* be asked, whether or not the
+        # tier says to ask. Scrolling and moving the pointer are not on the
+        # approval list -- neither activates anything -- but a caller with no
+        # way to ask is a caller that cannot consent to input at all, and voice
+        # is that caller. Without this, routing specs through the layer let a
+        # spoken "scroll down" turn the wheel because its tier asks nothing.
+        message = "Confirmation required before controlling the active app."
+        return AutomationResult("blocked", spec, message, message)
 
-    args: dict[str, Any] = {key: argument} if key else {}
-    if action_name in {"click_center", "move_center"}:
-        args.update(_screen_center())
-    response = AutomationControlService().execute(
-        _SpecRequest(target=argument, args=args),
+    # One gate, and it is the action layer's. The catalogue says which input
+    # actions need a yes (the same set pc_control gates on), the executor asks
+    # once, and this service checks and actuates. This module used to ask here
+    # as well, so an action staged by local_actions was approved once and then
+    # asked about again as it ran.
+    return _through_the_layer(
+        spec,
         name,
-        platform=platform or sys.platform,
+        parameters,
+        confirm_callback=confirm_callback,
+        confirmed=confirmed,
+        platform=platform,
     )
-    message = str(getattr(response, "message", "") or "")
-    if getattr(response, "ok", False):
+
+
+_SCROLL_NOTCHES = {"up": 3, "down": -3}
+
+
+def _layer_parameters(name: str, action_name: str, argument: str) -> dict[str, Any]:
+    """The catalogued parameters for a spec, or a refusal the user can act on.
+
+    The catalogue validates these, which is stricter than the service was on its
+    own: "scroll|down" used to reach ``int("down")`` and raise, and a click with
+    no coordinates used to click whatever is at 0,0.
+    """
+    if name == "keyboard_type":
+        return {"text": argument}
+    if name == "keyboard_hotkey":
+        keys = _normalise_hotkey(argument)
+        if not keys:
+            raise ValueError("Tell me which keys to press.")
+        return {"keys": keys}
+    if name == "mouse_scroll":
+        lowered = argument.strip().casefold()
+        if lowered in _SCROLL_NOTCHES:
+            return {"amount": _SCROLL_NOTCHES[lowered]}
+        try:
+            return {"amount": int(lowered)}
+        except ValueError:
+            raise ValueError(f"I cannot scroll {argument!r}.") from None
+    if action_name in {"click_center", "move_center"}:
+        return dict(_screen_center())
+    if name == "mouse_click":
+        raise ValueError("Tell me where on the screen to click.")
+    if name == "mouse_move":
+        raise ValueError("Tell me where on the screen to move the pointer.")
+    raise ValueError("That desktop action is not supported.")
+
+
+def _through_the_layer(
+    spec: str,
+    name: str,
+    parameters: dict[str, Any],
+    *,
+    confirm_callback: Any,
+    confirmed: bool,
+    platform: str | None,
+) -> AutomationResult:
+    """Run one input action through the action layer, which asks if it must."""
+    import sys
+
+    from grandpa.action_layer.catalogue import get
+    from grandpa.action_layer.executor import execute as execute_action
+    from grandpa.action_layer.model import ActionRequest, Origin
+
+    if (platform or sys.platform) != "win32":
+        message = "Keyboard and mouse control is only supported on Windows desktop."
+        return AutomationResult("unsupported", spec, message, message)
+
+    catalogued = get(name)
+
+    def ask(_action: str, _parameters: Any, _risk: Any) -> bool:
+        # The spec is what the caller's prompt has always shown ("type|hello").
+        return bool(confirm_callback(spec, "requires_confirmation"))
+
+    callback = (
+        (lambda *_a, **_k: True) if confirmed else (ask if confirm_callback else None)
+    )
+    result = execute_action(
+        ActionRequest(
+            name,
+            parameters,
+            origin=Origin.USER_CHAT,
+            risk=catalogued.risk,
+            requires_confirmation=catalogued.requires_confirmation,
+        ),
+        callback,
+    )
+    message = result.message
+    if result.success:
         return AutomationResult("handled", spec, message, message)
-    status = str(getattr(response, "status", "") or "blocked")
+    if result.error == "confirmation_declined":
+        return AutomationResult("cancelled", spec, "Cancelled.", "Cancelled.")
+    if result.error == "confirmation_required":
+        message = "Confirmation required before controlling the active app."
+        return AutomationResult("blocked", spec, message, message)
+    status = str(result.data.get("status") or "")
     return AutomationResult(
         status if status in {"unsupported", "blocked", "failed"} else "blocked",
         spec,

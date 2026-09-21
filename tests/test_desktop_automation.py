@@ -259,7 +259,9 @@ def test_click_center_clicks_the_middle_of_the_screen(recorded) -> None:
     assert result.status == "handled"
     action, args = recorded[0]
     assert action == "mouse_click"
-    assert set(args) == {"x", "y"}
+    # The layer resolves the catalogue's defaults now, so "button" arrives too.
+    assert {"x", "y"} <= set(args)
+    assert args["button"] == "left"
 
 
 def test_move_center_does_not_ask(recorded) -> None:

@@ -390,11 +390,15 @@ def handle_local_action(
         result.permission == "requires_confirmation"
         or classify_permission(command, result) == "requires_confirmation"
     )
+    # Synthetic input is asked for by the action layer, as it runs -- see
+    # _with_permission -- so this module does not hold it back here.
+    asked_at_the_layer = result.kind == "automation"
     result = _with_permission(
         command, result, confirm=confirm, deferred_origin=deferred_origin
     )
-    if result.status in {"requires_confirmation", "cancelled"} or (
-        needs_consent and result.permission != "allowed"
+    if not asked_at_the_layer and (
+        result.status in {"requires_confirmation", "cancelled"}
+        or (needs_consent and result.permission != "allowed")
     ):
         _log_attempt(command, result)
         return result
@@ -653,6 +657,24 @@ def _with_permission(
     # an inline prompt. That is chat, whose not-yet-migrated shapes have always
     # been two-turn ("search python packaging", then "yes"); it goes away as
     # those shapes move onto the layer.
+    #
+    # Synthetic input is the exception, and always will be: a keystroke goes to
+    # whatever has focus at the instant it is sent, so a yes given a turn ago
+    # is consent for a screen that may no longer be there. Keys and mouse are
+    # asked inline, at the moment they run, or refused.
+    if result.kind == "automation":
+        # ...and this module does not ask for it either. The action layer asks,
+        # once, as the keys are sent; asking here as well is the double prompt
+        # that taught a user to answer the first question without reading it.
+        # With no one to ask, the layer refuses, so nothing is let through.
+        return LocalActionResult(
+            status=result.status,
+            kind=result.kind,
+            target=result.target,
+            message=result.message,
+            tts_text=result.tts_text,
+            permission="requires_confirmation",
+        )
     if deferred_origin:
         from grandpa.desktop.kernel import approvals
 

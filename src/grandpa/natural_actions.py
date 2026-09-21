@@ -211,6 +211,13 @@ def request_for(kind: str | None, target: str) -> MappedRequest | None:
     return None
 
 
+def _is_synthetic_input(spec: Any) -> bool:
+    """True for the catalogued actions that send keys or move the mouse."""
+    from grandpa.action_layer.catalogue import AUTOMATION_IMPLEMENTATION
+
+    return getattr(spec, "implementation", "") == AUTOMATION_IMPLEMENTATION
+
+
 def _layer_confirm(confirm: ConfirmCallback | None):
     """Adapt a caller's (spec, tier) prompt to the layer's callback."""
     if confirm is None:
@@ -295,6 +302,12 @@ def run_parsed(
     wording = summary or f"Confirmation required before running {name}."
 
     if needs_consent and not confirmed and confirm is None:
+        if deferred_origin and _is_synthetic_input(spec):
+            # Never staged for a later yes: a keystroke goes to whatever has
+            # focus at the instant it is sent, so consent given a turn ago is
+            # consent for a screen that may no longer be there. Asked inline,
+            # or refused.
+            deferred_origin = None
         if not deferred_origin:
             # No one to ask and no opt-in: refuse, and stage nothing.
             return PhraseResult(

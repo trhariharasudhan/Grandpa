@@ -441,43 +441,49 @@ def probe_p5a(sandbox: Sandbox, model: str) -> Verdict:
 
 
 def probe_p5b(sandbox: Sandbox, model: str) -> Verdict:
-    name = "P5b chat synthetic input reaches desktop_automation with a confirm callback"
+    name = "P5b chat synthetic input is asked for once, at the moment it runs"
     work = sandbox.workdir("p5b")
     # The only local_actions synthetic-input phrase that chat does not hand to
-    # Screen Automation V2 first. 'n' declines, so no keystroke is sent.
+    # Screen Automation V2 first.
+    #
+    # This probe used to type "copy selected text", then "yes", and require a
+    # SECOND prompt as the copy ran: local_actions held the action for a
+    # turn-based yes, and desktop_automation asked again underneath it.
+    # Synthetic input is no longer staged for a later yes -- a keystroke goes
+    # wherever focus is at the instant it is sent -- so there is one prompt, at
+    # the point of action, and "n" at that prompt sends nothing.
     run = run_cli(
         sandbox,
         ["chat", "--no-fullscreen", "-m", model],
         cwd=work,
-        stdin_text="copy selected text\nyes\nn\nexit\n",
+        stdin_text="copy selected text\nn\nexit\n",
     )
     if run.timed_out or "Goodbye" not in run.text:
         return Verdict(name, NORUN, f"chat did not complete the session: {run.tail()}")
-    if CHAT_LOCAL_PENDING not in run.text:
+    if CHAT_LOCAL_PENDING in run.text:
+        return Verdict(
+            name,
+            FAIL,
+            "synthetic input was staged for a later yes instead of being asked "
+            "for as it ran.",
+        )
+    if CHAT_CALLBACK_PROMPT not in run.text:
+        if CHAT_COPY_DONE in run.text:
+            return Verdict(name, FAIL, "copy executed with no confirm-callback prompt.")
         return Verdict(
             name,
             NORUN,
-            f"'copy selected text' did not reach local_actions: {run.tail()}",
-        )
-    if CHAT_CALLBACK_PROMPT in run.text:
-        if CHAT_COPY_DONE in run.text:
-            return Verdict(
-                name, FAIL, "callback prompted, but the copy ran after answering 'n'."
-            )
-        return Verdict(
-            name,
-            PASS,
-            f"'copy selected text' -> 'yes' reached desktop_automation, which invoked chat's "
-            f"callback ({CHAT_CALLBACK_PROMPT!r}); answered 'n', nothing copied.",
+            f"'copy selected text' did not reach desktop_automation: {run.tail()}",
         )
     if CHAT_COPY_DONE in run.text:
-        return Verdict(name, FAIL, "copy executed with no confirm-callback prompt.")
-    if "There is no pending local action" in run.text:
-        return Verdict(name, NORUN, "the approval turn found no pending action.")
+        return Verdict(
+            name, FAIL, "callback prompted, but the copy ran after answering 'n'."
+        )
     return Verdict(
         name,
-        FAIL,
-        f"approval reached desktop_automation without invoking a confirm callback: {run.tail()}",
+        PASS,
+        f"'copy selected text' invoked chat's callback once "
+        f"({CHAT_CALLBACK_PROMPT!r}); answered 'n', nothing copied.",
     )
 
 

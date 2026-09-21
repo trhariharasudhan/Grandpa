@@ -263,8 +263,10 @@ def _deferred_rows():
         ]
 
 
-def test_pending_action_can_be_denied():
-    pending = handle_local_action("type hello", deferred_origin="chat")
+def test_pending_action_can_be_denied(tmp_path):
+    # Not "type hello" any more: synthetic input is never staged for a later
+    # yes, because a keystroke goes wherever focus is when it is sent.
+    pending = handle_local_action(f"open {tmp_path}", deferred_origin="chat")
     denied = handle_local_action("cancel", deferred_origin="chat")
 
     assert pending.status == "requires_confirmation"
@@ -274,10 +276,10 @@ def test_pending_action_can_be_denied():
     ]
 
 
-def test_expired_pending_action_is_not_approved(monkeypatch):
+def test_expired_pending_action_is_not_approved(monkeypatch, tmp_path):
     from grandpa import pc_control
 
-    pending = handle_local_action("type hello", deferred_origin="chat")
+    pending = handle_local_action(f"open {tmp_path}", deferred_origin="chat")
     later = pending.pending_action["expires_at"] + 1
     monkeypatch.setattr(pc_control.time, "time", lambda: later)
     approved = local_actions.approve_pending_action(origin="chat")
