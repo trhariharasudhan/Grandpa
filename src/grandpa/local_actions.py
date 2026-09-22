@@ -14,11 +14,16 @@ import sys
 import urllib.parse
 import webbrowser
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from grandpa.local_action_approvals import LocalActionApprovalStore
+from grandpa.local_action_result import (
+    ActionStatus,
+    LocalActionResult,
+    PermissionStatus,
+)
 
 ConfirmationCallback = Callable[[str, str], bool]
 """What a caller passes to be asked before synthetic input runs."""
@@ -33,33 +38,6 @@ def execute_automation_spec(spec, *, confirm_callback=None, confirmed=False):
 
 logger = logging.getLogger(__name__)
 
-ActionStatus = Literal[
-    "handled",
-    "requires_confirmation",
-    "blocked",
-    "unsupported",
-    "no_match",
-    "error",
-    "cancelled",
-]
-PermissionStatus = Literal["allowed", "requires_confirmation", "blocked", "unsupported"]
-ActionKind = Literal[
-    "app",
-    "folder",
-    "url",
-    "time",
-    "system_info",
-    "screen",
-    "screenshot",
-    "browser",
-    "automation",
-    "window",
-    "app_lookup",
-    "pc_control",
-    "agent_plan",
-    "blocked",
-]
-
 BLOCKED_MESSAGE = "I blocked this action for safety."
 CONFIRMATION_PREFIX = "Confirmation required before I run this action."
 CANCELLED_MESSAGE = "Cancelled the pending local action."
@@ -68,21 +46,6 @@ CANCELLED_MESSAGE = "Cancelled the pending local action."
 _WEB_SEARCH_PATTERN = (
     r"search (?!google for\b)(?!youtube for\b)(?!(?:my |all )?files for\b)(.+)"
 )
-
-
-@dataclass(frozen=True)
-class LocalActionResult:
-    status: ActionStatus
-    kind: ActionKind | None = None
-    target: str = ""
-    message: str = ""
-    tts_text: str = ""
-    permission: PermissionStatus | None = None
-    pending_action: dict[str, Any] | None = None
-
-    @property
-    def should_fallback(self) -> bool:
-        return self.status == "no_match"
 
 
 _APP_ALLOWLIST: dict[str, tuple[str, str]] = {

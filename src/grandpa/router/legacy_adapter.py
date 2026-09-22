@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
-    from grandpa.local_actions import LocalActionResult
+    from grandpa.local_action_result import LocalActionResult
     from grandpa.skills.runtime import SkillResult
 
 
@@ -13,7 +13,7 @@ def skill_result_to_local_action(
     route, skill_result: "SkillResult"
 ) -> "LocalActionResult":
     """Convert a runtime skill result into the existing local action contract."""
-    from grandpa.local_actions import LocalActionResult
+    from grandpa.local_action_result import LocalActionResult
 
     status = (
         "handled"
@@ -47,7 +47,7 @@ def skill_result_to_local_action(
 
 def planner_task_to_local_action(route, task) -> "LocalActionResult":
     """Convert a native agent planner task into a local action response."""
-    from grandpa.local_actions import LocalActionResult
+    from grandpa.local_action_result import LocalActionResult
 
     if hasattr(task, "goal_id"):
         analysis = getattr(task, "plan", {}) or {}

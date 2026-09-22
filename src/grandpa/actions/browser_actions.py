@@ -22,7 +22,7 @@ HANDLERS: dict[str, tuple[str, str, str]] = {
 
 
 def try_handle(command: str):
-    from grandpa.local_actions import LocalActionResult
+    from grandpa.local_action_result import LocalActionResult
 
     item = HANDLERS.get(command)
     if item is None:

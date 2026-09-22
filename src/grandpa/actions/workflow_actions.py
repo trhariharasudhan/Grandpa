@@ -6,7 +6,7 @@ HANDLERS = {"workflow status", "workflow diagnostics", "show workflow status"}
 
 
 def try_handle(command: str):
-    from grandpa.local_actions import LocalActionResult
+    from grandpa.local_action_result import LocalActionResult
 
     if command not in HANDLERS:
         return None
