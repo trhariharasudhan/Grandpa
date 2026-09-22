@@ -24,10 +24,20 @@ from typing import Any
 from grandpa.action_layer.catalogue import get
 from grandpa.action_layer.model import ActionRequest, Origin
 
-__all__ = ["INVENTORY_TARGETS", "build_desktop_request"]
+__all__ = ["INVENTORY_TARGETS", "build_desktop_request", "parameters_for"]
 
 INVENTORY_TARGETS = frozenset({"apps_search", "apps_is_running", "apps_restart"})
 """Inventory actions that take what the user named; the rest take nothing."""
+
+
+def parameters_for(spec_name: str, target: str, args: dict[str, Any]) -> dict[str, Any]:
+    """The catalogued parameters for a parsed desktop action.
+
+    Shared with voice, which parses the same phrases with the same parser: two
+    translations of one parser's output is the shape of bug this phase keeps
+    finding.
+    """
+    return _parameters(spec_name, target, args)
 
 
 def _parameters(spec_name: str, target: str, args: dict[str, Any]) -> dict[str, Any]:

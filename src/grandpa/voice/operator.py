@@ -1,4 +1,11 @@
-"""Voice Operator Mode for command-first desktop control."""
+"""Voice Operator Mode for command-first desktop control.
+
+Desktop actions go through the action layer, not straight to pc_control. They
+used to call ``pc_control.run_local_action`` directly -- a second door to the
+same capability, with pc_control's policy on one side and the catalogue's on
+the other. The tiers happened to agree when they were compared, which is not a
+reason to keep two of them.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +14,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from grandpa.pc_control import run_local_action
 from grandpa.voice.errors import (
     MicrophoneUnavailableError,
     VoiceDependencyError,
@@ -15,6 +21,7 @@ from grandpa.voice.errors import (
     VoiceOutputUnavailableError,
     VoiceRecognitionError,
 )
+from grandpa.voice.layer_runner import run_through_the_layer as run_local_action
 from grandpa.voice.speech_output import SpeechOutputEngine
 
 OperatorStatus = Literal[
