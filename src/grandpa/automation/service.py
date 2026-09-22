@@ -161,6 +161,16 @@ class ScreenAutomationService:
                 data={"dry_run": True},
             )
         attempts = max(1, min(12, int(action.args.get("max_attempts", 6))))
+        # Asked once for the whole scroll, not once per step: this is one
+        # instruction ("scroll until Submit appears") and a prompt per notch
+        # would be a prompt nobody reads.
+        refused = self._ask(
+            action,
+            f'I will scroll until "{action.target}" appears, up to '
+            f"{attempts} times. Do you want me to continue?",
+        )
+        if refused is not None:
+            return refused
         for attempt in range(attempts + 1):
             matches = self.executor.locator.locate(action.target, limit=2)
             if matches:
@@ -181,7 +191,7 @@ class ScreenAutomationService:
                     "window": action.args.get("window"),
                 },
             )
-            result = self._execute(step)
+            result = self._execute(step, consented=True)
             if result.status != "handled":
                 return replace(
                     result,

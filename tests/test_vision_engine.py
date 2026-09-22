@@ -336,7 +336,8 @@ def test_scroll_until_is_bounded_and_stops_when_target_appears() -> None:
             assert action.kind == "scroll"
             return AutomationResult("handled", "Scrolled.", action)
 
-    service = ScreenAutomationService(executor=Executor())
+    # Scrolling asks once, up front, so the caller must be askable.
+    service = ScreenAutomationService(executor=Executor(), confirm=lambda *_a: True)
     result = service._scroll_until(  # noqa: SLF001 - focused bounded-loop unit test
         AutomationAction(
             "scroll_until",
