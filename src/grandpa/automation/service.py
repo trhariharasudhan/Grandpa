@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
-from grandpa.automation.confirmation import ConfirmationManager
 from grandpa.automation.executor import AutomationExecutor
 from grandpa.automation.models import AutomationAction, AutomationResult
 from grandpa.automation.planner import AutomationPlanner
@@ -26,15 +26,15 @@ class ScreenAutomationService:
         *,
         planner: AutomationPlanner | None = None,
         executor: AutomationExecutor | None = None,
-        confirmations: ConfirmationManager | None = None,
         window_targets: WindowTargetController | None = None,
         allow_input: bool = True,
-        origin: str = "chat",
+        confirm: Callable[[str, str], bool] | None = None,
     ) -> None:
-        # Where a pending confirmation may be answered from. Its yes is bound
-        # to this origin in the kernel's approval store, so a question asked in
-        # chat cannot be answered over HTTP or by a spoken turn.
-        self.origin = origin
+        # How this service asks, at the moment it is about to act. There is no
+        # store of pending confirmations any more: a question kept for a later
+        # yes is consent for a desktop that has moved on, and for keys and mouse
+        # the window holding focus may not even be the same one.
+        self.confirm = confirm
         # False for a caller that has no way to consent to synthetic input --
         # voice. Its only question is the next utterance, and nothing that
         # answers it may type, click or scroll. Refused in _execute, which every
@@ -43,9 +43,7 @@ class ScreenAutomationService:
         self.allow_input = allow_input
         self.planner = planner or AutomationPlanner()
         self.executor = executor or AutomationExecutor()
-        self.confirmations = confirmations or ConfirmationManager(origin=origin)
         self.window_targets = window_targets or WindowTargetController()
-        self._last_confirmation_token: str | None = None
         self._target_window: WindowIdentity | None = None
         self._window_choices: tuple[WindowIdentity, ...] = ()
         self._choice_action: AutomationAction | None = None
@@ -53,7 +51,8 @@ class ScreenAutomationService:
 
     @property
     def has_pending_confirmation(self) -> bool:
-        return self._last_confirmation_token is not None
+        """Always False: nothing is held here waiting for a later yes."""
+        return False
 
     @property
     def has_pending_window_choice(self) -> bool:
@@ -83,10 +82,6 @@ class ScreenAutomationService:
         target_window: str | None = None,
     ) -> AutomationResult:
         decision = str(text).strip().casefold()
-        if self._last_confirmation_token and decision in {"yes", "confirm", "continue"}:
-            return self.confirm(self._last_confirmation_token)
-        if self._last_confirmation_token and decision in {"no", "cancel", "stop"}:
-            return self.reject(self._last_confirmation_token)
         dialog_result = self._handle_dialog_response(decision)
         if dialog_result is not None:
             return dialog_result
@@ -140,19 +135,15 @@ class ScreenAutomationService:
                         preview, message=f"{verification_message}\n{preview.message}"
                     )
                 return preview
-            pending = self.confirmations.create(action)
-            self._last_confirmation_token = pending.token
             reason = action.confirmation_reason or "This action can change the desktop."
             prefix = _verification_message(verification)
-            message = f"{reason} Do you want me to continue? Yes / No"
+            message = f"{reason} Do you want me to continue?"
             if prefix:
                 message = f"{prefix}\n{message}"
-            return AutomationResult(
-                "needs_confirmation",
-                message,
-                action,
-                confirmation_token=pending.token,
-            )
+            refused = self._ask(action, message)
+            if refused is not None:
+                return refused
+            return self._perform_confirmed(action)
         result = self._execute(action, dry_run=dry_run)
         result = self._verify_after_input(action, result, dry_run=dry_run)
         if verification_message := _verification_message(verification):
@@ -215,14 +206,20 @@ class ScreenAutomationService:
             data={"scroll_steps": attempts, "verified": True},
         )
 
-    def confirm(self, token: str) -> AutomationResult:
-        action = self.confirmations.consume(token)
-        if self._last_confirmation_token == token:
-            self._last_confirmation_token = None
-        if action is None:
+    def _ask(self, action: AutomationAction, message: str) -> AutomationResult | None:
+        """Ask the caller now. None means yes; a result means it stops here."""
+        if self.confirm is None:
             return AutomationResult(
-                "error", "That automation confirmation expired or was already used."
+                "blocked",
+                f"{message}\nI have no way to ask you here, so I did not do it.",
+                action,
             )
+        if not self.confirm(message, "requires_confirmation"):
+            return AutomationResult("handled", "Automation action cancelled.", action)
+        return None
+
+    def _perform_confirmed(self, action: AutomationAction) -> AutomationResult:
+        """Do what was just consented to, in the turn it was asked for."""
         action = replace(action, requires_confirmation=False)
         if action.kind == "overwrite_dialog":
             window = action.args.get("window_identity")
@@ -313,19 +310,9 @@ class ScreenAutomationService:
             if not verification.ok:
                 return AutomationResult("blocked", verification.message, action)
             self._target_window = verification.expected
-            result = self._execute(action)
+            result = self._execute(action, consented=True)
             return replace(result, message=f"{verification.message}\n{result.message}")
-        return self._execute(action)
-
-    def reject(self, token: str) -> AutomationResult:
-        rejected = self.confirmations.reject(token)
-        if self._last_confirmation_token == token:
-            self._last_confirmation_token = None
-        if not rejected:
-            return AutomationResult(
-                "error", "That automation confirmation expired or was already used."
-            )
-        return AutomationResult("handled", "Automation action cancelled.")
+        return self._execute(action, consented=True)
 
     def _preview(self, action: AutomationAction) -> AutomationResult | None:
         if (
@@ -363,17 +350,13 @@ class ScreenAutomationService:
                 action,
                 data=located.data,
             )
-        pending = self.confirmations.create(action)
-        self._last_confirmation_token = pending.token
         element = located.element
         label = _quoted_label(element.text if element is not None else action.target)
-        return AutomationResult(
-            "needs_confirmation",
-            f'I found "{label}". Do you want me to click it? Yes / No',
-            action,
-            element,
-            pending.token,
-            located.data,
+        refused = self._ask(action, f'I found "{label}". Do you want me to click it?')
+        if refused is not None:
+            return refused
+        return replace(
+            self._perform_confirmed(action), element=element, data=located.data
         )
 
     def _focus_target(
@@ -438,15 +421,12 @@ class ScreenAutomationService:
                 prepared,
                 data=_window_data(window),
             )
-        pending = self.confirmations.create(prepared)
-        self._last_confirmation_token = pending.token
-        return AutomationResult(
-            "needs_confirmation",
-            f"Close {window.title}? Unsaved work may be lost. Yes / No",
-            prepared,
-            confirmation_token=pending.token,
-            data=_window_data(window),
+        refused = self._ask(
+            prepared, f"Close {window.title}? Unsaved work may be lost."
         )
+        if refused is not None:
+            return refused
+        return self._perform_confirmed(prepared)
 
     def _handle_dialog_response(self, decision: str) -> AutomationResult | None:
         if self._pending_dialog is None:
@@ -553,15 +533,10 @@ class ScreenAutomationService:
                 True,
                 "The selected file already exists.",
             )
-            pending = self.confirmations.create(action)
-            self._last_confirmation_token = pending.token
-            return AutomationResult(
-                "needs_confirmation",
-                f"{path} already exists. Overwrite it? Yes / No",
-                action,
-                confirmation_token=pending.token,
-                data=_dialog_data(window, dialog),
-            )
+            refused = self._ask(action, f"{path} already exists. Overwrite it?")
+            if refused is not None:
+                return refused
+            return self._perform_confirmed(action)
         result = self.window_targets.save_as_and_verify(
             window,
             dialog,
@@ -604,17 +579,13 @@ class ScreenAutomationService:
                 True,
                 "The selected file already exists.",
             )
-            pending = self.confirmations.create(action)
-            self._last_confirmation_token = pending.token
-            return AutomationResult(
-                "needs_confirmation",
-                str(
-                    getattr(result, "message", "Overwrite the existing file? Yes / No")
-                ),
+            refused = self._ask(
                 action,
-                confirmation_token=pending.token,
-                data=_dialog_data(window, next_dialog),
+                str(getattr(result, "message", "Overwrite the existing file?")),
             )
+            if refused is not None:
+                return refused
+            return self._perform_confirmed(action)
         self._pending_dialog = None
         return AutomationResult(
             "failed",
@@ -705,7 +676,11 @@ class ScreenAutomationService:
         self._choice_action = None
 
     def _execute(
-        self, action: AutomationAction, *, dry_run: bool = False
+        self,
+        action: AutomationAction,
+        *,
+        dry_run: bool = False,
+        consented: bool = False,
     ) -> AutomationResult:
         from grandpa.automation.executor import INPUT_KINDS
 
@@ -716,6 +691,16 @@ class ScreenAutomationService:
                 "I can't type, click or scroll from here. No input was sent.",
                 action,
             )
+        if action.kind in INPUT_KINDS and not dry_run and not consented:
+            # Every input action asks, whatever the planner flagged. It marks
+            # some kinds and not others -- typing was not one -- and what used to
+            # catch the rest was pc_control's approval code, which is consent
+            # from minutes ago and so no longer accepts input at all.
+            refused = self._ask(
+                action, f"{_input_sentence(action)} Do you want me to continue?"
+            )
+            if refused is not None:
+                return refused
         result = self.executor.execute(action, dry_run=dry_run)
         point = result.element.bounds.center if result.element is not None else None
         x = point.x if point is not None else action.args.get("x")
@@ -777,10 +762,14 @@ class ScreenAutomationService:
 _SERVICE: ScreenAutomationService | None = None
 
 
-def get_automation_service() -> ScreenAutomationService:
+def get_automation_service(
+    *, confirm: Callable[[str, str], bool] | None = None
+) -> ScreenAutomationService:
     global _SERVICE
     if _SERVICE is None:
-        _SERVICE = ScreenAutomationService()
+        _SERVICE = ScreenAutomationService(confirm=confirm)
+    elif confirm is not None and _SERVICE.confirm is None:
+        _SERVICE.confirm = confirm
     return _SERVICE
 
 
@@ -809,6 +798,18 @@ def _needs_verified_target(action: AutomationAction) -> bool:
         "scroll",
         "scroll_until",
     }
+
+
+def _input_sentence(action: AutomationAction) -> str:
+    """What the action will do, for the prompt the caller shows."""
+    if action.kind == "type":
+        return f'I will type "{action.args.get("text", action.target)}".'
+    if action.kind == "press":
+        keys = "+".join(str(key) for key in action.args.get("keys", []) or [])
+        return f"I will press {keys or action.target}."
+    if action.kind == "paste":
+        return "I will paste the clipboard."
+    return f"I will {action.kind.replace('_', ' ')} {action.target}".strip() + "."
 
 
 def _verification_message(verification: object) -> str:

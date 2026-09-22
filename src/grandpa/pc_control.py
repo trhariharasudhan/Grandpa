@@ -157,6 +157,19 @@ APPROVAL_REQUIRED_ACTIONS = {
     "browser_search",
 }
 
+INLINE_CONSENT_ACTIONS = {
+    # Synthetic input: consent has to be given as it happens, so these are
+    # refused here rather than staged for an approval code. The action layer
+    # asks the caller and then calls the automation service directly.
+    "keyboard_type",
+    "keyboard_hotkey",
+    "mouse_click",
+    "mouse_drag",
+    "mouse_move",
+    "mouse_scroll",
+    "desktop_navigate",
+}
+
 SAFE_APP_ALIASES = {
     "notepad": "notepad",
     "calculator": "calculator",
@@ -308,6 +321,28 @@ def _run_local_action_impl(
             },
         )
         _audit(request, response, approval_status="dry_run")
+        return response
+
+    if _normalise_action_type(request.action_type) in INLINE_CONSENT_ACTIONS:
+        # Keys and mouse are not stageable. A code is consent given up to
+        # PENDING_TTL_SECONDS earlier, and a keystroke lands on whatever holds
+        # focus when it is sent, not when it was approved -- so this door does
+        # not offer one. Synthetic input goes through the action layer, which
+        # asks the caller at the moment it acts.
+        response = LocalActionResponse(
+            ok=False,
+            action_id=None,
+            status="blocked",
+            message=(
+                "Typing, clicking and scrolling need a yes at the moment they "
+                "run, so they cannot be approved with a code."
+            ),
+            approval_required=False,
+            risk_level=risk,
+            evidence={"inline_consent_required": True},
+            error="inline_consent_required",
+        )
+        _audit(request, response, approval_status="blocked")
         return response
 
     if (

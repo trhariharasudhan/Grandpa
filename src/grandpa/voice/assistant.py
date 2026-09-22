@@ -56,9 +56,7 @@ class VoiceCommandProcessor:
     # Voice cannot consent to synthetic input, so its automation service
     # refuses to type, click or scroll -- whichever gate would have asked.
     automation_service: ScreenAutomationService = field(
-        default_factory=lambda: ScreenAutomationService(
-            allow_input=False, origin="voice"
-        ),
+        default_factory=lambda: ScreenAutomationService(allow_input=False),
         repr=False,
     )
     _engine_name: str = field(default="", init=False)

@@ -1478,7 +1478,10 @@ def chat(
 
         from grandpa.automation import ScreenAutomationService
 
-        automation_service = ScreenAutomationService()
+        # Screen Automation asks through chat's own prompt, at the moment it
+        # acts. It used to return "Yes / No" as text and wait for the next turn,
+        # which is consent for a desktop that may have changed since.
+        automation_service = ScreenAutomationService(confirm=_confirm_local_change)
 
         # REPL loop
         while True:

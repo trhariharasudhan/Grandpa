@@ -677,24 +677,34 @@ def test_duplicate_approval_does_not_execute_twice(tmp_path):
     assert rejected.error == "already_completed"
 
 
-@pytest.mark.parametrize(
-    "action_type",
-    [
-        "keyboard_type",
-        "keyboard_hotkey",
-        "mouse_click",
-        "mouse_drag",
-        "browser_form_fill",
-        "browser_download",
-    ],
-)
-def test_synthetic_input_actions_require_approval(action_type):
-    """Synthetic input reaches arbitrary code execution, so it cannot run unattended."""
+@pytest.mark.parametrize("action_type", ["browser_form_fill", "browser_download"])
+def test_browser_actions_on_the_approval_list_are_staged(action_type):
+    """Not input: these still take an approval code, as they always did."""
     result = run_local_action({"action_type": action_type, "target": "x"})
 
     assert result.status == "approval_required"
     assert result.approval_required is True
     assert result.action_id
+
+
+@pytest.mark.parametrize(
+    "action_type",
+    ["keyboard_type", "keyboard_hotkey", "mouse_click", "mouse_drag"],
+)
+def test_synthetic_input_actions_require_approval(action_type):
+    """Synthetic input reaches arbitrary code execution, so this door refuses it.
+
+    It used to be staged here for an approval code. A code is consent given up
+    to PENDING_TTL_SECONDS earlier, and a keystroke lands on whatever holds
+    focus when it is sent -- so input is not stageable at all. It goes through
+    the action layer, which asks the caller as it acts.
+    """
+    result = run_local_action({"action_type": action_type, "target": "x"})
+
+    assert result.status == "blocked"
+    assert result.error == "inline_consent_required"
+    assert result.approval_required is False
+    assert result.action_id is None
 
 
 @pytest.mark.parametrize(
@@ -722,10 +732,12 @@ def test_blocked_hotkey_cannot_be_smuggled_via_empty_keys():
 
 
 @pytest.mark.parametrize("keys", ["ctrl+c", "alt+tab", "win+d"])
-def test_ordinary_hotkeys_still_reach_the_approval_gate(keys):
+def test_ordinary_hotkeys_are_refused_here_too(keys):
+    """Not because of the denylist: this door no longer sends any input."""
     result = run_local_action({"action_type": "keyboard_hotkey", "target": keys})
 
-    assert result.status == "approval_required"
+    assert result.status == "blocked"
+    assert result.error == "inline_consent_required"
 
 
 @pytest.mark.parametrize("action_type", ["mouse_move", "mouse_scroll"])

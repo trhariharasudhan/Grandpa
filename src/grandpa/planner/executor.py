@@ -394,21 +394,17 @@ class PlannerStepExecutor:
             else None
         )
         result = self.pipeline.handle(command)
-        if (
-            confirmed
-            and result.status == "confirmation_required"
-            and result.confirmation_token
-        ):
-            automation = self.automation_service.confirm(result.confirmation_token)
-            converted = _automation_result(step, automation)
-        else:
-            converted = StepResult(
-                result.status,
-                result.message,
-                step.step_id,
-                dict(result.data),
-                result.confirmation_token,
-            )
+        # No re-entry with a token: Screen Automation V2 asks the caller as it
+        # acts, and a plan step confirmed a turn ago is not that caller. A step
+        # that needs consent for input comes back as confirmation_required and
+        # stays there.
+        converted = StepResult(
+            result.status,
+            result.message,
+            step.step_id,
+            dict(result.data),
+            result.confirmation_token,
+        )
         if converted.status == "success" and before is not None:
             after = self._vision_signature()
             converted = StepResult(

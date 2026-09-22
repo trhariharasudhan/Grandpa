@@ -53,9 +53,7 @@ class VoiceRuntime:
     # Voice cannot consent to synthetic input, so its automation service
     # refuses to type, click or scroll -- whichever gate would have asked.
     automation_service: ScreenAutomationService = field(
-        default_factory=lambda: ScreenAutomationService(
-            allow_input=False, origin="voice"
-        ),
+        default_factory=lambda: ScreenAutomationService(allow_input=False),
         repr=False,
     )
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False)
@@ -358,7 +356,7 @@ def _route_voice_request(
 
     pipeline_result = WindowsCommandPipeline(
         automation_service=automation_service
-        or ScreenAutomationService(allow_input=False, origin="voice"),
+        or ScreenAutomationService(allow_input=False),
         source="voice_api",
         session_id=session_id,
     ).handle(command_text, spoken=True)

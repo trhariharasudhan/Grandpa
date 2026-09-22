@@ -7,9 +7,17 @@ from grandpa.cli.automation_cmd import automation
 
 
 class FakeService:
-    def __init__(self) -> None:
+    """The service's side of the new protocol: it asks, then acts, in one call.
+
+    ``confirm`` is the callback the CLI hands over, not a second entry point:
+    there is no token to come back with, because nothing is held for a later
+    turn.
+    """
+
+    def __init__(self, *, confirm=None) -> None:
         self.commands: list[tuple[str, bool]] = []
-        self.confirmed: list[str] = []
+        self.asked: list[str] = []
+        self.confirm = confirm
 
     def handle(
         self,
@@ -20,19 +28,14 @@ class FakeService:
     ) -> AutomationResult:
         self.commands.append((command, dry_run))
         if command.startswith("click") and not dry_run:
-            return AutomationResult(
-                "needs_confirmation",
-                "I found Save. Do you want me to click it? Yes / No",
-                confirmation_token="token",
-            )
+            prompt = "I found Save. Do you want me to click it?"
+            if self.confirm is None or not self.confirm(
+                prompt, "requires_confirmation"
+            ):
+                return AutomationResult("handled", "Automation action cancelled.")
+            self.asked.append(prompt)
+            return AutomationResult("handled", "Clicked.")
         return AutomationResult("handled", "Done.")
-
-    def confirm(self, token: str) -> AutomationResult:
-        self.confirmed.append(token)
-        return AutomationResult("handled", "Clicked.")
-
-    def reject(self, _token: str) -> AutomationResult:
-        return AutomationResult("handled", "Automation action cancelled.")
 
 
 def test_cli_click_confirms_without_real_input(monkeypatch) -> None:
@@ -45,7 +48,7 @@ def test_cli_click_confirms_without_real_input(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert service.commands == [("click Save", False)]
-    assert service.confirmed == ["token"]
+    assert service.asked == ["I found Save. Do you want me to click it?"]
     assert "Clicked." in result.output
 
 
@@ -59,7 +62,7 @@ def test_cli_locate_is_read_only(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert service.commands == [("locate Save button", False)]
-    assert service.confirmed == []
+    assert service.asked == []
 
 
 def test_cli_type_dry_run(monkeypatch) -> None:
@@ -97,6 +100,9 @@ def test_cli_session_retains_and_clears_target(monkeypatch) -> None:
 
     class SessionService(FakeService):
         target_window = None
+
+        def __init__(self, **kwargs) -> None:
+            super().__init__(confirm=kwargs.get("confirm"))
 
         def handle(self, command: str, **_kwargs) -> AutomationResult:
             events.append(command)

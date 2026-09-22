@@ -20,19 +20,24 @@ def _run(
     window: str | None = None,
     service: ScreenAutomationService | None = None,
 ) -> None:
+    # The service asks through this callback, at the moment it acts. It used to
+    # hand back a token for a second call, which meant a yes could arrive long
+    # after the screen it was about to act on had changed.
+    def _ask(prompt: str, _tier: str) -> bool:
+        if yes:
+            return True
+        return bool(click.confirm(f"{prompt} Continue?", default=False))
+
     service = service or get_automation_service()
+    if getattr(service, "confirm", None) is None:
+        # However the service was obtained, it asks through this CLI's prompt.
+        service.confirm = _ask
     result = (
         service.handle(command, dry_run=dry_run, target_window=window)
         if window is not None
         else service.handle(command, dry_run=dry_run)
     )
     click.echo(result.message)
-    if result.status != "needs_confirmation" or not result.confirmation_token:
-        return
-    if not yes and not click.confirm("Continue?", default=False):
-        click.echo(service.reject(result.confirmation_token).message)
-        return
-    click.echo(service.confirm(result.confirmation_token).message)
 
 
 def _execution_options(function):
@@ -148,7 +153,11 @@ def highlight(target: tuple[str, ...]) -> None:
 @automation.command("session")
 def session() -> None:
     """Run a process-local automation session with a pinned target window."""
-    service = ScreenAutomationService()
+
+    def _ask(prompt: str, _tier: str) -> bool:
+        return bool(click.confirm(f"{prompt} Continue?", default=False))
+
+    service = ScreenAutomationService(confirm=_ask)
     click.echo("Grandpa Automation Session")
     click.echo("Target window: none")
     while True:

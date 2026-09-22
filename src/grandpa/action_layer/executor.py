@@ -29,7 +29,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
-from grandpa.action_layer.catalogue import ActionSpec, Binding, Confirmation, get
+from grandpa.action_layer.catalogue import (
+    AUTOMATION_IMPLEMENTATION,
+    ActionSpec,
+    Binding,
+    Confirmation,
+    get,
+)
 from grandpa.action_layer.model import ActionRequest, ActionResult, RiskLevel
 
 __all__ = ["ConfirmCallback", "audit_log_path", "execute"]
@@ -737,6 +743,22 @@ def execute(
         return result
 
     parameters = _resolved_parameters(spec, request.parameters)
+
+    if spec.implementation == AUTOMATION_IMPLEMENTATION and confirm_callback is None:
+        # Synthetic input needs someone who *can* be asked, whatever the tier
+        # says. Scrolling and pointer moves ask for nothing -- neither activates
+        # anything -- but a caller with no callback cannot consent to input at
+        # all, and that caller is voice. Here rather than in one front end, so a
+        # tranche that maps a new input action onto the layer inherits it.
+        result = ActionResult.failed(
+            CONFIRMATION_REQUIRED,
+            message=(
+                f"{spec.name} needs a yes at the moment it runs, and there is no "
+                "way to ask for one here, so nothing was done."
+            ),
+        )
+        _audit(request, risk=spec.risk, confirmed=None, result=result)
+        return result
 
     # The catalogue decides, and a caller may only be stricter, never looser.
     confirmed: bool | None = None

@@ -6,7 +6,6 @@ from types import SimpleNamespace
 
 import pytest
 
-from grandpa.automation.confirmation import ConfirmationManager
 from grandpa.automation.executor import AutomationExecutor
 from grandpa.automation.locator import HighlightOverlay, ScreenElementLocator
 from grandpa.automation.models import (
@@ -193,6 +192,16 @@ class DialogWindowTargets:
         )
 
 
+def _yes(_prompt: str, _tier: str = "") -> bool:
+    """Screen Automation asks inline now; these tests answer yes.
+
+    The two-turn token flow these tests were written against is gone: a
+    confirmation held for a later turn is consent for a desktop that may have
+    changed, so the service asks the caller as it acts.
+    """
+    return True
+
+
 def element(text: str = "Save", confidence: float = 0.93) -> LocatedElement:
     return LocatedElement(
         text,
@@ -332,8 +341,16 @@ def test_executor_locates_highlights_then_builds_mocked_click() -> None:
     assert highlights == []
 
 
-def test_service_confirmation_is_single_use_and_no_real_click_occurs() -> None:
+def test_a_click_asks_once_and_clicks_once() -> None:
+    """One question, one click, one turn.
+
+    This used to be a single-use token: handle() returned needs_confirmation,
+    and confirm(token) did the click. There is no token now -- a confirmation
+    kept for a later turn is consent for a screen that may have changed -- so
+    nothing can be reused, and asking twice means two clicks.
+    """
     calls: list[dict] = []
+    asked: list[str] = []
     fake_element = element("Delete")
     executor = AutomationExecutor(
         runner=lambda payload: calls.append(payload) or FakeResponse(),
@@ -341,26 +358,21 @@ def test_service_confirmation_is_single_use_and_no_real_click_occurs() -> None:
         highlighter=HighlightOverlay(lambda _item, _duration: None),
     )
     service = ScreenAutomationService(
+        confirm=lambda prompt, _tier: asked.append(prompt) or True,
         executor=executor,
-        confirmations=ConfirmationManager(),
         window_targets=FakeWindowTargets(),
     )
 
-    pending = service.handle("click Delete", target_window="Notepad")
-    assert pending.status == "needs_confirmation"
-    assert pending.confirmation_token
-    assert calls == []
+    result = service.handle("click Delete", target_window="Notepad")
 
-    completed = service.confirm(pending.confirmation_token)
-    assert completed.status == "handled"
-    assert len(calls) == 1
-
-    reused = service.confirm(pending.confirmation_token)
-    assert reused.status == "error"
+    assert result.status == "handled"
+    assert not result.confirmation_token
+    assert len(asked) == 1, asked
     assert len(calls) == 1
 
 
-def test_service_accepts_explicit_yes_on_next_turn() -> None:
+def test_a_later_yes_is_not_an_answer_to_anything() -> None:
+    """The next turn's "yes" cannot complete an action, because none is waiting."""
     calls: list[dict] = []
     executor = AutomationExecutor(
         runner=lambda payload: calls.append(payload) or FakeResponse(),
@@ -368,26 +380,27 @@ def test_service_accepts_explicit_yes_on_next_turn() -> None:
         highlighter=HighlightOverlay(lambda _item, _duration: None),
     )
     service = ScreenAutomationService(
-        executor=executor, window_targets=FakeWindowTargets()
+        confirm=_yes, executor=executor, window_targets=FakeWindowTargets()
     )
 
-    pending = service.handle("click Save", target_window="Notepad")
-    completed = service.handle("yes")
+    asked_and_done = service.handle("click Save", target_window="Notepad")
+    later = service.handle("yes")
 
-    assert pending.status == "needs_confirmation"
-    assert completed.status == "handled"
-    assert len(calls) == 1
+    assert asked_and_done.status == "handled"
+    assert len(calls) == 1, "the click happened in the turn it was asked for"
+    assert later.status == "no_match", later
+    assert len(calls) == 1, "a later yes clicked something"
 
 
 def test_yes_without_pending_does_not_match_automation() -> None:
-    service = ScreenAutomationService()
+    service = ScreenAutomationService(confirm=_yes)
     assert service.handle("yes").status == "no_match"
 
 
 def test_automation_log_does_not_include_typed_text(caplog) -> None:
     executor = AutomationExecutor(runner=lambda _payload: FakeResponse())
     service = ScreenAutomationService(
-        executor=executor, window_targets=FakeWindowTargets()
+        confirm=_yes, executor=executor, window_targets=FakeWindowTargets()
     )
 
     with caplog.at_level(logging.INFO, logger="grandpa.automation.service"):
@@ -476,6 +489,7 @@ def test_explicit_target_is_verified_before_typing() -> None:
     calls: list[dict] = []
     targets = FakeWindowTargets()
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -493,6 +507,7 @@ def test_explicit_target_is_verified_before_typing() -> None:
 def test_press_enter_and_coordinate_move_use_existing_pc_control_payloads() -> None:
     calls: list[dict] = []
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -515,6 +530,7 @@ def test_focus_failure_and_terminal_focus_prevent_typing() -> None:
     calls: list[dict] = []
     targets = FakeWindowTargets(ok=False, actual_title="Windows Terminal")
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -533,6 +549,7 @@ def test_confirmation_revalidates_target_before_click() -> None:
     calls: list[dict] = []
     targets = FakeWindowTargets()
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse(),
             locator=FakeLocator(element("Save")),
@@ -542,7 +559,7 @@ def test_confirmation_revalidates_target_before_click() -> None:
     )
 
     pending = service.handle("click Save", target_window="Notepad")
-    result = service.confirm(pending.confirmation_token or "")
+    result = pending
 
     assert result.status == "handled"
     assert targets.calls == [("Notepad", False), ("Notepad", False)]
@@ -553,6 +570,7 @@ def test_pinned_target_is_session_local() -> None:
     calls: list[dict] = []
     targets = FakeWindowTargets()
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -566,6 +584,7 @@ def test_pinned_target_is_session_local() -> None:
     assert service.handle("press enter").status == "blocked"
 
     fresh = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -577,6 +596,7 @@ def test_pinned_target_is_session_local() -> None:
 def test_pinned_target_reuses_window_handle_instead_of_title_lookup() -> None:
     targets = TrackingWindowTargets()
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(runner=lambda _payload: FakeResponse()),
         window_targets=targets,
     )
@@ -595,6 +615,7 @@ def test_foreground_change_after_typing_returns_target_lost_and_clears_target() 
     targets = TrackingWindowTargets(drift_after_action=True)
     calls: list[dict] = []
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -627,6 +648,7 @@ def test_closed_pinned_window_stops_before_sending_more_input() -> None:
         timeout=0,
     )
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -661,7 +683,7 @@ def test_multiple_similar_windows_return_friendly_ambiguity(monkeypatch) -> None
         ),
     )
     service = ScreenAutomationService(
-        window_targets=WindowTargetController(resolve_func=resolve_window)
+        confirm=_yes, window_targets=WindowTargetController(resolve_func=resolve_window)
     )
 
     result = service.handle("focus Notepad")
@@ -699,7 +721,7 @@ def test_ambiguity_followups_select_by_ordinal_or_exact_title() -> None:
             return WindowVerification(True, "Focused.", target, target)
 
     targets = AmbiguousTargets()
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
 
     assert service.handle("focus Notepad").status == "ambiguous"
     chosen = service.handle("focus option two")
@@ -725,8 +747,12 @@ def test_window_ambiguity_is_isolated_per_session() -> None:
                 )
             return WindowVerification(True, "Focused.", target, target)
 
-    first_session = ScreenAutomationService(window_targets=AmbiguousTargets())
-    second_session = ScreenAutomationService(window_targets=AmbiguousTargets())
+    first_session = ScreenAutomationService(
+        confirm=_yes, window_targets=AmbiguousTargets()
+    )
+    second_session = ScreenAutomationService(
+        confirm=_yes, window_targets=AmbiguousTargets()
+    )
 
     assert first_session.handle("focus Notepad").status == "ambiguous"
     assert second_session.handle("choose the first one").status == "no_match"
@@ -753,14 +779,13 @@ def test_close_uses_pinned_hwnd_requires_confirmation_and_verifies() -> None:
             )
 
     targets = CloseTargets()
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
 
     assert service.handle("focus Notepad").status == "handled"
-    pending = service.handle("Close Notepad")
-    assert pending.status == "needs_confirmation"
-    assert targets.closed == []
 
-    closed = service.handle("yes")
+    # Asked and closed in one turn: the "yes" used to arrive on the next one.
+    closed = service.handle("Close Notepad")
+
     assert closed.status == "handled"
     assert closed.message == "Closed Notepad."
     assert closed.data["verified"] is True
@@ -778,11 +803,9 @@ def test_close_failure_is_not_reported_as_success() -> None:
         def close_and_verify(self, selected, *, dry_run: bool = False):
             return WindowVerification(False, "Notepad did not close.", selected)
 
-    service = ScreenAutomationService(window_targets=CloseTargets())
+    service = ScreenAutomationService(confirm=_yes, window_targets=CloseTargets())
     assert service.handle("focus Notepad").status == "handled"
-    pending = service.handle("close Notepad")
-
-    result = service.confirm(pending.confirmation_token or "")
+    result = service.handle("close Notepad")
 
     assert result.status == "failed"
     assert result.message == "Notepad did not close."
@@ -791,11 +814,10 @@ def test_close_failure_is_not_reported_as_success() -> None:
 
 def test_unsaved_notepad_returns_verified_pending_dialog() -> None:
     targets = DialogWindowTargets()
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
     assert service.handle("focus Notepad").status == "handled"
 
-    pending = service.handle("close Notepad")
-    result = service.confirm(pending.confirmation_token or "")
+    result = service.handle("close Notepad")
 
     assert result.status == "dialog_pending"
     assert result.message == (
@@ -813,10 +835,9 @@ def test_unsaved_notepad_returns_verified_pending_dialog() -> None:
 
 def test_dont_save_closes_verified_notepad_and_clears_target() -> None:
     targets = DialogWindowTargets(response_status="closed")
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
     service.handle("focus Notepad")
-    pending = service.handle("close Notepad")
-    service.confirm(pending.confirmation_token or "")
+    service.handle("close Notepad")
 
     result = service.handle("don't save")
 
@@ -830,10 +851,9 @@ def test_dont_save_closes_verified_notepad_and_clears_target() -> None:
 
 def test_save_transitions_to_save_as_pending_state() -> None:
     targets = DialogWindowTargets(response_status="save_as_pending")
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
     service.handle("focus Notepad")
-    pending = service.handle("close Notepad")
-    service.confirm(pending.confirmation_token or "")
+    service.handle("close Notepad")
 
     result = service.handle("save changes")
 
@@ -848,10 +868,9 @@ def test_save_transitions_to_save_as_pending_state() -> None:
 
 def test_save_as_accepts_path_and_avoids_unconfirmed_overwrite(tmp_path) -> None:
     targets = DialogWindowTargets(response_status="save_as_pending")
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
     service.handle("focus Notepad")
-    pending = service.handle("close Notepad")
-    service.confirm(pending.confirmation_token or "")
+    service.handle("close Notepad")
     service.handle("save")
 
     path = tmp_path / "note.txt"
@@ -863,27 +882,24 @@ def test_save_as_accepts_path_and_avoids_unconfirmed_overwrite(tmp_path) -> None
 
     path.write_text("existing", encoding="utf-8")
     second_targets = DialogWindowTargets(response_status="save_as_pending")
-    second = ScreenAutomationService(window_targets=second_targets)
+    second = ScreenAutomationService(confirm=_yes, window_targets=second_targets)
     second.handle("focus Notepad")
-    close_pending = second.handle("close Notepad")
-    second.confirm(close_pending.confirmation_token or "")
+    second.handle("close Notepad")
     second.handle("save")
 
+    # The overwrite is asked for and done in the same turn, with
+    # allow_overwrite=True, rather than held for a yes on the next one.
     overwrite = second.handle(str(path))
-    assert overwrite.status == "needs_confirmation"
-    assert second_targets.saved_paths == []
 
-    completed = second.handle("yes")
-    assert completed.status == "handled"
+    assert overwrite.status == "handled"
     assert second_targets.saved_paths == [(str(path), True)]
 
 
 def test_cancel_dialog_preserves_pinned_notepad() -> None:
     targets = DialogWindowTargets(response_status="cancelled")
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
     service.handle("focus Notepad")
-    pending = service.handle("close Notepad")
-    service.confirm(pending.confirmation_token or "")
+    service.handle("close Notepad")
 
     result = service.handle("cancel")
 
@@ -895,10 +911,9 @@ def test_cancel_dialog_preserves_pinned_notepad() -> None:
 
 def test_failed_dialog_action_never_reports_success() -> None:
     targets = DialogWindowTargets(response_status="failed")
-    service = ScreenAutomationService(window_targets=targets)
+    service = ScreenAutomationService(confirm=_yes, window_targets=targets)
     service.handle("focus Notepad")
-    pending = service.handle("close Notepad")
-    service.confirm(pending.confirmation_token or "")
+    service.handle("close Notepad")
 
     result = service.handle("discard changes")
 
@@ -908,11 +923,10 @@ def test_failed_dialog_action_never_reports_success() -> None:
 
 
 def test_pending_dialog_state_is_session_local() -> None:
-    first = ScreenAutomationService(window_targets=DialogWindowTargets())
-    second = ScreenAutomationService(window_targets=DialogWindowTargets())
+    first = ScreenAutomationService(confirm=_yes, window_targets=DialogWindowTargets())
+    second = ScreenAutomationService(confirm=_yes, window_targets=DialogWindowTargets())
     first.handle("focus Notepad")
-    pending = first.handle("close Notepad")
-    first.confirm(pending.confirmation_token or "")
+    first.handle("close Notepad")
 
     assert first.has_pending_dialog is True
     assert second.has_pending_dialog is False
@@ -1020,6 +1034,7 @@ def test_chat_retains_target_within_one_session() -> None:
 
     calls: list[dict] = []
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(
             runner=lambda payload: calls.append(payload) or FakeResponse()
         ),
@@ -1052,6 +1067,7 @@ def test_voice_retains_target_within_one_session() -> None:
         return FakeResponse()
 
     service = ScreenAutomationService(
+        confirm=_yes,
         executor=AutomationExecutor(runner=runner),
         window_targets=FakeWindowTargets(),
     )

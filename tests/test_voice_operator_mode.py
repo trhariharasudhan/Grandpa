@@ -348,10 +348,12 @@ def test_voice_dialog_prompt_hides_native_ids_and_routes_followup() -> None:
                 dialog,
             )
 
-    service = ScreenAutomationService(window_targets=DialogTargets())
+    # A caller that can be asked; the close and its dialog happen in one turn.
+    service = ScreenAutomationService(
+        window_targets=DialogTargets(), confirm=lambda *_a: True
+    )
     service.handle("focus Notepad")
-    pending = service.handle("close Notepad")
-    result = service.confirm(pending.confirmation_token or "")
+    result = service.handle("close Notepad")
 
     assert result.message == (
         "Notepad has unsaved changes. Save, don't save, or cancel?"
@@ -1201,18 +1203,17 @@ def test_voice_operator_pending_confirmation_yes_executes_action() -> None:
     automation_service = ScreenAutomationService(window_targets=MockWindowTargets())
     responder = VoiceOperatorResponder(automation_service=automation_service)
 
-    # Turn 1: "close notepad" -> triggers confirmation prompt
+    # Screen Automation asks the caller as it acts, and operator mode has no way
+    # to be asked, so it refuses rather than holding the close for a spoken yes.
+    # Voice still closes windows through its main route, where the action layer
+    # stages it against the "voice" origin (test_voice_yes_resolves_pending_action).
     turn1 = responder.handle_user_input("close notepad")
-    assert turn1.status in {"handled", "needs_confirmation"}
-    assert "Unsaved work may be lost" in turn1.text or "Yes / No" in turn1.text
-    assert automation_service.has_pending_confirmation is True
-
-    # Turn 2: "yes" -> confirms and executes exact close window
-    turn2 = responder.handle_user_input("yes")
-    assert turn2.status == "handled"
-    assert "Closed Notepad" in turn2.text
-    assert len(closed_targets) == 1
+    assert closed_targets == []
     assert automation_service.has_pending_confirmation is False
+
+    turn2 = responder.handle_user_input("yes")
+    assert closed_targets == [], "a later yes closed the window"
+    assert turn1.text or turn2.text
 
 
 def test_voice_operator_pending_confirmation_no_cancels_action() -> None:
@@ -1238,15 +1239,13 @@ def test_voice_operator_pending_confirmation_no_cancels_action() -> None:
     automation_service = ScreenAutomationService(window_targets=MockWindowTargets())
     responder = VoiceOperatorResponder(automation_service=automation_service)
 
-    # Turn 1: "close notepad"
-    _ = responder.handle_user_input("close notepad")
-    assert automation_service.has_pending_confirmation is True
-
-    # Turn 2: "no" -> cancels action
-    turn2 = responder.handle_user_input("no")
-    assert "cancelled" in turn2.text.lower() or "rejected" in turn2.text.lower()
-    assert len(closed_targets) == 0
+    # Nothing is held for a later answer, so "no" has nothing to cancel -- and
+    # either way the window is not closed.
+    responder.handle_user_input("close notepad")
     assert automation_service.has_pending_confirmation is False
+
+    responder.handle_user_input("no")
+    assert closed_targets == []
 
 
 def test_voice_operator_stop_listening_with_punctuation() -> None:

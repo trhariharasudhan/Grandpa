@@ -140,9 +140,37 @@ class LocatorResolutionError(RuntimeError):
 
 
 def _default_runner(payload: dict[str, Any]) -> Any:
-    from grandpa.pc_control import run_local_action
+    """Perform one input action through the action layer.
 
-    return run_local_action(payload)
+    Not pc_control: it refuses synthetic input at its own door now, because a
+    code is consent from minutes ago. The service above has already asked the
+    caller, in this turn, so the layer is told the consent is held -- and the
+    layer still applies the catalogue's schema and the automation service's
+    denylists, protected-window check and cooldown.
+    """
+    from grandpa.action_layer.catalogue import get
+    from grandpa.action_layer.executor import execute
+    from grandpa.action_layer.model import ActionRequest, Origin
+
+    action = str(payload.get("action_type") or "")
+    spec = get(action)
+    if spec is None:
+        from grandpa.pc_control import run_local_action
+
+        return run_local_action(payload)
+    parameters = dict(payload.get("args") or {})
+    if spec.target_parameter and payload.get("target"):
+        parameters.setdefault(spec.target_parameter, payload["target"])
+    return execute(
+        ActionRequest(
+            action,
+            parameters,
+            origin=Origin.USER_CHAT,
+            risk=spec.risk,
+            requires_confirmation=spec.requires_confirmation,
+        ),
+        lambda *_a, **_k: True,
+    )
 
 
 def _result_from_response(

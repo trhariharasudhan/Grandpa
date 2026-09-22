@@ -624,7 +624,6 @@ def execute_voice_operator_intent(
                 else AutomationExecutor(runner=action_runner)
             ),
             allow_input=False,
-            origin="voice",
         )
         result = service.handle(
             _automation_command_from_intent(intent), dry_run=dry_run
@@ -938,7 +937,6 @@ class VoiceOperatorResponder:
             self.automation_service = ScreenAutomationService(
                 executor=AutomationExecutor(runner=self.action_runner),
                 allow_input=False,
-                origin="voice",
             )
 
     def handle_user_input(self, text: str) -> VoiceOperatorTurnResponse:
@@ -972,7 +970,6 @@ def process_voice_operator_turn(
         automation_service = ScreenAutomationService(
             executor=AutomationExecutor(runner=action_runner),
             allow_input=False,
-            origin="voice",
         )
 
     raw_text = str(text or "").strip()
