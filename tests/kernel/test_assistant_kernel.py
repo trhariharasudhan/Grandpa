@@ -8,7 +8,6 @@ from grandpa.kernel.compat import (
     BasicRequestNormalizer,
     EventBusAuditSink,
     IdentityResponseRenderer,
-    InMemoryConfirmationService,
     LightweightContextProvider,
     ListDirectoryIntentClassifier,
     ListDirectoryPlanner,
@@ -32,6 +31,7 @@ from grandpa.kernel.models import (
     VerificationResult,
     VerificationStatus,
 )
+from tests.kernel.in_memory_confirmations import InMemoryConfirmationService
 
 
 class RecordingPolicy(ListDirectoryPolicy):

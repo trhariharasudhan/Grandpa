@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import re
-import secrets
 import uuid
 from dataclasses import replace
-from datetime import timedelta
 from pathlib import Path
 
 from grandpa.core.events import EventBus, EventType, get_event_bus
 from grandpa.kernel.assistant import AssistantKernel
+from grandpa.kernel.confirmations import StoredConfirmationService
 from grandpa.kernel.errors import (
     IntentClassificationError,
     RequestNormalizationError,
@@ -34,21 +33,19 @@ from grandpa.kernel.files import (
     ListDirectoryVerifier,
     SingleToolRegistry,
 )
+from grandpa.kernel.interfaces import ConfirmationService
 from grandpa.kernel.models import (
     AssistantContext,
     AssistantRequest,
     AssistantResponse,
     AuditEvent,
-    ConfirmationRequest,
     ExecutionPlan,
     Intent,
     PlannedAction,
-    PolicyDecision,
     ToolResult,
     VerificationResult,
     VerificationSpec,
     model_to_dict,
-    utc_now,
 )
 
 
@@ -251,51 +248,6 @@ class ExistingReadOnlyFilePlanner:
         )
 
 
-class InMemoryConfirmationService:
-    """Single-process exact-action confirmation for compatibility tests only."""
-
-    def __init__(self, *, ttl_seconds: int = 120) -> None:
-        self._ttl_seconds = ttl_seconds
-        self._pending: dict[str, ConfirmationRequest] = {}
-
-    def issue(
-        self,
-        request: AssistantRequest,
-        action: PlannedAction,
-        decision: PolicyDecision,
-    ) -> ConfirmationRequest:
-        confirmation = ConfirmationRequest(
-            token=secrets.token_urlsafe(24),
-            request_id=request.request_id,
-            session_id=request.session_id,
-            action_id=action.action_id,
-            action_digest=decision.action_digest,
-            expires_at=utc_now() + timedelta(seconds=self._ttl_seconds),
-        )
-        self._pending[confirmation.token] = confirmation
-        return confirmation
-
-    def validate(
-        self,
-        token: str,
-        request: AssistantRequest,
-        action: PlannedAction,
-        decision: PolicyDecision,
-    ) -> bool:
-        confirmation = self._pending.get(token)
-        valid = bool(
-            confirmation
-            and confirmation.expires_at > utc_now()
-            and confirmation.request_id == request.request_id
-            and confirmation.session_id == request.session_id
-            and confirmation.action_id == action.action_id
-            and confirmation.action_digest == decision.action_digest
-        )
-        if valid:
-            self._pending.pop(token, None)
-        return valid
-
-
 class EventBusAuditSink:
     """Compatibility adapter; durable audit ownership remains unchanged."""
 
@@ -330,7 +282,7 @@ class IdentityResponseRenderer:
 def build_list_directory_kernel(
     *,
     bus: EventBus | None = None,
-    confirmations: InMemoryConfirmationService | None = None,
+    confirmations: ConfirmationService | None = None,
 ) -> AssistantKernel:
     """Build the isolated Phase 1 harness without changing production routing."""
 
@@ -341,7 +293,7 @@ def build_list_directory_kernel(
         context_provider=LightweightContextProvider(),
         planner=ListDirectoryPlanner(),
         policy=ListDirectoryPolicy(),
-        confirmations=confirmations or InMemoryConfirmationService(),
+        confirmations=confirmations or StoredConfirmationService(),
         tools=SingleToolRegistry(),
         executor=ListDirectoryExecutor(),
         verifier=ListDirectoryVerifier(),
@@ -365,7 +317,7 @@ def build_read_only_file_kernel(
         context_provider=ExistingReadOnlyFileContextProvider(roots),
         planner=ExistingReadOnlyFilePlanner(),
         policy=FileReadOnlyPolicy(),
-        confirmations=InMemoryConfirmationService(),
+        confirmations=StoredConfirmationService(),
         tools=FileReadOnlyToolRegistry(),
         executor=FileReadOnlyExecutor(),
         verifier=FileReadOnlyVerifier(),
@@ -392,7 +344,7 @@ def build_file_compatibility_kernel(
         context_provider=ExistingReadOnlyFileContextProvider(roots, include_write=True),
         planner=ExistingReadOnlyFilePlanner(),
         policy=FileCompatibilityPolicy(),
-        confirmations=InMemoryConfirmationService(),
+        confirmations=StoredConfirmationService(),
         tools=FileCompatibilityToolRegistry(),
         executor=FileCompatibilityExecutor(),
         verifier=FileCompatibilityVerifier(),
