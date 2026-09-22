@@ -50,7 +50,10 @@ def _input_actions() -> list[str]:
     )
     found = []
     for name in names:
-        spec = get(name)
+        try:
+            spec = get(name)
+        except KeyError:
+            continue  # excluded from the catalogue on purpose
         if spec is not None and spec.implementation == AUTOMATION_IMPLEMENTATION:
             found.append(name)
     return found

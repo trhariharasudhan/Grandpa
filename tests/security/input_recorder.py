@@ -211,6 +211,54 @@ def install(monkeypatch) -> InputRecorder:
     monkeypatch.setattr(resolver, "launch_app", _refuse_launch("launch_app"))
     swapped.append((resolver, "launch_app"))
 
+    # Machine state that is neither input nor a launch: volume, brightness,
+    # locking the screen, sleep, shutdown, emptying the Recycle Bin. A probe in
+    # this session set the real master volume to 30% and locked a real screen,
+    # because the recorder covered only keys, mouse and launches.
+    import grandpa.desktop.control.power as power
+
+    def _recorded_response(label: str):
+        """Record, and answer in the shape pc_control expects back."""
+        record = rec.recorder(label)
+
+        def perform(*args: Any, **kwargs: Any) -> Any:
+            from grandpa.pc_control import LocalActionResponse
+
+            record(*args, **kwargs)
+            return LocalActionResponse(
+                ok=True,
+                action_id=None,
+                status="completed",
+                message=f"{label} recorded, not performed.",
+                approval_required=False,
+                risk_level="LOW",
+            )
+
+        perform.__input_recorder__ = label  # type: ignore[attr-defined]
+        return perform
+
+    for name in (
+        "execute_volume",
+        "execute_brightness",
+        "execute_system",
+        "execute_empty_recycle_bin",
+    ):
+        assert hasattr(power.PowerControlService, name), (
+            f"PowerControlService.{name} moved; update the recorder"
+        )
+        monkeypatch.setattr(
+            power.PowerControlService, name, _recorded_response(f"power.{name}")
+        )
+        swapped.append((power.PowerControlService, name))
+    if sys.platform == "win32":
+        for name in ("LockWorkStation", "ExitWindowsEx", "SetThreadExecutionState"):
+            swap(ctypes.windll.user32, name, f"user32.{name}")
+        swap(ctypes.windll.shell32, "SHEmptyRecycleBinW", "shell32.SHEmptyRecycleBinW")
+        try:
+            swap(ctypes.windll.powrprof, "SetSuspendState", "powrprof.SetSuspendState")
+        except (AttributeError, OSError):  # pragma: no cover - not every build
+            pass
+
     # The reads that decide whether there is anything to act on: one Notepad.
     import grandpa.automation.windows as targets
     import grandpa.windows_window_control as wc
