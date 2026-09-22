@@ -10,7 +10,13 @@ import pytest
 
 from tests.e2e.harness import run_cli_recording_launches
 
-pytestmark = pytest.mark.e2e
+# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
+pytestmark = [
+    pytest.mark.e2e,
+    pytest.mark.real_actions(
+        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
+    ),
+]
 
 # Phrases that navigate, with the address the user must be shown.
 NAVIGATION = [
