@@ -1281,9 +1281,9 @@ async def pending_local_actions():
 @router.post("/v1/local-actions/{action_id}/approve")
 async def approve_local_action(action_id: str):
     """Approve and run a pending local action."""
-    from grandpa.local_actions import approve_pending_action
+    from grandpa.deferred_actions import approve
 
-    result = approve_pending_action(action_id, origin="http")
+    result = approve(action_id, origin="http")
     return {
         "message": result.message,
         "local_action": {
@@ -1300,9 +1300,9 @@ async def approve_local_action(action_id: str):
 @router.post("/v1/local-actions/{action_id}/deny")
 async def deny_local_action(action_id: str):
     """Deny a pending local action."""
-    from grandpa.local_actions import deny_pending_action
+    from grandpa.deferred_actions import deny
 
-    result = deny_pending_action(action_id, origin="http")
+    result = deny(action_id, origin="http")
     return {
         "message": result.message,
         "local_action": {

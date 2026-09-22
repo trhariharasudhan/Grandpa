@@ -453,109 +453,19 @@ def approve_pending_action(
     confirm: ConfirmationCallback | None = None,
     origin: str | None = None,
 ) -> LocalActionResult:
-    """Run the one action ``origin`` staged, if there is one.
+    """Run the one action ``origin`` staged. Kept for the yes/no words below."""
+    from grandpa.deferred_actions import approve
 
-    Approvals live in the kernel's store (``grandpa.desktop.kernel.approvals``),
-    bound to the origin that staged them. No origin, no approval: a "yes" from
-    a caller that never opted into deferred consent has nothing to approve, and
-    a "yes" from one origin cannot reach an action staged by another.
-    """
-    from grandpa.desktop.kernel import approvals
-
-    claimed = (
-        approvals.approve_deferred(origin=origin, action_id=action_id)
-        if origin
-        else None
-    )
-    if claimed is None:
-        return LocalActionResult(
-            status="unsupported",
-            kind="blocked",
-            target=action_id or "",
-            message="There is no pending local action to approve.",
-            tts_text="There is no pending action.",
-            permission="unsupported",
-        )
-    payload = claimed.get("payload") or {}
-    metadata = _pending_metadata(claimed, status="approved")
-    staged = LocalActionResult(
-        status="handled",
-        kind=payload.get("kind"),
-        target=str(payload.get("target") or ""),
-        message=str(payload.get("message") or ""),
-        tts_text=str(payload.get("tts_text") or ""),
-        permission="allowed",
-        pending_action=metadata,
-    )
-    if staged.kind in {"app", "folder", "url", "browser"} and sys.platform != "win32":
-        result = LocalActionResult(
-            status="unsupported",
-            kind=staged.kind,
-            target=staged.target,
-            message="Windows local actions are not supported in this environment.",
-            tts_text="Windows local actions are not supported here.",
-            permission="unsupported",
-            pending_action=metadata,
-        )
-    else:
-        try:
-            executed = _execute(staged, confirm=confirm, consented=True)
-            result = LocalActionResult(
-                status=executed.status,
-                kind=executed.kind,
-                target=executed.target,
-                message=executed.message,
-                tts_text=executed.tts_text,
-                permission="allowed",
-                pending_action=metadata,
-            )
-        except Exception:  # pragma: no cover - defensive edge
-            result = LocalActionResult(
-                status="error",
-                kind=staged.kind,
-                target=staged.target,
-                message="I couldn't complete that local action.",
-                tts_text="I could not complete that local action.",
-                permission="allowed",
-                pending_action=metadata,
-            )
-    source_text = str(payload.get("source_text") or staged.target)
-    _audit_decision(source_text, result, "approved")
-    _log_attempt(source_text, result)
-    return result
+    return approve(action_id, origin=origin, confirm=confirm)
 
 
 def deny_pending_action(
     action_id: str | None = None, *, origin: str | None = None
 ) -> LocalActionResult:
-    from grandpa.desktop.kernel import approvals
+    """Refuse the one action ``origin`` staged. Kept for the yes/no words below."""
+    from grandpa.deferred_actions import deny
 
-    claimed = (
-        approvals.deny_deferred(origin=origin, action_id=action_id) if origin else None
-    )
-    if claimed is None:
-        return LocalActionResult(
-            status="unsupported",
-            kind="blocked",
-            target=action_id or "",
-            message="There is no pending local action to cancel.",
-            tts_text="There is no pending action.",
-            permission="unsupported",
-        )
-    payload = claimed.get("payload") or {}
-    result = LocalActionResult(
-        status="cancelled",
-        kind=payload.get("kind"),
-        target=str(payload.get("target") or ""),
-        message=CANCELLED_MESSAGE,
-        tts_text=CANCELLED_MESSAGE,
-        permission="requires_confirmation",
-        pending_action=_pending_metadata(claimed, status="denied"),
-    )
-    source_text = str(payload.get("source_text") or result.target)
-    _audit_decision(source_text, result, "denied")
-    _log_attempt(source_text, result)
-    return result
+    return deny(action_id, origin=origin)
 
 
 def _handle_confirmation_command(
