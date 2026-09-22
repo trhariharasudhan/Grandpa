@@ -2,8 +2,15 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from grandpa import local_actions, windows_app_resolver
 from grandpa.windows_app_resolver import AppResolution, AppResolverCache, resolve_app
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
 
 
 def test_resolve_app_from_common_path(tmp_path: Path, monkeypatch) -> None:

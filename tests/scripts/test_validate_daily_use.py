@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import argparse
 
+import pytest
 from scripts.validate_daily_use import (
     ValidationStep,
     _run_step,
     build_steps,
+)
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
 )
 
 

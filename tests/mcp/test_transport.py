@@ -20,6 +20,11 @@ from grandpa.mcp.transport import (
 from grandpa.tools.calculator import CalculatorTool
 from grandpa.tools.think import ThinkTool
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
+
 
 @pytest.fixture
 def server():

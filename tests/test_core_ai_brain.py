@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from grandpa.core_ai_brain import (
     BrainAnalysis,
     BrainStore,
@@ -10,6 +12,11 @@ from grandpa.core_ai_brain import (
     record_assistant_outcome,
 )
 from grandpa.memory_context import MemoryStore, handle_memory_command
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+)
 
 
 def test_follow_up_resolves_close_that(tmp_path):

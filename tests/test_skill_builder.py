@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -17,6 +18,11 @@ from grandpa.skill_builder.validator import (
     validate_skill_definition,
 )
 from grandpa.skills.registry import ensure_default_skills_registered, get_skill
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
 
 
 def test_create_user_skill_uses_safe_template(monkeypatch, tmp_path) -> None:

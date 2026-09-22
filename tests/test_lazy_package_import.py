@@ -6,7 +6,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 import tomllib
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
 
 
 def test_top_level_import_does_not_eagerly_load_sdk() -> None:

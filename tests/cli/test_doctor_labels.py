@@ -6,9 +6,15 @@ import json
 import traceback
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner, Result
 
 from grandpa.cli import cli
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
 
 
 def _describe(result: Result) -> str:

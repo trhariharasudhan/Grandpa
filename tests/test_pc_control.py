@@ -15,6 +15,11 @@ from grandpa.pc_control import run_local_action
 from grandpa.windows_app_resolver import AppResolution
 from grandpa.windows_window_control import WindowControlResult
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
+
 
 @pytest.fixture(autouse=True)
 def _isolated_pc_control(tmp_path, monkeypatch):

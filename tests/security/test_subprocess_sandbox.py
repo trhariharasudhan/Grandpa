@@ -6,10 +6,17 @@ import os
 import sys
 import tempfile
 
+import pytest
+
 from grandpa.security.subprocess_sandbox import (
     build_safe_env,
     kill_process_tree,
     run_sandboxed,
+)
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
 )
 
 # ---------------------------------------------------------------------------

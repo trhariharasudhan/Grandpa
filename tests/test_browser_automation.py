@@ -14,6 +14,11 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
+)
+
 
 def test_parser_open_known_website() -> None:
     action = BrowserParser().parse("Open YouTube")

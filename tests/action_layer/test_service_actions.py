@@ -24,6 +24,11 @@ from grandpa.core.runtime_context import (
 from grandpa.gmail.models import GmailActionType
 from grandpa.web_search.models import WebSearchActionType
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME; reads the real clock"
+)
+
 
 @pytest.fixture(autouse=True)
 def audit_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

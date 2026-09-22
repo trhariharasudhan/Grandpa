@@ -6,7 +6,13 @@ import grandpa.local_actions as local_actions
 from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.local_actions import BLOCKED_MESSAGE, handle_local_action
 
-pytestmark = pytest.mark.core
+# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
+pytestmark = [
+    pytest.mark.core,
+    pytest.mark.real_actions(
+        reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+    ),
+]
 
 
 @pytest.fixture(autouse=True)

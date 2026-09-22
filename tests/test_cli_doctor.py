@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.core
+# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
+pytestmark = [
+    pytest.mark.core,
+    pytest.mark.real_actions(
+        reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+    ),
+]
 
 
 def test_grandpa_doctor_smoke_without_optional_services() -> None:

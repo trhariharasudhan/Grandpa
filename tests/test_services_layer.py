@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -11,6 +12,11 @@ from grandpa.server.api_routes import (
     skills_router,
 )
 from grandpa.services import service_diagnostics, service_names
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
+)
 
 
 def test_service_registry_reports_expected_facades():

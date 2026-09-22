@@ -3,6 +3,8 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 
+import pytest
+
 from grandpa.files import (
     FileAutomation,
     FileExecutor,
@@ -12,6 +14,11 @@ from grandpa.files import (
 from grandpa.files.paths import find_matches, resolve_destination, resolve_path
 from grandpa.files.safety import FileSafetyPolicy
 from grandpa.voice.operator import parse_voice_operator_command
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real file implementation against paths the test creates"
+)
 
 
 def test_parser_natural_file_commands() -> None:

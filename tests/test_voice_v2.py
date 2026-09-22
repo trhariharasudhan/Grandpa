@@ -30,7 +30,13 @@ from grandpa.voice.history import VOICE_HISTORY_LIMIT, VoiceCommandHistoryStore
 from grandpa.voice.loop import VoiceLoopSession
 from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASE, WakeWordSession
 
-pytestmark = pytest.mark.core
+# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
+pytestmark = [
+    pytest.mark.core,
+    pytest.mark.real_actions(
+        reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+    ),
+]
 
 
 @pytest.fixture

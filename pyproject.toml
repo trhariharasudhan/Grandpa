@@ -152,6 +152,7 @@ markers = [
     "microphone: requires microphone hardware and local speech dependencies",
     "nvidia: requires NVIDIA hardware or an NVIDIA-specific fixture",
     "optional: optional feature/dependency test",
+    "real_actions(reason): run the real implementation of a catalogued action. Nothing actuates in a test by default (tests/actuation_guard.py); this says why this one needs the real thing and what keeps it off the machine",
     "release: release-gate deterministic test",
     "slow: long-running test",
 ]

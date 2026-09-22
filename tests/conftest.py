@@ -143,6 +143,33 @@ def _clean_registries() -> None:
     reset_event_bus()
 
 
+@pytest.fixture(autouse=True)
+def _nothing_actuates(request, monkeypatch) -> None:
+    """Replace every catalogued implementation, and the primitives beneath them.
+
+    Default-deny, from the catalogue rather than from a list of the categories
+    that have already gone wrong: six times in one session a test changed the
+    machine it ran on, and each time the previous fix had been to add that one
+    category to a recorder.
+
+    A test that needs the real thing marks itself:
+
+        @pytest.mark.real_actions(reason="...")
+
+    and the reason has to say something.
+    """
+    from tests.actuation_guard import MARKER, deny_everything, reason_for
+
+    marker = request.node.get_closest_marker(MARKER)
+    if marker is not None:
+        try:
+            reason_for(marker)
+        except ValueError as exc:
+            pytest.fail(str(exc))
+        return
+    deny_everything(monkeypatch)
+
+
 @pytest.fixture(scope="session")
 def _approval_store_root(tmp_path_factory) -> Path:
     """One directory for every test's approval store.

@@ -28,6 +28,11 @@ import pytest
 
 from tests.security.input_recorder import install
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
+
 BLOCKED_HOTKEYS = ["win+r", "win+x", "ctrl+shift+esc", "ctrl+alt+delete"]
 BLOCKED_TEXT = ["powershell", "cmd.exe", "format c:"]
 

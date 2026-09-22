@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+import pytest
+
 from grandpa.memory_context import (
     MemoryStore,
     handle_memory_command,
     search_personal_memory,
+)
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
 )
 
 

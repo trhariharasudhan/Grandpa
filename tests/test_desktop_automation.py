@@ -23,6 +23,11 @@ from grandpa.desktop.control.automation import (
     is_blocked_text,
 )
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
+
 
 class _Request:
     def __init__(self, target: str = "", **args: object) -> None:

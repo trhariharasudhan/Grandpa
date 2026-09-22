@@ -12,6 +12,11 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from grandpa.server.app import create_app  # noqa: E402
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="exercises the real implementation it names"
+)
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

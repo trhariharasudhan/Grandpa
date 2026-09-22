@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -21,6 +22,11 @@ from grandpa.skills.registry import (
     clear_skills,
     ensure_default_skills_registered,
     execute_skill,
+)
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
 )
 
 

@@ -15,6 +15,11 @@ from grandpa.kernel import files as kernel_files
 from grandpa.kernel.errors import ToolArgumentValidationError
 from grandpa.kernel.files import SearchFilesExecutor, SearchFilesToolDefinition
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real file implementation against paths the test creates"
+)
+
 
 def _legacy_search(command: str, root: Path) -> FileOperationResult:
     action = FileParser().parse(command)

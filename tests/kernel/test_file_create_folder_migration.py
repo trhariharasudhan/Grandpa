@@ -30,6 +30,11 @@ from grandpa.kernel.models import (
     action_digest,
 )
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real file implementation against paths the test creates"
+)
+
 
 def _legacy_create(command: str, root: Path) -> FileOperationResult:
     action = FileParser().parse(command)

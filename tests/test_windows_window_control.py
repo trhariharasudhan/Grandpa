@@ -7,6 +7,11 @@ from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.local_actions import handle_local_action
 from grandpa.windows_window_control import WindowInfo, control_window
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
+
 
 @pytest.fixture(autouse=True)
 def _approval_store_fixture(tmp_path, monkeypatch):

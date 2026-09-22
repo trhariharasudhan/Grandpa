@@ -1,10 +1,15 @@
 import sys
 from unittest.mock import MagicMock
 
+import pytest
+
 from grandpa.local_actions import handle_local_action, run_chrome_profile_selection
 from grandpa.voice.assistant import VoiceCommandProcessor
 from grandpa.voice.microphone import MicrophoneCapture
 from grandpa.windows_app_resolver import AppResolution, launch_app
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(reason="reads the real clock")
 
 
 def test_notepad_verified_launch_success(monkeypatch):

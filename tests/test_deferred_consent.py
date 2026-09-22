@@ -23,6 +23,11 @@ from grandpa.desktop.kernel import approvals
 from grandpa.local_actions import handle_local_action
 from grandpa.natural_actions import run_parsed
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
+
 
 @pytest.fixture(autouse=True)
 def _audit_log(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -23,6 +23,11 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+)
+
 
 def test_create_append_open_and_search_notes(tmp_path) -> None:
     store = NotesStore(tmp_path)

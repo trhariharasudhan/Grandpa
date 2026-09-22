@@ -46,6 +46,11 @@ from grandpa.planner.state_store import PlanStateStore
 from grandpa.planner.validator import PlanValidator
 from grandpa.planner.verifier import StepVerifier
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
+
 
 def _goal(
     text: str = "Open Chrome and search for FastAPI", session: str = "test"

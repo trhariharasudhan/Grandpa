@@ -33,6 +33,11 @@ from grandpa.cli import cli
 from grandpa.core.types import ToolCall, ToolResult
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
+
 _ask_mod = importlib.import_module("grandpa.cli.ask")
 _agent_cmd_mod = importlib.import_module("grandpa.cli.agent_cmd")
 

@@ -24,6 +24,11 @@ from grandpa.tools.shell_exec import (
     ShellExecTool,
 )
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
+
 IS_WINDOWS = sys.platform == "win32"
 
 

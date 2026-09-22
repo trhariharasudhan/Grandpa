@@ -2,6 +2,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
+
 from grandpa.cli.doctor_cmd import (
     CheckResult,
     _build_doctor_dashboard,
@@ -14,6 +16,11 @@ from grandpa.cli.doctor_cmd import (
     _readiness_label,
 )
 from grandpa.windows_app_resolver import AppResolution
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own; reads the real clock"
+)
 
 
 def test_fetch_ollama_models_parses_tags(monkeypatch) -> None:

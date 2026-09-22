@@ -10,6 +10,11 @@ from fastapi.testclient import TestClient
 from grandpa import pc_control
 from grandpa.server.routes import router
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
+
 
 @pytest.fixture(autouse=True)
 def _isolated_pc_control_api(tmp_path, monkeypatch):

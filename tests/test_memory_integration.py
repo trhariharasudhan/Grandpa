@@ -15,6 +15,11 @@ from grandpa.memory.service import MemoryService
 from grandpa.planner.executive import ExecutivePlanner
 from grandpa.voice.operator import parse_voice_operator_command
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+)
+
 
 @pytest.fixture(autouse=True)
 def setup_temp_memory_integration():

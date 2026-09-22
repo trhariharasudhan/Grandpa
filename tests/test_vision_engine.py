@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from types import SimpleNamespace
 
+import pytest
 from click.testing import CliRunner
 from PIL import Image
 
@@ -31,6 +32,11 @@ from grandpa.vision.models import (
     VisionResult,
 )
 from grandpa.vision.service import VisionEngine
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
 
 
 def _metadata() -> VisionCaptureMetadata:

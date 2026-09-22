@@ -20,6 +20,11 @@ from grandpa.agent.verifier import StepVerifier
 from grandpa.cli.agent_run_cmd import agent_group
 from grandpa.memory.service import MemoryService
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
+
 
 @pytest.fixture(autouse=True)
 def setup_temp_memory_agent():

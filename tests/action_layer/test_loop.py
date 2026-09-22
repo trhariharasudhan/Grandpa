@@ -25,6 +25,11 @@ from grandpa.action_layer.loop import (
 )
 from grandpa.action_layer.model import Origin
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real file implementation against paths the test creates"
+)
+
 
 @pytest.fixture(autouse=True)
 def audit_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:

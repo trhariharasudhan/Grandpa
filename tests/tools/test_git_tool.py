@@ -11,11 +11,18 @@ from __future__ import annotations
 import subprocess
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from grandpa.tools.git_tool import (
     GitCommitTool,
     GitDiffTool,
     GitLogTool,
     GitStatusTool,
+)
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
 )
 
 # ---------------------------------------------------------------------------

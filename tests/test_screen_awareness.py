@@ -9,6 +9,11 @@ from fastapi.testclient import TestClient
 import grandpa.screen_awareness as screen_awareness
 from grandpa.server.routes import router
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
+)
+
 
 def test_active_window_unsupported_off_windows(monkeypatch):
     monkeypatch.setattr(screen_awareness.sys, "platform", "linux")

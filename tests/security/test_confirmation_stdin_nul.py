@@ -14,8 +14,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import grandpa
 from grandpa.cli import ask as ask_module
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
 
 _SRC = str(Path(grandpa.__file__).resolve().parents[1])
 

@@ -20,12 +20,19 @@ platform. Speech output itself is covered by tests/speech/.
 
 from types import SimpleNamespace
 
+import pytest
+
 from grandpa.voice.errors import MicrophoneUnavailableError, VoiceRecognitionError
 from grandpa.voice.operator import (
     execute_voice_operator_intent,
     normalize_voice_operator_transcript,
     parse_voice_operator_command,
     run_voice_operator_loop,
+)
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
 )
 
 

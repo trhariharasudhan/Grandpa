@@ -14,6 +14,11 @@ from grandpa.browser.safety import is_trusted_url, parse_trusted_domains
 from grandpa.desktop.automation import handle_desktop_command
 from grandpa.local_actions import LocalActionResult, classify_permission
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
+)
+
 
 class Opener:
     """Stands in for the real browser."""

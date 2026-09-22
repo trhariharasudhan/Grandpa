@@ -15,6 +15,9 @@ from grandpa.prompt.builder import SystemPromptBuilder
 from grandpa.voice.cli_session import is_exit_phrase, is_prompt_echo
 from grandpa.voice.text_to_speech import GrandpaTextToSpeech
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(reason="reads the real clock")
+
 
 @pytest.fixture
 def mock_frozen_time():

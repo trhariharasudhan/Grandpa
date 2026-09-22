@@ -18,6 +18,11 @@ from grandpa.action_layer.executor import execute
 from grandpa.action_layer.model import ActionRequest, Origin, RiskLevel
 from grandpa.notes.models import NotesActionType
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+)
+
 NOTES_ACTIONS = tuple(
     spec for spec in CATALOGUE if spec.binding is Binding.NOTES_ACTION
 )

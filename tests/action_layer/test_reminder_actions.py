@@ -18,6 +18,11 @@ from grandpa.action_layer.model import ActionRequest, Origin, RiskLevel
 from grandpa.reminders import REMINDER_ACTIONS, parse_reminder_intent
 from grandpa.task_scheduler import SCHEDULER_ACTIONS, parse_scheduler_command
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+)
+
 REMINDER_SPECS = tuple(
     spec for spec in CATALOGUE if spec.binding is Binding.REMINDER_ACTION
 )

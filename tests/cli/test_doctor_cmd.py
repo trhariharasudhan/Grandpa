@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from click.testing import CliRunner
 
 from grandpa.cli import cli
@@ -19,6 +20,11 @@ from grandpa.cli.doctor_cmd import (
     _check_python_version,
     _check_runtime_environment,
     _grandpa_executable_candidates,
+)
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
 )
 
 

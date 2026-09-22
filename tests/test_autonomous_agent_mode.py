@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -14,6 +15,11 @@ from grandpa.agents.goal_mode import (
     goal_events,
 )
 from grandpa.server.api_routes import agent_runtime_router
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
+)
 
 
 def test_goal_creation_and_safe_completion(tmp_path: Path, monkeypatch) -> None:

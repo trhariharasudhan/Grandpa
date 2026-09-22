@@ -22,6 +22,11 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+)
+
 
 def _file(path: Path, content: bytes = b"data", *, days_old: int = 0) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)

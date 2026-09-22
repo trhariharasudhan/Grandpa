@@ -4,6 +4,7 @@ import csv
 import zipfile
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -15,6 +16,11 @@ from grandpa import (
     smart_automation,
 )
 from grandpa.server.routes import router
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
 
 
 def _make_docx(path: Path, text: str) -> None:

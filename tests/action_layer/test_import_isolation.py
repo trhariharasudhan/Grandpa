@@ -18,6 +18,11 @@ import sys
 
 import pytest
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
+
 # Importing any of these from the action layer would re-couple it to a stack
 # the layer exists to replace.
 FORBIDDEN = (

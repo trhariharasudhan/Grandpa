@@ -13,6 +13,11 @@ import pytest
 
 from grandpa.natural_actions import MIGRATED, request_for, run_parsed
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test; drives the real browser implementation with the opener and hotkey runner the test supplies"
+)
+
 
 @pytest.fixture(autouse=True)
 def _audit_log(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:

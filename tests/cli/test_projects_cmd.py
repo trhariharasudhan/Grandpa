@@ -5,12 +5,18 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from click.testing import CliRunner
 
 from grandpa.cli import cli
 from grandpa.projects.models import Project
 from grandpa.projects.registry import ProjectRegistry
 from grandpa.projects.service import ProjectService
+
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
+)
 
 
 def _service(tmp_path: Path) -> ProjectService:

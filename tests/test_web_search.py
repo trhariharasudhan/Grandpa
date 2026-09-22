@@ -31,6 +31,11 @@ from grandpa.web_search.providers import (
 from grandpa.web_search.ranking import WebSearchRanker
 from grandpa.web_search.safety import WebSearchSafetyPolicy
 
+# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
+pytestmark = pytest.mark.real_actions(
+    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+)
+
 
 class FakeSearchClient:
     def __init__(
