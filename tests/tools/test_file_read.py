@@ -16,11 +16,24 @@ class TestFileReadTool:
         result = tool.execute(path="")
         assert result.success is False
 
-    def test_file_not_found(self):
+    def test_file_not_found(self, tmp_path):
+        """Inside the allowed scope, so "not found" is the honest answer.
+
+        It used to use /nonexistent/file.txt, which is outside the scope now.
+        The tool refuses that before looking, deliberately: telling a caller
+        whether a file it may not read exists is still telling it something.
+        """
+        tool = FileReadTool()
+        result = tool.execute(path=str(tmp_path / "file.txt"))
+        assert result.success is False
+        assert "File not found" in result.content
+
+    def test_a_path_outside_the_scope_does_not_say_whether_it_exists(self):
         tool = FileReadTool()
         result = tool.execute(path="/nonexistent/file.txt")
         assert result.success is False
-        assert "File not found" in result.content
+        assert "Access denied" in result.content
+        assert "not found" not in result.content.lower()
 
     def test_read_file(self, tmp_path):
         f = tmp_path / "test.txt"

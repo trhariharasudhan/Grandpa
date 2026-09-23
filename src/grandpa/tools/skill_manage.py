@@ -98,6 +98,10 @@ class SkillManageTool(BaseTool):
             "[skill]",
             f'name = "{name}"',
             f'description = "{description}"',
+            # Recorded, not chosen: this tool is model-facing, so anything it
+            # writes was written by a model. SkillManager.discover() refuses to
+            # load it without someone agreeing first.
+            'provenance = "model"',
             "",
         ]
         for step in steps:

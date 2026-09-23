@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -11,6 +12,8 @@ from grandpa.core.events import EventBus, EventType
 from grandpa.core.types import ToolCall, ToolResult
 from grandpa.skills.types import SkillManifest
 from grandpa.tools._stubs import ToolExecutor
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -23,6 +26,39 @@ class SkillResult:
 
 # Resolver callback: given a skill name and the current context, returns a SkillResult.
 SkillResolver = Callable[[str, Dict[str, Any]], SkillResult]
+
+
+PRIVILEGE_ARGUMENTS: dict[str, dict[str, object]] = {
+    # db_query's read_only defaults to True and confines the statement to
+    # SELECT-shaped SQL. A step that passes read_only=False gets DROP, DELETE,
+    # UPDATE and TRUNCATE against any SQLite file or PostgreSQL URL it also
+    # names -- and db_query is not confirmation-gated, so nothing asks.
+    #
+    # A manifest step is deferred execution: it runs when the skill is next
+    # invoked, with nobody reading it. The rule is the same one the saved-skill
+    # fix established -- stored content supplies values, it does not choose
+    # what it is allowed to do -- so the safe value is forced here rather than
+    # taken from the template. An interactive caller is unaffected; this is
+    # only the path where the argument came out of a file.
+    "db_query": {"read_only": True},
+}
+
+
+def _without_privilege_arguments(
+    tool_name: str, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    """Force the arguments a stored step is not allowed to choose."""
+    forced = PRIVILEGE_ARGUMENTS.get(tool_name)
+    if not forced:
+        return arguments
+    cleaned = dict(arguments)
+    for key, value in forced.items():
+        if cleaned.get(key) != value:
+            logger.warning(
+                "Skill step for %s may not set %s; forcing %r.", tool_name, key, value
+            )
+        cleaned[key] = value
+    return cleaned
 
 
 class SkillExecutor:
@@ -87,7 +123,7 @@ class SkillExecutor:
                 tool_call = ToolCall(
                     id=f"skill_{manifest.name}_{i}",
                     name=step.tool_name,
-                    arguments=rendered,
+                    arguments=_without_privilege_arguments(step.tool_name, rendered),
                 )
                 result = self._tool_executor.execute(tool_call)
 

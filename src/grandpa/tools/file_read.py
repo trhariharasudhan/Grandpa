@@ -7,6 +7,7 @@ from typing import Any, List, Optional
 
 from grandpa.core.registry import ToolRegistry
 from grandpa.core.types import ToolResult
+from grandpa.tools import _file_scope
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 # Maximum file size to read (1 MB)
@@ -23,7 +24,12 @@ class FileReadTool(BaseTool):
         self,
         allowed_dirs: Optional[List[str]] = None,
     ) -> None:
-        self._allowed_dirs = [Path(d).resolve() for d in (allowed_dirs or [])]
+        """``None`` means the file domain's roots; ``[]`` means nowhere.
+
+        It used to mean the opposite: an empty list allowed every path on the
+        disk, and nothing ever passed a list, so this tool could read anything.
+        """
+        self._allowed_dirs = _file_scope.normalise(allowed_dirs)
 
     @property
     def spec(self) -> ToolSpec:
@@ -48,13 +54,12 @@ class FileReadTool(BaseTool):
         )
 
     def _is_path_allowed(self, path: Path) -> bool:
-        """Check if path is within allowed directories."""
-        if not self._allowed_dirs:
-            return True
-        resolved = path.resolve()
-        return any(
-            resolved == d or resolved.is_relative_to(d) for d in self._allowed_dirs
-        )
+        """Whether this tool may touch ``path``. Absence of a rule is a no."""
+        return _file_scope.refusal(path, self._allowed_dirs) is None
+
+    def _refusal(self, path: Path) -> str:
+        """Why ``path`` was refused, so the answer says which limit applied."""
+        return _file_scope.refusal(path, self._allowed_dirs) or ""
 
     def execute(self, **params: Any) -> ToolResult:
         file_path = params.get("path", "")
@@ -74,6 +79,13 @@ class FileReadTool(BaseTool):
                 content=f"Access denied: {file_path} is a sensitive file.",
                 success=False,
             )
+        refused = self._refusal(path)
+        if refused:
+            return ToolResult(
+                tool_name="file_read",
+                content=f"Access denied: {refused}",
+                success=False,
+            )
         if not path.exists():
             return ToolResult(
                 tool_name="file_read",
@@ -84,12 +96,6 @@ class FileReadTool(BaseTool):
             return ToolResult(
                 tool_name="file_read",
                 content=f"Not a file: {file_path}",
-                success=False,
-            )
-        if not self._is_path_allowed(path):
-            return ToolResult(
-                tool_name="file_read",
-                content=f"Access denied: {file_path} is outside allowed directories.",
                 success=False,
             )
         # Check size

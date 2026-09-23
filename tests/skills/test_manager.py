@@ -1,4 +1,11 @@
-"""Tests for SkillManager — discovery, catalog, tools, and resolve."""
+"""Note: every manifest here declares ``provenance = "user"``.
+
+SkillManager.discover() will not load a manifest that does not say a person
+wrote it, because ~/.grandpa/skills/ is also where a model-facing tool writes,
+and a manifest is deferred execution. These fixtures stand for files a person
+put there, so they say so.
+
+Tests for SkillManager — discovery, catalog, tools, and resolve."""
 
 from __future__ import annotations
 
@@ -23,6 +30,7 @@ def _write_toml_skill(directory: Path, name: str, description: str = "") -> None
     (skill_dir / "skill.toml").write_text(
         textwrap.dedent(f"""\
             [skill]
+            provenance = "user"
             name = "{name}"
             description = "{description or name}"
             tags = ["test"]
@@ -145,6 +153,7 @@ class TestSkillManagerCatalog:
         (skill_dir / "skill.toml").write_text(
             textwrap.dedent("""\
                 [skill]
+                provenance = "user"
                 name = "hidden"
                 description = "Hidden skill"
                 disable_model_invocation = true
@@ -166,6 +175,7 @@ class TestSkillManagerCatalog:
         (skill_dir / "skill.toml").write_text(
             textwrap.dedent("""\
                 [skill]
+                provenance = "user"
                 name = "special"
                 description = "A skill with <tags> & 'quotes'"
                 tags = ["test"]
@@ -190,6 +200,7 @@ class TestSkillManagerCatalog:
         (skill_dir / "skill.toml").write_text(
             textwrap.dedent("""\
                 [skill]
+                provenance = "user"
                 name = "invisible"
                 description = "Not for models"
                 disable_model_invocation = true
@@ -305,7 +316,8 @@ class TestSkillManagerSourcedLayout:
             d = tmp_path / source / name
             d.mkdir(parents=True)
             (d / "SKILL.md").write_text(
-                f"---\nname: {name}\ndescription: from {source}\n---\nBody"
+                f"---\nname: {name}\ndescription: from {source}\n"
+                "provenance: user\n---\nBody"
             )
 
         mgr = SkillManager(bus=EventBus())
@@ -323,14 +335,14 @@ class TestSkillManagerSourcedLayout:
         flat = tmp_path / "my-flat-skill"
         flat.mkdir()
         (flat / "SKILL.md").write_text(
-            "---\nname: my-flat-skill\ndescription: flat\n---\n"
+            "---\nname: my-flat-skill\ndescription: flat\nprovenance: user\n---\n"
         )
 
         # Sourced layout
         sourced = tmp_path / "workspace" / "my-sourced-skill"
         sourced.mkdir(parents=True)
         (sourced / "SKILL.md").write_text(
-            "---\nname: my-sourced-skill\ndescription: sourced\n---\n"
+            "---\nname: my-sourced-skill\ndescription: sourced\nprovenance: user\n---\n"
         )
 
         mgr = SkillManager(bus=EventBus())
@@ -360,6 +372,7 @@ class TestSkillManagerRemove:
         (skill_dir / "skill.toml").write_text(
             textwrap.dedent("""\
                 [skill]
+                provenance = "user"
                 name = "real-name"
                 description = "renamed"
 

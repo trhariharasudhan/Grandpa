@@ -45,6 +45,10 @@ SPEC_FIELDS = frozenset(
 FIELD_MAPPING: Dict[str, tuple[str, str]] = {
     "version": ("field", "version"),
     "author": ("field", "author"),
+    # A SKILL.md has no [skill] table, so this is the only way one can say
+    # who wrote it. Without it, a markdown-only manifest could never declare
+    # provenance and so could never load unattended.
+    "provenance": ("field", "provenance"),
     "tags": ("field", "tags"),
     "depends": ("field", "depends"),
     "required_capabilities": ("field", "required_capabilities"),

@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import html
+import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from grandpa.core.events import EventBus
+from grandpa.skills import provenance
 from grandpa.skills.dependency import validate_dependencies
 from grandpa.skills.executor import SkillExecutor, SkillResult
 from grandpa.skills.loader import discover_skills
 from grandpa.skills.tool_adapter import SkillTool
 from grandpa.skills.types import SkillManifest
 from grandpa.tools._stubs import BaseTool, ToolExecutor
+
+logger = logging.getLogger(__name__)
 
 
 class SkillManager:
@@ -35,30 +40,52 @@ class SkillManager:
         self._bus = bus
         self._capability_policy = capability_policy
         self._skills: Dict[str, SkillManifest] = {}
+        self.skipped: List[str] = []
+        """Why each manifest that did not load was left alone."""
         self._tool_executor: Optional[ToolExecutor] = None
 
     # ------------------------------------------------------------------
     # Discovery
     # ------------------------------------------------------------------
 
-    def discover(self, paths: Optional[List[Path]] = None) -> None:
+    def discover(
+        self,
+        paths: Optional[List[Path]] = None,
+        *,
+        confirm: Optional[Callable[[str, str], bool]] = None,
+    ) -> None:
         """Scan directories in order and register skills.
 
         First-seen name wins (workspace path listed first = highest precedence).
         After loading, the full dependency graph is validated.
 
+        A manifest is deferred execution -- its steps name tools, and they run
+        when the skill is next invoked, not now -- so one that does not say a
+        person wrote it is not loaded unless ``confirm`` agrees. Callers that
+        cannot ask, which is most of them, simply do not get those skills; the
+        reason is recorded in :attr:`skipped` and logged.
+
         Parameters
         ----------
         paths:
             Directories to scan. If *None* or empty, no skills are loaded.
+        confirm:
+            Asked before loading a manifest with no provenance, or one written
+            by a model or an agent.
         """
         if paths:
             for directory in paths:
                 manifests = discover_skills(directory)
                 for manifest in manifests:
                     # First-seen wins: do not overwrite an already-registered skill
-                    if manifest.name not in self._skills:
-                        self._skills[manifest.name] = manifest
+                    if manifest.name in self._skills:
+                        continue
+                    allowed, reason = provenance.admit(manifest, confirm)
+                    if not allowed:
+                        self.skipped.append(reason)
+                        logger.warning("Skill not loaded: %s", reason)
+                        continue
+                    self._skills[manifest.name] = manifest
 
             # Validate the dependency graph after loading skills
             if self._skills:

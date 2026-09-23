@@ -27,6 +27,7 @@ class SkillManifest:
     steps: List[SkillStep] = field(default_factory=list)
     required_capabilities: List[str] = field(default_factory=list)
     signature: str = ""  # Base64-encoded Ed25519 signature
+    provenance: str = ""  # who wrote this file: "user", "model", "agent", ...
     metadata: Dict[str, Any] = field(default_factory=dict)
     tags: List[str] = field(default_factory=list)
     depends: List[str] = field(default_factory=list)

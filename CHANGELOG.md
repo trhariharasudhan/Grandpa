@@ -12,6 +12,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **An empty `allowed_dirs` meant "allow everything".** `file_read` and
+  `file_write` each returned `True` from their path guard when the list was
+  empty, and nothing ever passed a list -- the registry builds both tools with
+  no arguments -- so the guard was inert in every configuration Grandpa runs
+  in. `file_write` could write any path on the disk, including
+  `~/.grandpa/skills/`, where a manifest is deferred execution. Unconfigured
+  now means the file domain's own roots (`safe_roots()` plus
+  `FileSafetyPolicy`, the policy `grandpa.files` already applies to the user's
+  file actions, rather than a second opinion invented for tools), and an
+  explicitly empty list means nowhere. System directories, `~/.ssh`,
+  `~/.grandpa` and browser profiles are refused inside the roots as well as
+  outside them.
+
+- **`file_read` said whether a file it may not read exists.** The existence
+  check ran before the path guard, so "File not found" and "Access denied"
+  distinguished a missing protected file from a present one. The guard runs
+  first now.
+
+- **A skill manifest did not have to say who wrote it.** `SkillManager
+  .discover()` loaded every manifest under `~/.grandpa/skills/`, and
+  `skill_manage` is a model-facing tool that writes exactly those files. A
+  manifest now records `provenance`, and one that says `model`, says `agent`,
+  or says nothing does not load unless someone agrees. `skill_manage` stamps
+  `provenance = "model"` on what it writes. A manifest a person wrote by hand
+  is in the "says nothing" group and will not load until they add
+  `provenance = "user"` or answer the prompt -- unmarked has to be the
+  untrusted state, or the marking means nothing.
+
+- **A stored skill step could turn `db_query`'s `read_only` off.** That gives
+  DROP, DELETE, UPDATE and TRUNCATE against any SQLite file or PostgreSQL URL
+  the same step names, and `db_query` is not confirmation-gated. A manifest
+  step is deferred execution, so the safe value is forced for steps that come
+  out of storage. An interactive caller is unaffected.
+
 ### Removed
 
 - **`local_actions.py`.** 2231 lines holding the phrase parsers, the tier

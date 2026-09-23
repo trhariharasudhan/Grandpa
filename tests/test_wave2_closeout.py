@@ -31,10 +31,17 @@ def test_telemetry_works_on_a_home_that_never_recorded_anything(tmp_path) -> Non
     assert ("telemetry",) in tables.fetchall()
 
 
-def test_file_search_roots_have_no_hardcoded_project_path(monkeypatch) -> None:
+def test_file_search_roots_have_no_hardcoded_project_path(
+    monkeypatch, tmp_path
+) -> None:
     monkeypatch.setattr(
         "grandpa.files.paths.configured_workspace", lambda: None, raising=False
     )
+    # safe_roots() always includes the working directory, so this only tested
+    # what it claims to when the suite is not run from D:\Grandpa itself.
+    # Running it there -- which is what happens in the main checkout -- put
+    # d:/grandpa in the roots legitimately, as the cwd, and failed.
+    monkeypatch.chdir(tmp_path)
 
     # The working directory is always searched; the hardcoded roots are not.
     roots = {

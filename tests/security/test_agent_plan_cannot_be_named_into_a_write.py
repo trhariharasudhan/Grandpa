@@ -137,12 +137,20 @@ def test_dry_run_is_advisory_and_two_skills_ignore_it() -> None:
     joins this list, this test fails and says so.
     """
     from grandpa.skills.registry import (
+        clear_skills,
         ensure_default_skills_registered,
         execute_skill,
         list_skills,
     )
     from grandpa.skills.runtime import SkillExecutionContext
 
+    # The registered set, not whatever this session happens to have accumulated.
+    # The runtime skill registry is global and conftest does not clear it, so an
+    # earlier test that called register_user_skills() leaves the user's own saved
+    # skills in it -- and UserSkillStore's default path is relative to the working
+    # directory, so "the user's own" can mean a store left behind in the repo.
+    # Running this from D:\Grandpa picked up a leaked "start coding session".
+    clear_skills()
     ensure_default_skills_registered()
     acted: set[str] = set()
     for skill in list_skills():
