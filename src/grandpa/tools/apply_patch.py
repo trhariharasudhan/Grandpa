@@ -216,6 +216,11 @@ class ApplyPatchTool(BaseTool):
                 "required": ["patch"],
             },
             category="filesystem",
+            # Tier 1. A manifest step naming this runs unprompted
+            # otherwise, and it applies a diff to files in the working tree, which is how you edit
+            # the thing that runs next. Rare in a skill, and
+            # unrecoverable when wrong, so the prompt is affordable.
+            requires_confirmation=True,
             required_capabilities=["file:write"],
         )
 

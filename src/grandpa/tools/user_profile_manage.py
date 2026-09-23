@@ -7,6 +7,7 @@ from typing import Any
 
 from grandpa.core.registry import ToolRegistry
 from grandpa.core.types import ToolResult
+from grandpa.runtime_paths import grandpa_home
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 
@@ -14,8 +15,13 @@ from grandpa.tools._stubs import BaseTool, ToolSpec
 class UserProfileManageTool(BaseTool):
     """Manage persistent user profile (USER.md)."""
 
-    def __init__(self, user_path: Path | str = "~/.grandpa/USER.md") -> None:
-        self._user_path = Path(user_path).expanduser()
+    def __init__(self, user_path: Path | str | None = None) -> None:
+        """``None`` means ``GRANDPA_HOME/USER.md``. See memory_manage."""
+        self._user_path = (
+            Path(user_path).expanduser()
+            if user_path is not None
+            else grandpa_home() / "USER.md"
+        )
 
     @property
     def spec(self) -> ToolSpec:

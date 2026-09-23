@@ -191,6 +191,11 @@ class ReplTool(BaseTool):
                 "required": ["code"],
             },
             category="code",
+            # Tier 1. A manifest step naming this runs unprompted
+            # otherwise, and it executes Python in-process, behind a denylist and restricted
+            # builtins rather than a sandbox. Rare in a skill, and
+            # unrecoverable when wrong, so the prompt is affordable.
+            requires_confirmation=True,
         )
 
     def execute(self, **params: Any) -> ToolResult:

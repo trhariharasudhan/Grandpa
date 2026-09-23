@@ -7,6 +7,7 @@ from typing import Any
 
 from grandpa.core.registry import ToolRegistry
 from grandpa.core.types import ToolResult
+from grandpa.runtime_paths import grandpa_home
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 
@@ -14,8 +15,19 @@ from grandpa.tools._stubs import BaseTool, ToolSpec
 class MemoryManageTool(BaseTool):
     """Manage persistent agent memory (MEMORY.md)."""
 
-    def __init__(self, memory_path: Path | str = "~/.grandpa/MEMORY.md") -> None:
-        self._memory_path = Path(memory_path).expanduser()
+    def __init__(self, memory_path: Path | str | None = None) -> None:
+        """``None`` means ``GRANDPA_HOME/MEMORY.md``.
+
+        The default used to be the literal ``"~/.grandpa/MEMORY.md"``, which
+        ignored GRANDPA_HOME: the tool wrote to the real home whatever the
+        configuration said. This tool is ungated on the argument that it
+        writes only inside Grandpa's own home, so that has to be true.
+        """
+        self._memory_path = (
+            Path(memory_path).expanduser()
+            if memory_path is not None
+            else grandpa_home() / "MEMORY.md"
+        )
 
     @property
     def spec(self) -> ToolSpec:

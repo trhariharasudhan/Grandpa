@@ -8,6 +8,7 @@ from typing import Any
 
 from grandpa.core.registry import ToolRegistry, TTSRegistry
 from grandpa.core.types import ToolResult
+from grandpa.runtime_paths import grandpa_home
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 
@@ -71,6 +72,28 @@ class TextToSpeechTool(BaseTool):
                 success=False,
             )
 
+        # Tier 2: bounded rather than prompted. Generating audio is frequent
+        # enough that a confirmation per call would be unusable, and the damage
+        # is containable by *where* rather than *whether*. Checked here, before
+        # any work: a request naming somewhere it may not write is refused on
+        # its own terms, not after synthesising the audio.
+        if output_dir:
+            requested = Path(output_dir).expanduser()
+            permitted = (grandpa_home() / "audio").resolve()
+            resolved = requested.resolve()
+            # Only GRANDPA_HOME/audio. Not "or a temp directory": on every
+            # platform the scratch directory a caller would reach for lives
+            # under the system temp tree, so allowing that allows everything a
+            # test -- or a manifest step -- cares to name.
+            if not (resolved == permitted or resolved.is_relative_to(permitted)):
+                return ToolResult(
+                    tool_name="text_to_speech",
+                    content=(
+                        f"Refused: audio is written under {permitted}, not {requested}."
+                    ),
+                    success=False,
+                )
+
         if not TTSRegistry.contains(backend_key):
             return ToolResult(
                 tool_name="text_to_speech",
@@ -85,7 +108,7 @@ class TextToSpeechTool(BaseTool):
 
         # Save to file
         if output_dir:
-            out_dir = Path(output_dir)
+            out_dir = Path(output_dir).expanduser()
         else:
             out_dir = Path(tempfile.mkdtemp(prefix="Grandpa-tts-"))
 

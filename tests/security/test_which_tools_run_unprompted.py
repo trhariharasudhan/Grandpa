@@ -33,19 +33,23 @@ GATED = {
     "git_commit": "writes a commit to the repository",
     "skill_manage": "creates and deletes skill manifests, which are themselves "
     "deferred execution",
+    # Tier 1: irreversible, or reaching arbitrary code.
+    "apply_patch": "applies a diff to files in the working tree",
+    "code_interpreter": "runs a subprocess",
+    "repl": "executes Python in-process behind a denylist, not a sandbox",
 }
 
 # requires_confirmation=False and able to change something. Every one of these
 # runs unprompted as a manifest step.
 UNGATED_BUT_ACTS = {
-    "apply_patch": "applies a diff to files in the working tree",
-    "file_write": "writes any file; its allowed_dirs list permits everything "
-    "when empty, which is how it is registered",
-    "code_interpreter": "runs a subprocess",
-    "repl": "executes Python in-process, in a daemon thread, behind a denylist "
-    "and restricted builtins rather than a sandbox",
-    "db_query": "executes SQL; read_only defaults to True, and the caller can "
-    "pass read_only=False and then write or drop",
+    # Tier 2: bounded rather than prompted, because a prompt per call would be
+    # unusable and the damage is containable by *where* rather than *whether*.
+    "file_write": "writes files, confined to the file domain's own roots and "
+    "carve-outs",
+    "db_query": "executes SQL; read_only defaults True, and a stored skill "
+    "step may no longer turn it off",
+    "text_to_speech": "writes audio, confined to GRANDPA_HOME/audio or a "
+    "temporary directory",
     "http_request": "sends network requests; SSRF-guarded, not confirmation-gated",
     "web_search": "sends network requests; SSRF-guarded",
     "memory_manage": "writes the memory store",
@@ -54,8 +58,20 @@ UNGATED_BUT_ACTS = {
     "kg_add_entity": "writes the knowledge graph",
     "kg_add_relation": "writes the knowledge graph",
     "user_profile_manage": "writes the user profile store",
-    "text_to_speech": "writes audio files",
 }
+
+# Tier 3: left ungated on the argument that they write only inside Grandpa's
+# own home. That argument has to be true, so it is checked below rather than
+# asserted -- two of these used a hardcoded "~/.grandpa/..." literal and
+# ignored GRANDPA_HOME entirely until it was.
+TIER_3 = (
+    "memory_manage",
+    "memory_store",
+    "memory_index",
+    "kg_add_entity",
+    "kg_add_relation",
+    "user_profile_manage",
+)
 
 
 def _snapshot() -> dict[str, bool]:
@@ -167,3 +183,45 @@ def test_a_user_skill_step_cannot_name_a_tool() -> None:
 
     assert steps[0]["risk_level"] == "HIGH"
     assert steps[0]["approval_required"] is True
+
+
+def test_tier_three_writes_only_under_grandpa_home(monkeypatch, tmp_path) -> None:
+    """The claim that justifies leaving these ungated, checked.
+
+    A tool that takes a backend writes wherever that backend does -- which is
+    the caller's choice, not the tool's -- and without one it does nothing. The
+    two that own a path have to honour GRANDPA_HOME.
+    """
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("GRANDPA_HOME", str(home))
+
+    from grandpa.tools.memory_manage import MemoryManageTool
+    from grandpa.tools.user_profile_manage import UserProfileManageTool
+
+    owned = {
+        "memory_manage": MemoryManageTool()._memory_path,
+        "user_profile_manage": UserProfileManageTool()._user_path,
+    }
+    outside = {
+        name: path
+        for name, path in owned.items()
+        if not path.resolve().is_relative_to(home.resolve())
+    }
+
+    assert outside == {}, (
+        f"these are in Tier 3 on the grounds that they write under "
+        f"GRANDPA_HOME, and they do not: {outside}"
+    )
+
+
+def test_the_tier_three_backend_tools_do_nothing_without_one() -> None:
+    """The other four own no path: unconfigured, they write nowhere at all."""
+    # Built directly: conftest empties the registry before every test.
+    from grandpa.tools.knowledge_tools import KGAddEntityTool, KGAddRelationTool
+
+    for tool in (KGAddEntityTool(), KGAddRelationTool()):
+        result = tool.execute(entity_id="x", name="x", source="a", target="b")
+
+        assert result.success is False
+        assert "backend" in result.content.lower()

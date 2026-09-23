@@ -12,6 +12,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Tools that can act are tiered rather than all gated or all trusted.**
+  Fourteen tools could change something with no confirmation, reachable
+  unprompted from a saved manifest. Gating all fourteen would have made
+  memory and knowledge writes ask on every call, and an unusable gate gets
+  disabled or clicked through, which is worse than a bound that holds
+  silently. So:
+
+  * **Prompted** (irreversible, or reaching arbitrary code): `apply_patch`,
+    `code_interpreter`, `repl`, alongside the already-gated `shell_exec`,
+    `git_commit` and `skill_manage`.
+  * **Bounded, not prompted**: `file_write` (the file domain's roots),
+    `db_query` (a stored step may not set `read_only=False`),
+    `text_to_speech` (now confined to `GRANDPA_HOME/audio`), and
+    `http_request` / `web_search` (already SSRF-guarded).
+  * **Left ungated**: the memory, knowledge-graph and user-profile writers,
+    which write inside Grandpa's own home and are what a skill uses
+    constantly.
+
+  Two of the last group did not actually meet that condition:
+  `memory_manage` and `user_profile_manage` defaulted to the hardcoded
+  literals `~/.grandpa/MEMORY.md` and `~/.grandpa/USER.md` and ignored
+  `GRANDPA_HOME`. They honour it now, and a test checks the claim rather
+  than restating it.
+
 ### Fixed
 
 - **A test could write anywhere on the machine.** The actuation guard replaces

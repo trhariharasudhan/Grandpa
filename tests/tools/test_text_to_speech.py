@@ -43,8 +43,15 @@ def test_tts_tool_is_wired_into_the_builtin_loader():
     assert "text_to_speech" in _BUILTINS
 
 
-def test_tts_tool_execute(tmp_path):
+def test_tts_tool_execute(tmp_path, monkeypatch):
     from grandpa.tools.text_to_speech import TextToSpeechTool
+
+    # output_dir is bounded to GRANDPA_HOME/audio now: the tool is reachable
+    # unprompted from a saved manifest, so it may not write to a path the
+    # caller picks. This test writes to the directory it is allowed to.
+    monkeypatch.setenv("GRANDPA_HOME", str(tmp_path))
+    audio_dir = tmp_path / "audio"
+    audio_dir.mkdir()
 
     tool = TextToSpeechTool()
     mock_result = TTSResult(
@@ -64,7 +71,7 @@ def test_tts_tool_execute(tmp_path):
             text="Good morning sir.",
             voice_id="Grandpa",
             backend="cartesia",
-            output_dir=str(tmp_path),
+            output_dir=str(audio_dir),
         )
 
     assert result.success is True
