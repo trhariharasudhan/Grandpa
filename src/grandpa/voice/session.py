@@ -378,7 +378,7 @@ def _route_voice_request(
         }
 
     try:
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local import handle_local_action
 
         # Voice has no synchronous spoken yes/no. It opts into deferred
         # consent instead: an action that asks is staged, bound to "voice",

@@ -773,7 +773,7 @@ def _check_known_app(app_name: str) -> CheckResult:
 
 def _check_local_actions_ready() -> CheckResult:
     try:
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local import handle_local_action
 
         result = handle_local_action("what time is it", execute=False)
         if result.status in {"handled", "requires_confirmation"}:

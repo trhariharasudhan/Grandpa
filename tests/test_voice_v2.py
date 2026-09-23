@@ -7,7 +7,9 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import grandpa.local_actions as local_actions
+import grandpa.local.audit
+import grandpa.local.permissions
+import grandpa.local.router as local_actions
 import grandpa.voice.speech_output as speech_output
 from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.memory.context import ConversationContextBuilder
@@ -47,7 +49,7 @@ def voice_client(tmp_path, monkeypatch):
     approval_store = LocalActionApprovalStore(tmp_path / "approvals.db")
     reminder_store = ReminderStore(tmp_path / "reminders.db")
     monkeypatch.setattr(
-        local_actions, "LocalActionApprovalStore", lambda: approval_store
+        grandpa.local.audit, "LocalActionApprovalStore", lambda: approval_store
     )
     app = FastAPI()
     app.state.reminder_store = reminder_store
@@ -491,8 +493,8 @@ def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
 
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
 
-    # Mirrors the real signature: local_actions._execute now forwards the
-    # caller's confirm callback down to local_actions.execute_automation_spec.
+    # Mirrors the real signature: execute_parsed_action forwards the caller's
+    # confirm callback down to execute_automation_spec.
     def fake_execute_automation(spec: str, *, confirm_callback=None):
         from grandpa.desktop.control.automation import AutomationResult
 
@@ -500,7 +502,7 @@ def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
         return AutomationResult("handled", spec, "Typed hello.", "Typed hello.")
 
     monkeypatch.setattr(
-        "grandpa.local_actions.execute_automation_spec",
+        "grandpa.local.execute.execute_automation_spec",
         fake_execute_automation,
     )
 

@@ -84,7 +84,7 @@ def test_the_catalogue_names_the_input_actions() -> None:
 def test_no_input_action_is_ever_staged(recorder, action) -> None:
     """Drive every route that could stage, for every input action there is."""
     from grandpa.desktop.control.automation import execute_spec
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
     from grandpa.natural_actions import run_parsed
 
     spec_for = {

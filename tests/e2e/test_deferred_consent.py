@@ -77,7 +77,7 @@ print("TURN-RESULT " + json.dumps({"status": reply.status, "text": reply.text}))
 """
 
 _LOCAL_TURN = r"""
-from grandpa.local_actions import handle_local_action
+from grandpa.local import handle_local_action
 
 reply = handle_local_action(TURN, deferred_origin=ORIGIN)
 print("TURN-RESULT " + json.dumps({

@@ -277,7 +277,7 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
             )
 
         from grandpa.file_assistant import handle_file_command
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local import handle_local_action
         from grandpa.memory_context import handle_memory_command
         from grandpa.task_scheduler import handle_scheduler_command
 

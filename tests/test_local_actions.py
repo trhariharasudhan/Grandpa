@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import pytest
 
-import grandpa.local_actions as local_actions
+import grandpa.local.audit
+import grandpa.local.permissions
+import grandpa.local.router as local_actions
+from grandpa.local import BLOCKED_MESSAGE, handle_local_action
 from grandpa.local_action_approvals import LocalActionApprovalStore
-from grandpa.local_actions import BLOCKED_MESSAGE, handle_local_action
+from grandpa.local_action_result import LocalActionResult
 
 # ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
 pytestmark = [
@@ -18,7 +21,7 @@ pytestmark = [
 @pytest.fixture(autouse=True)
 def _approval_store_fixture(tmp_path, monkeypatch):
     store = LocalActionApprovalStore(tmp_path / "approvals.db")
-    monkeypatch.setattr(local_actions, "LocalActionApprovalStore", lambda: store)
+    monkeypatch.setattr(grandpa.local.audit, "LocalActionApprovalStore", lambda: store)
     return store
 
 
@@ -150,9 +153,9 @@ def test_the_deleted_browser_stub_phrases_are_no_longer_routes() -> None:
 
 
 def test_browser_high_risk_click_is_blocked():
-    result = local_actions._with_permission(
+    result = grandpa.local.permissions.with_permission(
         "click checkout",
-        local_actions.LocalActionResult(
+        LocalActionResult(
             status="handled",
             kind="browser",
             target="click|checkout payment button",
@@ -278,7 +281,7 @@ def test_expired_pending_action_is_not_approved(monkeypatch, tmp_path):
     pending = handle_local_action(f"open {tmp_path}", deferred_origin="chat")
     later = pending.pending_action["expires_at"] + 1
     monkeypatch.setattr(pc_control.time, "time", lambda: later)
-    approved = local_actions.approve_pending_action(origin="chat")
+    approved = grandpa.local.permissions.approve_pending_action(origin="chat")
 
     assert approved.status == "unsupported"
     assert "no pending local action" in approved.message
@@ -315,7 +318,7 @@ def test_unknown_url_requires_confirmation():
     ],
 )
 def test_a_category_word_does_not_resolve_to_an_application(phrase: str) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action(phrase, execute=False)
 
@@ -332,7 +335,7 @@ def test_a_category_word_does_not_resolve_to_an_application(phrase: str) -> None
     ],
 )
 def test_real_applications_still_resolve(phrase: str, expected: str) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action(phrase, execute=False)
 
@@ -342,7 +345,7 @@ def test_real_applications_still_resolve(phrase: str, expected: str) -> None:
 
 def test_a_category_word_that_is_also_an_app_name_still_resolves() -> None:
     """Settings is a real application, and the guard only skips the loose rules."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action("open settings", execute=False)
 
@@ -356,7 +359,7 @@ def test_a_domain_is_opened_as_an_address_not_guessed_as_an_app(phrase: str) -> 
     """It used to answer "Did you mean Google Chrome?" for google.com, and
     nothing at all for example.com -- the same phrasing behaving differently
     depending on what happened to be installed."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action(phrase, execute=False)
 
@@ -366,7 +369,7 @@ def test_a_domain_is_opened_as_an_address_not_guessed_as_an_app(phrase: str) -> 
 
 
 def test_a_bare_ip_is_not_guessed_at() -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     assert handle_local_action("open 192.168.1.1", execute=False).status == "no_match"
 

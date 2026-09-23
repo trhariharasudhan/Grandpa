@@ -11,10 +11,8 @@ import pytest
 
 from grandpa.automation.planner import AutomationPlanner
 from grandpa.files.parser import FileParser
-from grandpa.local_actions import (
-    _parse_browser_action,
-    _prefer_deterministic_browser_route,
-)
+from grandpa.local.parsers import _parse_browser_action
+from grandpa.local.router import _prefer_deterministic_browser_route
 
 
 @pytest.mark.parametrize(

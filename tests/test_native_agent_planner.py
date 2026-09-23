@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from grandpa.agents.runtime import list_agent_tasks, run_agent_goal
-from grandpa.local_actions import handle_local_action
+from grandpa.local import handle_local_action
 from grandpa.mcp import execute_tool, list_tools
 from grandpa.planner import analyze_request, build_execution_plan, classify_goal
 from grandpa.server.api_routes import (

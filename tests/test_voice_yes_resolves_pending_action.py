@@ -15,14 +15,16 @@ from __future__ import annotations
 
 from functools import partial
 
-import grandpa.local_actions as local_actions
+import grandpa.local.audit
+import grandpa.local.execute
 from grandpa.local_action_approvals import LocalActionApprovalStore
+from grandpa.local_action_result import LocalActionResult
 from grandpa.voice.assistant import VoiceAssistantResponse, VoiceCommandProcessor
 
 
 def test_spoken_yes_resolves_a_pending_local_action(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr(
-        local_actions,
+        grandpa.local.audit,
         "LocalActionApprovalStore",
         partial(LocalActionApprovalStore, tmp_path / "approvals.db"),
     )
@@ -30,11 +32,13 @@ def test_spoken_yes_resolves_a_pending_local_action(monkeypatch, tmp_path) -> No
 
     def _record_execution(result, **_kwargs):
         executed.append((result.kind, result.target))
-        return local_actions.LocalActionResult(
+        return LocalActionResult(
             status="handled", kind=result.kind, target=result.target, message="done"
         )
 
-    monkeypatch.setattr(local_actions, "_execute", _record_execution)
+    monkeypatch.setattr(
+        grandpa.local.execute, "execute_parsed_action", _record_execution
+    )
     monkeypatch.setattr(
         VoiceCommandProcessor,
         "_generate_response",

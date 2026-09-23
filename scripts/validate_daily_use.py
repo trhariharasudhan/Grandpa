@@ -198,7 +198,7 @@ def build_steps(args: argparse.Namespace) -> list[ValidationStep]:
 
 
 _LOCAL_ACTION_DRY_RUN = (
-    "from grandpa.local_actions import handle_local_action; "
+    "from grandpa.local import handle_local_action; "
     "result = handle_local_action('open notepad', execute=False); "
     "print(result.status)"
 )

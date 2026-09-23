@@ -132,7 +132,7 @@ def test_the_phrase_path_asks_the_person_in_front_of_it(monkeypatch) -> None:
         "grandpa.skill_builder.builder.template_steps_for_name",
         lambda _name: [dict(TYPING_STEP)],
     )
-    from grandpa.local_actions import _parse_user_skill_action
+    from grandpa.local.parsers import _parse_user_skill_action
 
     asked: list[str] = []
 

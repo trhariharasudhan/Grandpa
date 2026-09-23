@@ -105,7 +105,7 @@ def _via_pc_control(action: str, parameters: dict[str, Any]) -> Any:
 
 def _via_phrase(action: str, parameters: dict[str, Any]) -> Any:
     """A typed phrase through local_actions, with chat's inline yes."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     phrase = {
         "keyboard_hotkey": lambda p: "press " + "+".join(p["keys"]),
@@ -145,7 +145,7 @@ def test_a_command_execution_hotkey_is_refused_on_every_route(
 @pytest.mark.parametrize("keys", BLOCKED_HOTKEYS)
 def test_no_phrase_can_ask_for_a_command_execution_hotkey(keys) -> None:
     """The phrase route's defence is vocabulary: there is no way to say it."""
-    from grandpa.local_actions import _normalise, _parse_safe_action
+    from grandpa.local.parsers import _normalise, _parse_safe_action
 
     for phrase in (f"press {keys}", f"hotkey {keys}", f"press the {keys} keys"):
         parsed = _parse_safe_action(_normalise(phrase))
@@ -195,7 +195,7 @@ def test_text_naming_a_shell_is_refused_on_every_route(recorder, route, text) ->
 @pytest.mark.parametrize("text", BLOCKED_TEXT)
 def test_a_phrase_naming_a_shell_is_refused_before_it_is_parsed(recorder, text) -> None:
     """The phrase route refuses earlier, at local_actions' dangerous-text guard."""
-    from grandpa.local_actions import BLOCKED_MESSAGE
+    from grandpa.local import BLOCKED_MESSAGE
 
     result = _via_phrase("keyboard_type", {"text": text})
 

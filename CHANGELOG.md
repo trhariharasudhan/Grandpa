@@ -14,6 +14,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Removed
 
+- **`local_actions.py`.** 2231 lines holding the phrase parsers, the tier
+  decision, the executor and the audit trail at once, with `handle_local_action`
+  threading all four. It is now `grandpa/local/`: `parsers` (1215 lines),
+  `execute` (401), `permissions` (326), `router` (298), `audit` (57) and
+  `types` (10), layered in that order with no cycles. Every importer is
+  repointed and there is no shim -- `from grandpa.local import
+  handle_local_action` is the whole public surface, and
+  `grandpa.local_actions` no longer exists. Six helpers that now cross a module
+  boundary lost their leading underscore.
+
 - **The five browser stubs.** `browser_click`, `browser_focus`,
   `browser_reload`, `browser_form_fill` and `browser_download` each returned
   `requires_confirmation` and then completed nothing -- no code clicked,

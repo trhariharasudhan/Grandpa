@@ -20,7 +20,7 @@ import pytest
 
 from grandpa import pc_control
 from grandpa.desktop.kernel import approvals
-from grandpa.local_actions import handle_local_action
+from grandpa.local import handle_local_action
 from grandpa.natural_actions import run_parsed
 
 # Opted out of the default-deny actuation fixture (tests/actuation_guard.py):

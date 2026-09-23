@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from grandpa.local_actions import handle_local_action
+from grandpa.local import handle_local_action
 from grandpa.voice.assistant import VoiceCommandProcessor
 from grandpa.voice.microphone import MicrophoneCapture
 from grandpa.windows_app_resolver import AppResolution, launch_app

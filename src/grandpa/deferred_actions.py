@@ -54,8 +54,9 @@ def approve(
     deferred consent has nothing to approve, and one origin's yes cannot reach
     an action staged by another.
     """
-    from grandpa import local_actions
     from grandpa.desktop.kernel import approvals
+    from grandpa.local.audit import audit_decision, log_attempt
+    from grandpa.local.execute import execute_parsed_action
 
     claimed = (
         approvals.approve_deferred(origin=origin, action_id=action_id)
@@ -94,7 +95,7 @@ def approve(
         )
     else:
         try:
-            executed = local_actions._execute(staged, confirm=confirm, consented=True)
+            executed = execute_parsed_action(staged, confirm=confirm, consented=True)
             result = LocalActionResult(
                 status=executed.status,
                 kind=executed.kind,
@@ -115,8 +116,8 @@ def approve(
                 pending_action=metadata,
             )
     source_text = str(payload.get("source_text") or staged.target)
-    local_actions._audit_decision(source_text, result, "approved")
-    local_actions._log_attempt(source_text, result)
+    audit_decision(source_text, result, "approved")
+    log_attempt(source_text, result)
     return result
 
 
@@ -124,8 +125,8 @@ def deny(
     action_id: str | None = None, *, origin: str | None = None
 ) -> LocalActionResult:
     """Refuse the one action ``origin`` staged, if there is one."""
-    from grandpa import local_actions
     from grandpa.desktop.kernel import approvals
+    from grandpa.local.audit import audit_decision, log_attempt
 
     claimed = (
         approvals.deny_deferred(origin=origin, action_id=action_id) if origin else None
@@ -150,8 +151,8 @@ def deny(
         pending_action=_metadata(claimed, status="denied"),
     )
     source_text = str(payload.get("source_text") or result.target)
-    local_actions._audit_decision(source_text, result, "denied")
-    local_actions._log_attempt(source_text, result)
+    audit_decision(source_text, result, "denied")
+    log_attempt(source_text, result)
     return result
 
 

@@ -682,7 +682,7 @@ def _run_routine(
     lines = [f"Running {routine['name']}:"]
     statuses: list[str] = []
     for action in routine["actions"]:
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local import handle_local_action
 
         result = handle_local_action(action, execute=execute)
         if automatic and result.status == "requires_confirmation":

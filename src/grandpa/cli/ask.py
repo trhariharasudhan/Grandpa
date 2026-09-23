@@ -620,7 +620,7 @@ def ask(
             click.echo(memory_result.message)
         return
 
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     local_action = handle_local_action(effective_query_text)
     if not local_action.should_fallback:

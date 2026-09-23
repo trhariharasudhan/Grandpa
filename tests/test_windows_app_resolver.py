@@ -4,7 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from grandpa import local_actions, windows_app_resolver
+from grandpa import windows_app_resolver
+from grandpa.local import router as local_actions
 from grandpa.windows_app_resolver import AppResolution, AppResolverCache, resolve_app
 
 # Opted out of the default-deny actuation fixture (tests/actuation_guard.py):

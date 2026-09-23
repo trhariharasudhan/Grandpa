@@ -1967,7 +1967,7 @@ def chat(
                 render_assistant_response(console, Markdown(desktop_result.message))
                 continue
 
-            from grandpa.local_actions import handle_local_action
+            from grandpa.local import handle_local_action
 
             # Migrated actions are asked inline, as the tool loop asks. Shapes
             # still on the legacy dispatch keep chat's two-turn "yes" -- which

@@ -20,13 +20,20 @@ def _current_direct_imports() -> dict[str, set[str]]:
         text = path.read_text(encoding="utf-8")
         tree = ast.parse(text, filename=str(path))
         relative = path.relative_to(ROOT).as_posix()
+        # grandpa/local/ is the local router itself. Its modules importing
+        # one another is the package being a package, not a route around
+        # the kernel, so only importers from outside it are counted.
+        inside_the_local_package = relative.startswith("src/grandpa/local/")
         categories: set[str] = set()
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 modules = {alias.name for alias in node.names}
                 if "grandpa.pc_control" in modules:
                     categories.add("pc_control")
-                if "grandpa.local_actions" in modules:
+                if (
+                    modules & {"grandpa.local", "grandpa.local.router"}
+                    and not inside_the_local_package
+                ):
                     categories.add("local_actions")
                 if "grandpa.actions.router" in modules:
                     categories.add("legacy_action_router")
@@ -36,7 +43,10 @@ def _current_direct_imports() -> dict[str, set[str]]:
                     categories.add("pc_control")
                 if node.module == "grandpa.pc_control":
                     categories.add("pc_control")
-                if node.module == "grandpa.local_actions":
+                if (
+                    node.module in {"grandpa.local", "grandpa.local.router"}
+                    and not inside_the_local_package
+                ):
                     categories.add("local_actions")
                 if node.module == "grandpa.tools._stubs" and "ToolExecutor" in names:
                     categories.add("tool_executor")

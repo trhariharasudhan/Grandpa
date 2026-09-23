@@ -8,7 +8,7 @@ from grandpa.actions import (
     action_diagnostics,
     reset_action_diagnostics,
 )
-from grandpa.local_actions import handle_local_action
+from grandpa.local import handle_local_action
 from grandpa.server.api_routes import actions_router
 
 

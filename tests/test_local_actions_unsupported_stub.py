@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-import grandpa.local_actions as local_actions
+import grandpa.local.audit
+import grandpa.local.permissions
+import grandpa.local.router as local_actions
 
 
 def test_highlighted_click_stub_is_unsupported_not_handled(monkeypatch) -> None:
@@ -35,8 +37,8 @@ def test_highlighted_click_stub_is_unsupported_not_handled(monkeypatch) -> None:
         def mark(self, *args) -> None:
             pass
 
-    monkeypatch.setattr(local_actions, "LocalActionApprovalStore", _GuardStore)
-    monkeypatch.setattr(local_actions, "_log_attempt", lambda *a, **k: None)
+    monkeypatch.setattr(grandpa.local.audit, "LocalActionApprovalStore", _GuardStore)
+    monkeypatch.setattr(grandpa.local.audit, "log_attempt", lambda *a, **k: None)
 
     result = local_actions.handle_local_action("click the highlighted button")
 

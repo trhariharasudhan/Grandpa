@@ -62,14 +62,14 @@ def test_a_dry_run_describes_and_performs_nothing(monkeypatch) -> None:
 
 def test_the_dangerous_text_guard_still_runs_first() -> None:
     """The catalogue has no text-level refusal, so it must stay in front."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     assert handle_local_action("delete my registry").status == "blocked"
     assert handle_local_action("show my password").status == "blocked"
 
 
 def test_a_migrated_phrase_is_performed_by_the_layer(monkeypatch) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     monkeypatch.setattr(
         "grandpa.desktop.control.diagnostics.system_info_message",
@@ -109,7 +109,7 @@ def window_calls(monkeypatch):
 
 
 def test_focusing_a_window_does_not_ask(window_calls) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action("switch to chrome")
 
@@ -119,7 +119,7 @@ def test_focusing_a_window_does_not_ask(window_calls) -> None:
 
 def test_closing_asks_inline_and_no_closes_nothing(window_calls) -> None:
     """The pending store used to hold this; the layer asks on the spot."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action("close notepad", confirm=lambda *_: False)
 
@@ -128,7 +128,7 @@ def test_closing_asks_inline_and_no_closes_nothing(window_calls) -> None:
 
 
 def test_closing_proceeds_on_yes(window_calls) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action("close notepad", confirm=lambda *_: True)
 
@@ -138,7 +138,7 @@ def test_closing_proceeds_on_yes(window_calls) -> None:
 
 def test_closing_task_manager_is_refused_without_asking(window_calls) -> None:
     """A refusal that asks first is a yes that does nothing."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     asked: list[str] = []
     result = handle_local_action(
@@ -212,7 +212,7 @@ def _launched(rec) -> list[str]:
 @pytest.mark.parametrize("phrase", ["open chrome", "launch edge"])
 def test_starting_a_browser_with_no_one_to_ask_starts_nothing(launches, phrase) -> None:
     """Hole: local_actions called launch_app itself, around the browser rule."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action(phrase)
 
@@ -222,7 +222,7 @@ def test_starting_a_browser_with_no_one_to_ask_starts_nothing(launches, phrase) 
 
 @pytest.mark.parametrize("phrase", ["open chrome", "launch edge"])
 def test_starting_a_browser_asks_and_no_starts_nothing(launches, phrase) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     asked: list[str] = []
     handle_local_action(phrase, confirm=lambda spec, _t: asked.append(spec) or False)
@@ -232,7 +232,7 @@ def test_starting_a_browser_asks_and_no_starts_nothing(launches, phrase) -> None
 
 
 def test_starting_a_browser_on_yes_launches_it(launches) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     handle_local_action("open chrome", confirm=lambda *_a: True)
 
@@ -240,7 +240,7 @@ def test_starting_a_browser_on_yes_launches_it(launches) -> None:
 
 
 def test_voice_cannot_start_a_browser(launches) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     handle_local_action("open chrome", deferred_origin="voice")
     handle_local_action("yes", deferred_origin="voice")
@@ -249,7 +249,7 @@ def test_voice_cannot_start_a_browser(launches) -> None:
 
 
 def test_an_ordinary_app_starts_without_asking(launches) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     asked: list[str] = []
     handle_local_action(
@@ -270,7 +270,7 @@ def test_an_ordinary_app_starts_without_asking(launches) -> None:
 )
 def test_a_protected_folder_is_refused_before_anyone_is_asked(launches, folder) -> None:
     """Hole: local_actions staged it, and opened it on a yes."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     asked: list[str] = []
     result = handle_local_action(
@@ -284,7 +284,7 @@ def test_a_protected_folder_is_refused_before_anyone_is_asked(launches, folder) 
 
 def test_a_protected_folder_is_not_staged_for_voice(launches) -> None:
     from grandpa import pc_control
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action(
         f"open {Path.home() / '.ssh'}", deferred_origin="voice"
@@ -299,7 +299,7 @@ def test_a_protected_folder_is_not_staged_for_voice(launches) -> None:
 
 def test_an_unknown_folder_still_asks(launches, tmp_path) -> None:
     """open_folder alone would not ask; local_actions did, and still does."""
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     asked: list[str] = []
     declined = handle_local_action(
@@ -346,7 +346,7 @@ def _opened(rec) -> list[str]:
 
 @pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
 def test_navigating_with_no_one_to_ask_opens_nothing(launches, phrase, address) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     result = handle_local_action(phrase)
 
@@ -358,7 +358,7 @@ def test_navigating_with_no_one_to_ask_opens_nothing(launches, phrase, address) 
 def test_navigating_shows_the_address_and_no_opens_nothing(
     launches, phrase, address
 ) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     asked: list[str] = []
     handle_local_action(phrase, confirm=lambda spec, _t: asked.append(spec) or False)
@@ -372,7 +372,7 @@ def test_navigating_shows_the_address_and_no_opens_nothing(
 def test_navigating_on_yes_opens_exactly_that_address(
     launches, phrase, address
 ) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     handle_local_action(phrase, confirm=lambda *_a: True)
 
@@ -380,7 +380,7 @@ def test_navigating_on_yes_opens_exactly_that_address(
 
 
 def test_voice_navigation_waits_for_its_own_yes(launches) -> None:
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     staged = handle_local_action("open example.com", deferred_origin="voice")
     assert staged.status == "requires_confirmation"
@@ -394,7 +394,7 @@ def test_voice_navigation_waits_for_its_own_yes(launches) -> None:
 
 
 def test_a_trusted_domain_opens_without_asking(launches, monkeypatch) -> None:
-    import grandpa.local_actions as local_actions
+    import grandpa.local.router as local_actions
 
     # tools.browser.trusted_domains, as both local_actions and the browser
     # domain read it.

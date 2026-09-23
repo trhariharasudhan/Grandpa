@@ -12,7 +12,8 @@ import pytest
 from grandpa.browser import handle_browser_command
 from grandpa.browser.safety import is_trusted_url, parse_trusted_domains
 from grandpa.desktop.automation import handle_desktop_command
-from grandpa.local_actions import LocalActionResult, classify_permission
+from grandpa.local.permissions import classify_permission
+from grandpa.local_action_result import LocalActionResult
 
 # Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
 pytestmark = pytest.mark.real_actions(
@@ -133,14 +134,19 @@ def test_shortcuts_on_the_open_page_are_not_navigation() -> None:
 def test_local_actions_browser_navigation_needs_confirmation(
     monkeypatch, kind, target
 ) -> None:
-    import grandpa.local_actions as local_actions
+    import grandpa.local.parsers
+    import grandpa.local.permissions
 
     result = LocalActionResult(status="handled", kind=kind, target=target, message="")
 
-    monkeypatch.setattr(local_actions, "_is_trusted_navigation", lambda _target: False)
+    monkeypatch.setattr(
+        grandpa.local.parsers, "_is_trusted_navigation", lambda _target: False
+    )
     assert classify_permission("open it", result) == "requires_confirmation"
 
-    monkeypatch.setattr(local_actions, "_is_trusted_navigation", lambda _target: True)
+    monkeypatch.setattr(
+        grandpa.local.parsers, "_is_trusted_navigation", lambda _target: True
+    )
     assert classify_permission("open it", result) == "allowed"
 
 

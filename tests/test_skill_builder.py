@@ -4,7 +4,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from grandpa.local_actions import handle_local_action
+from grandpa.local import handle_local_action
 from grandpa.server.api_routes import user_skills_router
 from grandpa.skill_builder import (
     create_user_skill,

@@ -249,7 +249,7 @@ class TestAgentsAskConfirmation:
 @pytest.fixture
 def recorded_automation(monkeypatch):
     """Record the kwargs ``execute_automation`` is invoked with."""
-    import grandpa.local_actions as local_actions
+    import grandpa.local.execute
     from grandpa.desktop.control.automation import AutomationResult
 
     calls: list[dict[str, Any]] = []
@@ -261,7 +261,7 @@ def recorded_automation(monkeypatch):
         )
 
     monkeypatch.setattr(
-        local_actions, "execute_automation_spec", _fake_execute_automation
+        grandpa.local.execute, "execute_automation_spec", _fake_execute_automation
     )
     return calls
 
@@ -273,7 +273,7 @@ def _drive_chat_local_action(phrase: str, confirm) -> None:
     own pending-approval store, so ``execute_automation`` is only reached
     on the follow-up "yes" turn. Chat passes the same callback on both.
     """
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     handle_local_action(phrase, confirm=confirm)
     handle_local_action("yes", confirm=confirm)

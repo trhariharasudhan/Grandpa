@@ -27,7 +27,7 @@ pytestmark = pytest.mark.real_actions(
 # the layer exists to replace.
 FORBIDDEN = (
     "grandpa.pc_control",
-    "grandpa.local_actions",
+    "grandpa.local.router",
     "grandpa.desktop_context",
     "grandpa.browser_control",
     "grandpa.actions",  # the legacy router this package was moved out of

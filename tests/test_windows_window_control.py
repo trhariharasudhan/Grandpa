@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import pytest
 
-from grandpa import local_actions, windows_window_control
+import grandpa.local.audit
+import grandpa.local.permissions
+from grandpa import windows_window_control
+from grandpa.local import handle_local_action
 from grandpa.local_action_approvals import LocalActionApprovalStore
-from grandpa.local_actions import handle_local_action
 from grandpa.windows_window_control import WindowInfo, control_window
 
 # Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
@@ -16,7 +18,7 @@ pytestmark = pytest.mark.real_actions(
 @pytest.fixture(autouse=True)
 def _approval_store_fixture(tmp_path, monkeypatch):
     store = LocalActionApprovalStore(tmp_path / "approvals.db")
-    monkeypatch.setattr(local_actions, "LocalActionApprovalStore", lambda: store)
+    monkeypatch.setattr(grandpa.local.audit, "LocalActionApprovalStore", lambda: store)
     return store
 
 

@@ -1,8 +1,9 @@
 import time
 from pathlib import Path
 
-from grandpa import local_actions, task_scheduler
-from grandpa.local_actions import LocalActionResult
+import grandpa.local
+from grandpa import task_scheduler
+from grandpa.local_action_result import LocalActionResult
 from grandpa.scheduler_daemon import BackgroundSchedulerDaemon
 from grandpa.task_scheduler import SchedulerStore, execute_due_once
 
@@ -45,7 +46,9 @@ def test_execute_due_routine_runs_safe_actions(tmp_path: Path, monkeypatch) -> N
             "handled", "app", action, f"ran {action}", f"ran {action}"
         )
 
-    monkeypatch.setattr(local_actions, "handle_local_action", fake_handle)
+    # task_scheduler imports the name from the package inside the function,
+    # so the package attribute is what it reads at call time.
+    monkeypatch.setattr(grandpa.local, "handle_local_action", fake_handle)
     store = _store(tmp_path)
     routine = store.upsert_routine(
         "morning routine", ["open chrome"], schedule="daily:09:00"

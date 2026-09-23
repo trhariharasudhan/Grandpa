@@ -197,7 +197,7 @@ def _run_scenario(scenario: BurnInScenario) -> BurnInResult:
     start = time.perf_counter()
     try:
         if scenario.runner.startswith("local_action"):
-            from grandpa.local_actions import handle_local_action
+            from grandpa.local import handle_local_action
 
             execute = scenario.runner == "local_action_execute"
             result = handle_local_action(scenario.command, execute=execute)
@@ -258,7 +258,7 @@ def _run_workflow_stress(
     approval_required = 0
     statuses: dict[str, int] = {}
     try:
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local import handle_local_action
 
         for index in range(max(1, iterations)):
             command = commands[index % len(commands)]

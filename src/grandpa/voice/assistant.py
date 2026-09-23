@@ -122,7 +122,7 @@ class VoiceCommandProcessor:
             user_input_lower = user_input.lower().rstrip(".?!,")
             if user_input_lower in {"yes", "y", "yeah", "sure", "ok", "okay"}:
                 remember_conversation("user", user_input)
-                from grandpa.local_actions import handle_local_action
+                from grandpa.local import handle_local_action
 
                 result = handle_local_action(
                     pending["command"], execute=True, deferred_origin="voice"
@@ -247,7 +247,7 @@ class VoiceCommandProcessor:
             "switch ",
         )
         if lower.startswith(local_prefixes):
-            from grandpa.local_actions import handle_local_action
+            from grandpa.local import handle_local_action
 
             # Voice cannot be asked mid-action; its question is the next thing
             # the user says. It opts into deferred consent: an action that asks
@@ -364,7 +364,7 @@ class VoiceCommandProcessor:
                 kind=getattr(scheduler_action, "kind", "routine"),
             )
 
-        from grandpa.local_actions import handle_local_action
+        from grandpa.local import handle_local_action
 
         # Deferred consent, as above: a "yes" arriving here resolves the one
         # action voice staged, and nothing staged anywhere else.

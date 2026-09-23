@@ -1824,7 +1824,7 @@ def _handle_voice_local_action(
     context_message_count: int = 0,
 ) -> dict[str, Any]:
     from grandpa.deferred_actions import approve
-    from grandpa.local_actions import handle_local_action
+    from grandpa.local import handle_local_action
 
     try:
         # Staged under "http", so the confirmation token this returns can be

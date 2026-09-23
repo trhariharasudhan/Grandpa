@@ -1,7 +1,8 @@
 import pytest
 
 import grandpa.windows_window_control as wwc
-from grandpa.local_actions import handle_local_action, resolve_fuzzy_app
+from grandpa.local import handle_local_action
+from grandpa.local.parsers import resolve_fuzzy_app
 from grandpa.voice.assistant import VoiceCommandProcessor
 from grandpa.voice.cli_session import is_prompt_echo
 from grandpa.windows_window_control import WindowInfo, _resolve_window
