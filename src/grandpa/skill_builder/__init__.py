@@ -1,6 +1,7 @@
 """Declarative user-defined skill builder for Grandpa."""
 
 from grandpa.skill_builder.builder import (
+    SkillValidationError,
     create_user_skill,
     delete_user_skill,
     diagnostics,
@@ -11,6 +12,7 @@ from grandpa.skill_builder.builder import (
 )
 
 __all__ = [
+    "SkillValidationError",
     "create_user_skill",
     "delete_user_skill",
     "diagnostics",

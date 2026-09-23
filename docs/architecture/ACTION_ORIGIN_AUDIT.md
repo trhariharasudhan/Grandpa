@@ -40,7 +40,7 @@ nothing.
 **[FACT]** The following is a valid, wired action path:
 
 ```
-LLM → Agent → ToolRegistry → SkillTool → _pc_action → run_local_action
+LLM → Agent → ToolRegistry → SkillTool → _pc_action → the action layer
 ```
 
 Evidence, each independently verifiable:
@@ -49,12 +49,21 @@ Evidence, each independently verifiable:
 |---|---|
 | SkillTool is agent-invocable | `skills/tool_adapter.py:1` — *"wraps a skill as a tool that agents can invoke"* |
 | Skills are registered as tools | `system/builder.py:150` — `skill_manager.get_skill_tools(...)` when `config.skills.enabled` |
-| Skill params reach the payload | `skills/registry/defaults.py:20-28` — `_pc_action` builds `{"action_type": params.get("action_type", action_type), "target": params.get("target", ...), ...}` and calls `run_local_action(payload)` |
+| Skill params reach the payload | `skills/registry/defaults.py` — `_pc_action` builds the payload from the step's params and executes it (through the action layer since Phase 1.7 — see the correction below) |
 
-**[FACT]** `_pc_action` takes `action_type` from caller-supplied `params` **in
-preference to** the value the skill was registered with. A caller that controls
-`params` therefore controls which action is requested, regardless of what the
-skill manifest declares.
+**[WAS TRUE, FIXED IN PHASE 1.7]** `_pc_action` took `action_type` from
+caller-supplied `params` **in preference to** the value the skill was
+registered with, so a caller that controlled `params` controlled which action
+was requested.
+
+That mattered more than this audit judged, because a runtime skill's params
+arrive from a **saved** workflow step. `POST /v1/user-skills/create` accepted
+`{"skill": "desktop.summary", "risk_level": "LOW", "params": {"action_type":
+"system_lock"}}`, and the stored skill reached the screen lock the next time its
+trigger phrase was said. The action is now fixed at registration, a
+params-named one is refused, and the call goes through the action layer.
+Pinned by `tests/security/test_saved_skills_cannot_rename_an_action.py` and
+`TestSkillToolPathIsWiredAsDescribed`.
 
 **[FACT]** This does **not** produce an escalation, because the declared skill
 risk is not what gets enforced — `run_local_action` re-derives risk from the
@@ -243,7 +252,7 @@ and genuinely enforced; there is no global switch that silently does nothing.
 |---|---|---|
 | 1 | `code_interpreter` and `repl` execute Python with no confirmation and no enforced capability; guarded only by denylists | **High** |
 | 2 | Capability RBAC is disabled by default and fails open, so every `required_capabilities` declaration is inert | **High** (already scheduled, Phase 1.3) |
-| 3 | `_pc_action` lets caller params override the skill's declared `action_type`, so manifest-declared risk is not a boundary | **Medium** — contained, because `run_local_action` re-derives risk |
+| 3 | ~~`_pc_action` lets caller params override the skill's declared `action_type`~~ | **Fixed, Phase 1.7.** Rated Medium here because `run_local_action` re-derives risk; that held for HIGH actions and not for LOW or MEDIUM writes, and the params came from saved content |
 | 4 | 40 of 43 tools require no confirmation, including `apply_patch`, `file_write`, `agent_spawn`, `browser_click`, `browser_type` | **Medium** |
 | 5 | Two enforcement models with different strengths (tiers+approval vs binary confirm) and no shared vocabulary | **Medium** — this is what AD-006 consolidates |
 | 6 | Actions carry no `origin`, so audit cannot distinguish user- from model-initiated | **Medium** — Phase 4, pinned by `TestOriginIsNotYetCarried` |

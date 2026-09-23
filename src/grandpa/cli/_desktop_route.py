@@ -23,48 +23,9 @@ from typing import Any
 
 from grandpa.action_layer.catalogue import get
 from grandpa.action_layer.model import ActionRequest, Origin
+from grandpa.desktop.layer_runner import INVENTORY_TARGETS, parameters_for
 
-__all__ = ["INVENTORY_TARGETS", "build_desktop_request", "parameters_for"]
-
-INVENTORY_TARGETS = frozenset({"apps_search", "apps_is_running", "apps_restart"})
-"""Inventory actions that take what the user named; the rest take nothing."""
-
-
-def parameters_for(spec_name: str, target: str, args: dict[str, Any]) -> dict[str, Any]:
-    """The catalogued parameters for a parsed desktop action.
-
-    Shared with voice, which parses the same phrases with the same parser: two
-    translations of one parser's output is the shape of bug this phase keeps
-    finding.
-    """
-    return _parameters(spec_name, target, args)
-
-
-def _parameters(spec_name: str, target: str, args: dict[str, Any]) -> dict[str, Any]:
-    parameters = {
-        key: value for key, value in (args or {}).items() if value not in (None, "")
-    }
-
-    if spec_name in INVENTORY_TARGETS:
-        return {"query": target} if target else {}
-    if spec_name.startswith("apps_"):
-        return {}
-    if spec_name == "open_app":
-        parameters["app"] = target
-        return parameters
-    if spec_name == "volume_set":
-        # The parser puts the level in args; the catalogue names it "level".
-        if "level" not in parameters and target:
-            parameters["level"] = target
-        return parameters
-    # Only where the catalogue actually declares one. The parser fills target
-    # for its own convenience -- system_lock carries "lock", empty_recycle_bin
-    # carries "recycle_bin" -- and passing that to an action that takes no
-    # parameters would be rejected as an unknown one.
-    key = get(spec_name).target_parameter
-    if target and key:
-        parameters.setdefault(key, target)
-    return parameters
+__all__ = ["INVENTORY_TARGETS", "build_desktop_request"]
 
 
 def build_desktop_request(text: str) -> tuple[ActionRequest | None, Any]:
@@ -87,7 +48,7 @@ def build_desktop_request(text: str) -> tuple[ActionRequest | None, Any]:
     return (
         ActionRequest(
             name,
-            _parameters(name, str(parsed.target or ""), dict(parsed.args or {})),
+            parameters_for(name, str(parsed.target or ""), dict(parsed.args or {})),
             origin=Origin.USER_CHAT,
             risk=spec.risk,
             requires_confirmation=spec.requires_confirmation,

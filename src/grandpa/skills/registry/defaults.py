@@ -16,16 +16,52 @@ _REGISTERED = False
 
 
 def _pc_action(action_type: str, target: str = ""):
-    def _execute(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
-        from grandpa.pc_control import run_local_action
+    """A skill that performs one *fixed* catalogued action.
 
+    The action is decided here, at registration, and params may only supply
+    that action's parameters. They used to be able to rename it --
+    ``params.get("action_type", action_type)`` -- and a skill's params come
+    from a saved workflow step, so a skill registered as a read could be
+    stored as a write: {"skill": "desktop.summary", "params":
+    {"action_type": "system_lock"}} was accepted by the HTTP API and locked
+    the screen when the phrase that triggered it was next spoken. What a
+    capability *is* cannot be chosen by the content that calls it.
+
+    The action goes through the action layer, like every other route, rather
+    than straight to pc_control: one policy, one audit trail, and the
+    catalogue's schema rejects parameters this action does not have.
+    """
+
+    def _execute(params: dict[str, Any], context: SkillExecutionContext) -> SkillResult:
+        from grandpa.desktop.layer_runner import run_through_the_layer
+
+        supplied = dict(params or {})
+        named = str(supplied.pop("action_type", "") or "")
+        dry_run = bool(supplied.pop("dry_run", context.dry_run))
+        if named and named != action_type:
+            # Refused out loud rather than quietly ignored. Something asked
+            # this skill to be a different capability; running the registered
+            # one anyway would look like the request had been honoured.
+            return SkillResult(
+                ok=False,
+                status="blocked",
+                message=(
+                    f"This skill does {action_type.replace('_', ' ')} and nothing "
+                    f"else. It cannot be asked to do "
+                    f"{named.replace('_', ' ')} instead."
+                ),
+                risk_level="BLOCKED",
+                error="action_rename_refused",
+            )
         payload = {
-            "action_type": params.get("action_type", action_type),
-            "target": params.get("target", params.get("text", target)),
-            "args": params.get("args", {}),
-            "dry_run": bool(params.get("dry_run", context.dry_run)),
+            "action_type": action_type,
+            "target": str(
+                supplied.pop("target", None) or supplied.pop("text", "") or target
+            ),
+            "args": supplied.pop("args", None) or supplied,
+            "dry_run": dry_run,
         }
-        response = run_local_action(payload)
+        response = run_through_the_layer(payload)
         return SkillResult(
             ok=response.ok,
             status="dry_run"

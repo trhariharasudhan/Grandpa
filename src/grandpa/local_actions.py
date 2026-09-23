@@ -265,7 +265,7 @@ def handle_local_action(
             _log_attempt(command, result)
             return result
 
-    user_skill_result = _parse_user_skill_action(command)
+    user_skill_result = _parse_user_skill_action(command, confirm=confirm)
     if user_skill_result.status != "no_match":
         if user_skill_result.permission == "requires_confirmation":
             user_skill_result = _with_permission(
@@ -1136,9 +1136,12 @@ def _parse_desktop_operator_action(command: str) -> LocalActionResult:
         )
 
 
-def _parse_user_skill_action(command: str) -> LocalActionResult:
+def _parse_user_skill_action(
+    command: str, *, confirm: ConfirmationCallback | None = None
+) -> LocalActionResult:
     try:
         from grandpa.skill_builder import (
+            SkillValidationError,
             create_user_skill,
             list_user_skills,
             run_user_skill,
@@ -1163,7 +1166,19 @@ def _parse_user_skill_action(command: str) -> LocalActionResult:
             r"^(create a skill called|remember this workflow|save this automation)",
             command,
         ):
-            created = create_user_skill({"request": command})
+            try:
+                created = create_user_skill({"request": command}, confirm=confirm)
+            except SkillValidationError as exc:
+                # Saving a skill that acts is itself an approval, and this is
+                # the person who would give it. Their "no" is an answer, not a
+                # parse failure, so it must not fall through to another route.
+                return LocalActionResult(
+                    status="error",
+                    kind="pc_control",
+                    target="user_skill|not_saved",
+                    message=str(exc),
+                    tts_text=str(exc),
+                )
             skill = created["skill"]
             message = f"Saved user skill '{skill['name']}' with {len(skill['workflow_steps'])} declarative step(s)."
             return LocalActionResult(

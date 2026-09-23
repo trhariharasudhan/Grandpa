@@ -42,7 +42,7 @@ def test_register_duplicate_skill_is_blocked():
 
 
 def test_default_skills_register_and_execute_pc_summary(monkeypatch):
-    def fake_run_local_action(payload):
+    def fake_desktop_action(payload):
         class Response:
             ok = True
             status = "completed"
@@ -55,7 +55,11 @@ def test_default_skills_register_and_execute_pc_summary(monkeypatch):
 
         return Response()
 
-    monkeypatch.setattr("grandpa.pc_control.run_local_action", fake_run_local_action)
+    # The desktop runtime skills reach the action layer now, not
+    # pc_control, so the stand-in replaces the layer runner.
+    monkeypatch.setattr(
+        "grandpa.desktop.layer_runner.run_through_the_layer", fake_desktop_action
+    )
     ensure_default_skills_registered()
 
     skill = get_skill("desktop summary")
@@ -98,7 +102,7 @@ def test_approval_required_skill_does_not_execute_without_approval():
 
 
 def test_skills_api_lists_gets_executes_and_categorizes(monkeypatch):
-    def fake_run_local_action(payload):
+    def fake_desktop_action(payload):
         class Response:
             ok = True
             status = "completed"
@@ -111,7 +115,11 @@ def test_skills_api_lists_gets_executes_and_categorizes(monkeypatch):
 
         return Response()
 
-    monkeypatch.setattr("grandpa.pc_control.run_local_action", fake_run_local_action)
+    # The desktop runtime skills reach the action layer now, not
+    # pc_control, so the stand-in replaces the layer runner.
+    monkeypatch.setattr(
+        "grandpa.desktop.layer_runner.run_through_the_layer", fake_desktop_action
+    )
     app = FastAPI()
     app.include_router(skills_router)
     client = TestClient(app)

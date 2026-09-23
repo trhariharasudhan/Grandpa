@@ -1,20 +1,21 @@
-"""Voice's desktop actions, performed by the action layer.
+"""A parsed desktop payload, performed by the action layer.
 
-Voice Operator Mode parsed a phrase with ``DesktopParser`` and handed the result
-to ``pc_control.run_local_action``. That was the last door to a catalogued
-capability that did not go through the layer: pc_control decided the tier, the
-approval and the audit, while chat's identical phrase was decided by the
-catalogue. They agreed, action for action, when they were compared -- but two
-policies agreeing today is a coincidence maintained by hand, and every hole this
-phase has found was two routes to one capability.
+Voice Operator Mode and the desktop runtime skills both parsed or stored a
+``pc_action_type`` and handed it to ``pc_control.run_local_action``. Those were
+doors to a catalogued capability that did not go through the layer: pc_control
+decided the tier, the approval and the audit, while chat's identical phrase was
+decided by the catalogue. They agreed, action for action, when they were
+compared -- but two policies agreeing today is a coincidence maintained by hand,
+and every hole this phase has found was two routes to one capability.
 
-The answer this module returns keeps ``pc_control``'s shape (``ok``, ``status``,
-``message``, ``evidence``), because that is what the operator reads.
+The answer keeps ``pc_control``'s shape (``ok``, ``status``, ``message``,
+``evidence``), because that is what the callers read.
 
-Voice cannot be asked inline: its only question is the next utterance. So no
-confirmation callback is handed over, and an action the catalogue asks about is
-refused here rather than performed. Synthetic input is refused for the same
-reason, by the layer itself.
+No confirmation callback is handed over. Neither caller can be asked at the
+moment of action -- voice's only question is the next utterance, and a stored
+workflow step has nobody present at all -- so an action the catalogue asks about
+is refused here rather than performed, and synthetic input is refused by the
+layer itself.
 """
 
 from __future__ import annotations
@@ -22,9 +23,47 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from grandpa.action_layer.catalogue import get
+
+INVENTORY_TARGETS = frozenset({"apps_search", "apps_is_running", "apps_restart"})
+"""Inventory actions that take what the user named; the rest take nothing."""
+
+
+def parameters_for(spec_name: str, target: str, args: dict[str, Any]) -> dict[str, Any]:
+    """The catalogued parameters for a parsed desktop action.
+
+    One translation, shared by chat's desktop route, voice operator mode and
+    the desktop runtime skills: they all read the same parser's output, and
+    two translations of it is the shape of bug this phase keeps finding.
+    """
+    parameters = {
+        key: value for key, value in (args or {}).items() if value not in (None, "")
+    }
+
+    if spec_name in INVENTORY_TARGETS:
+        return {"query": target} if target else {}
+    if spec_name.startswith("apps_"):
+        return {}
+    if spec_name == "open_app":
+        parameters["app"] = target
+        return parameters
+    if spec_name == "volume_set":
+        # The parser puts the level in args; the catalogue names it "level".
+        if "level" not in parameters and target:
+            parameters["level"] = target
+        return parameters
+    # Only where the catalogue actually declares one. The parser fills target
+    # for its own convenience -- system_lock carries "lock", empty_recycle_bin
+    # carries "recycle_bin" -- and passing that to an action that takes no
+    # parameters would be rejected as an unknown one.
+    key = get(spec_name).target_parameter
+    if target and key:
+        parameters.setdefault(key, target)
+    return parameters
+
 
 @dataclass(frozen=True)
-class VoiceActionResponse:
+class DesktopActionResponse:
     """``pc_control.LocalActionResponse``'s shape, filled from an ActionResult."""
 
     ok: bool
@@ -77,7 +116,7 @@ def run_through_the_layer(payload: dict[str, Any]) -> Any:
         # the purchase and credential browser actions) and the browser stubs
         # that never completed anything. Falling back to pc_control would be
         # reopening the second door this module exists to close.
-        return VoiceActionResponse(
+        return DesktopActionResponse(
             ok=False,
             action_id=None,
             status="unsupported",
@@ -88,17 +127,15 @@ def run_through_the_layer(payload: dict[str, Any]) -> Any:
             error="unsupported",
         )
 
-    # The same translation chat's desktop route uses, because it is the same
-    # parser's output: the parser puts a volume level in target, names an app
-    # there too, and fills target for actions that take no parameter at all.
-    from grandpa.cli._desktop_route import parameters_for
-
+    # One translation of the parser's output, shared with chat's desktop route:
+    # the parser puts a volume level in target, names an app there too, and
+    # fills target for actions that take no parameter at all.
     parameters = parameters_for(
         action, str(payload.get("target") or ""), dict(payload.get("args") or {})
     )
 
     if payload.get("dry_run"):
-        return VoiceActionResponse(
+        return DesktopActionResponse(
             ok=True,
             action_id=None,
             status="dry_run",
@@ -125,7 +162,7 @@ def run_through_the_layer(payload: dict[str, Any]) -> Any:
         if result.success
         else _STATUS_BY_ERROR.get(str(result.error or ""), "failed")
     )
-    return VoiceActionResponse(
+    return DesktopActionResponse(
         ok=result.success,
         action_id=None,
         status=status,
@@ -137,4 +174,4 @@ def run_through_the_layer(payload: dict[str, Any]) -> Any:
     )
 
 
-__all__ = ["VoiceActionResponse", "run_through_the_layer"]
+__all__ = ["DesktopActionResponse", "parameters_for", "run_through_the_layer"]

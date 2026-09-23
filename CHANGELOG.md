@@ -14,6 +14,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A saved skill could rename the action it performed.** A runtime skill
+  registered as a read built its payload with
+  `params.get("action_type", action_type)`, and a runtime skill's params come
+  from a *stored* workflow step. So `POST /v1/user-skills/create` accepted a
+  `desktop.summary` step declaring `risk_level: LOW` whose params named
+  `system_lock`, and the screen locked the next time that skill's trigger
+  phrase was said. What a capability *is* is now fixed where it is registered;
+  a params-named action is refused and says so; and these skills go through the
+  action layer instead of straight to `pc_control`, so one policy and one audit
+  trail cover them.
+
+- **Saving a skill that acts is now approved when it is saved.** A saved skill
+  is deferred execution: it runs later, on a trigger phrase, with nobody
+  reading its steps. Storing one whose steps change the PC now asks first and
+  lists those steps, and a caller with no way to ask -- which is exactly the
+  HTTP API -- cannot store one at all. Each step's risk is read from the
+  registry rather than from the step, which declared its own.
+
 - **Four tool subjects existed but could not be named.** The tiered catalogue
   lets the model fetch a domain with `load_tools`, and the list of subjects it
   could ask for was typed by hand into the system prompt. The clock, calendar,

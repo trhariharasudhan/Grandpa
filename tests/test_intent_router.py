@@ -36,7 +36,7 @@ def test_read_only_desktop_route_maps_to_runtime_skill():
 
 
 def test_skill_route_executes_through_registry(monkeypatch):
-    def fake_run_local_action(payload):
+    def fake_desktop_action(payload):
         class Response:
             ok = True
             status = "completed"
@@ -50,7 +50,11 @@ def test_skill_route_executes_through_registry(monkeypatch):
         assert payload["action_type"] == "desktop_summary"
         return Response()
 
-    monkeypatch.setattr("grandpa.pc_control.run_local_action", fake_run_local_action)
+    # The desktop runtime skills reach the action layer now, not
+    # pc_control, so the stand-in replaces the layer runner.
+    monkeypatch.setattr(
+        "grandpa.desktop.layer_runner.run_through_the_layer", fake_desktop_action
+    )
 
     result = route_local_intent("desktop summary")
 

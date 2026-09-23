@@ -3,14 +3,19 @@
 Architecture discovery established that model output *can* reach the structured
 actuation funnel. The path is real and wired:
 
-    LLM -> Agent -> ToolRegistry -> SkillTool -> _pc_action -> run_local_action
+    LLM -> Agent -> ToolRegistry -> SkillTool -> _pc_action -> the action layer
 
 ``skills/tool_adapter.py`` says so in its own first line ("wraps a skill as a
-tool that agents can invoke"), ``SkillManager.get_skill_tools()`` is registered
-in ``system/builder.py`` whenever ``config.skills.enabled``, and
-``skills/registry/defaults.py::_pc_action`` copies caller-supplied ``params``
-straight into the ``action_type`` and ``target`` of a ``run_local_action``
-payload.
+tool that agents can invoke") and ``SkillManager.get_skill_tools()`` is
+registered in ``system/builder.py`` whenever ``config.skills.enabled``.
+
+One part of that path has since closed, and is recorded below rather than
+quietly dropped: ``skills/registry/defaults.py::_pc_action`` used to copy
+caller-supplied ``params`` straight into the ``action_type`` of a
+``run_local_action`` payload, so the caller chose the capability. It now
+performs the action it was registered with, through the action layer, and
+refuses a params-named one. The path still *reaches* actuation -- that is the
+point of this module -- but it can no longer be pointed somewhere else.
 
 So the claim "model output never becomes an action" is true only of the
 natural-language funnel (``handle_local_action``, which is only ever called
@@ -199,14 +204,27 @@ class TestSkillToolPathIsWiredAsDescribed:
     closed (good, record it) or it moved (record where).
     """
 
-    def test_pc_action_forwards_caller_action_type(self):
+    def test_pc_action_no_longer_forwards_a_caller_supplied_action_type(self):
+        """The path closed. Recording it, as this class's docstring requires.
+
+        ``_pc_action`` used to build its payload with
+        ``params.get("action_type", action_type)``, so a caller -- an agent
+        through SkillTool, or a *stored* workflow step -- chose which
+        capability a skill was. It now performs the action it was registered
+        with, through the action layer, and refuses a params-named one.
+        """
         import inspect
 
         from grandpa.skills.registry import defaults
 
-        source = inspect.getsource(defaults._pc_action)
-        assert "run_local_action" in source
-        assert 'params.get("action_type"' in source
+        # The inner function, not the factory: the factory's docstring quotes
+        # the old expression, and a test that reads prose proves nothing.
+        source = inspect.getsource(defaults._pc_action("desktop_summary"))
+
+        assert 'params.get("action_type"' not in source
+        assert "run_local_action" not in source
+        assert "grandpa.desktop.layer_runner" in source
+        assert "action_rename_refused" in source
 
     def test_skill_tool_is_documented_as_agent_invocable(self):
         from grandpa.skills import tool_adapter

@@ -40,7 +40,7 @@ def test_planner_blocks_dangerous_goal():
 
 
 def test_mcp_bridge_lists_and_executes_runtime_tool(monkeypatch):
-    def fake_run_local_action(payload):
+    def fake_desktop_action(payload):
         class Response:
             ok = True
             status = "completed"
@@ -53,7 +53,11 @@ def test_mcp_bridge_lists_and_executes_runtime_tool(monkeypatch):
 
         return Response()
 
-    monkeypatch.setattr("grandpa.pc_control.run_local_action", fake_run_local_action)
+    # The desktop runtime skills reach the action layer now, not
+    # pc_control, so the stand-in replaces the layer runner.
+    monkeypatch.setattr(
+        "grandpa.desktop.layer_runner.run_through_the_layer", fake_desktop_action
+    )
     tools = list_tools()
     assert any(tool["name"] == "desktop.summary" for tool in tools)
 

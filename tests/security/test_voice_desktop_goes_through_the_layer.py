@@ -18,7 +18,7 @@ from tests.actuation_guard import ActuationDenied
 
 
 def _run(action: str, target: str = "", **args):
-    from grandpa.voice.layer_runner import run_through_the_layer
+    from grandpa.desktop.layer_runner import run_through_the_layer
 
     return run_through_the_layer(
         {"action_type": action, "target": target, "args": args}
@@ -27,7 +27,7 @@ def _run(action: str, target: str = "", **args):
 
 def test_the_operators_default_runner_is_the_layer() -> None:
     import grandpa.voice.operator as operator
-    from grandpa.voice.layer_runner import run_through_the_layer
+    from grandpa.desktop.layer_runner import run_through_the_layer
 
     assert operator.run_local_action is run_through_the_layer
 
@@ -74,7 +74,7 @@ def test_a_low_risk_action_reaches_its_implementation() -> None:
     that replaced the real implementation, at the point the real one would run.
     """
     from grandpa.desktop.automation import DesktopParser
-    from grandpa.voice.layer_runner import run_through_the_layer
+    from grandpa.desktop.layer_runner import run_through_the_layer
 
     parsed = DesktopParser().parse("set volume to 30")
     assert parsed is not None and parsed.pc_action_type == "volume_set"
@@ -90,7 +90,7 @@ def test_a_low_risk_action_reaches_its_implementation() -> None:
 
 
 def test_a_dry_run_says_so_and_reaches_nothing() -> None:
-    from grandpa.voice.layer_runner import run_through_the_layer
+    from grandpa.desktop.layer_runner import run_through_the_layer
 
     result = run_through_the_layer(
         {
