@@ -468,7 +468,7 @@ class VoiceSession:
             self.presenter.print_confirmation_required(response_text)
         elif getattr(response, "status", None) == "handled" and getattr(
             response, "kind", None
-        ) in {"app", "window", "folder", "chrome_profile", "session_control"}:
+        ) in {"app", "window", "folder", "session_control"}:
             self.presenter.print_action_completed(response_text)
         else:
             self.presenter.print_assistant_message(response_text)

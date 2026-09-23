@@ -12,6 +12,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Removed
+
+- **The five browser stubs.** `browser_click`, `browser_focus`,
+  `browser_reload`, `browser_form_fill` and `browser_download` each returned
+  `requires_confirmation` and then completed nothing -- no code clicked,
+  focused, reloaded, filled or downloaded. Two of them were on pc_control's
+  approval list, so a person could be asked to approve something that could
+  not happen, which is worse than not offering it: they agreed to an action
+  and nothing followed. Gone from the risk tables, the approval list, the
+  dispatch map, `browser_control` and the catalogue's exclusions.
+
+- **`browser_media`.** Catalogued as "report the media playing in the visible
+  browser window"; its implementation always returned `unsupported`, because
+  visible-page media control needs a browser adapter that does not exist.
+
+- **The `media|`, `form_fill|`, `download|` and `task|` phrase routes.** The
+  chat and voice phrases that fed the above ("play video", "fill X with Y",
+  "download this file", "remember browser task X"). `browser_task` itself is
+  **kept**: unlike the others it does something real, recording an activity row
+  that `BrowserContextStore.recent()` reads back for browser awareness and the
+  diagnostics route. It is now reached through the action layer only.
+
+- **Chrome profile selection.** `run_chrome_profile_selection` drove the
+  "Who's using Chrome?" screen by building a vision graph, matching profile
+  names by fuzzy string similarity, and clicking at the matched coordinates --
+  a click at coordinates chosen by a text match, with no confirmation. The
+  phrase route and the implementation are both gone. `launch_app` still
+  *reports* the chooser (`chrome_profile_chooser`), because saying what is on
+  screen is not the same as clicking it.
+
 ### Fixed
 
 - **The skill-authoring surface no longer rests on one guard.** The escalation

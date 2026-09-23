@@ -434,56 +434,6 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
         summary = _summarize_visible_text(text)
         return BrowserActionResult("handled", action, target, summary, context=context)
 
-    if action == "media":
-        context = get_visible_browser_context()
-        if not context.supported:
-            return BrowserActionResult(
-                "unsupported", action, target, context.message, context=context
-            )
-        return _browser_media_action(target, context)
-
-    if action == "form_fill":
-        if _looks_high_risk(target):
-            return BrowserActionResult(
-                "blocked",
-                action,
-                target,
-                "I blocked this form action for safety.",
-                risk_level="BLOCKED",
-            )
-        context = get_visible_browser_context()
-        if not context.supported:
-            return BrowserActionResult(
-                "unsupported", action, target, context.message, context=context
-            )
-        return BrowserActionResult(
-            "requires_confirmation",
-            action,
-            target,
-            "Confirmation required before filling a visible form field.",
-            risk_level="MEDIUM",
-            context=context,
-        )
-
-    if action == "download":
-        if _looks_high_risk(target):
-            return BrowserActionResult(
-                "blocked",
-                action,
-                target,
-                "I blocked this download action for safety.",
-                risk_level="BLOCKED",
-            )
-        context = get_visible_browser_context()
-        return BrowserActionResult(
-            "requires_confirmation",
-            action,
-            target,
-            "Confirmation required before starting a browser download.",
-            risk_level="MEDIUM",
-            context=context,
-        )
-
     if action == "task":
         store = BrowserContextStore()
         store.record("task", query=target, status="handled")
@@ -532,23 +482,6 @@ def execute_browser_action(action: str, target: str = "") -> BrowserActionResult
         )
         return BrowserActionResult(
             "handled", action, target, f"Opening YouTube and searching for {target}."
-        )
-
-    if action in {"back", "forward", "reload", "focus_search", "click"}:
-        if action == "click" and _looks_high_risk(target):
-            return BrowserActionResult(
-                "blocked",
-                action,
-                target,
-                "I blocked this browser action for safety.",
-                risk_level="BLOCKED",
-            )
-        return BrowserActionResult(
-            "requires_confirmation",
-            action,
-            target,
-            "Confirmation required before controlling the visible browser.",
-            risk_level="MEDIUM",
         )
 
     return BrowserActionResult(
@@ -1157,16 +1090,6 @@ def _safe_session(value: Any, url: str) -> dict[str, Any]:
         session["visibility"] = str(value.get("visibility") or "")[:40]
         session["focused"] = bool(value.get("focused", False))
     return session
-
-
-def _browser_media_action(target: str, context: BrowserContext) -> BrowserActionResult:
-    if not context.media:
-        message = "I do not see visible media controls in the current browser context."
-    else:
-        message = (
-            "Visible-page media controls require a browser adapter and are unavailable."
-        )
-    return BrowserActionResult("unsupported", "media", target, message, context=context)
 
 
 def _redact_sensitive_visible_text(text: str) -> str:

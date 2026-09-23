@@ -861,22 +861,6 @@ def _is_dangerous(command: str) -> bool:
 
 def _parse_safe_action(command: str) -> LocalActionResult:
     # Parse Chrome Profile Selection command
-    profile_match = re.search(
-        r"(?:select|click|choose|open chrome using|use)(?:\s+my|\s+the)?\s+([a-zA-Z0-9\s]+?)(?:\s+chrome)?\s+profile",
-        command,
-    )
-    if profile_match:
-        profile_name = profile_match.group(1).strip()
-        # Capitalize words to look like a canonical profile name (e.g. Hari Hara Sudhan)
-        profile_name = " ".join(w.capitalize() for w in profile_name.split())
-        return LocalActionResult(
-            status="handled",
-            kind="chrome_profile",
-            target=profile_name,
-            message=f"Selecting Chrome profile {profile_name}.",
-            tts_text=f"Selecting Chrome profile {profile_name}.",
-        )
-
     action_result = _route_with_action_modules(command)
     if action_result is not None:
         return action_result
@@ -1611,58 +1595,6 @@ def _parse_browser_action(command: str) -> LocalActionResult:
         )
 
     if command in {
-        "play video",
-        "pause video",
-        "play youtube",
-        "pause youtube",
-        "mute video",
-        "unmute video",
-    }:
-        action = command.replace("youtube", "video")
-        return LocalActionResult(
-            status="handled",
-            kind="browser",
-            target=f"media|{action}",
-            message=f"{action.title()}.",
-            tts_text=f"{action.title()}.",
-        )
-
-    fill_match = re.fullmatch(r"fill (?:the )?(.+?) (?:field )?with (.+)", command)
-    if fill_match:
-        field = fill_match.group(1).strip()
-        value = fill_match.group(2).strip()
-        return LocalActionResult(
-            status="handled",
-            kind="browser",
-            target=f"form_fill|{field}={value}",
-            message=f"Fill {field}.",
-            tts_text=f"Fill {field}.",
-        )
-
-    if command in {
-        "download this file",
-        "download selected file",
-        "download this page file",
-    }:
-        return LocalActionResult(
-            status="handled",
-            kind="browser",
-            target="download|visible selection",
-            message="Prepare browser download.",
-            tts_text="Prepare browser download.",
-        )
-
-    task_match = re.fullmatch(r"(?:remember|continue|track) browser task (.+)", command)
-    if task_match:
-        return LocalActionResult(
-            status="handled",
-            kind="browser",
-            target=f"task|{task_match.group(1).strip()}",
-            message="Recording browser task context.",
-            tts_text="Recording browser task context.",
-        )
-
-    if command in {
         "summarize this webpage",
         "summarise this webpage",
         "summarize current webpage",
@@ -2146,19 +2078,6 @@ def _execute(
             tts_text=launched.message,
         )
 
-    if result.kind == "chrome_profile":
-        msg = run_chrome_profile_selection(result.target)
-        status = "handled" if "selected" in msg or "opened" in msg else "error"
-        if "Which Chrome profile do you mean" in msg:
-            status = "ambiguous"
-        return LocalActionResult(
-            status=status,
-            kind="chrome_profile",
-            target=result.target,
-            message=msg,
-            tts_text=msg,
-        )
-
     if result.kind == "folder":
         path = Path(result.target)
         if not path.exists():
@@ -2310,124 +2229,3 @@ def _log_attempt(command: str, result: LocalActionResult) -> None:
         )
     except Exception:
         logger.debug("Failed to record local action activity", exc_info=True)
-
-
-def run_chrome_profile_selection(profile_name: str) -> str:
-    """Detect and select the requested Chrome profile from the 'Who's using Chrome?' screen."""
-    if sys.platform != "win32":
-        return "Chrome profile selection is only supported on Windows."
-
-    import time
-    from difflib import SequenceMatcher
-
-    from grandpa.windows_window_control import _list_windows, control_window
-
-    # 1. Find the Chrome profile chooser window
-    chooser_window = None
-    for w in _list_windows():
-        w_title = w.title.lower() if w.title else ""
-        if "who's using chrome" in w_title or "whos using chrome" in w_title:
-            chooser_window = w
-            break
-
-    if not chooser_window:
-        return "I could not find the Chrome profile chooser window."
-
-    # 2. Focus it
-    try:
-        control_window("focus", chooser_window.title)
-    except Exception:
-        pass
-
-    # Give a tiny fraction of a second to settle
-    time.sleep(0.2)
-
-    # 3. Build vision graph
-    try:
-        from grandpa.vision.service import VisionEngine
-
-        engine = VisionEngine()
-        inspect_res = engine.inspect(active_window=True)
-        graph = inspect_res.graph
-    except Exception as exc:
-        return f"Could not inspect the screen to find Chrome profiles: {exc}"
-
-    if not graph or not graph.nodes:
-        return "No visible elements were found in the Chrome window."
-
-    # 4. Find matching profile cards
-    matches = []
-    seen_labels = set()
-    for node in graph.nodes:
-        if not node.visible:
-            continue
-        label = node.label.strip()
-        if not label:
-            continue
-        if label.lower() in {
-            "who's using chrome?",
-            "browse as guest",
-            "guest",
-            "add",
-            "close",
-            "minimize",
-            "maximize",
-            "add profile",
-            "customize your chrome profile",
-            "who's using chrome",
-        }:
-            continue
-
-        ratio = SequenceMatcher(None, profile_name.lower(), label.lower()).ratio()
-        if ratio >= 0.85 or profile_name.lower() in label.lower():
-            if label not in seen_labels:
-                seen_labels.add(label)
-                matches.append((node, ratio, label))
-
-    if not matches:
-        return f"I could not find a Chrome profile named {profile_name}."
-
-    if len(matches) > 1:
-        # Check if they are distinct names
-        return "Which Chrome profile do you mean?"
-
-    # 5. Click the single matching profile card
-    node, ratio, matched_label = matches[0]
-    x, y = node.bounds.center
-
-    try:
-        from grandpa.automation.service import get_automation_service
-
-        service = get_automation_service()
-        service.handle(f"click at {x} {y}", target_window=chooser_window.title)
-    except Exception as exc:
-        return f"Failed to automate click on the profile card: {exc}"
-
-    # 6. Verify selection success by waiting for chooser to close or browser window to open
-    start_time = time.time()
-    while time.time() - start_time < 5.0:
-        # Check if chooser disappeared
-        chooser_exists = False
-        browser_exists = False
-        for w in _list_windows():
-            w_title = w.title.lower() if w.title else ""
-            if "who's using chrome" in w_title or "whos using chrome" in w_title:
-                chooser_exists = True
-            elif "chrome" in w_title or "google chrome" in w_title:
-                browser_exists = True
-
-        if not chooser_exists or browser_exists:
-            return f"Chrome profile {matched_label} selected."
-        time.sleep(0.2)
-
-    return "I found the profile card, but clicking it did not open Chrome."
-
-
-__all__ = [
-    "BLOCKED_MESSAGE",
-    "LocalActionResult",
-    "approve_pending_action",
-    "classify_permission",
-    "deny_pending_action",
-    "handle_local_action",
-]

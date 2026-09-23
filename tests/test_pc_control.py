@@ -682,14 +682,17 @@ def test_duplicate_approval_does_not_execute_twice(tmp_path):
     assert rejected.error == "already_completed"
 
 
-@pytest.mark.parametrize("action_type", ["browser_form_fill", "browser_download"])
-def test_browser_actions_on_the_approval_list_are_staged(action_type):
-    """Not input: these still take an approval code, as they always did."""
+@pytest.mark.parametrize(
+    "action_type",
+    ["browser_click", "browser_focus", "browser_reload", "browser_form_fill"],
+)
+def test_the_deleted_browser_stubs_are_not_actions_any_more(action_type):
+    """They asked for approval and then completed nothing. Now they refuse."""
     result = run_local_action({"action_type": action_type, "target": "x"})
 
-    assert result.status == "approval_required"
-    assert result.approval_required is True
-    assert result.action_id
+    assert result.ok is False
+    assert result.status in {"blocked", "unsupported"}
+    assert result.action_id is None
 
 
 @pytest.mark.parametrize(

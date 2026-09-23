@@ -450,7 +450,6 @@ _CALLS: dict[str, _Call] = {
     "browser_headings": _Call(Binding.ACTION_TARGET, target="scope", alias="headings"),
     "browser_links": _Call(Binding.AWARENESS_ACTION, alias="links"),
     "browser_buttons": _Call(Binding.ACTION_TARGET, target="scope", alias="buttons"),
-    "browser_media": _Call(Binding.ACTION_TARGET, target="scope", alias="media"),
     "browser_diagnostics": _Call(
         Binding.ACTION_TARGET, target="scope", alias="diagnostics"
     ),
@@ -1316,14 +1315,6 @@ _BROWSER_ACTIONS: tuple[ActionSpec, ...] = (
         _BROWSER,
         _schema({"scope": _browser_scope("visible")}),
         notes="execute_browser_action('buttons', 'visible').",
-    ),
-    _spec(
-        "browser_media",
-        _LOW,
-        "Report the media playing in the visible browser window.",
-        _BROWSER,
-        _schema({"scope": _browser_scope("visible")}),
-        notes="execute_browser_action('media', 'visible').",
     ),
     _spec(
         "browser_diagnostics",
@@ -2236,31 +2227,6 @@ EXCLUSIONS: Mapping[str, str] = MappingProxyType(
         "browser_purchase": (
             "BLOCKED in pc_control: spending the user's money, never."
         ),
-        # Stubs. browser_control.execute_browser_action returns
-        # "requires_confirmation" for each of these and nothing in the
-        # repository ever completes them (audit section 2.7,
-        # browser_control.py:436-539). They are capabilities Grandpa does not
-        # have, so they are not offered as tools.
-        "browser_click": (
-            "Stub: always returns requires_confirmation and nothing completes "
-            "the click. No implementation behind it."
-        ),
-        "browser_focus": (
-            "Stub: maps to 'focus_search', which always returns "
-            "requires_confirmation and is never completed."
-        ),
-        "browser_reload": (
-            "Stub: always returns requires_confirmation; no code reloads the "
-            "visible browser."
-        ),
-        "browser_form_fill": (
-            "Stub: always returns requires_confirmation; no code fills the "
-            "field. On pc_control's approval list, but there is nothing to "
-            "approve."
-        ),
-        "browser_download": (
-            "Stub: always returns requires_confirmation; no code starts the download."
-        ),
     }
 )
 
@@ -2612,7 +2578,6 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "browser_headings",
             "browser_links",
             "browser_buttons",
-            "browser_media",
             "browser_diagnostics",
             "browser_task",
         ),

@@ -83,7 +83,6 @@ LOW_RISK_ACTIONS = {
     "browser_links",
     "browser_buttons",
     "browser_diagnostics",
-    "browser_media",
     "browser_task",
     "system_lock",
 }
@@ -104,15 +103,10 @@ MEDIUM_RISK_ACTIONS = {
     "mouse_scroll",
     "mouse_drag",
     "desktop_navigate",
-    "browser_click",
-    "browser_focus",
     "browser_open",
     "browser_search",
     "browser_back",
     "browser_forward",
-    "browser_reload",
-    "browser_form_fill",
-    "browser_download",
 }
 HIGH_RISK_ACTIONS = {
     "file_delete",
@@ -151,8 +145,6 @@ APPROVAL_REQUIRED_ACTIONS = {
     "keyboard_hotkey",
     "mouse_click",
     "mouse_drag",
-    "browser_form_fill",
-    "browser_download",
     "browser_open",
     "browser_search",
 }
@@ -1112,13 +1104,7 @@ def _execute_browser(request: LocalActionRequest, action: str) -> LocalActionRes
         "browser_links": ("links", "visible"),
         "browser_buttons": ("buttons", "visible"),
         "browser_diagnostics": ("diagnostics", "browser"),
-        "browser_media": ("media", request.target),
         "browser_task": ("task", request.target),
-        "browser_click": ("click", request.target),
-        "browser_focus": ("focus_search", request.target or "visible"),
-        "browser_reload": ("reload", "visible"),
-        "browser_form_fill": ("form_fill", request.target),
-        "browser_download": ("download", request.target),
     }
     browser_action = mapping.get(action)
     if browser_action is None:

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from grandpa.local_actions import handle_local_action, run_chrome_profile_selection
+from grandpa.local_actions import handle_local_action
 from grandpa.voice.assistant import VoiceCommandProcessor
 from grandpa.voice.microphone import MicrophoneCapture
 from grandpa.windows_app_resolver import AppResolution, launch_app
@@ -99,91 +99,6 @@ def test_chrome_chooser_detection(monkeypatch):
     result = launch_app("chrome")
     assert result.status == "found"
     assert "profile chooser" in result.message
-
-
-def test_chrome_profile_text_matching(monkeypatch):
-    monkeypatch.setattr(sys, "platform", "win32")
-
-    mock_window = MagicMock()
-    mock_window.title = "Who's using Chrome?"
-
-    call_idx = 0
-
-    def mock_list_windows():
-        nonlocal call_idx
-        call_idx += 1
-        if call_idx <= 2:
-            return [mock_window]
-        return []
-
-    monkeypatch.setattr(
-        "grandpa.windows_window_control._list_windows", mock_list_windows
-    )
-    monkeypatch.setattr(
-        "grandpa.windows_window_control.control_window", lambda act, tgt: True
-    )
-
-    mock_node = MagicMock()
-    mock_node.visible = True
-    mock_node.label = "Hari Hara Sudhan"
-    mock_node.bounds.center = (400, 300)
-
-    mock_graph = MagicMock()
-    mock_graph.nodes = [mock_node]
-
-    mock_inspect = MagicMock()
-    mock_inspect.graph = mock_graph
-
-    mock_engine = MagicMock()
-    mock_engine.inspect.return_value = mock_inspect
-
-    monkeypatch.setattr("grandpa.vision.service.VisionEngine", lambda: mock_engine)
-
-    mock_service = MagicMock()
-    monkeypatch.setattr(
-        "grandpa.automation.service.get_automation_service", lambda: mock_service
-    )
-
-    msg = run_chrome_profile_selection("Hari Hara Sudhan")
-    assert "selected" in msg or "opened" in msg
-    mock_service.handle.assert_called_with(
-        "click at 400 300", target_window="Who's using Chrome?"
-    )
-
-
-def test_ambiguous_profile_clarification(monkeypatch):
-    monkeypatch.setattr(sys, "platform", "win32")
-
-    mock_window = MagicMock()
-    mock_window.title = "Who's using Chrome?"
-    monkeypatch.setattr(
-        "grandpa.windows_window_control._list_windows", lambda: [mock_window]
-    )
-    monkeypatch.setattr(
-        "grandpa.windows_window_control.control_window", lambda act, tgt: True
-    )
-
-    node1 = MagicMock()
-    node1.visible = True
-    node1.label = "Hari 1"
-
-    node2 = MagicMock()
-    node2.visible = True
-    node2.label = "Hari 2"
-
-    mock_graph = MagicMock()
-    mock_graph.nodes = [node1, node2]
-
-    mock_inspect = MagicMock()
-    mock_inspect.graph = mock_graph
-
-    mock_engine = MagicMock()
-    mock_engine.inspect.return_value = mock_inspect
-
-    monkeypatch.setattr("grandpa.vision.service.VisionEngine", lambda: mock_engine)
-
-    msg = run_chrome_profile_selection("Hari")
-    assert "Which Chrome profile do you mean" in msg
 
 
 def test_window_focus_suffixes():

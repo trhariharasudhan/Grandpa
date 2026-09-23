@@ -136,27 +136,17 @@ def test_browser_click_requires_confirmation():
     assert result.pending_action is None
 
 
-@pytest.mark.parametrize(
-    ("command", "target", "message_part"),
-    [
-        (
-            "fill search with python",
-            "form_fill|search=python",
-            "filling a browser field",
-        ),
-        ("download this file", "download|visible selection", "browser download"),
-    ],
-)
-def test_browser_workflow_actions_require_confirmation(command, target, message_part):
-    result = handle_local_action(command, execute=False)
+def test_the_deleted_browser_stub_phrases_are_no_longer_routes() -> None:
+    """form_fill| and download| were stubs: nothing ever filled or downloaded.
 
-    assert result.status == "requires_confirmation"
-    assert result.kind == "browser"
-    assert result.target == target
-    assert result.permission == "requires_confirmation"
-    # A dry run describes the question; it stages nothing to answer it.
-    assert result.pending_action is None
-    assert message_part in result.message
+    They asked for confirmation and then did nothing, which is worse than not
+    offering the capability -- the person agreed to something that never
+    happened. The phrases now fall through to the assistant.
+    """
+    for command in ("fill search with python", "download this file"):
+        result = handle_local_action(command, execute=False)
+
+        assert result.should_fallback, f"{command} still routes to a stub"
 
 
 def test_browser_high_risk_click_is_blocked():

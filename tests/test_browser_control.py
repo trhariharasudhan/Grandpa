@@ -143,18 +143,26 @@ def test_summary_uses_visible_text(monkeypatch):
     assert "One. Two. Three." in result.message
 
 
-def test_click_requires_confirmation():
-    result = execute_browser_action("click", "first video")
+def test_the_deleted_stubs_are_unsupported_rather_than_asked_about():
+    """click, focus_search, reload, form_fill and download are gone.
 
-    assert result.status == "requires_confirmation"
-    assert result.risk_level == "MEDIUM"
+    Each used to answer "requires_confirmation" and then complete nothing, so a
+    person could agree to an action that never happened. Being told it is not
+    supported is the honest answer, and it is what an unknown action already
+    got.
+    """
+    for action, target in (
+        ("click", "first video"),
+        ("click", "checkout payment button"),
+        ("focus_search", "visible"),
+        ("reload", "visible"),
+        ("form_fill", "search=python"),
+        ("form_fill", "password=hunter2"),
+        ("download", "visible link"),
+    ):
+        result = execute_browser_action(action, target)
 
-
-def test_unsafe_browser_action_is_blocked():
-    result = execute_browser_action("click", "checkout payment button")
-
-    assert result.status == "blocked"
-    assert result.risk_level == "BLOCKED"
+        assert result.status == "unsupported", f"{action} still has a branch"
 
 
 def test_browser_context_store_records_recent_activity(tmp_path):
@@ -165,32 +173,6 @@ def test_browser_context_store_records_recent_activity(tmp_path):
     recent = store.recent()
     assert recent[0]["action"] == "search"
     assert recent[0]["query"] == "python"
-
-
-def test_safe_form_fill_requires_confirmation(monkeypatch):
-    monkeypatch.setattr("grandpa.browser_control.sys.platform", "win32")
-    monkeypatch.setattr(
-        "grandpa.browser_control._active_window_title", lambda: "Search - Google Chrome"
-    )
-
-    result = execute_browser_action("form_fill", "search=python")
-
-    assert result.status == "requires_confirmation"
-    assert result.risk_level == "MEDIUM"
-
-
-def test_sensitive_form_fill_blocked():
-    result = execute_browser_action("form_fill", "password=hunter2")
-
-    assert result.status == "blocked"
-    assert result.risk_level == "BLOCKED"
-
-
-def test_download_requires_confirmation():
-    result = execute_browser_action("download", "visible link")
-
-    assert result.status == "requires_confirmation"
-    assert result.risk_level == "MEDIUM"
 
 
 def test_browser_diagnostics_reports_visible_context(monkeypatch):
