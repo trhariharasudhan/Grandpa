@@ -85,9 +85,9 @@ def _browser_context() -> dict[str, Any]:
 
 
 def _desktop_context() -> dict[str, Any]:
-    from grandpa.pc_control import run_local_action
+    from grandpa.desktop.layer_runner import run_through_the_layer
 
-    result = run_local_action(
+    result = run_through_the_layer(
         {"action_type": "desktop_summary", "target": "desktop", "dry_run": True}
     )
     return {

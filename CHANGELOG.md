@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Two more direct `pc_control` doors closed.** The autonomous agent read the
+  desktop through `pc_control.run_local_action` in both its observation phase
+  and its context gatherer. Both are hard-coded dry-run reads, so neither was a
+  hole; both now go through the action layer like every other route.
+
 - **A saved skill could rename the action it performed.** A runtime skill
   registered as a read built its payload with
   `params.get("action_type", action_type)`, and a runtime skill's params come

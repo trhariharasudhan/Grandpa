@@ -512,28 +512,31 @@ burnin.py (×2) · cli/doctor_cmd.py
 hardcoded or user-derived payloads. **But two paths carry model-influenced
 data:**
 
-1. **Agent context gathering** — `agents/context.py:90` and
-   `agents/goal_mode.py:381`. **Verified safe:** both pass a hardcoded literal
+1. **Agent context gathering** — `agents/context.py` and
+   `agents/goal_mode.py`. **Verified safe:** both pass a hardcoded literal
    `{"action_type": "desktop_summary", "target": "desktop", "dry_run": True}` —
-   a read-only action with `dry_run=True`. No model output enters the payload.
+   a read-only action with `dry_run=True`. No model output enters the payload. Both
+   went straight to `run_local_action`; since Phase 1.7 they go through the action
+   layer, so the read is classified and audited in one place like every other.
 
-2. **Skills invoked as agent tools** — `skills/registry/defaults.py:_pc_action`:
-   ```python
-   payload = {
-       "action_type": params.get("action_type", action_type),
-       "target": params.get("target", params.get("text", target)),
-       "args": params.get("args", {}),
-       ...
-   }
-   response = run_local_action(payload)
-   ```
-   `params` are supplied by the caller. And `skills/tool_adapter.py:1` states
-   plainly: *"SkillTool — wraps a skill as a tool **that agents can invoke**."*
-   `SkillManager.get_skill_tools()` is wired into the tool registry at
-   `system/builder.py:150` whenever `config.skills.enabled`.
+2. **Skills invoked as agent tools** — `skills/registry/defaults.py:_pc_action`.
+   `skills/tool_adapter.py:1` states plainly: *"SkillTool — wraps a skill as
+   a tool **that agents can invoke**."* `SkillManager.get_skill_tools()` is
+   wired into the tool registry at `system/builder.py:150` whenever
+   `config.skills.enabled`.
 
    **So the chain LLM → agent → ToolRegistry → SkillTool → `_pc_action` →
-   `run_local_action` exists and is live.**
+   the action layer exists and is live.**
+
+   **Corrected in Phase 1.7.** This entry used to quote the payload as
+   `params.get("action_type", action_type)` and note only that `params` are
+   caller-supplied. The consequence was understated: a runtime skill's params
+   come from a **saved** workflow step, so a skill registered as a read could
+   be *stored* as a write — the HTTP API accepted a `desktop.summary` step
+   declaring `risk_level: LOW` whose params named `system_lock`. The action a
+   skill performs is now fixed where it is registered, a params-named one is
+   refused, and the call goes through the action layer rather than straight to
+   `run_local_action`.
 
 ### Why the system is nonetheless safe
 

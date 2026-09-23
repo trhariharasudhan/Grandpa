@@ -376,9 +376,9 @@ def _observe(goal: AgentGoal, store: AgentGoalStore) -> None:
             }
         )
     try:
-        from grandpa.pc_control import run_local_action
+        from grandpa.desktop.layer_runner import run_through_the_layer
 
-        desktop = run_local_action(
+        desktop = run_through_the_layer(
             {"action_type": "desktop_summary", "target": "desktop", "dry_run": True}
         )
         observations.append({"type": "desktop", "data": desktop.to_dict()})
