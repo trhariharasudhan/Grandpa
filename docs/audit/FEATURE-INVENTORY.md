@@ -502,8 +502,10 @@ command can redeem** (§2.4, finding 3). They are safe by accident, not by desig
 
 ## 6. Findings, ranked
 
-Status as of 2026-09-11: 10 FIXED, 16 OPEN, 2 DEFERRED. The findings themselves are unchanged
-below.
+Status as of 2026-09-23, after Phase 1: **11 FIXED, 1 CLOSED, 14 OPEN, 2 DEFERRED** of the
+original 28, plus **17 further findings** that Phase 1 discovered while closing them, all
+fixed (section 6.1). The original findings themselves are unchanged below; only the Status
+and Closed-by columns move.
 
 | # | Finding | Status | Closed by / note |
 |---|---------|--------|------------------|
@@ -514,9 +516,9 @@ below.
 | 5 | `skill list` never finds the 43 skills | OPEN | |
 | 6 | Synthetic input skips its confirmation tier | FIXED | `bacffe0b` (premise corrected: dead end, not bypass) |
 | 7 | `agents ask` auto-approves by default | FIXED | `bacffe0b`, `9485cb8f` |
-| 8 | Volume/brightness/clipboard/process control have no entry point | OPEN | |
+| 8 | Volume/brightness/clipboard/process control have no entry point | OPEN | Partly: volume is catalogued and reachable by phrase (`set volume to 30` -> `volume_set`) since the action layer landed. Brightness, clipboard and process control are catalogued but still have no phrase that reaches them, and `process_kill` is not catalogued at all |
 | 9 | `grandpa jarvis` understands one command | OPEN | |
-| 10 | Browser control stubs report success | OPEN | Partly: false scroll messages removed in `b6376c14`; click/back/forward/reload/focus_search/form_fill/download remain stubs |
+| 10 | Browser control stubs report success | FIXED | `b829661a`. `browser_click`, `browser_focus`, `browser_reload`, `browser_form_fill` and `browser_download` are deleted rather than repaired: each returned `requires_confirmation` and completed nothing, and two were on the approval list, so a person could approve something that could not happen. `browser_back`/`browser_forward` got real implementations via the browser domain (`3f2245fd`) |
 | 11 | Reminders never fire on a default install | OPEN | |
 | 12 | One-shot reminders become daily | OPEN | |
 | 13 | Planner invents application names | OPEN | |
@@ -524,7 +526,7 @@ below.
 | 15 | `python -m grandpa` does not work | OPEN | |
 | 16 | Seven empty skill sub-packages | FIXED | `881c5c9a` |
 | 17 | `file_assistant` misroutes clipboard requests | OPEN | |
-| 18 | Six parallel desktop-control stacks | DEFERRED | Consolidation batch |
+| 18 | Six parallel desktop-control stacks | DEFERRED | Consolidation batch. Phase 1 removed four of the *routes* into them -- voice operator (`74a1c1a1`), the desktop runtime skills (`fd690a65`), agent_plan's observation and context phases (`e585e0e2`) and chat -- so they are reached through the action layer now. The stacks themselves are still six |
 | 19 | `desktop/kernel/*` circular layer | DEFERRED | Consolidation batch |
 | 20 | Symlink-escape tests skip on Windows | OPEN | |
 | 21 | `a2a` imported by nothing | FIXED | `881c5c9a` |
@@ -535,6 +537,34 @@ below.
 | 26 | Nineteen config keys never read | FIXED | `881c5c9a` removed 16; `20d02f6b` wired `top_p`/`repetition_penalty`; `24b320e4` Rust sync; `character_voice` is read |
 | 27 | Stub reported as a handled action | FIXED | `b6376c14` |
 | 28 | Assorted smaller defects | OPEN | Partly: agent names and placeholder (`b6376c14`), `models` alias and most §3.1 modules (`881c5c9a`); five unimported tool modules, `page_reader` URL, `embeddings_placeholder`, duplicate notes remain |
+
+### 6.1 Found while closing the above (Phase 1)
+
+Every one of these was discovered by the work rather than by the original audit, and every
+one is fixed. They are listed because the pattern matters more than the individual bugs:
+eleven of the seventeen are the same shape -- something that decides what may happen taking
+its answer from content, a default, or a path that nobody had checked.
+
+| # | Finding | Status | Closed by |
+|---|---------|--------|-----------|
+| P1 | Voice Operator Mode called `pc_control` directly, bypassing the action layer | FIXED | `74a1c1a1` |
+| P2 | A **saved** skill's params could rename the action it performed: `desktop.summary` with `params.action_type = system_lock` locked the screen | FIXED | `fd690a65` |
+| P3 | Saving a skill that acts was not itself an approval, though it is deferred execution | FIXED | `fd690a65` |
+| P4 | agent_plan read the desktop through two direct `pc_control` doors | FIXED | `e585e0e2` |
+| P5 | The intent router stamped `LOW`/`approval_required=False` on every route without asking the registry, while executing with `dry_run=False`; one row already named a MEDIUM skill | FIXED | `8b960ad6` |
+| P6 | The whole model-cannot-author-a-skill argument rested on one SSRF check | FIXED | `22eec862` |
+| P7 | `skill_manage` (model-facing) wrote skill manifests with no confirmation | FIXED | `22eec862` |
+| P8 | `file_write`/`file_read`: an empty `allowed_dirs` meant *allow everything*, and nothing ever passed a list | FIXED | `639a0470` |
+| P9 | `file_read` answered "File not found" for paths it may not read, revealing their existence | FIXED | `639a0470` |
+| P10 | A skill manifest did not record who wrote it, so a model-authored one loaded silently | FIXED | `639a0470` |
+| P11 | A stored skill step could set `db_query`'s `read_only=False` and then DROP | FIXED | `639a0470` |
+| P12 | **Tests could write anywhere on the machine.** The actuation guard covers catalogued implementations; `FileWriteTool` is a tool, so a mutation run that removed its path guard wrote to a real `~/.ssh/authorized_keys` and `~/.grandpa/config.toml` | FIXED | `79e576d8` |
+| P13 | `RUNTIME_DIR`, the user-skill store and the operator store were **relative** paths, so state followed the working directory; a `user_skills.db` was left in the repository and later loaded by a test that believed its store was isolated | FIXED | `79e576d8` |
+| P14 | Six config defaults were evaluated at class-definition time and ignored `GRANDPA_HOME`, so the suite wrote an audit database into a real home directory on every run | FIXED | `79e576d8` |
+| P15 | The knowledge store, browser-agent database and browser session file wrote into the code tree or a hardcoded `~/.grandpa` | FIXED | `79e576d8` |
+| P16 | A mocked config made the security setup `mkdir` the repr of a `MagicMock`: 319 sqlite files across two checkouts, which `.gitignore` had been taught to hide | FIXED | `79e576d8` |
+| P17 | `memory_manage` and `user_profile_manage` were left ungated on the grounds that they write inside `GRANDPA_HOME`, and did not -- both used a hardcoded `~/.grandpa/...` literal | FIXED | `2df79819` |
+
 
 1. **`grandpa ask --tools <any tool>` hardcodes unconditional tool auto-approval.**
    `src/grandpa/cli/ask.py:413-414` sets `confirm_callback = lambda prompt: True` with no
