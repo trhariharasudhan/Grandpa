@@ -110,12 +110,23 @@ _ROUTE_TABLE: dict[str, tuple[str, str, str]] = {
 
 
 def match_skill_route(request_text: str) -> IntentRoute | None:
-    """Return a skill route for exact read-only commands."""
+    """Return a skill route for exact read-only commands.
+
+    The route's risk comes from the registry, not from this table. It used to
+    be stamped ``LOW``/``approval_required=False`` here, and one row already
+    disagreed -- ``summarize current desktop state`` names
+    ``desktop.operator_plan``, which is registered MEDIUM. Nothing acting was
+    reachable, so nothing had gone wrong yet; but this is the only route in
+    Grandpa that executes with ``dry_run=False``, and it was safe because of
+    what the table happened to contain rather than because of a check. That is
+    the same shape as the saved-skill hole, with the declaration in code.
+    """
     clean = _clean(request_text)
     item = _ROUTE_TABLE.get(clean)
     if item is None:
         return None
     skill_name, intent, category = item
+    risk_level, approval_required = _registered_risk(skill_name)
     return IntentRoute(
         request_text=request_text,
         intent=intent,
@@ -123,10 +134,22 @@ def match_skill_route(request_text: str) -> IntentRoute | None:
         confidence=0.96,
         skill_name=skill_name,
         params={},
-        risk_level="LOW",
-        approval_required=False,
+        risk_level=risk_level,
+        approval_required=approval_required,
         execution_source="skill",
     )
+
+
+def _registered_risk(skill_name: str) -> tuple[str, bool]:
+    """What the registry says this skill is. Unknown counts against it."""
+    from grandpa.skills.registry import ensure_default_skills_registered, get_skill
+
+    ensure_default_skills_registered()
+    try:
+        skill = get_skill(skill_name)
+    except KeyError:
+        return "HIGH", True
+    return str(skill.risk_level), bool(skill.approval_required)
 
 
 def execute_skill_route(route: IntentRoute):

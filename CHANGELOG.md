@@ -14,6 +14,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The intent router believed its own risk labels.** It is the one route that
+  executes with `dry_run=False`, and it stamped every match
+  `LOW`/`approval_required=False` without asking the registry -- while one row
+  already disagreed (`summarize current desktop state` names a MEDIUM skill).
+  Nothing acting was reachable, so nothing had gone wrong; it was safe because
+  of what the table contained, not because of a check. Risk now comes from the
+  registry, and a skill needing approval is refused there, because a routed
+  request has nobody to ask.
+
 - **Two more direct `pc_control` doors closed.** The autonomous agent read the
   desktop through `pc_control.run_local_action` in both its observation phase
   and its context gatherer. Both are hard-coded dry-run reads, so neither was a

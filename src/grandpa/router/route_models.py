@@ -44,10 +44,18 @@ class IntentRoute:
 
     @property
     def can_execute_as_skill(self) -> bool:
+        """Whether the router may run this itself.
+
+        ``approval_required`` is part of the answer because a routed request
+        has nobody to ask: the router executes with ``dry_run=False`` and no
+        confirmation callback, so a skill the registry says needs approval is
+        refused here and left to a route that can ask, rather than run.
+        """
         return (
             self.execution_source == "skill"
             and bool(self.skill_name)
             and self.confidence >= 0.7
+            and not self.approval_required
         )
 
     @property
