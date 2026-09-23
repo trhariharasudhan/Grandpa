@@ -76,8 +76,8 @@ def test_tts_tool_execute(tmp_path, monkeypatch):
 
     assert result.success is True
     assert "digest.mp3" in result.content
-    assert (tmp_path / "digest.mp3").exists()
-    assert (tmp_path / "digest.mp3").read_bytes() == b"fake-audio-data"
+    assert (audio_dir / "digest.mp3").exists()
+    assert (audio_dir / "digest.mp3").read_bytes() == b"fake-audio-data"
 
 
 def test_tts_tool_empty_text():
