@@ -8,7 +8,17 @@ from typing import Any
 
 from grandpa.browser_intelligence.models import BrowserSessionState, ExtractedContent
 
-_SESSION_FILE = Path.home() / ".grandpa" / "browser_session_state.json"
+
+def _session_file() -> Path:
+    """Resolved per call, and from the configured home.
+
+    This was ``Path.home() / ".grandpa" / ...`` at module level, which ignored
+    GRANDPA_HOME entirely: every test run wrote this file into the real home
+    directory, whatever the configuration said.
+    """
+    from grandpa.runtime_paths import grandpa_home
+
+    return grandpa_home() / "browser_session_state.json"
 
 
 class BrowserSessionMemory:
@@ -33,17 +43,17 @@ class BrowserSessionMemory:
 
     def _save_to_disk(self) -> None:
         try:
-            _SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _session_file().parent.mkdir(parents=True, exist_ok=True)
             data = self.state.to_dict()
-            _SESSION_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            _session_file().write_text(json.dumps(data, indent=2), encoding="utf-8")
         except Exception:
             pass
 
     def _load_from_disk(self) -> None:
-        if not _SESSION_FILE.exists():
+        if not _session_file().exists():
             return
         try:
-            raw = json.loads(_SESSION_FILE.read_text(encoding="utf-8"))
+            raw = json.loads(_session_file().read_text(encoding="utf-8"))
             if isinstance(raw, dict):
                 self.state.visited_pages = raw.get("visited_pages", [])
                 self.state.verified_pages = raw.get("verified_pages", [])

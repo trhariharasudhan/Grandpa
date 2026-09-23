@@ -152,13 +152,22 @@ def _nothing_actuates(request, monkeypatch) -> None:
     machine it ran on, and each time the previous fix had been to add that one
     category to a recorder.
 
+    The filesystem is confined too (tests/write_guard.py). The catalogue names
+    actions, not tools, so nothing here replaced ``FileWriteTool`` -- and when
+    a mutation run removed that tool's own path guard, a test asserting the
+    refusal against real absolute paths wrote to a real ``~/.ssh`` and a real
+    ``~/.grandpa``. Replacing the one tool would leave the gap; the writes are
+    confined instead.
+
     A test that needs the real thing marks itself:
 
         @pytest.mark.real_actions(reason="...")
 
-    and the reason has to say something.
+    and the reason has to say something. The marker covers both guards: a test
+    that drives a real implementation usually needs it to write somewhere real.
     """
     from tests.actuation_guard import MARKER, deny_everything, reason_for
+    from tests.write_guard import confine_writes
 
     marker = request.node.get_closest_marker(MARKER)
     if marker is not None:
@@ -168,6 +177,7 @@ def _nothing_actuates(request, monkeypatch) -> None:
             pytest.fail(str(exc))
         return
     deny_everything(monkeypatch)
+    confine_writes(monkeypatch)
 
 
 @pytest.fixture(scope="session")

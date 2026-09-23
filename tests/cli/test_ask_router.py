@@ -106,6 +106,12 @@ class TestAskModelResolution:
         ):
             cfg = mock_config.return_value
             cfg.telemetry.enabled = False
+            # A MagicMock config makes config.security.audit_log_path a
+            # MagicMock, and setup_security mkdir'd the repr of it: the
+            # suite was creating MagicMock/load_config()... trees full of
+            # sqlite files in the repository, which .gitignore had been
+            # taught to hide. Turning security off keeps the mock honest.
+            cfg.security.enabled = False
             cfg.intelligence.default_model = ""
             cfg.intelligence.fallback_model = ""
             cfg.intelligence.temperature = 0.7
@@ -138,6 +144,12 @@ class TestAskModelResolution:
         ):
             cfg = mock_config.return_value
             cfg.telemetry.enabled = False
+            # A MagicMock config makes config.security.audit_log_path a
+            # MagicMock, and setup_security mkdir'd the repr of it: the
+            # suite was creating MagicMock/load_config()... trees full of
+            # sqlite files in the repository, which .gitignore had been
+            # taught to hide. Turning security off keeps the mock honest.
+            cfg.security.enabled = False
             cfg.intelligence.default_model = ""
             cfg.intelligence.fallback_model = "fallback-model"
             cfg.intelligence.temperature = 0.7

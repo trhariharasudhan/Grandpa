@@ -31,6 +31,23 @@ DEFAULT_CONFIG_DIR = Path(
     os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")
 ).expanduser()
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.toml"
+
+
+def _in_config_dir(name: str) -> str:
+    """A default that resolves when the config object is built, not at import.
+
+    ``str(DEFAULT_CONFIG_DIR / name)`` as a dataclass default is evaluated once,
+    when the class is created -- before anything has had a chance to set
+    ``GRANDPA_HOME``. Every store defaulting that way pointed at the real
+    ``~/.grandpa`` regardless of configuration, which is how a test suite ended
+    up writing an audit database into a real home directory.
+    """
+    return str(
+        Path(os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")).expanduser()
+        / name
+    )
+
+
 CONFIG_RECOVERY_MESSAGE = (
     "Configuration was invalid and was backed up. Safe defaults were loaded."
 )
@@ -488,7 +505,7 @@ class StorageConfig:
     """Storage (memory) backend settings."""
 
     default_backend: str = "sqlite"
-    db_path: str = str(DEFAULT_CONFIG_DIR / "memory.db")
+    db_path: str = field(default_factory=lambda: _in_config_dir("memory.db"))
     context_top_k: int = 5
     context_min_score: float = 0.0
     context_max_tokens: int = 2048
@@ -588,7 +605,7 @@ class TelemetryConfig:
     """Telemetry persistence settings."""
 
     enabled: bool = True
-    db_path: str = str(DEFAULT_CONFIG_DIR / "telemetry.db")
+    db_path: str = field(default_factory=lambda: _in_config_dir("telemetry.db"))
     energy_vendor: str = ""  # auto-detect or force "nvidia"/"amd"/"apple"/"cpu_rapl"
 
 
@@ -597,7 +614,7 @@ class TracesConfig:
     """Trace system settings."""
 
     enabled: bool = True
-    db_path: str = str(DEFAULT_CONFIG_DIR / "traces.db")
+    db_path: str = field(default_factory=lambda: _in_config_dir("traces.db"))
 
 
 @dataclass(slots=True)
@@ -627,7 +644,7 @@ class SecurityConfig:
     mode: str = "redact"  # "redact" | "warn" | "block"
     secret_scanner: bool = True
     pii_scanner: bool = True
-    audit_log_path: str = str(DEFAULT_CONFIG_DIR / "audit.db")
+    audit_log_path: str = field(default_factory=lambda: _in_config_dir("audit.db"))
     profile: str = ""
     capabilities: CapabilitiesConfig = field(default_factory=CapabilitiesConfig)
 
@@ -714,7 +731,7 @@ class SessionConfig:
     enabled: bool = False
     max_age_hours: float = 24.0
     consolidation_threshold: int = 100
-    db_path: str = str(DEFAULT_CONFIG_DIR / "sessions.db")
+    db_path: str = field(default_factory=lambda: _in_config_dir("sessions.db"))
 
 
 @dataclass(slots=True)
@@ -772,7 +789,7 @@ class AgentManagerConfig:
     """Persistent agent manager settings."""
 
     enabled: bool = True
-    db_path: str = str(DEFAULT_CONFIG_DIR / "agents.db")
+    db_path: str = field(default_factory=lambda: _in_config_dir("agents.db"))
 
 
 @dataclass(slots=True)

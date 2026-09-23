@@ -11,8 +11,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from grandpa.runtime_paths import runtime_path
+
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_KNOWLEDGE_DIR = ROOT / "runtime" / "knowledge"
+# Was ROOT/runtime/knowledge -- the *code* tree, which in an installed
+# layout is site-packages. User data belongs under GRANDPA_HOME.
+DEFAULT_KNOWLEDGE_DIR = runtime_path("knowledge")
 DEFAULT_KNOWLEDGE_DB = DEFAULT_KNOWLEDGE_DIR / "knowledge.db"
 
 

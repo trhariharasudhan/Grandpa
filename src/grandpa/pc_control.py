@@ -22,6 +22,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Any, Literal
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
+from grandpa.runtime_paths import runtime_dir
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,10 @@ ActionStatus = Literal[
     "expired",
 ]
 
-RUNTIME_DIR = Path("runtime")
+# Kept as names because they are exported and widely imported, but they are
+# resolved through grandpa.runtime_paths now: these used to be relative, so
+# the audit log landed wherever the process was started from.
+RUNTIME_DIR = runtime_dir()
 AUDIT_LOG_PATH = RUNTIME_DIR / "logs" / "local_actions.jsonl"
 PENDING_TTL_SECONDS = 300
 DEFAULT_APPROVAL_DB = DEFAULT_CONFIG_DIR / "pc_control_approvals.db"
@@ -1787,7 +1791,7 @@ def _get_audit_log_path_impl() -> Path:
     configured = os.environ.get("GRANDPA_LOCAL_ACTION_LOG")
     if configured:
         return Path(configured)
-    base = Path(os.environ.get("GRANDPA_RUNTIME_DIR", str(RUNTIME_DIR)))
+    base = runtime_dir()
     return base / "logs" / "local_actions.jsonl"
 
 

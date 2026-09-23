@@ -20,6 +20,9 @@ def _write_skill(root: Path, name: str, description: str = "A test skill") -> Pa
             [skill]
             name = "{name}"
             description = "{description}"
+            # SkillManager.discover() refuses a manifest that does not say a
+            # person wrote it; this fixture stands for one that a person did.
+            provenance = "user"
 
             [[skill.steps]]
             tool_name = "echo"

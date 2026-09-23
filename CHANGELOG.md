@@ -14,6 +14,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **A test could write anywhere on the machine.** The actuation guard replaces
+  every implementation the catalogue names; it does not replace the
+  filesystem, and `FileWriteTool` is a tool rather than a catalogued action.
+  So when a mutation run removed that tool's own path guard -- which is what a
+  mutation run is for -- a test asserting the refusal against real absolute
+  paths wrote `x` over a real `~/.ssh/authorized_keys` and a real
+  `~/.grandpa/config.toml`. Every Python-level write in a test is now confined
+  to the test's own scratch space: `open` in writing modes, the `pathlib`
+  mutators, the `os` removers and movers, and `shutil`'s copy and delete
+  helpers. A test that needs to write elsewhere opts out with the existing
+  `real_actions` marker.
+
+- **Grandpa's own state landed wherever the process was started.**
+  `RUNTIME_DIR`, `DEFAULT_USER_SKILLS_DB` and `DEFAULT_OPERATOR_DB` were
+  relative paths, so the audit log, the desktop operator's history and saved
+  user skills followed the working directory: running the CLI from one place
+  and the server from another gave two installations that could not see each
+  other's data. They are rooted under `GRANDPA_HOME` now. Anything left at an
+  old relative location is reported by `grandpa doctor` -- named, with the new
+  location, and left alone. It is not migrated (that would have to guess which
+  `./runtime` is the real one) and not deleted.
+
+- **The knowledge store and the browser-agent database were written into the
+  code tree.** Both defaulted to `ROOT/runtime/...`, which in an installed
+  layout is site-packages. Now under `GRANDPA_HOME`.
+
+- **Six config defaults ignored `GRANDPA_HOME`.** `audit.db`, `memory.db`,
+  `traces.db`, `sessions.db`, `agents.db` and `telemetry.db` were evaluated as
+  dataclass defaults at class-definition time, before anything could set the
+  variable, so they pointed at the real `~/.grandpa` whatever the
+  configuration said -- which is how a test run wrote an audit database into a
+  real home directory. They resolve when the config object is built now.
+
+- **The browser session file ignored it too.** `browser_session_state.json`
+  used `Path.home() / ".grandpa"` directly at module level.
+
+- **The suite was creating `MagicMock/...` directories in the repository.** A
+  mocked config left `security.audit_log_path` as a `MagicMock`, and the
+  security setup made a directory out of the repr of it: 319 sqlite files
+  across two checkouts. `.gitignore` had been taught to hide the symptom.
+  Fixed at the cause, and the litter is deleted.
+
 - **An empty `allowed_dirs` meant "allow everything".** `file_read` and
   `file_write` each returned `True` from their path guard when the list was
   empty, and nothing ever passed a list -- the registry builds both tools with

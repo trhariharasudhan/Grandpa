@@ -18,12 +18,14 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from grandpa.runtime_paths import runtime_path
+
 OperatorStatus = Literal[
     "planned", "running", "waiting_approval", "completed", "failed", "blocked"
 ]
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 
-DEFAULT_OPERATOR_DB = Path("runtime") / "desktop" / "operator.db"
+DEFAULT_OPERATOR_DB = runtime_path("desktop", "operator.db")
 MIN_VISUAL_CONFIDENCE = 0.72
 MAX_RETRIES = 2
 

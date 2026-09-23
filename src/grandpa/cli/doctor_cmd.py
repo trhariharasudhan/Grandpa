@@ -230,6 +230,36 @@ def _check_runtime_environment() -> list[CheckResult]:
     return checks
 
 
+def _check_legacy_runtime_state() -> CheckResult:
+    """Report state left at the old relative ``./runtime`` location.
+
+    RUNTIME_DIR and the two stores under it used to be relative paths, so this
+    data landed wherever the process was started from. They are rooted under
+    GRANDPA_HOME now, which means anything at an old location is no longer
+    being read. It is not moved and not deleted -- copying would have to guess
+    which ./runtime is the real one for someone who started the app from
+    several directories -- so it is named here instead.
+    """
+    from grandpa.runtime_paths import legacy_state, runtime_dir
+
+    found = legacy_state()
+    if not found:
+        return CheckResult("Runtime state", "ok", str(runtime_dir()))
+    listed = ", ".join(str(path) for path in found[:3])
+    more = f" (+{len(found) - 3} more)" if len(found) > 3 else ""
+    return CheckResult(
+        "Runtime state",
+        "warn",
+        f"{len(found)} file(s) left at the old relative location: {listed}{more}",
+        details=(
+            "Runtime state now lives under "
+            f"{runtime_dir()}. Nothing reads the old path any more. Move the "
+            "files there yourself if you want that data, or delete them; "
+            "Grandpa will not touch them."
+        ),
+    )
+
+
 def _check_config_exists() -> CheckResult:
     """Check that the config file exists."""
     if DEFAULT_CONFIG_PATH.exists():
@@ -1302,6 +1332,7 @@ def _run_all_checks() -> List[CheckResult]:
     checks: List[CheckResult] = []
     checks.append(_check_python_version())
     checks.append(_check_config_exists())
+    checks.append(_check_legacy_runtime_state())
     checks.append(_check_config_parses())
     checks.extend(_check_engines())
     checks.extend(_check_models())
@@ -1324,6 +1355,7 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         _check_python_version(),
         *_check_runtime_environment(),
         _check_config_exists(),
+        _check_legacy_runtime_state(),
         _check_config_parses(),
         _check_rest_api_installed(),
         _check_security_profile(),

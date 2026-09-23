@@ -10,7 +10,12 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-DEFAULT_USER_SKILLS_DB = Path("runtime") / "skills" / "user_skills.db"
+from grandpa.runtime_paths import runtime_path
+
+# Was Path("runtime")/..., relative to the working directory: a suite run
+# from the project root left a store behind in the repository, and a later
+# run loaded the skill saved in it.
+DEFAULT_USER_SKILLS_DB = runtime_path("skills", "user_skills.db")
 
 
 class UserSkillStore:

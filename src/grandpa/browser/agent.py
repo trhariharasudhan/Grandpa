@@ -18,9 +18,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from grandpa.browser_control import execute_browser_action, get_visible_browser_context
+from grandpa.runtime_paths import runtime_path
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_BROWSER_AGENT_DB = ROOT / "runtime" / "browser" / "browser_agent.db"
+DEFAULT_BROWSER_AGENT_DB = runtime_path("browser", "browser_agent.db")
 
 BrowserTaskStatus = Literal[
     "planned", "completed", "requires_approval", "blocked", "unsupported"

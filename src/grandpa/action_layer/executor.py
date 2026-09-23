@@ -37,6 +37,7 @@ from grandpa.action_layer.catalogue import (
     get,
 )
 from grandpa.action_layer.model import ActionRequest, ActionResult, RiskLevel
+from grandpa.runtime_paths import runtime_dir
 
 __all__ = ["ConfirmCallback", "audit_log_path", "execute"]
 
@@ -670,11 +671,7 @@ def audit_log_path() -> Path:
     configured = os.environ.get("GRANDPA_LOCAL_ACTION_LOG")
     if configured:
         return Path(configured)
-    return (
-        Path(os.environ.get("GRANDPA_RUNTIME_DIR", "runtime"))
-        / "logs"
-        / ("local_actions.jsonl")
-    )
+    return runtime_dir() / "logs" / ("local_actions.jsonl")
 
 
 def _audit(
