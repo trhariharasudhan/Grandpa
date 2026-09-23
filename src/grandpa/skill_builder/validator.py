@@ -64,17 +64,16 @@ def validate_workflow_steps(raw_steps: Any) -> list[dict[str, Any]]:
             raise SkillValidationError(
                 f"workflow step {index + 1} params must be an object."
             )
-        risk = str(raw.get("risk_level") or "LOW").upper()
-        if risk not in ALLOWED_RISK_LEVELS:
+        supplied_risk = str(raw.get("risk_level") or "LOW").upper()
+        if supplied_risk not in ALLOWED_RISK_LEVELS:
             raise SkillValidationError(
                 f"workflow step {index + 1} has an invalid risk level."
             )
-        approval_required = bool(raw.get("approval_required")) or risk in {
-            "MEDIUM",
-            "HIGH",
-        }
-        if risk == "BLOCKED":
-            approval_required = True
+        _reject_capability_naming_params(index, skill, params)
+        risk, approval_required = _risk_from_the_registry(skill)
+        if supplied_risk == "BLOCKED":
+            # The one thing a request may make *stricter* about itself.
+            risk, approval_required = "BLOCKED", True
         steps.append(
             {
                 "schema_version": "skill_graph_v2",
@@ -89,6 +88,82 @@ def validate_workflow_steps(raw_steps: Any) -> list[dict[str, Any]]:
             }
         )
     return steps
+
+
+CAPABILITY_NAMING_PARAMS = frozenset(
+    {
+        "action_type",
+        "action",
+        "skill",
+        "tool",
+        "implementation",
+        "module",
+    }
+)
+"""Param keys that would choose *what runs* rather than pass it a value.
+
+``action_type`` is the one that was actually read this way: ``_pc_action``
+built its payload with ``params.get("action_type", action_type)``, and a
+runtime skill's params come from a stored step, so a step could rename a read
+into a write. The rest are here because a step must not be able to name a
+capability *at all*, and these are the names such an attempt would use.
+
+A skill that legitimately declares one of these as a parameter is not caught:
+the check asks the registry. Nothing does today -- the declared parameter names
+across all registered skills are target, text, query, tag, topic, field, value,
+limit, request, document_id and dry_run -- but the rule is about naming a
+capability, not about these particular words.
+"""
+
+
+def _reject_capability_naming_params(
+    index: int, skill: str, params: dict[str, Any]
+) -> None:
+    """A step's params may supply values, never name what to run."""
+    offending = sorted(CAPABILITY_NAMING_PARAMS & set(map(str, params)))
+    if not offending:
+        return
+    declared = _declared_parameters(skill)
+    offending = [key for key in offending if key not in declared]
+    if not offending:
+        return
+    raise SkillValidationError(
+        f"workflow step {index + 1} ({skill}) passes {', '.join(offending)} in "
+        "params. A step may supply parameters for the skill it names, but it "
+        "cannot name a different action -- what a skill does is fixed where it "
+        "is registered."
+    )
+
+
+def _registered(skill: str):
+    from grandpa.skills.registry import ensure_default_skills_registered, get_skill
+
+    ensure_default_skills_registered()
+    try:
+        return get_skill(skill)
+    except KeyError:
+        return None
+
+
+def _declared_parameters(skill: str) -> frozenset[str]:
+    registered = _registered(skill)
+    if registered is None:
+        return frozenset()
+    return frozenset(parameter.name for parameter in registered.parameters)
+
+
+def _risk_from_the_registry(skill: str) -> tuple[str, bool]:
+    """What this step is worth, read from the registry rather than the request.
+
+    A stored step declares its own ``risk_level`` and would otherwise be
+    believed about it: the probe that reached the screen lock declared
+    ``LOW``. A skill nothing has registered cannot be vouched for, so it counts
+    as acting -- ``run_user_skill`` refuses it later by name anyway.
+    """
+    registered = _registered(skill)
+    if registered is None:
+        return "HIGH", True
+    return str(registered.risk_level), bool(registered.approval_required)
 
 
 def _clean_name(name: str) -> str:

@@ -29,7 +29,9 @@ def create_user_skill(
 
     The risk each step carries is read from the registered skill, not from the
     step: a stored step declares its own ``risk_level`` and would otherwise be
-    trusted about it.
+    trusted about it. That reconciliation lives in ``validate_skill_definition``
+    so the HTTP route gets it too, and a step naming an action in its params is
+    rejected there before anything is stored.
     """
     data = dict(payload)
     name = _extract_skill_name(str(data.get("name") or data.get("request") or ""))
@@ -38,34 +40,11 @@ def create_user_skill(
     if not data.get("workflow_steps"):
         data["workflow_steps"] = template_steps_for_name(name)
     validated = validate_skill_definition(data)
-    validated["workflow_steps"] = _with_registered_risk(validated["workflow_steps"])
     _approve_saving(validated, confirm)
     skill = UserSkillStore().create(validated)
     register_user_skills()
     _remember_skill(skill)
     return {"status": "created", "skill": skill}
-
-
-def _with_registered_risk(steps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Stamp each step with what its skill actually is, per the registry."""
-    from grandpa.skills.registry import ensure_default_skills_registered, get_skill
-
-    ensure_default_skills_registered()
-    stamped: list[dict[str, Any]] = []
-    for step in steps:
-        entry = dict(step)
-        try:
-            registered = get_skill(str(step.get("skill") or ""))
-        except KeyError:
-            # Unknown at save time: treated as acting, because nothing here can
-            # say it is not. run_user_skill refuses it later by name.
-            entry["risk_level"] = "HIGH"
-            entry["approval_required"] = True
-        else:
-            entry["risk_level"] = str(registered.risk_level)
-            entry["approval_required"] = bool(registered.approval_required)
-        stamped.append(entry)
-    return stamped
 
 
 def _approve_saving(

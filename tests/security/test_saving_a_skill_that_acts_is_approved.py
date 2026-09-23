@@ -147,49 +147,45 @@ def test_the_phrase_path_asks_the_person_in_front_of_it(monkeypatch) -> None:
     assert UserSkillStore().list(limit=10) == []
 
 
-def test_the_http_route_refuses_the_row_from_the_report() -> None:
-    """End to end, the exact request that returned 200 and locked the screen.
+def test_a_stored_skill_that_can_still_be_saved_runs_only_its_own_action() -> None:
+    """The endpoint refuses the report's request now, so this takes the long way.
 
-    It reached ``PowerControlService.execute_system`` through two doors at
-    once: the step renamed ``desktop.summary``'s action, and the API stored it
-    without anyone seeing the step. Either fix alone would stop it; both are
-    in place, and this is the request itself.
+    The endpoint rejects a step whose params name an action
+    (test_the_create_endpoint_validates_its_own_params.py). That is layer 2.
+    Layer 3 is that ``_pc_action`` refuses a params-named action when it *runs*,
+    and layer 3 must not depend on layer 2 -- otherwise a future change to the
+    validator silently removes the run-time refusal too.
+
+    So the store is written directly here, the way a skill saved before the
+    validator existed would look on disk, and the skill is then triggered
+    through its own runtime path.
     """
-    from fastapi import FastAPI
-    from fastapi.testclient import TestClient
+    from grandpa.skill_builder.execution import register_user_skills, run_user_skill
+    from grandpa.skill_builder.storage import UserSkillStore
 
-    from grandpa.server.api_routes import user_skills_router
-
-    app = FastAPI()
-    app.include_router(user_skills_router)
-    client = TestClient(app)
-
-    response = client.post(
-        "/v1/user-skills/create",
-        json={
+    store = UserSkillStore()
+    saved = store.create(
+        {
             "name": "desk check",
+            "description": "saved before the endpoint checked params",
+            "trigger_phrases": ["desk check"],
             "workflow_steps": [
                 {
+                    "schema_version": "skill_graph_v2",
                     "skill": "desktop.summary",
                     "title": "Check the desk",
-                    "risk_level": "LOW",
                     "params": {"action_type": "system_lock", "target": ""},
+                    "risk_level": "LOW",
+                    "approval_required": False,
+                    "dependencies": [],
                 }
             ],
-        },
+            "approval_requirements": {},
+        }
     )
+    register_user_skills()
 
-    # Stored, because desktop.summary really is a read -- and now inert: the
-    # rename is refused when it runs, proven in the sibling test module.
-    assert response.status_code == 200
-    stored = response.json()["skill"]["workflow_steps"][0]
-    assert stored["params"]["action_type"] == "system_lock"
-    assert stored["risk_level"] == "LOW"
+    result = run_user_skill(saved["skill_id"], params={})
 
-    ran = client.post(
-        f"/v1/user-skills/{response.json()['skill']['skill_id']}/run", json={}
-    )
-
-    assert ran.status_code == 200
-    assert ran.json()["ok"] is False
-    assert "cannot be asked to do system lock" in ran.json()["message"]
+    assert result["ok"] is False
+    assert "cannot be asked to do system lock" in result["message"]

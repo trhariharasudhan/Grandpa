@@ -14,6 +14,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **The skill-authoring surface no longer rests on one guard.** The escalation
+  report closed with "that conclusion rests entirely on the SSRF guard": the
+  only thing keeping a model from writing a user skill through
+  `POST /v1/user-skills/create` was `check_ssrf` refusing loopback. A saved
+  skill is deferred execution with nobody present when it runs, so it now has
+  three independent layers instead of one. The guard is pinned by a regression
+  test that fails if it is loosened or if the tool stops consulting it; the
+  create endpoint rejects a step whose params name an action and reads each
+  step's risk from the registry rather than from the request, so the request
+  that returned 200 and reached the screen lock is now a 400; and `_pc_action`
+  still refuses a params-named action when it runs. Each is tested with the
+  others assumed absent.
+
+- **`skill_manage` could write a skill manifest unprompted.** It is
+  model-facing and had no `requires_confirmation`, so a model could author a
+  TOML manifest under `~/.grandpa/skills/` whose steps name tools, to be run
+  later by somebody else. It is now confirmation-gated. The flag is per-tool,
+  because `ToolExecutor` reads it before dispatch and cannot see the
+  arguments, so `list` and `load` are gated too -- a prompt on two reads, in
+  exchange for closing the write.
+
 - **The intent router believed its own risk labels.** It is the one route that
   executes with `dry_run=False`, and it stamped every match
   `LOW`/`approval_required=False` without asking the registry -- while one row

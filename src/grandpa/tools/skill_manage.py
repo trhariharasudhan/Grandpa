@@ -49,6 +49,21 @@ class SkillManageTool(BaseTool):
                 "required": ["action"],
             },
             category="skill",
+            # ``create`` and ``delete`` write and remove skill manifests under
+            # ~/.grandpa/skills/, and a manifest is deferred execution: its
+            # steps name tools, and it runs later with nobody reading it. This
+            # tool is model-facing, so without this flag a model could author
+            # one unprompted -- the same shape as the saved-skill hole, one
+            # directory over.
+            #
+            # The flag is per-tool because ``ToolExecutor`` reads
+            # ``spec.requires_confirmation`` before dispatch and cannot see the
+            # params (tools/_stubs.py). So ``list`` and ``load``, which only
+            # read, are gated too. That costs a prompt on two reads; the
+            # alternative is teaching the one mandatory enforcement boundary to
+            # inspect arguments, which is a larger change to the thing every
+            # other tool depends on. Paying the prompt is the cheaper side.
+            requires_confirmation=True,
         )
 
     def execute(self, **params: Any) -> ToolResult:
