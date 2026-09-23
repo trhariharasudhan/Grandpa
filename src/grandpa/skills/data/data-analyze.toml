@@ -3,6 +3,7 @@ name = "data-analyze"
 description = "Analyze a data file and generate statistical insights and visualizations"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "file_read"

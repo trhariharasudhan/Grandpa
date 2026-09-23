@@ -3,6 +3,7 @@ name = "code-test-gen"
 description = "Read a source file and generate unit tests for its functions and classes"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "file_read"

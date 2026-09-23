@@ -3,6 +3,7 @@ name = "compare-docs"
 description = "Compare two documents and summarize their differences"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "file_read"

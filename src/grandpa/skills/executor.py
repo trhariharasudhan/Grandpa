@@ -201,14 +201,28 @@ class SkillExecutor:
 
     @staticmethod
     def _render_template(template: str, ctx: Dict[str, Any]) -> str:
-        """Simple {key} placeholder rendering."""
+        """Fill {key} placeholders, escaped for the JSON they sit inside.
+
+        Every template in the repository puts its placeholder inside a JSON
+        string -- ``'{"path": "{file_path}"}'`` -- and the value used to be
+        substituted raw. So any value containing a backslash, a quote or a
+        newline produced invalid JSON and the step failed with "Invalid
+        arguments JSON".
+
+        On Windows that is *every file path*, which is why the bundled skills
+        that take a file did not work: a Windows path is an invalid escape
+        sequence in JSON. Values are escaped as a JSON string body now -- the
+        surrounding quotes come from the template.
+        """
 
         def _replace(match: re.Match) -> str:
             key = match.group(1)
-            val = ctx.get(key, match.group(0))
-            if isinstance(val, str):
-                return val
-            return json.dumps(val)
+            if key not in ctx:
+                return match.group(0)
+            value = ctx[key]
+            text = value if isinstance(value, str) else json.dumps(value)
+            # dumps() adds the quotes; the template already has them.
+            return json.dumps(text)[1:-1]
 
         return re.sub(r"\{(\w+)\}", _replace, template)
 

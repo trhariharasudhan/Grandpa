@@ -7,6 +7,7 @@ from typing import Any, List
 
 from grandpa.core.registry import ToolRegistry
 from grandpa.core.types import ToolResult
+from grandpa.skills.bundled import refuse_write
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
 
@@ -86,6 +87,9 @@ class SkillManageTool(BaseTool):
         )
 
     def _create(self, name: str, description: str, steps: List[dict]) -> ToolResult:
+        refusal = refuse_write(name)
+        if refusal:
+            return ToolResult(tool_name=self.spec.name, success=False, content=refusal)
         if not name:
             return ToolResult(
                 tool_name=self.spec.name,
@@ -156,6 +160,9 @@ class SkillManageTool(BaseTool):
         )
 
     def _delete(self, name: str) -> ToolResult:
+        refusal = refuse_write(name)
+        if refusal:
+            return ToolResult(tool_name=self.spec.name, success=False, content=refusal)
         path = self._skills_dir / f"{name}.toml"
         if not path.exists():
             return ToolResult(

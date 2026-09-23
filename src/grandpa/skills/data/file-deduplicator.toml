@@ -3,6 +3,7 @@ name = "file-deduplicator"
 description = "Find and report duplicate files in a directory by comparing checksums"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "shell_exec"

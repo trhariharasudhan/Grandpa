@@ -3,6 +3,7 @@ name = "email-draft"
 description = "Draft a professional email response based on context and intent"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "think"

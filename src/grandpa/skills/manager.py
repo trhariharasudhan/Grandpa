@@ -294,10 +294,21 @@ class SkillManager:
         """
         import shutil
 
+        from grandpa.skills.bundled import is_bundled, refuse_write
+
+        refusal = refuse_write(name)
+        if refusal:
+            raise PermissionError(refusal)
+
         paths = self.find_installed_paths(name, roots=roots)
         if not paths:
             raise FileNotFoundError(f"No installed skill named {name!r}")
         for p in paths:
+            # Checked per path as well as per name: a root list could include
+            # the packaged directory, and rmtree there deletes from the
+            # installation itself.
+            if is_bundled(p):
+                raise PermissionError(refuse_write(p.stem) or f"{p} ships with Grandpa")
             shutil.rmtree(p)
         # Drop from in-memory catalog
         self._skills.pop(name, None)

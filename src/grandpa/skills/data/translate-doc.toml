@@ -3,6 +3,7 @@ name = "translate-doc"
 description = "Translate a document from one language to another while preserving formatting"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "file_read"
@@ -15,7 +16,7 @@ arguments_template = '{"thought": "Detect the source language and analyze the do
 output_key = "analysis"
 
 [[skill.steps]]
-tool_name = "llm_call"
+tool_name = "llm"
 arguments_template = '{"prompt": "Translate the following text to {target_language}, preserving all formatting, technical terms, and document structure: {original_content}"}'
 output_key = "translation"
 

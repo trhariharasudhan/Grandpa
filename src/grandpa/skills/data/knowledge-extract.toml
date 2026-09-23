@@ -3,6 +3,7 @@ name = "knowledge-extract"
 description = "Extract structured knowledge from a document and store in memory"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "file_read"

@@ -3,6 +3,7 @@ name = "meeting-notes"
 description = "Generate structured meeting notes from a transcript or raw notes"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "file_read"

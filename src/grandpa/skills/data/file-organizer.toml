@@ -3,6 +3,7 @@ name = "file-organizer"
 description = "Organize files in a directory by type (images, documents, code, etc.)"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "shell_exec"

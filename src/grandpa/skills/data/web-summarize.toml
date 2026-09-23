@@ -3,6 +3,7 @@ name = "web-summarize"
 description = "Fetch a web page and summarize its content into key points"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "http_request"

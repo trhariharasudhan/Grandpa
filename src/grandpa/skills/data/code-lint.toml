@@ -3,6 +3,7 @@ name = "code-lint"
 description = "Read a source file, analyze it for code quality issues, and report findings"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "file_read"

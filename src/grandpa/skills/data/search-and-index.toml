@@ -3,6 +3,7 @@ name = "search-and-index"
 description = "Search for documents matching a query and index them into memory for future retrieval"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "shell_exec"

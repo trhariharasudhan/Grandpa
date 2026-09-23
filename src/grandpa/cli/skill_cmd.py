@@ -11,22 +11,64 @@ from rich.table import Table
 
 from grandpa.cli._tty import require_confirmation
 from grandpa.core.events import EventBus
+from grandpa.skills.bundled import bundled_dir, refuse_write
 from grandpa.skills.manager import SkillManager
+from grandpa.tools._stubs import ToolExecutor
 
 
 def _get_skill_paths() -> List[Path]:
-    """Return trusted workspace and user-local skill roots."""
+    """Workspace, then user-local, then the skills that ship in the package.
+
+    The packaged directory is last because discovery is first-seen-wins: a
+    skill of the same name in ~/.grandpa/skills/ shadows the bundled one, which
+    is how a user replaces one they cannot edit.
+
+    It was missing entirely, so `skill list` reported "No skills installed" on
+    a clean install while eighteen manifests sat inside the package.
+    """
     paths: List[Path] = []
     workspace = Path("./skills")
     if workspace.exists():
         paths.append(workspace)
     paths.append(Path("~/.grandpa/skills/").expanduser())
+    paths.append(bundled_dir())
     return paths
+
+
+def _tool_executor() -> "ToolExecutor":
+    """Something that can actually run the tools a skill's steps name.
+
+    Without this the manager had no executor and every `skill run` answered
+    "Unknown tool: think" -- a third bug sitting behind the two that kept the
+    bundled skills invisible, and one that only shows up once they are
+    reachable.
+
+    ``interactive`` is True because this is a terminal command: a step naming a
+    confirmation-gated tool (shell_exec, code_interpreter) asks, rather than
+    being refused for want of anyone to ask.
+    """
+    from grandpa.core.registry import ToolRegistry
+    from grandpa.tools import ToolExecutor, load_builtin_tools
+
+    load_builtin_tools()
+    tools = []
+    for name in sorted(ToolRegistry.keys()):
+        try:
+            tools.append(ToolRegistry.create(name))
+        except Exception:  # noqa: BLE001 - a tool that cannot be built cannot run
+            continue
+    return ToolExecutor(
+        tools,
+        EventBus(),
+        interactive=True,
+        confirm_callback=lambda prompt: click.confirm(prompt, default=False),
+    )
 
 
 def _get_manager() -> SkillManager:
     manager = SkillManager(bus=EventBus())
     manager.discover(paths=_get_skill_paths())
+    manager.set_tool_executor(_tool_executor())
     return manager
 
 
@@ -137,6 +179,10 @@ def run(skill_name: str, arg: tuple[str, ...]) -> None:
 def remove(skill_name: str, yes: bool) -> None:
     """Remove a locally installed skill by name."""
     console = Console()
+    refusal = refuse_write(skill_name)
+    if refusal:
+        console.print(f"[red]{refusal}[/red]")
+        raise SystemExit(1)
     manager = SkillManager(bus=EventBus())
     roots = _get_skill_paths()
     paths = manager.find_installed_paths(skill_name, roots=roots)

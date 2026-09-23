@@ -140,10 +140,14 @@ class SystemBuilder:
                 skill_manager = SkillManager(
                     bus, capability_policy=sec.capability_policy
                 )
+                from grandpa.skills.bundled import bundled_dir
+
                 skill_paths = [Path(config.skills.skills_dir).expanduser()]
                 workspace_skills = Path("./skills")
                 if workspace_skills.exists():
                     skill_paths.insert(0, workspace_skills)
+                # Last, so a user's own copy of a name shadows the packaged one.
+                skill_paths.append(bundled_dir())
                 skill_manager.discover(paths=skill_paths)
                 if tool_executor:
                     skill_manager.set_tool_executor(tool_executor)

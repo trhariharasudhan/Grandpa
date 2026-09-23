@@ -3,10 +3,11 @@ name = "pdf-summarize"
 description = "Extract text from a PDF document and generate a structured summary"
 version = "0.1.0"
 author = "grandpa"
+provenance = "bundled"
 
 [[skill.steps]]
 tool_name = "pdf_extract"
-arguments_template = '{"path": "{pdf_path}"}'
+arguments_template = '{"file_path": "{pdf_path}"}'
 output_key = "pdf_text"
 
 [[skill.steps]]
