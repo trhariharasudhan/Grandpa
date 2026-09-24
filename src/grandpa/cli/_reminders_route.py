@@ -5,10 +5,11 @@ Chat had *two* reminder branches in the waterfall, in this order:
 1. a one-shot reminder helper, writing to reminders.db
 2. the task scheduler, writing routines and recurring reminders to scheduler.db
 
-The order matters and is preserved exactly: whichever parser claims a phrase
-first decides which store it lands in. That is the behaviour the audit
-described, and reproducing it is the point -- joining the stores is a separate
-task, and doing it inside a migration would hide it.
+The order is preserved, but it no longer decides anything: each parser now
+declines what the other claims, so a phrase reaches the same store whichever is
+tried first. "at 5pm" is one-shot, "every day at 5pm" is the scheduler's, and
+``grandpa reminders list`` reads both. ``grandpa ask`` consults the same two, in
+the same order, so the two commands agree.
 """
 
 from __future__ import annotations

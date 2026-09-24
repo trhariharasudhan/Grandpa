@@ -402,18 +402,18 @@ SCHEDULER_ACTIONS: tuple[str, ...] = (
 )
 """What handle_scheduler_command's regexes can decide to do.
 
-Two things worth knowing before using these, both found by the audit and left
-exactly as they are here:
+``create_recurring_reminder`` writes to **scheduler.db**, while the one-shot
+reminders in :mod:`grandpa.reminders` live in **reminders.db**. Which store a
+"remind me" phrase reaches is no longer a matter of which parser is tried
+first: a phrase has to name a recurrence to be read as one here, and the
+one-shot parser declines any phrase that names one. ``grandpa reminders list``
+reads both stores, so the split is not something a user has to know about.
 
-* ``create_recurring_reminder`` writes to **scheduler.db**, while the one-shot
-  reminders in :mod:`grandpa.reminders` live in **reminders.db**. "remind me"
-  reaches one or the other depending on which parser claims the phrase first.
-* "remind me to X at 5pm" is read by ``_parse_reminder`` as ``daily:17:00`` --
-  a reminder that repeats every day, not once. It only arrives here at all when
-  the one-shot parser has already declined the phrase.
-
-Splitting the stores and fixing the daily/one-shot confusion are their own
-tasks. Cataloguing them dishonestly would have hidden both.
+The audit found two defects here, both fixed: "remind me to X at 5pm" was read
+as ``daily:17:00`` -- a standing appointment for someone who asked for one
+reminder -- and a reminder created in chat was missing from the list. Nothing
+was migrated between the stores; a recurring reminder has a schedule where a
+one-shot has a due time, so there is nothing to migrate it to.
 """
 
 
@@ -725,8 +725,19 @@ def _parse_reminder(command: str) -> dict[str, str] | None:
     match = re.fullmatch(r"remind me to (.+) every hour", command)
     if match:
         return {"text": match.group(1).strip(), "schedule": "hourly"}
+    # A daily reminder has to say so. This used to match "remind me to X at
+    # 5pm" and return daily:17:00 -- a standing appointment for someone who
+    # asked for one reminder. The one-shot parser claims that phrasing now, and
+    # requiring the recurrence here as well means the two agree by rule rather
+    # than by which one happens to be tried first.
     match = re.fullmatch(
-        r"remind me to (.+) at ([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)", command
+        r"remind me to (.+?) (?:every day|daily) at "
+        r"([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)",
+        command,
+    ) or re.fullmatch(
+        r"remind me (?:every day|daily) to (.+?) at "
+        r"([0-9]{1,2})(?::([0-9]{2}))?\s*(am|pm)",
+        command,
     )
     if match:
         hour = int(match.group(2))

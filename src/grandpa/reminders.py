@@ -7,6 +7,7 @@ import logging
 import platform
 import re
 import sqlite3
+import sys
 import threading
 import time
 import uuid
@@ -111,6 +112,67 @@ class WindowsToastNotifier:
                 backend="winotify",
                 warning=str(exc),
             )
+
+
+class ConsoleNotifier:
+    """The delivery that always works, because it needs nothing.
+
+    A reminder whose notification fails is marked ``failed``, and on a default
+    install every one of them failed: the toast backend needs ``winotify``,
+    which lives in an optional extra. A reminder that never arrives is the
+    whole feature not working.
+
+    This writes the reminder to stdout and to a file under GRANDPA_HOME, so
+    ``reminders run-due`` in a terminal shows it and a daemon leaves a record
+    that survives the process. It is not a substitute for a toast -- nobody
+    watches a log -- which is why it runs only after the toast has declined.
+    """
+
+    def __init__(self, stream: Any | None = None) -> None:
+        self._stream = stream
+
+    def notify(self, reminder: Reminder) -> NotificationResult:
+        line = f"[reminder] {reminder.message}"
+        stream = self._stream if self._stream is not None else sys.stdout
+        try:
+            print(line, file=stream, flush=True)
+        except Exception as exc:  # pragma: no cover - a closed stdout
+            logger.debug("Reminder console write failed: %s", exc)
+        try:
+            from grandpa.runtime_paths import grandpa_home
+
+            log = grandpa_home() / "reminders-delivered.log"
+            log.parent.mkdir(parents=True, exist_ok=True)
+            with log.open("a", encoding="utf-8") as handle:
+                handle.write(f"{datetime.now(UTC).isoformat()} {line}\n")
+        except Exception as exc:  # pragma: no cover - a read-only home
+            logger.debug("Reminder log write failed: %s", exc)
+        return NotificationResult(
+            True, "sent", "Reminder delivered to the console.", backend="console"
+        )
+
+
+class FirstWorkingNotifier:
+    """Try each notifier in turn; the first that delivers wins.
+
+    Toast first, because that is what a person actually sees. Console last,
+    because it cannot fail -- which is what stops a missing optional package
+    turning every reminder into a failure.
+    """
+
+    def __init__(self, notifiers: "list[ReminderNotifier] | None" = None) -> None:
+        self._notifiers = notifiers or [WindowsToastNotifier(), ConsoleNotifier()]
+
+    def notify(self, reminder: Reminder) -> NotificationResult:
+        last: NotificationResult | None = None
+        for notifier in self._notifiers:
+            result = notifier.notify(reminder)
+            if result.ok:
+                return result
+            last = result
+        return last or NotificationResult(
+            False, "failed", "No notifier was configured.", backend="none"
+        )
 
 
 class ReminderStore:
@@ -304,7 +366,7 @@ class ReminderSchedulerService:
         sleep_fn: Callable[[float], None] | None = None,
     ) -> None:
         self.store = store
-        self.notifier = notifier or WindowsToastNotifier()
+        self.notifier = notifier or FirstWorkingNotifier()
         self.poll_interval_seconds = poll_interval_seconds
         self.now_fn = now_fn or (lambda: datetime.now(UTC))
         self.sleep_fn = sleep_fn or time.sleep
@@ -428,6 +490,8 @@ __all__ = [
     "ReminderSchedulerService",
     "ReminderStatus",
     "ReminderStore",
+    "ConsoleNotifier",
+    "FirstWorkingNotifier",
     "WindowsToastNotifier",
     "execute_reminder_action",
     "format_reminder_list",

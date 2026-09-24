@@ -64,7 +64,18 @@ def test_reminders_add_persists_a_future_reminder_that_list_shows(
 def test_reminders_run_due_records_failed_delivery_instead_of_claiming_it(
     cli, make_nonce
 ) -> None:
-    """PARTIAL: delivery needs winotify, absent by default. The failure must be recorded."""
+    """Delivery works with no optional package, and says so honestly.
+
+    This was PARTIAL, and asserted the opposite: the only backend was the
+    Windows toast, which needs ``winotify`` from an optional extra, so on a
+    default install every reminder was marked *failed*. The test pinned that so
+    it could not be mistaken for working.
+
+    Delivery is now a chain -- toast first, then a console backend that needs
+    nothing -- so a due reminder is delivered and recorded as triggered. The
+    name is kept: what it guards is still that the store records what actually
+    happened rather than what was attempted.
+    """
     if importlib.util.find_spec("winotify") is not None:
         pytest.skip("winotify is installed; delivery would raise a real toast")
     message = f"stretch {make_nonce('')}"
@@ -80,12 +91,18 @@ def test_reminders_run_due_records_failed_delivery_instead_of_claiming_it(
     ran = cli("reminders", "run-due")
 
     assert ran.returncode == 0, ran.text
-    assert re.search(r"Triggered:\s*0\b", ran.text) and re.search(
-        r"failed:\s*1\b", ran.text
-    ), f"run-due did not report the failed delivery: {ran.text}"
+    assert re.search(r"Triggered:\s*1\b", ran.text) and re.search(
+        r"failed:\s*0\b", ran.text
+    ), f"run-due did not report the delivery: {ran.text}"
     (after,) = sqlite_rows(db, "reminders")
-    assert after["status"] == "failed", after
-    assert "windows-notifications" in (after.get("failure_reason") or ""), after
+    assert after["status"] == "triggered", after
+    assert not (after.get("failure_reason") or ""), after
+    # Delivered somewhere a person can actually see it, and recorded outside
+    # the process that sent it.
+    assert message in ran.text, ran.text
+    log = cli.grandpa_home / "reminders-delivered.log"
+    assert log.exists(), "nothing recorded the delivery"
+    assert message in log.read_text(encoding="utf-8")
 
 
 # 17 --------------------------------------------------------------------------

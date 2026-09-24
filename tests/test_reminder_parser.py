@@ -324,3 +324,58 @@ def test_cli_clear_keeps_default_list_pending_only(monkeypatch, tmp_path) -> Non
     assert pending.message in list_result.output
     assert cancelled.message not in list_result.output
     assert failed.message not in list_result.output
+
+
+# ---------------------------------------------------------------------------
+# One-shot versus recurring: exactly one parser claims each phrase.
+# ---------------------------------------------------------------------------
+
+ONE_SHOT_PHRASES = [
+    "remind me to call mom at 5pm",
+    "remind me to call mom at 17:30",
+    "remind me to take the pills at 8 am",
+]
+
+RECURRING_PHRASES = [
+    "remind me to call mom every day at 5pm",
+    "remind me every day to call mom at 5pm",
+    "remind me to call mom daily at 5pm",
+    "remind me to stretch every hour",
+]
+
+
+@pytest.mark.parametrize("phrase", ONE_SHOT_PHRASES)
+def test_one_shot_phrases_go_to_the_one_shot_store(phrase: str) -> None:
+    """ "at 5pm" is once. It used to become daily:17:00 in the other store."""
+    from grandpa.reminders import parse_reminder_intent
+    from grandpa.task_scheduler import parse_scheduler_command
+
+    assert parse_reminder_intent(phrase) == ("create", phrase)
+    assert parse_scheduler_command(phrase) is None
+
+
+@pytest.mark.parametrize("phrase", RECURRING_PHRASES)
+def test_recurring_phrases_go_to_the_scheduler(phrase: str) -> None:
+    """A phrase that says it repeats is the scheduler's, and only its."""
+    from grandpa.reminders import parse_reminder_intent
+    from grandpa.task_scheduler import parse_scheduler_command
+
+    assert parse_reminder_intent(phrase) is None
+    parsed = parse_scheduler_command(phrase)
+    assert parsed is not None and parsed[0] == "create_recurring_reminder"
+
+
+def test_neither_parser_claims_a_phrase_the_other_does() -> None:
+    """The property, stated once: the two partition the phrasings.
+
+    Which store a reminder lands in used to depend on which parser was tried
+    first. This is what makes that ordering stop mattering, so the order in
+    chat, in ``grandpa ask`` and in the voice assistant cannot disagree.
+    """
+    from grandpa.reminders import parse_reminder_intent
+    from grandpa.task_scheduler import parse_scheduler_command
+
+    for phrase in ONE_SHOT_PHRASES + RECURRING_PHRASES:
+        claimed_by_one_shot = parse_reminder_intent(phrase) is not None
+        claimed_by_scheduler = parse_scheduler_command(phrase) is not None
+        assert claimed_by_one_shot != claimed_by_scheduler, phrase

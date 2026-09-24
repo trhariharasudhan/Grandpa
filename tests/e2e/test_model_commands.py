@@ -158,21 +158,41 @@ def test_chat_remembers_a_personal_fact_and_recalls_it(
 def test_chat_reminder_stores_exactly_the_schedule_it_announces(
     cli, e2e_model, make_nonce
 ) -> None:
-    """PARTIAL: chat reminders are daily-only. The reply must say so and match the store."""
+    """The reply and the store have to agree, whichever kind of reminder it is.
+
+    This was PARTIAL: chat read "at 5pm" as a daily routine in scheduler.db, so
+    the test asserted that, to keep the defect visible. "at 5pm" is now one
+    reminder in reminders.db, and the recurring phrasing still reaches the
+    scheduler -- so both halves are checked here, against the store each
+    actually lands in.
+    """
     who = make_nonce("mom")
 
     run = cli.chat(e2e_model, f"remind me to call {who} at 5pm")
 
     reply = chat_replies(run.text)[0]
-    rows = sqlite_rows(cli.grandpa_home / "scheduler.db", "reminders")
-    assert [r["text"] for r in rows] == [f"call {who}"], (
-        f"rows {rows}; chat said {reply!r}"
+    once = sqlite_rows(cli.grandpa_home / "reminders.db", "reminders")
+    assert [r["message"] for r in once] == [f"call {who}"], (
+        f"rows {once}; chat said {reply!r}"
     )
-    announced = re.search(r"\(daily at (\d{2}):(\d{2})\)", reply)
-    assert announced, f"reply does not state the recurrence: {reply!r}"
+    # Announced as a moment, not a recurrence, and the same moment that is stored.
+    assert "daily" not in reply.lower(), reply
+    assert once[0]["due_at"][:16] in reply, (once[0], reply)
+    assert sqlite_rows(cli.grandpa_home / "scheduler.db", "reminders") == []
+
+    other = make_nonce("dad")
+    recurring_run = cli.chat(e2e_model, f"remind me to call {other} every day at 5pm")
+
+    recurring_reply = chat_replies(recurring_run.text)[0]
+    rows = sqlite_rows(cli.grandpa_home / "scheduler.db", "reminders")
+    assert [r["text"] for r in rows] == [f"call {other}"], (
+        f"rows {rows}; chat said {recurring_reply!r}"
+    )
+    announced = re.search(r"\(daily at (\d{2}):(\d{2})\)", recurring_reply)
+    assert announced, f"reply does not state the recurrence: {recurring_reply!r}"
     assert rows[0]["schedule"] == f"daily:{announced.group(1)}:{announced.group(2)}", (
         rows[0],
-        reply,
+        recurring_reply,
     )
     assert rows[0]["enabled"] == 1
 

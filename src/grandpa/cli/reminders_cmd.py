@@ -11,16 +11,76 @@ from rich.table import Table
 from grandpa.cli._tty import require_confirmation
 from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
 from grandpa.reminders import (
+    FirstWorkingNotifier,
     ReminderSchedulerService,
     ReminderStatus,
     ReminderStore,
-    WindowsToastNotifier,
 )
 
 
 @click.group()
 def reminders() -> None:
     """Manage local one-shot reminders."""
+
+
+def _recurring_reminders() -> list[dict]:
+    """Recurring reminders, which live in the other store.
+
+    Two stores hold two different things: ``reminders.db`` holds a reminder with
+    a due time, ``scheduler.db`` holds a routine with a schedule. That split is
+    right -- a recurring reminder has no single due time -- and it is the
+    *answer* that was split, not the data: "remind me at 5pm" landed in one or
+    the other depending on which parser claimed the phrase first, so a reminder
+    a person had just created could be missing from `reminders list`.
+
+    The routing is fixed (one-shot phrasing goes to reminders.db, recurring
+    phrasing to the scheduler). This closes the other half: one question, one
+    answer. Nothing is migrated -- a routine has no due time to migrate to --
+    and nothing is hidden.
+    """
+    try:
+        from grandpa.task_scheduler import SchedulerStore
+
+        # list_reminders(), not list_routines(): there are three tables, not
+        # two. reminders.db/reminders holds one-shot reminders,
+        # scheduler.db/reminders holds recurring ones, and scheduler.db/routines
+        # holds morning routines. Chat's "every day at 5pm" writes the middle
+        # one, which is the row that went missing from this listing.
+        return list(SchedulerStore().list_reminders())
+    except Exception:  # noqa: BLE001 - a missing scheduler store is not an error here
+        return []
+
+
+def _warn_if_nothing_will_fire(console: Console) -> None:
+    """Say so when a reminder has been stored but nothing is running to deliver it.
+
+    ``scheduler.enabled`` is False by default and that is deliberate: the
+    scheduler is a background thread, and starting one inside all fifty CLI
+    commands -- including ``grandpa --help`` -- costs every invocation for a
+    feature most of them do not use.
+
+    The cost of keeping it off is that a reminder silently never arrives, which
+    is worse than the thread. So the honest version is off by default and said
+    out loud.
+    """
+    try:
+        from grandpa.core.config import load_config
+
+        if load_config().scheduler.enabled:
+            return
+    except Exception:  # noqa: BLE001 - a broken config is not this command's business
+        return
+    console.print(
+        "[yellow]Nothing is running to deliver this.[/yellow] The scheduler is "
+        "off by default, because it is a background thread and every CLI "
+        "command would pay for it."
+    )
+    console.print(
+        "  Deliver what is due now:  [bold]grandpa reminders run-due[/bold]\n"
+        "  Keep one running:         [bold]grandpa scheduler start[/bold]\n"
+        "  Turn it on permanently:   [bold]grandpa config set scheduler.enabled "
+        "true[/bold]"
+    )
 
 
 @reminders.command("create")
@@ -39,6 +99,7 @@ def reminders_create(message: str, due_at: str) -> None:
     console.print(f"[green]Reminder created:[/green] {reminder.id}")
     console.print(f"  Message: {reminder.message}")
     console.print(f"  Due: {reminder.due_at.isoformat()}")
+    _warn_if_nothing_will_fire(console)
 
 
 @reminders.command("add")
@@ -63,6 +124,7 @@ def reminders_add(phrase: str) -> None:
     console.print(f"[green]Reminder created:[/green] {reminder.id}")
     console.print(f"  Message: {reminder.message}")
     console.print(f"  Due: {reminder.due_at.isoformat()}")
+    _warn_if_nothing_will_fire(console)
 
 
 @reminders.command("list")
@@ -83,7 +145,8 @@ def reminders_list(show_all: bool, status: str | None) -> None:
     console = Console()
     effective_status = status if status is not None else None if show_all else "pending"
     items = ReminderStore().list(status=effective_status)  # type: ignore[arg-type]
-    if not items:
+    recurring = _recurring_reminders()
+    if not items and not recurring:
         if effective_status == "pending" and status is None and not show_all:
             console.print("[dim]No pending reminders found.[/dim]")
         else:
@@ -92,13 +155,26 @@ def reminders_list(show_all: bool, status: str | None) -> None:
     table = Table(title="Grandpa Reminders")
     table.add_column("ID", style="cyan")
     table.add_column("Status")
-    table.add_column("Due")
+    table.add_column("When")
     table.add_column("Message", max_width=50)
     for reminder in items:
         table.add_row(
             reminder.id, reminder.status, reminder.due_at.isoformat(), reminder.message
         )
+    for routine in recurring:
+        table.add_row(
+            str(routine.get("id", "")),
+            "recurring" if routine.get("enabled", True) else "paused",
+            str(routine.get("schedule_label") or routine.get("schedule", "")),
+            str(routine.get("text") or routine.get("name", "")),
+        )
     console.print(table)
+    if recurring:
+        console.print(
+            "[dim]Rows marked recurring live in scheduler.db and are managed "
+            "with `grandpa scheduler`. They are listed here because a person "
+            "asking what reminders they have means both.[/dim]"
+        )
 
 
 @reminders.command("clear")
@@ -154,7 +230,10 @@ def reminders_cancel(reminder_id: str) -> None:
 def reminders_run_due() -> None:
     """Trigger currently due reminders once."""
     console = Console()
-    service = ReminderSchedulerService(ReminderStore(), notifier=WindowsToastNotifier())
+    # FirstWorkingNotifier, not the toast alone: the toast needs the
+    # optional winotify package, and without it every reminder was
+    # marked failed rather than delivered.
+    service = ReminderSchedulerService(ReminderStore(), notifier=FirstWorkingNotifier())
     result = service.tick()
     console.print(
         f"[green]Checked reminders.[/green] Triggered: {len(result['triggered'])}; failed: {len(result['failed'])}"

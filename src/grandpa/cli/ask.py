@@ -680,6 +680,48 @@ def ask(
             click.echo(file_action.message)
         return
 
+    # One-shot reminders, before the scheduler, which is the order chat uses.
+    # `ask` only ever consulted the scheduler, so "remind me to call mom at
+    # 5pm" used to be stored as daily:17:00 here -- and once that phrasing
+    # became one-shot, `ask` would have matched nothing at all and fallen
+    # through to the model. Two commands, one answer.
+    from grandpa.action_layer.executor import execute as execute_action
+    from grandpa.cli._reminders_route import (
+        reminder_reply,
+        reminder_request,
+        reminder_status,
+    )
+
+    one_shot_request, _ = reminder_request(effective_query_text)
+    if one_shot_request is not None:
+        reminder_result = execute_action(one_shot_request)
+        reminder_message = reminder_reply(reminder_result)
+        remember_conversation("assistant", reminder_message)
+        record_assistant_outcome(
+            brain_analysis,
+            assistant_text=reminder_message,
+            kind="reminder",
+            target=None,
+            status=reminder_status(reminder_result),
+        )
+        if output_json:
+            click.echo(
+                json_mod.dumps(
+                    {
+                        "content": reminder_message,
+                        "local_action": {
+                            "status": reminder_status(reminder_result),
+                            "kind": "reminder",
+                            "target": None,
+                        },
+                    },
+                    indent=2,
+                )
+            )
+        else:
+            click.echo(reminder_message)
+        return
+
     from grandpa.task_scheduler import handle_scheduler_command
 
     scheduler_action = handle_scheduler_command(effective_query_text)

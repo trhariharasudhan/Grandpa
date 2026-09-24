@@ -2,8 +2,12 @@
 
 The audit found that chat's reminder handling spans reminders.db and
 scheduler.db, and that "remind me to X at 5pm" becomes a daily rule rather than
-a one-off. Neither is fixed here. These tests pin the behaviour as it is, so
-that when someone does fix it the change is visible rather than silent.
+a one-off. Both are now fixed, and because the defects were pinned here, the
+fix showed up as these tests failing rather than as nothing at all.
+
+The two stores remain two stores -- a recurring reminder has a schedule where a
+one-shot has a due time -- so what changed is the routing and the answer:
+exactly one parser claims any given phrase, and ``reminders list`` reads both.
 """
 
 from __future__ import annotations
@@ -143,14 +147,17 @@ def test_a_routine_of_unsafe_actions_is_refused() -> None:
 # --- the two findings, pinned as they are ------------------------------------
 
 
-def test_remind_me_at_a_time_is_read_by_the_scheduler_as_daily() -> None:
-    """Audit finding, left as found: this repeats every day, not once.
+def test_remind_me_at_a_time_is_no_longer_read_as_daily() -> None:
+    """The audit finding, now fixed -- and this is where it shows.
 
-    The one-shot parser claims most "remind me" phrasings first, so this is
-    what the scheduler does with the ones that reach it. Catalogued honestly
-    rather than quietly corrected -- fixing it is its own task.
+    This test previously asserted ``daily:17:00``, pinning the defect so that
+    fixing it could not be silent. The scheduler now requires a phrase to say
+    it repeats, and declines the one-shot phrasing so the one-shot parser gets
+    it. The inversion is the visible change that pinning was for.
     """
-    parsed = parse_scheduler_command("remind me to stretch at 5pm")
+    assert parse_scheduler_command("remind me to stretch at 5pm") is None
+
+    parsed = parse_scheduler_command("remind me to stretch every day at 5pm")
 
     assert parsed is not None
     action, parameters = parsed

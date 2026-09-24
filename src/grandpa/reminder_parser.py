@@ -65,6 +65,18 @@ def default_reminder_timezone() -> tzinfo:
     return local or UTC
 
 
+_RECURRENCE = re.compile(
+    r"(?i)\b(every\s+(day|morning|evening|hour|minute|week)|daily|hourly|"
+    r"weekly|each\s+day)\b"
+)
+"""What makes a phrase recurring rather than one-shot.
+
+The one-shot parser declines anything matching this, so it reaches the
+scheduler; the scheduler's parser requires it. One vocabulary, read by both,
+rather than two parsers guessing at each other.
+"""
+
+
 def parse_reminder_phrase(
     phrase: str,
     *,
@@ -81,6 +93,7 @@ def parse_reminder_phrase(
         _parse_relative(clean, current)
         or _parse_relative_message_first(clean, current)
         or _parse_today_tomorrow(clean, current)
+        or _parse_bare_clock_time(clean, current)
         or _parse_month_date(clean, current)
         or _parse_iso(clean, current)
     )
@@ -151,6 +164,36 @@ def _parse_relative_message_first(clean: str, now: datetime) -> ParsedReminder |
     )
     return ParsedReminder(
         message=message, due_at=now + delta, matched_expression=match.group(0)
+    )
+
+
+def _parse_bare_clock_time(clean: str, now: datetime) -> ParsedReminder | None:
+    """ "remind me to X at 5pm" -- the next 5pm, once.
+
+    Without this the phrase fell through to the scheduler's own parser, which
+    read it as ``daily:17:00``: a standing appointment rather than a reminder.
+    A phrase that names a recurrence ("every day at 5pm") is deliberately not
+    matched here, so it still reaches the scheduler, which is what owns
+    anything that repeats.
+    """
+    if _RECURRENCE.search(clean):
+        return None
+    match = re.fullmatch(
+        r"(?i)(?:please\s+)?remind\s+me\s+to\s+(.+?)\s+at\s+"
+        r"(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)",
+        clean,
+    )
+    if not match:
+        return None
+    message = _require_message(match.group(1))
+    parsed_time = _parse_clock_time(match.group(2))
+    due = datetime.combine(now.date(), parsed_time, tzinfo=now.tzinfo)
+    if due <= now:
+        # "at 5pm" said at six o'clock means tomorrow's five, not a time that
+        # has passed -- _ensure_future would otherwise reject the phrase.
+        due += timedelta(days=1)
+    return ParsedReminder(
+        message=message, due_at=due, matched_expression=match.group(0)
     )
 
 
