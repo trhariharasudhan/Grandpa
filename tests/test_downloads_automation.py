@@ -22,11 +22,6 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 def _file(path: Path, content: bytes = b"data", *, days_old: int = 0) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -84,6 +79,9 @@ def test_scanner_detects_large_files_and_duplicates(tmp_path: Path) -> None:
     assert all(item.duplicate_group for item in duplicates)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_open_latest_safe_file_and_block_executable(tmp_path: Path) -> None:
     opened: list[Path] = []
     # safe.pdf is aged a day so setup.exe below is unambiguously the latest
@@ -116,6 +114,9 @@ def test_open_latest_safe_file_and_block_executable(tmp_path: Path) -> None:
     assert "unsafe" in blocked.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_move_archive_organize_and_delete_require_confirmation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -145,6 +146,9 @@ def test_move_archive_organize_and_delete_require_confirmation(
     assert deleted.status == "handled"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_organize_downloads_by_file_type(tmp_path: Path) -> None:
     _file(tmp_path / "doc.pdf")
     _file(tmp_path / "pic.jpg")
@@ -234,6 +238,9 @@ def test_voice_operator_routes_downloads_commands(
     assert result.action["action_type"] == "downloads"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_handle_downloads_command_uses_temp_scanner_only(tmp_path: Path) -> None:
     _file(tmp_path / "invoice.pdf")
 

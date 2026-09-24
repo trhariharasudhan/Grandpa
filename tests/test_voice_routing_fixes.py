@@ -8,9 +8,6 @@ from grandpa.voice.assistant import VoiceCommandProcessor
 from grandpa.voice.microphone import MicrophoneCapture
 from grandpa.windows_app_resolver import AppResolution, launch_app
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(reason="reads the real clock")
-
 
 def test_notepad_verified_launch_success(monkeypatch):
     monkeypatch.setattr(
@@ -188,6 +185,9 @@ def test_stop_reasoning_and_cancel_intent_routing():
     assert res2.status == "no_match"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 def test_datetime_regression():
     from grandpa.core.runtime_context import handle_datetime_intent
 

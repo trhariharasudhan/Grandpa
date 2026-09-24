@@ -9,11 +9,6 @@ from grandpa.local import handle_local_action
 from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.windows_window_control import WindowInfo, control_window
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 @pytest.fixture(autouse=True)
 def _approval_store_fixture(tmp_path, monkeypatch):
@@ -264,6 +259,9 @@ def test_same_hwnd_notepad_content_dialog_is_recognized_by_exact_labels(
     assert result.kind == "notepad_unsaved"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.windows_window_control.invoke_dialog_choice"
+)
 def test_dialog_choice_rejects_wrong_owner_before_click(monkeypatch):
     target = WindowInfo(100, "Untitled - Notepad", "notepad", 123)
     dialog = windows_window_control.DialogInfo(

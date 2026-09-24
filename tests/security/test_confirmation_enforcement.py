@@ -33,11 +33,6 @@ from grandpa.cli import cli
 from grandpa.core.types import ToolCall, ToolResult
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 _ask_mod = importlib.import_module("grandpa.cli.ask")
 _agent_cmd_mod = importlib.import_module("grandpa.cli.agent_cmd")
 
@@ -140,6 +135,7 @@ class TestAskShellExecConfirmation:
             f"marker file was created. CLI output:\n{result.output}"
         )
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_t2_ask_runs_shell_command_with_explicit_yes(
         self, ask_setup, tmp_path
     ) -> None:

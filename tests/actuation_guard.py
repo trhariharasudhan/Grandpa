@@ -236,3 +236,52 @@ __all__ = [
     "is_denied",
     "primitive_targets",
 ]
+
+
+# ---------------------------------------------------------------------------
+# The marker is function-scope only
+# ---------------------------------------------------------------------------
+
+SCOPE_ERROR = """\
+@pytest.mark.{marker} is function-scope only, and these apply it to a whole
+module or class:
+
+{offenders}
+The marker switches off both guards -- nothing-actuates and the write bound --
+so its reason is the only thing between a test and the machine it runs on. A
+reason attached to a file cannot be true of every test in the file:
+tests/cli/test_chat_cmd.py claimed "against the store under the test's own
+GRANDPA_HOME" for 107 tests, and one of them wrote a traceback into a real
+~/.grandpa/server.log. The sentence was true of most of them and false of that
+one, and nothing on the file could tell them apart.
+
+Mark the tests that need it, one at a time, and say what each one reaches:
+
+    @pytest.mark.{marker}(reason="drives the real X; kept off the machine by Y")
+    def test_one_thing(): ...
+"""
+
+
+def scope_violations(items: list[Any]) -> dict[str, list[str]]:
+    """Which collected tests inherit the marker rather than carrying it.
+
+    ``own_markers`` holds only what was applied to the test function itself, so a
+    marker in ``iter_markers`` but not in ``own_markers`` came from a module-level
+    ``pytestmark`` or from a class.
+    """
+    offenders: dict[str, list[str]] = {}
+    for item in items:
+        own = {mark.name for mark in getattr(item, "own_markers", [])}
+        if MARKER in own:
+            continue
+        if next(item.iter_markers(MARKER), None) is not None:
+            where = str(getattr(item, "location", ("?",))[0])
+            offenders.setdefault(where, []).append(item.name)
+    return offenders
+
+
+def scope_error_message(offenders: dict[str, list[str]]) -> str:
+    listing = "\n".join(
+        f"  {where}  ({len(names)} tests)" for where, names in sorted(offenders.items())
+    )
+    return SCOPE_ERROR.format(marker=MARKER, offenders=listing + "\n")

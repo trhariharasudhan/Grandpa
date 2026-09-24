@@ -11,12 +11,10 @@ from grandpa.memory_context import (
     handle_memory_command,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
 )
-
-
 @pytest.mark.parametrize(
     ("attribute", "value"),
     [
@@ -88,6 +86,9 @@ def test_context_includes_only_relevant_memory(tmp_path: Path) -> None:
     assert "VS Code" not in context
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_forget_removes_naturally_captured_memory(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path / "personal_memory.db")
     capture_natural_personal_fact("My favorite color is blue", store=store)

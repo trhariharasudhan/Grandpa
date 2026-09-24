@@ -9,13 +9,7 @@ from grandpa.local import BLOCKED_MESSAGE, handle_local_action
 from grandpa.local_action_approvals import LocalActionApprovalStore
 from grandpa.local_action_result import LocalActionResult
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.core,
-    pytest.mark.real_actions(
-        reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-    ),
-]
+pytestmark = [pytest.mark.core]
 
 
 @pytest.fixture(autouse=True)
@@ -66,6 +60,9 @@ def test_unsupported_command_falls_back_to_assistant():
     assert result.should_fallback
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_windows_launcher_action_is_unsupported_off_windows(monkeypatch):
     monkeypatch.setattr(local_actions.sys, "platform", "linux")
 
@@ -184,6 +181,9 @@ def test_screen_diagnostics_command_is_recognized_without_execution():
     assert result.target == "screen_diagnostics"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.screen_awareness.capture_screen_answer"
+)
 def test_screenshot_command_is_unsupported_off_windows(monkeypatch):
     monkeypatch.setattr(local_actions.sys, "platform", "linux")
 

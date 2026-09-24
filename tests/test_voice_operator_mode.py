@@ -30,11 +30,6 @@ from grandpa.voice.operator import (
     run_voice_operator_loop,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 def test_parse_open_chrome() -> None:
     intent = parse_voice_operator_command("open chrome")
@@ -1061,6 +1056,9 @@ def test_voice_operator_genuine_command_after_tts_not_rejected() -> None:
     assert actions[1]["target"] == "calculator"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_voice_operator_inventory_canonical_fallback_and_missing_path_safety() -> None:
     from grandpa.desktop.control.applications import ApplicationControlService
     from grandpa.pc_control import LocalActionRequest
@@ -1377,6 +1375,9 @@ def test_voice_session_state_transitions_idle_to_capturing_to_processing_to_exec
     assert session.state == VoiceSessionState.IDLE
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_voice_session_debug_state_tags_rendered() -> None:
     from grandpa.voice.cli_session import VoiceSession
     from grandpa.voice.operator import VoiceOperatorResponder

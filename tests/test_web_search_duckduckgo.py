@@ -22,11 +22,6 @@ from grandpa.web_search.client import WebSearchClient
 from grandpa.web_search.models import WebSearchQuery
 from grandpa.web_search.providers import default_provider_config
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 _SEARCH_ENVS = (
     "BRAVE_SEARCH_API_KEY",
     "BING_SEARCH_API_KEY",
@@ -98,6 +93,9 @@ def test_explicit_provider_overrides_keyless_default(
     assert WebSearchClient(config).status()[0] == "not_configured"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.web_search.automation.WebSearchAutomation.execute"
+)
 def test_cli_search_web_returns_results_without_api_key(
     no_search_keys, fake_ddgs, monkeypatch, tmp_path
 ) -> None:

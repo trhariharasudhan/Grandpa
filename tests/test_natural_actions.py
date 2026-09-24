@@ -13,11 +13,6 @@ import pytest
 
 from grandpa.natural_actions import MIGRATED, request_for, run_parsed
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test; drives the real browser implementation with the opener and hotkey runner the test supplies"
-)
-
 
 @pytest.fixture(autouse=True)
 def _audit_log(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -68,6 +63,9 @@ def test_the_dangerous_text_guard_still_runs_first() -> None:
     assert handle_local_action("show my password").status == "blocked"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_a_migrated_phrase_is_performed_by_the_layer(monkeypatch) -> None:
     from grandpa.local import handle_local_action
 
@@ -108,6 +106,9 @@ def window_calls(monkeypatch):
     return calls
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.windows.WindowControlService.execute"
+)
 def test_focusing_a_window_does_not_ask(window_calls) -> None:
     from grandpa.local import handle_local_action
 
@@ -127,6 +128,9 @@ def test_closing_asks_inline_and_no_closes_nothing(window_calls) -> None:
     assert window_calls == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.windows.WindowControlService.execute"
+)
 def test_closing_proceeds_on_yes(window_calls) -> None:
     from grandpa.local import handle_local_action
 
@@ -209,6 +213,9 @@ def _launched(rec) -> list[str]:
     ]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 @pytest.mark.parametrize("phrase", ["open chrome", "launch edge"])
 def test_starting_a_browser_with_no_one_to_ask_starts_nothing(launches, phrase) -> None:
     """Hole: local_actions called launch_app itself, around the browser rule."""
@@ -220,6 +227,9 @@ def test_starting_a_browser_with_no_one_to_ask_starts_nothing(launches, phrase) 
     assert _launched(launches) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 @pytest.mark.parametrize("phrase", ["open chrome", "launch edge"])
 def test_starting_a_browser_asks_and_no_starts_nothing(launches, phrase) -> None:
     from grandpa.local import handle_local_action
@@ -231,6 +241,9 @@ def test_starting_a_browser_asks_and_no_starts_nothing(launches, phrase) -> None
     assert _launched(launches) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_starting_a_browser_on_yes_launches_it(launches) -> None:
     from grandpa.local import handle_local_action
 
@@ -239,6 +252,9 @@ def test_starting_a_browser_on_yes_launches_it(launches) -> None:
     assert _launched(launches) == ["launch_app"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_voice_cannot_start_a_browser(launches) -> None:
     from grandpa.local import handle_local_action
 
@@ -248,6 +264,9 @@ def test_voice_cannot_start_a_browser(launches) -> None:
     assert _launched(launches) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_an_ordinary_app_starts_without_asking(launches) -> None:
     from grandpa.local import handle_local_action
 
@@ -297,6 +316,9 @@ def test_a_protected_folder_is_not_staged_for_voice(launches) -> None:
         )
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.pc_control._execute_open_folder"
+)
 def test_an_unknown_folder_still_asks(launches, tmp_path) -> None:
     """open_folder alone would not ask; local_actions did, and still does."""
     from grandpa.local import handle_local_action
@@ -313,6 +335,9 @@ def test_an_unknown_folder_still_asks(launches, tmp_path) -> None:
     assert _launched(launches) == ["os.startfile"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.pc_control._execute_open_folder"
+)
 def test_a_folder_the_old_rule_trusted_opens_without_asking(launches, tmp_path) -> None:
     """Without require_consent, open_folder opens an ordinary folder unasked.
 
@@ -354,6 +379,9 @@ def test_navigating_with_no_one_to_ask_opens_nothing(launches, phrase, address) 
     assert _opened(launches) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 @pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
 def test_navigating_shows_the_address_and_no_opens_nothing(
     launches, phrase, address
@@ -368,6 +396,9 @@ def test_navigating_shows_the_address_and_no_opens_nothing(
     assert _opened(launches) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 @pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
 def test_navigating_on_yes_opens_exactly_that_address(
     launches, phrase, address
@@ -379,6 +410,9 @@ def test_navigating_on_yes_opens_exactly_that_address(
     assert _opened(launches) == [address]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_voice_navigation_waits_for_its_own_yes(launches) -> None:
     from grandpa.local import handle_local_action
 
@@ -393,6 +427,9 @@ def test_voice_navigation_waits_for_its_own_yes(launches) -> None:
     assert _opened(launches) == ["https://example.com"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_a_trusted_domain_opens_without_asking(launches, monkeypatch) -> None:
     import grandpa.local.router as local_actions
 

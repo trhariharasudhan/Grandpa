@@ -43,11 +43,6 @@ import pytest
 
 from tests.security.input_recorder import install
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
-)
-
 VOICE_PACKAGE = Path(__file__).resolve().parents[2] / "src" / "grandpa" / "voice"
 
 # Not keyboard or mouse input. Window focus and state: focusing asks nowhere in
@@ -274,6 +269,9 @@ INPUT_PHRASES = (
 )
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute, grandpa.browser_control.execute_browser_action"
+)
 @pytest.mark.parametrize("entry", ENTRY_POINTS)
 def test_voice_cannot_actuate_keys_or_mouse_by_any_route(
     recorder, monkeypatch, tmp_path, entry

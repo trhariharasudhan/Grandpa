@@ -10,16 +10,11 @@ import pytest
 
 from tests.e2e.harness import sqlite_execute, sqlite_rows
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 
 # 14 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_memory_remember_stores_a_row_that_search_returns(cli, make_nonce) -> None:
     fact = f"e2e favourite okapi {make_nonce('')}"
     token = fact.split()[-1]
@@ -40,6 +35,7 @@ def test_memory_remember_stores_a_row_that_search_returns(cli, make_nonce) -> No
 
 
 # 15 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_reminders_add_persists_a_future_reminder_that_list_shows(
     cli, make_nonce
 ) -> None:
@@ -61,6 +57,7 @@ def test_reminders_add_persists_a_future_reminder_that_list_shows(
 
 
 # 16 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_reminders_run_due_records_failed_delivery_instead_of_claiming_it(
     cli, make_nonce
 ) -> None:
@@ -106,6 +103,7 @@ def test_reminders_run_due_records_failed_delivery_instead_of_claiming_it(
 
 
 # 17 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_scheduler_create_list_cancel_round_trip_through_the_store(
     cli, make_nonce
 ) -> None:

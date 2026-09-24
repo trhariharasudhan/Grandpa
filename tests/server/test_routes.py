@@ -12,11 +12,6 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from grandpa.server.app import create_app  # noqa: E402
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="exercises the real implementation it names"
-)
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -245,6 +240,9 @@ class TestChatCompletions:
         data = resp.json()
         assert data["choices"][0]["finish_reason"] == "stop"
 
+    @pytest.mark.real_actions(
+        reason="needs a real implementation; the guards refuse this test without it"
+    )
     def test_local_time_action_bypasses_engine(self):
         engine = _make_engine(content="Should not be used")
         app = create_app(engine, "test-model")
@@ -298,6 +296,9 @@ class TestChatCompletions:
         assert data["choices"][0]["message"]["content"] == "Hello from server"
         assert data["local_action"] is None
 
+    @pytest.mark.real_actions(
+        reason="needs a real implementation; the guards refuse this test without it"
+    )
     def test_streaming_local_action_marks_finish_chunk(self, client):
         resp = client.post(
             "/v1/chat/completions",

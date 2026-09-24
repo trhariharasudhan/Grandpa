@@ -27,11 +27,6 @@ from grandpa.agent.runtime import AgentRuntime
 from grandpa.cli.agent_run_cmd import agent_group
 from grandpa.memory.service import MemoryService
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture
 def temp_workspace():
@@ -51,6 +46,7 @@ def setup_memory():
 # --- Workspace safety tests ---
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_workspace_safety(temp_workspace) -> None:
     # 1. Valid workspace
     ws = resolve_and_verify_workspace(str(temp_workspace))
@@ -154,6 +150,7 @@ class TestSensitivePathsBlockedRegardlessOfExistence:
         assert "exist" in ws.reason
         assert "blocked" not in ws.reason
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_temp_workspace_is_still_usable(self, temp_workspace):
         # Guards the is_in_temp carve-out: the Windows temp directory lives
         # under AppData, which is itself a secret pattern, so moving the secrets
@@ -337,6 +334,7 @@ def test_fabricated_proposal_invalidation(temp_workspace) -> None:
 # --- Calculator Fixture End-To-End (Fix 9) ---
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_calculator_fixture_end_to_end(temp_workspace) -> None:
     # 1. Setup workspace structure
     (temp_workspace / "src").mkdir(exist_ok=True)
@@ -386,6 +384,7 @@ def test_calculator_fixture_end_to_end(temp_workspace) -> None:
 # --- Goal Classification and Success checks (Fix 10) ---
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_read_only_inspections_and_no_failures(temp_workspace, setup_memory) -> None:
     (temp_workspace / "src").mkdir(exist_ok=True)
     (temp_workspace / "tests").mkdir(exist_ok=True)
@@ -416,6 +415,7 @@ def test_read_only_inspections_and_no_failures(temp_workspace, setup_memory) -> 
 # --- CLI Commands integration tests ---
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_cli_execution(temp_workspace, setup_memory) -> None:
     runner = click.testing.CliRunner()
     app_db = temp_workspace / "approvals.db"

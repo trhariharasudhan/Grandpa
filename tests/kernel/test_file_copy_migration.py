@@ -31,11 +31,6 @@ from grandpa.kernel.models import (
     action_digest,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates"
-)
-
 
 def _legacy_copy(command: str, root: Path) -> FileOperationResult:
     action = FileParser().parse(command)
@@ -63,6 +58,9 @@ def _snapshot(root: Path) -> dict[str, bytes | None]:
     }
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 @pytest.mark.parametrize("verb", ("copy", "duplicate", "copy file"))
 def test_regular_file_copy_matches_legacy_public_result(tmp_path, verb):
     source = tmp_path / "source.txt"
@@ -78,6 +76,9 @@ def test_regular_file_copy_matches_legacy_public_result(tmp_path, verb):
     assert destination.read_bytes() == source.read_bytes()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_default_copy_name_matches_legacy(tmp_path):
     source = tmp_path / "report.txt"
     source.write_text("report", encoding="utf-8")
@@ -90,6 +91,9 @@ def test_default_copy_name_matches_legacy(tmp_path):
     _assert_parity(actual, expected)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_copy_to_existing_directory_matches_legacy(tmp_path):
     source = tmp_path / "source.txt"
     target_directory = tmp_path / "target"
@@ -315,6 +319,9 @@ def test_injected_executor_remains_copy_rollback_path(tmp_path):
     assert executor.calls == 1
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_existing_destination_preserves_legacy_confirmation_without_execution(
     tmp_path, monkeypatch
 ):

@@ -19,11 +19,6 @@ from grandpa.windows_window_control import (
     WindowInfo,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 def test_desktop_control_registry_lists_domain_services():
     services = list_desktop_services(platform="linux")
@@ -50,6 +45,9 @@ def test_application_service_preserves_safe_aliases():
     assert service.app_id("unknown app") is None
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_application_service_verifies_new_notepad_document(monkeypatch):
     existing = NotepadDocumentTarget(
         WindowInfo(10, "Existing - Notepad", "notepad", 101),
@@ -94,6 +92,9 @@ def test_application_service_verifies_new_notepad_document(monkeypatch):
     assert result.evidence["launch_target"]["document_id"] == "doc-new"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_pc_control_facade_still_detects_app(monkeypatch, tmp_path):
     monkeypatch.setenv(
         "GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "local_actions.jsonl")

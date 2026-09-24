@@ -1,0 +1,30 @@
+#!/bin/sh
+# Notice a commit that got in without being verified.
+#
+# `git commit --no-verify` skips pre-commit and commit-msg, so the guard that
+# refuses commits cannot see that commit happen. post-commit is not skipped by
+# --no-verify, so this runs. It cannot refuse -- the commit already exists --
+# but it can make the bypass expensive: it appends to
+# runtime/verification/unverified.log, and a test in the suite fails while that
+# file has entries. Since the commit guard needs a *passing* full run to allow
+# the next commit, a bypass blocks the next commit until someone deals with it
+# on purpose. That is the difference between a hatch and a habit.
+
+repo="$(git rev-parse --show-toplevel)"
+
+for candidate in \
+    "$GRANDPA_PYTHON" \
+    "$repo/.venv/Scripts/python.exe" \
+    "$repo/.venv/bin/python" \
+    "$(command -v python3 2>/dev/null)" \
+    "$(command -v python 2>/dev/null)"
+do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        python_bin="$candidate"
+        break
+    fi
+done
+
+[ -z "$python_bin" ] && exit 0
+
+exec "$python_bin" "$repo/scripts/commit_verification.py" --audit-head

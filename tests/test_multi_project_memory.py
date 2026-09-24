@@ -14,11 +14,6 @@ from grandpa.agent.runtime import AgentRuntime
 from grandpa.cli.project_cmd import project_group
 from grandpa.memory.service import MemoryService
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture
 def temp_workspace():
@@ -74,6 +69,7 @@ def test_project_registration_and_switching(temp_workspace) -> None:
     assert registry.active_project_id == "prj_chronobot"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_memory_isolation_and_continuation(temp_workspace, setup_memory) -> None:
     registry_file = temp_workspace / "projects_registry.json"
     registry = MultiProjectRegistry(str(registry_file))
@@ -127,6 +123,7 @@ def test_persistence(temp_workspace) -> None:
     assert len(registry2.list_projects()) == 1
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_agent_runtime_multi_project(temp_workspace, setup_memory) -> None:
     # We patch global projects_registry path so AgentRuntime uses our isolated file
     import os
@@ -154,6 +151,7 @@ def test_agent_runtime_multi_project(temp_workspace, setup_memory) -> None:
     assert "Continuation engine active for 'ChronoBot'" in res_continue.message
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_cli_commands(temp_workspace, setup_memory) -> None:
     import os
 

@@ -1,0 +1,41 @@
+#!/bin/sh
+# Refuse a commit whose content has not passed a full pytest run.
+#
+# commit-msg rather than pre-commit, because the escape hatch is a trailer in
+# the commit message and pre-commit cannot see the message. See
+# scripts/commit_verification.py for what is checked and why.
+#
+# Installed by scripts/install_git_hooks.py. If this file is not the one git is
+# running, tests/test_commit_verification_guard.py says so.
+
+set -e
+
+repo="$(git rev-parse --show-toplevel)"
+
+# The guard uses only the standard library and git, so any interpreter will do.
+# It is still resolved in a fixed order so the hook behaves the same for
+# everyone: an explicit override, then the project venv, then whatever is on
+# PATH.
+for candidate in \
+    "$GRANDPA_PYTHON" \
+    "$repo/.venv/Scripts/python.exe" \
+    "$repo/.venv/bin/python" \
+    "$(command -v python3 2>/dev/null)" \
+    "$(command -v python 2>/dev/null)"
+do
+    if [ -n "$candidate" ] && [ -x "$candidate" ]; then
+        python_bin="$candidate"
+        break
+    fi
+done
+
+if [ -z "$python_bin" ]; then
+    echo "" >&2
+    echo "commit guard: no Python interpreter found, so the commit cannot be" >&2
+    echo "checked. Refusing -- a guard that cannot check must not approve." >&2
+    echo "Set GRANDPA_PYTHON to an interpreter if this is wrong." >&2
+    echo "" >&2
+    exit 1
+fi
+
+exec "$python_bin" "$repo/scripts/commit_verification.py" "$1"

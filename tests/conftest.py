@@ -70,7 +70,20 @@ _RELEASE_TEST_PATHS = {
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:
-    """Classify optional/environment suites and keep default full runs local."""
+    """Classify optional/environment suites, and refuse a file-wide opt-out.
+
+    The scope check comes first and raises: @pytest.mark.real_actions is
+    function-scope only. 88 files once carried one between them, covering 1288
+    tests, of which 893 did not need it -- and one of the ones that did need
+    something wrote to a real home under a reason written for its neighbours. A
+    warning would have been read once; this refuses the run.
+    """
+    from tests.actuation_guard import scope_error_message, scope_violations
+
+    offenders = scope_violations(items)
+    if offenders:
+        raise pytest.UsageError(scope_error_message(offenders))
+
     for item in items:
         rel_path = item.path.as_posix()
         if rel_path.startswith(str(Path.cwd()).replace("\\", "/")):
@@ -169,7 +182,12 @@ def _nothing_actuates(request, monkeypatch) -> None:
     from tests.actuation_guard import MARKER, deny_everything, reason_for
     from tests.write_guard import confine_writes
 
-    marker = request.node.get_closest_marker(MARKER)
+    # own_markers, not get_closest_marker: the marker is function-scope only, so
+    # one inherited from a module or a class does not count. See
+    # tests/actuation_guard.py's scope_violations for the collection-time refusal.
+    marker = next(
+        (mark for mark in request.node.own_markers if mark.name == MARKER), None
+    )
     if marker is not None:
         try:
             reason_for(marker)
@@ -412,3 +430,19 @@ def mock_engine():
 def event_bus() -> EventBus:
     """Fresh EventBus with history recording enabled."""
     return EventBus(record_history=True)
+
+
+# ---------------------------------------------------------------------------
+# What this run proved, recorded from inside pytest
+# ---------------------------------------------------------------------------
+# Three commits in this project were made on a failing suite, and one of them
+# (2df79819) only because the exit status passed through `tail` on its way to an
+# `&&`. These two hooks write the result from inside the pytest process, where
+# no pipe exists yet; scripts/commit_verification.py reads the file and the
+# commit-msg hook refuses the commit. See tests/verification_plugin.py.
+from tests.verification_plugin import (  # noqa: E402
+    pytest_runtest_logreport,
+    pytest_sessionfinish,
+)
+
+__all__ = ["pytest_runtest_logreport", "pytest_sessionfinish"]

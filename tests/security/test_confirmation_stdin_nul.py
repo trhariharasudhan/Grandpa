@@ -19,11 +19,6 @@ import pytest
 import grandpa
 from grandpa.cli import ask as ask_module
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 _SRC = str(Path(grandpa.__file__).resolve().parents[1])
 
 
@@ -42,6 +37,7 @@ def _run_with_devnull_stdin(code: str) -> subprocess.CompletedProcess:
     )
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_devnull_stdin_is_not_interactive() -> None:
     proc = _run_with_devnull_stdin(
         "import sys; from grandpa.cli._tty import stdin_is_interactive;"
@@ -51,6 +47,7 @@ def test_devnull_stdin_is_not_interactive() -> None:
     assert proc.stdout.strip() == "False"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_ask_installs_no_prompt_callback_when_stdin_is_devnull() -> None:
     proc = _run_with_devnull_stdin(
         "import sys; from grandpa.cli.ask import _resolve_confirm_callback;"

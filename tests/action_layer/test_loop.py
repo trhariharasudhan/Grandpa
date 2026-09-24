@@ -25,11 +25,6 @@ from grandpa.action_layer.loop import (
 )
 from grandpa.action_layer.model import Origin
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates"
-)
-
 
 @pytest.fixture(autouse=True)
 def audit_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -120,6 +115,9 @@ def test_a_single_action_can_be_offered(monkeypatch: pytest.MonkeyPatch) -> None
 # --- several steps ------------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_a_multi_step_chain_runs_in_order_and_feeds_results_back(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

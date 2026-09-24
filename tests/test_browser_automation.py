@@ -14,11 +14,6 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
-)
-
 
 def test_parser_open_known_website() -> None:
     action = BrowserParser().parse("Open YouTube")
@@ -116,6 +111,9 @@ def test_search_url_encodes_query() -> None:
     assert url == "https://www.google.com/search?q=FastAPI+tutorials+%26+examples"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_executor_opens_website_with_mocked_opener() -> None:
     opened: list[str] = []
     action = BrowserParser().parse("open github")
@@ -130,6 +128,9 @@ def test_executor_opens_website_with_mocked_opener() -> None:
     assert result.message == "GitHub opened."
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_executor_generates_search_url_with_mocked_opener() -> None:
     opened: list[str] = []
     action = BrowserParser().parse("search youtube for Python automation")
@@ -144,6 +145,9 @@ def test_executor_generates_search_url_with_mocked_opener() -> None:
     assert result.message == "Searching YouTube for Python automation."
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_executor_browser_hotkeys_are_mockable() -> None:
     keys_seen: list[tuple[str, ...]] = []
     action = BrowserParser().parse("open a new tab")
@@ -157,6 +161,9 @@ def test_executor_browser_hotkeys_are_mockable() -> None:
     assert keys_seen == [("ctrl", "t")]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_unsafe_url_returns_friendly_blocked_error() -> None:
     result = handle_browser_command(
         "open javascript:alert(1)", opener=lambda _url: True, confirmed=True
@@ -166,6 +173,9 @@ def test_unsafe_url_returns_friendly_blocked_error() -> None:
     assert "Blocked unsafe URL scheme" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_browser_slash_routes_to_automation(monkeypatch) -> None:
     opened: list[str] = []
     monkeypatch.setattr(
@@ -266,6 +276,9 @@ def recorded_keys(monkeypatch):
     return pressed
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_a_shortcut_is_not_sent_to_a_window_that_is_not_a_browser(
     monkeypatch, recorded_keys
 ) -> None:
@@ -284,6 +297,9 @@ def test_a_shortcut_is_not_sent_to_a_window_that_is_not_a_browser(
     assert recorded_keys == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_a_shortcut_runs_when_a_browser_is_in_front(monkeypatch, recorded_keys) -> None:
     """They used to be staged as a generic keyboard_hotkey approval and never ran."""
     from grandpa.browser.executor import BrowserExecutor

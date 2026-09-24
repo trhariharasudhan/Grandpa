@@ -14,13 +14,7 @@ import pytest
 
 from tests.e2e.harness import chat_replies, ollama_models, sqlite_rows
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 ATTEMPTS = 3
 
@@ -43,6 +37,7 @@ def _note_titles(grandpa_home) -> list[str]:
 # 1 ---------------------------------------------------------------------------
 # Plain `ask` goes through the configured default agent; `--agent ""` goes
 # straight to the engine. They print from different code, so both are covered.
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.parametrize(
     "mode", [(), ("--agent", "")], ids=["default-agent", "direct-engine"]
 )
@@ -68,6 +63,7 @@ def test_ask_returns_what_the_model_generated(cli, e2e_model, make_nonce, mode) 
     )
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_model_list_marks_exactly_the_installed_models(cli, ollama) -> None:
     """`model list` called catalog entries "available" though they were not installed."""
     run = cli("model", "list", "--json", timeout=300)
@@ -87,6 +83,7 @@ def test_model_list_marks_exactly_the_installed_models(cli, ollama) -> None:
 
 
 # 2 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_telemetry_stats_reports_the_call_ask_recorded(
     cli, e2e_model, make_nonce
 ) -> None:
@@ -112,6 +109,7 @@ def test_telemetry_stats_reports_the_call_ask_recorded(
 
 
 # 3 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_answers_with_what_the_model_generated(cli, e2e_model, make_nonce) -> None:
     outputs = []
     for _ in range(ATTEMPTS):
@@ -126,6 +124,7 @@ def test_chat_answers_with_what_the_model_generated(cli, e2e_model, make_nonce) 
 
 
 # 4 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_create_a_note_writes_the_note_file(cli, e2e_model, make_nonce) -> None:
     title = f"e2e groceries {make_nonce('')}"
 
@@ -137,6 +136,7 @@ def test_chat_create_a_note_writes_the_note_file(cli, e2e_model, make_nonce) -> 
 
 
 # 5 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_remembers_a_personal_fact_and_recalls_it(
     cli, e2e_model, make_nonce
 ) -> None:
@@ -155,6 +155,7 @@ def test_chat_remembers_a_personal_fact_and_recalls_it(
 
 
 # 6 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_reminder_stores_exactly_the_schedule_it_announces(
     cli, e2e_model, make_nonce
 ) -> None:
@@ -198,6 +199,7 @@ def test_chat_reminder_stores_exactly_the_schedule_it_announces(
 
 
 # 7 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_delete_file_is_blocked_and_the_file_survives(
     cli, e2e_model, make_nonce
 ) -> None:
@@ -216,6 +218,7 @@ def test_chat_delete_file_is_blocked_and_the_file_survives(
 
 
 # 8 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_agents_ask_runs_the_agent_and_records_its_answer(
     cli, e2e_model, make_nonce
 ) -> None:

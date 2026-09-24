@@ -15,11 +15,6 @@ from grandpa.desktop.automation import handle_desktop_command
 from grandpa.local.permissions import classify_permission
 from grandpa.local_action_result import LocalActionResult
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
-)
-
 
 class Opener:
     """Stands in for the real browser."""
@@ -37,6 +32,9 @@ def opener() -> Opener:
     return Opener()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 @pytest.mark.parametrize(
     ("phrase", "expected"),
     [
@@ -54,6 +52,9 @@ def test_navigation_without_a_callback_is_refused(opener, phrase, expected) -> N
     assert expected in result.message or expected in result.url
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 @pytest.mark.parametrize(
     ("phrase", "expected_url", "prompt_contains"),
     [
@@ -92,6 +93,9 @@ def test_answering_yes_opens_and_no_opens_nothing(
     assert opener.opened == [expected_url]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_trusted_domains_skip_the_prompt(opener) -> None:
     def refuse(prompt: str, tier: str) -> bool:
         raise AssertionError(f"asked about a trusted domain: {prompt}")
@@ -111,6 +115,9 @@ def test_trusted_domains_skip_the_prompt(opener) -> None:
     assert not is_trusted_url("https://example.com.evil.test/x", ("example.com",))
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute"
+)
 def test_shortcuts_on_the_open_page_are_not_navigation() -> None:
     keys: list[tuple[str, ...]] = []
 

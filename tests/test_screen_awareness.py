@@ -9,11 +9,6 @@ from fastapi.testclient import TestClient
 import grandpa.screen_awareness as screen_awareness
 from grandpa.server.routes import router
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 def test_active_window_unsupported_off_windows(monkeypatch):
     monkeypatch.setattr(screen_awareness.sys, "platform", "linux")
@@ -216,6 +211,9 @@ def test_ocr_text_is_redacted_before_anyone_sees_it(monkeypatch) -> None:
     assert "[REDACTED_PASSWORD]" in message
 
 
+@pytest.mark.real_actions(
+    reason="needs a real implementation; the guards refuse this test without it"
+)
 def test_a_credential_screen_is_not_described_at_all(monkeypatch) -> None:
     """Redaction removes the shapes it knows; this is where the others live."""
     import grandpa.screen_awareness as sa
@@ -306,6 +304,9 @@ def test_a_screen_sensitive_only_by_its_text_is_captured_then_removed(
     assert list(temp_home.glob("*.png")) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.screen_awareness.capture_screen_answer"
+)
 def test_a_refusal_is_reported_as_blocked_not_handled(monkeypatch) -> None:
     import grandpa.screen_awareness as sa
 

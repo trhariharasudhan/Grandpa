@@ -9,12 +9,8 @@ from pathlib import Path
 import pytest
 import tomllib
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
 
-
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_top_level_import_does_not_eagerly_load_sdk() -> None:
     code = "import sys, grandpa; print('grandpa.sdk' in sys.modules)"
     result = subprocess.run(
@@ -26,6 +22,7 @@ def test_top_level_import_does_not_eagerly_load_sdk() -> None:
     assert result.stdout.strip() == "False"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_public_sdk_exports_still_resolve_lazily() -> None:
     code = (
         "import sys, grandpa; "

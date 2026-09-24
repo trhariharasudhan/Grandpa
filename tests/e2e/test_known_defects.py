@@ -11,16 +11,11 @@ import pytest
 
 from tests.e2e.harness import chat_replies, sqlite_rows
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 
 # Fixed: notes delete printed "Delete note ...? [y/N]" and never read an answer.
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_answering_yes_at_the_notes_delete_prompt_deletes_the_note(
     cli, make_nonce
 ) -> None:
@@ -35,6 +30,7 @@ def test_answering_yes_at_the_notes_delete_prompt_deletes_the_note(
 
 
 # Fixed: downloads delete printed "Delete 1 download? [y/N]" and never read an answer.
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_answering_yes_at_the_downloads_delete_prompt_deletes_the_file(
     cli, make_nonce
 ) -> None:
@@ -49,6 +45,7 @@ def test_answering_yes_at_the_downloads_delete_prompt_deletes_the_file(
 
 
 # Fixed: chat sent "find files named X" to screen automation, which searched the screen.
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_find_files_finds_a_file_in_documents(cli, e2e_model, make_nonce) -> None:
     stem = make_nonce("quarterly")
     (cli.home / "Documents" / f"{stem}.txt").write_text("numbers", encoding="utf-8")
@@ -60,6 +57,7 @@ def test_chat_find_files_finds_a_file_in_documents(cli, e2e_model, make_nonce) -
 
 
 # Fixed alongside it: "search my files for X" opened a Google search instead.
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_search_my_files_finds_a_file_and_opens_no_browser(
     cli, e2e_model, make_nonce
 ) -> None:
@@ -75,6 +73,7 @@ def test_chat_search_my_files_finds_a_file_and_opens_no_browser(
 
 # Fixed: "remember that ..." was saved to memory.db (MemoryService), but chat
 # recalls from personal_memory.db. (The xfail reason wrongly said core_brain.db.)
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_remember_that_is_recalled(cli, e2e_model, make_nonce) -> None:
     colour = make_nonce("teal")
 

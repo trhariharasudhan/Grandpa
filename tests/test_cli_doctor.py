@@ -7,15 +7,10 @@ from pathlib import Path
 
 import pytest
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.core,
-    pytest.mark.real_actions(
-        reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-    ),
-]
+pytestmark = [pytest.mark.core]
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_grandpa_doctor_smoke_without_optional_services() -> None:
     """The real doctor CLI should not crash when optional services are absent."""
     env = os.environ.copy()

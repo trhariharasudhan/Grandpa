@@ -32,13 +32,7 @@ from grandpa.voice.history import VOICE_HISTORY_LIMIT, VoiceCommandHistoryStore
 from grandpa.voice.loop import VoiceLoopSession
 from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASE, WakeWordSession
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.core,
-    pytest.mark.real_actions(
-        reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-    ),
-]
+pytestmark = [pytest.mark.core]
 
 
 @pytest.fixture
@@ -277,6 +271,9 @@ def test_voice_runtime_does_not_mislabel_programming_errors():
         runtime.listen(text="ignored")
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_voice_runtime_normal_mocked_input_still_works(monkeypatch, tmp_path):
     monkeypatch.setenv("GRANDPA_KNOWLEDGE_DB", str(tmp_path / "knowledge.db"))
     monkeypatch.setenv("GRANDPA_PERSONAL_MEMORY_DB", str(tmp_path / "memory.db"))
@@ -385,6 +382,9 @@ def test_voice_runtime_command_text_path_does_not_bypass_action_permissions():
     assert result["risk_level"] == "HIGH"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_voice_runtime_routes_read_only_command(monkeypatch, tmp_path):
     monkeypatch.setenv("GRANDPA_KNOWLEDGE_DB", str(tmp_path / "knowledge.db"))
     monkeypatch.setenv("GRANDPA_PERSONAL_MEMORY_DB", str(tmp_path / "memory.db"))
@@ -409,6 +409,9 @@ def test_voice_runtime_wake_gate():
     assert result["ok"] is False
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_voice_api_routes(monkeypatch, tmp_path):
     monkeypatch.setenv("GRANDPA_KNOWLEDGE_DB", str(tmp_path / "knowledge.db"))
     monkeypatch.setenv("GRANDPA_PERSONAL_MEMORY_DB", str(tmp_path / "memory.db"))
@@ -467,6 +470,9 @@ def test_voice_command_routes_desktop_action_to_confirmation(voice_client, tmp_p
     assert body["action"]["pending_action"]["id"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.windows.WindowControlService.execute"
+)
 def test_voice_command_refuses_synthetic_input(voice_client, monkeypatch):
     """Keys and mouse need someone who can be asked; the voice API is not."""
     from tests.security.input_recorder import install
@@ -519,6 +525,9 @@ def test_voice_command_confirmed_desktop_action_executes_with_mocked_automation(
     assert calls == ["focus|notepad||type|hello"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.pc_control._execute_open_folder"
+)
 def test_voice_confirm_token_executes_the_action(monkeypatch, voice_client, tmp_path):
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
     from tests.security.input_recorder import install
@@ -539,6 +548,9 @@ def test_voice_confirm_token_executes_the_action(monkeypatch, voice_client, tmp_
     assert recorder.actuated == ["os.startfile"], recorder.calls
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.pc_control._execute_open_folder"
+)
 def test_voice_confirm_token_cannot_be_reused(monkeypatch, voice_client, tmp_path):
     monkeypatch.setattr(local_actions.sys, "platform", "win32")
     from tests.security.input_recorder import install

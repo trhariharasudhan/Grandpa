@@ -19,11 +19,6 @@ from grandpa.action_layer.catalogue import CATALOGUE, Binding, get
 from grandpa.action_layer.executor import execute
 from grandpa.action_layer.model import ActionRequest, ActionResult, Origin, RiskLevel
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates"
-)
-
 
 @pytest.fixture(autouse=True)
 def audit_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
@@ -319,6 +314,9 @@ def test_the_browser_binding_passes_the_short_sub_action_name(
     assert implementation.call_args.args == ("headings", "visible")
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_a_real_action_has_a_real_effect(tmp_path: Path) -> None:
     """One round trip through an unmocked implementation, effect asserted."""
     target = tmp_path / "written-by-the-executor.txt"

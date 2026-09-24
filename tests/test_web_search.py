@@ -31,11 +31,6 @@ from grandpa.web_search.providers import (
 from grandpa.web_search.ranking import WebSearchRanker
 from grandpa.web_search.safety import WebSearchSafetyPolicy
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 class FakeSearchClient:
     def __init__(
@@ -102,6 +97,9 @@ def test_parser_handles_supported_search_commands() -> None:
     assert parser.parse("find invoice.pdf") is None
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.web_search.automation.WebSearchAutomation.execute"
+)
 def test_successful_search_ranks_and_formats_sources(tmp_path) -> None:
     cache = WebSearchCache(tmp_path, ttl_minutes=15)
     automation = WebSearchAutomation(client=FakeSearchClient(), cache=cache)
@@ -114,6 +112,9 @@ def test_successful_search_ranks_and_formats_sources(tmp_path) -> None:
     assert "Sources:" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.web_search.automation.WebSearchAutomation.execute"
+)
 def test_no_provider_returns_friendly_setup_message(tmp_path) -> None:
     result = WebSearchAutomation(
         client=FakeSearchClient(
@@ -126,6 +127,9 @@ def test_no_provider_returns_friendly_setup_message(tmp_path) -> None:
     assert "BRAVE_SEARCH_API_KEY" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.web_search.automation.WebSearchAutomation.execute"
+)
 @pytest.mark.parametrize(
     ("error", "expected"),
     (
@@ -188,6 +192,9 @@ def test_safety_sanitizes_html_prompt_injection_and_blocks_bad_urls() -> None:
     assert safety.safe_url("javascript:alert(1)") is False
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.web_search.automation.WebSearchAutomation.execute"
+)
 def test_cache_reuses_results_without_second_provider_call(tmp_path) -> None:
     client = FakeSearchClient()
     cache = WebSearchCache(tmp_path, ttl_minutes=15)
@@ -201,6 +208,9 @@ def test_cache_reuses_results_without_second_provider_call(tmp_path) -> None:
     assert len(client.calls) == 1
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.web_search.automation.WebSearchAutomation.execute"
+)
 def test_clear_cache_command(tmp_path) -> None:
     cache = WebSearchCache(tmp_path, ttl_minutes=15)
     automation = WebSearchAutomation(client=FakeSearchClient(), cache=cache)

@@ -17,11 +17,6 @@ from grandpa import (
 )
 from grandpa.server.routes import router
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 def _make_docx(path: Path, text: str) -> None:
     xml = (
@@ -160,6 +155,7 @@ def test_security_sensitive_memory_policy_and_redaction(tmp_path):
     assert security_safety.diagnostics(store)["health"]["score"] >= 70
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_completion_diagnostics_routes():
     app = FastAPI()
     app.include_router(router)

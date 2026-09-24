@@ -13,12 +13,10 @@ from grandpa.server.api_routes import (
 )
 from grandpa.services import service_diagnostics, service_names
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
+
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser_control.execute_browser_action"
 )
-
-
 def test_service_registry_reports_expected_facades():
     data = service_diagnostics()
 
@@ -30,6 +28,9 @@ def test_service_registry_reports_expected_facades():
     assert all("readiness" in service for service in data["services"])
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser_control.execute_browser_action"
+)
 def test_services_api_returns_diagnostics():
     app = FastAPI()
     app.include_router(services_router)

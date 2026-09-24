@@ -20,11 +20,6 @@ from grandpa.cli.project_cmd import project_group
 from grandpa.cli.roadmap_cmd import roadmap_group
 from grandpa.cli.sprint_cmd import sprint_group
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture
 def temp_workspace():
@@ -33,6 +28,7 @@ def temp_workspace():
 
 
 # Scenario 1 & 2: Greeting & Time Queries
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_greeting_and_time_queries() -> None:
     runtime = AgentRuntime()
 
@@ -71,6 +67,7 @@ def test_preferences_lifecycle() -> None:
 
 
 # Scenario 4, 5, 6, 7 & 8: Project continuation, Roadmap next task, Sprint preview, Start, Pause, Cancel
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_project_roadmap_sprint_lifecycle(temp_workspace) -> None:
     from unittest.mock import patch
 
@@ -150,6 +147,7 @@ def test_automation_intent_routing() -> None:
 
 
 # Scenario 12, 13, 14, 15 & 16: Agent repository, diagnosis, patch preview, approved patch, focused validation
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_agent_v2_flow_mock(temp_workspace) -> None:
     from grandpa.agent.execution import inspect_repository, resolve_and_verify_workspace
 

@@ -15,11 +15,6 @@ from grandpa.cli.doctor_cmd import (
 )
 from grandpa.core.config import GrandpaConfig
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 class TestDoctorNativeDiagnostics:
     def test_native_diagnostics_when_llama_cpp_missing(self, tmp_path: Path) -> None:
@@ -86,6 +81,7 @@ class TestDoctorNativeDiagnostics:
         assert "Selected native model" in names
         assert names["Selected native model"].status in ("warn", "fail")
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_cli_doctor_runs_cleanly_with_native(
         self, tmp_path: Path, monkeypatch
     ) -> None:

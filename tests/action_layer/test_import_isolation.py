@@ -18,11 +18,6 @@ import sys
 
 import pytest
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 # Importing any of these from the action layer would re-couple it to a stack
 # the layer exists to replace.
 FORBIDDEN = (
@@ -65,6 +60,7 @@ def _grandpa_modules_after_importing(module: str) -> list[str]:
     return json.loads(probe.stdout.strip().splitlines()[-1])
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.parametrize("module", PUBLIC_MODULES)
 def test_importing_the_action_layer_pulls_in_no_legacy_stack(module: str) -> None:
     imported = _grandpa_modules_after_importing(module)
@@ -77,6 +73,7 @@ def test_importing_the_action_layer_pulls_in_no_legacy_stack(module: str) -> Non
     )
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_the_probe_would_notice_a_leak() -> None:
     """A check that cannot fail is worth nothing, so prove this one can."""
     imported = _grandpa_modules_after_importing("grandpa.pc_control")
@@ -84,6 +81,7 @@ def test_the_probe_would_notice_a_leak() -> None:
     assert "grandpa.pc_control" in imported
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_the_legacy_package_still_imports_its_handlers() -> None:
     """Untouched, and left that way -- this test would notice if it were not."""
     imported = _grandpa_modules_after_importing("grandpa.actions")

@@ -11,11 +11,6 @@ from click.testing import CliRunner, Result
 
 from grandpa.cli import cli
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 def _describe(result: Result) -> str:
     """Render everything known about a CliRunner result."""
@@ -88,6 +83,7 @@ def _doctor_json() -> list[dict]:
 
 
 class TestDoctorOptionalLabels:
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_labels_show_description(self) -> None:
         """Doctor output uses unified readiness labels, not raw package names."""
         data = _doctor_json()
@@ -98,6 +94,7 @@ class TestDoctorOptionalLabels:
         assert "Optional: torch (for learning)" not in names
         assert "Optional: pynvml (GPU monitoring)" not in names
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_optional_items_are_non_blocking(self) -> None:
         """Optional environment gaps should be informational, not failures."""
         data = _doctor_json()
@@ -107,6 +104,7 @@ class TestDoctorOptionalLabels:
         assert optional_checks
         assert all(c["status"] not in {"fail", "failure"} for c in optional_checks)
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_engine_labels_use_descriptive_names(self) -> None:
         """Engine readiness checks should be grouped by engine name."""
         data = _doctor_json()
@@ -123,6 +121,7 @@ class TestDoctorJsonStdoutStaysMachineReadable:
     precisely when something is wrong.
     """
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_stdout_is_valid_json_when_ollama_is_unreachable(self) -> None:
         import httpx
 

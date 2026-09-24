@@ -19,11 +19,6 @@ from grandpa.skill_builder.validator import (
 )
 from grandpa.skills.registry import ensure_default_skills_registered, get_skill
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 def test_create_user_skill_uses_safe_template(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("GRANDPA_USER_SKILLS_DB", str(tmp_path / "user_skills.db"))
@@ -65,6 +60,9 @@ def test_user_skill_registers_as_runtime_skill(monkeypatch, tmp_path) -> None:
     assert skill.category == "user"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_run_user_skill_records_usage(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("GRANDPA_USER_SKILLS_DB", str(tmp_path / "user_skills.db"))
     created = create_user_skill({"name": "desktop readiness"})
@@ -105,6 +103,9 @@ def test_user_skill_api_routes(monkeypatch, tmp_path) -> None:
     assert deleted.status_code == 200
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_local_action_creates_and_runs_user_skill(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("GRANDPA_USER_SKILLS_DB", str(tmp_path / "user_skills.db"))
 

@@ -20,11 +20,6 @@ from grandpa.tools.git_tool import (
     GitStatusTool,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 # ---------------------------------------------------------------------------
 # Helpers — mock Rust backend
 # ---------------------------------------------------------------------------
@@ -154,6 +149,7 @@ class TestGitStatusTool:
         tool = GitStatusTool()
         assert tool.tool_id == "git_status"
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_clean_repo(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitStatusTool()
@@ -164,6 +160,7 @@ class TestGitStatusTool:
         # Clean repo — Rust uses --short so no output
         assert result.content == "(no output)"
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_modified_file(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "README.md").write_text("# Modified\n")
@@ -174,6 +171,7 @@ class TestGitStatusTool:
         assert result.success is True
         assert "README.md" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_untracked_file(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "new_file.txt").write_text("hello")
@@ -184,6 +182,7 @@ class TestGitStatusTool:
         assert result.success is True
         assert "new_file.txt" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_default_repo_path(self):
         tool = GitStatusTool()
         mock_mod = _make_mock_rust()
@@ -192,6 +191,7 @@ class TestGitStatusTool:
         # Should succeed or fail depending on cwd; not a crash
         assert isinstance(result.content, str)
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_invalid_repo_path(self, tmp_path):
         tool = GitStatusTool()
         mock_mod = _make_mock_rust()
@@ -199,6 +199,7 @@ class TestGitStatusTool:
             result = tool.execute(repo_path=str(tmp_path / "nonexistent"))
         assert result.success is False
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_returncode_in_metadata(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitStatusTool()
@@ -242,6 +243,7 @@ class TestGitDiffTool:
         tool = GitDiffTool()
         assert tool.tool_id == "git_diff"
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_no_changes(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitDiffTool()
@@ -251,6 +253,7 @@ class TestGitDiffTool:
         assert result.success is True
         assert result.content == "(no output)"
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_unstaged_changes(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "README.md").write_text("# Changed\n")
@@ -261,6 +264,7 @@ class TestGitDiffTool:
         assert result.success is True
         assert "Changed" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_staged_changes(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "README.md").write_text("# Staged\n")
@@ -281,6 +285,7 @@ class TestGitDiffTool:
         assert result_staged.success is True
         assert "Staged" in result_staged.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_specific_file_path(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "README.md").write_text("# Changed\n")
@@ -310,6 +315,7 @@ class TestGitDiffTool:
         assert result.success is False
         assert "not found" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_invalid_repo_path(self, tmp_path):
         tool = GitDiffTool()
         mock_mod = _make_mock_rust()
@@ -317,6 +323,7 @@ class TestGitDiffTool:
             result = tool.execute(repo_path=str(tmp_path / "nonexistent"))
         assert result.success is False
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_returncode_in_metadata(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitDiffTool()
@@ -355,6 +362,7 @@ class TestGitCommitTool:
         assert result.success is False
         assert "No commit message" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_commit_staged_files(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "new.txt").write_text("hello")
@@ -372,6 +380,7 @@ class TestGitCommitTool:
         assert result.success is True
         assert result.metadata["returncode"] == 0
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_stage_and_commit(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "a.txt").write_text("aaa")
@@ -392,6 +401,7 @@ class TestGitCommitTool:
         )
         assert "Add a and b" in log_output.stdout
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_stage_all_files(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "x.txt").write_text("xxx")
@@ -403,6 +413,7 @@ class TestGitCommitTool:
         )
         assert result.success is True
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_commit_nothing_staged(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitCommitTool()
@@ -413,6 +424,7 @@ class TestGitCommitTool:
         # git commit with nothing staged fails
         assert result.success is False
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_stage_nonexistent_file(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitCommitTool()
@@ -424,6 +436,7 @@ class TestGitCommitTool:
         assert result.success is False
         assert "git add failed" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_empty_files_string(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitCommitTool()
@@ -463,6 +476,7 @@ class TestGitLogTool:
         tool = GitLogTool()
         assert tool.tool_id == "git_log"
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_log_oneline(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitLogTool()
@@ -472,6 +486,7 @@ class TestGitLogTool:
         assert result.success is True
         assert "Initial commit" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_log_full_format(self, tmp_path):
         """Rust git_log always uses --oneline; the ``oneline`` param is ignored."""
         _init_repo(tmp_path)
@@ -484,6 +499,7 @@ class TestGitLogTool:
         # Rust always uses --oneline, so "Author:" is never present
         assert "Author:" not in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_log_count(self, tmp_path):
         """Rust reads param ``n`` but PyO3 passes ``count``, so the limit
         is always the default (10).  With 6 total commits all 6 are returned."""
@@ -530,6 +546,7 @@ class TestGitLogTool:
         assert result.success is False
         assert "not found" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_invalid_repo_path(self, tmp_path):
         tool = GitLogTool()
         mock_mod = _make_mock_rust()
@@ -537,6 +554,7 @@ class TestGitLogTool:
             result = tool.execute(repo_path=str(tmp_path / "nonexistent"))
         assert result.success is False
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_returncode_in_metadata(self, tmp_path):
         _init_repo(tmp_path)
         tool = GitLogTool()
@@ -581,6 +599,7 @@ class TestGitToolsWithoutRustExtension:
     green.
     """
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_status_falls_back_to_cli(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "new_file.txt").write_text("hello")
@@ -590,6 +609,7 @@ class TestGitToolsWithoutRustExtension:
         assert "new_file.txt" in result.content
         assert result.metadata["returncode"] == 0
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_diff_falls_back_to_cli(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "README.md").write_text("# Changed\n")
@@ -598,6 +618,7 @@ class TestGitToolsWithoutRustExtension:
         assert result.success is True
         assert "Changed" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_diff_staged_falls_back_to_cli(self, tmp_path):
         """The staged path never used Rust, but was unreachable behind it."""
         _init_repo(tmp_path)
@@ -613,6 +634,7 @@ class TestGitToolsWithoutRustExtension:
         assert result.success is True
         assert "Staged" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_log_falls_back_to_cli(self, tmp_path):
         _init_repo(tmp_path)
         with _no_rust():
@@ -620,6 +642,7 @@ class TestGitToolsWithoutRustExtension:
         assert result.success is True
         assert "Initial commit" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_commit_never_used_rust(self, tmp_path):
         _init_repo(tmp_path)
         (tmp_path / "new.txt").write_text("hello")
@@ -631,6 +654,7 @@ class TestGitToolsWithoutRustExtension:
             )
         assert result.success is True
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_log_count_is_honoured_by_cli(self, tmp_path):
         """The CLI path respects ``count``; the Rust binding silently drops it.
 
@@ -655,6 +679,7 @@ class TestGitToolsWithoutRustExtension:
         lines = [ln for ln in result.content.strip().splitlines() if ln.strip()]
         assert len(lines) == 2
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_log_oneline_false_is_honoured_by_cli(self, tmp_path):
         """The CLI path respects ``oneline``; the Rust binding forces oneline."""
         _init_repo(tmp_path)
@@ -663,6 +688,7 @@ class TestGitToolsWithoutRustExtension:
         assert result.success is True
         assert "Author:" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_no_tool_raises(self, tmp_path):
         """None of the git tools may raise; they return a ToolResult."""
         _init_repo(tmp_path)

@@ -17,11 +17,6 @@ from grandpa.cli.doctor_cmd import (
 )
 from grandpa.windows_app_resolver import AppResolution
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own; reads the real clock"
-)
-
 
 def test_fetch_ollama_models_parses_tags(monkeypatch) -> None:
     captured = {}
@@ -148,6 +143,9 @@ def test_configured_unreachable_engine_warns(monkeypatch) -> None:
     assert results[0].status == "warn"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 def test_daily_readiness_contains_expected_checks(monkeypatch) -> None:
     monkeypatch.setattr(
         "grandpa.cli.doctor_cmd._fetch_ollama_models",
@@ -179,6 +177,7 @@ def test_daily_readiness_contains_expected_checks(monkeypatch) -> None:
     assert "Scheduler daemon import/startup ready" in names
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_dashboard_uses_expected_grouped_sections(monkeypatch) -> None:
     def patch_check(function_name: str, result: CheckResult) -> None:
         monkeypatch.setattr(f"grandpa.cli.doctor_cmd.{function_name}", lambda: result)

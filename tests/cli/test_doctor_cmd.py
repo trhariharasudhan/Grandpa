@@ -22,11 +22,6 @@ from grandpa.cli.doctor_cmd import (
     _grandpa_executable_candidates,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 class TestDoctorHelp:
     def test_doctor_help(self) -> None:
@@ -107,6 +102,7 @@ class TestCheckPythonVersion:
 
 
 class TestRuntimeEnvironmentChecks:
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_runtime_checks_report_python_and_grandpa_environment(self) -> None:
         results = _check_runtime_environment()
         names = {result.name for result in results}

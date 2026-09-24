@@ -24,11 +24,6 @@ from grandpa.tools.shell_exec import (
     ShellExecTool,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 IS_WINDOWS = sys.platform == "win32"
 
 
@@ -87,12 +82,14 @@ class TestShellExecTool:
 
     # -- output capture ---------------------------------------------------
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_simple_stdout(self):
         result = ShellExecTool().execute(command=_py("print('hello')"))
         assert result.success is True
         assert "hello" in result.content
         assert "=== STDOUT ===" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_capture_stderr(self):
         result = ShellExecTool().execute(
             command=_py("import sys; sys.stderr.write('error_msg')"),
@@ -100,6 +97,7 @@ class TestShellExecTool:
         assert "error_msg" in result.content
         assert "=== STDERR ===" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_no_output(self):
         result = ShellExecTool().execute(command=_py("pass"))
         assert result.success is True
@@ -114,16 +112,19 @@ class TestReturnCodeIsTruthful:
     succeeded.
     """
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_zero_returncode_is_success(self):
         result = ShellExecTool().execute(command=_py("pass"))
         assert result.success is True
         assert result.metadata["returncode"] == 0
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_nonzero_returncode_is_failure(self):
         result = ShellExecTool().execute(command=_py("raise SystemExit(42)"))
         assert result.success is False
         assert result.metadata["returncode"] == 42
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_nonzero_returncode_still_returns_output(self):
         result = ShellExecTool().execute(
             command=_py("import sys; print('partial'); sys.exit(3)"),
@@ -140,6 +141,7 @@ class TestTimeoutIsEnforced:
     deadline, while still reporting ``timeout_used`` in metadata.
     """
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_timeout_terminates_long_command(self):
         result = ShellExecTool().execute(
             command=_py("import time; time.sleep(30)"),
@@ -150,18 +152,22 @@ class TestTimeoutIsEnforced:
         assert result.metadata["returncode"] == -1
         assert result.metadata["timeout_used"] == 1
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_timeout_capped_at_max(self):
         result = ShellExecTool().execute(command=_py("pass"), timeout=999)
         assert result.metadata["timeout_used"] == _MAX_TIMEOUT
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_timeout_floored_at_one(self):
         result = ShellExecTool().execute(command=_py("pass"), timeout=0)
         assert result.metadata["timeout_used"] == 1
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_default_timeout_metadata(self):
         result = ShellExecTool().execute(command=_py("pass"))
         assert result.metadata["timeout_used"] == 30
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     @pytest.mark.parametrize("bad", ["abc", None, [], {}])
     def test_invalid_timeout_falls_back_to_default(self, bad):
         result = ShellExecTool().execute(command=_py("pass"), timeout=bad)
@@ -175,6 +181,7 @@ class TestEnvironmentIsSanitised:
     in the agent's own environment was readable by an executed command.
     """
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_arbitrary_env_var_is_not_inherited(self, monkeypatch):
         monkeypatch.setenv("GRANDPA_TEST_SECRET_12345", "leaked")
         result = ShellExecTool().execute(
@@ -187,6 +194,7 @@ class TestEnvironmentIsSanitised:
         assert "leaked" not in result.content
         assert "ABSENT" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_env_passthrough_allows_named_var(self, monkeypatch):
         monkeypatch.setenv("GRANDPA_TEST_PASSTHROUGH_67890", "allowed_value")
         result = ShellExecTool().execute(
@@ -199,6 +207,7 @@ class TestEnvironmentIsSanitised:
         assert result.success is True
         assert "allowed_value" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_env_passthrough_of_unset_var_is_not_an_error(self):
         result = ShellExecTool().execute(
             command=_py("pass"),
@@ -206,6 +215,7 @@ class TestEnvironmentIsSanitised:
         )
         assert result.success is True
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_path_is_preserved(self):
         result = ShellExecTool().execute(
             command=_py("import os; print('PATH' in os.environ)"),
@@ -228,6 +238,7 @@ class TestOutputTruncation:
     emitting hundreds of megabytes flowed straight into a model prompt.
     """
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_large_stdout_is_truncated(self):
         result = ShellExecTool().execute(
             command=_py(f"print('A' * {_MAX_OUTPUT_BYTES * 2})"),
@@ -236,6 +247,7 @@ class TestOutputTruncation:
         assert "stdout truncated" in result.content
         assert len(result.content) < _MAX_OUTPUT_BYTES * 2
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_large_stderr_is_truncated(self):
         result = ShellExecTool().execute(
             command=_py(f"import sys; sys.stderr.write('B' * {_MAX_OUTPUT_BYTES * 2})"),
@@ -245,6 +257,7 @@ class TestOutputTruncation:
 
 
 class TestWorkingDir:
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_working_dir_is_used(self, tmp_path):
         result = ShellExecTool().execute(
             command=_py("import os; print(os.getcwd())"),
@@ -279,6 +292,7 @@ class TestNoRustDelegation:
     return-code semantics.
     """
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_rust_module_is_never_requested(self, monkeypatch):
         calls: list[str] = []
 

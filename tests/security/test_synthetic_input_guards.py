@@ -28,11 +28,6 @@ import pytest
 
 from tests.security.input_recorder import install
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 BLOCKED_HOTKEYS = ["win+r", "win+x", "ctrl+shift+esc", "ctrl+alt+delete"]
 BLOCKED_TEXT = ["powershell", "cmd.exe", "format c:"]
 
@@ -132,6 +127,9 @@ ARBITRARY_KEY_ROUTES = ["layer", "pc_control", "spec"]
 # --- 1: command-execution hotkeys ------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 @pytest.mark.parametrize("route", ARBITRARY_KEY_ROUTES)
 @pytest.mark.parametrize("keys", BLOCKED_HOTKEYS)
 def test_a_command_execution_hotkey_is_refused_on_every_route(
@@ -174,6 +172,9 @@ def test_screen_automation_v2_does_not_actuate_a_command_execution_hotkey(
     assert _typed_or_pressed(recorder) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_an_ordinary_hotkey_still_works(recorder) -> None:
     """The guard is a denylist, not a refusal of everything."""
     _via_spec("keyboard_hotkey", {"keys": ["ctrl", "c"]})
@@ -184,6 +185,9 @@ def test_an_ordinary_hotkey_still_works(recorder) -> None:
 # --- 2: text naming a shell ------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 @pytest.mark.parametrize("route", ARBITRARY_KEY_ROUTES)
 @pytest.mark.parametrize("text", BLOCKED_TEXT)
 def test_text_naming_a_shell_is_refused_on_every_route(recorder, route, text) -> None:
@@ -206,6 +210,9 @@ def test_a_phrase_naming_a_shell_is_refused_before_it_is_parsed(recorder, text) 
     assert _typed_or_pressed(recorder) == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_ordinary_text_is_still_typed(recorder) -> None:
     _via_spec("keyboard_type", {"text": "hello there"})
 
@@ -223,6 +230,9 @@ def sensitive_window(monkeypatch):
     assert desktop_context.active_window_is_protected(), "the stand-in did not hold"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 @pytest.mark.parametrize("route", sorted(ROUTES))
 def test_a_sensitive_window_refuses_input_on_every_route(
     recorder, sensitive_window, route
@@ -235,6 +245,9 @@ def test_a_sensitive_window_refuses_input_on_every_route(
 # --- 4: a refusal does not start the cooldown ------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_a_refused_hotkey_does_not_start_the_cooldown(recorder, monkeypatch) -> None:
     """Otherwise one blocked hotkey fails the next honest action, for the wrong reason."""
     import grandpa.desktop.control.automation as automation
@@ -248,6 +261,9 @@ def test_a_refused_hotkey_does_not_start_the_cooldown(recorder, monkeypatch) -> 
     assert allowed.status == "handled", allowed
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_a_refused_text_does_not_start_the_cooldown(recorder, monkeypatch) -> None:
     import grandpa.desktop.control.automation as automation
 
@@ -260,6 +276,9 @@ def test_a_refused_text_does_not_start_the_cooldown(recorder, monkeypatch) -> No
     assert allowed.status == "handled", allowed
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_a_completed_action_does_start_the_cooldown(recorder, monkeypatch) -> None:
     import grandpa.desktop.control.automation as automation
 

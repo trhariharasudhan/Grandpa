@@ -14,11 +14,6 @@ from grandpa.agent.development.tracker import ProjectStateTracker
 from grandpa.agent.runtime import AgentRuntime
 from grandpa.cli.project_cmd import project_group
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture
 def temp_workspace():
@@ -140,6 +135,7 @@ def test_work_package_generation() -> None:
     assert wp_blocked["risk_level"] == "HIGH"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_cli_engineer_commands(temp_workspace) -> None:
     import os
 
@@ -174,6 +170,7 @@ def test_cli_engineer_commands(temp_workspace) -> None:
     assert "Blocked Tasks:" in res_bl.output
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_agent_runtime_engineer_goals(temp_workspace) -> None:
     import os
 

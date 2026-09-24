@@ -25,11 +25,6 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 class FakeCalendarClient:
     def __init__(self) -> None:
@@ -142,6 +137,9 @@ def test_safety_redacts_event_text_and_requires_write_confirmation() -> None:
     assert safety.is_blocked("accept_invitation") is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.calendar.automation.CalendarAutomation.execute"
+)
 def test_read_events_and_freebusy_are_direct() -> None:
     automation = CalendarAutomation(client=FakeCalendarClient())
 
@@ -155,6 +153,9 @@ def test_read_events_and_freebusy_are_direct() -> None:
     assert "2:00 PM" in free.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.calendar.automation.CalendarAutomation.execute"
+)
 def test_create_update_delete_require_confirmation() -> None:
     automation = CalendarAutomation(client=FakeCalendarClient())
 
@@ -167,6 +168,9 @@ def test_create_update_delete_require_confirmation() -> None:
     assert delete.status == "needs_confirmation"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.calendar.automation.CalendarAutomation.execute"
+)
 def test_confirmed_write_actions_execute_through_client() -> None:
     client = FakeCalendarClient()
     automation = CalendarAutomation(client=client)
@@ -183,6 +187,9 @@ def test_confirmed_write_actions_execute_through_client() -> None:
     assert client.deleted == ["event-1"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.calendar.automation.CalendarAutomation.execute"
+)
 def test_auto_accept_invitations_are_blocked() -> None:
     automation = CalendarAutomation(client=FakeCalendarClient())
 

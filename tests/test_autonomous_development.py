@@ -14,11 +14,6 @@ from grandpa.agent.runtime import AgentRuntime
 from grandpa.cli.project_cmd import project_group
 from grandpa.memory.service import MemoryService
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture
 def temp_workspace():
@@ -123,6 +118,7 @@ def test_checkpoints(temp_workspace) -> None:
     )
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_continuation_engine_and_memory(temp_workspace, setup_memory) -> None:
     engine = ContinuationEngine(str(temp_workspace), project_name="MemoryProj")
     tracker = engine.tracker
@@ -156,6 +152,9 @@ def test_continuation_engine_and_memory(temp_workspace, setup_memory) -> None:
     assert projects[0]["next_task"] == "Step 2"
 
 
+@pytest.mark.real_actions(
+    reason="needs a real implementation; the guards refuse this test without it"
+)
 def test_agent_runtime_continuation(temp_workspace, setup_memory) -> None:
     # Set up some task state in workspace
     tracker = ProjectStateTracker(str(temp_workspace), project_name="RuntimeProj")
@@ -171,6 +170,7 @@ def test_agent_runtime_continuation(temp_workspace, setup_memory) -> None:
     assert "Continuation engine active" in res.message
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_cli_commands(temp_workspace, setup_memory) -> None:
     runner = click.testing.CliRunner()
 

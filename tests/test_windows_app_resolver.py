@@ -8,11 +8,6 @@ from grandpa import windows_app_resolver
 from grandpa.local import router as local_actions
 from grandpa.windows_app_resolver import AppResolution, AppResolverCache, resolve_app
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 def test_resolve_app_from_common_path(tmp_path: Path, monkeypatch) -> None:
     program_files = tmp_path / "ProgramFiles"
@@ -100,6 +95,9 @@ def test_resolve_app_from_registry_app_paths(tmp_path: Path, monkeypatch) -> Non
     assert result.launch_target == str(chrome)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.windows_app_resolver.launch_app"
+)
 def test_launch_missing_app_returns_clear_error(monkeypatch) -> None:
     monkeypatch.setattr(windows_app_resolver.sys, "platform", "win32")
     monkeypatch.setattr(
@@ -122,6 +120,9 @@ def test_launch_missing_app_returns_clear_error(monkeypatch) -> None:
     assert "could not find Chrome" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.windows_app_resolver.launch_app"
+)
 def test_launch_vscode_with_project_argument_uses_popen_without_shell(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -150,6 +151,9 @@ def test_launch_vscode_with_project_argument_uses_popen_without_shell(
     assert calls == [([str(code), str(project)], False)]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_local_action_open_app_uses_resolver(monkeypatch) -> None:
     """Launches go through the resolver -- and a browser only after a yes.
 

@@ -24,11 +24,6 @@ from grandpa.core.runtime_context import (
 from grandpa.gmail.models import GmailActionType
 from grandpa.web_search.models import WebSearchActionType
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME; reads the real clock"
-)
-
 
 @pytest.fixture(autouse=True)
 def audit_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -103,6 +98,9 @@ def test_the_clock_parser_decides_what_it_always_did(phrase, kind) -> None:
     assert parse_datetime_intent(phrase) == kind
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 def test_the_old_entry_point_still_answers_the_same_way() -> None:
     from grandpa.core.runtime_context import handle_datetime_intent
 
@@ -110,6 +108,9 @@ def test_the_old_entry_point_still_answers_the_same_way() -> None:
     assert handle_datetime_intent("tell me a joke") is None
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 @pytest.mark.parametrize("kind", DATETIME_KINDS)
 def test_every_clock_kind_answers(kind: str) -> None:
     result = act("datetime_now", kind=kind)
@@ -179,6 +180,9 @@ def test_nothing_in_web_search_asks_for_confirmation() -> None:
 # --- calendar and mail without an account -------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.calendar.automation.CalendarAutomation.execute, grandpa.gmail.automation.GmailAutomation.execute"
+)
 @pytest.mark.parametrize("action", ["calendar_status", "gmail_status"])
 def test_status_answers_rather_than_crashing(action: str) -> None:
     """No account configured is a real answer, not an error to hide."""

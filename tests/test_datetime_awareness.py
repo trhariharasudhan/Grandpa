@@ -15,9 +15,6 @@ from grandpa.prompt.builder import SystemPromptBuilder
 from grandpa.voice.cli_session import is_exit_phrase, is_prompt_echo
 from grandpa.voice.text_to_speech import GrandpaTextToSpeech
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(reason="reads the real clock")
-
 
 @pytest.fixture
 def mock_frozen_time():
@@ -71,6 +68,9 @@ def test_frozen_time_expected_values(mock_frozen_time, pinned_windows_timezone):
     assert "2026-08-02T18:30:00+05:30" == ctx["iso_timestamp"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 def test_date_intent_variations(mock_frozen_time):
     # Standard date queries
     assert (
@@ -102,6 +102,9 @@ def test_date_intent_variations(mock_frozen_time):
     assert handle_datetime_intent("todays day?") == "Today is Sunday, August 2, 2026."
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 def test_time_intent_variations(mock_frozen_time):
     assert (
         handle_datetime_intent("What is the current time?")
@@ -121,6 +124,9 @@ def test_time_intent_variations(mock_frozen_time):
     )
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 def test_year_and_month_intents(mock_frozen_time):
     assert handle_datetime_intent("what year is it?") == "The current year is 2026."
     assert handle_datetime_intent("what year is this?") == "The current year is 2026."
@@ -130,6 +136,9 @@ def test_year_and_month_intents(mock_frozen_time):
     assert handle_datetime_intent("current month") == "The current month is August."
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.core.runtime_context.answer_datetime"
+)
 def test_user_dispute_override(mock_frozen_time):
     # User tries to correct date/time to a false value
     response = handle_datetime_intent("No, today is May 20, 2023")

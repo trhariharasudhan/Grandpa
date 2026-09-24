@@ -28,11 +28,6 @@ from grandpa.core.config import load_config
 from grandpa.core.registry import MemoryRegistry
 from grandpa.tools.storage import load_storage_backends
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture(autouse=True)
 def _backends_registered():
@@ -128,6 +123,7 @@ class TestBuilderBackendResolution:
 
         return SystemBuilder.__new__(SystemBuilder)
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_sqlite_receives_configured_db_path(self, tmp_path):
         config = load_config()
         config.memory.default_backend = "sqlite"
@@ -141,6 +137,7 @@ class TestBuilderBackendResolution:
         assert backend is not None
         assert backend._db_path == str(tmp_path / "custom.db")
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_non_sqlite_backend_receives_no_db_path(self, tmp_path):
         config = load_config()
         config.memory.default_backend = "dense"
@@ -249,6 +246,7 @@ def _run_serve(backend_key: str, db_path: str):
 
 
 class TestServeBackendResolution:
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_sqlite_receives_configured_db_path(self, tmp_path):
         db_path = str(tmp_path / "custom.db")
         calls = _run_serve("sqlite", db_path)
@@ -257,6 +255,7 @@ class TestServeBackendResolution:
         assert memory_calls, f"serve did not construct the sqlite backend: {calls}"
         assert all(kwargs.get("db_path") == db_path for _key, kwargs in memory_calls)
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_non_sqlite_backend_receives_no_db_path(self, tmp_path):
         db_path = str(tmp_path / "custom.db")
         calls = _run_serve("dense", db_path)

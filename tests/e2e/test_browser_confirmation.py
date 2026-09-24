@@ -10,13 +10,7 @@ import pytest
 
 from tests.e2e.harness import run_cli_recording_launches
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 # Phrases that navigate, with the address the user must be shown.
 NAVIGATION = [
@@ -41,6 +35,7 @@ def _chat(cli, model, *lines, answer=None):
     )
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
 def test_chat_asks_before_navigating_and_no_opens_nothing(
     cli, e2e_model, phrase, address
@@ -52,6 +47,7 @@ def test_chat_asks_before_navigating_and_no_opens_nothing(
     assert attempts == [], f"something opened after answering n: {attempts}"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.parametrize(("phrase", "address"), NAVIGATION, ids=lambda v: v.split()[0])
 def test_chat_opens_exactly_what_it_showed_after_yes(
     cli, e2e_model, phrase, address
@@ -62,6 +58,7 @@ def test_chat_opens_exactly_what_it_showed_after_yes(
     assert [item["value"] for item in attempts] == [address], run.tail(400)
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_asks_before_starting_a_browser(cli, e2e_model) -> None:
     declined, attempts = _chat(cli, e2e_model, "open chrome", answer="n")
 
@@ -74,6 +71,7 @@ def test_chat_asks_before_starting_a_browser(cli, e2e_model) -> None:
     assert any("chrome" in item["value"].lower() for item in attempts), attempts
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_search_through_local_actions_waits_for_approval(cli, e2e_model) -> None:
     """The other chat path: local_actions' "search <words>".
 
@@ -94,6 +92,7 @@ def test_chat_search_through_local_actions_waits_for_approval(cli, e2e_model) ->
     ], approved.tail(400)
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_trusted_domains_open_without_asking(cli, e2e_model) -> None:
     cli.grandpa_home.mkdir(parents=True, exist_ok=True)
     (cli.grandpa_home / "config.toml").write_text(

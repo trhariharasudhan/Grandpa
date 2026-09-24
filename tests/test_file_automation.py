@@ -15,11 +15,6 @@ from grandpa.files.paths import find_matches, resolve_destination, resolve_path
 from grandpa.files.safety import FileSafetyPolicy
 from grandpa.voice.operator import parse_voice_operator_command
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates"
-)
-
 
 def test_parser_natural_file_commands() -> None:
     parser = FileParser()
@@ -71,6 +66,9 @@ def test_safety_blocks_protected_and_traversal_paths() -> None:
     assert safety.blocks_traversal("..\\secret.txt")
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_create_file_and_folder(tmp_path: Path) -> None:
     automation = FileAutomation(roots=(tmp_path,))
 
@@ -83,6 +81,9 @@ def test_create_file_and_folder(tmp_path: Path) -> None:
     assert (tmp_path / "notes.txt").exists()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_copy_move_rename_and_overwrite_protection(tmp_path: Path) -> None:
     source = tmp_path / "report.pdf"
     source.write_text("report", encoding="utf-8")
@@ -102,6 +103,9 @@ def test_copy_move_rename_and_overwrite_protection(tmp_path: Path) -> None:
     assert blocked.status == "needs_confirmation"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_delete_requires_confirmation_and_then_deletes(tmp_path: Path) -> None:
     target = tmp_path / "temp.txt"
     target.write_text("x", encoding="utf-8")
@@ -115,6 +119,9 @@ def test_delete_requires_confirmation_and_then_deletes(tmp_path: Path) -> None:
     assert deleted.status == "handled"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_search_open_properties_zip_and_extract(tmp_path: Path) -> None:
     opened: list[Path] = []
     source = tmp_path / "Project Folder"
@@ -139,6 +146,9 @@ def test_search_open_properties_zip_and_extract(tmp_path: Path) -> None:
     assert extract.status == "handled"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_archive_rejects_unsafe_members(tmp_path: Path) -> None:
     archive = tmp_path / "bad.zip"
     with zipfile.ZipFile(archive, "w") as zf:
@@ -148,6 +158,9 @@ def test_archive_rejects_unsafe_members(tmp_path: Path) -> None:
     assert result.status == "blocked"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_open_missing_path_returns_friendly_error(tmp_path: Path) -> None:
     result = FileAutomation(roots=(tmp_path,), opener=lambda _path: None).handle(
         "Open missing.txt"
@@ -157,6 +170,9 @@ def test_open_missing_path_returns_friendly_error(tmp_path: Path) -> None:
     assert "could not find" in result.message.lower()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_file_executor_open_is_mockable(tmp_path: Path) -> None:
     opened: list[Path] = []
     target = tmp_path / "note.txt"
@@ -170,6 +186,9 @@ def test_file_executor_open_is_mockable(tmp_path: Path) -> None:
     assert opened == [target.resolve(strict=False)]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_files_slash_command_routes_to_file_automation(
     tmp_path: Path, monkeypatch
 ) -> None:

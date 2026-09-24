@@ -19,11 +19,6 @@ from grandpa.action_layer.executor import execute
 from grandpa.action_layer.model import ActionRequest, Origin, RiskLevel
 from grandpa.downloads.models import DownloadActionType
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 DOWNLOADS_ACTIONS = tuple(
     spec for spec in CATALOGUE if spec.binding is Binding.DOWNLOADS_ACTION
 )
@@ -77,6 +72,9 @@ def test_they_all_point_at_the_existing_downloads_implementation() -> None:
 # --- reading ------------------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_recent_lists_what_is_in_the_folder(downloads_home: Path) -> None:
     (downloads_home / "report.pdf").write_bytes(b"%PDF")
 
@@ -86,6 +84,9 @@ def test_recent_lists_what_is_in_the_folder(downloads_home: Path) -> None:
     assert "report.pdf" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_search_finds_by_name(downloads_home: Path) -> None:
     (downloads_home / "quarterly-report.pdf").write_bytes(b"%PDF")
     (downloads_home / "cat.png").write_bytes(b"\x89PNG")
@@ -97,6 +98,9 @@ def test_search_finds_by_name(downloads_home: Path) -> None:
     assert "cat.png" not in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_latest_is_catalogued_but_still_unsupported(downloads_home: Path) -> None:
     """The parser produces it and _execute has no branch. Catalogued so the
     honest refusal survives the migration rather than becoming an LLM guess."""
@@ -130,6 +134,9 @@ def test_with_no_callback_nothing_is_deleted(downloads_home: Path) -> None:
     assert target.exists(), "deleted with nobody asked"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_a_declined_delete_keeps_the_file(downloads_home: Path) -> None:
     target = downloads_home / "old.pdf"
     target.write_bytes(b"%PDF")
@@ -140,6 +147,9 @@ def test_a_declined_delete_keeps_the_file(downloads_home: Path) -> None:
     assert target.exists(), "deleted after answering no"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_an_approved_delete_removes_the_file(downloads_home: Path) -> None:
     target = downloads_home / "old.pdf"
     target.write_bytes(b"%PDF")
@@ -152,6 +162,9 @@ def test_an_approved_delete_removes_the_file(downloads_home: Path) -> None:
     assert "Deleted 1 download" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_the_prompt_quotes_what_the_scan_found(downloads_home: Path) -> None:
     """The whole reason downloads asks for itself rather than the layer."""
     (downloads_home / "old.pdf").write_bytes(b"%PDF12")
@@ -164,6 +177,9 @@ def test_the_prompt_quotes_what_the_scan_found(downloads_home: Path) -> None:
     assert risk is RiskLevel.MEDIUM
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_moving_one_file_does_not_ask(downloads_home: Path) -> None:
     """A single-file move has always been silent; the migration kept that."""
     target = downloads_home / "one.pdf"
@@ -189,6 +205,9 @@ def test_a_move_with_no_destination_is_refused_before_the_scan() -> None:
     assert "destination" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
+)
 def test_the_action_is_audited_with_chat_as_the_origin(
     downloads_home: Path, tmp_path: Path
 ) -> None:

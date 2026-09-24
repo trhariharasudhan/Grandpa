@@ -10,11 +10,6 @@ from fastapi.testclient import TestClient
 from grandpa import pc_control
 from grandpa.server.routes import router
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 @pytest.fixture(autouse=True)
 def _isolated_pc_control_api(tmp_path, monkeypatch):
@@ -95,6 +90,9 @@ def test_local_action_endpoint_approval_reject_flow(client: TestClient, tmp_path
     assert target.exists()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_local_action_endpoint_approval_execute_flow(
     client: TestClient, tmp_path: Path
 ):
@@ -145,6 +143,9 @@ def test_local_action_endpoint_emergency_stop_cancels_pending(
     assert target.exists()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.clipboard.ClipboardControlService.execute"
+)
 def test_local_action_audit_endpoint_returns_redacted_entries(
     client: TestClient, monkeypatch
 ):

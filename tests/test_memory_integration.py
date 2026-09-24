@@ -15,11 +15,6 @@ from grandpa.memory.service import MemoryService
 from grandpa.planner.executive import ExecutivePlanner
 from grandpa.voice.operator import parse_voice_operator_command
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 @pytest.fixture(autouse=True)
 def setup_temp_memory_integration():
@@ -447,6 +442,9 @@ def test_voice_operator_loop_integration(
     assert any("Forgot" in out for out in outputs)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_remember_that_fact_round_trips_through_one_store(
     setup_temp_memory_integration: MemoryService, tmp_path: Path
 ) -> None:

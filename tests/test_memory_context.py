@@ -8,12 +8,10 @@ from grandpa.memory_context import (
     search_personal_memory,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
 )
-
-
 def test_remember_and_recall_project(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
 
@@ -25,6 +23,9 @@ def test_remember_and_recall_project(tmp_path):
     assert recalled.message == "Your project is Grandpa."
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_sensitive_memory_is_blocked(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
 
@@ -34,6 +35,9 @@ def test_sensitive_memory_is_blocked(tmp_path):
     assert store.list_memories() == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_forget_matching_memory(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember I use VS Code", store=store)
@@ -45,6 +49,9 @@ def test_forget_matching_memory(tmp_path):
     assert store.list_memories() == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_remember_that_learning_ai_automation(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
 
@@ -57,6 +64,9 @@ def test_remember_that_learning_ai_automation(tmp_path):
     assert store.list_memories()[0]["value"] == "I am learning AI automation"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_what_do_you_remember_about_me(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my name is Hari", store=store)
@@ -67,6 +77,9 @@ def test_what_do_you_remember_about_me(tmp_path):
     assert "Hari" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_forget_my_name(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my name is Hari", store=store)
@@ -78,6 +91,9 @@ def test_forget_my_name(tmp_path):
     assert store.list_memories() == []
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_activity_query_for_opened_apps_today(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     store.record_activity("app", "open", "notepad.exe", "open notepad", "handled")
@@ -96,6 +112,9 @@ def test_unmatched_memory_command_falls_back(tmp_path):
     assert result.should_fallback is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_semantic_recall_project_without_exact_words(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my project is Grandpa", store=store)
@@ -107,6 +126,9 @@ def test_semantic_recall_project_without_exact_words(tmp_path):
     assert "confidence" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_mixed_tamil_english_project_recall(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my project is Grandpa", store=store)
@@ -117,6 +139,9 @@ def test_mixed_tamil_english_project_recall(tmp_path):
     assert result.message == "Your project is Grandpa."
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_semantic_recall_editor_preference(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember I use VS Code", store=store)
@@ -127,6 +152,9 @@ def test_semantic_recall_editor_preference(tmp_path):
     assert "VS Code" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_semantic_search_category_filter(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my project is Grandpa", store=store)
@@ -139,6 +167,9 @@ def test_semantic_search_category_filter(tmp_path):
     assert results[0]["score"] > 0
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_semantic_low_confidence_does_not_invent_memory(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my project is Grandpa", store=store)
@@ -151,6 +182,9 @@ def test_semantic_low_confidence_does_not_invent_memory(tmp_path):
     assert "not confident" in result.message or "do not have" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_embedding_fallback_creates_local_metadata(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
     handle_memory_command("remember my project is Grandpa", store=store)
@@ -162,6 +196,9 @@ def test_embedding_fallback_creates_local_metadata(tmp_path):
     assert status["local_only"] is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_memory_search_response_reports_uncertain(monkeypatch, tmp_path):
     db_path = tmp_path / "memory.db"
     store = MemoryStore(db_path)
@@ -174,6 +211,9 @@ def test_memory_search_response_reports_uncertain(monkeypatch, tmp_path):
     assert response["uncertain"] is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_sensitive_semantic_memory_is_still_blocked(tmp_path):
     store = MemoryStore(tmp_path / "memory.db")
 

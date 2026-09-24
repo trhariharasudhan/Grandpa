@@ -16,12 +16,10 @@ from grandpa.agents.goal_mode import (
 )
 from grandpa.server.api_routes import agent_runtime_router
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real browser implementation with the opener and hotkey runner the test supplies"
+
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser_control.execute_browser_action"
 )
-
-
 def test_goal_creation_and_safe_completion(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("GRANDPA_AGENT_GOALS_DB", str(tmp_path / "goals.db"))
 
@@ -45,6 +43,9 @@ def test_approval_needed_goal_pauses(tmp_path: Path, monkeypatch) -> None:
     assert any(item["risk_level"] == "MEDIUM" for item in goal.approvals_needed)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser_control.execute_browser_action"
+)
 def test_browser_research_plan(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("GRANDPA_AGENT_GOALS_DB", str(tmp_path / "goals.db"))
 
@@ -81,6 +82,9 @@ def test_cancel_flow(tmp_path: Path, monkeypatch) -> None:
     assert continue_goal(goal.goal_id, store=store).status == "cancelled"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser_control.execute_browser_action"
+)
 def test_diagnostics(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("GRANDPA_AGENT_GOALS_DB", str(tmp_path / "goals.db"))
     create_goal("check Grandpa readiness and report issues")
@@ -92,6 +96,9 @@ def test_diagnostics(tmp_path: Path, monkeypatch) -> None:
     assert diagnostics["local_only"] is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.browser_control.execute_browser_action"
+)
 def test_agent_goal_api(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("GRANDPA_AGENT_GOALS_DB", str(tmp_path / "goals.db"))
     app = FastAPI()

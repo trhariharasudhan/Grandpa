@@ -28,13 +28,7 @@ import pytest
 
 from tests.e2e.harness import run_cli
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 MODEL = "scripted-tool-model"
 
@@ -113,6 +107,7 @@ def _call(index: int, name: str, arguments: dict) -> dict:
     }
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_one_instruction_creates_copies_and_renames_a_file(cli) -> None:
     work = cli.sandbox.workdir("tool-loop")
     note = work / "note.txt"
@@ -176,6 +171,7 @@ def test_one_instruction_creates_copies_and_renames_a_file(cli) -> None:
     assert payload["content"].startswith("Created the note")
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_each_result_is_carried_back_to_the_model(cli) -> None:
     """Multi-step only means anything if step two can see step one's outcome."""
     work = cli.sandbox.workdir("tool-loop-feedback")
@@ -211,6 +207,7 @@ def test_each_result_is_carried_back_to_the_model(cli) -> None:
     assert json.loads(tool_messages[0]["content"])["success"] is True
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_confirmable_action_is_refused_when_nobody_can_be_asked(cli) -> None:
     """The loop runs with no terminal here, so keyboard input must not happen."""
     turns = [
@@ -235,6 +232,7 @@ def test_a_confirmable_action_is_refused_when_nobody_can_be_asked(cli) -> None:
     assert payload["trace"][0]["success"] is False
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_model_that_cannot_call_tools_is_named_and_refused(cli) -> None:
     """No silent fallback to chatting about the desktop instead of touching it.
 
@@ -258,6 +256,7 @@ def test_a_model_that_cannot_call_tools_is_named_and_refused(cli) -> None:
     assert asked == [], "it asked the model anyway and would have believed the reply"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_the_action_is_written_to_the_shared_audit_log(cli) -> None:
     """The layer appends to the same JSONL log pc_control reads."""
     work = cli.sandbox.workdir("tool-loop-audit")

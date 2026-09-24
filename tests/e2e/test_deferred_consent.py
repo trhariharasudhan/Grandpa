@@ -21,13 +21,7 @@ from tests.e2e.harness import (
     sqlite_rows,
 )
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 CLOSE_NOTEPAD = {"kind": "window", "value": "close|notepad"}
 
@@ -47,6 +41,7 @@ def _chat(cli, model, *lines):
 CHAT_CLOSE_PROMPT = "Unsaved work may be lost"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_close_notepad_declined_closes_nothing(cli, e2e_model) -> None:
     run, attempts = _chat(cli, e2e_model, "close notepad", "no")
 
@@ -54,6 +49,7 @@ def test_chat_close_notepad_declined_closes_nothing(cli, e2e_model) -> None:
     assert attempts == [], f"a window was acted on after answering no: {attempts}"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_chat_close_notepad_accepted_closes_it(cli, e2e_model) -> None:
     run, attempts = _chat(cli, e2e_model, "close notepad", "yes")
 
@@ -123,6 +119,7 @@ class _Voice:
         ]
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_voice_stages_and_the_next_turn_yes_runs_it(sandbox) -> None:
     voice = _Voice(sandbox)
 
@@ -142,6 +139,7 @@ def test_voice_stages_and_the_next_turn_yes_runs_it(sandbox) -> None:
     assert [r["status"] for r in voice.deferred_rows()] == ["approved"]
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_voice_action_cannot_be_approved_from_another_origin(sandbox) -> None:
     voice = _Voice(sandbox)
     voice.say("close notepad")
@@ -172,6 +170,7 @@ def test_a_voice_action_cannot_be_approved_from_another_origin(sandbox) -> None:
     assert attempts == [CLOSE_NOTEPAD]
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_staged_action_past_its_expiry_cannot_be_approved(sandbox) -> None:
     voice = _Voice(sandbox)
     voice.say("close notepad")

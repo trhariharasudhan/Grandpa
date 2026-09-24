@@ -22,11 +22,6 @@ from grandpa.action_layer.model import ActionRequest, Origin, RiskLevel
 from grandpa.reminders import REMINDER_ACTIONS, parse_reminder_intent
 from grandpa.task_scheduler import SCHEDULER_ACTIONS, parse_scheduler_command
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 REMINDER_SPECS = tuple(
     spec for spec in CATALOGUE if spec.binding is Binding.REMINDER_ACTION
 )
@@ -88,6 +83,9 @@ def test_they_point_at_their_own_domains() -> None:
 # --- one-shot reminders -------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.reminders.execute_reminder_action"
+)
 def test_create_then_list_then_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
     from datetime import UTC
 
@@ -112,6 +110,9 @@ def test_a_phrase_with_no_time_is_not_a_reminder() -> None:
     assert parse_reminder_intent("tell me about the weather") is None
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.reminders.execute_reminder_action"
+)
 def test_cancelling_something_that_is_not_there_says_so() -> None:
     result = act("reminder_cancel", subject="no-such-id")
 
@@ -122,6 +123,9 @@ def test_cancelling_something_that_is_not_there_says_so() -> None:
 # --- routines -----------------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.task_scheduler.execute_scheduler_action"
+)
 def test_create_list_disable_and_enable_a_routine() -> None:
     created = act("routine_create_morning")
     assert created.success is True, created
@@ -137,6 +141,9 @@ def test_create_list_disable_and_enable_a_routine() -> None:
     assert "Enabled" in enabled.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.task_scheduler.execute_scheduler_action"
+)
 def test_a_routine_of_unsafe_actions_is_refused() -> None:
     result = act("routine_set_morning", targets="format the disk")
 
@@ -176,6 +183,9 @@ def test_the_two_reminder_kinds_are_separate_actions_on_separate_stores() -> Non
     )
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.task_scheduler.execute_scheduler_action"
+)
 def test_a_recurring_reminder_lands_in_the_scheduler_store(tmp_path: Path) -> None:
     result = act("routine_create_reminder", text="stretch", schedule="hourly")
 

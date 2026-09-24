@@ -12,15 +12,10 @@ import pytest
 
 from tests.e2e.harness import sqlite_rows
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.parametrize(
     ("command", "prompt"),
     [
@@ -55,6 +50,7 @@ def test_downloads_moves_ask_and_move_only_on_yes(
     )
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_agents_delete_asks_and_archives_only_on_yes(cli, make_nonce) -> None:
     name = make_nonce("e2e-archive-")
     created = cli("agents", "create", "--name", name, "--type", "simple")
@@ -84,6 +80,7 @@ def test_agents_delete_asks_and_archives_only_on_yes(cli, make_nonce) -> None:
     assert missing.returncode == 1 and "Agent not found" in missing.text, missing.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.parametrize(
     ("args", "prompt"),
     [
@@ -118,6 +115,7 @@ def test_calendar_changes_read_the_answer_to_their_prompt(cli, args, prompt) -> 
     assert accepted.returncode == 1, accepted.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.parametrize(
     ("phrase", "cancelled", "done"),
     [
@@ -160,6 +158,7 @@ def test_chat_delete_prompts_read_the_answer(
     assert not present(), "still there after answering y"
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_memory_delete_refuses_a_piped_answer(cli, make_nonce) -> None:
     """These prompts used to accept a piped "y" as if a person had typed it."""
     fact = f"e2e keepsake {make_nonce('')}"

@@ -18,11 +18,6 @@ from grandpa.action_layer.model import ActionRequest, RiskLevel
 from grandpa.files.executor import MAX_READ_BYTES, FileExecutor
 from grandpa.files.models import FileAction
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 @pytest.fixture(autouse=True)
 def audit_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,6 +84,9 @@ def test_every_read_action_resolves_to_something_callable(action: str) -> None:
 # --- file_read ----------------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_a_file_in_a_searchable_root_reads_back(readable_root: Path) -> None:
     note = readable_root / "note.txt"
     note.write_text("shopping list", encoding="utf-8")
@@ -100,6 +98,9 @@ def test_a_file_in_a_searchable_root_reads_back(readable_root: Path) -> None:
     assert result.data["size"] == len("shopping list")
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_a_file_outside_the_searchable_roots_is_refused(
     readable_root: Path, tmp_path: Path
 ) -> None:
@@ -129,6 +130,9 @@ def test_the_env_var_that_widens_file_search_widens_reading_too(
     assert extra in safe_roots()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_a_file_over_the_limit_is_refused_without_being_read(
     readable_root: Path,
 ) -> None:
@@ -142,6 +146,9 @@ def test_a_file_over_the_limit_is_refused_without_being_read(
     assert "content" not in result.data, "it read the file it had just refused"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_the_ceiling_cannot_be_raised_by_asking(readable_root: Path) -> None:
     """max_bytes narrows the limit; it cannot widen it past MAX_READ_BYTES."""
     result = FileExecutor(roots=(readable_root,)).execute(
@@ -157,12 +164,18 @@ def test_the_ceiling_cannot_be_raised_by_asking(readable_root: Path) -> None:
     assert result.error == "missing_file"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_a_missing_file_says_so(readable_root: Path) -> None:
     result = execute(read_request("file_read", path=str(readable_root / "nope.txt")))
 
     assert result.error == "missing_file"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_a_binary_file_is_reported_not_mangled(readable_root: Path) -> None:
     binary = readable_root / "image.png"
     binary.write_bytes(b"\x89PNG\r\n\x1a\n\xff\xfe")
@@ -181,6 +194,9 @@ def test_the_schema_rejects_a_negative_limit(readable_root: Path) -> None:
 # --- volume_get ---------------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.power.PowerControlService.execute_volume_get"
+)
 def test_volume_get_reports_a_level_or_says_why_it_cannot() -> None:
     """pycaw is an optional backend. Either answer is honest; inventing is not."""
     result = execute(read_request("volume_get"))

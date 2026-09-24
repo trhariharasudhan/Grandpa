@@ -23,11 +23,6 @@ from grandpa.desktop.control.automation import (
     is_blocked_text,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 class _Request:
     def __init__(self, target: str = "", **args: object) -> None:
@@ -53,6 +48,9 @@ def _ordinary_window(monkeypatch: pytest.MonkeyPatch) -> None:
 # --- the hotkeys the deleted module would have pressed -------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 @pytest.mark.parametrize(
     "keys", ["win+r", "win+x", "ctrl+shift+esc", "ctrl+alt+delete", "Windows+R"]
 )
@@ -78,6 +76,9 @@ def test_an_ordinary_hotkey_is_not_blocked() -> None:
 # --- the text the surviving service did not used to check ----------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 @pytest.mark.parametrize(
     "text",
     ["powershell", "cmd.exe", "format c:", "rm -rf /", "delete the system32 folder"],
@@ -128,6 +129,9 @@ def test_an_unknown_spec_is_refused_rather_than_guessed() -> None:
 # --- the protected window check, which the deleted module never had ------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_a_sensitive_window_refuses_input(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "grandpa.desktop_context.active_window_is_protected", lambda: True
@@ -141,6 +145,9 @@ def test_a_sensitive_window_refuses_input(monkeypatch: pytest.MonkeyPatch) -> No
     assert response.error == "protected_window"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_input_is_unsupported_off_windows() -> None:
     response = AutomationControlService().execute(
         _Request("hello", text="hello"), "keyboard_type", platform="linux"
@@ -153,6 +160,9 @@ def test_input_is_unsupported_off_windows() -> None:
 # --- the cooldown --------------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.automation.AutomationControlService.execute"
+)
 def test_a_refusal_does_not_start_the_cooldown(monkeypatch: pytest.MonkeyPatch) -> None:
     """Otherwise one blocked hotkey makes the next honest request fail too."""
     marked: list[bool] = []

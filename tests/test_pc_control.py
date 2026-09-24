@@ -15,11 +15,6 @@ from grandpa.pc_control import run_local_action
 from grandpa.windows_app_resolver import AppResolution
 from grandpa.windows_window_control import WindowControlResult
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates; drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 @pytest.fixture(autouse=True)
 def _isolated_pc_control(tmp_path, monkeypatch):
@@ -62,6 +57,9 @@ def test_app_open_command_dry_run():
     assert result.risk_level == "LOW"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_installed_app_detection(monkeypatch):
     monkeypatch.setattr(
         "grandpa.windows_app_resolver.resolve_app", lambda _app: _found_app("chrome")
@@ -73,6 +71,9 @@ def test_installed_app_detection(monkeypatch):
     assert result.evidence["app_id"] == "chrome"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_vscode_opens_with_project_path_argument(monkeypatch, tmp_path: Path):
     project = tmp_path / "Grandpa"
     project.mkdir()
@@ -99,6 +100,9 @@ def test_vscode_opens_with_project_path_argument(monkeypatch, tmp_path: Path):
     assert launch_calls == [("vscode", [str(project.resolve(strict=False))])]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_vscode_invalid_project_path_is_rejected(monkeypatch, tmp_path: Path):
     missing = tmp_path / "missing"
     monkeypatch.setattr(
@@ -124,6 +128,9 @@ def test_vscode_invalid_project_path_is_rejected(monkeypatch, tmp_path: Path):
     assert result.error == "invalid_project_path"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_vscode_protected_project_path_is_blocked(monkeypatch, tmp_path: Path):
     project = tmp_path / "Grandpa"
     project.mkdir()
@@ -193,6 +200,9 @@ def test_portable_protected_paths_are_blocked(path: Path):
     assert pc_control._is_protected_path(path) is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_normal_vscode_open_still_uses_no_project_argument(monkeypatch):
     launch_calls = []
     monkeypatch.setattr(
@@ -211,6 +221,9 @@ def test_normal_vscode_open_still_uses_no_project_argument(monkeypatch):
     assert launch_calls == [("vscode", [])]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_blocked_unknown_app():
     result = run_local_action({"action_type": "open_app", "target": "unknown browser"})
 
@@ -227,6 +240,9 @@ def test_close_app_dry_run():
     assert result.risk_level == "MEDIUM"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.windows.WindowControlService.execute"
+)
 def test_window_action_no_window_found(monkeypatch):
     monkeypatch.setattr(
         "grandpa.windows_window_control.control_window",
@@ -242,6 +258,9 @@ def test_window_action_no_window_found(monkeypatch):
     assert result.error == "not_found"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.power.PowerControlService.execute_volume"
+)
 def test_volume_action_mocked(monkeypatch):
     calls: list[str] = []
     monkeypatch.setattr(pc_control.sys, "platform", "win32")
@@ -276,6 +295,9 @@ def _without_brightness_backend(monkeypatch):
     monkeypatch.setitem(sys.modules, "screen_brightness_control", None)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.power.PowerControlService.execute_volume"
+)
 def test_volume_set_missing_backend_is_graceful(monkeypatch):
     monkeypatch.setattr(pc_control.sys, "platform", "win32")
     _without_audio_backend(monkeypatch)
@@ -289,6 +311,9 @@ def test_volume_set_missing_backend_is_graceful(monkeypatch):
     assert result.error == "missing_volume_backend"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.power.PowerControlService.execute_brightness"
+)
 def test_brightness_unsupported_path(monkeypatch):
     _without_brightness_backend(monkeypatch)
 
@@ -298,6 +323,9 @@ def test_brightness_unsupported_path(monkeypatch):
     assert result.status == "unsupported"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.power.PowerControlService.execute_brightness"
+)
 def test_brightness_get_reports_a_real_level_when_the_backend_is_there(monkeypatch):
     """The other half, now that the backend can actually be installed."""
     monkeypatch.setattr(
@@ -311,6 +339,9 @@ def test_brightness_get_reports_a_real_level_when_the_backend_is_there(monkeypat
     assert result.evidence["brightness"] == [42]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.power.PowerControlService.execute_brightness"
+)
 def test_brightness_set_is_allowed_but_truthful_when_unsupported(monkeypatch):
     # Never drive the real display from a test: it dimmed the developer's
     # screen the first time this ran with the backend installed.
@@ -322,6 +353,9 @@ def test_brightness_set_is_allowed_but_truthful_when_unsupported(monkeypatch):
     assert result.risk_level == "LOW"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.monitors.MonitorControlService.execute"
+)
 def test_multi_monitor_detection(monkeypatch):
     monkeypatch.setattr(
         "grandpa.desktop_context.list_monitors",
@@ -359,6 +393,9 @@ def test_multi_monitor_detection(monkeypatch):
     assert result.evidence["count"] == 2
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_active_process_awareness(monkeypatch):
     monkeypatch.setattr(
         "grandpa.desktop_context.get_active_process",
@@ -383,6 +420,9 @@ def test_active_process_awareness(monkeypatch):
     assert result.evidence["process"]["name"] == "notepad.exe"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.clipboard.ClipboardControlService.execute"
+)
 def test_clipboard_read_write_mocked(monkeypatch):
     clipboard = {"value": ""}
     monkeypatch.setitem(
@@ -406,6 +446,9 @@ def test_clipboard_read_write_mocked(monkeypatch):
     assert "[redacted]" in log_text
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.clipboard.ClipboardControlService.execute"
+)
 def test_clipboard_inspect_and_history_are_metadata_only(monkeypatch):
     clipboard = {"value": "https://example.com/private-token"}
     monkeypatch.setitem(
@@ -427,6 +470,9 @@ def test_clipboard_inspect_and_history_are_metadata_only(monkeypatch):
     assert "private-token" not in json.dumps(history.evidence)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_safe_file_create_rename_move_copy(tmp_path):
     source = tmp_path / "note.txt"
     renamed = tmp_path / "renamed.txt"
@@ -536,6 +582,9 @@ def test_protected_active_window_blocks_automation(monkeypatch):
     assert result.error == "protected_window"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_desktop_session_summary(monkeypatch):
     monkeypatch.setattr(
         "grandpa.desktop_context.desktop_session_summary",
@@ -556,6 +605,9 @@ def test_desktop_session_summary(monkeypatch):
     assert result.evidence["active_process"]["name"] == "chrome.exe"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.execute"
+)
 def test_pc_control_diagnostics_contains_richer_sections(monkeypatch):
     monkeypatch.setattr(
         "grandpa.desktop_context.pc_control_diagnostics",
@@ -606,6 +658,9 @@ def _approval_code(action_id: str) -> str:
     return record.approval_token
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_approval_approve_reject_flow(tmp_path):
     target = tmp_path / "delete-me.txt"
     target.write_text("x", encoding="utf-8")
@@ -622,6 +677,9 @@ def test_approval_approve_reject_flow(tmp_path):
     assert not target.exists()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_approval_requires_out_of_band_code(tmp_path):
     """An action_id alone must not authorise execution."""
     target = tmp_path / "delete-me.txt"
@@ -664,6 +722,9 @@ def test_pending_listing_does_not_leak_approval_code(tmp_path):
     assert "approval_token" not in serialised
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_duplicate_approval_does_not_execute_twice(tmp_path):
     target = tmp_path / "delete-me.txt"
     target.write_text("x", encoding="utf-8")
@@ -803,6 +864,9 @@ def test_emergency_stop_cancels_pending_actions(tmp_path):
     assert target.exists()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.clipboard.ClipboardControlService.execute"
+)
 def test_audit_log_schema_redacts_clipboard(monkeypatch):
     monkeypatch.setitem(
         __import__("sys").modules,
@@ -823,6 +887,9 @@ def test_audit_log_schema_redacts_clipboard(monkeypatch):
     assert "sensitive clipboard" not in line
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.clipboard.ClipboardControlService.execute"
+)
 def test_recent_audit_entries_are_redacted(monkeypatch):
     monkeypatch.setitem(
         __import__("sys").modules,

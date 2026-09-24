@@ -57,11 +57,6 @@ from grandpa.memory_context import MemoryStore
 from grandpa.reminders import ReminderStore
 from grandpa.tools._stubs import BaseTool, ToolSpec
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 class _SimpleChatAgent(BaseAgent):
     agent_id = "simple_chat_agent"
@@ -175,6 +170,9 @@ class TestChatCommand:
         assert get_command("/desktop").routing == "help"  # type: ignore[union-attr]
         assert "Help only" in get_command("/desktop").status  # type: ignore[union-attr]
 
+    @pytest.mark.real_actions(
+        reason="reaches the real grandpa.memory_context.execute_memory_action"
+    )
     def test_compound_natural_fact_is_recalled_across_chat_turns(
         self,
         tmp_path,
@@ -1261,6 +1259,9 @@ class TestChatSlashCommands:
         assert "grandpa-fast:latest" in result.output
         engine.generate.assert_not_called()
 
+    @pytest.mark.real_actions(
+        reason="reaches the real grandpa.reminders.execute_reminder_action"
+    )
     def test_chat_reminder_creation_still_works(self, tmp_path, monkeypatch) -> None:
         from datetime import UTC
 

@@ -5,16 +5,14 @@ import pytest
 from grandpa import task_scheduler
 from grandpa.task_scheduler import SchedulerStore, handle_scheduler_command
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 def _store(tmp_path: Path) -> SchedulerStore:
     return SchedulerStore(tmp_path / "scheduler.db")
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.task_scheduler.execute_scheduler_action"
+)
 def test_create_and_list_morning_routine(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         task_scheduler, "_record_scheduler_activity", lambda *args: None
@@ -33,6 +31,9 @@ def test_create_and_list_morning_routine(tmp_path: Path, monkeypatch) -> None:
     assert "morning routine" in listed.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.task_scheduler.execute_scheduler_action"
+)
 def test_every_morning_open_allowlisted_apps(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         task_scheduler, "_record_scheduler_activity", lambda *args: None
@@ -49,6 +50,9 @@ def test_every_morning_open_allowlisted_apps(tmp_path: Path, monkeypatch) -> Non
     assert routine["actions"] == ["open chrome", "open vs code"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.task_scheduler.execute_scheduler_action"
+)
 def test_reminder_every_hour(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         task_scheduler, "_record_scheduler_activity", lambda *args: None
@@ -65,6 +69,9 @@ def test_reminder_every_hour(tmp_path: Path, monkeypatch) -> None:
     assert reminders[0]["schedule"] == "hourly"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.task_scheduler.execute_scheduler_action"
+)
 def test_disable_routine(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         task_scheduler, "_record_scheduler_activity", lambda *args: None

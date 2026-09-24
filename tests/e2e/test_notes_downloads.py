@@ -6,13 +6,7 @@ from pathlib import Path
 
 import pytest
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 
 def _note_files(grandpa_home: Path, title: str) -> list[Path]:
@@ -27,6 +21,7 @@ def _note_files(grandpa_home: Path, title: str) -> list[Path]:
 
 
 # 9 ---------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_notes_create_writes_a_note_that_list_and_search_find(cli, make_nonce) -> None:
     title = f"e2e shopping {make_nonce('')}"
     other = f"e2e unrelated {make_nonce('')}"
@@ -46,6 +41,7 @@ def test_notes_create_writes_a_note_that_list_and_search_find(cli, make_nonce) -
 
 
 # 10 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_notes_append_adds_the_text_to_the_note_file(cli, make_nonce) -> None:
     title = make_nonce("e2eappend")
     line = f"buy oat milk {make_nonce('')}"
@@ -62,6 +58,7 @@ def test_notes_append_adds_the_text_to_the_note_file(cli, make_nonce) -> None:
 
 
 # 11 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_notes_delete_needs_yes_and_then_really_deletes(cli, make_nonce) -> None:
     title = make_nonce("e2edelete")
     cli("notes", "create", title)
@@ -92,6 +89,7 @@ def test_notes_delete_needs_yes_and_then_really_deletes(cli, make_nonce) -> None
 
 
 # 12 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_downloads_recent_and_search_list_the_real_folder(cli, make_nonce) -> None:
     downloads = cli.home / "Downloads"
     report = downloads / f"{make_nonce('report-')}.pdf"
@@ -111,6 +109,7 @@ def test_downloads_recent_and_search_list_the_real_folder(cli, make_nonce) -> No
 
 
 # 13 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_downloads_delete_needs_yes_and_then_deletes_only_the_target(
     cli, make_nonce
 ) -> None:

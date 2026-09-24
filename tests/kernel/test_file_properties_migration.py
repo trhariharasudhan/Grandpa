@@ -25,11 +25,6 @@ from grandpa.kernel.models import (
     VerificationStatus,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates"
-)
-
 
 def _legacy_properties(command: str, root: Path) -> FileOperationResult:
     action = FileParser().parse(command)
@@ -56,6 +51,9 @@ def _snapshot(root: Path) -> dict[str, tuple[bool, bytes | None]]:
     }
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 @pytest.mark.parametrize(
     ("name", "content"),
     [
@@ -79,6 +77,9 @@ def test_file_properties_match_legacy_behavior(tmp_path, name, content):
     _assert_parity(actual, expected)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_directory_properties_match_legacy_behavior(tmp_path):
     target = tmp_path / "Project Folder"
     target.mkdir()
@@ -122,6 +123,9 @@ def test_in_root_symlink_properties_match_legacy_behavior(tmp_path):
     assert "- Type: txt" in actual.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_missing_path_matches_legacy_error(tmp_path):
     expected = _legacy_properties("Show properties of missing.txt", tmp_path)
     actual = FileAutomation(roots=(tmp_path,)).handle("Show properties of missing.txt")
@@ -130,6 +134,9 @@ def test_missing_path_matches_legacy_error(tmp_path):
     assert actual.action is None
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_ambiguous_path_matches_legacy_result(tmp_path):
     for folder in (tmp_path / "one", tmp_path / "two"):
         folder.mkdir()
@@ -142,6 +149,9 @@ def test_ambiguous_path_matches_legacy_result(tmp_path):
     assert actual.status == "ambiguous"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_latest_pdf_without_match_preserves_legacy_result(tmp_path):
     expected = _legacy_properties("Show properties of latest PDF", tmp_path)
     actual = FileAutomation(roots=(tmp_path,)).handle("Show properties of latest PDF")

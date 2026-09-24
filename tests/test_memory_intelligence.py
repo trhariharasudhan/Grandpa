@@ -24,11 +24,6 @@ from grandpa.skills.registry import (
     execute_skill,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 def _store(tmp_path: Path) -> MemoryStore:
     store = MemoryStore(tmp_path / "memory.db")
@@ -84,6 +79,9 @@ def test_ranked_context_and_profile(tmp_path: Path) -> None:
     assert "Grandpa has" in profile["summary"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_memory_commands_use_intelligence(tmp_path: Path) -> None:
     store = _store(tmp_path)
 

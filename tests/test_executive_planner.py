@@ -46,11 +46,6 @@ from grandpa.planner.state_store import PlanStateStore
 from grandpa.planner.validator import PlanValidator
 from grandpa.planner.verifier import StepVerifier
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 def _goal(
     text: str = "Open Chrome and search for FastAPI", session: str = "test"
@@ -341,6 +336,7 @@ def test_validator_enforces_step_and_retry_limits() -> None:
     assert {issue.code for issue in result.issues} >= {"step_limit", "retry_limit"}
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_successful_multi_step_plan_updates_every_step(tmp_path: Path) -> None:
     executor = FakeExecutor()
     executive = ExecutivePlanner(
@@ -375,6 +371,7 @@ def test_false_success_is_prevented_by_verifier(tmp_path: Path) -> None:
     assert result.plan.steps[0].status == StepStatus.FAILED
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_confirmation_pauses_and_same_session_can_resume(tmp_path: Path) -> None:
     executor = FakeExecutor(
         [
@@ -423,6 +420,7 @@ def test_wrong_session_cannot_resume_confirmation(tmp_path: Path) -> None:
     assert owner.current().status == PlanStatus.WAITING_FOR_CONFIRMATION
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_clarification_choice_resumes_without_replaying_action(tmp_path: Path) -> None:
     executor = FakeExecutor(
         [

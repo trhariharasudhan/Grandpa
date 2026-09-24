@@ -9,11 +9,6 @@ from scripts.validate_daily_use import (
     build_steps,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 def test_build_steps_can_skip_app_launch() -> None:
     args = argparse.Namespace(
@@ -27,6 +22,9 @@ def test_build_steps_can_skip_app_launch() -> None:
     assert "open safe app command" not in names
 
 
+@pytest.mark.real_actions(
+    reason="needs a real implementation; the guards refuse this test without it"
+)
 def test_run_step_checks_expected_text() -> None:
     result = _run_step(
         ValidationStep(
@@ -40,6 +38,9 @@ def test_run_step_checks_expected_text() -> None:
     assert result.status == "ok"
 
 
+@pytest.mark.real_actions(
+    reason="needs a real implementation; the guards refuse this test without it"
+)
 def test_run_step_reports_expected_text_mismatch() -> None:
     result = _run_step(
         ValidationStep(

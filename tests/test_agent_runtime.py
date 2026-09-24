@@ -20,11 +20,6 @@ from grandpa.agent.verifier import StepVerifier
 from grandpa.cli.agent_run_cmd import agent_group
 from grandpa.memory.service import MemoryService
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture(autouse=True)
 def setup_temp_memory_agent():
@@ -64,6 +59,7 @@ def test_intent_classification() -> None:
     assert classify_intent("Fly to the moon") == AgentIntent.UNKNOWN
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_context_creation_and_memory_retrieval(
     setup_temp_memory_agent: MemoryService,
 ) -> None:
@@ -175,6 +171,7 @@ def test_verification_logic() -> None:
     assert len(v_fail.failures) == 2  # error field and empty result
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_bounded_recovery() -> None:
     # Set progress callback
     progress_msgs = []
@@ -204,6 +201,9 @@ def test_bounded_recovery() -> None:
     assert all(not r.success for r in context.recovery_attempts)
 
 
+@pytest.mark.real_actions(
+    reason="needs a real implementation; the guards refuse this test without it"
+)
 def test_cli_commands(setup_temp_memory_agent: MemoryService) -> None:
     runner = click.testing.CliRunner()
 

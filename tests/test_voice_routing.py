@@ -7,11 +7,6 @@ from grandpa.voice.assistant import VoiceCommandProcessor
 from grandpa.voice.cli_session import is_prompt_echo
 from grandpa.windows_window_control import WindowInfo, _resolve_window
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 def test_voice_actions_routing():
     # Basic open actions (without execution to prevent popups, execute=False)
@@ -115,6 +110,9 @@ def test_fuzzy_open_and_focus_routing():
     assert calcium_open.status == "no_match"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.applications.ApplicationControlService.execute"
+)
 def test_voice_command_processor_confirmation_flow(monkeypatch):
     proc = VoiceCommandProcessor(model_name=None)
 

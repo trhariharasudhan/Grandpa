@@ -30,11 +30,6 @@ from grandpa.kernel.models import (
     action_digest,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates"
-)
-
 
 def _legacy_create(command: str, root: Path) -> FileOperationResult:
     action = FileParser().parse(command)
@@ -83,6 +78,9 @@ def test_public_file_automation_signatures_remain_compatible():
     ]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 @pytest.mark.parametrize(
     "command",
     (
@@ -102,6 +100,9 @@ def test_create_folder_parser_forms_and_result_match_legacy(tmp_path, command):
     _assert_parity(actual, expected)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_nested_folder_creation_matches_legacy(tmp_path):
     target = tmp_path / "parent" / "child" / "leaf"
     expected = _legacy_create("Create folder parent/child/leaf", tmp_path)
@@ -114,6 +115,9 @@ def test_nested_folder_creation_matches_legacy(tmp_path):
     _assert_parity(actual, expected)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 @pytest.mark.parametrize("target_kind", ("directory", "file"))
 def test_existing_target_semantics_match_legacy(tmp_path, target_kind):
     target = tmp_path / "existing"

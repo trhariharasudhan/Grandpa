@@ -15,11 +15,6 @@ from grandpa.kernel import files as kernel_files
 from grandpa.kernel.errors import ToolArgumentValidationError
 from grandpa.kernel.files import SearchFilesExecutor, SearchFilesToolDefinition
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real file implementation against paths the test creates"
-)
-
 
 def _legacy_search(command: str, root: Path) -> FileOperationResult:
     action = FileParser().parse(command)
@@ -56,6 +51,9 @@ def test_public_file_automation_signatures_remain_compatible():
     assert list(entry_parameters) == ["text", "roots", "confirm", "opener"]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 @pytest.mark.parametrize(
     "command",
     [
@@ -78,6 +76,9 @@ def test_search_results_match_legacy_executor(tmp_path, command):
     _assert_parity(actual, expected)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_latest_search_matches_legacy_path_and_message(tmp_path):
     first = tmp_path / "screenshot-old.png"
     second = tmp_path / "screenshot-new.png"
@@ -103,6 +104,9 @@ def test_search_preserves_spaces_and_unicode(tmp_path, name):
     assert result.matches == (target.resolve(),)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
+)
 def test_search_accepts_file_as_existing_legacy_root(tmp_path):
     target = tmp_path / "single.txt"
     target.write_text("content", encoding="utf-8")

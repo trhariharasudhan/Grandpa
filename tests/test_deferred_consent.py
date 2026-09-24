@@ -23,11 +23,6 @@ from grandpa.desktop.kernel import approvals
 from grandpa.local import handle_local_action
 from grandpa.natural_actions import run_parsed
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 @pytest.fixture(autouse=True)
 def _audit_log(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -129,6 +124,9 @@ def test_a_dry_run_stages_nothing_even_when_opted_in(closed) -> None:
 # --- the voice path ------------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.windows.WindowControlService.execute"
+)
 def test_voice_stages_and_the_next_turn_yes_runs_it(closed) -> None:
     staged = handle_local_action("close notepad", deferred_origin="voice")
 
@@ -226,6 +224,9 @@ def _deferred_created_at() -> float:
         )
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.desktop.control.windows.WindowControlService.execute"
+)
 def test_one_yes_resolves_exactly_one_action(closed) -> None:
     handle_local_action("close notepad", deferred_origin="voice")
     handle_local_action("close calculator", deferred_origin="voice")

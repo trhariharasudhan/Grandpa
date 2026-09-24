@@ -12,16 +12,11 @@ import pytest
 
 from tests.e2e.harness import CouldNotRun
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the harness records launches and window actions instead of performing them"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 
 # 18 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_search_web_returns_live_results_and_caches_them(cli) -> None:
     try:
         urllib.request.urlopen("https://duckduckgo.com/", timeout=10).close()
@@ -51,6 +46,7 @@ def test_search_web_returns_live_results_and_caches_them(cli) -> None:
 
 
 # 19 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_jarvis_routes_its_one_intent_and_refuses_everything_else(cli) -> None:
     """PARTIAL: the router knows exactly one intent. Everything else must fail loudly."""
     routed = cli(
@@ -76,6 +72,7 @@ def test_jarvis_routes_its_one_intent_and_refuses_everything_else(cli) -> None:
 
 
 # 20 --------------------------------------------------------------------------
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 @pytest.mark.skipif(os.name != "nt", reason="Screen automation is Windows-only")
 def test_automation_click_prompts_and_sends_nothing_when_declined(cli) -> None:
     import ctypes

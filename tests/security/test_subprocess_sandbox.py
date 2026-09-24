@@ -14,11 +14,6 @@ from grandpa.security.subprocess_sandbox import (
     run_sandboxed,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 # ---------------------------------------------------------------------------
 # build_safe_env tests
 # ---------------------------------------------------------------------------
@@ -71,6 +66,7 @@ class TestBuildSafeEnv:
 
 
 class TestRunSandboxed:
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_simple_echo(self) -> None:
         result = run_sandboxed("echo hello", timeout=10.0)
         assert result.returncode == 0
@@ -78,6 +74,7 @@ class TestRunSandboxed:
         assert not result.timed_out
         assert not result.killed
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_timeout_kills_process(self) -> None:
         command = (
             f'"{sys.executable}" -c "import time; time.sleep(60)"'
@@ -89,6 +86,7 @@ class TestRunSandboxed:
         assert result.killed
         assert result.returncode == -1
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_working_dir(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             command = "cd" if sys.platform == "win32" else "pwd"
@@ -96,6 +94,7 @@ class TestRunSandboxed:
             assert result.returncode == 0
             assert tmpdir in result.stdout.strip()
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_env_isolation(self) -> None:
         os.environ["TEST_SECRET"] = "super_secret_value"
         try:
@@ -113,6 +112,7 @@ class TestRunSandboxed:
         finally:
             del os.environ["TEST_SECRET"]
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_output_truncation(self) -> None:
         # Generate output larger than max_output_bytes
         python_cmd = f'"{sys.executable}" -c "print(\'A\' * 200)"'
@@ -124,6 +124,7 @@ class TestRunSandboxed:
         assert result.returncode == 0
         assert len(result.stdout) <= 50
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_non_zero_exit_code(self) -> None:
         command = (
             f'"{sys.executable}" -c "import sys; sys.exit(42)"'
@@ -141,6 +142,7 @@ class TestRunSandboxed:
 
 
 class TestKillProcessTree:
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_no_crash_on_nonexistent_pid(self) -> None:
         # Should not raise on a PID that doesn't exist
         kill_process_tree(999999999)

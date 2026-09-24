@@ -18,11 +18,6 @@ from grandpa.action_layer.executor import execute
 from grandpa.action_layer.model import ActionRequest, Origin, RiskLevel
 from grandpa.notes.models import NotesActionType
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 NOTES_ACTIONS = tuple(
     spec for spec in CATALOGUE if spec.binding is Binding.NOTES_ACTION
 )
@@ -80,6 +75,9 @@ def test_they_all_point_at_the_existing_notes_implementation() -> None:
 # --- the round trip -----------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_create_then_read_then_append_then_read(notes_home: Path) -> None:
     created = act("notes_create", title="Shopping", content="eggs")
     assert created.success is True, created
@@ -96,6 +94,9 @@ def test_create_then_read_then_append_then_read(notes_home: Path) -> None:
     assert "eggs" in again.message and "milk" in again.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_list_and_search_find_what_was_created() -> None:
     act("notes_create", title="Roof repair", content="call the builder")
     act("notes_create", title="Birthday", content="buy a cake")
@@ -108,6 +109,9 @@ def test_list_and_search_find_what_was_created() -> None:
     assert "Roof repair" in found.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_rename_archive_restore_and_pin(notes_home: Path) -> None:
     act("notes_create", title="Draft", content="x")
 
@@ -127,6 +131,9 @@ def test_rename_archive_restore_and_pin(notes_home: Path) -> None:
     assert act("notes_unpin", title="Final").success is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_tags_survive_the_trip_as_a_tuple() -> None:
     """NotesAction.tags is a tuple; JSON gives a list."""
     result = act("notes_create", title="Tagged", content="x", tags=["home", "urgent"])
@@ -144,6 +151,9 @@ def test_delete_is_high_risk_and_asks() -> None:
     assert spec.requires_confirmation is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_delete_with_no_way_to_ask_keeps_the_note(notes_home: Path) -> None:
     act("notes_create", title="Keepsake", content="x")
 
@@ -153,6 +163,9 @@ def test_delete_with_no_way_to_ask_keeps_the_note(notes_home: Path) -> None:
     assert "Keepsake" in act("notes_list").message, "deleted with nobody asked"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_a_declined_delete_keeps_the_note(notes_home: Path) -> None:
     act("notes_create", title="Keepsake", content="x")
 
@@ -162,6 +175,9 @@ def test_a_declined_delete_keeps_the_note(notes_home: Path) -> None:
     assert "Keepsake" in act("notes_list").message, "deleted after answering no"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_an_approved_delete_removes_the_note(notes_home: Path) -> None:
     act("notes_create", title="Keepsake", content="x")
     asked = MagicMock(return_value=True)
@@ -178,6 +194,9 @@ def test_an_approved_delete_removes_the_note(notes_home: Path) -> None:
     assert risk is RiskLevel.HIGH
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_notes_is_never_asked_a_second_time(notes_home: Path) -> None:
     """The layer holds the consent, so notes must not re-prompt for it.
 
@@ -203,6 +222,9 @@ def test_a_missing_title_is_refused_before_notes_sees_it() -> None:
     assert "title" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_a_note_that_does_not_exist_is_an_error_not_a_crash() -> None:
     result = act("notes_read", title="never written")
 
@@ -210,6 +232,9 @@ def test_a_note_that_does_not_exist_is_an_error_not_a_crash() -> None:
     assert "not found" in result.message.lower()
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_the_action_is_audited_with_chat_as_the_origin(
     notes_home: Path, tmp_path: Path
 ) -> None:

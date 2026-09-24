@@ -7,11 +7,6 @@ import pytest
 from grandpa.core.registry import ToolRegistry
 from grandpa.tools.code_interpreter import CodeInterpreterTool
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 class TestCodeInterpreterTool:
     def test_spec_name_and_category(self):
@@ -24,18 +19,21 @@ class TestCodeInterpreterTool:
         assert "code" in tool.spec.parameters["properties"]
         assert "code" in tool.spec.parameters["required"]
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_execute_simple_code(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="print(2 + 2)")
         assert result.success is True
         assert "4" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_execute_with_imports(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="import math; print(round(math.pi, 5))")
         assert result.success is True
         assert "3.14159" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_execute_multiline(self):
         tool = CodeInterpreterTool()
         code = "x = 10\ny = 20\nprint(x + y)"
@@ -43,18 +41,21 @@ class TestCodeInterpreterTool:
         assert result.success is True
         assert "30" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_timeout_protection(self):
         tool = CodeInterpreterTool(timeout=2)
         result = tool.execute(code="import time; time.sleep(10)")
         assert result.success is False
         assert "timed out" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_syntax_error(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="def f(\n")
         assert result.success is False
         assert "SyntaxError" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_runtime_error(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="print(1/0)")
@@ -98,6 +99,7 @@ class TestCodeInterpreterTool:
         assert result.success is False
         assert "No code" in result.content
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_output_truncation(self):
         tool = CodeInterpreterTool(max_output=50)
         result = tool.execute(code="print('A' * 200)")
@@ -112,18 +114,21 @@ class TestCodeInterpreterTool:
         assert fn["function"]["name"] == "code_interpreter"
         assert "code" in fn["function"]["parameters"]["properties"]
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_returncode_in_metadata(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="print('ok')")
         assert result.success is True
         assert result.metadata["returncode"] == 0
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_returncode_nonzero_on_error(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="raise ValueError('boom')")
         assert result.success is False
         assert result.metadata["returncode"] != 0
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_no_output_produces_placeholder(self):
         tool = CodeInterpreterTool()
         result = tool.execute(code="x = 42")

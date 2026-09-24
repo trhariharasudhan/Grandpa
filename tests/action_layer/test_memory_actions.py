@@ -24,11 +24,6 @@ from grandpa.memory_context import (
     parse_memory_command,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 MEMORY_SPECS = tuple(
     spec for spec in CATALOGUE if spec.binding is Binding.MEMORY_ACTION
 )
@@ -115,6 +110,9 @@ def test_continue_project_is_unreachable_and_that_is_pre_existing() -> None:
 # --- the round trip -----------------------------------------------------------
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_remember_then_recall(memory_db: Path) -> None:
     remembered = act("memory_remember", subject="my dog is called Rex")
     assert remembered.success is True, remembered
@@ -124,6 +122,9 @@ def test_remember_then_recall(memory_db: Path) -> None:
     assert "Rex" in recalled.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_forget_removes_without_asking(memory_db: Path) -> None:
     """Targeted forget has never prompted, and the migration kept that."""
     act("memory_remember", subject="my dog is called Rex")
@@ -136,6 +137,9 @@ def test_forget_removes_without_asking(memory_db: Path) -> None:
     assert "Rex" not in act("memory_recall", subject="dog").message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_the_reads_need_no_arguments_and_do_not_ask() -> None:
     for action in (
         "memory_profile",
@@ -160,6 +164,9 @@ def test_clearing_everything_is_high_risk_and_asks() -> None:
     assert spec.requires_confirmation is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_a_wipe_with_nobody_to_ask_keeps_the_memories(memory_db: Path) -> None:
     act("memory_remember", subject="my dog is called Rex")
 
@@ -169,6 +176,9 @@ def test_a_wipe_with_nobody_to_ask_keeps_the_memories(memory_db: Path) -> None:
     assert "Rex" in act("memory_recall", subject="dog").message, "wiped unasked"
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_a_declined_wipe_keeps_the_memories(memory_db: Path) -> None:
     act("memory_remember", subject="my dog is called Rex")
 
@@ -178,6 +188,9 @@ def test_a_declined_wipe_keeps_the_memories(memory_db: Path) -> None:
     assert "Rex" in act("memory_recall", subject="dog").message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_an_approved_wipe_erases_them(memory_db: Path) -> None:
     act("memory_remember", subject="my dog is called Rex")
 
@@ -187,6 +200,9 @@ def test_an_approved_wipe_erases_them(memory_db: Path) -> None:
     assert "Rex" not in act("memory_recall", subject="dog").message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.memory_context.execute_memory_action"
+)
 def test_the_store_is_untouched_by_a_refusal(memory_db: Path) -> None:
     """The point of the tier: refusing must not half-clear anything."""
     act("memory_remember", subject="my dog is called Rex")

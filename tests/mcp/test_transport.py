@@ -20,11 +20,6 @@ from grandpa.mcp.transport import (
 from grandpa.tools.calculator import CalculatorTool
 from grandpa.tools.think import ThinkTool
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture
 def server():
@@ -78,6 +73,7 @@ class TestInProcessTransport:
 
 
 class TestStdioTransport:
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_send_receive(self, tmp_path):
         """Use a simple Python echo script as the subprocess."""
         script = tmp_path / "echo_server.py"
@@ -110,6 +106,7 @@ class TestStdioTransport:
         finally:
             transport.close()
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_multiple_requests(self, tmp_path):
         """Send multiple requests to the subprocess."""
         script = tmp_path / "echo_server.py"
@@ -141,6 +138,7 @@ class TestStdioTransport:
         finally:
             transport.close()
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_send_notification_does_not_read_stdout(self, tmp_path):
         """Regression for #339: stdio servers don't reply to notifications.
 
@@ -189,6 +187,7 @@ class TestStdioTransport:
         finally:
             transport.close()
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_close_terminates_process(self, tmp_path):
         script = tmp_path / "sleep_server.py"
         script.write_text(
@@ -206,6 +205,7 @@ class TestStdioTransport:
         transport.close()
         assert transport._process is None
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     def test_close_idempotent(self, tmp_path):
         script = tmp_path / "sleep_server.py"
         script.write_text("import time; time.sleep(300)")
@@ -225,6 +225,7 @@ class TestStreamableHTTPTransport:
         mock_response.raise_for_status = MagicMock()
         return mock_response
 
+    @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
     @patch("httpx.Client")
     def test_send_receive(self, mock_client_cls):
         """Mock httpx.Client to simulate HTTP response."""

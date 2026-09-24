@@ -13,11 +13,6 @@ from grandpa.projects.models import Project
 from grandpa.projects.registry import ProjectRegistry
 from grandpa.projects.service import ProjectService
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 def _service(tmp_path: Path) -> ProjectService:
     root = tmp_path / "Example"
@@ -37,6 +32,7 @@ def test_projects_list_and_alias(tmp_path: Path) -> None:
     assert alias.exit_code == 0
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_projects_show(tmp_path: Path) -> None:
     service = _service(tmp_path)
     with patch("grandpa.cli.projects_cmd._service", return_value=service):

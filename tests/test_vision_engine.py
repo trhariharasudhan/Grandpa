@@ -33,11 +33,6 @@ from grandpa.vision.models import (
 )
 from grandpa.vision.service import VisionEngine
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real desktop service, with the OS-level calls under it stubbed or recorded by the test"
-)
-
 
 def _metadata() -> VisionCaptureMetadata:
     return VisionCaptureMetadata(
@@ -253,6 +248,9 @@ def test_ocr_preprocessing_coordinates_scale_back_to_source_image() -> None:
     assert blocks[0].bounds == (100, 50, 40, 20)
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.vision.service.VisionEngine.describe"
+)
 def test_vision_describe_reports_dialog_loading_and_error() -> None:
     nodes = (
         VisionNode("root", "window", name="Example", focused=True),
@@ -271,6 +269,9 @@ def test_vision_describe_reports_dialog_loading_and_error() -> None:
     assert result.data["error_detected"] is True
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.vision.service.VisionEngine.describe"
+)
 def test_vision_describe_does_not_report_active_root_as_dialog() -> None:
     root = VisionNode("root", "window", name="Example", focused=True)
     engine = VisionEngine()

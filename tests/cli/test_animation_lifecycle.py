@@ -25,11 +25,6 @@ from grandpa.cli._animation import TerminalAnimation, stop_all_animations
 from grandpa.cli.chat_cmd import ThinkingAnimation
 from grandpa.voice.presenter import ListeningAnimation, VoicePresenter
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 class _Spinner(TerminalAnimation):
     """Always-enabled animation writing to a real (captured) console."""
@@ -164,6 +159,7 @@ def test_both_animations_share_the_guarded_lifecycle(factory):
     assert not anim.running
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_process_exits_cleanly_with_a_running_animation():
     """End-to-end: the interpreter must finalize without aborting.
 

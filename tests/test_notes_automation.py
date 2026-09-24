@@ -23,12 +23,10 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
+
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
 )
-
-
 def test_create_append_open_and_search_notes(tmp_path) -> None:
     store = NotesStore(tmp_path)
     automation = NotesAutomation(store=store)
@@ -49,6 +47,9 @@ def test_create_append_open_and_search_notes(tmp_path) -> None:
     assert "Grandpa Ideas" in searched.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_rename_pin_archive_restore_and_recent_notes(tmp_path) -> None:
     store = NotesStore(tmp_path)
     automation = NotesAutomation(store=store)
@@ -69,6 +70,9 @@ def test_rename_pin_archive_restore_and_recent_notes(tmp_path) -> None:
     assert "Grandpa Project Notes" in recent.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_delete_requires_confirmation_and_confirmed_delete_removes_file(
     tmp_path,
 ) -> None:
@@ -87,6 +91,9 @@ def test_delete_requires_confirmation_and_confirmed_delete_removes_file(
     assert "Note not found" in opened.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_storage_prevents_path_traversal_and_secret_capture(tmp_path) -> None:
     safety = NotesSafetyPolicy()
     store = NotesStore(tmp_path, safety=safety)
@@ -201,6 +208,9 @@ def test_doctor_reports_notes_storage_ready(
     assert "Ready" in result.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.notes.automation.NotesAutomation.execute"
+)
 def test_handle_notes_command_accepts_custom_store(tmp_path) -> None:
     store = NotesStore(tmp_path)
 

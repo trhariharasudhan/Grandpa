@@ -22,13 +22,7 @@ import pytest
 
 from tests.e2e.harness import sqlite_rows
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME, so the reminder store and the delivery log are written inside it"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 
 def _pending(cli):
@@ -39,6 +33,7 @@ def _pending(cli):
     ]
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_due_reminder_actually_fires(cli) -> None:
     """The whole point of finding 11: created, due, run, delivered.
 
@@ -65,6 +60,7 @@ def test_a_due_reminder_actually_fires(cli) -> None:
     assert "drink water" in log.read_text(encoding="utf-8")
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_creating_one_says_that_nothing_will_deliver_it(cli) -> None:
     """The scheduler stays off by default, so the CLI has to say so."""
     due = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
@@ -76,6 +72,7 @@ def test_creating_one_says_that_nothing_will_deliver_it(cli) -> None:
     assert "reminders run-due" in created.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_at_five_pm_is_one_shot(cli) -> None:
     """It used to become daily:17:00 in the other store."""
     added = cli("reminders", "add", "remind me to call mom at 5pm")
@@ -91,6 +88,7 @@ def test_at_five_pm_is_one_shot(cli) -> None:
     assert "recurring" not in listed.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_every_day_at_five_pm_is_recurring(cli) -> None:
     """The same clock time, with a recurrence word, is a routine."""
     added = cli("reminders", "add", "remind me to call mom every day at 5pm")
@@ -102,6 +100,7 @@ def test_every_day_at_five_pm_is_recurring(cli) -> None:
     assert _pending(cli) == []
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_recurring_reminder_still_shows_up_in_the_list(cli) -> None:
     """One question, one answer, without migrating anything.
 
@@ -126,6 +125,7 @@ def test_a_recurring_reminder_still_shows_up_in_the_list(cli) -> None:
     assert "call mom" in listed.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_ask_creates_the_same_one_shot_reminder_chat_does(cli) -> None:
     """`grandpa ask` consulted only the scheduler, so it disagreed with chat.
 

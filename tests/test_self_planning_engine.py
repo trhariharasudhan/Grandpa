@@ -20,11 +20,6 @@ from grandpa.agent.development.tracker import ProjectStateTracker
 from grandpa.agent.runtime import AgentRuntime
 from grandpa.cli.roadmap_cmd import roadmap_group
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="runs real subprocesses, which is the unit under test; the command and its working directory are the test's own"
-)
-
 
 @pytest.fixture
 def temp_workspace():
@@ -203,6 +198,7 @@ def test_cli_roadmap_commands(temp_workspace) -> None:
     assert "Roadmap is valid" in res_val.output
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_agent_runtime_roadmap_goals(temp_workspace) -> None:
     import os
 

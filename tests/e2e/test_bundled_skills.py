@@ -12,15 +12,10 @@ from __future__ import annotations
 
 import pytest
 
-# ...and out of the default-deny actuation fixture (tests/actuation_guard.py).
-pytestmark = [
-    pytest.mark.e2e,
-    pytest.mark.real_actions(
-        reason="runs the real CLI as a subprocess in a throwaway sandbox, which is what this suite is for; the sandbox has its own HOME and the skills exercised here read a file the test wrote and call the pure-Python think tool"
-    ),
-]
+pytestmark = [pytest.mark.e2e]
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_skill_list_shows_the_bundled_skills(cli) -> None:
     listed = cli("skill", "list")
 
@@ -32,6 +27,7 @@ def test_skill_list_shows_the_bundled_skills(cli) -> None:
     assert "web-summarize" in listed.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_skill_info_reads_one(cli) -> None:
     info = cli("skill", "info", "email-draft")
 
@@ -39,6 +35,7 @@ def test_skill_info_reads_one(cli) -> None:
     assert "email-draft" in info.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_skill_run_executes_one(cli) -> None:
     """email-draft is three `think` steps, so it needs no model and no network.
 
@@ -64,6 +61,7 @@ def test_skill_run_executes_one(cli) -> None:
     assert "Ana" in ran.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_skill_that_reads_a_file_gets_a_usable_path(cli) -> None:
     """The bug that made every file-taking skill fail on Windows.
 
@@ -81,6 +79,7 @@ def test_a_skill_that_reads_a_file_gets_a_usable_path(cli) -> None:
     assert "Success" in ran.text
 
 
+@pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_a_bundled_skill_cannot_be_deleted(cli) -> None:
     removed = cli("skill", "remove", "email-draft", "--yes")
 

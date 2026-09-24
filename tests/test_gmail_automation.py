@@ -26,11 +26,6 @@ from grandpa.voice.operator import (
     parse_voice_operator_command,
 )
 
-# Opted out of the default-deny actuation fixture (tests/actuation_guard.py):
-pytestmark = pytest.mark.real_actions(
-    reason="drives the real domain implementation against the store under the test's own GRANDPA_HOME"
-)
-
 
 class FakeGmailClient:
     def __init__(self) -> None:
@@ -136,6 +131,9 @@ def test_safety_redacts_secrets_and_flags_injection() -> None:
     assert safety.attachment_is_blocked("report.pdf") is False
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.gmail.automation.GmailAutomation.execute"
+)
 def test_write_actions_require_confirmation_and_permanent_delete_is_blocked() -> None:
     automation = GmailAutomation(client=FakeGmailClient())
 
@@ -151,6 +149,9 @@ def test_write_actions_require_confirmation_and_permanent_delete_is_blocked() ->
     assert "Permanent Gmail deletion is blocked" in blocked.message
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.gmail.automation.GmailAutomation.execute"
+)
 def test_confirmed_write_actions_execute_through_client() -> None:
     client = FakeGmailClient()
     automation = GmailAutomation(client=client)
@@ -167,6 +168,9 @@ def test_confirmed_write_actions_execute_through_client() -> None:
     assert client.sent == [""]
 
 
+@pytest.mark.real_actions(
+    reason="reaches the real grandpa.gmail.automation.GmailAutomation.execute"
+)
 def test_read_and_summary_hide_internal_ids_and_sanitize_body() -> None:
     client = FakeGmailClient()
     automation = GmailAutomation(client=client)
