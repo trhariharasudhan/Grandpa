@@ -48,7 +48,18 @@ def test_search_web_returns_live_results_and_caches_them(cli) -> None:
 # 19 --------------------------------------------------------------------------
 @pytest.mark.real_actions(reason="reaches the real subprocess.Popen")
 def test_jarvis_routes_its_one_intent_and_refuses_everything_else(cli) -> None:
-    """PARTIAL: the router knows exactly one intent. Everything else must fail loudly."""
+    """PARTIAL: the router knows exactly one intent. Everything else must fail loudly.
+
+    The project is created here, inside the sandbox. It used to be found at
+    ``D:\\Grandpa``, which ``default_approved_roots`` listed outright -- so this
+    test passed on the machine the product was written on and nowhere else, and
+    it started failing the moment that path was removed from the product. A test
+    that needs a project on disk makes one.
+    """
+    project = cli.home / "grandpa"
+    project.mkdir(parents=True, exist_ok=True)
+    (project / "README.md").write_text("a project", encoding="utf-8")
+
     routed = cli(
         "jarvis", "--dry-run", "open", "my", "Grandpa", "project", "in", "vscode"
     )

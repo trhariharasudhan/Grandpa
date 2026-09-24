@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import Any
 
 from grandpa.memory.intent import MemoryIntentResult, MemoryIntentRouter
@@ -181,7 +182,7 @@ class MemoryService:
             "latest_commit": latest_commit,
             "next_task": next_task,
             "last_failed_plan": last_failed_plan,
-            "project_path": project_path or "D:\\Grandpa",
+            "project_path": project_path or str(Path.cwd()),
         }
 
         # Key for project summary

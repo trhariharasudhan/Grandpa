@@ -24,6 +24,9 @@ class ScanChunksTool(BaseTool):
     """Semantic grep — feeds chunks to the LM to find information BM25 misses."""
 
     tool_id = "scan_chunks"
+    # The store it can default to the one under GRANDPA_HOME;
+    # a model it cannot invent.
+    requires = ("engine", "model")
 
     def __init__(
         self,

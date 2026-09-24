@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from pathlib import Path
 
 from grandpa.agent.models import AgentContext, AgentGoal, AgentIntent
 from grandpa.memory.service import MemoryService
@@ -88,8 +89,14 @@ def classify_intent(goal_text: str) -> AgentIntent:
     return AgentIntent.UNKNOWN
 
 
-def get_current_git_branch(repo_path: str = "D:\\Grandpa") -> str | None:
-    """Safely get the verified current git branch."""
+def get_current_git_branch(repo_path: str | None = None) -> str | None:
+    """Safely get the verified current git branch.
+
+    Defaults to the working directory. It used to default to one
+    developer's checkout, so on any other machine it read the branch of
+    whatever happened to be at that path, or nothing.
+    """
+    repo_path = repo_path or str(Path.cwd())
     try:
         res = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -165,7 +172,7 @@ def build_context(goal: AgentGoal, project_name: str = "Grandpa") -> AgentContex
             project_mem["last_failed_plan"] = content
 
     # Load verified current branch
-    project_path = project_mem.get("project_path") or "D:\\Grandpa"
+    project_path = project_mem.get("project_path") or str(Path.cwd())
     branch = get_current_git_branch(project_path)
     if branch:
         project_mem["current_branch"] = branch

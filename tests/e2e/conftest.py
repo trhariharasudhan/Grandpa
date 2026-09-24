@@ -157,6 +157,27 @@ def e2e_model(ollama: OllamaServer) -> str:
     )
 
 
+def _timed_out_message(args: tuple[str, ...], run) -> str:
+    """Say what the child was doing, not merely that it stopped.
+
+    ``test_at_five_pm_is_one_shot`` has timed out twice, in two sessions, each
+    time with its output already printed and nothing to explain the stall. The
+    CLI arms a watchdog (``GRANDPA_STALL_TIMEOUT``, set for every child by the
+    harness) that dumps every thread's stack before the process ends, and this
+    puts that dump in the failure rather than leaving it in a sandbox that is
+    about to be deleted.
+    """
+    message = f"`grandpa {' '.join(args)}` timed out: {run.tail()}"
+    stacks = getattr(run, "stall_stacks", "")
+    if stacks:
+        return f"{message}\n\n--- stacks at the stall ---\n{stacks}"
+    return (
+        f"{message}\n\n(no stack dump: the watchdog did not fire, so the process "
+        f"was killed by this harness before GRANDPA_STALL_TIMEOUT elapsed, or it "
+        f"was stuck somewhere Python could not interrupt.)"
+    )
+
+
 # --------------------------------------------------------------------------
 # Per-test sandbox
 # --------------------------------------------------------------------------
@@ -181,7 +202,7 @@ class Cli:
             timeout=timeout,
         )
         if run.timed_out:
-            raise AssertionError(f"`grandpa {' '.join(args)}` timed out: {run.tail()}")
+            raise AssertionError(_timed_out_message(args, run))
         return run
 
     def at_terminal(self, *args: str, answer: str, timeout: float = 120) -> CliRun:
@@ -196,7 +217,7 @@ class Cli:
             timeout=timeout,
         )
         if run.timed_out:
-            raise AssertionError(f"`grandpa {' '.join(args)}` timed out: {run.tail()}")
+            raise AssertionError(_timed_out_message(args, run))
         return run
 
     def chat(self, model: str, *lines: str, timeout: float = 420) -> CliRun:

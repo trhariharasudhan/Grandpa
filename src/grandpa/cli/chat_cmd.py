@@ -6,6 +6,7 @@ import asyncio
 import logging
 import re
 import sys
+from pathlib import Path
 from typing import Any, List, Optional
 
 import click
@@ -870,8 +871,8 @@ def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
                 goal="Set project information",
                 status="completed",
                 project_path=route.target_value
-                if "d:\\" in route.target_value.lower()
-                else "D:\\Grandpa",
+                if _looks_like_a_path(route.target_value)
+                else str(Path.cwd()),  # noqa: E501
             )
             return f"Saved project memory for {route.project_name or 'Grandpa'}."
         if route.action_type == "save_knowledge":
@@ -935,7 +936,7 @@ def _handle_natural_memory_intent(text: str, *, store=None) -> str | None:
         proj_name = route.project_name or "Grandpa"
         items = svc.list_memories(category="project", project_name=proj_name, limit=100)
 
-        path_val = "D:\\Grandpa"
+        path_val = str(Path.cwd())
         feature_val = "N/A"
         commit_val = "N/A"
         next_task_val = "N/A"
@@ -1187,6 +1188,18 @@ def _format_reminders(items: list, *, empty: str) -> str:
 
 def _normalize_local_intent(text: str) -> str:
     return " ".join(text.lower().strip(" ?!.").split())
+
+
+def _looks_like_a_path(value: str) -> bool:
+    """Did the user hand us a filesystem path, rather than a project's name?
+
+    This read ``"d:\\" in value.lower()`` -- true only for one developer's
+    drive, so a path on any other was treated as a name and thrown away.
+    """
+    text = (value or "").strip()
+    if not text:
+        return False
+    return bool(re.match(r"^[a-zA-Z]:[\\/]", text)) or text.startswith(("/", "~", "."))
 
 
 @click.command()

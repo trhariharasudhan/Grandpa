@@ -20,6 +20,7 @@ class MemoryStoreTool(BaseTool):
     """MCP-exposed tool: store content into memory backend."""
 
     tool_id = "memory_store"
+    requires = ("memory_backend",)
 
     def __init__(self, backend: MemoryBackend | None = None) -> None:
         self._backend = backend
@@ -83,6 +84,7 @@ class MemoryRetrieveTool(BaseTool):
     """MCP-exposed tool: retrieve from memory backend."""
 
     tool_id = "memory_retrieve"
+    requires = ("memory_backend",)
 
     def __init__(self, backend: MemoryBackend | None = None) -> None:
         self._backend = backend
@@ -151,6 +153,7 @@ class MemorySearchTool(BaseTool):
     """MCP-exposed tool: search memory with agent-friendly formatting."""
 
     tool_id = "memory_search"
+    requires = ("memory_backend",)
 
     def __init__(self, backend: MemoryBackend | None = None) -> None:
         self._backend = backend
@@ -225,6 +228,7 @@ class MemoryIndexTool(BaseTool):
     """MCP-exposed tool: index a file or directory into memory."""
 
     tool_id = "memory_index"
+    requires = ("memory_backend",)
 
     def __init__(self, backend: MemoryBackend | None = None) -> None:
         self._backend = backend

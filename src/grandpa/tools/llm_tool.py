@@ -15,6 +15,7 @@ class LLMTool(BaseTool):
     """Delegate a sub-query to an inference engine for generation."""
 
     tool_id = "llm"
+    requires = ("engine", "model")
 
     def __init__(
         self,

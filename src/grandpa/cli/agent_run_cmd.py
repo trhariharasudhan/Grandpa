@@ -133,7 +133,7 @@ def cancel() -> None:
 
 @agent_group.command("inspect")
 @click.argument("goal")
-@click.option("--workspace", default="D:\\Grandpa", help="Workspace root directory.")
+@click.option("--workspace", default=".", help="Workspace root directory.")
 def inspect(goal: str, workspace: str) -> None:
     """Run read-only workspace and repository inspection."""
     console = Console()
@@ -146,7 +146,7 @@ def inspect(goal: str, workspace: str) -> None:
 
 @agent_group.command("diagnose")
 @click.argument("goal")
-@click.option("--workspace", default="D:\\Grandpa", help="Workspace root directory.")
+@click.option("--workspace", default=".", help="Workspace root directory.")
 @click.option("--db-path", default="", help="Custom approvals DB path.")
 def diagnose(goal: str, workspace: str, db_path: str) -> None:
     """Run diagnostics and generate a safe patch proposal."""
@@ -231,7 +231,7 @@ def patch_reject(proposal_id: str, db_path: str) -> None:
 
 @patch_group.command("apply")
 @click.argument("proposal_id")
-@click.option("--workspace", default="D:\\Grandpa", help="Workspace root directory.")
+@click.option("--workspace", default=".", help="Workspace root directory.")
 @click.option("--db-path", default="", help="Custom approvals DB path.")
 def patch_apply(proposal_id: str, workspace: str, db_path: str) -> None:
     """Apply an approved patch proposal to the workspace."""
@@ -244,7 +244,7 @@ def patch_apply(proposal_id: str, workspace: str, db_path: str) -> None:
 
 
 @agent_group.command("validate")
-@click.option("--workspace", default="D:\\Grandpa", help="Workspace root directory.")
+@click.option("--workspace", default=".", help="Workspace root directory.")
 def validate(workspace: str) -> None:
     """Run lint, compile, and git diff check validations."""
     console = Console()
@@ -287,7 +287,7 @@ def report() -> None:
 
 @agent_group.command("rollback")
 @click.argument("execution_id")
-@click.option("--workspace", default="D:\\Grandpa", help="Workspace root directory.")
+@click.option("--workspace", default=".", help="Workspace root directory.")
 def rollback(execution_id: str, workspace: str) -> None:
     """Roll back applied changes by restoringpre-existing .bak files."""
     console = Console()

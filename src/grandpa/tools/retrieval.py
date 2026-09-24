@@ -16,6 +16,7 @@ class RetrievalTool(BaseTool):
     """Search the memory backend and return formatted context."""
 
     tool_id = "retrieval"
+    requires = ("memory_backend",)
 
     def __init__(
         self,

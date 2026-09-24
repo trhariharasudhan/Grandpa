@@ -53,6 +53,19 @@ class BaseTool(ABC):
     tool_id: str
     is_local: bool = True
 
+    requires: tuple[str, ...] = ()
+    """What this tool cannot invent and must be handed.
+
+    Names from ``grandpa.tools.dependencies.ATTRIBUTE`` -- "engine", "model",
+    "memory_backend", "knowledge_store". Whoever builds the tool supplies them
+    and reports, at build time, any it could not.
+
+    Empty by default, and empty is the honest answer for most tools. A tool that
+    can fall back to something sensible -- the knowledge tools open the store
+    under GRANDPA_HOME when given none -- declares nothing here, because a
+    default is not a dependency.
+    """
+
     @property
     @abstractmethod
     def spec(self) -> ToolSpec:

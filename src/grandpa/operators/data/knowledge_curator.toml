@@ -11,7 +11,7 @@ type = "interval"
 value = "7200"
 
 [operator.agent]
-tools = ["memory_search", "kg_add_entity", "kg_add_relation", "kg_query", "think"]
+tools = ["memory_search", "memory_store", "kg_add_entity", "kg_add_relation", "kg_query", "think"]
 max_turns = 25
 temperature = 0.3
 system_prompt = """

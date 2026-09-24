@@ -21,9 +21,8 @@ def _get_project_path() -> str:
     except Exception:
         pass
 
-    default_path = "D:\\Grandpa"
-    if Path(default_path).exists():
-        return default_path
+    # No registered project: the one you are standing in. This used to prefer
+    # a hardcoded D:\\Grandpa when it happened to exist.
     return str(Path.cwd())
 
 

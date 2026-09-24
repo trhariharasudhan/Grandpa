@@ -214,7 +214,7 @@ class AgentRuntime:
         elif intent == AgentIntent.SPRINT:
             registry = MultiProjectRegistry()
             active_p = registry.get_active_project()
-            p_path = active_p.project_path if active_p else "D:\\Grandpa"
+            p_path = active_p.project_path if active_p else str(Path.cwd())
             from grandpa.agent.development.sprint import SprintRunner
 
             runner = SprintRunner(p_path)
@@ -724,7 +724,7 @@ class AgentRuntime:
                     next_task=context.project_memory.get("next_task")
                     or "Grandpa Agent Runtime V1",
                     project_path=context.project_memory.get("project_path")
-                    or "D:\\Grandpa",
+                    or str(Path.cwd()),
                 )
             except Exception:
                 pass

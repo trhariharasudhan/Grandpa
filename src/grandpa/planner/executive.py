@@ -331,7 +331,7 @@ class ExecutivePlanner:
                         try:
                             cp = subprocess.run(
                                 ["git", "rev-parse", "--short", "HEAD"],
-                                cwd="D:\\Grandpa",
+                                cwd=None,  # the working directory
                                 capture_output=True,
                                 text=True,
                                 timeout=3,

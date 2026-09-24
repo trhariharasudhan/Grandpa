@@ -23,6 +23,7 @@ the day the file lands rather than when somebody remembers to add it here.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -179,6 +180,57 @@ def test_every_prompt_template_survives_a_windows_path(
                 f"be doubled."
             )
         assert WINDOWS_PATH in filled or "{instruction}" not in template
+
+
+def _prompt_text(table: dict) -> str:
+    """Everything a manifest says to the model, as one body of text."""
+    chunks: list[str] = []
+    for key in ("system_prompt_template", "system_prompt", "instructions"):
+        value = table.get(key)
+        if isinstance(value, str):
+            chunks.append(value)
+    agent = table.get("agent")
+    if isinstance(agent, dict):
+        for key in ("system_prompt_template", "system_prompt", "instructions"):
+            value = agent.get(key)
+            if isinstance(value, str):
+                chunks.append(value)
+    return "\n".join(chunks)
+
+
+@pytest.mark.parametrize(("family", "path", "section"), MANIFESTS, ids=IDS)
+def test_no_prompt_names_a_tool_the_manifest_did_not_grant(
+    family: str, path: Path, section: str
+) -> None:
+    """A prompt telling the model to use a tool it does not have.
+
+    ``knowledge_curator`` instructed the agent to "Store your updated state with
+    memory_store", and memory_store was not in its tools list. The model is told
+    to do something it cannot; what happens next is a wasted turn at best.
+
+    This does not parse the prose. It takes the set of names the registry knows,
+    which is a closed set of identifiers, and looks for each one verbatim. Exact
+    matching against a known set, so a sentence about "thinking" is not mistaken
+    for the ``think`` tool -- though a prompt that happens to contain a real tool
+    name as an ordinary word would be a false positive worth fixing in the prompt
+    anyway, since the model reads it the same way.
+    """
+    table = _table(path, section)
+    prompt = _prompt_text(table)
+    if not prompt:
+        pytest.skip("no prompt in this manifest")
+    granted = set(_declared_tools(table))
+    named = {
+        tool
+        for tool in REGISTERED_TOOLS
+        if re.search(rf"\b{re.escape(tool)}\b", prompt)
+    }
+    ungranted = sorted(named - granted)
+    assert not ungranted, (
+        f"{path.name}'s prompt tells the model to use {ungranted}, which its "
+        f"tools list does not grant. Either add them to tools, or stop naming "
+        f"them: it has {sorted(granted)}."
+    )
 
 
 @pytest.mark.parametrize(("family", "path", "section"), MANIFESTS, ids=IDS)

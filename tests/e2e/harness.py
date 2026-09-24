@@ -34,6 +34,15 @@ SRC_DIR = REPO_ROOT / "src"
 OLLAMA_URL = "http://localhost:11434"
 
 CLI_TIMEOUT = 420
+
+STALL_TIMEOUT = 120
+"""Seconds a CLI child may make no progress before it dumps its stacks and ends.
+
+Well under ``CLI_TIMEOUT`` and under the per-test default of 300, so the stacks
+are written while the process still exists. It is not a shorter timeout in
+disguise: the slowest command measured here is under a second, and the two
+stalls that prompted this ran past five minutes.
+"""
 OLLAMA_START_TIMEOUT = 60
 
 
@@ -205,6 +214,13 @@ class Sandbox:
             NO_COLOR="1",
             # Rich tables otherwise truncate cells to the default 80 columns.
             COLUMNS="200",
+            # A child that stalls writes every thread's stack to
+            # GRANDPA_HOME/stalled-stacks.log and ends, rather than sitting there
+            # until this harness kills it and the evidence goes with it.
+            # `test_at_five_pm_is_one_shot` has timed out twice, in two sessions,
+            # each time with its output already printed and nothing to say why.
+            # Comfortably inside CLI_TIMEOUT so the dump happens first.
+            GRANDPA_STALL_TIMEOUT=str(STALL_TIMEOUT),
         )
         return env
 
@@ -219,6 +235,14 @@ class CliRun:
     stdout: str
     stderr: str
     timed_out: bool = False
+    stall_stacks: str = ""
+    """What the child was doing when it stopped, if the watchdog caught it.
+
+    The sandbox is deleted when the test ends, so a stack left in the sandbox's
+    GRANDPA_HOME would go with it -- which is how two stalls were investigated
+    after the fact with nothing to look at. It is read out here, while the
+    directory still exists, and carried into the failure message.
+    """
 
     @property
     def text(self) -> str:
@@ -226,6 +250,15 @@ class CliRun:
 
     def tail(self, limit: int = 240) -> str:
         return " ".join(self.text.split())[-limit:]
+
+
+def _stall_stacks(sandbox: Sandbox) -> str:
+    """The watchdog's dump, read before the sandbox is thrown away."""
+    path = sandbox.grandpa_home / "stalled-stacks.log"
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[-4000:]
+    except OSError:
+        return ""
 
 
 def run_python(
@@ -260,7 +293,9 @@ def run_python(
     except subprocess.TimeoutExpired as exc:
         out = exc.stdout if isinstance(exc.stdout, str) else ""
         err = exc.stderr if isinstance(exc.stderr, str) else ""
-        return CliRun(None, out, err, timed_out=True)
+        return CliRun(
+            None, out, err, timed_out=True, stall_stacks=_stall_stacks(sandbox)
+        )
     return CliRun(proc.returncode, proc.stdout, proc.stderr)
 
 

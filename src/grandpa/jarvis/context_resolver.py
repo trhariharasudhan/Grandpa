@@ -76,10 +76,6 @@ def default_approved_roots() -> list[Path]:
         home / "Documents",
         home / "Downloads",
     ]
-    for raw in (r"D:\Grandpa", r"D:\Projects"):
-        path = Path(raw)
-        if path.exists():
-            roots.append(path)
     return roots
 
 

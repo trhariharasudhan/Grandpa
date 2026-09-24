@@ -336,6 +336,8 @@ def builtin_tool_executor(
     *,
     interactive: bool = False,
     confirm_callback: Optional[Callable[[str], bool]] = None,
+    providers: Optional[Dict[str, Any]] = None,
+    unavailable: Optional[Dict[str, List[str]]] = None,
 ) -> ToolExecutor:
     """A :class:`ToolExecutor` holding every built-in tool a skill step can name.
 
@@ -348,17 +350,36 @@ def builtin_tool_executor(
     A tool that cannot be constructed is left out rather than raising, because
     one unbuildable tool must not make every skill unrunnable; a step naming it
     then fails with "Unknown tool", which names the problem.
+
+    Dependencies are supplied here, through the same
+    ``grandpa.tools.dependencies.inject`` the system builder uses. Until they
+    were, this built every tool from the registry and handed them nothing, so
+    ``grandpa skill run calendar-prep`` failed at its second step with "No memory
+    backend configured." and no indication that the tool had simply never been
+    given one. ``unavailable`` names what could not be supplied and for which
+    tool, so a caller can say so before the skill starts rather than during it.
     """
     from grandpa.core.registry import ToolRegistry
     from grandpa.tools import load_builtin_tools
+    from grandpa.tools.dependencies import inject
 
     load_builtin_tools()
+    if providers is None:
+        providers = {}
     tools: List[BaseTool] = []
+    unmet: Dict[str, List[str]] = {}
     for name in sorted(ToolRegistry.keys()):
         try:
-            tools.append(ToolRegistry.create(name))
+            tool = ToolRegistry.create(name)
         except Exception:  # noqa: BLE001 - an unbuildable tool cannot run anyway
             logger.debug("Skill tool %s could not be constructed", name)
+            continue
+        missing = inject(tool, providers)
+        if missing:
+            unmet[name] = missing
+        tools.append(tool)
+    if unavailable is not None:
+        unavailable.update(unmet)
     return ToolExecutor(
         tools,
         EventBus(),
@@ -367,4 +388,50 @@ def builtin_tool_executor(
     )
 
 
-__all__ = ["SkillManager", "builtin_tool_executor"]
+def cli_providers() -> Dict[str, Any]:
+    """How a CLI resolves what a tool declares, at most once and lazily.
+
+    Asked for explicitly rather than applied by default, because resolving an
+    inference engine means talking to Ollama. Building the executor with these on
+    by default put that round trip inside every test that builds one, and took a
+    suite of a thousand tests from one minute to ten. ``grandpa skill run`` wants
+    them; ``skill list`` does not, and neither does a unit test.
+    """
+    from grandpa.tools.dependencies import memoized
+
+    def engine_and_model() -> tuple[Any, str]:
+        from grandpa.core.config import load_config
+        from grandpa.engine._discovery import get_engine
+
+        config = load_config()
+        resolved = get_engine(config, config.engine.default)
+        if resolved is None:
+            return None, ""
+        _key, engine = resolved
+        model = config.intelligence.default_model or ""
+        return engine, model
+
+    resolve_engine = memoized(engine_and_model)
+
+    def memory_backend() -> Any:
+        from grandpa.core.config import load_config
+        from grandpa.core.registry import MemoryRegistry
+        from grandpa.tools.storage import load_storage_backends
+
+        load_storage_backends()
+        config = load_config()
+        key = config.memory.default_backend
+        if not MemoryRegistry.contains(key):
+            return None
+        if key == "sqlite":
+            return MemoryRegistry.create(key, db_path=config.memory.db_path)
+        return MemoryRegistry.create(key)
+
+    return {
+        "engine": lambda: resolve_engine()[0],
+        "model": lambda: resolve_engine()[1],
+        "memory_backend": memoized(memory_backend),
+    }
+
+
+__all__ = ["SkillManager", "builtin_tool_executor", "cli_providers"]

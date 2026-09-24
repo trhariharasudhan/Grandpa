@@ -12,7 +12,11 @@ from rich.table import Table
 from grandpa.cli._tty import require_confirmation
 from grandpa.core.events import EventBus
 from grandpa.skills.bundled import bundled_dir, refuse_write
-from grandpa.skills.manager import SkillManager, builtin_tool_executor
+from grandpa.skills.manager import (
+    SkillManager,
+    builtin_tool_executor,
+    cli_providers,
+)
 
 
 def _get_skill_paths() -> List[Path]:
@@ -34,7 +38,7 @@ def _get_skill_paths() -> List[Path]:
     return paths
 
 
-def _get_manager() -> SkillManager:
+def _get_manager(*, with_dependencies: bool = False) -> SkillManager:
     """A manager that has both the skills and something to run them with.
 
     Without the executor the manager had none, and every `skill run` answered
@@ -48,13 +52,49 @@ def _get_manager() -> SkillManager:
     """
     manager = SkillManager(bus=EventBus())
     manager.discover(paths=_get_skill_paths())
+    unavailable: dict[str, list[str]] = {}
+    # Dependencies are resolved only when a skill is about to run. Resolving an
+    # inference engine means talking to Ollama, and `skill list` should not wait
+    # on that to print a table -- nor should a unit test that builds an executor.
+    providers = cli_providers() if with_dependencies else None
     manager.set_tool_executor(
         builtin_tool_executor(
             interactive=True,
             confirm_callback=lambda prompt: click.confirm(prompt, default=False),
+            providers=providers,
+            unavailable=unavailable,
         )
     )
+    manager.unavailable_tools = unavailable
     return manager
+
+
+def _warn_about_unavailable_tools(manager: SkillManager, skill_name: str) -> None:
+    """Say which dependency is missing before the skill runs, not during it.
+
+    ``calendar-prep`` used to reach its second step and answer "No memory backend
+    configured." -- true, and useless: nothing said the tool had never been given
+    one, or which of the eighteen skills would hit the same wall. What a step
+    cannot do is knowable when the tools are built, so it is said then.
+    """
+    unavailable = getattr(manager, "unavailable_tools", None) or {}
+    if not unavailable:
+        return
+    try:
+        manifest = manager.resolve(skill_name)
+    except KeyError:
+        return
+    steps = getattr(manifest, "steps", []) or []
+    named = {getattr(step, "tool_name", "") for step in steps}
+    affected = {tool: needs for tool, needs in unavailable.items() if tool in named}
+    if not affected:
+        return
+    console = Console()
+    for tool, needs in sorted(affected.items()):
+        console.print(
+            f"[yellow]{tool} is unavailable:[/yellow] no {', '.join(needs)}. "
+            f"Steps using it will fail."
+        )
 
 
 @click.group()
@@ -131,7 +171,8 @@ def info(skill_name: str) -> None:
 def run(skill_name: str, arg: tuple[str, ...]) -> None:
     """Execute a locally installed skill."""
     console = Console()
-    manager = _get_manager()
+    manager = _get_manager(with_dependencies=True)
+    _warn_about_unavailable_tools(manager, skill_name)
     context: dict[str, str] = {}
     for item in arg:
         if "=" in item:

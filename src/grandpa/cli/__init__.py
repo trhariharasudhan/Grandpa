@@ -399,7 +399,18 @@ def main() -> None:
                     _stream.reconfigure(encoding="utf-8", errors="replace")
                 except (AttributeError, OSError):
                     pass
-    cli()
+
+    # A command that hangs should say what it was doing. Off unless
+    # GRANDPA_STALL_TIMEOUT is set, so nobody pays for a watchdog they did not
+    # ask for; when it is set, a stalled process writes every thread's stack to
+    # GRANDPA_HOME/stalled-stacks.log instead of dying silently under a kill.
+    from grandpa.diagnostics import stall
+
+    stall.arm()
+    try:
+        cli()
+    finally:
+        stall.disarm()
 
 
 __all__ = ["cli", "main"]

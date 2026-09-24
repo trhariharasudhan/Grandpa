@@ -82,7 +82,12 @@ docs/superpowers/
 
 # Claude Code project instructions (per-developer)
 CLAUDE.md
-.claude/
+.claude/*
+# ...except the project's own tool hooks, which have to travel with the
+# repository to be worth anything. A guard that lives only in one checkout is a
+# guard that a fresh clone does not have. Everything else under .claude/ stays
+# per-developer, including settings.local.json.
+!.claude/settings.json
 
 # NFS lock artifacts
 .nfs*

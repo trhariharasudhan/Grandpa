@@ -561,7 +561,6 @@ def _safe_roots() -> list[Path]:
         home / "Downloads",
         home / "Documents",
         home / "Desktop",
-        Path("D:/Grandpa"),
     ]
 
 

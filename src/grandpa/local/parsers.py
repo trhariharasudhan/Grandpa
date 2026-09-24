@@ -180,7 +180,15 @@ def _is_protected_folder(path: str) -> bool:
 
 
 def _is_known_safe_folder(path: str) -> bool:
-    return path in {str(Path.home() / "Downloads"), str(Path("D:\\"))}
+    """Folders that open without asking.
+
+    ``D:\\`` used to be in here beside the user's Downloads. A drive root is not
+    inherently safe -- it was on this list because it was the drive the product
+    was written on, and on anybody else's machine it granted silent access to
+    whatever D: happens to be. Opening a drive root asks now, like any other
+    folder nobody has vouched for.
+    """
+    return path in {str(Path.home() / "Downloads")}
 
 
 def _normalise(text: str) -> str:
@@ -1196,8 +1204,12 @@ def _unknown_folder_path(target: str) -> Path | None:
 def _folder_for(target: str) -> Path | None:
     if target in {"downloads", "downloads folder", "download folder"}:
         return Path.home() / "Downloads"
-    if target in {"d drive", "d:", "d drive folder", "d folder"}:
-        return Path("D:\\")
+    # Any drive the user names, not only D. "d drive" was spelled out here with
+    # its path written in, so "e drive" meant nothing and the one drive that did
+    # work was the one this was written on.
+    drive = re.fullmatch(r"([a-z]):?(?: drive| drive folder| folder)?", target.strip())
+    if drive and (target.strip().endswith((" drive", " drive folder", " folder", ":"))):
+        return Path(f"{drive.group(1).upper()}:\\")
     return None
 
 

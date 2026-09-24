@@ -8,7 +8,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-REPO_ROOT = Path("D:/Grandpa")
+
+def _repo_root() -> Path:
+    """The repository being worked on: the one you are standing in.
+
+    This was Path("D:/Grandpa"), so on any other machine the developer
+    helpers reported on a directory that did not exist.
+    """
+    return Path.cwd()
+
+
 BLOCKED_COMMAND_PATTERNS = re.compile(
     r"\b(rm|del|format|shutdown|restart|reg\s+delete|git\s+reset\s+--hard)\b", re.I
 )
@@ -82,8 +91,8 @@ def terminal_plan(command: str, *, dry_run: bool = True) -> DeveloperResult:
     )
 
 
-def git_summary(repo: Path | str = REPO_ROOT) -> DeveloperResult:
-    repo = Path(repo)
+def git_summary(repo: Path | str | None = None) -> DeveloperResult:
+    repo = Path(repo) if repo else _repo_root()
     if not (repo / ".git").exists():
         return DeveloperResult(
             "unsupported", "This folder is not a Git repository.", {"repo": str(repo)}
@@ -122,8 +131,8 @@ def git_summary(repo: Path | str = REPO_ROOT) -> DeveloperResult:
     )
 
 
-def project_diagnostics(repo: Path | str = REPO_ROOT) -> DeveloperResult:
-    repo = Path(repo)
+def project_diagnostics(repo: Path | str | None = None) -> DeveloperResult:
+    repo = Path(repo) if repo else _repo_root()
     checks = {
         "pyproject": (repo / "pyproject.toml").exists(),
         "uv_lock": (repo / "uv.lock").exists(),

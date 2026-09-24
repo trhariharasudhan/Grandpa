@@ -62,7 +62,9 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
     # "appdata" secret pattern and block every legitimate temp workspace.
     temp_dir = Path(os.environ.get("TEMP", os.environ.get("TMP", "/tmp"))).resolve()
     is_in_temp = is_subpath(resolved_path, temp_dir)
-    is_in_grandpa = is_subpath(resolved_path, Path("D:\\Grandpa"))
+    # The project is where you are, not where it was written.
+    project_root = Path.cwd().resolve()
+    is_in_grandpa = is_subpath(resolved_path, project_root)
 
     # 3. Reject user profile secrets directories (unless inside temp directory)
     if not is_in_temp:
@@ -99,7 +101,7 @@ def resolve_and_verify_workspace(path_str: str) -> WorkspaceContext:
             reason="Workspace path is not a directory.",
         )
 
-    if not (is_in_grandpa or is_in_temp or str(resolved_path) == "D:\\Grandpa"):
+    if not (is_in_grandpa or is_in_temp or resolved_path == project_root):
         return WorkspaceContext(
             root_path=str(resolved_path),
             is_safe=False,

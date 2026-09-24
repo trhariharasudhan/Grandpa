@@ -376,31 +376,29 @@ class SystemBuilder:
         return tools
 
     @staticmethod
-    def _inject_tool_deps(tool, engine, model, memory_backend):
-        name = tool.spec.name
-        if name in ("llm", "scan_chunks"):
-            # scan_chunks reads knowledge chunks and asks a model to judge each
-            # one, so it needs an engine exactly as the llm tool does. It has a
-            # default store but cannot invent an engine, and without this it
-            # answered "not configured" wherever it was reached.
-            if hasattr(tool, "_engine"):
-                tool._engine = engine
-            if hasattr(tool, "_model"):
-                tool._model = model
-        elif name == "retrieval":
-            if hasattr(tool, "_backend"):
-                tool._backend = memory_backend
-        elif name.startswith("memory_"):
-            if hasattr(tool, "_backend"):
-                tool._backend = memory_backend
-        elif name in (
-            "schedule_task",
-            "list_scheduled_tasks",
-            "pause_scheduled_task",
-            "resume_scheduled_task",
-            "cancel_scheduled_task",
-        ):
-            pass  # scheduler injection handled post-build
+    def _inject_tool_deps(tool, engine, model, memory_backend) -> list[str]:
+        """Give the tool what it declares, and say what could not be given.
+
+        This was a chain of name tests -- ``if name == "llm" ... elif
+        name.startswith("memory_")`` -- which is a list of the tools somebody
+        remembered to wire. Anything built anywhere else got nothing, and
+        ``skill run`` builds its tools elsewhere: three bundled skills failed on
+        "No memory backend configured." with nothing to say why.
+
+        The tool declares what it needs now (``BaseTool.requires``) and
+        ``grandpa.tools.dependencies`` supplies it, so a tool added later is wired
+        by its own declaration rather than by an edit here.
+        """
+        from grandpa.tools.dependencies import inject
+
+        return inject(
+            tool,
+            {
+                "engine": lambda: engine,
+                "model": lambda: model,
+                "memory_backend": lambda: memory_backend,
+            },
+        )
 
     def _setup_scheduler(self, config, bus):
         scheduler_enabled = (
