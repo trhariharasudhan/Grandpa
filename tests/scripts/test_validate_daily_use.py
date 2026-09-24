@@ -9,6 +9,8 @@ from scripts.validate_daily_use import (
     build_steps,
 )
 
+from scripts import validate_daily_use
+
 
 def test_build_steps_can_skip_app_launch() -> None:
     args = argparse.Namespace(
@@ -23,9 +25,15 @@ def test_build_steps_can_skip_app_launch() -> None:
 
 
 @pytest.mark.real_actions(
-    reason="needs a real implementation; the guards refuse this test without it"
+    reason="runs a real `python -c` through subprocess.Popen, which is the thing "
+    "under test; VALIDATION_HOME is redirected to tmp_path so the step's own "
+    "GRANDPA_HOME is not the repository's"
 )
-def test_run_step_checks_expected_text() -> None:
+def test_run_step_checks_expected_text(monkeypatch, tmp_path) -> None:
+    # _run_step mkdirs VALIDATION_HOME, which the script defines as
+    # <repo>/runtime/daily-use-home. That is a reasonable place for a script a
+    # person runs by hand, and the wrong place for a test.
+    monkeypatch.setattr(validate_daily_use, "VALIDATION_HOME", tmp_path / "home")
     result = _run_step(
         ValidationStep(
             "sample",
@@ -39,9 +47,12 @@ def test_run_step_checks_expected_text() -> None:
 
 
 @pytest.mark.real_actions(
-    reason="needs a real implementation; the guards refuse this test without it"
+    reason="runs a real `python -c` through subprocess.Popen to check a mismatch "
+    "is reported; VALIDATION_HOME is redirected to tmp_path so nothing is written "
+    "into the repository"
 )
-def test_run_step_reports_expected_text_mismatch() -> None:
+def test_run_step_reports_expected_text_mismatch(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(validate_daily_use, "VALIDATION_HOME", tmp_path / "home")
     result = _run_step(
         ValidationStep(
             "sample",

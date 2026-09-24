@@ -153,16 +153,21 @@ def test_continuation_engine_and_memory(temp_workspace, setup_memory) -> None:
 
 
 @pytest.mark.real_actions(
-    reason="needs a real implementation; the guards refuse this test without it"
+    reason="drives the real ContinuationEngine, which shells out to git through "
+    "subprocess.Popen; the project it works on is temp_workspace, so its state "
+    "file is written there"
 )
-def test_agent_runtime_continuation(temp_workspace, setup_memory) -> None:
+def test_agent_runtime_continuation(temp_workspace, setup_memory, monkeypatch) -> None:
     # Set up some task state in workspace
     tracker = ProjectStateTracker(str(temp_workspace), project_name="RuntimeProj")
     tracker.add_task("Complete project setup")
 
-    # Override target project path in runtime test (via mock or default resolution)
-    # In AgentRuntime.run, it will use temp_workspace if D:\Grandpa does not exist,
-    # but we can also copy D:\Grandpa behavior by temporarily patching Path.cwd()
+    # The runtime resolves its project as the working directory when no project is
+    # registered as active, so this is what makes it work on temp_workspace. The
+    # comment here used to say it would "use temp_workspace if D:\\Grandpa does not
+    # exist" -- on the machine this was written on D:\\Grandpa did exist, so the
+    # test wrote its state there, outside the checkout, on every run.
+    monkeypatch.chdir(temp_workspace)
     runtime = AgentRuntime()
     # Mock continue grandpa project goal execution
     res = runtime.run("Continue Grandpa project")

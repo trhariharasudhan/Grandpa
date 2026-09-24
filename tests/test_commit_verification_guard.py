@@ -417,7 +417,9 @@ def test_a_module_scope_opt_out_is_refused_at_collection() -> None:
 
     offenders = scope_violations([inherited_only, carries_its_own, unmarked])
 
-    assert offenders == {"tests/x.py": ["test_a"]}
+    # The marker's name is in the entry now that there are two of them: knowing a
+    # file applies one at module scope is not much use without knowing which.
+    assert offenders == {"tests/x.py": ["test_a (real_actions)"]}
     message = scope_error_message(offenders)
     assert "function-scope only" in message
     # The message has to say why, or the next person deletes the rule.
@@ -547,3 +549,42 @@ def test_the_history_is_appended_and_capped(tmp_path: Path) -> None:
     assert len(history) == KEEP_RUNS
     # The oldest are dropped, not the newest.
     assert history[-1].when == NOW + KEEP_RUNS + 4
+
+
+def test_a_failure_answered_by_a_later_clean_run_stops_blocking() -> None:
+    """An intermittent failure must not disqualify a tree for ever.
+
+    A flaky e2e timeout recorded a failure for this exact tree. Because the rule
+    took the newest failure whatever its age, no later full pass could clear it,
+    and every future commit of that tree would have been refused with no way to
+    satisfy the guard. A guard nobody can satisfy gets switched off.
+    """
+    flake = passing(
+        exitstatus=1,
+        scope="partial",
+        argv=["tests/e2e", "-m", "e2e"],
+        when=NOW - 600,
+        failed=["tests/e2e/test_reminders_fire.py::test_at_five_pm_is_one_shot"],
+    )
+    clean = passing(when=NOW - 60)
+
+    decision = decide([flake, clean])
+
+    assert decision.allowed, decision.reason
+
+
+def test_a_failure_after_the_last_clean_run_still_refuses() -> None:
+    """The other half: order is what matters, not the mere existence of a pass."""
+    clean = passing(when=NOW - 600)
+    later_failure = passing(
+        exitstatus=1,
+        scope="partial",
+        argv=["tests/e2e", "-m", "e2e"],
+        when=NOW - 60,
+        failed=["tests/e2e/test_stores.py::test_something_real"],
+    )
+
+    decision = decide([clean, later_failure])
+
+    assert not decision.allowed
+    assert "test_something_real" in decision.reason

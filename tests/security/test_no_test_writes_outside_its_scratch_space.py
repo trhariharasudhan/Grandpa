@@ -145,9 +145,10 @@ def test_the_allowed_roots_are_not_empty_or_everything() -> None:
     assert not is_allowed(Path.home()), "the home directory itself is not a root"
 
 
-@pytest.mark.real_actions(
-    reason="checks that the marker really restores the real filesystem; writes "
-    "one file under tmp_path and removes it"
+@pytest.mark.real_writes(
+    reason="this is the test that checks real_writes takes the guard off, so it "
+    "must carry it; the file it writes is under tmp_path, which is allowed "
+    "anyway -- what it needs is the guard's absence, not the permission"
 )
 def test_the_marker_gives_the_real_filesystem_back(tmp_path: Path) -> None:
     import builtins

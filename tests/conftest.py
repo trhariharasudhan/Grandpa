@@ -172,30 +172,35 @@ def _nothing_actuates(request, monkeypatch) -> None:
     ``~/.grandpa``. Replacing the one tool would leave the gap; the writes are
     confined instead.
 
-    A test that needs the real thing marks itself:
+    There are two permissions here, and they are different sizes, so they are
+    two markers and a test asks for exactly the one it needs:
 
-        @pytest.mark.real_actions(reason="...")
+        @pytest.mark.real_actions(reason="...")   # run the real implementation
+        @pytest.mark.real_writes(reason="...")    # write outside the sandbox
 
-    and the reason has to say something. The marker covers both guards: a test
-    that drives a real implementation usually needs it to write somewhere real.
+    Each needs its own reason. They used to be one marker, which is how a test
+    that legitimately needed a real implementation also got permission to write
+    a mocked traceback into a real ``~/.grandpa/server.log``. Of the 395 tests
+    that carried the combined marker, five needed the write bound off.
     """
     from tests.actuation_guard import MARKER, deny_everything, reason_for
-    from tests.write_guard import confine_writes
+    from tests.write_guard import WRITE_MARKER, confine_writes
 
-    # own_markers, not get_closest_marker: the marker is function-scope only, so
-    # one inherited from a module or a class does not count. See
+    # own_markers, not get_closest_marker: both markers are function-scope only,
+    # so one inherited from a module or a class does not count. See
     # tests/actuation_guard.py's scope_violations for the collection-time refusal.
-    marker = next(
-        (mark for mark in request.node.own_markers if mark.name == MARKER), None
-    )
-    if marker is not None:
-        try:
-            reason_for(marker)
-        except ValueError as exc:
-            pytest.fail(str(exc))
-        return
-    deny_everything(monkeypatch)
-    confine_writes(monkeypatch)
+    own = {mark.name: mark for mark in request.node.own_markers}
+    for name in (MARKER, WRITE_MARKER):
+        if name in own:
+            try:
+                reason_for(own[name])
+            except ValueError as exc:
+                pytest.fail(str(exc))
+
+    if MARKER not in own:
+        deny_everything(monkeypatch)
+    if WRITE_MARKER not in own:
+        confine_writes(monkeypatch)
 
 
 @pytest.fixture(scope="session")

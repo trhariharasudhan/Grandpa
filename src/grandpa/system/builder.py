@@ -378,7 +378,11 @@ class SystemBuilder:
     @staticmethod
     def _inject_tool_deps(tool, engine, model, memory_backend):
         name = tool.spec.name
-        if name == "llm":
+        if name in ("llm", "scan_chunks"):
+            # scan_chunks reads knowledge chunks and asks a model to judge each
+            # one, so it needs an engine exactly as the llm tool does. It has a
+            # default store but cannot invent an engine, and without this it
+            # answered "not configured" wherever it was reached.
             if hasattr(tool, "_engine"):
                 tool._engine = engine
             if hasattr(tool, "_model"):

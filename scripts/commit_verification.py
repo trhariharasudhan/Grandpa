@@ -226,12 +226,23 @@ def evidence_for(
     A failure counts whatever its scope. A subset that fails is still proof that
     this tree is broken -- which is ``2624cd71`` read the other way round, where
     a subset that passed was taken as proof that it was not.
+
+    The failure it returns is only one that is *newer* than the newest full pass.
+    An older one has been answered: the suite has been run clean since. Without
+    that, a single flaky run disqualified a tree permanently -- an intermittent
+    e2e timeout did exactly this, and no amount of re-running could clear it,
+    because the failure stayed the newest failure for ever. A guard nobody can
+    satisfy gets switched off, so this is a correctness fix and not a softening:
+    a failure after the last clean run still refuses.
     """
     same_tree = [record for record in records if record.digest == digest]
     passes = [r for r in same_tree if r.exitstatus == 0 and r.scope == "full"]
     failures = [r for r in same_tree if r.exitstatus != 0]
     newest_pass = max(passes, key=lambda r: r.when) if passes else None
     newest_failure = max(failures, key=lambda r: r.when) if failures else None
+    if newest_pass is not None and newest_failure is not None:
+        if newest_failure.when <= newest_pass.when:
+            newest_failure = None
     return newest_pass, newest_failure
 
 

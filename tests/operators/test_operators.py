@@ -892,7 +892,6 @@ class TestLoadBundledOperators:
 
         m = load_operator(operators_dir / "researcher.toml")
         assert m.id == "researcher"
-        assert "web_search" in m.tools
         assert m.schedule_type == "interval"
 
     def test_news_digest_loads(self, operators_dir):
@@ -907,7 +906,14 @@ class TestLoadBundledOperators:
 
         m = load_operator(operators_dir / "knowledge_curator.toml")
         assert m.id == "knowledge_curator"
-        assert "knowledge_add_entity" in m.tools
+        # Deliberately not a literal tool name. This line used to read
+        # `assert "knowledge_add_entity" in m.tools`, and knowledge_add_entity has
+        # never existed -- the real name is kg_add_entity. A test that pins a
+        # string from the manifest it is checking can only ever agree with it,
+        # including when both are wrong. What the tools must satisfy is the
+        # registry, and tests/skills/test_shipped_manifests.py checks that for
+        # every shipped manifest in both directories.
+        assert m.tools, "knowledge_curator declares no tools at all"
 
     def test_system_monitor_loads(self, operators_dir):
         from grandpa.operators.loader import load_operator

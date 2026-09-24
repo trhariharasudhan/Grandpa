@@ -107,12 +107,31 @@ class TestKnowledgeSearchTool:
         assert result.success is False
         assert "No query provided" in result.content
 
-    def test_no_store(self):
-        """Missing store returns success=False."""
+    def test_no_store_falls_back_to_the_one_under_grandpa_home(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """No store passed means the user's own knowledge.db, not a refusal.
+
+        This used to assert success=False and "No knowledge store configured",
+        which was true and was the reason the tool was useless: the registry
+        builds tools with no arguments and nothing injected a store, so every
+        caller that did not construct it by hand got that sentence. The tool was
+        also absent from ``grandpa.tools._BUILTINS``, so no manifest could reach
+        it at all -- ``personal_deep_research`` names it and three of its four
+        tools did not resolve.
+        """
+        import grandpa.core.config as config_module
+
+        monkeypatch.setattr(config_module, "DEFAULT_CONFIG_DIR", tmp_path)
+
         tool = KnowledgeSearchTool()
         result = tool.execute(query="kubernetes")
-        assert result.success is False
-        assert "No knowledge store configured" in result.content
+
+        assert result.success is True, result.content
+        assert "No relevant results" in result.content
+        assert (tmp_path / "knowledge.db").exists(), (
+            "the default store was not created under GRANDPA_HOME"
+        )
 
     def test_spec_has_filter_params(self):
         """ToolSpec.parameters includes all required and optional filter fields."""

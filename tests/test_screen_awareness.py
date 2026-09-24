@@ -178,7 +178,7 @@ def test_screen_diagnostics_route(monkeypatch):
 # --- the screen is redacted at the OCR boundary --------------------------------
 
 
-def test_ocr_text_is_redacted_before_anyone_sees_it(monkeypatch) -> None:
+def test_ocr_text_is_redacted_before_anyone_sees_it(monkeypatch, tmp_path) -> None:
     """A screenshot contains whatever is on the display.
 
     The vision engine has always redacted its own reading of the screen. This
@@ -187,11 +187,18 @@ def test_ocr_text_is_redacted_before_anyone_sees_it(monkeypatch) -> None:
     """
     import grandpa.screen_awareness as sa
 
+    # A real file the test owns. The path used to be the bare string "shot.png",
+    # and the code under test deletes the screenshot once it has been read -- so a
+    # relative path resolved against the working directory and it tried to unlink
+    # <repo>/shot.png.
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(b"not really a png")
+
     secrets = "Password: hunter2hunter2\napi_key: sk_live_ABCDEFGH12345678"
     monkeypatch.setattr(
         sa,
         "capture_screenshot",
-        lambda: sa.ScreenContext(supported=True, screenshot_path="shot.png"),
+        lambda: sa.ScreenContext(supported=True, screenshot_path=str(shot)),
     )
     monkeypatch.setattr(
         sa,
@@ -211,17 +218,23 @@ def test_ocr_text_is_redacted_before_anyone_sees_it(monkeypatch) -> None:
     assert "[REDACTED_PASSWORD]" in message
 
 
-@pytest.mark.real_actions(
-    reason="needs a real implementation; the guards refuse this test without it"
-)
-def test_a_credential_screen_is_not_described_at_all(monkeypatch) -> None:
-    """Redaction removes the shapes it knows; this is where the others live."""
+def test_a_credential_screen_is_not_described_at_all(monkeypatch, tmp_path) -> None:
+    """Redaction removes the shapes it knows; this is where the others live.
+
+    No opt-out any more: this test carried ``real_actions`` only because its
+    screenshot path was relative, so discarding the screenshot reached
+    <repo>/shot.png. With a real file under tmp_path there is nothing outside the
+    sandbox to delete.
+    """
     import grandpa.screen_awareness as sa
+
+    shot = tmp_path / "shot.png"
+    shot.write_bytes(b"not really a png")
 
     monkeypatch.setattr(
         sa,
         "capture_screenshot",
-        lambda: sa.ScreenContext(supported=True, screenshot_path="shot.png"),
+        lambda: sa.ScreenContext(supported=True, screenshot_path=str(shot)),
     )
     monkeypatch.setattr(
         sa,

@@ -95,11 +95,12 @@ class KnowledgeSearchTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         if self._store is None and self._retriever is None:
-            return ToolResult(
-                tool_name="knowledge_search",
-                content="No knowledge store configured.",
-                success=False,
-            )
+            # The registry builds tools with no arguments, and nothing injects a
+            # store, so this tool answered "No knowledge store configured." for
+            # every caller that did not construct it by hand. The default is the
+            # user's own knowledge.db under GRANDPA_HOME, which is what a
+            # knowledge tool with no store told about means.
+            self._store = KnowledgeStore()
 
         query: str = params.get("query", "")
         if not query:

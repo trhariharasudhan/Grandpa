@@ -30,6 +30,9 @@ _BUILTINS = (
     "db_query",
     "pdf_tool",
     "knowledge_tools",
+    "knowledge_search",
+    "knowledge_sql",
+    "scan_chunks",
     "text_to_speech",
 )
 _builtins_loaded = False

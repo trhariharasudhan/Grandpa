@@ -152,6 +152,18 @@ def test_no_unaudited_tool_is_registered() -> None:
         "kg_neighbors",
         "memory_retrieve",
         "memory_search",
+        # The knowledge tools, newly registered: their modules shipped and
+        # declared these ids, but none was in grandpa.tools._BUILTINS, so nothing
+        # could reach them and personal_deep_research.toml named three tools that
+        # did not resolve. Read-only, and knowledge_sql's is enforced rather than
+        # documented: it refuses anything that does not start with SELECT and
+        # rejects DELETE, DROP and UPDATE even inside a stacked statement.
+        "knowledge_search",
+        "knowledge_sql",
+        # scan_chunks reads chunks and asks a model about each one. It writes
+        # nothing; what it sends is the user's own stored content to the engine
+        # they configured, which is the same exposure as the llm tool above.
+        "scan_chunks",
     }
     known = set(GATED) | set(UNGATED_BUT_ACTS) | read_only
 

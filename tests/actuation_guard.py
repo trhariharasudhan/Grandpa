@@ -64,9 +64,13 @@ def reason_for(marker: Any) -> str:
     """
     reason = marker.kwargs.get("reason") or (marker.args[0] if marker.args else "")
     if not str(reason).strip():
+        # The marker's own name, not MARKER: this is called for real_writes too,
+        # and naming the wrong marker in the error would send the reader to the
+        # wrong permission.
+        name = getattr(marker, "name", MARKER)
         raise ValueError(
-            f"@pytest.mark.{MARKER} needs a reason: why this test uses the real "
-            "implementation, and what keeps it off the machine."
+            f"@pytest.mark.{name} needs a reason: why this test needs that "
+            "permission, and what keeps it off the machine."
         )
     return str(reason)
 
@@ -262,8 +266,20 @@ Mark the tests that need it, one at a time, and say what each one reaches:
 """
 
 
+def scoped_markers() -> tuple[str, ...]:
+    """Every marker that grants a permission, and so must be per-test.
+
+    Read here rather than listed in two places: a third permission added later
+    is covered by the scope rule the day it exists, which is the same argument as
+    taking the actuation list from the catalogue.
+    """
+    from tests.write_guard import WRITE_MARKER
+
+    return (MARKER, WRITE_MARKER)
+
+
 def scope_violations(items: list[Any]) -> dict[str, list[str]]:
-    """Which collected tests inherit the marker rather than carrying it.
+    """Which collected tests inherit a permission marker rather than carrying it.
 
     ``own_markers`` holds only what was applied to the test function itself, so a
     marker in ``iter_markers`` but not in ``own_markers`` came from a module-level
@@ -272,11 +288,12 @@ def scope_violations(items: list[Any]) -> dict[str, list[str]]:
     offenders: dict[str, list[str]] = {}
     for item in items:
         own = {mark.name for mark in getattr(item, "own_markers", [])}
-        if MARKER in own:
-            continue
-        if next(item.iter_markers(MARKER), None) is not None:
-            where = str(getattr(item, "location", ("?",))[0])
-            offenders.setdefault(where, []).append(item.name)
+        for marker in scoped_markers():
+            if marker in own:
+                continue
+            if next(item.iter_markers(marker), None) is not None:
+                where = str(getattr(item, "location", ("?",))[0])
+                offenders.setdefault(where, []).append(f"{item.name} ({marker})")
     return offenders
 
 

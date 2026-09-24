@@ -350,14 +350,19 @@ class AgentRuntime:
 
             active = registry.get_active_project()
 
-            project_path = "D:\\Grandpa"
-            project_name = "Grandpa"
+            # The default was the literal string "D:\\Grandpa" -- one developer's
+            # own drive, shipped in the product, with a fallback to cwd only when
+            # that path did not exist. On that developer's machine it did exist,
+            # so the runtime wrote project state into D:\Grandpa\.grandpa whatever
+            # directory it was run from; on anyone else's machine with a D:\Grandpa
+            # folder it would have written into theirs. The project you are in is
+            # the only defensible default.
             if active:
                 project_path = active.project_path
                 project_name = active.project_name
             else:
-                if not Path(project_path).exists():
-                    project_path = str(Path.cwd())
+                project_path = str(Path.cwd())
+                project_name = "Grandpa"
 
             from grandpa.agent.development.engine import ContinuationEngine
 

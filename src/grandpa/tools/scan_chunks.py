@@ -83,10 +83,23 @@ class ScanChunksTool(BaseTool):
         )
 
     def execute(self, **params: Any) -> ToolResult:
-        if self._store is None or self._engine is None:
+        if self._store is None:
+            # As for the other knowledge tools: the registry builds with no
+            # arguments, so default to the user's knowledge.db under GRANDPA_HOME.
+            from grandpa.connectors.store import KnowledgeStore
+
+            self._store = KnowledgeStore()
+        if self._engine is None:
+            # An engine cannot be defaulted -- this tool asks a model to judge each
+            # chunk, and there is no model to invent. The system builder injects
+            # one (see _inject_tool_deps); without it, say which half is missing
+            # rather than blaming the store.
             return ToolResult(
                 tool_name="scan_chunks",
-                content="Scan tool not configured (missing store or engine).",
+                content=(
+                    "Scan tool has no inference engine. It reads chunks and asks a "
+                    "model to judge each one, so it needs an engine to run."
+                ),
                 success=False,
             )
 

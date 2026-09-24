@@ -202,9 +202,19 @@ def test_bounded_recovery() -> None:
 
 
 @pytest.mark.real_actions(
-    reason="needs a real implementation; the guards refuse this test without it"
+    reason="runs the agent CLI, which shells out to git through the real "
+    "subprocess.Popen to read the branch; the project it inspects is an empty "
+    "tmp_path, so the state it writes goes there"
 )
-def test_cli_commands(setup_temp_memory_agent: MemoryService) -> None:
+def test_cli_commands(
+    setup_temp_memory_agent: MemoryService, monkeypatch, tmp_path
+) -> None:
+    # The runtime stores project state in <project>/.grandpa/, and with no
+    # registered active project the project is the working directory. Run from the
+    # repository, that wrote into the repository -- and before the hardcoded
+    # "D:\\Grandpa" default was removed from agent/runtime.py, into a directory
+    # outside this checkout altogether.
+    monkeypatch.chdir(tmp_path)
     runner = click.testing.CliRunner()
 
     # 1. Preview

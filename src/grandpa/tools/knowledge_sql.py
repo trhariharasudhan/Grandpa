@@ -62,11 +62,9 @@ class KnowledgeSQLTool(BaseTool):
 
     def execute(self, **params: Any) -> ToolResult:
         if self._store is None:
-            return ToolResult(
-                tool_name="knowledge_sql",
-                content="No knowledge store configured.",
-                success=False,
-            )
+            # See KnowledgeSearchTool.execute: registry-built tools get no store,
+            # so the default is the user's knowledge.db under GRANDPA_HOME.
+            self._store = KnowledgeStore()
 
         query: str = params.get("query", "").strip()
         if not query:

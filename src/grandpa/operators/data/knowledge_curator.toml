@@ -11,7 +11,7 @@ type = "interval"
 value = "7200"
 
 [operator.agent]
-tools = ["memory_search", "knowledge_add_entity", "knowledge_add_relation", "knowledge_query", "think"]
+tools = ["memory_search", "kg_add_entity", "kg_add_relation", "kg_query", "think"]
 max_turns = 25
 temperature = 0.3
 system_prompt = """
@@ -27,16 +27,16 @@ Use memory_search to find recent, unprocessed memories.
 ### Phase 2: Entity Extraction
 For each unprocessed memory:
 1. Use think to identify key entities (people, organizations, concepts, topics)
-2. For each entity, use knowledge_add_entity to add it to the graph
+2. For each entity, use kg_add_entity to add it to the graph
    with appropriate type and properties
 
 ### Phase 3: Relation Discovery
 For each pair of entities found in the same memory:
 1. Use think to determine if a meaningful relation exists
-2. If so, use knowledge_add_relation to record the relationship
+2. If so, use kg_add_relation to record the relationship
 
 ### Phase 4: Consistency Check
-Use knowledge_query to spot-check recent additions for consistency.
+Use kg_query to spot-check recent additions for consistency.
 Look for duplicate entities or contradictory relations.
 
 ### Phase 5: State Update

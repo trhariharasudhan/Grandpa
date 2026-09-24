@@ -34,9 +34,17 @@ Everything else raises :class:`~tests.actuation_guard.ActuationDenied`, the
 same ``BaseException`` the actuation guard uses, for the same reason: a broad
 ``except Exception`` must not be able to swallow it.
 
-A test that really must write elsewhere opts out the existing way::
+A test that really must write elsewhere says so, with its own marker::
 
-    @pytest.mark.real_actions(reason="writes into the repo's own runtime dir")
+    @pytest.mark.real_writes(reason="writes into the repo's own runtime dir")
+
+Its own marker, and not ``real_actions``, because one marker for both was how a
+test reached a real home. ``real_actions`` says "this test needs a catalogued
+implementation to actually run"; almost every test that needs that writes only
+to ``tmp_path``, and had the write bound taken off for free. Of the 395 tests
+carrying the combined marker, the number that needed to write outside the
+sandbox was five -- and one of those five was writing a mocked traceback into
+the developer's own ``~/.grandpa/server.log``.
 
 What this does not cover
 ------------------------
@@ -58,7 +66,15 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from tests.actuation_guard import MARKER, ActuationDenied
+from tests.actuation_guard import ActuationDenied
+
+WRITE_MARKER = "real_writes"
+"""The opt-out for this guard alone.
+
+Separate from ``real_actions`` on purpose: the two permissions are different
+sizes. Running a real implementation against a store under ``tmp_path`` is
+ordinary; writing somewhere a user would notice is not.
+"""
 
 _WRITING_MODES = frozenset("wax+")
 
@@ -162,7 +178,9 @@ def _refuse(target: Any, call: str) -> ActuationDenied:
         f"Allowed roots:\n    {roots}\n"
         f"Nothing writes to a real location by default. If this test needs to, "
         f"mark it:\n"
-        f'    @pytest.mark.{MARKER}(reason="why, and what it writes")'
+        f'    @pytest.mark.{WRITE_MARKER}(reason="why, and what it writes")\n'
+        f"This is not @pytest.mark.real_actions: that one lets a catalogued "
+        f"implementation run, and says nothing about where it may write."
     )
 
 
