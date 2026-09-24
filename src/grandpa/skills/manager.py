@@ -332,4 +332,39 @@ class _NullToolExecutor(ToolExecutor):
         super().__init__(tools=[], bus=None)
 
 
-__all__ = ["SkillManager"]
+def builtin_tool_executor(
+    *,
+    interactive: bool = False,
+    confirm_callback: Optional[Callable[[str], bool]] = None,
+) -> ToolExecutor:
+    """A :class:`ToolExecutor` holding every built-in tool a skill step can name.
+
+    This lives here, next to the manager that consumes it, rather than in the
+    caller: a skill step names a tool, so building the thing that runs those
+    tools is the skills package's business. It also keeps callers -- the CLI --
+    from constructing a ToolExecutor directly, which is what
+    ``tests/kernel/test_direct_executor_baseline.py`` is counting.
+
+    A tool that cannot be constructed is left out rather than raising, because
+    one unbuildable tool must not make every skill unrunnable; a step naming it
+    then fails with "Unknown tool", which names the problem.
+    """
+    from grandpa.core.registry import ToolRegistry
+    from grandpa.tools import load_builtin_tools
+
+    load_builtin_tools()
+    tools: List[BaseTool] = []
+    for name in sorted(ToolRegistry.keys()):
+        try:
+            tools.append(ToolRegistry.create(name))
+        except Exception:  # noqa: BLE001 - an unbuildable tool cannot run anyway
+            logger.debug("Skill tool %s could not be constructed", name)
+    return ToolExecutor(
+        tools,
+        EventBus(),
+        interactive=interactive,
+        confirm_callback=confirm_callback,
+    )
+
+
+__all__ = ["SkillManager", "builtin_tool_executor"]
