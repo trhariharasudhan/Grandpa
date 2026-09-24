@@ -1647,7 +1647,9 @@ class TestChatOllamaUnavailable:
         assert "Traceback" not in result.output
         assert "Chat generation failed" in log_path.read_text(encoding="utf-8")
 
-    def test_non_connection_error_is_not_reported_as_ollama_unavailable(self) -> None:
+    def test_non_connection_error_is_not_reported_as_ollama_unavailable(
+        self, tmp_path
+    ) -> None:
         engine = MagicMock()
         engine.engine_id = "ollama"
         engine.generate.side_effect = RuntimeError("programming bug")
@@ -1659,6 +1661,16 @@ class TestChatOllamaUnavailable:
             patch("grandpa.cli.chat_cmd.load_config", return_value=config),
             patch("grandpa.engine.get_engine", return_value=("ollama", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
+            # Without this the traceback below is appended to the real
+            # ~/.grandpa/server.log: _generation_log_path() is built from
+            # Path.home(), not GRANDPA_HOME, so neither the sandbox nor the
+            # write guard redirects it. The other two tests in this class
+            # already patch it; this one did not, and wrote to the developer's
+            # own machine every time the suite ran.
+            patch(
+                "grandpa.engine.messages._generation_log_path",
+                return_value=tmp_path / "server.log",
+            ),
         ):
             result = CliRunner().invoke(
                 chat,

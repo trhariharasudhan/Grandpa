@@ -69,7 +69,17 @@ def model_load_failure_message(exc: EngineModelLoadError) -> str:
 
 
 def _generation_log_path() -> Path:
-    return Path.home() / ".grandpa" / "server.log"
+    """Where a generation failure is recorded.
+
+    ``grandpa_home()``, not ``Path.home() / ".grandpa"``: the two agree on a
+    real install, but the hard-coded form ignored GRANDPA_HOME, so a test or a
+    sandbox that had moved everything else still wrote its tracebacks into the
+    developer's own log. Found by noticing a mocked RuntimeError in the real
+    ~/.grandpa/server.log after a suite run.
+    """
+    from grandpa.runtime_paths import grandpa_home
+
+    return grandpa_home() / "server.log"
 
 
 def log_generation_exception(exc: BaseException) -> None:
