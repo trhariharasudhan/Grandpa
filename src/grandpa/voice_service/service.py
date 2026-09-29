@@ -195,11 +195,23 @@ def create_app(runtime: VoiceServiceRuntime | None = None) -> FastAPI:
 def _load_f5_model() -> Any:
     from f5_tts.api import F5TTS
 
+    # Same shape as the Whisper cache, and the same fix: passing None here let
+    # F5TTS fall back to the huggingface_hub default under ~/.cache, outside
+    # GRANDPA_HOME, for a model measured in hundreds of megabytes. An explicit
+    # GRANDPA_VOICE_MODEL_CACHE still wins -- that is a choice someone made --
+    # but the default is now inside GRANDPA_HOME rather than in the user's home
+    # cache. Resolved here rather than at import, so GRANDPA_HOME is read after
+    # anything that sets it.
     cache_dir = os.getenv("GRANDPA_VOICE_MODEL_CACHE", "").strip()
+    if not cache_dir:
+        home = Path(
+            os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")
+        ).expanduser()
+        cache_dir = str(home / "models" / "f5-tts")
     return F5TTS(
         model=DEFAULT_F5_MODEL,
         device="cpu",
-        hf_cache_dir=cache_dir or None,
+        hf_cache_dir=cache_dir,
     )
 
 

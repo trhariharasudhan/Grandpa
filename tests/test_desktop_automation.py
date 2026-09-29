@@ -179,11 +179,20 @@ def test_a_refusal_does_not_start_the_cooldown(monkeypatch: pytest.MonkeyPatch) 
 # --- asking exactly when pc_control would --------------------------------------
 
 
-def test_scrolling_does_not_ask(monkeypatch: pytest.MonkeyPatch) -> None:
-    """pc_control excludes scrolling from approval: it cannot activate anything.
+def test_scrolling_asks(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This test used to assert the opposite, on a premise that was wrong.
 
-    Asking anyway looked stricter, and taught a user to answer yes without
-    reading -- which is the opposite of what a prompt is for.
+    It read: "pc_control excludes scrolling from approval: it cannot activate
+    anything", and warned that asking anyway teaches a user to answer yes
+    without reading. The second half is a real cost and still is. The first half
+    is not true on Windows: ``pyautogui.scroll`` emits ``MOUSEEVENTF_WHEEL``,
+    which is delivered to the window *under the cursor* rather than the focused
+    one, and over a combo box, spinner, slider or numeric field a notch changes
+    that control's value. It also moves content beneath fixed coordinates, so a
+    separately approved click at (x, y) no longer lands on what was approved.
+
+    Prompt fatigue is an argument for better prompts, not for actuating
+    silently. See _ALWAYS_CONFIRM in action_layer/catalogue.py.
     """
     import grandpa.desktop.control.automation as automation
 
@@ -198,10 +207,17 @@ def test_scrolling_does_not_ask(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     asked: list[str] = []
 
-    result = execute_spec("scroll|down", confirm_callback=lambda s, _t: asked.append(s))
+    result = execute_spec(
+        "scroll|down", confirm_callback=lambda s, _t: asked.append(s) or True
+    )
 
     assert result.status == "handled"
-    assert asked == []
+    assert len(asked) == 1, f"scrolling ran without asking: {asked}"
+
+
+def test_scrolling_refuses_when_there_is_nobody_to_ask() -> None:
+    """The other half: no callback is a refusal, not a silent scroll."""
+    assert execute_spec("scroll|down").status == "blocked"
 
 
 def test_typing_still_asks_and_refuses_without_anyone_to_ask() -> None:
@@ -279,13 +295,23 @@ def test_click_center_clicks_the_middle_of_the_screen(recorded) -> None:
     assert args["button"] == "left"
 
 
-def test_move_center_does_not_ask(recorded) -> None:
+def test_move_center_asks(recorded) -> None:
+    """Moving the pointer asks too, and for a reason of its own.
+
+    It commits nothing and does not move focus -- Windows focus follows the
+    click, not the pointer. It is gated because ``mouse_scroll`` takes only
+    ``amount`` and has no coordinates: the pointer position *is* the scroll's
+    aim, and this is the only way to set it. Gating the scroll alone leaves a
+    prompt that cannot say where the wheel will land.
+    """
     asked: list[str] = []
 
-    result = execute_spec("move_center", confirm_callback=lambda s, _t: asked.append(s))
+    result = execute_spec(
+        "move_center", confirm_callback=lambda s, _t: asked.append(s) or True
+    )
 
     assert result.status == "handled"
-    assert asked == []
+    assert len(asked) == 1, f"the pointer moved without asking: {asked}"
     assert recorded[0][0] == "mouse_move"
 
 

@@ -15,12 +15,29 @@ tool_name = "think"
 arguments_template = '{"thought": "Identify all functions, classes, and methods in the source code. Determine their inputs, outputs, and edge cases: {source_code}"}'
 output_key = "analysis"
 
+# This step used to interpolate {analysis} -- which carries the whole contents of
+# the file being analysed -- into the `code` argument, behind a single `#`. Two
+# defects, and the first hid the second:
+#
+#   1. `\\n` in a TOML literal string is a backslash followed by an n, and JSON
+#      decoding leaves it that way, so the payload's last line began with a
+#      literal backslash. That is a SyntaxError on every input, which meant
+#      code-test-gen could never succeed no matter what it was pointed at.
+#   2. The `#` only comments out the first line. The analysed file arrives with
+#      real newlines, so from its second line onward the file's own code sat at
+#      top level in the payload -- executable. Fixing (1) alone would have
+#      unmasked (2).
+#
+# So the file's content no longer reaches the interpreter at all. Nothing here
+# needed it: this step prints a fixed string, and `analysis` is already carried
+# to the review step below in its own right. The newline is now a single `\n`,
+# which JSON decodes to a real newline.
 [[skill.steps]]
 tool_name = "code_interpreter"
-arguments_template = '{"code": "# Generate pytest-style unit tests based on the analysis:\\n# {analysis}\\nprint(\"Tests generated successfully\")"}'
+arguments_template = '{"code": "# The analysis step describes the tests; this step only reports.\nprint(\"Tests generated successfully\")"}'
 output_key = "generated_tests"
 
 [[skill.steps]]
 tool_name = "think"
-arguments_template = '{"thought": "Review the generated tests for completeness and correctness. Suggest additional test cases if needed: {generated_tests}"}'
+arguments_template = '{"thought": "Review the proposed tests for completeness and correctness. Suggest additional test cases if needed. Analysis: {analysis}. Generation step: {generated_tests}"}'
 output_key = "review"

@@ -134,6 +134,18 @@ PYAUTOGUI_NAMES = (
     "scroll",
     "hscroll",
     "vscroll",
+    # The one entry in this whole file that does NOT actuate, kept deliberately
+    # and labelled so it is not mistaken for one. pyautogui.screenshot() reads
+    # the screen and returns an image; it changes nothing. It is denied for a
+    # different reason: it captures whatever is on the user's display, which is
+    # theirs, and given a filename it also writes the capture to disk. So it is
+    # a privacy read and a write, not an actuation.
+    #
+    # Every other name here was checked against the same question -- "what does
+    # it actuate?" -- after two mistakes in this file denied calls that actuate
+    # nothing (sounddevice.stop halts, sounddevice.wait blocks, pyttsx3.init
+    # reads the installed voices). The rule that came out of it: if the answer is
+    # "it leads to something that actuates", deny that instead, one level down.
     "screenshot",
 )
 USER32_NAMES = (
@@ -159,6 +171,49 @@ MODULE_NAMES = {
     "webbrowser": ("open", "open_new", "open_new_tab"),
     "subprocess": ("Popen",),
     "os": ("startfile", "system"),
+}
+# Audio in and out. Voice is the one subsystem whose actuation is not a
+# catalogued action: nothing in the catalogue says "open the microphone" or
+# "speak", so the enumeration above covers none of it, and a voice test could
+# record from a real microphone and make the machine talk out loud.
+#
+# Optional packages, and importing sounddevice can raise more than ImportError
+# when PortAudio is missing, so the loader below is deliberately broad.
+#
+# The three TTS backends -- pyttsx3, grandpa_voice and kokoro -- converge on
+# sounddevice.play for the audible part (speech_output._play_audio_bytes), so
+# denying play covers all three. pyttsx3 is the exception: it drives SAPI
+# in-process and never touches sounddevice, so its engine is denied separately
+# in AUDIO_CLASS_NAMES below.
+AUDIO_MODULE_NAMES = {
+    "sounddevice": (
+        "play",  # speech_output.py:331, audio_diagnostics.py:128
+        "rec",  # jarvis/voice_input.py:84
+        "playrec",
+        "InputStream",  # voice/microphone.py:156
+        "OutputStream",
+        "RawInputStream",
+        "RawOutputStream",
+        "Stream",
+        "RawStream",
+    ),
+    # Deliberately not denied: `stop` and `wait`. Neither opens a device nor
+    # emits a sound -- stop() halts playback and wait() blocks until it ends, so
+    # denying them is the wrong polarity for a guard whose purpose is silence.
+    # They were in this list for one run, and it cost the interrupt path its
+    # tests: SpeechOutputEngine.stop() calls sd.stop() unconditionally, so every
+    # test that merely stopped the engine was denied, including a dry run that
+    # had never made a sound. A guard that blocks the off switch is not stricter.
+}
+# pyttsx3 is denied at the engine's methods, not at ``pyttsx3.init``. init()
+# builds the SAPI driver and makes no sound, and it is also the only route to
+# getProperty("voices") -- which ``grandpa voice diagnose`` and
+# SpeechOutputEngine.diagnostics() both need. Denying init blocked device
+# enumeration, which is reading, and took `voice diagnose` down with it.
+# say() queues and runAndWait() emits; _speak_with_pyttsx3 calls both, so either
+# catches the product's speech path.
+AUDIO_CLASS_NAMES = {
+    ("pyttsx3.engine", "Engine"): ("say", "runAndWait"),
 }
 GRANDPA_NAMES = {
     "grandpa.windows_window_control": (
@@ -197,6 +252,26 @@ def primitive_targets() -> list[tuple[object, str, str]]:
             (module, name, f"{module_name}.{name}")
             for name in attributes
             if hasattr(module, name)
+        ]
+    for module_name, attributes in AUDIO_MODULE_NAMES.items():
+        try:
+            module = importlib.import_module(module_name)
+        except BaseException:  # noqa: BLE001 - PortAudio failures are not ImportError
+            continue
+        found += [
+            (module, name, f"{module_name}.{name}")
+            for name in attributes
+            if hasattr(module, name)
+        ]
+    for (module_name, class_name), attributes in AUDIO_CLASS_NAMES.items():
+        try:
+            owner = getattr(importlib.import_module(module_name), class_name)
+        except BaseException:  # noqa: BLE001 - optional, and not only ImportError
+            continue
+        found += [
+            (owner, name, f"{class_name}.{name}")
+            for name in attributes
+            if hasattr(owner, name)
         ]
     for module_name, attributes in GRANDPA_NAMES.items():
         try:

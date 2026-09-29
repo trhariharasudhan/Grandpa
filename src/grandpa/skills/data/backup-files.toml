@@ -5,14 +5,42 @@ version = "0.1.0"
 author = "grandpa"
 provenance = "bundled"
 
+# This step used to run `date +%Y%m%d_%H%M%S`, which is the single most dangerous
+# line that shipped in this package. shell_exec runs subprocess.run(shell=True),
+# and on Windows that is cmd.exe, where `date` is not the GNU program that prints
+# a timestamp -- it is the built-in that SETS THE SYSTEM CLOCK. Given an argument
+# it does not understand it prints "The system cannot accept the date entered."
+# and then prompts "Enter the new date: (dd-mm-yy)", waiting on stdin. It was
+# only ever a refused argument and an unanswered prompt standing between a
+# bundled skill and the machine's clock.
+#
+# Get-Date is the Windows-native way to read the clock and cannot set it.
+#
+# It is also now one step rather than two, which fixes a second defect the first
+# one was hiding. The timestamp used to be its own step, and `{timestamp}` then
+# interpolated shell_exec's *formatted result* -- not its stdout -- into the next
+# command line, so the archive name came out as
+#     backup_=== STDOUT ===\n20260929_213537\n.tar.gz
+# and the embedded newline split tar's arguments, which then refused to create an
+# empty archive. That was equally broken before, with `date`'s error text pasted
+# in instead of a timestamp. Computing the stamp inside the same command removes
+# the class of problem: no formatted tool result is ever spliced into a shell
+# command line.
+#
+# tar is gone too, and not because it is missing. Windows 10 ships bsdtar and a
+# machine with Git Bash resolves GNU tar -- but GNU tar reads an archive path
+# containing a colon as a *remote host* spec, so a perfectly ordinary Windows path
+# fails with "tar (child): Cannot connect to C: resolve failed". `--force-local`
+# fixes GNU tar and is rejected by bsdtar, so there is no one spelling that works
+# on both. Every path in this product has a drive letter, so tar is the wrong tool
+# here regardless of which one is installed.
+#
+# Compress-Archive is in Windows PowerShell 5.1 and later, needs nothing external,
+# and has no opinion about colons. The archive is a .zip rather than a .tar.gz;
+# the skill promises "a timestamped backup archive" and does not name a format.
 [[skill.steps]]
 tool_name = "shell_exec"
-arguments_template = '{"command": "date +%Y%m%d_%H%M%S"}'
-output_key = "timestamp"
-
-[[skill.steps]]
-tool_name = "shell_exec"
-arguments_template = '{"command": "tar czf {destination}/backup_{timestamp}.tar.gz -C {source} ."}'
+arguments_template = '''{"command": "powershell -NoProfile -Command \"$stamp = Get-Date -Format yyyyMMdd_HHmmss; $archive = Join-Path '{destination}' ('backup_' + $stamp + '.zip'); Compress-Archive -Path (Join-Path '{source}' '*') -DestinationPath $archive -Force; 'Created ' + $archive\""}'''
 output_key = "archive_result"
 
 [[skill.steps]]

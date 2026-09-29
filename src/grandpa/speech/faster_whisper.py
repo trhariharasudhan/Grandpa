@@ -34,6 +34,26 @@ except ImportError:
     WhisperModel = None  # type: ignore[assignment, misc]
 
 
+def model_cache_dir() -> str:
+    """Where Whisper model weights are downloaded and cached.
+
+    Built without ``download_root``, ``WhisperModel`` falls back to the
+    huggingface_hub default -- ``~/.cache/huggingface`` -- which is outside
+    ``GRANDPA_HOME``. That put a several-hundred-megabyte download in a real user
+    directory on first use, and made the write guard the only thing standing
+    between the test suite and the same download: a guard that a
+    ``real_writes`` marker is meant to be able to lift, at which point the
+    download lands in the developer's own home.
+
+    Resolving it here, from ``GRANDPA_HOME``, fixes it by construction instead.
+    Read at call time rather than at import, for the reason recorded on
+    ``config._in_config_dir``: an import-time constant is evaluated before
+    anything has set ``GRANDPA_HOME``.
+    """
+    home = Path(os.environ.get("GRANDPA_HOME", Path.home() / ".grandpa")).expanduser()
+    return str(home / "models" / "faster-whisper")
+
+
 @SpeechRegistry.register("faster-whisper")
 class FasterWhisperBackend(SpeechBackend):
     """Local speech-to-text using Faster-Whisper (CTranslate2)."""
@@ -69,6 +89,7 @@ class FasterWhisperBackend(SpeechBackend):
                         self._model_size,
                         device=self._device,
                         compute_type=compute_type,
+                        download_root=model_cache_dir(),
                     )
                     self._compute_type = compute_type
                     break

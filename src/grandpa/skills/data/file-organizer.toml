@@ -5,9 +5,17 @@ version = "0.1.0"
 author = "grandpa"
 provenance = "bundled"
 
+# Was `find {directory} -maxdepth 1 -type f -exec file --mime-type {} \;`. Two
+# POSIX-only programs: Windows `find` is a string search tool, and `file` does not
+# exist. It failed with "find: missing argument to `-exec'" on this machine and
+# would have failed differently on one without Git Bash.
+#
+# Windows has no mime-type oracle, and the extension is what Windows itself uses
+# to decide a file's type, so that is what this reports. Name, extension and size
+# is strictly more than `file --mime-type` gave the next step.
 [[skill.steps]]
 tool_name = "shell_exec"
-arguments_template = '{"command": "find {directory} -maxdepth 1 -type f -exec file --mime-type {} \\;"}'
+arguments_template = '''{"command": "powershell -NoProfile -Command \"Get-ChildItem -LiteralPath '{directory}' -File | ForEach-Object { $_.Name + ' type=' + $_.Extension + ' bytes=' + $_.Length }\""}'''
 output_key = "file_listing"
 
 [[skill.steps]]
@@ -15,9 +23,12 @@ tool_name = "think"
 arguments_template = '{"thought": "Analyze the file types and group them into categories (images, documents, code, archives, media, other): {file_listing}"}'
 output_key = "organization_plan"
 
+# Was `mkdir -p a b c ...`. cmd.exe's mkdir creates intermediate directories
+# anyway, but it has no -p switch, so it would have created a directory literally
+# named "-p" alongside the rest.
 [[skill.steps]]
 tool_name = "shell_exec"
-arguments_template = '{"command": "mkdir -p {directory}/images {directory}/documents {directory}/code {directory}/archives {directory}/media {directory}/other"}'
+arguments_template = '''{"command": "powershell -NoProfile -Command \"foreach ($name in 'images','documents','code','archives','media','other') { New-Item -ItemType Directory -Force -Path (Join-Path '{directory}' $name) | Out-Null }; Get-ChildItem -LiteralPath '{directory}' -Directory | ForEach-Object { $_.Name }\""}'''
 output_key = "dirs_created"
 
 [[skill.steps]]

@@ -155,10 +155,22 @@ APPROVAL_REQUIRED_ACTIONS = {
     # its running process with it. close_app is close_window renamed.
     "close_app",
     "close_window",
+    # Every synthetic-input action, which is the same set as
+    # INLINE_CONSENT_ACTIONS below. The two disagreed: all seven were listed as
+    # needing consent at the moment they run, while only four were declared to
+    # need approval at all. That mattered because this set is not only read here
+    # -- desktop/kernel/risk.py:requires_approval consults it *without* the
+    # inline-consent check, so on the skill and kernel paths mouse_move,
+    # mouse_scroll and desktop_navigate were gated by nothing. Here the
+    # INLINE_CONSENT_ACTIONS branch runs first and blocks all seven, so this
+    # addition changes no behaviour on this path; it makes the declaration true.
     "keyboard_type",
     "keyboard_hotkey",
     "mouse_click",
     "mouse_drag",
+    "mouse_move",
+    "mouse_scroll",
+    "desktop_navigate",
     "browser_open",
     "browser_search",
 }

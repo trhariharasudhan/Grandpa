@@ -23,6 +23,37 @@ _DEFAULT_TIMEOUT = 30
 # Environment variables always passed through
 _BASE_ENV_KEYS = ("PATH", "HOME", "USER", "LANG", "TERM")
 
+# The same, for Windows -- where the list above is not merely incomplete but the
+# wrong shape. ``shell=True`` on Windows is cmd.exe, and these are the variables
+# Windows itself uses to find its own components. Without SystemRoot,
+# ``powershell.exe`` cannot load the CLR and dies with "Internal Windows
+# PowerShell error. Loading managed Windows PowerShell failed with error
+# 8009001d" -- which is how the bundled skills came to use POSIX tools instead:
+# PowerShell looked broken, so `date`, `find` and `md5sum` looked like the
+# options. SystemRoot alone is what PowerShell needs; the rest are here because
+# omitting them makes programs misbehave rather than fail cleanly.
+#
+# Every one of these is a location pointer, not a secret. PATH, which was always
+# passed, tells a command far more than any of them. Nothing that carries
+# credentials or user content is added -- a caller wanting more still has to name
+# it in ``env_passthrough``.
+_WINDOWS_ENV_KEYS = (
+    "SystemRoot",  # required: powershell.exe cannot start without it
+    "windir",  # the same path under the name older programs read
+    "ComSpec",  # which shell shell=True actually launches
+    "PATHEXT",  # how cmd.exe resolves an extensionless command
+    "SystemDrive",
+    "TEMP",
+    "TMP",
+)
+
+
+def _env_keys() -> tuple[str, ...]:
+    """The allowlist for this platform, read at call time rather than at import."""
+    if os.name == "nt":
+        return _BASE_ENV_KEYS + _WINDOWS_ENV_KEYS
+    return _BASE_ENV_KEYS
+
 
 @ToolRegistry.register("shell_exec")
 class ShellExecTool(BaseTool):
@@ -112,7 +143,7 @@ class ShellExecTool(BaseTool):
 
         # Build sanitised environment
         env: dict[str, str] = {}
-        for key in _BASE_ENV_KEYS:
+        for key in _env_keys():
             val = os.environ.get(key)
             if val is not None:
                 env[key] = val

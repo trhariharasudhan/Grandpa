@@ -5,9 +5,22 @@ version = "0.1.0"
 author = "grandpa"
 provenance = "bundled"
 
+# Was `find {directory} -type f -exec md5sum {} \; | sort`. shell_exec runs
+# subprocess.run(shell=True), so on Windows this went to cmd.exe, where `find` is
+# find.exe -- a string search tool that takes none of those switches -- and
+# md5sum does not exist at all. On a developer machine with Git Bash on PATH it
+# resolved to GNU find instead and still failed, with
+# "find: missing argument to `-exec'", because cmd.exe consumes the backslash
+# before the semicolon. Either way it produced nothing, and the skill reported
+# Success and handed the error text to the next step as if it were checksums.
+#
+# Get-FileHash is the Windows-native equivalent and needs no external tools. The
+# grouping is done here rather than left to the model, so the next step receives
+# actual duplicate groups. The path is single-quoted for PowerShell, which is why
+# this template is a TOML multi-line literal string.
 [[skill.steps]]
 tool_name = "shell_exec"
-arguments_template = '{"command": "find {directory} -type f -exec md5sum {} \\; | sort"}'
+arguments_template = '''{"command": "powershell -NoProfile -Command \"Get-ChildItem -LiteralPath '{directory}' -Recurse -File | Get-FileHash -Algorithm MD5 | Group-Object Hash | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Name + ' ' + ($_.Group.Path -join ' | ') }\""}'''
 output_key = "checksums"
 
 [[skill.steps]]

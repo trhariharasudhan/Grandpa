@@ -140,12 +140,43 @@ _ALWAYS_CONFIRM = frozenset(
     {
         # Mirrors pc_control.APPROVAL_REQUIRED_ACTIONS. Synthetic input is
         # arbitrary code execution in practice, so it is gated on approval
-        # rather than by inflating its tier; mouse_move and mouse_scroll are
-        # deliberately not in the set, because neither activates anything.
+        # rather than by inflating its tier.
+        #
+        # Every action implemented by the automation service is here, and
+        # test_automation_actions_all_confirm.py enumerates the catalogue to keep
+        # it that way. Three used to be missing on the grounds that they
+        # "activate nothing", and each was wrong on its own terms:
+        #
+        # * desktop_navigate is pyautogui.press(direction) -- an arrow
+        #   keystroke. It moves the selection, which is exactly the state the
+        #   next keystroke acts on, so an already-approved Enter afterwards
+        #   activates a different thing.
+        # * mouse_scroll emits MOUSEEVENTF_WHEEL, which Windows delivers to the
+        #   window under the cursor rather than the focused one. Over a combo
+        #   box, spinner, slider or numeric field a notch *changes the value*.
+        #   It also moves content beneath fixed coordinates, so a separately
+        #   approved click at (x, y) no longer lands on what was approved.
+        # * mouse_move commits nothing by itself and does not move focus --
+        #   Windows focus follows the click, not the pointer. It is here because
+        #   mouse_scroll takes only `amount` and has no coordinates: the pointer
+        #   position *is* the scroll's aim, and mouse_move is the only way to set
+        #   it. Gating the scroll alone leaves a prompt that cannot say where the
+        #   wheel will land. The two are one consent unit in two rows.
+        #
+        # This matters because AUTOMATION_IMPLEMENTATION names
+        # AutomationControlService.execute, which checks the foreground window
+        # and a cooldown but never confirmation, and the executor skips its own
+        # gate when requires_confirmation is False. automation.execute_spec does
+        # refuse a caller that cannot be asked, but that guard is on the phrase
+        # path only -- it is a different function, and the action layer does not
+        # go through it.
         "keyboard_type",
         "keyboard_hotkey",
         "mouse_click",
         "mouse_drag",
+        "mouse_move",
+        "mouse_scroll",
+        "desktop_navigate",
         # Closing ends something the user was using. WM_CLOSE lets most
         # applications ask about unsaved work, but not all do: a console
         # window takes its running process with it, and a model chose the
@@ -1048,7 +1079,9 @@ _INPUT_ACTIONS: tuple[ActionSpec, ...] = (
                 },
             }
         ),
-        notes="Not on the approval list: moving the pointer activates nothing.",
+        notes="On the approval list. Moving the pointer commits nothing and does "
+        "not move focus, but it is the only way to aim mouse_scroll, which takes "
+        "no coordinates and can change a control's value.",
     ),
     _spec(
         "mouse_click",
@@ -1075,7 +1108,9 @@ _INPUT_ACTIONS: tuple[ActionSpec, ...] = (
         "Scroll the wheel at the pointer's current position.",
         _AUTOMATION,
         _schema({"amount": _integer("Notches: positive scrolls up.")}, ("amount",)),
-        notes="Not on the approval list: scrolling activates nothing.",
+        notes="On the approval list. The wheel goes to the window under the "
+        "cursor, and over a combo box, spinner, slider or numeric field a notch "
+        "changes that control's value.",
     ),
     _spec(
         "mouse_drag",
@@ -1114,9 +1149,11 @@ _INPUT_ACTIONS: tuple[ActionSpec, ...] = (
             },
             ("direction",),
         ),
-        notes="Implemented, but unreachable today: pc_control._execute only "
-        "routes keyboard_* and mouse_* to the automation service, so this "
-        "action falls through to 'unknown_action_type'.",
+        notes="An arrow keystroke (pyautogui.press), so it is on the approval "
+        "list with the other keyboard actions. Unreachable from pc_control "
+        "today: pc_control._execute only routes keyboard_* and mouse_* to the "
+        "automation service, so that path falls through to "
+        "'unknown_action_type'. The action layer does reach it.",
     ),
 )
 

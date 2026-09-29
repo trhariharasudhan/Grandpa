@@ -192,6 +192,15 @@ def run(skill_name: str, arg: tuple[str, ...]) -> None:
     if result.step_results:
         console.print(result.step_results[-1].content)
 
+    if not result.success:
+        # A failed run used to exit 0, so `grandpa skill run ... && next-thing`
+        # carried on and any script driving skills read success. The word
+        # "Failed" on stdout is not a status a caller can act on. Raised after
+        # the step output is printed, so the reason is still shown -- and
+        # matching the agent commands, which already exit 1 (agent_cmd.py:46,
+        # agent_run_cmd.py:81).
+        raise SystemExit(1)
+
 
 @skill.command("remove")
 @click.argument("skill_name")

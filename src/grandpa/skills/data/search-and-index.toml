@@ -5,9 +5,14 @@ version = "0.1.0"
 author = "grandpa"
 provenance = "bundled"
 
+# Was `find {directory} -type f \( -name "*.txt" ... \) | head -50`. POSIX find
+# plus `head`, neither of which behaves this way under cmd.exe -- Windows `find`
+# is a string search tool and `head` does not exist. It returned nothing, and the
+# skill reported Success with "No results found.", which reads as "the directory
+# has no documents" rather than "the command could not run".
 [[skill.steps]]
 tool_name = "shell_exec"
-arguments_template = '{"command": "find {directory} -type f \\( -name \"*.txt\" -o -name \"*.md\" -o -name \"*.pdf\" \\) | head -50"}'
+arguments_template = '''{"command": "powershell -NoProfile -Command \"Get-ChildItem -LiteralPath '{directory}' -Recurse -File | Where-Object { $_.Extension -in '.txt','.md','.pdf' } | Select-Object -First 50 -ExpandProperty FullName\""}'''
 output_key = "found_files"
 
 [[skill.steps]]
