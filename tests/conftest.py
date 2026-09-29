@@ -451,3 +451,50 @@ from tests.verification_plugin import (  # noqa: E402
 )
 
 __all__ = ["pytest_runtest_logreport", "pytest_sessionfinish"]
+
+
+# ---------------------------------------------------------------------------
+# Which test left a sqlite connection open
+# ---------------------------------------------------------------------------
+# Off unless GRANDPA_TRACK_SQLITE=1. See tests/sqlite_tracker.py for the three
+# stalls this exists to explain -- one of which came with a stack dump showing a
+# test blocked on `conn.execute` waiting for a lock somebody else held.
+from tests import sqlite_tracker  # noqa: E402
+
+sqlite_tracker.install()
+
+
+@pytest.fixture(autouse=True)
+def _track_sqlite_connections(request):
+    """Attribute every connection to the test that opened it.
+
+    Reports rather than fails: the first run of this found leaks in code that
+    has always leaked them, and turning the suite red on discovery would have
+    buried the stall this is for.
+    """
+    if os.environ.get(sqlite_tracker.ENV_VAR) != "1":
+        yield
+        return
+    nodeid = request.node.nodeid
+    # Anything mid-transaction before this test has even started belongs to
+    # somebody else, and is what will block this test if it tries to write.
+    inherited = sqlite_tracker.TRACKER.in_transaction()
+    if inherited:
+        print(
+            f"\n[sqlite] {nodeid} starts with {len(inherited)} connection(s) "
+            f"already in a transaction, held by earlier tests:\n"
+            + sqlite_tracker.describe(inherited)
+        )
+    sqlite_tracker.TRACKER.current_nodeid = nodeid
+    yield
+    sqlite_tracker.TRACKER.forget_dead()
+    leaked = sqlite_tracker.TRACKER.open_for(nodeid)
+    if leaked:
+        for record in leaked:
+            sqlite_tracker.TRACKER.leaks.append(
+                (nodeid, record.database, record.opened_at)
+            )
+        print(
+            f"\n[sqlite] {nodeid} left {len(leaked)} connection(s) open:\n"
+            + sqlite_tracker.describe(leaked)
+        )

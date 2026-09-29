@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import concurrent.futures
 import json
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -64,6 +65,24 @@ class BaseTool(ABC):
     can fall back to something sensible -- the knowledge tools open the store
     under GRANDPA_HOME when given none -- declares nothing here, because a
     default is not a dependency.
+    """
+
+    abandon_on_timeout: bool = False
+    """May a call that overruns its budget be left running and its result dropped?
+
+    False by default, and the default is the safe one: abandoning work that holds
+    shared state wedges whatever runs next. That is not hypothetical here -- an
+    abandoned ``repl`` execution carried on running ``exec()``, kept hold of the
+    memory database, and the next test blocked on sqlite until pytest killed it
+    at 300 seconds.
+
+    A tool may set this to True when it only reads, holds no lock, no cursor, no
+    file handle and no process, so that dropping it mid-flight leaves nothing
+    half-done. One inference call over HTTP qualifies. Anything that writes, runs
+    code, or touches a store does not.
+
+    Without it, the executor waits for the call and reports honestly how long it
+    actually waited -- which is slower, and true.
     """
 
     @property
@@ -245,39 +264,79 @@ class ToolExecutor:
                 {"tool": tool_call.name, "arguments": params},
             )
 
-        # Execute with timeout.
+        # Execute with timeout, and mean it -- as far as the tool allows.
         #
-        # KNOWN DEFECT, measured and left as it is: this does not enforce the
-        # timeout. `future.result(timeout=...)` raising does not stop the work,
-        # and the pool's context manager calls shutdown(wait=True) on the way
-        # out -- so the executor waits for the whole call and then reports a
-        # timeout it never applied. A 0.5s budget against a 6s call returns
-        # after 6.0s saying it timed out at 0.5s. See
-        # tests/tools/test_tool_timeout_actually_stops_waiting.py, which pins it.
+        # The budget used to be decorative: `future.result(timeout=...)` raising
+        # does not stop the work, and a ThreadPoolExecutor's context manager
+        # calls shutdown(wait=True) on the way out, so the executor waited for
+        # the whole call and then reported a timeout it never applied. A 0.5s
+        # budget against a 4s call returned after 4s claiming 0.5.
         #
-        # Abandoning the call instead was tried and reverted in the same change.
-        # It works for a tool that only reads, and breaks one that does not: an
-        # abandoned `repl` execution carried on running, held the memory
-        # database, and a later test blocked on sqlite until pytest killed it at
-        # 300s. Abandonment is only safe for tools that hold no shared state, so
-        # it needs each tool to say which it is -- the same shape as
-        # BaseTool.requires -- and that is its own change, not a footnote to a
-        # timeout number.
+        # Abandoning every call fixes that and breaks something worse: an
+        # abandoned `repl` execution kept running `exec()`, held the memory
+        # database, and the next test blocked on sqlite until pytest killed it at
+        # 300s. So the tool says whether it is safe to abandon
+        # (BaseTool.abandon_on_timeout), the default is no, and a tool that holds
+        # shared state is waited for with the wait reported honestly rather than
+        # described as a timeout that did not happen.
         timeout = tool.spec.timeout_seconds or self._default_timeout
+        abandonable = bool(getattr(tool, "abandon_on_timeout", False))
         t0 = time.time()
+        outcome: Dict[str, Any] = {}
+
+        def _run_tool() -> None:
+            try:
+                outcome["result"] = tool.execute(**params)
+            except BaseException as exc:  # noqa: BLE001 - re-raised in the caller
+                # BaseException, not Exception: ActuationDenied derives from it on
+                # purpose so no broad handler can turn a denial into a friendly
+                # sentence. concurrent.futures carried it across for us; this has
+                # to do it by hand.
+                outcome["error"] = exc
+
+        worker = threading.Thread(
+            target=_run_tool, name=f"tool-{tool_call.name}", daemon=abandonable
+        )
+        worker.start()
+        worker.join(timeout)
+        overran = worker.is_alive()
+        if overran and not abandonable:
+            # Cannot be dropped: wait for it, and say how long it really took.
+            worker.join()
+
         try:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(tool.execute, **params)
-                result = future.result(timeout=timeout)
+            if overran:
+                raise concurrent.futures.TimeoutError
+            error = outcome.get("error")
+            if error is not None:
+                raise error
+            result = outcome["result"]
         except concurrent.futures.TimeoutError:
             if self._bus:
                 self._bus.publish(
                     EventType.TOOL_TIMEOUT,
                     {"tool": tool_call.name, "timeout": timeout},
                 )
+            waited = time.time() - t0
+            if abandonable:
+                content = (
+                    f"Tool '{tool_call.name}' timed out after {timeout:.0f}s and "
+                    f"was abandoned."
+                )
+            else:
+                # Still leads with "timed out": that phrase is the contract every
+                # caller and test reads a timeout by, and the budget really was
+                # exceeded. What follows is the part that used to be a lie --
+                # the call was not stopped, and the sentence now says so and for
+                # how long, rather than implying the budget was enforced.
+                content = (
+                    f"Tool '{tool_call.name}' timed out after {timeout:.0f}s. It "
+                    f"could not be abandoned, so the call ran to completion: "
+                    f"{waited:.0f}s. Its result is discarded."
+                )
             result = ToolResult(
                 tool_name=tool_call.name,
-                content=(f"Tool '{tool_call.name}' timed out after {timeout:.0f}s."),
+                content=content,
                 success=False,
             )
         except Exception as exc:

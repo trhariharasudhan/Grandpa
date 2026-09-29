@@ -18,6 +18,11 @@ class LLMTool(BaseTool):
     tool_id = "llm"
     requires = ("engine", "model")
 
+    # One HTTP request to an inference engine: no lock, no cursor, no file
+    # handle, no subprocess. Dropping it mid-flight leaves nothing half-done on
+    # this side, and the engine's own request simply completes unread.
+    abandon_on_timeout = True
+
     def __init__(
         self,
         engine: Optional[InferenceEngine] = None,

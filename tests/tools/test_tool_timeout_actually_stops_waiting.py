@@ -26,13 +26,16 @@ test waiting in ``MemoryIntelligenceStore.sync()``.
 
 So abandonment is only safe for a tool that holds no shared state, and knowing
 which is which means each tool saying so -- the same shape as
-``BaseTool.requires``. That is its own change.
+``BaseTool.requires``. That is what ``BaseTool.abandon_on_timeout`` now is: a
+declaration, defaulting to False, that a tool opts out of with a reason. Only
+``llm`` has opted in so far; ``scan_chunks``, which spends its budget in the same
+kind of model call, has not, because it holds a live sqlite connection across it.
 
-The two tests that describe the enforced behaviour are therefore ``xfail``, and
-strict: they fail today on purpose, and the day someone makes the timeout real
-they will pass, the strict xfail will turn into a failure, and whoever did it has
-to come here and say so. The alternative -- deleting them -- would leave a
-product whose every tool timeout is decorative and nothing saying so.
+These tests were ``xfail(strict=True)`` while that was unbuilt. They are now
+plain tests, in both directions: a tool that may be abandoned returns at its
+budget and leaves its worker running on a daemon thread, and a tool that may not
+is waited out, says so in the result rather than claiming a timeout it did not
+apply, and leaves nothing in flight to wedge the next caller.
 """
 
 from __future__ import annotations
@@ -53,9 +56,12 @@ class _Blocking(BaseTool):
 
     tool_id = "blocking_tool"
 
-    def __init__(self, seconds: float, budget: float) -> None:
+    def __init__(
+        self, seconds: float, budget: float, *, abandonable: bool = True
+    ) -> None:
         self._seconds = seconds
         self._budget = budget
+        self.abandon_on_timeout = abandonable
         self.finished = threading.Event()
 
     @property
@@ -72,22 +78,18 @@ class _Blocking(BaseTool):
         return ToolResult(tool_name="blocking_tool", content="late", success=True)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="the executor waits for the whole call and then reports a timeout it "
-    "never applied; abandoning it is unsafe until tools declare whether they "
-    "hold shared state -- see this module's docstring",
-)
 def test_the_executor_returns_at_the_budget_not_at_the_end() -> None:
-    """The defect, stated as a stopwatch.
+    """The fix, stated as a stopwatch.
 
-    Budget 0.5s, a call that takes 6s. This returns after ~6 seconds with a
-    message claiming it timed out after 0.5.
+    Budget 0.5s against a call that takes 4s, on a tool that may be abandoned.
+    It must return at the budget. Before this change it returned after the full
+    4 seconds with a message claiming it had timed out at 0.5.
     """
-    # Kept small on purpose: because the executor waits for the whole call, this
-    # test's cost *is* the sleep, and it is paid on every run of the suite. A
-    # first draft slept for 6 and 30 seconds and taxed the suite 36 seconds to
-    # describe a defect.
+    # Kept small on purpose. While the executor waited for every call, this
+    # test's cost *was* the sleep, paid on every run of the suite: a first draft
+    # slept for 6 and 30 seconds and taxed the suite 36 seconds to describe a
+    # defect. The abandonable case no longer pays it, but the non-abandonable
+    # tests below still do, so the sleeps stay short.
     tool = _Blocking(seconds=4.0, budget=0.5)
     executor = ToolExecutor([tool])
 
@@ -106,15 +108,10 @@ def test_the_executor_returns_at_the_budget_not_at_the_end() -> None:
     assert not tool.finished.is_set()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="nothing is abandoned today, so there is no abandoned worker to find; "
-    "see this module's docstring for why abandonment was reverted",
-)
 def test_the_abandoned_worker_cannot_hold_the_process_open() -> None:
     """A non-daemon worker would be joined at interpreter exit, so the wait moves."""
-    # Two seconds, not thirty: see the note in the test above. The executor waits
-    # for the call either way, so the sleep is what the suite pays.
+    # Two seconds, not thirty: see the note in the test above. This tool is
+    # abandonable, so the sleep outlives the test rather than being waited for.
     tool = _Blocking(seconds=2.0, budget=0.3)
     executor = ToolExecutor([tool])
 
@@ -130,6 +127,51 @@ def test_the_abandoned_worker_cannot_hold_the_process_open() -> None:
         "an abandoned tool call is on a non-daemon thread, so Python will wait "
         "for it at exit and the timeout is still not a timeout"
     )
+
+
+def test_a_tool_that_cannot_be_abandoned_is_waited_for_and_says_so() -> None:
+    """The other half of the deal, and the reason the default is False.
+
+    A tool holding shared state cannot be dropped: the abandoned `repl`
+    execution that kept running `exec()` held the memory database and wedged the
+    next test. So it is waited for -- and the message says what actually
+    happened rather than claiming a timeout that was not applied.
+    """
+    tool = _Blocking(seconds=2.0, budget=0.3, abandonable=False)
+    executor = ToolExecutor([tool])
+
+    started = time.time()
+    result = executor.execute(ToolCall(id="1", name="blocking_tool", arguments="{}"))
+    elapsed = time.time() - started
+
+    assert result.success is False
+    assert "could not be abandoned" in result.content
+    assert "ran to completion" in result.content
+    # Waited for the whole call, and the call finished before we returned --
+    # which is the property that keeps the next caller unwedged.
+    assert elapsed >= 1.8, elapsed
+    assert tool.finished.is_set(), (
+        "returned before the call finished, so its work is still in flight"
+    )
+
+
+def test_a_non_abandonable_tool_does_not_wedge_the_next_call() -> None:
+    """What the repl/sqlite stall looked like, asserted as a sequence.
+
+    The first call overruns and is waited out; the second must then run at its
+    own pace rather than queueing behind live work from the first.
+    """
+    slow = _Blocking(seconds=1.5, budget=0.2, abandonable=False)
+    executor = ToolExecutor([slow])
+    executor.execute(ToolCall(id="1", name="blocking_tool", arguments="{}"))
+
+    started = time.time()
+    again = executor.execute(ToolCall(id="2", name="blocking_tool", arguments="{}"))
+    elapsed = time.time() - started
+
+    assert again.success is False
+    # The second call costs its own duration, not its own plus the first's.
+    assert elapsed < 3.0, elapsed
 
 
 def test_a_fast_tool_still_returns_its_own_result() -> None:

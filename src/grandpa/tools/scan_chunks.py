@@ -29,6 +29,13 @@ class ScanChunksTool(BaseTool):
     # a model it cannot invent.
     requires = ("engine", "model")
 
+    # Deliberately NOT abandon_on_timeout, though like `llm` it spends its whole
+    # budget inside one model call. It interleaves those calls with reads on a
+    # live sqlite connection it holds for the duration (`_store._conn.execute`),
+    # and an abandoned worker goes on holding it. That is the exact shape that
+    # wedged `tests/security/test_agent_plan_cannot_be_named_into_a_write.py` in
+    # `MemoryIntelligenceStore.sync()` for 300 seconds. See BaseTool.abandon_on_timeout.
+
     def __init__(
         self,
         store: Optional[KnowledgeStore] = None,
