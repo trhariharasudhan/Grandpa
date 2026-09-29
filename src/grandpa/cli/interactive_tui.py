@@ -20,7 +20,17 @@ from grandpa.core.config import DEFAULT_CONFIG_PATH, GrandpaConfig
 from grandpa.core.types import Message, Role
 
 TUI_PROMPT = user_prompt()
-TUI_HISTORY_PATH = Path.home() / ".grandpa" / "terminal_history"
+
+
+def tui_history_path() -> Path:
+    """Resolved when asked, and under GRANDPA_HOME rather than Path.home().
+
+    Path.home() ignores GRANDPA_HOME entirely, so a sandboxed run still
+    wrote its terminal history into the real profile.
+    """
+    from grandpa.runtime_paths import grandpa_home
+
+    return grandpa_home() / "terminal_history"
 
 
 @dataclass
@@ -588,7 +598,7 @@ __all__ = [
     "InteractiveCommandRegistry",
     "InteractiveSession",
     "LocalCommandResult",
-    "TUI_HISTORY_PATH",
+    "tui_history_path",
     "TUI_PROMPT",
     "chat_helper_text",
     "render_startup_header",

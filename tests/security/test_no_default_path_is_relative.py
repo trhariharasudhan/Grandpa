@@ -78,18 +78,23 @@ def test_no_default_path_constant_is_a_bare_relative_literal() -> None:
 @pytest.mark.parametrize(
     "dotted,attribute",
     [
-        ("grandpa.pc_control", "RUNTIME_DIR"),
-        ("grandpa.pc_control", "AUDIT_LOG_PATH"),
-        ("grandpa.skill_builder.storage", "DEFAULT_USER_SKILLS_DB"),
-        ("grandpa.desktop.operator", "DEFAULT_OPERATOR_DB"),
+        # Functions now, not constants: they resolved GRANDPA_HOME at import, so
+        # anything importing grandpa before setting it got the real home. See
+        # tests/test_no_import_time_paths.py.
+        ("grandpa.runtime_paths", "runtime_dir"),
+        ("grandpa.pc_control", "audit_log_path"),
+        ("grandpa.skill_builder.storage", "default_user_skills_db"),
+        ("grandpa.desktop.operator", "default_operator_db"),
+        ("grandpa.knowledge.storage", "default_knowledge_db"),
+        ("grandpa.browser.agent", "default_browser_agent_db"),
     ],
 )
-def test_the_three_that_were_wrong_are_absolute(dotted: str, attribute: str) -> None:
+def test_the_ones_that_were_wrong_are_absolute(dotted: str, attribute: str) -> None:
     import importlib
 
-    value = getattr(importlib.import_module(dotted), attribute)
+    value = getattr(importlib.import_module(dotted), attribute)()
 
-    assert value.is_absolute(), f"{dotted}.{attribute} is {value}"
+    assert value.is_absolute(), f"{dotted}.{attribute}() is {value}"
 
 
 def test_they_follow_grandpa_home(monkeypatch, tmp_path: Path) -> None:

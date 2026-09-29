@@ -39,11 +39,21 @@ ActionStatus = Literal[
     "expired",
 ]
 
+
 # Kept as names because they are exported and widely imported, but they are
 # resolved through grandpa.runtime_paths now: these used to be relative, so
 # the audit log landed wherever the process was started from.
-RUNTIME_DIR = runtime_dir()
-AUDIT_LOG_PATH = RUNTIME_DIR / "logs" / "local_actions.jsonl"
+def audit_log_path() -> Path:
+    """Where local actions are recorded, resolved when asked.
+
+    ``RUNTIME_DIR`` and this were module-level constants, so they resolved
+    GRANDPA_HOME once, at import, and anything importing grandpa before
+    setting it wrote to the real home. ``runtime_dir()`` is already a
+    function; call it instead of holding its answer.
+    """
+    return runtime_dir() / "logs" / "local_actions.jsonl"
+
+
 PENDING_TTL_SECONDS = 300
 DEFAULT_APPROVAL_DB = DEFAULT_CONFIG_DIR / "pc_control_approvals.db"
 DEFAULT_RETENTION_CONFIG = DEFAULT_CONFIG_DIR / "pc_control_retention.json"
@@ -1885,7 +1895,7 @@ def _unsupported(message: str, risk: RiskLevel) -> LocalActionResponse:
 
 
 __all__ = [
-    "AUDIT_LOG_PATH",
+    "audit_log_path",
     "LocalActionRequest",
     "LocalActionResponse",
     "approve_local_action",

@@ -12,16 +12,19 @@ from typing import Any
 
 from grandpa.runtime_paths import runtime_path
 
+
 # Was Path("runtime")/..., relative to the working directory: a suite run
 # from the project root left a store behind in the repository, and a later
 # run loaded the skill saved in it.
-DEFAULT_USER_SKILLS_DB = runtime_path("skills", "user_skills.db")
+def default_user_skills_db() -> Path:
+    """Resolved when asked, not when imported. See knowledge/storage.py."""
+    return runtime_path("skills", "user_skills.db")
 
 
 class UserSkillStore:
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.db_path = Path(
-            db_path or os.getenv("GRANDPA_USER_SKILLS_DB") or DEFAULT_USER_SKILLS_DB
+            db_path or os.getenv("GRANDPA_USER_SKILLS_DB") or default_user_skills_db()
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -184,4 +187,4 @@ def _loads(raw: str, fallback: Any) -> Any:
         return fallback
 
 
-__all__ = ["DEFAULT_USER_SKILLS_DB", "UserSkillStore"]
+__all__ = ["default_user_skills_db", "UserSkillStore"]

@@ -24,9 +24,9 @@ from grandpa.knowledge.retrieval import (
     semantic_search_documents,
 )
 from grandpa.knowledge.storage import (
-    DEFAULT_KNOWLEDGE_DB,
     KnowledgeDocument,
     KnowledgeStore,
+    default_knowledge_db,
 )
 from grandpa.knowledge.summaries import (
     summarize_document,
@@ -371,7 +371,7 @@ def planner_knowledge_context(query: str, *, limit: int = 5) -> dict[str, Any]:
 
 
 __all__ = [
-    "DEFAULT_KNOWLEDGE_DB",
+    "default_knowledge_db",
     "KnowledgeEngine",
     "import_knowledge_document",
     "knowledge_diagnostics",

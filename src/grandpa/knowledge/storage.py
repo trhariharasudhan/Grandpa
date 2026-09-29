@@ -14,10 +14,23 @@ from typing import Any
 from grandpa.runtime_paths import runtime_path
 
 ROOT = Path(__file__).resolve().parents[3]
+
+
 # Was ROOT/runtime/knowledge -- the *code* tree, which in an installed
 # layout is site-packages. User data belongs under GRANDPA_HOME.
-DEFAULT_KNOWLEDGE_DIR = runtime_path("knowledge")
-DEFAULT_KNOWLEDGE_DB = DEFAULT_KNOWLEDGE_DIR / "knowledge.db"
+def default_knowledge_dir() -> Path:
+    """Where the knowledge store lives, resolved when asked.
+
+    This was a module-level constant, so it resolved when the module was
+    imported -- and ``runtime_path`` reads GRANDPA_HOME. A script that
+    imported grandpa before setting GRANDPA_HOME therefore pointed at the
+    developer's real home, and created a knowledge.db there.
+    """
+    return runtime_path("knowledge")
+
+
+def default_knowledge_db() -> Path:
+    return default_knowledge_dir() / "knowledge.db"
 
 
 @dataclass(frozen=True)
@@ -48,7 +61,7 @@ class KnowledgeStore:
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.db_path = Path(
-            db_path or os.environ.get("GRANDPA_KNOWLEDGE_DB") or DEFAULT_KNOWLEDGE_DB
+            db_path or os.environ.get("GRANDPA_KNOWLEDGE_DB") or default_knowledge_db()
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
@@ -349,8 +362,8 @@ def _embedding_model_row(row: sqlite3.Row) -> dict[str, Any]:
 
 
 __all__ = [
-    "DEFAULT_KNOWLEDGE_DB",
-    "DEFAULT_KNOWLEDGE_DIR",
+    "default_knowledge_db",
+    "default_knowledge_dir",
     "KnowledgeDocument",
     "KnowledgeStore",
 ]

@@ -8,6 +8,7 @@ from grandpa.core.registry import ToolRegistry
 from grandpa.core.types import Message, Role, ToolResult
 from grandpa.engine._stubs import InferenceEngine
 from grandpa.tools._stubs import BaseTool, ToolSpec
+from grandpa.tools.model_timeout import model_call_timeout
 
 
 @ToolRegistry.register("llm")
@@ -49,6 +50,10 @@ class LLMTool(BaseTool):
                 "required": ["prompt"],
             },
             category="inference",
+            # Not the generic 30s every tool gets: this makes one model call, and
+            # the engine that serves it is allowed 900. translate-doc's correct
+            # translation took 110s and was thrown away. See tools/model_timeout.py.
+            timeout_seconds=model_call_timeout(),
         )
 
     def execute(self, **params: Any) -> ToolResult:

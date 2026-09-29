@@ -14,6 +14,7 @@ from grandpa.core.registry import ToolRegistry
 from grandpa.core.types import Message, Role, ToolResult
 from grandpa.engine._stubs import InferenceEngine
 from grandpa.tools._stubs import BaseTool, ToolSpec
+from grandpa.tools.model_timeout import model_call_timeout
 
 _DEFAULT_MAX_CHUNKS = 200
 _DEFAULT_BATCH_SIZE = 20
@@ -83,6 +84,10 @@ class ScanChunksTool(BaseTool):
                 "required": ["question"],
             },
             category="knowledge",
+            # Same reasoning as the llm tool: this makes model calls, one per
+            # batch of chunks, so the generic 30s every tool gets would cut a
+            # working scan short. See tools/model_timeout.py.
+            timeout_seconds=model_call_timeout(),
         )
 
     def execute(self, **params: Any) -> ToolResult:

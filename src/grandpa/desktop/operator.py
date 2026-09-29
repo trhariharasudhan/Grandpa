@@ -25,7 +25,12 @@ OperatorStatus = Literal[
 ]
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH", "BLOCKED"]
 
-DEFAULT_OPERATOR_DB = runtime_path("desktop", "operator.db")
+
+def default_operator_db() -> Path:
+    """Resolved when asked, not when imported. See knowledge/storage.py."""
+    return runtime_path("desktop", "operator.db")
+
+
 MIN_VISUAL_CONFIDENCE = 0.72
 MAX_RETRIES = 2
 
@@ -178,7 +183,7 @@ APP_PROFILES: dict[str, AppProfile] = {
 class OperatorTaskStore:
     def __init__(self, db_path: Path | str | None = None) -> None:
         self.db_path = Path(
-            db_path or os.getenv("GRANDPA_DESKTOP_OPERATOR_DB") or DEFAULT_OPERATOR_DB
+            db_path or os.getenv("GRANDPA_DESKTOP_OPERATOR_DB") or default_operator_db()
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()

@@ -245,7 +245,24 @@ class ToolExecutor:
                 {"tool": tool_call.name, "arguments": params},
             )
 
-        # Execute with timeout
+        # Execute with timeout.
+        #
+        # KNOWN DEFECT, measured and left as it is: this does not enforce the
+        # timeout. `future.result(timeout=...)` raising does not stop the work,
+        # and the pool's context manager calls shutdown(wait=True) on the way
+        # out -- so the executor waits for the whole call and then reports a
+        # timeout it never applied. A 0.5s budget against a 6s call returns
+        # after 6.0s saying it timed out at 0.5s. See
+        # tests/tools/test_tool_timeout_actually_stops_waiting.py, which pins it.
+        #
+        # Abandoning the call instead was tried and reverted in the same change.
+        # It works for a tool that only reads, and breaks one that does not: an
+        # abandoned `repl` execution carried on running, held the memory
+        # database, and a later test blocked on sqlite until pytest killed it at
+        # 300s. Abandonment is only safe for tools that hold no shared state, so
+        # it needs each tool to say which it is -- the same shape as
+        # BaseTool.requires -- and that is its own change, not a footnote to a
+        # timeout number.
         timeout = tool.spec.timeout_seconds or self._default_timeout
         t0 = time.time()
         try:

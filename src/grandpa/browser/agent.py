@@ -21,7 +21,12 @@ from grandpa.browser_control import execute_browser_action, get_visible_browser_
 from grandpa.runtime_paths import runtime_path
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_BROWSER_AGENT_DB = runtime_path("browser", "browser_agent.db")
+
+
+def default_browser_agent_db() -> Path:
+    """Resolved when asked, not when imported. See knowledge/storage.py."""
+    return runtime_path("browser", "browser_agent.db")
+
 
 BrowserTaskStatus = Literal[
     "planned", "completed", "requires_approval", "blocked", "unsupported"
@@ -63,7 +68,7 @@ class BrowserAgentStore:
         self.db_path = Path(
             db_path
             or os.environ.get("GRANDPA_BROWSER_AGENT_DB")
-            or DEFAULT_BROWSER_AGENT_DB
+            or default_browser_agent_db()
         )
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()

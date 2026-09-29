@@ -1503,13 +1503,13 @@ def chat(
 
             if tui_mode:
                 from grandpa.cli.interactive_tui import (
-                    TUI_HISTORY_PATH,
                     interactive_prompt,
+                    tui_history_path,
                 )
 
                 user_input = read_chat_input(
                     interactive_prompt(tui_session),
-                    history_path=TUI_HISTORY_PATH,
+                    history_path=tui_history_path(),
                     multiline=True,
                 )
             else:

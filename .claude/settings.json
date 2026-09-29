@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "python scripts/hooks/block_escaped_heredoc.py"
+          },
+          {
+            "type": "command",
+            "command": "python scripts/hooks/require_sandboxed_probe.py"
           }
         ]
       }

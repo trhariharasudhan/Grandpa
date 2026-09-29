@@ -16,7 +16,14 @@ except ModuleNotFoundError:
     import tomli as tomllib  # type: ignore[no-redef]
 
 _LOCK = threading.Lock()
-_DEFAULT_PATH = Path.home() / ".grandpa" / "credentials.toml"
+
+
+def _default_path() -> Path:
+    """Resolved when asked, and under GRANDPA_HOME rather than Path.home()."""
+    from grandpa.runtime_paths import grandpa_home
+
+    return grandpa_home() / "credentials.toml"
+
 
 TOOL_CREDENTIALS: dict[str, list[str]] = {
     "web_search": ["TAVILY_API_KEY"],
@@ -25,7 +32,7 @@ TOOL_CREDENTIALS: dict[str, list[str]] = {
 
 def load_credentials(path: Path | None = None) -> dict[str, dict[str, str]]:
     """Load credentials from TOML file."""
-    p = Path(path) if path else _DEFAULT_PATH
+    p = Path(path) if path else _default_path()
     if not p.exists():
         return {}
     with open(p, "rb") as f:
@@ -47,7 +54,7 @@ def save_credential(
     if not stripped:
         raise ValueError("Credential value must not be empty")
 
-    p = Path(path) if path else _DEFAULT_PATH
+    p = Path(path) if path else _default_path()
     with _LOCK:
         creds = load_credentials(path=p)
         if tool_name not in creds:
