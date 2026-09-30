@@ -1,9 +1,27 @@
-"""Voice cannot actuate keys or mouse without consent -- and today, not at all.
+"""Voice cannot actuate keys or mouse without consent -- and typing is the only
+thing it can consent to.
 
-The property: nothing a person says to Grandpa, including "yes", sends keyboard
-or mouse input. Voice has no way to consent to synthetic input: its only
-question is the next utterance, and an utterance is exactly what a stray
-sentence, a television, or a misheard word supplies.
+This file's property changed when the route opened, and the change is recorded
+rather than quietly applied. It used to be absolute: nothing a person says,
+including "yes", sends keyboard or mouse input. It is now three parts:
+
+  1. typing is the only input voice can actuate, and only through the whole
+     consent sequence -- a witnessed stage, a yes on the very next turn, and the
+     foreground window unchanged;
+  2. a staged keystroke with no yes actuates nothing;
+  3. every other input kind voice can phrase still actuates nothing, whatever it
+     is answered with.
+
+The original reasoning was that voice has no way to consent to synthetic input:
+its only question is the next utterance, and an utterance is exactly what a stray
+sentence, a television, or a misheard word supplies. That objection was not
+dismissed -- it was answered. A stray "yes" now has to arrive on the turn
+immediately after the ask, against a foreground window that has not changed since
+it, for an action whose read-back named that window out loud. A television
+supplies none of that.
+
+What has not changed is that the property is checked by driving voice and
+watching the actuators at the bottom of the stack, never by reading a status.
 
 These tests used to pin a mechanism instead -- "every voice call site passes
 ``confirm=refuse_confirmation``". That mechanism is gone: voice now opts into
@@ -250,11 +268,38 @@ def test_every_automation_service_voice_builds_refuses_input() -> None:
 
 
 # --- c) tranche guard --------------------------------------------------------------
+#
+# This guard used to say: voice actuates no keyboard or mouse input, by any
+# route, ever. That property is gone, deliberately, and this is the record of the
+# moment it went.
+#
+# It held for two reasons stacked on each other. Screen Automation V2 refused
+# every input phrase for a caller with allow_input=False, and even if it had not,
+# no parsed phrase mapped to a catalogued synthetic action so the action layer
+# would have refused too. Voice consent (the witness, the turn counter, the spoken
+# read-back) was built under that shadow and could not be reached.
+#
+# Both were opened, one bolt at a time. The new property is narrower and has to be
+# stated in three parts rather than one, because "nothing" is no longer the
+# answer:
+#
+#   1. Typing is the only input voice can actuate, and only through the full
+#      consent sequence: a witnessed stage, then a yes on the very next turn,
+#      with the foreground window unchanged.
+#   2. A staged keystroke with no yes actuates nothing. Staging is not sending.
+#   3. Every other input kind voice can phrase -- keys, paste, clicks, scroll,
+#      browser hotkeys -- still actuates nothing, whatever it is answered with.
+#
+# Part 3 is the old guard, unchanged, over everything except typing. Parts 1 and 2
+# are what replaced it for typing. If part 1 ever passes for a second kind,
+# something opened a bolt without reading this.
 
-# Every kind of input voice can phrase, and browser hotkeys, which reach the
-# keyboard by a route of their own.
-INPUT_PHRASES = (
-    "type hello",
+#: The one kind voice can now actuate, and the phrase that reaches it.
+TYPING_PHRASE = "type hello"
+
+#: Every other kind of input voice can phrase, including browser hotkeys, which
+#: reach the keyboard by a route of their own.
+OTHER_INPUT_PHRASES = (
     "press enter",
     "paste",
     "select all",
@@ -269,14 +314,38 @@ INPUT_PHRASES = (
 )
 
 
+@pytest.fixture
+def steady_window(monkeypatch):
+    """The same window in front for every reading.
+
+    The consent path takes a real reading of the foreground window, which during
+    a test run is whatever the developer happens to have focused -- so an alt-tab
+    between the ask and the yes would fail these tests for a reason that has
+    nothing to do with what voice may actuate. Pinning the reading keeps this
+    guard about its subject; tests/desktop cover the reading itself.
+    """
+    from grandpa.desktop import focus_witness
+    from tests.witness_support import make_witness
+
+    monkeypatch.setattr(
+        focus_witness,
+        "capture",
+        lambda **_kwargs: make_witness(title="Untitled - Notepad"),
+    )
+
+
 @pytest.mark.real_actions(
     reason="reaches the real grandpa.browser.executor.BrowserExecutor.execute, grandpa.browser_control.execute_browser_action"
 )
 @pytest.mark.parametrize("entry", ENTRY_POINTS)
-def test_voice_cannot_actuate_keys_or_mouse_by_any_route(
-    recorder, monkeypatch, tmp_path, entry
+def test_voice_actuates_no_input_kind_except_typing(
+    recorder, monkeypatch, tmp_path, entry, steady_window
 ) -> None:
-    """Fails loudly the day voice can type, click or scroll -- whatever lets it."""
+    """Part 3: the old guard, still absolute, over everything but typing.
+
+    Fails loudly the day voice can press, paste, click or scroll -- whatever
+    lets it.
+    """
     say = _voice(entry, monkeypatch, tmp_path)
     # A pinned target is what Screen Automation needs before it acts; voice can
     # pin one by saying so. Without it most of these stop at "which window?",
@@ -284,7 +353,7 @@ def test_voice_cannot_actuate_keys_or_mouse_by_any_route(
     say("bring notepad to the front")
 
     reached: dict[str, list[str]] = {}
-    for phrase in INPUT_PHRASES:
+    for phrase in OTHER_INPUT_PHRASES:
         recorder.calls.clear()
         say(phrase)
         say("yes")
@@ -292,4 +361,103 @@ def test_voice_cannot_actuate_keys_or_mouse_by_any_route(
         if actuated := _input_only(recorder.actuated):
             reached[phrase] = actuated
 
-    assert reached == {}, f"voice actuated input: {reached}"
+    assert reached == {}, f"voice actuated input it may not: {reached}"
+
+
+@pytest.mark.real_actions(
+    reason="drives the real AutomationControlService for the approved keystroke; "
+    "input_recorder replaced pyautogui, so it is recorded rather than typed"
+)
+@pytest.mark.parametrize("entry", ["processor", "session"])
+def test_voice_staging_a_keystroke_sends_nothing_until_the_yes(
+    recorder, monkeypatch, tmp_path, entry, steady_window
+) -> None:
+    """Part 2: staging is not sending.
+
+    The ask is a whole turn on its own, and nothing may reach an actuator during
+    it. Without this, part 1 passing would not distinguish "typed after consent"
+    from "typed on being asked".
+    """
+    say = _voice(entry, monkeypatch, tmp_path)
+    say("bring notepad to the front")
+    recorder.calls.clear()
+
+    say(TYPING_PHRASE)
+
+    assert _input_only(recorder.actuated) == [], (
+        f"voice typed while only asking: {recorder.calls}"
+    )
+
+
+@pytest.mark.real_actions(
+    reason="drives the real AutomationControlService for the approved keystroke; "
+    "input_recorder replaced pyautogui, so it is recorded rather than typed"
+)
+@pytest.mark.parametrize("entry", ["processor", "session"])
+def test_voice_typing_reaches_an_actuator_after_a_yes(
+    recorder, monkeypatch, tmp_path, entry, steady_window
+) -> None:
+    """Part 1: the capability this tranche added, asserted positively.
+
+    A guard that only says what cannot happen would pass just as well if voice
+    were broken. This is the thing that had to become true.
+    """
+    say = _voice(entry, monkeypatch, tmp_path)
+    say("bring notepad to the front")
+    recorder.calls.clear()
+
+    say(TYPING_PHRASE)
+    say("yes")
+
+    assert _input_only(recorder.actuated), (
+        f"the approved keystroke never reached an actuator: {recorder.calls}"
+    )
+
+
+@pytest.mark.real_actions(reason="same real path as above, actuators recorded")
+@pytest.mark.parametrize("entry", ["processor", "session"])
+def test_a_yes_one_turn_late_types_nothing(
+    recorder, monkeypatch, tmp_path, entry, steady_window
+) -> None:
+    """Part 1's boundary: the consent is good for the next turn, not for later."""
+    say = _voice(entry, monkeypatch, tmp_path)
+    say("bring notepad to the front")
+    recorder.calls.clear()
+
+    say(TYPING_PHRASE)
+    say("what is the time")
+    say("yes")
+
+    assert _input_only(recorder.actuated) == [], (
+        f"a stale yes typed something: {recorder.calls}"
+    )
+
+
+@pytest.mark.real_actions(reason="same real path as above, actuators recorded")
+@pytest.mark.parametrize("entry", ["processor", "session"])
+def test_typing_is_refused_when_the_window_changed(
+    recorder, monkeypatch, tmp_path, entry
+) -> None:
+    """Part 1's other boundary, and the reason the witness exists at all."""
+    from grandpa.desktop import focus_witness
+    from tests.witness_support import make_witness, stub_capture
+
+    say = _voice(entry, monkeypatch, tmp_path)
+    say("bring notepad to the front")
+    recorder.calls.clear()
+    # Notepad when staged, Chrome when the yes arrives.
+    stub_capture(
+        monkeypatch,
+        [
+            make_witness(title="Untitled - Notepad"),
+            make_witness(exe_path=r"c:\chrome.exe", title="New Tab - Chrome"),
+        ],
+    )
+
+    say(TYPING_PHRASE)
+    say("yes")
+
+    assert _input_only(recorder.actuated) == [], (
+        f"voice typed into a window that was not the one approved: {recorder.calls}"
+    )
+    assert focus_witness.WITNESS_ORIGINS == frozenset({"voice"})

@@ -19,6 +19,21 @@ from grandpa.automation.windows import (
 
 logger = logging.getLogger(__name__)
 
+#: Input kinds a caller with ``allow_input=False`` hands to the action layer
+#: instead of refusing.
+#:
+#: These are the kinds the layer can obtain consent for without an inline
+#: channel -- against a focus witness, a spoken read-back and a next-turn yes.
+#: The set must agree with what ``natural_actions._PREFIXED`` actually maps to a
+#: catalogued synthetic action; a kind listed here with no mapping would fall
+#: through to the model and come back as a conversational non-answer, which is
+#: worse than an honest refusal. ``test_v2_yields_exactly_what_the_layer_routes``
+#: pins the two together so they cannot drift.
+#:
+#: Everything else -- clicks, scrolls, drags, hotkeys -- is still refused here,
+#: because nothing downstream can ask about it.
+YIELDS_TO_THE_LAYER = frozenset({"type"})
+
 
 class ScreenAutomationService:
     def __init__(
@@ -695,6 +710,27 @@ class ScreenAutomationService:
         from grandpa.automation.executor import INPUT_KINDS
 
         if not self.allow_input and action.kind in INPUT_KINDS:
+            if action.kind in YIELDS_TO_THE_LAYER:
+                # Not refused -- handed on. A caller with allow_input=False has no
+                # inline channel to ask through, which is why this flag exists;
+                # but the action layer can now consent to this particular kind
+                # without one, against a focus witness, a spoken read-back and a
+                # next-turn yes (grandpa.desktop.focus_witness). Refusing here
+                # would keep the only mechanism that *can* ask from being reached.
+                #
+                # "no_match" is what the pipeline reads as "not mine, pass it on"
+                # (automation.models.AutomationResult.should_fallback), so the
+                # voice route falls through to handle_local_action.
+                #
+                # The flag itself stays False. The alternative -- making it
+                # conditional -- would put two consent mechanisms on one phrase,
+                # V2's inline prompt and the layer's deferred one, and this
+                # project has spent five tranches collapsing to one.
+                logger.info(
+                    "screen_automation yielding input action=%s to the action layer",
+                    action.kind,
+                )
+                return AutomationResult("no_match", "", action)
             logger.warning("screen_automation refused input action=%s", action.kind)
             return AutomationResult(
                 "blocked",

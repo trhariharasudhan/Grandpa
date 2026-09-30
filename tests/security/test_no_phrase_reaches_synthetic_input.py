@@ -179,6 +179,79 @@ def test_the_automation_actions_exist_to_be_found() -> None:
     assert not _is_synthetic("open_folder")
 
 
+def test_v2_refuses_every_input_kind_it_does_not_yield() -> None:
+    """V2's behaviour per kind, not just the constant it is supposed to follow.
+
+    Added because a mutation got through. Replacing the branch condition with
+    ``if True`` -- so V2 yielded *every* input kind -- broke nothing any test
+    could see, because the other kinds have no mapping and so died quietly at the
+    action layer instead. The property was being held by the absence of a mapping
+    rather than by V2's refusal, which is exactly the doubled protection that
+    hides a bolt drifting open: map ``press|`` in some later tranche and hotkeys
+    would become actuatable with no separate decision anywhere.
+
+    So this drives ``_execute`` directly, for every input kind, and requires a
+    refusal rather than a pass-through for the ones out of scope.
+    """
+    from grandpa.automation.executor import INPUT_KINDS
+    from grandpa.automation.models import AutomationAction
+    from grandpa.automation.service import YIELDS_TO_THE_LAYER, ScreenAutomationService
+
+    service = ScreenAutomationService(allow_input=False)
+    wrong: dict[str, str] = {}
+    for kind in sorted(INPUT_KINDS):
+        result = service._execute(AutomationAction(kind=kind, target="x"))
+        expected = "no_match" if kind in YIELDS_TO_THE_LAYER else "blocked"
+        if result.status != expected:
+            wrong[kind] = f"{result.status} (expected {expected})"
+
+    assert wrong == {}, (
+        f"Screen Automation V2 handled these input kinds wrongly for a caller "
+        f"that cannot be asked: {wrong}. A kind not in YIELDS_TO_THE_LAYER must "
+        f"be refused here, not passed on -- nothing downstream can ask about it."
+    )
+
+
+def test_v2_yields_exactly_what_the_layer_routes() -> None:
+    """Two decisions in two files that have to be the same decision.
+
+    Screen Automation V2 hands a kind to the action layer when it is in
+    ``YIELDS_TO_THE_LAYER``; the layer can only consent to it if a mapping exists.
+    Drift either way is a real defect rather than an inconsistency:
+
+    * a kind V2 yields with no mapping falls through to the model and comes back
+      as a conversational non-answer -- worse than an honest refusal, because the
+      user is told something happened;
+    * a kind the layer maps that V2 still refuses is a route that exists and
+      cannot be reached, which is what this whole tranche was fixing.
+    """
+    from grandpa.automation.service import YIELDS_TO_THE_LAYER
+    from grandpa.natural_actions import request_for
+
+    for kind in YIELDS_TO_THE_LAYER:
+        mapped = request_for("automation", f"{kind}|something")
+        assert mapped is not None, (
+            f"V2 yields {kind!r} to the layer, but no parsed shape maps it to a "
+            f"catalogued action, so it will fall through to the model"
+        )
+        assert _is_synthetic(mapped[0]), (
+            f"{kind!r} maps to {mapped[0]}, which the automation service does "
+            f"not implement"
+        )
+
+    routed = {
+        key[1].rstrip("|")
+        for key, action in _synthetic_mappings().items()
+        if isinstance(key, tuple) and key[0] == "automation" and key[1].endswith("|")
+    }
+    assert routed == set(YIELDS_TO_THE_LAYER), (
+        f"the layer routes {sorted(routed)} but V2 yields "
+        f"{sorted(YIELDS_TO_THE_LAYER)}; a route that is mapped but refused "
+        f"earlier cannot be reached, and one that is yielded but unmapped "
+        f"reaches the model instead"
+    )
+
+
 def _message(found: dict) -> str:
     return (
         f"the set of phrases reaching synthetic input changed: {found}.\n"

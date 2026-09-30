@@ -9,18 +9,23 @@ Driven through ``VoiceCommandProcessor.handle_user_input``, so the turn counter
 is incremented by the same wrapper that does it in production rather than by the
 test. A turn that does not count itself would make the expiry untestable.
 
-Two things are deliberate about the setup:
+**No test-only mapping.** An earlier version of this file had to install one --
+``("automation", "hotkey|ctrl+c")`` -- because the route did not exist and the
+consent path was unreachable. That was the honest way to test mechanism without a
+route, and it is gone: "type hello" is a phrase the shipped parser turns into
+``("automation", "type|hello")``, ``_PREFIXED`` maps to ``keyboard_type``, and
+Screen Automation V2 hands to the layer. If any of that regresses, these tests
+fail rather than quietly testing a fixture.
 
-* **The actuator is recorded, not live.** ``input_recorder.install`` replaces
-  every input primitive before anything runs, so the happy path proves a keystroke
-  *reached* an actuator without one reaching the machine. The fixture asserts the
-  replacement held.
-* **The phrase is mapped for the test only.** ``("automation", "hotkey|ctrl+c")``
-  is the shape the real parser already produces for "copy selected text" -- the
-  trace is in the report -- but no product mapping turns it into a catalogued
-  action yet. Mapping it here exercises the consent path end to end without
-  shipping a route. This is also why the voice tranche guard still passes: it
-  runs against the unmapped product, where Screen Automation V2 refuses first.
+The actuator is recorded, not live: ``input_recorder.install`` replaces every
+input primitive before anything runs, so the happy path proves a keystroke
+*reached* an actuator without one reaching the machine.
+
+The only thing stubbed is which window is in front. ``focus_witness.capture``
+reads the real foreground window, which during a test run is whatever the
+developer happens to have focused -- so an alt-tab between the ask and the yes
+would fail these for a reason that has nothing to do with the route. Reading the
+window is covered by tests/desktop; this file is about what voice can actuate.
 
 The audio guard stays armed throughout. Nothing here opens a microphone or
 speaks: the read-back is returned as text and asserted as text.
@@ -35,9 +40,9 @@ from grandpa.desktop.kernel import approvals
 from tests.security.input_recorder import install
 from tests.witness_support import make_witness, stub_capture
 
-PHRASE = "copy selected text"
-ACTION = "keyboard_hotkey"
-PARAMETERS = {"keys": ["ctrl", "c"]}
+#: A phrase the shipped parser handles, mapped by the shipped tables.
+PHRASE = "type hello"
+ACTION = "keyboard_type"
 
 
 @pytest.fixture
@@ -51,22 +56,14 @@ def recorder(monkeypatch, tmp_path):
 
 @pytest.fixture
 def voice(monkeypatch):
-    """VoiceRuntime's route -- the one voice entry point that reaches the layer.
+    """VoiceRuntime's route, with nothing about the route stubbed.
 
-    Not ``VoiceCommandProcessor``: every input phrase there is taken by Screen
-    Automation V2, which answers "This input action needs a target window" and
-    never consults the action layer. The runtime's route does reach it, with a
-    target pinned. Both are traced in the report; this is the one under test
-    because it is the one the consent path is on.
+    Both Python voice entry points reach the layer now that V2 yields typing --
+    the processor does too, once a target is pinned. This one is used because it
+    is the shortest path to the layer; the tranche guard exercises both.
     """
-    import grandpa.natural_actions as natural_actions
     import grandpa.voice.session as session
 
-    monkeypatch.setitem(
-        natural_actions.MIGRATED,
-        ("automation", "hotkey|ctrl+c"),
-        (ACTION, PARAMETERS),
-    )
     for helper in (
         "_safe_planner",
         "_safe_knowledge_context",
@@ -140,7 +137,9 @@ def test_the_window_changes_and_nothing_is_typed(recorder, monkeypatch, voice) -
     assert _keys_sent(recorder) == [], (
         f"a keystroke was sent after the window changed: {recorder.calls}"
     )
-    assert "did not send any keys" in answered, answered
+    # Typing's own wording, not the hotkey's: the read-back names what did not
+    # happen per action, and this route is keyboard_type.
+    assert "did not type anything" in answered, answered
     assert "Chrome" in answered and "Notepad" in answered
 
     # The row approved against Notepad is gone. What is pending is the re-ask,
@@ -236,3 +235,65 @@ def test_no_witness_means_voice_is_refused_exactly_as_before(
     assert _pending() == [], "an unwitnessed keystroke was staged"
     assert _keys_sent(recorder) == []
     assert "nothing was run" in answered or "cannot ask" in answered, answered
+
+
+# --- the same real phrase, from callers that are not voice ----------------------
+
+
+@pytest.mark.real_actions(reason="same real path, actuators recorded")
+def test_chat_saying_the_same_phrase_gets_no_deferred_keystroke(
+    recorder, monkeypatch
+) -> None:
+    """Chat reaches the same mapping and gets nothing staged.
+
+    Not a weaker version of voice's path -- a different one. Chat has an inline
+    callback, so run_parsed never reaches the deferred branch; and if it somehow
+    arrived there without one, the origin allowlist refuses it. Both are checked
+    here: no pending row, and nothing typed.
+    """
+    from grandpa.local import handle_local_action
+
+    stub_capture(monkeypatch, [make_witness()])
+
+    handle_local_action(PHRASE, deferred_origin="chat")
+    handle_local_action("yes", deferred_origin="chat")
+
+    assert _pending() == [], f"chat staged a keystroke: {_pending()}"
+    assert _keys_sent(recorder) == [], recorder.calls
+
+
+@pytest.mark.real_actions(reason="same real path, actuators recorded")
+def test_http_saying_the_same_phrase_gets_no_deferred_keystroke(
+    recorder, monkeypatch
+) -> None:
+    """The HTTP API has no turns and nobody to read a read-back to."""
+    from grandpa.local import handle_local_action
+
+    stub_capture(monkeypatch, [make_witness()])
+
+    handle_local_action(PHRASE, deferred_origin="http")
+    handle_local_action("yes", deferred_origin="http")
+
+    assert _pending() == [], f"http staged a keystroke: {_pending()}"
+    assert _keys_sent(recorder) == [], recorder.calls
+
+
+def test_the_route_needs_no_test_only_mapping() -> None:
+    """Stated directly, because it is the difference between this and last task.
+
+    If the shipped tables stopped resolving the phrase, every test above would
+    still pass by refusing things -- a suite that proves the route is shut while
+    claiming to prove it is open. This one fails instead.
+    """
+    from grandpa.local.parsers import _normalise, _parse_automation_action
+    from grandpa.natural_actions import request_for
+
+    parsed = _parse_automation_action(_normalise(PHRASE))
+    assert parsed.kind == "automation", parsed
+    mapped = request_for(parsed.kind, parsed.target)
+
+    assert mapped is not None, (
+        f"{PHRASE!r} no longer resolves to a catalogued action, so the e2e tests "
+        f"in this file are passing without exercising a route"
+    )
+    assert mapped[0] == ACTION, mapped
