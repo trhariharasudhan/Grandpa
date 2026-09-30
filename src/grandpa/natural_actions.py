@@ -128,6 +128,33 @@ _PREFIXED: dict[tuple[str, str], Callable[[str], MappedRequest]] = {
     ("window", "maximize|"): _window("maximize_window"),
     ("window", "restore|"): _window("restore_window"),
     ("window", "close|"): _window("close_window"),
+    # --- tranche 4: typing, and only typing -----------------------------------
+    #
+    # The first synthetic input a spoken phrase can reach. `_parse_automation_action`
+    # turns a bare "type hello" into ("automation", "type|hello"); this is the
+    # entry that lets the action layer see it, which is what gives voice a witness,
+    # a spoken read-back and a next-turn yes instead of a flat refusal.
+    #
+    # Only typing, on the merits rather than for symmetry:
+    #
+    # * it is the one action whose target is the window the witness attests.
+    #   pyautogui.write goes to the focused window, which is the foreground
+    #   window the witness reads. The mouse actions do not: click and drag carry
+    #   absolute coordinates and scroll goes to the window under the *cursor*,
+    #   which the witness never looks at.
+    # * typing cannot change which window has focus. A hotkey can -- alt+tab,
+    #   win+d, win+e -- so a hotkey can invalidate the very invariant the witness
+    #   rests on, and the denylist is four combinations against the whole
+    #   shortcut space.
+    # * it is the one action with a content filter already in place
+    #   (automation.is_blocked_text: powershell, cmd, format, wipe, rm -, del ),
+    #   and the read-back names the target window, which is what turns "typing is
+    #   arbitrary" into a decision a person can hear and refuse.
+    #
+    # Deliberately *not* mapped: the chained "focus|notepad||type|hello" shape the
+    # same parser produces for "type hello in notepad". That is focus plus type,
+    # two actions, and one catalogued action cannot honestly stand for it.
+    ("automation", "type|"): lambda text: ("keyboard_type", {"text": text}),
 }
 """Shapes matched by kind and target *prefix*, e.g. ("window", "focus|")."""
 

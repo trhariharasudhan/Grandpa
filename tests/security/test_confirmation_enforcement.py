@@ -278,15 +278,64 @@ def _drive_chat_local_action(phrase: str, confirm) -> None:
 class TestChatSyntheticInputConfirmation:
     """T4 / T5 — finding 6."""
 
-    def test_t4_chat_type_passes_confirm_callback(self, recorded_automation) -> None:
-        _drive_chat_local_action("type hello", confirm=lambda spec, perm: True)
+    def test_t4_chat_typing_asks_inline_and_a_no_types_nothing(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Rewritten when typing moved onto the action layer, not weakened.
 
-        assert recorded_automation, "execute_automation was never reached"
-        call = recorded_automation[-1]
-        assert call["spec"] == "type|hello"
-        assert call.get("confirm_callback") is not None, (
-            "chat reached execute_automation with confirm_callback=None; "
-            "the confirm-required tier can never be satisfied"
+        This used to assert that chat reached ``execute_automation`` with a
+        non-None ``confirm_callback`` -- a check on the mechanism. Mapping
+        ("automation", "type|") to ``keyboard_type`` moved chat's typing off that
+        legacy path and onto the action layer, so the old assertion failed while
+        the property it protected was intact: chat still has an inline callback,
+        so ``run_parsed`` never reaches the deferred branch at all and asks in the
+        same turn.
+
+        Finding 6 was that chat could type without its confirmation tier being
+        satisfied. That is what this now tests directly, in both directions,
+        which is stronger than the call-site check it replaces: asking is only
+        worth anything if a "no" stops the keystroke.
+        """
+        from tests.security.input_recorder import install
+
+        monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "actions.jsonl"))
+        recorder = install(monkeypatch)
+        asked: list[str] = []
+
+        def refuse(plan, tier):
+            asked.append(str(plan))
+            return False
+
+        _drive_chat_local_action("type hello", confirm=refuse)
+
+        assert asked, "chat typed without asking anybody"
+        assert [
+            name for name in recorder.actuated if name.startswith("pyautogui.")
+        ] == [], f"chat typed after its confirmation was refused: {recorder.calls}"
+
+    @pytest.mark.real_actions(
+        reason="drives the real AutomationControlService so an approved keystroke "
+        "reaches an actuator; input_recorder replaced pyautogui, so it is recorded"
+    )
+    def test_t4b_chat_typing_on_a_yes_reaches_the_actuator(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """The other direction, so the refusal above is not passing vacuously."""
+        from tests.security.input_recorder import install
+
+        monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "actions.jsonl"))
+        recorder = install(monkeypatch)
+        asked: list[str] = []
+
+        def approve(plan, tier):
+            asked.append(str(plan))
+            return True
+
+        _drive_chat_local_action("type hello", confirm=approve)
+
+        assert asked, "chat typed without asking anybody"
+        assert [name for name in recorder.actuated if name.startswith("pyautogui.")], (
+            f"an approved keystroke never reached an actuator: {recorder.calls}"
         )
 
     def test_t5_chat_press_passes_confirm_callback(self, recorded_automation) -> None:

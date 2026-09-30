@@ -88,36 +88,84 @@ def test_the_catalogue_names_the_input_actions() -> None:
     assert len(actions) >= 5, actions
 
 
+_SPEC_FOR = {
+    "keyboard_type": "type|hello",
+    "keyboard_hotkey": "hotkey|ctrl+c",
+    "mouse_scroll": "scroll|down",
+    "mouse_click": "click_center",
+    "mouse_move": "move_center",
+}
+
+
 @pytest.mark.parametrize("action", _input_actions())
-def test_no_input_action_is_ever_staged(recorder, action) -> None:
-    """Drive every route that could stage, for every input action there is."""
+def test_no_input_action_is_staged_without_a_witness(recorder, action) -> None:
+    """Drive every route that could stage, for every input action there is.
+
+    This test used to assert no pending row at all. "type hello" now maps to
+    keyboard_type and voice can stage it, so the assertion is on the *shape* of
+    any row that appears rather than on their absence: every pending input row
+    must be one voice staged, with a witness on it. A row without a witness, or
+    from another origin, is the defect the old absolute rule was protecting
+    against, and is still caught here.
+    """
     from grandpa.desktop.control.automation import execute_spec
     from grandpa.local import handle_local_action
     from grandpa.natural_actions import run_parsed
 
-    spec_for = {
-        "keyboard_type": "type|hello",
-        "keyboard_hotkey": "hotkey|ctrl+c",
-        "mouse_scroll": "scroll|down",
-        "mouse_click": "click_center",
-        "mouse_move": "move_center",
-    }
+    spec = _SPEC_FOR.get(action, "type|hello")
     # Every caller that opts into deferred consent, with no inline prompt --
     # the combination that stages for everything else.
     for origin in ("voice", "chat", "http"):
         handle_local_action("type hello", deferred_origin=origin)
         handle_local_action("copy selected text", deferred_origin=origin)
         handle_local_action("scroll down", deferred_origin=origin)
-        run_parsed(
-            "automation", spec_for.get(action, "type|hello"), deferred_origin=origin
-        )
-    execute_spec(spec_for.get(action, "type|hello"))
+        run_parsed("automation", spec, deferred_origin=origin)
+    execute_spec(spec)
 
     # pc_control's own door, which used to stage input for an approval code --
     # consent up to PENDING_TTL_SECONDS old, for a keystroke.
     pc_control.run_local_action({"action_type": action, "args": _parameters(action)})
 
-    assert _pending_rows() == [], f"{action} left a pending row: {_pending_rows()}"
+    for row in _witnessed_rows():
+        assert row["origin"] == "voice", (
+            f"{row['action_type']} was staged by {row['origin']}, which may not "
+            f"carry a witness (see focus_witness.WITNESS_ORIGINS)"
+        )
+        assert row["witness_json"], (
+            f"{row['action_type']} is staged with no witness, so redeeming it "
+            f"would check nothing"
+        )
+        assert row["action_type"] == "keyboard_type", (
+            f"{row['action_type']} was staged, but typing is the only synthetic "
+            f"action in scope for a spoken route"
+        )
+
+
+@pytest.mark.parametrize("action", _input_actions())
+def test_no_route_stages_input_for_chat_or_http(recorder, action) -> None:
+    """Split out from the sweep above, because it is a different property.
+
+    The sweep allows voice a witnessed row. This says the same phrases and specs
+    give chat and the HTTP API nothing at all -- not a witnessed row, not any
+    row. Kept separate so a change that loosened one could not be mistaken for a
+    change that loosened both.
+    """
+    from grandpa.desktop.control.automation import execute_spec
+    from grandpa.local import handle_local_action
+    from grandpa.natural_actions import run_parsed
+
+    spec = _SPEC_FOR.get(action, "type|hello")
+    for origin in ("chat", "http"):
+        handle_local_action("type hello", deferred_origin=origin)
+        handle_local_action("copy selected text", deferred_origin=origin)
+        handle_local_action("scroll down", deferred_origin=origin)
+        run_parsed("automation", spec, deferred_origin=origin)
+    execute_spec(spec)
+    pc_control.run_local_action({"action_type": action, "args": _parameters(action)})
+
+    assert _witnessed_rows() == [], (
+        f"{action}: chat or http left a pending input row: {_witnessed_rows()}"
+    )
 
 
 def _parameters(action: str) -> dict:
@@ -208,13 +256,22 @@ def test_a_staged_input_row_always_carries_a_witness(
 
 
 def _witnessed_rows() -> list[dict]:
+    """Pending rows whose action is one the automation service performs.
+
+    Filtered to input actions on purpose: the sweep above also says phrases that
+    stage a folder or a URL, and those rows are ordinary deferred consent that
+    has always been allowed.
+    """
+    inputs = set(_input_actions())
     with pc_control._connect_approval_db() as conn:
         return [
             dict(row)
             for row in conn.execute(
                 "SELECT action_id, action_type, consent, status, witness_json, "
-                "staged_turn_seq FROM pc_control_approvals WHERE status = 'pending'"
+                "staged_turn_seq, origin FROM pc_control_approvals "
+                "WHERE status = 'pending'"
             ).fetchall()
+            if str(row["action_type"]) in inputs
         ]
 
 
