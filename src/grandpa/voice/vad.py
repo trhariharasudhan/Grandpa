@@ -15,6 +15,19 @@ class VoiceActivityConfig:
     silence_seconds: float = 0.55
     maximum_utterance_seconds: float = 12.0
 
+    #: How long to wait for speech to begin before giving up on this capture.
+    #:
+    #: There was no such bound. Every ``return True`` below is gated on
+    #: ``_speech_started``, and the caller's utterance cap is only checked after
+    #: speech starts -- so if nothing ever crossed the threshold the capture loop
+    #: read frames forever. Demonstrated with synthetic audio: at amplitudes 0,
+    #: 50 and 179 against a threshold of 180 the call never returned, having
+    #: consumed the equivalent of over an hour of audio.
+    #:
+    #: That is what a user experiences as "Listening..." and then five to ten
+    #: minutes of nothing at all.
+    silence_before_speech_seconds: float = 8.0
+
 
 class VoiceActivityDetector:
     """Track speech start/end using chunk RMS and an adaptive noise floor."""
@@ -51,7 +64,26 @@ class VoiceActivityDetector:
     def finalization_reason(self) -> str | None:
         return self._finalization_reason
 
+    @property
+    def max_rms(self) -> float:
+        """Loudest chunk seen. What to tell the user when nothing was loud enough."""
+        return self._max_rms
+
+    @property
+    def current_threshold(self) -> float:
+        """The level a chunk must reach right now to count as speech."""
+        return max(
+            self.config.minimum_rms,
+            self._noise_floor * self.config.noise_multiplier,
+        )
+
     def reset(self) -> None:
+        # Survives reset on purpose. A false start -- speech detected, then too
+        # short to keep -- calls reset(), which would restart the no-speech clock
+        # and let a stream of clicks or door slams hold the capture open forever.
+        # This clock measures the whole capture, not the current attempt.
+        self._wall_elapsed = getattr(self, "_wall_elapsed", 0.0)
+        self._max_rms = getattr(self, "_max_rms", 0.0)
         self._elapsed = 0.0
         self._speech_seconds = 0.0
         self._silence_after_speech = 0.0
@@ -67,6 +99,8 @@ class VoiceActivityDetector:
 
         duration = max(0.0, chunk_seconds)
         self._elapsed += duration
+        self._wall_elapsed += duration
+        self._max_rms = max(self._max_rms, float(rms))
         threshold = max(
             self.config.minimum_rms,
             self._noise_floor * self.config.noise_multiplier,
@@ -97,6 +131,15 @@ class VoiceActivityDetector:
             and self._speech_active_seconds >= self.config.maximum_utterance_seconds
         ):
             self._finalization_reason = "maximum_duration"
+            return True
+        # The only path out of this function that does not require speech to have
+        # started. Without it, a capture that never hears anything never returns.
+        if (
+            not self._speech_started
+            and self.config.silence_before_speech_seconds > 0
+            and self._wall_elapsed >= self.config.silence_before_speech_seconds
+        ):
+            self._finalization_reason = "no_speech_timeout"
             return True
         finalized = (
             self._speech_started

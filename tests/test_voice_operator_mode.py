@@ -1082,6 +1082,23 @@ def test_voice_operator_inventory_canonical_fallback_and_missing_path_safety() -
 def test_voice_activity_detector_idle_silence_does_not_timeout_until_speech_starts() -> (
     None
 ):
+    """Idle silence no longer waits forever, and this test says so deliberately.
+
+    It used to assert that 10 seconds of background noise returned False every
+    time -- which was true, and was the bug. Every ``return True`` in observe()
+    was gated on speech having started, so a capture that heard nothing never
+    returned and `grandpa voice` sat showing "Listening..." for five to ten
+    minutes with no output at all.
+
+    The property that mattered here is preserved and is what the rest of this
+    test checks: silence must not be mistaken for speech. The detector stays
+    ``speech_started is False`` throughout, and speech still starts when it
+    arrives. What changed is that the wait is now bounded, so the caller can say
+    why it heard nothing -- and the caller loops, so listening continues.
+
+    Passing ``silence_before_speech_seconds=0`` keeps the old unbounded wait for
+    a caller that genuinely wants it.
+    """
     from grandpa.voice.vad import VoiceActivityConfig, VoiceActivityDetector
 
     config = VoiceActivityConfig(
@@ -1089,6 +1106,8 @@ def test_voice_activity_detector_idle_silence_does_not_timeout_until_speech_star
         minimum_speech_seconds=0.20,
         silence_seconds=0.55,
         maximum_utterance_seconds=5.0,
+        # The original intent of this test: no bound at all.
+        silence_before_speech_seconds=0.0,
     )
     detector = VoiceActivityDetector(config)
 

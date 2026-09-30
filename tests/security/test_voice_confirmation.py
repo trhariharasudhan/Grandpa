@@ -91,7 +91,18 @@ def _input_only(actuated: list[str]) -> list[str]:
 
 @pytest.fixture
 def recorder(monkeypatch, tmp_path):
+    import grandpa.desktop.control.automation as automation
+
     monkeypatch.setenv("GRANDPA_LOCAL_ACTION_LOG", str(tmp_path / "actions.jsonl"))
+    # Module state. AutomationControlService refuses an action within
+    # _ACTION_COOLDOWN_SECONDS of the last successful one, and that timestamp
+    # lives on the module, so it survives between tests. Every test in this file
+    # used to assert that *nothing* actuated, and a leftover cooldown made those
+    # pass for the wrong reason without anyone noticing. The positive tests added
+    # with the typing route are the first here that need an action to succeed, and
+    # they failed only when run after the others -- which is exactly what
+    # tests/security/test_no_staged_input.py's fixture warns about.
+    monkeypatch.setattr(automation, "_last_action_at", 0.0)
     return install(monkeypatch)
 
 

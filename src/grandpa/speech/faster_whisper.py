@@ -273,17 +273,65 @@ def _delete_temp_audio(path: str) -> None:
         pass
 
 
+#: How many times a phrase must repeat before it is a loop rather than a person.
+#:
+#: This was 3, and 3 is what a person does when nothing is responding. It
+#: discarded "Hello Grandpa. Hello Grandpa. Hello Grandpa." -- a correctly decoded
+#: microphone test, no_speech_prob 0.4335, well inside every confidence gate --
+#: and reported "I could not understand the audio."
+#:
+#: Repetition count is the signal that separates the two, and it is the only one
+#: that does. Measured on this machine:
+#:
+#:   * gzip compression ratio does not. faster-whisper already rejects segments
+#:     above 2.4; the discarded text scored 1.16, and a genuine 12x loop scores
+#:     only 1.78. Whisper's own mechanism is right to keep both, and deferring to
+#:     it would let short loops through.
+#:   * the 65% dominance ratio does not. A phrase said three times and a phrase
+#:     looped twelve times both score 1.00.
+#:
+#: Five, and the number came from the suite rather than from my corpus. I chose
+#: eight first, on a set of cases I wrote myself; the existing tests then supplied
+#: two I had not thought of and that I would have broken:
+#:
+#:     "I'm sorry." x5   and   "Thank you." x5   must be filtered
+#:
+#: Five satisfies those and the reported regression together -- "Hello Grandpa."
+#: said three times is three repetitions and survives. The cost is that a genuine
+#: "yes yes yes yes yes yes" is discarded, which is a real false positive and the
+#: right trade: a person repeating a word six times is rare, and a decoder
+#: emitting a phrase five times is not.
+_MIN_LOOP_REPEATS = 5
+
+#: Chunk sizes to test for a repeating period, in words.
+#:
+#: Was (1, 2, 3), which structurally cannot see a loop whose period is longer --
+#: "I don't know." repeated fifteen times has a four-word period, and
+#: "Subtitles by the Amara.org community" a six-word one. Both are classic
+#: Whisper hallucinations and both were missed at every count threshold.
+_LOOP_PERIODS = (1, 2, 3, 4, 5, 6)
+
+#: Share of chunks the repeated phrase must account for. Unchanged.
+_LOOP_DOMINANCE = 0.65
+
+
 def _is_hallucinated_repetition(text: str) -> bool:
-    """Return True if the transcribed text is a degenerate Whisper repetition loop."""
+    """Return True if the transcribed text is a degenerate Whisper repetition loop.
+
+    Strictly better than the rule it replaces in both directions: on the corpus
+    in tests/speech/test_repetition_filter.py it keeps 15 of 15 real utterances
+    (was 9) and catches 8 of 8 loops (was 5).
+    """
     clean = re.sub(r"[^\w\s]", " ", text.lower()).strip()
     words = clean.split()
-    if len(words) >= 6:
-        for n in (1, 2, 3):
-            chunks = [
-                " ".join(words[i : i + n]) for i in range(0, len(words) - n + 1, n)
-            ]
-            if len(chunks) >= 3:
-                most_common = max(set(chunks), key=chunks.count)
-                if chunks.count(most_common) / len(chunks) >= 0.65:
-                    return True
+    if len(words) < 6:
+        return False
+    for n in _LOOP_PERIODS:
+        chunks = [" ".join(words[i : i + n]) for i in range(0, len(words) - n + 1, n)]
+        if len(chunks) < _MIN_LOOP_REPEATS:
+            continue
+        most_common = max(set(chunks), key=chunks.count)
+        count = chunks.count(most_common)
+        if count >= _MIN_LOOP_REPEATS and count / len(chunks) >= _LOOP_DOMINANCE:
+            return True
     return False

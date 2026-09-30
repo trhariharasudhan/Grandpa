@@ -36,6 +36,16 @@ class CapturedAudio:
     speech_active_seconds: float = 0.0
     trailing_silence_seconds: float = 0.0
     finalization_reason: str = "unknown"
+    #: The loudest chunk heard and the level it needed to reach. Carried so a
+    #: capture that heard nothing can say what it did hear instead of sitting
+    #: silent -- "levels reached 119 against a threshold of 299" is actionable,
+    #: and nothing at all is not.
+    max_chunk_rms: float = 0.0
+    speech_threshold: float = 0.0
+    #: Frames actually read from the device. Zero means the device delivered
+    #: nothing, which is a different fault from delivering audio that is too
+    #: quiet, and the two need different advice.
+    chunks_read: int = 0
 
 
 class MicrophoneCapture:
@@ -147,6 +157,7 @@ class MicrophoneCapture:
             1, int(sample_rate * max(1.0, self.duration_seconds))
         )
         native_frame_count = 0
+        chunks_read = 0
         chunks: list[bytes] = []
         pre_chunks: list[bytes] = []
         pre_chunk_limit = max(2, int(0.3 / max(0.01, self.chunk_seconds)))
@@ -162,6 +173,7 @@ class MicrophoneCapture:
             with self._stream as stream:
                 while not stop.is_set():
                     recording, _overflowed = stream.read(chunk_frames)
+                    chunks_read += 1
                     frames = recording.tobytes()
                     frame_count = _captured_frame_count(recording, chunk_frames)
                     rms = calculate_pcm16_rms(_downmix_pcm16(frames, channels))
@@ -225,6 +237,9 @@ class MicrophoneCapture:
                 detector.finalization_reason
                 or ("cancelled" if stop.is_set() else "stream_ended")
             ),
+            max_chunk_rms=detector.max_rms,
+            speech_threshold=detector.current_threshold,
+            chunks_read=chunks_read,
         )
 
     def close(self) -> None:

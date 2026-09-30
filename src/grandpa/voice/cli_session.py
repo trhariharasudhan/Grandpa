@@ -40,8 +40,11 @@ EXIT_PHRASES = {
     "exit voice mode",
     "exit voice",
     "goodbye grandpa",
+    "goodbye now",
     "goodbye",
     "quit",
+    "quit voice",
+    "quit voice mode",
     "exit",
     "stop voice",
     "stop voice mode",
@@ -139,6 +142,7 @@ class VoiceSession:
     _last_spoken_text: str = field(default="", init=False, repr=False)
     _last_spoken_at: float | None = field(default=None, init=False, repr=False)
     _last_timing: dict[str, float] = field(default_factory=dict, init=False, repr=False)
+    _last_quiet_message: str | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.presenter is None:
@@ -299,6 +303,13 @@ class VoiceSession:
 
         t_capture_end = time.monotonic()
 
+        # Say what happened before any of the silent returns below. Voice sat
+        # showing "Listening..." for five to ten minutes with no output at all,
+        # because every path out of a capture that heard nothing returns None and
+        # the loop immediately starts another one. Whatever else is wrong, that is
+        # its own bug: a capture that gives up has to say so.
+        self._report_quiet_capture(audio)
+
         # Audio / VAD Gate: if audio is explicitly marked with no speech detected or empty data, ignore
         if hasattr(audio, "data") and not audio.data:
             return None
@@ -320,15 +331,44 @@ class VoiceSession:
                 f"samples={num_samples}"
             )
 
-        # Gate on minimum voiced duration & minimum energy if finalized by VAD silence_timeout
-        if getattr(audio, "finalization_reason", None) == "silence_timeout" and hasattr(
-            audio, "speech_active_seconds"
-        ):
+        # A capture too marginal to be speech must not become a command.
+        #
+        # This used to apply only when the VAD finalised on silence_timeout, so a
+        # capture that ended any other way -- maximum_duration, stream_ended --
+        # skipped it entirely and a burst of noise could be transcribed and acted
+        # on. That is the mechanism behind voice printing the farewell
+        # immediately after "Listening..." with nothing said: a click crosses the
+        # threshold, Whisper puts a stock word to it, and "Goodbye." is an exit
+        # phrase.
+        #
+        # Refusing the exit vocabulary was the other candidate and is worse: it
+        # removes documented behaviour ("quit" is what people say) and it only
+        # ever protects exits. This protects every command on the same evidence.
+        #
+        # Applied whenever a VAD actually judged this capture, which is any
+        # reason the capture path sets -- not just silence_timeout. Skipped when
+        # the reason is the dataclass default, because then nothing measured
+        # speech_active_seconds and its 0.0 means "not recorded" rather than "no
+        # speech". A first pass keyed only on the field, and silently discarded
+        # every hand-built CapturedAudio that left the metadata at its defaults.
+        # A gate that cannot tell absent from zero is a gate that eats real audio.
+        judged_by_vad = str(getattr(audio, "finalization_reason", "") or "") not in {
+            "",
+            "unknown",
+        }
+        if judged_by_vad and hasattr(audio, "speech_active_seconds"):
             if voiced_duration < 0.25 or (audio_rms < 120.0 and voiced_duration < 0.5):
                 if self.debug:
                     self.presenter.output(
                         f"[DEBUG] Discarded non-speech audio (voiced={voiced_duration:.2f}s, rms={audio_rms:.1f})"
                     )
+                logger.warning(
+                    "voice discarded a marginal capture: voiced=%.2fs rms=%.1f "
+                    "reason=%s",
+                    voiced_duration,
+                    audio_rms,
+                    getattr(audio, "finalization_reason", None),
+                )
                 return None
 
         try:
@@ -520,6 +560,77 @@ class VoiceSession:
                 return False
         return not stop.is_set()
 
+    def _report_quiet_capture(self, audio: object) -> None:
+        """Tell the user why a capture heard nothing, naming the device and level.
+
+        Three different faults produce the same blank screen, and they need
+        different advice, so they get different messages:
+
+        * no frames at all -- the device is not delivering. Naming it is the whole
+          point: selection is automatic, and on this machine it picks one of four
+          duplicates of the same microphone across MME, DirectSound, WASAPI and
+          WDM-KS.
+        * frames arrived, nothing crossed the threshold -- report the loudest
+          chunk against the threshold it was compared with. "Levels reached 119
+          against a threshold of 299" is something a person can act on.
+        * speech started but was too short to keep -- say that rather than
+          nothing, or the user cannot tell it from not being heard.
+
+        Logged at WARNING as well as printed. The existing diagnostics in this
+        path are all at INFO with no file handler unless --verbose, which is why
+        none of this was in the log after a ten-minute failure.
+        """
+        reason = str(getattr(audio, "finalization_reason", "") or "")
+        if reason not in {"no_speech_timeout", "stream_ended"}:
+            # A capture that heard something clears the dedupe, so if the fault
+            # comes back the user is told again rather than once per process.
+            self._last_quiet_message = None
+            return
+
+        device = str(getattr(audio, "device_name", "") or "an unknown device")
+        index = getattr(audio, "device_index", None)
+        named = f"{device} (device {index})" if index is not None else device
+        chunks = int(getattr(audio, "chunks_read", 0) or 0)
+        level = float(getattr(audio, "max_chunk_rms", 0.0) or 0.0)
+        threshold = float(getattr(audio, "speech_threshold", 0.0) or 0.0)
+
+        if chunks == 0:
+            message = (
+                f"I heard nothing at all from {named} - it delivered no audio. "
+                f"Check that it is the right input and that Windows lets desktop "
+                f"apps use the microphone."
+            )
+        elif level <= 1.0:
+            message = (
+                f"{named} is delivering silence - {chunks} audio chunks, all "
+                f"empty. Check the Windows microphone privacy setting and that "
+                f"this is the input you are speaking into."
+            )
+        else:
+            message = (
+                f"I did not hear speech on {named}. Levels reached "
+                f"{level:.0f} against a threshold of {threshold:.0f}. Try "
+                f"speaking louder or closer, or pick another input with "
+                f"`grandpa voice --list-microphones`."
+            )
+        # Said once per run of consecutive quiet captures, not every time. The
+        # loop starts a new capture the moment one gives up, so at an eight second
+        # bound an idle session would otherwise print this seven times a minute,
+        # and a message that repeats that often stops being read.
+        if message != getattr(self, "_last_quiet_message", None):
+            self.presenter.print_error(message)
+            self._last_quiet_message = message
+        logger.warning(
+            "voice capture heard no speech: device=%r index=%s chunks=%d "
+            "max_rms=%.1f threshold=%.1f reason=%s",
+            device,
+            index,
+            chunks,
+            level,
+            threshold,
+            reason,
+        )
+
     def _reset_microphone(self) -> None:
         resetter = getattr(self.microphone, "reset", None)
         if callable(resetter):
@@ -666,15 +777,40 @@ def build_voice_session(
         echo_similarity_threshold=config.echo_similarity_threshold,
         presenter=presenter,
         stt_model=config.stt_model,
-        debug=debug,
+        # --verbose implies debug. This parameter existed, defaulted to False,
+        # and voice_cmd never passed it -- so the per-capture diagnostic at
+        # _listen_for_transcript ("capture_duration=... audio_rms=...") could not
+        # be switched on by any flag the CLI offers. A diagnostic nobody can reach
+        # is not a diagnostic.
+        #
+        # The quiet-capture message is separate and unconditional: it goes out at
+        # WARNING on an ordinary run, because a user who waited ten minutes should
+        # not have had to know to re-run with a flag to find out why.
+        debug=debug or verbose,
     )
 
 
 def is_exit_phrase(text: str) -> bool:
-    """Return True when recognized text asks to stop voice mode."""
+    """Return True when recognized text asks to stop voice mode.
 
+    The vocabulary is deliberately unchanged, including the bare words "goodbye",
+    "exit" and "quit". Refusing those was tried first, as the obvious guard
+    against a hallucination ending the session -- and the suite showed it removes
+    documented, conventional behaviour: three separate tests assert those exact
+    words work, and eight more end a session loop with a bare "quit". "Quit" is
+    what people say.
+
+    The hazard is real but it is not in this function. A spurious exit needs a
+    spurious *transcript*, which needs a capture too marginal to be speech -- and
+    that is worth refusing for every command, not only for exits. See the
+    marginal-capture gate in ``_listen_for_transcript``: widening it protects
+    "delete that file" on the same evidence, which a vocabulary change here never
+    would have.
+    """
     normalized = re.sub(r"[^\w\s]", " ", text.strip().casefold().replace("-", " "))
     normalized = re.sub(r"\s+", " ", normalized).strip()
+    if not normalized:
+        return False
     return normalized in EXIT_PHRASES
 
 

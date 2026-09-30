@@ -390,13 +390,36 @@ def normalize_device_name(value: str) -> str:
 
 
 def _default_input_device(sounddevice: Any) -> int | None:
+    """The system's default input device index, or None if it cannot be read.
+
+    ``sounddevice.default.device`` reprs as ``[1, 3]`` but is a
+    ``sounddevice._InputOutputPair``, which inherits straight from ``object`` --
+    so ``isinstance(default, (list, tuple))`` was False, ``int()`` on the pair
+    raised TypeError, and the bare ``except`` below returned None. Every device
+    therefore came back ``is_default=False``, ``_best_device`` could never honour
+    the system default, and selection fell through to a name heuristic that
+    prefers WASAPI. On this machine that chose index 9 while Windows had nominated
+    index 1 -- and ``voice diagnose`` reported "No default index reported", which
+    was the bug describing itself.
+
+    Indexing by position is what the object actually supports, so try that first
+    and fall back to treating it as a scalar.
+    """
     try:
         default = sounddevice.default.device
-        value = default[0] if isinstance(default, (list, tuple)) else default
-        value = int(value)
-        return value if value >= 0 else None
-    except Exception:
+    except Exception:  # noqa: BLE001 - no default is a legitimate answer
         return None
+    candidate: Any = default
+    try:
+        candidate = default[0]
+    except (TypeError, IndexError, KeyError):
+        # Not subscriptable: some backends expose a plain int.
+        candidate = default
+    try:
+        value = int(candidate)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
 
 
 def _host_apis(sounddevice: Any) -> list[dict[str, Any]]:
