@@ -301,13 +301,24 @@ def run_parsed(
 
     wording = summary or f"Confirmation required before running {name}."
 
+    witness = None
     if needs_consent and not confirmed and confirm is None:
         if deferred_origin and _is_synthetic_input(spec):
-            # Never staged for a later yes: a keystroke goes to whatever has
-            # focus at the instant it is sent, so consent given a turn ago is
-            # consent for a screen that may no longer be there. Asked inline,
-            # or refused.
-            deferred_origin = None
+            # Synthetic input is stageable only against a focus witness. A
+            # keystroke goes to whatever has focus at the instant it is sent, so
+            # consent given a turn ago is consent for a screen that may no longer
+            # be there -- unless something recorded which screen it was, and
+            # checks it again before sending. That is the witness.
+            #
+            # A caller that cannot produce one is still refused, exactly as
+            # before: voice earns this by having a witness, not by being voice.
+            from grandpa.desktop import focus_witness
+
+            witness = focus_witness.capture(
+                control_target=str(parameters.get("control") or "")
+            )
+            if witness is None:
+                deferred_origin = None
         if not deferred_origin:
             # No one to ask and no opt-in: refuse, and stage nothing.
             return PhraseResult(
@@ -328,14 +339,22 @@ def run_parsed(
             parameters=dict(parameters),
             payload={"kind": kind, "target": target},
             risk_level=spec.risk.value,
+            witness=witness.to_dict() if witness is not None else None,
         )
+        spoken = wording
+        if witness is not None:
+            # With no screen, the read-back is the confirmation interface, so it
+            # names the window rather than only the action.
+            from grandpa.desktop import consent_readback
+
+            spoken = consent_readback.ask(name, dict(parameters), witness)
         return PhraseResult(
             status="requires_confirmation",
             kind=kind,
             target=target,
-            message=f"{wording}\n\nReply with yes/confirm to approve, or cancel to "
+            message=f"{spoken}\n\nReply with yes/confirm to approve, or cancel to "
             f"deny.\nAction ID: {staged['id']}",
-            tts_text=wording,
+            tts_text=spoken,
             permission=permission,
             pending_action=staged,
         )

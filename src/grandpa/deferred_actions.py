@@ -11,10 +11,24 @@ kernel would then have to know what a parsed phrase is -- the layering the
 direct-executor baseline exists to protect. The execution hop into
 ``local_actions`` below is the last of it, and goes away with that module.
 
-Synthetic input is never staged, so nothing here can send keys or move the
-mouse: the layer refuses to defer anything the automation service implements
-(``natural_actions``), and a keystroke's target is whatever has focus at the
-instant it is sent, not whenever the yes arrives.
+Synthetic input is stageable only against a focus witness. A keystroke's target
+is whatever has focus at the instant it is sent, not whenever the yes arrives, so
+a staged row carries a reading of the foreground window and that reading is taken
+again here before anything is sent (``grandpa.desktop.focus_witness``). Three
+preconditions, all checked in ``_witness_verdict`` below:
+
+* the row is inside the store's single wall-clock TTL -- applied by the peek, so
+  an expired row is simply not found;
+* the origin's turn counter is exactly one past the turn the row was staged on,
+  because a turn has no fixed duration and "the screen you were just looking at"
+  is a turn, not a number of seconds;
+* the witness still matches, tiered as ``focus_witness.compare`` defines.
+
+A mismatch discards the row, re-stages against the new reading and says so --
+once. A second mismatch refuses aloud and drops it, because a window that changes
+every turn must not become an endless prompt: that is how "yes" becomes a reflex.
+
+A row with no witness is a non-synthetic action and behaves as it always has.
 """
 
 from __future__ import annotations
@@ -27,6 +41,105 @@ from grandpa.local_action_result import LocalActionResult
 ConfirmationCallback = Callable[[str, str], bool]
 
 CANCELLED_MESSAGE = "Cancelled the pending local action."
+
+
+#: One re-ask per original intent. The second mismatch refuses and drops it.
+MAX_REASKS = 1
+
+
+def _check_witness_before_claiming(
+    *, origin: str, action_id: str | None
+) -> LocalActionResult | None:
+    """None to proceed with the claim, or the result to return instead.
+
+    Only witnessed rows are checked. Everything else -- every non-synthetic
+    deferred action -- reaches the claim untouched, which is why adding this did
+    not change how staging a folder or a URL behaves.
+    """
+    from grandpa.desktop import consent_readback, focus_witness
+    from grandpa.desktop.kernel import approvals
+
+    row = approvals.peek_deferred(origin=origin, action_id=action_id)
+    if row is None or not row.get("witness"):
+        return None
+
+    action = str(row.get("action") or "")
+    parameters = dict(row.get("parameters") or {})
+    staged = focus_witness.Witness.from_dict(row.get("witness"))
+
+    # The turn window. Redeemable only on the turn immediately after staging:
+    # a "yes" two turns later is about something the user has moved on from, and
+    # leaving the row pending would let any later "yes" drain it.
+    staged_turn = int(row.get("staged_turn_seq", -1))
+    current_turn = approvals.current_turn(origin)
+    if staged_turn >= 0 and current_turn != staged_turn + 1:
+        approvals.cancel_deferred(
+            origin=origin, action_id=str(row["id"]), reason="stale_turn"
+        )
+        spoken = (
+            "That yes came too late for the keystroke I asked about, so I did not "
+            "send it. Tell me again if you still want it."
+        )
+        return LocalActionResult(
+            status="blocked",
+            kind="blocked",
+            target=str(row.get("target") or ""),
+            message=spoken,
+            tts_text=spoken,
+            permission="requires_confirmation",
+        )
+
+    current = focus_witness.capture(control_target=str(parameters.get("control") or ""))
+    verdict = focus_witness.compare(staged, current, action=action)
+    if verdict.matched:
+        return None
+
+    # Mismatched. Drop this row whatever happens next: it was approved against a
+    # screen that is not there.
+    approvals.cancel_deferred(
+        origin=origin, action_id=str(row["id"]), reason="witness_mismatch"
+    )
+    reasks = int(row.get("reask_count", 0))
+
+    if reasks >= MAX_REASKS or staged is None or current is None:
+        # No second re-ask, and nothing to re-ask against when either reading is
+        # missing. Refuse aloud and stop.
+        spoken = (
+            consent_readback.refuse(action)
+            if staged is not None and current is not None
+            else consent_readback.cannot_witness(action)
+        )
+        return LocalActionResult(
+            status="blocked",
+            kind="blocked",
+            target=str(row.get("target") or ""),
+            message=f"{spoken} ({verdict.reason})" if verdict.reason else spoken,
+            tts_text=spoken,
+            permission="requires_confirmation",
+        )
+
+    # One re-ask: stage fresh against the reading that is actually in front of the
+    # user, and say what did not happen before offering it again.
+    restaged = approvals.stage_deferred(
+        origin=origin,
+        action=action,
+        target=str(row.get("target") or ""),
+        parameters=parameters,
+        payload=dict(row.get("payload") or {}),
+        risk_level=str(row.get("risk_level") or "MEDIUM"),
+        witness=current.to_dict(),
+        reask_count=reasks + 1,
+    )
+    spoken = consent_readback.reask(action, parameters, staged, current)
+    return LocalActionResult(
+        status="requires_confirmation",
+        kind=str((row.get("payload") or {}).get("kind") or ""),
+        target=str(row.get("target") or ""),
+        message=f"{spoken}\n\nAction ID: {restaged['id']}",
+        tts_text=spoken,
+        permission="requires_confirmation",
+        pending_action=restaged,
+    )
 
 
 def _metadata(row: dict, *, status: str) -> dict:
@@ -57,6 +170,13 @@ def approve(
     from grandpa.desktop.kernel import approvals
     from grandpa.local.audit import audit_decision, log_attempt
     from grandpa.local.execute import execute_parsed_action
+
+    # A witnessed row is checked before it is claimed: a mismatch has to re-stage,
+    # and a claim that had already fired would leave nothing to re-ask about.
+    if origin:
+        refusal = _check_witness_before_claiming(origin=origin, action_id=action_id)
+        if refusal is not None:
+            return refusal
 
     claimed = (
         approvals.approve_deferred(origin=origin, action_id=action_id)

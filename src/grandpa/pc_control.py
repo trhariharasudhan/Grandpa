@@ -1330,11 +1330,33 @@ def _connect_approval_db() -> sqlite3.Connection:
         ("origin", "TEXT NOT NULL DEFAULT 'pc_control'"),
         ("consent", "TEXT NOT NULL DEFAULT 'token'"),
         ("payload_json", "TEXT NOT NULL DEFAULT '{}'"),
+        # The focus witness, and the turn it was staged on. Columns of their own
+        # rather than keys inside payload_json, because payload_json is
+        # caller-supplied: a caller that could write its own witness or its own
+        # turn number into the row could approve a keystroke against a screen
+        # that was never checked. Empty witness and -1 turn mean "no witness
+        # required", which is every row that existed before this and every
+        # non-synthetic deferred row.
+        ("witness_json", "TEXT NOT NULL DEFAULT ''"),
+        ("staged_turn_seq", "INTEGER NOT NULL DEFAULT -1"),
+        ("reask_count", "INTEGER NOT NULL DEFAULT 0"),
     ):
         if column not in columns:
             conn.execute(
                 f"ALTER TABLE pc_control_approvals ADD COLUMN {column} {declaration}"
             )
+    # The turn counter, in the same database as the approvals it governs. A
+    # second store is what made audit finding 3 a dead end -- two pending stores
+    # that could not resolve each other's requests -- so this is a table beside
+    # the rows, not a file of its own.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS origin_turns (
+            origin TEXT PRIMARY KEY,
+            turn_seq INTEGER NOT NULL
+        )
+        """
+    )
     return conn
 
 
@@ -1356,6 +1378,41 @@ def _connect_approval_db() -> sqlite3.Connection:
 DEFERRED = "deferred"
 
 
+def _current_turn_impl(origin: str) -> int:
+    """This origin's turn counter. 0 before it has completed a turn."""
+    if not origin:
+        return 0
+    with _connect_approval_db() as conn:
+        row = conn.execute(
+            "SELECT turn_seq FROM origin_turns WHERE origin = ?", (origin,)
+        ).fetchone()
+    return int(row["turn_seq"]) if row is not None else 0
+
+
+def _bump_turn_impl(origin: str) -> int:
+    """Record that ``origin`` finished a turn, and return the new count.
+
+    Called once per completed turn. The expiry that matters for synthetic input
+    is measured in turns, not seconds: a turn has no fixed duration, so a
+    wall-clock window is either too short for a slow model call or too long to
+    mean "the screen you were just looking at".
+    """
+    if not origin:
+        return 0
+    with _STORE_LOCK, _connect_approval_db() as conn:
+        conn.execute(
+            """
+            INSERT INTO origin_turns (origin, turn_seq) VALUES (?, 1)
+            ON CONFLICT(origin) DO UPDATE SET turn_seq = turn_seq + 1
+            """,
+            (origin,),
+        )
+        row = conn.execute(
+            "SELECT turn_seq FROM origin_turns WHERE origin = ?", (origin,)
+        ).fetchone()
+    return int(row["turn_seq"]) if row is not None else 0
+
+
 def _stage_deferred_impl(
     *,
     origin: str,
@@ -1364,6 +1421,8 @@ def _stage_deferred_impl(
     parameters: dict[str, Any],
     payload: dict[str, Any],
     risk_level: str,
+    witness: dict[str, Any] | None = None,
+    reask_count: int = 0,
 ) -> dict[str, Any]:
     if not origin:
         raise ValueError("deferred consent needs an origin to bind the approval to")
@@ -1384,8 +1443,10 @@ def _stage_deferred_impl(
             INSERT INTO pc_control_approvals (
                 action_id, action_type, target, args_json, risk_level, created_at,
                 expires_at, status, approval_required, decision, decision_timestamp,
-                approval_token, origin, consent, payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, 'pending', NULL, '', ?, ?, ?)
+                approval_token, origin, consent, payload_json,
+                witness_json, staged_turn_seq, reask_count
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 1, 'pending', NULL, '', ?, ?, ?,
+                      ?, ?, ?)
             """,
             (
                 action_id,
@@ -1398,6 +1459,11 @@ def _stage_deferred_impl(
                 origin,
                 DEFERRED,
                 json.dumps(payload, ensure_ascii=True, sort_keys=True, default=str),
+                json.dumps(witness, ensure_ascii=True, sort_keys=True, default=str)
+                if witness
+                else "",
+                _current_turn_impl(origin) if witness else -1,
+                int(reask_count),
             ),
         )
     return {
@@ -1405,7 +1471,66 @@ def _stage_deferred_impl(
         "action": action,
         "origin": origin,
         "expires_at": now + PENDING_TTL_SECONDS,
+        "witness": witness or None,
+        "staged_turn_seq": _current_turn_impl(origin) if witness else -1,
+        "reask_count": int(reask_count),
     }
+
+
+def _peek_deferred_impl(
+    *, origin: str, action_id: str | None = None
+) -> dict[str, Any] | None:
+    """Look at this origin's pending deferred row without resolving it.
+
+    The witness has to be compared before the row is consumed: a mismatch
+    re-stages against the new reading, and a claim that had already fired would
+    leave nothing to re-ask about. Expiry is applied first, so a row past the TTL
+    is simply not there -- that is the single wall-clock policy doing its job.
+    """
+    if not origin:
+        return None
+    _expire_pending()
+    with _connect_approval_db() as conn:
+        row = conn.execute(
+            """
+            SELECT * FROM pc_control_approvals
+            WHERE status = 'pending' AND consent = ? AND origin = ?
+              AND (? IS NULL OR action_id = ?)
+            ORDER BY created_at DESC LIMIT 1
+            """,
+            (DEFERRED, origin, action_id, action_id),
+        ).fetchone()
+    if row is None or float(row["expires_at"]) <= time.time():
+        return None
+    witness_json = str(row["witness_json"] or "")
+    return {
+        "id": str(row["action_id"]),
+        "action": str(row["action_type"]),
+        "target": str(row["target"]),
+        "origin": str(row["origin"]),
+        "parameters": json.loads(row["args_json"] or "{}"),
+        "payload": json.loads(row["payload_json"] or "{}"),
+        "risk_level": str(row["risk_level"]),
+        "witness": json.loads(witness_json) if witness_json else None,
+        "staged_turn_seq": int(row["staged_turn_seq"]),
+        "reask_count": int(row["reask_count"]),
+    }
+
+
+def _cancel_deferred_impl(*, origin: str, action_id: str, reason: str) -> bool:
+    """Drop a pending deferred row without running it. Returns whether it moved."""
+    if not origin or not action_id:
+        return False
+    with _STORE_LOCK, _connect_approval_db() as conn:
+        moved = conn.execute(
+            """
+            UPDATE pc_control_approvals
+            SET status = 'cancelled', decision = ?, decision_timestamp = ?
+            WHERE action_id = ? AND origin = ? AND status = 'pending'
+            """,
+            (reason[:60] or "cancelled", time.time(), action_id, origin),
+        ).rowcount
+    return moved == 1
 
 
 def _claim_deferred_impl(
@@ -1451,12 +1576,16 @@ def _claim_deferred_impl(
         ).rowcount
     if claimed != 1:
         return None
+    witness_json = str(row["witness_json"] or "")
     return {
         "id": str(row["action_id"]),
         "action": str(row["action_type"]),
         "origin": str(row["origin"]),
         "parameters": json.loads(row["args_json"] or "{}"),
         "payload": json.loads(row["payload_json"] or "{}"),
+        "witness": json.loads(witness_json) if witness_json else None,
+        "staged_turn_seq": int(row["staged_turn_seq"]),
+        "reask_count": int(row["reask_count"]),
     }
 
 

@@ -98,8 +98,16 @@ def stage_deferred(
     parameters: dict[str, Any],
     payload: dict[str, Any],
     risk_level: str,
+    witness: dict[str, Any] | None = None,
+    reask_count: int = 0,
 ) -> dict[str, Any]:
-    """Stage an action for a later yes from ``origin``, and only from it."""
+    """Stage an action for a later yes from ``origin``, and only from it.
+
+    ``witness`` is the focus reading a synthetic-input action was approved
+    against (see grandpa.desktop.focus_witness). Passing one also records the
+    origin's current turn, which is what makes the approval good for exactly the
+    next turn. A row with no witness behaves as it always has.
+    """
     from grandpa import pc_control
 
     return pc_control._stage_deferred_impl(
@@ -109,7 +117,39 @@ def stage_deferred(
         parameters=parameters,
         payload=payload,
         risk_level=risk_level,
+        witness=witness,
+        reask_count=reask_count,
     )
+
+
+def peek_deferred(*, origin: str, action_id: str | None = None):
+    """This origin's pending row, unresolved, so its witness can be checked."""
+    from grandpa import pc_control
+
+    return pc_control._peek_deferred_impl(origin=origin, action_id=action_id)
+
+
+def cancel_deferred(*, origin: str, action_id: str, reason: str) -> bool:
+    """Drop a pending row without running it."""
+    from grandpa import pc_control
+
+    return pc_control._cancel_deferred_impl(
+        origin=origin, action_id=action_id, reason=reason
+    )
+
+
+def current_turn(origin: str) -> int:
+    """``origin``'s completed-turn count."""
+    from grandpa import pc_control
+
+    return pc_control._current_turn_impl(origin)
+
+
+def bump_turn(origin: str) -> int:
+    """Record that ``origin`` completed a turn. Called once per turn."""
+    from grandpa import pc_control
+
+    return pc_control._bump_turn_impl(origin)
 
 
 def approve_deferred(

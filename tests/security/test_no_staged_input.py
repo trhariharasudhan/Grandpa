@@ -1,18 +1,26 @@
-"""Synthetic input is never staged for a later yes, by any route.
+"""Synthetic input is never staged for a later yes *without a focus witness*.
 
 A staged action waits in the kernel's approval store until someone answers it --
-up to five minutes. That is right for opening a folder, and wrong for a
+up to five minutes. That is right for opening a folder, and wrong for a bare
 keystroke: keys and clicks land on whatever holds focus at the instant they are
 sent, so a yes from four minutes ago is consent for a screen that has moved on.
-Screen Automation V2 used to stage its own confirmations (its own 120-second
-store, then briefly the kernel's), and was safe only because pc_control then
-demanded an approval code nobody in a chat turn has. Removing that dead end
-without removing the staging would have turned a stale yes into keystrokes.
+Screen Automation V2 used to stage its own confirmations and was safe only
+because pc_control then demanded an approval code nobody in a chat turn has.
 
-So: nothing may leave a pending row in the approval store whose action is
-implemented by the automation service. The set of those actions is read from the
-catalogue, so an input action added later is covered by this test the day it
-exists.
+This file used to assert the absolute: no pending row may ever name an action the
+automation service implements. That property is now one notch narrower, and the
+notch is the whole of the voice-consent change: a row may exist **if it carries a
+reading of the foreground window it was approved against**, which is re-taken and
+compared before anything is sent (grandpa.desktop.focus_witness). "Consent a turn
+ago" becomes "consent for this screen", which is the only thing the old rule was
+really protecting.
+
+What did not change: a caller that cannot produce a witness is refused and stages
+nothing. Voice earns this by having a witness, not by being voice -- and on a
+machine or platform where the foreground window cannot be read, nobody earns it.
+
+The set of input actions is read from the catalogue, so one added later is covered
+the day it exists.
 """
 
 from __future__ import annotations
@@ -124,14 +132,12 @@ def _parameters(action: str) -> dict:
     }.get(action, {})
 
 
-@pytest.mark.parametrize("action", _input_actions())
-def test_the_layer_refuses_to_defer_an_input_action(
-    recorder, monkeypatch, action
-) -> None:
-    """The guard that covers an input action a later tranche maps onto the layer.
+def _map_probe(monkeypatch, action: str) -> None:
+    """Give the layer a parsed shape that maps to ``action``.
 
-    No parsed shape maps to one today, so this gives the mapping a stand-in: if
-    run_parsed would stage anything the automation service implements, it fails.
+    No real parsed shape maps to a synthetic action today, so every test of this
+    branch needs a stand-in. That is also why the branch was dead code before the
+    witness landed, and why this file is where its behaviour is pinned.
     """
     import grandpa.natural_actions as natural_actions
 
@@ -140,16 +146,76 @@ def test_the_layer_refuses_to_defer_an_input_action(
         ("automation", "staging-probe"),
         (action, _parameters(action)),
     )
+
+
+@pytest.mark.parametrize("action", _input_actions())
+def test_the_layer_refuses_to_defer_an_input_action_with_no_witness(
+    recorder, monkeypatch, action
+) -> None:
+    """The invariant that survived: no witness, no staging, nothing sent.
+
+    This is the case on any platform where the foreground window cannot be read,
+    and on a machine where it can but the reading fails. The refusal must stage
+    nothing -- a pending row with no witness is a keystroke waiting for a yes that
+    nothing will check.
+    """
+    import grandpa.natural_actions as natural_actions
+    from tests.witness_support import stub_capture
+
+    _map_probe(monkeypatch, action)
+    stub_capture(monkeypatch, [None])
+
     result = natural_actions.run_parsed(
         "automation", "staging-probe", deferred_origin="voice"
     )
 
     assert result is not None, "the stand-in mapping did not take"
-    # A refusal may report requires_confirmation; what must not exist is a
-    # staged action to answer later.
     assert result.pending_action is None, result
+    assert result.status == "blocked", result
     assert _pending_rows() == [], _pending_rows()
     assert [name for name in recorder.actuated if name.startswith("pyautogui.")] == []
+
+
+@pytest.mark.parametrize("action", _input_actions())
+def test_a_staged_input_row_always_carries_a_witness(
+    recorder, monkeypatch, action
+) -> None:
+    """The new invariant, stated over the store rather than over one call path.
+
+    Whatever route stages an input action, the row it leaves must carry a witness.
+    A row without one would be redeemed with nothing checked, which is precisely
+    the stale-yes-becomes-keystrokes case the old absolute rule prevented.
+    """
+    import grandpa.natural_actions as natural_actions
+    from tests.witness_support import make_witness, stub_capture
+
+    _map_probe(monkeypatch, action)
+    stub_capture(monkeypatch, [make_witness()])
+
+    result = natural_actions.run_parsed(
+        "automation", "staging-probe", deferred_origin="voice"
+    )
+
+    assert result is not None
+    assert result.pending_action is not None, "a witnessed action was not staged"
+    rows = _witnessed_rows()
+    assert len(rows) == 1, rows
+    assert rows[0]["action_type"] == action
+    assert rows[0]["witness_json"], f"{action} staged a row with no witness"
+    # Staging is not sending. Nothing may actuate until the yes arrives and the
+    # witness is re-checked.
+    assert [name for name in recorder.actuated if name.startswith("pyautogui.")] == []
+
+
+def _witnessed_rows() -> list[dict]:
+    with pc_control._connect_approval_db() as conn:
+        return [
+            dict(row)
+            for row in conn.execute(
+                "SELECT action_id, action_type, consent, status, witness_json, "
+                "staged_turn_seq FROM pc_control_approvals WHERE status = 'pending'"
+            ).fetchall()
+        ]
 
 
 def test_screen_automation_v2_stages_nothing_and_asks_inline(recorder) -> None:

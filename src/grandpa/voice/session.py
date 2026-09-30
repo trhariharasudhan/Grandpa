@@ -348,6 +348,33 @@ def _route_voice_request(
     automation_service: ScreenAutomationService | None = None,
     session_id: str = "",
 ) -> dict[str, Any]:
+    """One voice turn through the runtime's route, counted like the assistant's.
+
+    See VoiceCommandProcessor.handle_user_input for why a staged keystroke is
+    bounded by turns rather than by seconds. Both voice entry points count the
+    same origin's turns, because both are the same user taking a turn.
+    """
+    try:
+        return _route_one_turn(
+            command_text,
+            automation_service=automation_service,
+            session_id=session_id,
+        )
+    finally:
+        try:
+            from grandpa.desktop.kernel import approvals
+
+            approvals.bump_turn("voice")
+        except Exception:  # noqa: BLE001 - bookkeeping must not end a turn
+            pass
+
+
+def _route_one_turn(
+    command_text: str,
+    *,
+    automation_service: ScreenAutomationService | None = None,
+    session_id: str = "",
+) -> dict[str, Any]:
     planner = _safe_planner(command_text)
     knowledge = _safe_knowledge_context(command_text)
     memory = _safe_memory_context(command_text)

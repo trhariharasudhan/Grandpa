@@ -65,6 +65,30 @@ class VoiceCommandProcessor:
     _pending_action: dict[str, Any] | None = field(default=None, init=False)
 
     def handle_user_input(self, text: str) -> VoiceAssistantResponse:
+        """One voice turn, and the turn counter that bounds a staged keystroke.
+
+        A staged synthetic-input action is redeemable only on the turn
+        immediately after the one that staged it, so something has to say when a
+        turn ended. It is counted here rather than timed because a turn has no
+        fixed duration: a wall-clock window is either too short for a slow model
+        call or too long to mean "the screen you were just looking at". The
+        store's single TTL remains the wall-clock backstop for a loop that stalls
+        and never gets here.
+
+        Counted in a wrapper because the body below has a dozen early returns,
+        and a turn that ends on any of them is still a turn.
+        """
+        try:
+            return self._handle_one_turn(text)
+        finally:
+            try:
+                from grandpa.desktop.kernel import approvals
+
+                approvals.bump_turn("voice")
+            except Exception:  # noqa: BLE001 - bookkeeping must not end a turn
+                pass
+
+    def _handle_one_turn(self, text: str) -> VoiceAssistantResponse:
         """Process recognized text and return a user-facing response string."""
 
         user_input = text.strip()
