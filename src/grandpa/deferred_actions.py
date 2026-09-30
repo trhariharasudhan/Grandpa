@@ -90,7 +90,9 @@ def _check_witness_before_claiming(
         )
 
     current = focus_witness.capture(control_target=str(parameters.get("control") or ""))
-    verdict = focus_witness.compare(staged, current, action=action)
+    verdict = focus_witness.compare(
+        staged, current, action=action, parameters=parameters
+    )
     if verdict.matched:
         return None
 

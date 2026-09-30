@@ -45,6 +45,16 @@ from typing import Any, Callable
 #: keystroke follows focus and does not care where the window sits.
 GEOMETRY_ACTIONS = frozenset({"mouse_click", "mouse_drag", "mouse_move"})
 
+#: The coordinate pairs each of those actions carries, so every point an action
+#: will touch can be checked. ``mouse_drag`` has two, and both matter: a drag
+#: that starts on the witnessed window and ends somewhere else is still a drag
+#: into somewhere else.
+POINT_PARAMETERS: dict[str, tuple[tuple[str, str], ...]] = {
+    "mouse_click": (("x", "y"),),
+    "mouse_move": (("x", "y"),),
+    "mouse_drag": (("start_x", "start_y"), ("end_x", "end_y")),
+}
+
 #: The only origins that may stage synthetic input against a witness.
 #:
 #: A witness is one of three preconditions, not the whole mechanism. The other
@@ -286,6 +296,40 @@ def _resolve_control_uia(hwnd: int, control_target: str) -> str:
 CONTROL_RESOLVER: Callable[[int, str], str] = _resolve_control_uia
 
 
+def _owner_of_point(x: int, y: int) -> int:
+    """The top-level window that would receive a click at (x, y), or 0.
+
+    ``WindowFromPoint`` answers the question the rect cannot: which window is
+    actually *at* that point, given the z-order. It returns the deepest child --
+    a button rather than its dialog -- so the result is lifted with
+    ``GetAncestor(GA_ROOT)`` to the top-level window the witness records.
+    """
+    if sys.platform != "win32":
+        return 0
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        user32 = ctypes.windll.user32
+        point = wintypes.POINT(int(x), int(y))
+        user32.WindowFromPoint.restype = wintypes.HWND
+        user32.WindowFromPoint.argtypes = [wintypes.POINT]
+        found = user32.WindowFromPoint(point)
+        if not found:
+            return 0
+        user32.GetAncestor.restype = wintypes.HWND
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        root = user32.GetAncestor(found, 2)  # GA_ROOT
+        return int(root or found)
+    except Exception:  # noqa: BLE001 - a point we cannot attribute is a mismatch
+        return 0
+
+
+#: Replaceable for the same reason as CONTROL_RESOLVER: the point tier has to be
+#: able to fail in a test without a real desktop underneath it.
+POINT_OWNER: Callable[[int, int], int] = _owner_of_point
+
+
 def capture(*, control_target: str = "") -> Witness | None:
     """Read the foreground window, or None if it cannot be read.
 
@@ -336,17 +380,71 @@ class Comparison:
     extra: dict[str, Any] = field(default_factory=dict)
 
 
+def _point_differences(
+    action: str, parameters: dict[str, Any] | None, staged_hwnd: int
+) -> list[str]:
+    """Points the action will touch that the witnessed window does not own.
+
+    This tier exists because the rect comparison was only half the check, and the
+    weaker half. ``rect`` says the window has not moved; it says nothing about
+    whether a click at (x, y) reaches *that* window. Coordinates inside a
+    window's rectangle still land on whatever is stacked on top at that point,
+    because Windows delivers a click by z-order.
+
+    Containment in the rect was the obvious fix and is the wrong one: necessary,
+    not sufficient, and it also drags in the question of which DPI space the
+    coordinates and the rect are each in. Asking the OS which window owns the
+    point answers the real question and subsumes containment -- a point a window
+    owns is inside its visible region by construction.
+
+    Both checks are kept, because they fail on different things. If the window
+    slid sideways, an approved (820, 540) may still be owned by it while now
+    sitting over Cancel rather than Delete: ownership passes, rect catches it.
+    """
+    pairs = POINT_PARAMETERS.get(action)
+    if not pairs:
+        return []
+    if not parameters:
+        # A coordinate-bearing action whose coordinates we were not given cannot
+        # be checked, and an unchecked point is not an approved one.
+        return ["point_unknown"]
+    found: list[str] = []
+    for x_name, y_name in pairs:
+        raw_x, raw_y = parameters.get(x_name), parameters.get(y_name)
+        if raw_x is None or raw_y is None:
+            found.append("point_unknown")
+            continue
+        try:
+            point = (int(raw_x), int(raw_y))
+        except (TypeError, ValueError):
+            found.append("point_unknown")
+            continue
+        owner = POINT_OWNER(*point)
+        if not owner:
+            # Nobody owns it, or the question could not be asked.
+            found.append("point_unowned")
+        elif owner != staged_hwnd:
+            found.append("point_owner")
+    return found
+
+
 def compare(
     staged: Witness | None,
     current: Witness | None,
     *,
     action: str,
+    parameters: dict[str, Any] | None = None,
 ) -> Comparison:
     """Compare two readings for ``action``.
 
     A missing witness on either side is a mismatch. That is the whole point of
     treating a failed capture as a refusal: the alternative is a blank that
     matches anything.
+
+    ``parameters`` are the action's own arguments, needed by the point-ownership
+    tier: for a coordinate-bearing action, the window that owns each point it
+    will touch has to be the window the witness attests. Omitting them for such
+    an action is itself a mismatch -- see ``_point_differences``.
     """
     if staged is None and current is None:
         return Comparison(
@@ -378,6 +476,9 @@ def compare(
         differences.append("class_name")
     if geometry_matters(action) and staged.rect != current.rect:
         differences.append("rect")
+    # The other half of geometry: not just "the window has not moved" but "the
+    # point this will touch belongs to that window".
+    differences.extend(_point_differences(action, parameters, staged.hwnd))
     # Control is hard only when the action named one. When it did, the staged
     # value was resolved from the live tree, and so is this one.
     if staged.control_id or current.control_id:
@@ -412,6 +513,12 @@ def _describe(differences: list[str], staged: Witness, current: Witness) -> str:
         return f"a different {staged.app_name} window is in front now"
     if "rect" in differences:
         return f"the {staged.app_name} window moved or was resized"
+    if "point_owner" in differences:
+        return f"that point is no longer on the {staged.app_name} window"
+    if "point_unowned" in differences:
+        return "I could not tell which window that point is on"
+    if "point_unknown" in differences:
+        return "that action has no coordinates I could check"
     if "control_id" in differences:
         return "the control that was approved is no longer there"
     return "the foreground window changed"
@@ -420,6 +527,9 @@ def _describe(differences: list[str], staged: Witness, current: Witness) -> str:
 __all__ = [
     "CONTROL_RESOLVER",
     "GEOMETRY_ACTIONS",
+    "POINT_OWNER",
+    "POINT_PARAMETERS",
+    "WITNESS_ORIGINS",
     "Comparison",
     "Witness",
     "capture",
