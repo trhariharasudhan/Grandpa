@@ -304,21 +304,29 @@ def run_parsed(
     witness = None
     if needs_consent and not confirmed and confirm is None:
         if deferred_origin and _is_synthetic_input(spec):
-            # Synthetic input is stageable only against a focus witness. A
-            # keystroke goes to whatever has focus at the instant it is sent, so
-            # consent given a turn ago is consent for a screen that may no longer
-            # be there -- unless something recorded which screen it was, and
-            # checks it again before sending. That is the witness.
+            # Synthetic input is stageable only against a focus witness, and only
+            # by an origin that can satisfy the other two preconditions the
+            # witness depends on -- next-turn-only redemption and a spoken
+            # read-back. See focus_witness.WITNESS_ORIGINS for why that is an
+            # allowlist rather than "anyone who can take a reading": a witness on
+            # its own is a third of a mechanism, and handing it to a caller with
+            # no turns and no voice approves a keystroke nobody heard described.
             #
-            # A caller that cannot produce one is still refused, exactly as
-            # before: voice earns this by having a witness, not by being voice.
+            # An earlier comment here said voice earns this "by having a witness,
+            # not by being voice". That was wrong in a way worth recording: the
+            # capture succeeds for any caller on a Windows desktop, so without
+            # this check chat and the HTTP API would have gained the deferred
+            # path the moment a phrase mapped to a synthetic action.
             from grandpa.desktop import focus_witness
 
-            witness = focus_witness.capture(
-                control_target=str(parameters.get("control") or "")
-            )
-            if witness is None:
+            if not focus_witness.may_carry_a_witness(deferred_origin):
                 deferred_origin = None
+            else:
+                witness = focus_witness.capture(
+                    control_target=str(parameters.get("control") or "")
+                )
+                if witness is None:
+                    deferred_origin = None
         if not deferred_origin:
             # No one to ask and no opt-in: refuse, and stage nothing.
             return PhraseResult(

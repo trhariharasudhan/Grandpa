@@ -45,6 +45,40 @@ from typing import Any, Callable
 #: keystroke follows focus and does not care where the window sits.
 GEOMETRY_ACTIONS = frozenset({"mouse_click", "mouse_drag", "mouse_move"})
 
+#: The only origins that may stage synthetic input against a witness.
+#:
+#: A witness is one of three preconditions, not the whole mechanism. The other
+#: two are that the approval is redeemable on the *next* turn only, and that a
+#: spoken read-back names the window before anything is sent. Both of those need
+#: a loop with turns and a voice; a witness handed to a caller that has neither
+#: is a keystroke approved by something nobody heard describe it.
+#:
+#: So this is an allowlist, not a capability check, and it is deliberately not
+#: "any origin that can produce a witness":
+#:
+#: * ``voice`` is here because it *cannot* ask inline -- its only question is the
+#:   next utterance -- and because it has turns and speaks. Deferred consent with
+#:   a witness is the only shape of consent available to it.
+#: * ``chat`` is not, and not because it is less trusted. Chat *can* ask inline
+#:   and does: Screen Automation V2 prompts in the same turn and refuses on "n",
+#:   which verify_confirmation_enforcement's P5b probe pins. An inline question
+#:   answered now is strictly better evidence than a witness re-checked later, so
+#:   giving chat the deferred path would replace a stronger mechanism with a
+#:   weaker one.
+#: * ``http`` is not, because it has no turns and no user in the loop. "The next
+#:   turn" is meaningless when the next request may come from anywhere, and there
+#:   is nobody to read a read-back to.
+#:
+#: Widening this set means arguing that the new origin has all three, not just
+#: the witness.
+WITNESS_ORIGINS = frozenset({"voice"})
+
+
+def may_carry_a_witness(origin: str | None) -> bool:
+    """Whether ``origin`` may stage synthetic input against a witness."""
+    return bool(origin) and origin in WITNESS_ORIGINS
+
+
 _MISSING = "<no-witness>"
 
 
