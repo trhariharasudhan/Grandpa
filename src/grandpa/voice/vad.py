@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections import deque
 from dataclasses import dataclass
 
 
@@ -13,6 +14,26 @@ class VoiceActivityConfig:
     minimum_rms: float = 200.0
     noise_multiplier: float = 2.5
     minimum_speech_seconds: float = 0.25
+
+    #: The span within which ``minimum_speech_seconds`` of speech must fall.
+    #:
+    #: Onset used to require that much speech *consecutively*: a single
+    #: sub-threshold chunk set the run back to zero. At a 0.1s chunk that is
+    #: three unbroken chunks, and ordinary speech does not supply them --
+    #: plosives, the gaps between syllables and the start of a word all dip
+    #: below the threshold for one chunk at a time. Measured against a
+    #: threshold of 180 with chunks at 3000:
+    #:
+    #:     alternating loud/quiet       never started  (max_rms 3000)
+    #:     2 loud, 1 quiet, repeated    never started  (max_rms 3000)
+    #:     3 loud, 1 quiet, repeated    started
+    #:
+    #: That is the live log's contradiction: max_rms between 640 and 2994
+    #: against threshold 180, every capture ending in no_speech_timeout. The
+    #: requirement is still 0.25s of audio above the threshold; it is now
+    #: measured over a trailing window instead of demanded unbroken, so 3 of
+    #: any 6 chunks suffice. An isolated click is still 0.1s and still refused.
+    onset_window_seconds: float = 0.6
 
     #: Consecutive sub-threshold audio that ends an utterance.
     #:
@@ -44,6 +65,11 @@ class VoiceActivityConfig:
     #: That is what a user experiences as "Listening..." and then five to ten
     #: minutes of nothing at all.
     silence_before_speech_seconds: float = 8.0
+
+
+#: Chunk durations are floats, so 3 x 0.1 is 0.30000000000000004 and a 0.25
+#: budget met exactly by two 0.125s chunks must not miss by one ulp.
+_EPS = 1e-9
 
 
 class VoiceActivityDetector:
@@ -119,7 +145,9 @@ class VoiceActivityDetector:
         self._speech_square_sum = 0.0
         self._speech_chunks = 0
         self._elapsed = 0.0
-        self._speech_seconds = 0.0
+        #: (end_elapsed, duration, is_speech) for the trailing onset window.
+        self._onset_window: deque[tuple[float, float, bool]] = deque()
+        self._onset_speech_seconds = 0.0
         self._silence_after_speech = 0.0
         self._noise_floor = 0.0
         self._noise_samples = 0
@@ -127,6 +155,25 @@ class VoiceActivityDetector:
         self._speech_onset_seconds: float | None = None
         self._speech_active_seconds = 0.0
         self._finalization_reason: str | None = None
+
+    def _remember_for_onset(self, duration: float, is_speech: bool) -> None:
+        """Hold the last ``onset_window_seconds`` of classifications."""
+        self._onset_window.append((self._elapsed, duration, is_speech))
+        if is_speech:
+            self._onset_speech_seconds += duration
+        oldest_kept = self._elapsed - self.config.onset_window_seconds
+        while self._onset_window and self._onset_window[0][0] <= oldest_kept + _EPS:
+            _, evicted_duration, evicted_speech = self._onset_window.popleft()
+            if evicted_speech:
+                self._onset_speech_seconds -= evicted_duration
+        self._onset_speech_seconds = max(0.0, self._onset_speech_seconds)
+
+    def _oldest_speech_start(self) -> float:
+        """Where in the capture the speech still inside the window began."""
+        for end_elapsed, duration, is_speech in self._onset_window:
+            if is_speech:
+                return max(0.0, end_elapsed - duration)
+        return max(0.0, self._elapsed)
 
     def observe(self, rms: float, chunk_seconds: float) -> bool:
         """Return True when the utterance should stop."""
@@ -145,15 +192,21 @@ class VoiceActivityDetector:
             self._speech_square_sum += float(rms) * float(rms)
             self._speech_chunks += 1
         if not self._speech_started:
-            if is_speech:
-                self._speech_seconds += duration
-                if self._speech_seconds >= self.config.minimum_speech_seconds:
-                    self._speech_started = True
-                    self._speech_onset_seconds = max(
-                        0.0, self._elapsed - self._speech_seconds
-                    )
-            else:
-                self._speech_seconds = 0.0
+            self._remember_for_onset(duration, is_speech)
+            if self._onset_speech_seconds >= self.config.minimum_speech_seconds - _EPS:
+                self._speech_started = True
+                self._speech_onset_seconds = self._oldest_speech_start()
+            elif rms < self.config.minimum_rms:
+                # Only audio that could never have been speech feeds the floor.
+                #
+                # Every sub-threshold chunk used to be folded in, which let the
+                # floor absorb speech: a speech chunk below floor x 2.5 raised
+                # the floor, which raised the threshold, which made the next
+                # speech chunk likelier to be called noise. One live session
+                # walked 180.0 -> 188.9 -> 226.1 -> 291.8 -> 419.9 -> 500.4.
+                # Bounded by this condition the floor stays under minimum_rms,
+                # so the threshold stays under minimum_rms * noise_multiplier,
+                # and nothing it learns from was ever a candidate for speech.
                 self._noise_samples += 1
                 weight = 1.0 / min(self._noise_samples, 20)
                 self._noise_floor = (1.0 - weight) * self._noise_floor + weight * rms

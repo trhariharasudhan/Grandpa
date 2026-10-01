@@ -670,6 +670,22 @@ class VoiceSession:
                 f"empty. Check the Windows microphone privacy setting and that "
                 f"this is the input you are speaking into."
             )
+        elif level >= threshold > 0:
+            # "Levels reached 2994 against a threshold of 180" followed by "try
+            # speaking louder" is advice that cannot help, and it was printed
+            # seven times in one live session. max_rms is the loudest single
+            # chunk; the requirement is a quantity of such chunks inside a short
+            # window. So when the peak cleared the threshold and speech still
+            # did not start, loudness is not the problem and saying so is not
+            # merely unhelpful, it sends the user the wrong way.
+            voiced = float(getattr(audio, "speech_active_seconds", 0.0) or 0.0)
+            message = (
+                f"{named} was loud enough - peaks hit {level:.0f} against a "
+                f"threshold of {threshold:.0f} - but only {voiced:.1f}s of it "
+                f"held up, too little and too broken to start an utterance. "
+                f"Use `grandpa voice push-to-talk` to hold a key while you "
+                f"speak, which skips speech detection entirely."
+            )
         else:
             message = (
                 f"I did not hear speech on {named}. Levels reached "

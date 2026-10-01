@@ -28,6 +28,13 @@ from grandpa.voice.diagnostics import (
 )
 from grandpa.voice.errors import VoiceError, VoiceOutputUnavailableError
 from grandpa.voice.microphone import MicrophoneCapture
+from grandpa.voice.push_to_talk import (
+    KEY_CODES,
+    MAXIMUM_HOLD_SECONDS,
+    PushToTalkSession,
+    WindowsKeyProbe,
+    hold_to_talk_vad_config,
+)
 from grandpa.voice.speech_output import SpeechOutputEngine
 from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 from grandpa.voice.text_to_speech import list_system_voices
@@ -428,6 +435,111 @@ def _print_voices() -> None:
         return
     for voice_name in voices:
         click.echo(voice_name)
+
+
+@voice.command("push-to-talk")
+@click.option("--key", type=click.Choice(sorted(KEY_CODES)), default="space",
+              help="Key to hold while speaking.")
+@click.option("--device", type=int, default=None, help="Microphone input device index.")
+@click.option("--no-tts", is_flag=True, help="Print responses instead of speaking.")
+@click.option("--once", is_flag=True, help="Handle one utterance and exit.")
+@click.option("--no-route", is_flag=True,
+              help="Print the transcript only. Do not act on it.")
+@click.option("--model", default=None, help="Whisper model name, e.g. base.en.")
+@click.option("--language", default=None, help="Recognition language code, e.g. en.")
+def push_to_talk(
+    key: str,
+    device: int | None,
+    no_tts: bool,
+    once: bool,
+    no_route: bool,
+    model: str | None,
+    language: str | None,
+) -> None:
+    """Record while a key is held. No voice activity detection.
+
+    The adaptive detector decides for itself when speech starts, from a
+    threshold it derives from a noise floor it estimates as it goes. This
+    command removes that decision: the key down is the start, the key up is the
+    end, and every frame in between is kept.
+    """
+
+    if not WindowsKeyProbe.available():
+        safe_cli_error(
+            "Push-to-talk needs the Windows keyboard API (user32), which is not "
+            "available here. 'grandpa voice' uses automatic speech detection "
+            "instead."
+        )
+        raise SystemExit(1)
+
+    config = load_voice_assistant_config(
+        model=model, language=language, microphone=device, tts_enabled=not no_tts
+    )
+    capture = MicrophoneCapture(
+        duration_seconds=MAXIMUM_HOLD_SECONDS,
+        device=config.microphone if device is None else device,
+        recovery_attempts=config.microphone_recovery_attempts,
+        vad_config=hold_to_talk_vad_config(MAXIMUM_HOLD_SECONDS),
+    )
+    transcriber = FasterWhisperSpeechToText(
+        language=config.language,
+        model=config.stt_model,
+        device=config.device,
+        compute_type=config.compute_type,
+    )
+
+    responder = None
+    speaker = None
+    if not no_route:
+        from grandpa.voice.assistant import VoiceCommandProcessor
+
+        responder = VoiceCommandProcessor(model_name=None)
+        if not no_tts:
+            try:
+                speaker = SpeechOutputEngine()
+            except VoiceOutputUnavailableError as exc:
+                click.echo(f"Speech output unavailable, printing instead: {exc}")
+
+    session = PushToTalkSession(
+        capture=capture,
+        transcriber=transcriber,
+        probe=WindowsKeyProbe(),
+        key=key,
+        responder=responder,
+        speaker=speaker,
+        echo=click.echo,
+        on_idle=_console_idle_check,
+    )
+    click.echo(f"Push-to-talk ready on device {capture.device}.")
+    try:
+        session.run(once=once)
+    except KeyboardInterrupt:
+        click.echo("")
+    finally:
+        capture.close()
+
+
+def _console_idle_check() -> bool:
+    """Drain whatever the held key typed, and report Esc as a request to stop.
+
+    Holding a printable key in a terminal also fills the console input buffer
+    with it. Draining here keeps the prompt clean and gives Esc somewhere to be
+    noticed. Absent a console -- a pipe, a test -- there is nothing to drain and
+    nothing to stop for.
+    """
+
+    try:
+        import msvcrt
+    except ImportError:
+        return False
+    stop = False
+    try:
+        while msvcrt.kbhit():
+            if msvcrt.getwch() == "\x1b":
+                stop = True
+    except Exception:
+        return False
+    return stop
 
 
 @voice.command("set-device")
