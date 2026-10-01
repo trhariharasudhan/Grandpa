@@ -322,14 +322,49 @@ class VoiceSession:
         data_len = len(getattr(audio, "data", b"") or b"")
         num_samples = data_len // 2 if data_len else 0
 
-        # Log diagnostics in debug mode
+        speech_rms = float(getattr(audio, "speech_window_rms", 0.0) or 0.0)
+        threshold = float(getattr(audio, "speech_threshold", 0.0) or 0.0)
+        noise_floor = float(getattr(audio, "noise_floor", 0.0) or 0.0)
+        reason = str(getattr(audio, "finalization_reason", "") or "unknown")
+
+        # Everything needed to read a capture without guessing.
+        #
+        # The previous line had capture_duration, voiced_duration and audio_rms,
+        # and each of those is easy to misread on its own:
+        #
+        #   * capture_duration is wall clock including the wait for speech to
+        #     begin, which is not in the buffer. A 4.88s capture sent Whisper
+        #     about 2.4s of audio.
+        #   * voiced_duration is the SUM of chunks above the threshold, not the
+        #     span of the utterance. 1.40s of voiced can be a 3s sentence.
+        #   * audio_rms is the whole buffer, diluted by pre-roll and trailing
+        #     silence. A capture logged at 176 had speech chunks averaging 289.
+        #
+        # So the reason, the threshold, the floor it came from, and the speech
+        # window on its own are all reported now.
         if self.debug:
             self.presenter.output(
-                f"[DEBUG] capture_duration={capture_duration:.2f}s "
+                f"[DEBUG] reason={reason} "
+                f"capture_duration={capture_duration:.2f}s "
                 f"voiced_duration={voiced_duration:.2f}s "
-                f"audio_rms={audio_rms:.1f} "
+                f"buffer_rms={audio_rms:.1f} "
+                f"speech_rms={speech_rms:.1f} "
+                f"threshold={threshold:.1f} "
+                f"noise_floor={noise_floor:.1f} "
                 f"samples={num_samples}"
             )
+        logger.info(
+            "voice capture: reason=%s capture=%.2fs voiced=%.2fs buffer_rms=%.1f "
+            "speech_rms=%.1f threshold=%.1f floor=%.1f samples=%d",
+            reason,
+            capture_duration,
+            voiced_duration,
+            audio_rms,
+            speech_rms,
+            threshold,
+            noise_floor,
+            num_samples,
+        )
 
         # A capture too marginal to be speech must not become a command.
         #
@@ -368,6 +403,35 @@ class VoiceSession:
                     voiced_duration,
                     audio_rms,
                     getattr(audio, "finalization_reason", None),
+                )
+                return None
+
+            if _too_thin_to_transcribe(voiced_duration, speech_rms):
+                # Do not spend a model call on this, and do not risk the answer.
+                #
+                # Two live captures were 0.50s and 0.70s of audio whose speech
+                # chunks averaged 289 and 353 -- 1.6x and 2.0x the threshold, so
+                # they cleared it, but barely. Whisper answered each with a
+                # hundred words of "new, new, new..." at no_speech_prob 0.877 and
+                # 0.832. The repetition filter caught both, which is the system
+                # working; the model should not have been asked at all.
+                #
+                # Short AND quiet, not either alone: a clipped "yes" is short but
+                # loud and must still work, and a long quiet mumble is real
+                # speech that the confidence gates can judge for themselves.
+                spoken = (
+                    f"That was too short and too quiet for me to make out - "
+                    f"{voiced_duration:.1f} seconds at level {speech_rms:.0f}. "
+                    f"Say it again a little louder."
+                )
+                self.presenter.print_error(spoken)
+                logger.warning(
+                    "voice refused to transcribe a thin capture: voiced=%.2fs "
+                    "speech_rms=%.1f threshold=%.1f reason=%s",
+                    voiced_duration,
+                    speech_rms,
+                    threshold,
+                    reason,
                 )
                 return None
 
@@ -787,6 +851,38 @@ def build_voice_session(
         # WARNING on an ordinary run, because a user who waited ten minutes should
         # not have had to know to re-run with a flag to find out why.
         debug=debug or verbose,
+    )
+
+
+#: Below this much voiced audio, a capture is only sent to the model if it was
+#: loud. Set from the live captures: 0.50s and 0.70s of barely-above-threshold
+#: audio each produced a hundred hallucinated words, while a 1.40s capture at
+#: 2949 was real speech.
+MIN_TRANSCRIBE_VOICED_SECONDS = 1.0
+
+#: ...and "loud" means this. The two bad captures measured 289 and 353 in the
+#: speech window; ordinary speech in the same room measured 2949. 500 sits well
+#: clear of the noise and far below real speech, so a short utterance has to be
+#: genuinely spoken to get through.
+MIN_TRANSCRIBE_SPEECH_RMS = 500.0
+
+
+def _too_thin_to_transcribe(voiced_seconds: float, speech_rms: float) -> bool:
+    """Whether a capture is too short *and* too quiet to be worth a model call.
+
+    Both conditions, never either alone:
+
+    * short alone would refuse a clipped "yes", which is 0.3s and perfectly
+      audible;
+    * quiet alone would refuse a long mumble, which is real speech and which the
+      no_speech_prob and avg_logprob gates are there to judge.
+
+    A capture that is both is the shape that made Whisper invent a hundred words
+    from seven tenths of a second.
+    """
+    return (
+        voiced_seconds < MIN_TRANSCRIBE_VOICED_SECONDS
+        and speech_rms < MIN_TRANSCRIBE_SPEECH_RMS
     )
 
 

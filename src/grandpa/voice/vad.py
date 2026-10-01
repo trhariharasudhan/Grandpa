@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 
 
@@ -12,7 +13,23 @@ class VoiceActivityConfig:
     minimum_rms: float = 200.0
     noise_multiplier: float = 2.5
     minimum_speech_seconds: float = 0.25
-    silence_seconds: float = 0.55
+
+    #: Consecutive sub-threshold audio that ends an utterance.
+    #:
+    #: Was 0.55, which at a 0.1s chunk means six chunks -- 0.6s -- of quiet. That
+    #: is inside the range of an ordinary mid-sentence pause, so a sentence was
+    #: cut at its first breath and Whisper received a fragment. Measured on a
+    #: synthetic 2.8s sentence with a 0.6s internal pause:
+    #:
+    #:     0.55 -> captured 1.2s of 2.8s   TRUNCATED
+    #:     0.70 -> captured 2.8s           intact
+    #:     0.80 -> captured 2.8s           intact
+    #:
+    #: 0.70 is the first value that holds it together, so 0.80 is that plus one
+    #: chunk of margin. The cost is 0.25s more latency after the speaker stops,
+    #: which is the right trade against losing the sentence: a fragment does not
+    #: merely fail, it makes the model invent words to fill the gap.
+    silence_seconds: float = 0.80
     maximum_utterance_seconds: float = 12.0
 
     #: How long to wait for speech to begin before giving up on this capture.
@@ -70,6 +87,21 @@ class VoiceActivityDetector:
         return self._max_rms
 
     @property
+    def speech_window_rms(self) -> float:
+        """RMS of the chunks that cleared the threshold, and nothing else.
+
+        Distinct from the whole-capture RMS, which is what the log used to
+        report, and the difference is large enough to mislead: a capture whose
+        speech chunks averaged 289 was reported as rms 176, because the buffer
+        also holds 0.3s of pre-roll and 0.6s of trailing silence. Reading 176
+        against a threshold of 180 suggests speech never crossed it, when in fact
+        every speech chunk did.
+        """
+        if not self._speech_chunks:
+            return 0.0
+        return math.sqrt(self._speech_square_sum / self._speech_chunks)
+
+    @property
     def current_threshold(self) -> float:
         """The level a chunk must reach right now to count as speech."""
         return max(
@@ -84,6 +116,8 @@ class VoiceActivityDetector:
         # This clock measures the whole capture, not the current attempt.
         self._wall_elapsed = getattr(self, "_wall_elapsed", 0.0)
         self._max_rms = getattr(self, "_max_rms", 0.0)
+        self._speech_square_sum = 0.0
+        self._speech_chunks = 0
         self._elapsed = 0.0
         self._speech_seconds = 0.0
         self._silence_after_speech = 0.0
@@ -108,6 +142,8 @@ class VoiceActivityDetector:
         is_speech = rms >= threshold
         if is_speech:
             self._speech_active_seconds += duration
+            self._speech_square_sum += float(rms) * float(rms)
+            self._speech_chunks += 1
         if not self._speech_started:
             if is_speech:
                 self._speech_seconds += duration

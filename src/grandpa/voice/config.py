@@ -83,8 +83,14 @@ def load_voice_assistant_config(
         minimum_speech_seconds=max(
             0.0, _env_float("GRANDPA_VOICE_MINIMUM_SPEECH_SECONDS", 0.25)
         ),
+        # 0.80, not 0.55. This is the value that actually reaches the VAD, so
+        # changing only VoiceActivityConfig's own default would have fixed
+        # nothing the CLI runs. At a 0.1s chunk, 0.55 ends an utterance after six
+        # chunks -- 0.6s of quiet -- which is inside an ordinary mid-sentence
+        # pause, so a sentence was cut at its first breath and the model received
+        # a fragment. See the measurement in vad.VoiceActivityConfig.
         silence_timeout_seconds=max(
-            0.1, _env_float("GRANDPA_VOICE_SILENCE_TIMEOUT_SECONDS", 0.55)
+            0.1, _env_float("GRANDPA_VOICE_SILENCE_TIMEOUT_SECONDS", 0.80)
         ),
         microphone_recovery_attempts=max(
             0, _env_int("GRANDPA_VOICE_RECOVERY_ATTEMPTS", 2) or 0

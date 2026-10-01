@@ -42,6 +42,17 @@ class CapturedAudio:
     #: and nothing at all is not.
     max_chunk_rms: float = 0.0
     speech_threshold: float = 0.0
+    #: RMS of the chunks that cleared the threshold, and nothing else.
+    #:
+    #: ``rms_level`` above is the whole buffer, which includes 0.3s of pre-roll
+    #: and the trailing silence that ended the utterance. The two differ enough to
+    #: mislead: a live capture whose speech chunks averaged about 289 was logged
+    #: as rms 176, which read as "speech never crossed the 180 threshold" when
+    #: every speech chunk had.
+    speech_window_rms: float = 0.0
+    #: The adaptive floor the threshold was derived from, so a log line shows why
+    #: the threshold was what it was.
+    noise_floor: float = 0.0
     #: Frames actually read from the device. Zero means the device delivered
     #: nothing, which is a different fault from delivering audio that is too
     #: quiet, and the two need different advice.
@@ -239,6 +250,8 @@ class MicrophoneCapture:
             ),
             max_chunk_rms=detector.max_rms,
             speech_threshold=detector.current_threshold,
+            speech_window_rms=detector.speech_window_rms,
+            noise_floor=detector.noise_floor,
             chunks_read=chunks_read,
         )
 
