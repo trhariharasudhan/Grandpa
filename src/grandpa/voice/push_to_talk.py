@@ -157,6 +157,8 @@ class PushToTalkSession:
     on_idle: Callable[[], bool] | None = None
     #: Shortest hold worth transcribing. A tap is a tap, not an utterance.
     minimum_hold_seconds: float = 0.2
+    #: Deduped, so a standing fallback is not reprinted on every hold.
+    _last_warning: str | None = None
 
     def wait_for_press(self) -> bool:
         """Block until the key goes down. False means the caller asked to stop."""
@@ -194,6 +196,41 @@ class PushToTalkSession:
         reason = "key_released" if held < self.maximum_seconds else "maximum_hold"
         return audio, max(0.0, held), reason
 
+    def _report_device_warning(self) -> None:
+        """Say once if the recorder fell back, or if an index is not the device.
+
+        The recorder has always recorded this and nothing ever printed it, so a
+        requested index that pointed at the wrong microphone after a Bluetooth
+        reshuffle recorded silently from whatever was at that position.
+        """
+        warning = getattr(self.capture, "last_warning", None)
+        if warning and warning != self._last_warning:
+            self.echo(str(warning))
+            self._last_warning = str(warning)
+
+    def _transcribe(self, audio: Any) -> tuple[str, str]:
+        """Transcribe without passing through a gate that can refuse the audio.
+
+        ``transcribe_trusted`` disables both Whisper's own speech suppression
+        and this project's stricter copy of it, and returns an empty string with
+        a reason instead of raising. A transcriber that does not offer it -- a
+        test double, or another backend -- falls back to ``transcribe``, and its
+        refusal is caught here rather than reaching the top level as a
+        traceback.
+        """
+        trusted = getattr(self.transcriber, "transcribe_trusted", None)
+        if callable(trusted):
+            outcome = trusted(audio)
+            return outcome.text, outcome.explanation
+        from grandpa.voice.errors import VoiceError
+
+        try:
+            return (self.transcriber.transcribe(audio) or "").strip(), (
+                "nothing recognisable was in it"
+            )
+        except VoiceError as exc:
+            return "", str(exc).splitlines()[0]
+
     def run_once(self) -> HoldResult | None:
         """One utterance. None means the caller asked to stop."""
         self.echo(f"Hold {self.key.upper()} and speak. Esc or Ctrl+C to finish.")
@@ -202,6 +239,7 @@ class PushToTalkSession:
         self.echo("Recording...")
         audio, held, reason = self.record_while_held()
         self.echo(f"Released after {held:.1f}s. Transcribing...")
+        self._report_device_warning()
 
         if held < self.minimum_hold_seconds:
             # No threshold is being applied to the audio here -- only to how
@@ -220,7 +258,7 @@ class PushToTalkSession:
             )
             return HoldResult(held_seconds=held, reason="no_audio", audio=audio)
 
-        transcript = (self.transcriber.transcribe(audio) or "").strip()
+        transcript, empty_note = self._transcribe(audio)
         result = HoldResult(
             transcript=transcript, held_seconds=held, reason=reason, audio=audio
         )
@@ -229,7 +267,8 @@ class PushToTalkSession:
             # command, and must not be read as one.
             self.echo(
                 f"Nothing recognisable in {held:.1f}s of audio "
-                f"(level {getattr(audio, 'rms_level', 0.0):.0f}). Try again."
+                f"(level {getattr(audio, 'rms_level', 0.0):.0f}) -- {empty_note}. "
+                f"Try again."
             )
             result.reason = "empty_transcript"
             return result

@@ -73,6 +73,7 @@ class SpeechInputEngine:
         audio_bytes: bytes | None = None,
         audio_format: str = "wav",
         language: str | None = None,
+        trust_audio: bool = False,
     ) -> SpeechInputResult:
         started = time.perf_counter()
         if text is not None:
@@ -93,6 +94,7 @@ class SpeechInputEngine:
                 started,
                 audio_format=audio_format,
                 language=language,
+                trust_audio=trust_audio,
             )
             self._last_result = result
             return result
@@ -151,6 +153,7 @@ class SpeechInputEngine:
         *,
         audio_format: str,
         language: str | None,
+        trust_audio: bool = False,
     ) -> SpeechInputResult:
         if not audio_bytes:
             raise VoiceRecognitionError(detail="Empty audio was received.")
@@ -171,8 +174,12 @@ class SpeechInputEngine:
 
         try:
             backend = self._get_backend()
-            result = backend.transcribe(
-                audio_bytes, format=normalized_format, language=language
+            result = self._invoke_backend(
+                backend,
+                audio_bytes,
+                normalized_format,
+                language,
+                trust_audio=trust_audio,
             )
         except ModuleNotFoundError as exc:
             if exc.name == "faster_whisper":
@@ -216,17 +223,64 @@ class SpeechInputEngine:
             raise VoiceRecognitionError(detail=str(exc)) from exc
 
         transcript = result.text.strip()
-        if not transcript:
+        if not transcript and not trust_audio:
             raise VoiceRecognitionError(detail="No speech was detected in the audio.")
         return SpeechInputResult(
-            status="completed",
+            # Trusted audio reports an empty transcript as a result rather than
+            # an exception. The audio was recorded on purpose, so "nothing was
+            # recognised in it" is an answer, not a failure, and raising turned
+            # it into a traceback at the top level of a CLI command.
+            status="completed" if transcript else "empty",
             transcript=transcript,
             engine="faster_whisper",
             latency_ms=_elapsed_ms(started),
             confidence=result.confidence or 0.0,
             language=result.language,
             duration_seconds=float(result.duration_seconds or 0.0),
+            fallback_reason=self._empty_reason(backend) if not transcript else None,
         )
+
+    @staticmethod
+    def _invoke_backend(
+        backend: Any,
+        audio_bytes: bytes,
+        normalized_format: str,
+        language: str | None,
+        *,
+        trust_audio: bool,
+    ) -> Any:
+        """Call the backend, passing ``trust_audio`` only if it accepts it.
+
+        Backends are duck-typed here and the suite supplies several doubles that
+        predate the argument, so an unconditional keyword would break them. When
+        a backend cannot be told to trust the audio it simply judges it as
+        before, which is the safe direction.
+        """
+        if trust_audio:
+            try:
+                return backend.transcribe(
+                    audio_bytes,
+                    format=normalized_format,
+                    language=language,
+                    trust_audio=True,
+                )
+            except TypeError:
+                pass
+        return backend.transcribe(
+            audio_bytes, format=normalized_format, language=language
+        )
+
+    @staticmethod
+    def _empty_reason(backend: Any) -> str | None:
+        """Which of the four gates emptied the transcript.
+
+        Recorded by the backend on every decode. Without it an empty transcript
+        is indistinguishable from the several different causes of one, which is
+        what made the live failure unreadable.
+        """
+        diagnostics = getattr(backend, "last_diagnostics", None)
+        reason = getattr(diagnostics, "empty_reason", "") or ""
+        return reason or None
 
     def _get_backend(self) -> Any:
         if self._backend is None:

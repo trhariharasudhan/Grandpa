@@ -145,6 +145,18 @@ class MicrophoneDeviceManager:
         self._last_refresh_at = self.clock()
         return tuple(devices)
 
+    def _index_identity_warning(
+        self, match: MicrophoneDevice, requested_index: int
+    ) -> str | None:
+        """Compare a requested index against the stored name preference."""
+        try:
+            preference = self.preference_loader()
+        except Exception:
+            # A preference that cannot be read must not break a request that
+            # named an explicit index.
+            return None
+        return _index_identity_warning_for(match, requested_index, preference)
+
     def select(
         self,
         *,
@@ -171,7 +183,11 @@ class MicrophoneDeviceManager:
                 raise self._selection_error(
                     f"Microphone device {requested_index} was not found.", devices
                 )
-            return MicrophoneSelection(match, requested_index=requested_index)
+            return MicrophoneSelection(
+                match,
+                requested_index=requested_index,
+                warning=self._index_identity_warning(match, requested_index),
+            )
 
         preference = self.preference_loader()
         identity = _coerce_identity(preference)
@@ -373,6 +389,34 @@ def _find_by_identity(
             "wasapi" in normalize_device_name(item.driver),
             not item.is_virtual,
         ),
+    )
+
+
+def _index_identity_warning_for(
+    match: MicrophoneDevice, requested_index: int, preference: Any
+) -> str | None:
+    """Say so when a requested index is not the device the user chose by name.
+
+    PortAudio indexes are positional, not stable: the same microphone was index
+    9 on one run and 15 on the next because a Bluetooth device connected in
+    between. Nothing in Grandpa persists an index -- the stored preference is a
+    name plus a host API, and the index is only ever supplied for one
+    invocation by ``--microphone N`` or ``GRANDPA_VOICE_MICROPHONE`` -- but when
+    one *is* supplied it was taken on trust, so a shifted index silently
+    recorded from whatever now sits at that position.
+
+    This does not override the request. The user asked for an index and gets it;
+    they are told when it disagrees with the name they saved.
+    """
+    identity = _coerce_identity(preference)
+    if identity is None or not identity.name:
+        return None
+    if normalize_device_name(match.name) == normalize_device_name(identity.name):
+        return None
+    return (
+        f"Device {requested_index} is '{match.name}', not the saved preference "
+        f"'{identity.name}'. Indexes shift when audio devices connect or "
+        f"disconnect. Omit the index to use the saved name."
     )
 
 

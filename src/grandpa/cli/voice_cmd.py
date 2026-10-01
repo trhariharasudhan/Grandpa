@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import tempfile
 import time
 from pathlib import Path
@@ -39,6 +40,48 @@ from grandpa.voice.speech_output import SpeechOutputEngine
 from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 from grandpa.voice.text_to_speech import list_system_voices
 from grandpa.voice.vad import VoiceActivityConfig
+
+
+def handles_voice_errors(command):
+    """Turn an expected voice failure into a sentence and exit 1.
+
+    Every expected failure in this module is a ``VoiceError`` subclass, and
+    seven of the eleven entry points let one escape to a traceback. Measured by
+    driving each command with its helper patched to raise:
+
+        voice doctor            TRACEBACK
+        voice diagnose          TRACEBACK
+        voice test              TRACEBACK
+        voice set-device        TRACEBACK
+        voice microphone-test   TRACEBACK
+        voice push-to-talk      TRACEBACK
+        voice --list-voices     TRACEBACK
+        voice --diagnose        TRACEBACK
+        voice devices           handled, but exit 0
+        voice --list-microphones handled, but exit 0
+        voice (group)           handled
+
+    Two of those -- ``set-device`` and ``microphone-test`` -- do have an
+    ``except VoiceError``; they call ``import_sounddevice()`` on the line
+    *before* the ``try``, which is outside it. A decorator is used rather than
+    eleven more try blocks precisely because the placement is what went wrong.
+
+    A stack trace is not a user-facing error message: it buries the one
+    sentence that matters and reads as a crash in Grandpa rather than something
+    the user can fix.
+    """
+
+    @functools.wraps(command)
+    def wrapper(*args, **kwargs):
+        try:
+            return command(*args, **kwargs)
+        except VoiceError as exc:
+            safe_cli_error(str(exc))
+            if getattr(exc, "detail", None):
+                safe_cli_error(f"Detail: {exc.detail}")
+            raise SystemExit(1) from None
+
+    return wrapper
 
 
 @click.group("voice", invoke_without_command=True)
@@ -93,6 +136,7 @@ from grandpa.voice.vad import VoiceActivityConfig
     help="Enable screen-reader friendly output.",
 )
 @click.pass_context
+@handles_voice_errors
 def voice(
     ctx: click.Context,
     no_tts: bool,
@@ -168,6 +212,7 @@ def voice(
     show_default=True,
     help="Microphone test duration.",
 )
+@handles_voice_errors
 def doctor(device: int | None, duration: float) -> None:
     """Run bounded microphone, STT, and TTS readiness checks."""
 
@@ -178,6 +223,7 @@ def doctor(device: int | None, duration: float) -> None:
 
 @voice.command("diagnose")
 @click.option("--device", type=int, default=None, help="Input device index to inspect.")
+@handles_voice_errors
 def diagnose_voice(device: int | None) -> None:
     """Show voice runtime and device diagnostics without recording."""
 
@@ -191,6 +237,7 @@ def _print_diagnostics(checks: list[dict]) -> None:
 
 @voice.command("test")
 @click.option("--dry-run", is_flag=True, help="Validate TTS without speaking.")
+@handles_voice_errors
 def test_voice(dry_run: bool) -> None:
     """Say a short test phrase through the configured TTS backend."""
 
@@ -208,6 +255,7 @@ def test_voice(dry_run: bool) -> None:
 
 
 @voice.command("devices")
+@handles_voice_errors
 def devices() -> None:
     _print_microphones()
 
@@ -226,6 +274,7 @@ def devices() -> None:
     is_flag=True,
     help="Skip capture playback for automated/non-interactive diagnostics.",
 )
+@handles_voice_errors
 def microphone_test(
     device: int | None,
     device_name: str | None,
@@ -394,10 +443,27 @@ def _print_stt_diagnostics(label, diagnostics) -> None:
     click.echo(f"  language: {diagnostics.language or 'unknown'}")
     for name, value in diagnostics.options.items():
         click.echo(f"  {name}: {value}")
+    # Why the transcript was empty, when it was. Without this an empty result is
+    # indistinguishable from the several different things that cause one, and
+    # the only trace was a logger.info with no file handler unless --verbose --
+    # so a live failure left nothing to read.
+    empty_reason = getattr(diagnostics, "empty_reason", "") or ""
+    if empty_reason:
+        click.echo(f"  empty_reason: {empty_reason}")
+        click.echo(
+            f"  segments_dropped_by_confidence_filter: "
+            f"{getattr(diagnostics, 'segments_dropped', 0)}"
+        )
     for index, segment in enumerate(diagnostics.segments, start=1):
+        # The cutoffs this is compared against, beside the number, because 0.45
+        # is stricter than the 0.5 passed to Whisper itself: a segment Whisper
+        # kept can still be dropped here.
+        no_speech = segment["no_speech_probability"]
+        dropped = isinstance(no_speech, (int, float)) and no_speech > 0.45
         click.echo(
             f"  segment {index}: {segment['start']:.3f}-{segment['end']:.3f}s "
-            f"{segment['text']!r}; no_speech={segment['no_speech_probability']}"
+            f"{segment['text']!r}; no_speech={no_speech}"
+            f"{' DROPPED (> 0.45)' if dropped else ''}"
         )
 
 
@@ -406,11 +472,7 @@ def _seconds(value: float | None) -> str:
 
 
 def _print_microphones() -> None:
-    try:
-        found = list_input_devices()
-    except VoiceError as exc:
-        click.echo(str(exc))
-        return
+    found = list_input_devices()
     if not found:
         click.echo("No input devices found.")
         return
@@ -447,6 +509,7 @@ def _print_voices() -> None:
               help="Print the transcript only. Do not act on it.")
 @click.option("--model", default=None, help="Whisper model name, e.g. base.en.")
 @click.option("--language", default=None, help="Recognition language code, e.g. en.")
+@handles_voice_errors
 def push_to_talk(
     key: str,
     device: int | None,
@@ -544,6 +607,7 @@ def _console_idle_check() -> bool:
 
 @voice.command("set-device")
 @click.argument("name")
+@handles_voice_errors
 def set_device(name: str) -> None:
     """Save the preferred microphone by name."""
 

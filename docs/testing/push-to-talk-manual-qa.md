@@ -33,11 +33,27 @@ Expected, per hold:
 | Key down | `Recording...` |
 | Key up | `Released after N.Ns. Transcribing...` |
 | Speech recognised | `You said: <transcript>`, then the reply |
-| Nothing recognisable | Says so with the audio level, and routes nothing. An empty transcription is never read as a command. |
+| Nothing recognisable | Says so with the audio level and which gate emptied it, and routes nothing. An empty transcription is never read as a command. |
+| Microphone is not the saved one | Says which device the index actually is. PortAudio indexes shift when audio devices connect; nothing persists one. |
 | Key tapped, not held | Says it was a tap and asks for a hold. Nothing is transcribed. |
 | No audio captured | Says the device delivered nothing and points at `grandpa voice doctor`. |
 
-Esc or Ctrl+C ends the loop. It never exits silently.
+Esc or Ctrl+C ends the loop. It never exits silently, and no expected failure
+prints a stack trace.
+
+**No second speech gate.** The automatic path hands audio to Whisper with
+`no_speech_threshold` 0.5, `log_prob_threshold` -0.85 and
+`compression_ratio_threshold` 2.4, and then applies a stricter copy of the first
+two on the decoded segments (`no_speech_prob > 0.45`), so a segment Whisper
+chose to keep can still be dropped. Push-to-talk disables all of it: the user
+holding a key down has already answered the question those thresholds ask. The
+repetition filter stays, because it rejects a decoder failure mode rather than
+judging the audio, and when it fires the command says so.
+
+If a hold genuinely transcribes to nothing, the command prints which of the
+gates emptied it (`no speech decoded`, `every segment dropped`, `repetition
+loop`) rather than raising. `grandpa voice microphone-test` prints the same
+per-segment numbers with the cutoff beside each one.
 
 Windows only: the key is read through `GetAsyncKeyState`, which asks what the
 keyboard is doing and synthesises nothing, so this requires no actuation

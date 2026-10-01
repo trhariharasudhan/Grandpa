@@ -27,6 +27,20 @@ class FasterWhisperDiagnostics:
     language_probability: float | None
     segments: tuple[dict[str, Any], ...]
 
+    #: Why the transcript came back empty, when it did. An empty transcript used
+    #: to be indistinguishable from the four different things that cause one,
+    #: and the only trace was a logger.info with no file handler unless
+    #: --verbose, so a live failure left nothing to read.
+    #:
+    #: "no_segments"         Whisper decoded nothing at all.
+    #: "segments_filtered"   it decoded segments and the confidence filter
+    #:                       dropped every one.
+    #: "repetition_filtered" it decoded a degenerate loop.
+    #: ""                    the transcript is not empty.
+    empty_reason: str = ""
+    segments_dropped: int = 0
+    trusted_audio: bool = False
+
 
 try:
     from faster_whisper import WhisperModel
@@ -107,32 +121,52 @@ class FasterWhisperBackend(SpeechBackend):
         *,
         format: str = "wav",
         language: Optional[str] = None,
+        trust_audio: bool = False,
     ) -> TranscriptionResult:
         """Transcribe audio bytes using Faster-Whisper."""
         suffix = f".{format}" if not format.startswith(".") else format
         tmp_path = _write_closed_temp_audio(audio, suffix)
         try:
-            return self.transcribe_file(tmp_path, language=language)
+            return self.transcribe_file(
+                tmp_path, language=language, trust_audio=trust_audio
+            )
         finally:
             _delete_temp_audio(tmp_path)
 
     def transcribe_file(
-        self, path: str | Path, *, language: str | None = None
+        self,
+        path: str | Path,
+        *,
+        language: str | None = None,
+        trust_audio: bool = False,
     ) -> TranscriptionResult:
-        """Transcribe a closed audio file through the canonical production path."""
+        """Transcribe a closed audio file through the canonical production path.
+
+        ``trust_audio`` skips the confidence filter below as well as relaxing
+        Whisper's own thresholds. See :func:`build_transcription_options`.
+        """
 
         model = self._ensure_model()
-        options = build_transcription_options(language)
+        options = build_transcription_options(language, trust_audio=trust_audio)
         segments_iter, info = model.transcribe(str(path), **options)
         segments_list = list(segments_iter)
 
-        # Filter segments based on confidence metadata to reject background noise/hallucination
+        # Filter segments based on confidence metadata to reject background
+        # noise/hallucination.
+        #
+        # This is a second, stricter copy of a judgement Whisper has already
+        # made: no_speech_prob > 0.45 against the no_speech_threshold of 0.5
+        # passed above, and avg_logprob < -0.85 against the identical
+        # log_prob_threshold. A segment Whisper kept can still be dropped here.
+        # Trusted audio skips it, because the user holding a key down has
+        # already answered the question it asks.
         valid_segments = []
+        dropped = 0
         for seg in segments_list:
             no_speech = getattr(seg, "no_speech_prob", 0.0)
             avg_log = getattr(seg, "avg_logprob", 0.0)
             # Avoid type errors in unit tests where MagicMock returns mock objects for attributes
-            if isinstance(no_speech, (int, float)) and isinstance(
+            if not trust_audio and isinstance(no_speech, (int, float)) and isinstance(
                 avg_log, (int, float)
             ):
                 if no_speech > 0.45 or avg_log < -0.85:
@@ -142,15 +176,18 @@ class FasterWhisperBackend(SpeechBackend):
                         no_speech,
                         avg_log,
                     )
+                    dropped += 1
                     continue
             valid_segments.append(seg)
 
         # Build result
         text = "".join(seg.text for seg in valid_segments).strip()
+        repetition_filtered = False
         if text and _is_hallucinated_repetition(text):
             logger.info("Ignoring degenerate repetitive hallucination: %r", text)
             text = ""
             valid_segments = []
+            repetition_filtered = True
 
         segments = [
             Segment(
@@ -192,6 +229,11 @@ class FasterWhisperBackend(SpeechBackend):
                 }
                 for segment in segments_list
             ),
+            empty_reason=_empty_reason(
+                text, segments_list, dropped, repetition_filtered
+            ),
+            segments_dropped=dropped,
+            trusted_audio=trust_audio,
         )
         return result
 
@@ -220,8 +262,22 @@ def select_compute_type(device: str = "auto", compute_type: str = "auto") -> str
     return "int8"
 
 
-def build_transcription_options(language: str | None = None) -> dict[str, Any]:
-    """Return the single production decoding policy used for local STT."""
+def build_transcription_options(
+    language: str | None = None, *, trust_audio: bool = False
+) -> dict[str, Any]:
+    """Return the single production decoding policy used for local STT.
+
+    ``trust_audio`` is for audio whose provenance already answers the question
+    these thresholds exist to ask. Push-to-talk is the case: the user held a key
+    down for the duration of the utterance, so "is there speech here" has been
+    settled by a person and Whisper suppressing the decode on its own estimate
+    can only be wrong.
+
+    Each threshold is set to ``None``, which is how faster-whisper disables the
+    corresponding check -- all three are ``Optional[float]`` in 1.2.1. Nothing
+    else changes, so the decode itself is identical; only the three places it
+    could discard its own output are removed.
+    """
 
     options: dict[str, Any] = {
         "beam_size": 1,
@@ -229,12 +285,30 @@ def build_transcription_options(language: str | None = None) -> dict[str, Any]:
         "condition_on_previous_text": False,
         "initial_prompt": "Grandpa, Notepad, Chrome, Calculator, VS Code, Explorer, Settings, Terminal.",
         "vad_filter": False,
-        "no_speech_threshold": 0.5,
-        "compression_ratio_threshold": 2.4,
-        "log_prob_threshold": -0.85,
+        # Stricter than faster-whisper's own defaults of 0.6 and -1.0. Kept, so
+        # the automatic path is unchanged by this commit.
+        "no_speech_threshold": None if trust_audio else 0.5,
+        "compression_ratio_threshold": None if trust_audio else 2.4,
+        "log_prob_threshold": None if trust_audio else -0.85,
         "language": language or "en",
     }
     return options
+
+
+def _empty_reason(
+    text: str, segments_list: list[Any], dropped: int, repetition_filtered: bool
+) -> str:
+    """Name which of the four causes produced an empty transcript."""
+    if text:
+        return ""
+    if repetition_filtered:
+        return "repetition_filtered"
+    if not segments_list:
+        return "no_segments"
+    if dropped:
+        return "segments_filtered"
+    # Whisper returned segments whose text was blank or whitespace.
+    return "no_segments"
 
 
 def _numeric_or_none(value: Any) -> float | None:
@@ -277,8 +351,15 @@ def _delete_temp_audio(path: str) -> None:
 #:
 #: This was 3, and 3 is what a person does when nothing is responding. It
 #: discarded "Hello Grandpa. Hello Grandpa. Hello Grandpa." -- a correctly decoded
-#: microphone test, no_speech_prob 0.4335, well inside every confidence gate --
-#: and reported "I could not understand the audio."
+#: microphone test at no_speech_prob 0.4335 -- and reported "I could not
+#: understand the audio."
+#:
+#: An earlier version of this note called 0.4335 "well inside every confidence
+#: gate". It is not: the segment filter above cuts at 0.45, so correctly decoded
+#: speech from this microphone passed by 0.0165. That margin is the measurement
+#: that matters here. Speech on this device sits right at the boundary, so the
+#: filter drops real sentences whenever it drifts the wrong side of it -- which
+#: is why trusted audio skips it rather than having the number retuned.
 #:
 #: Repetition count is the signal that separates the two, and it is the only one
 #: that does. Measured on this machine:
