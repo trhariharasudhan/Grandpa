@@ -6,7 +6,14 @@ from grandpa.core.config import GrandpaConfig, SpeechConfig, load_config
 def test_speech_config_defaults():
     cfg = SpeechConfig()
     assert cfg.backend == "auto"
-    assert cfg.model == "base"
+    # "base.en", not "base". Changed on measurement over 504 reference words:
+    # base.en scored WER 0.133 at 1.00x latency, base 0.177 at 2.36x -- worse on
+    # both axes, because a multilingual model carries a larger decoder and runs
+    # language identification this assistant does not need. The voice config's
+    # own "base.en" fallback was unreachable while this said "base", so every
+    # user ran multilingual whatever the documentation claimed. A non-English
+    # language switches back; see tests/speech/test_decoding_policy_is_measured.
+    assert cfg.model == "base.en"
     assert cfg.language == ""
     assert cfg.device == "auto"
     assert cfg.compute_type == "auto"

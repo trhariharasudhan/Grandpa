@@ -85,6 +85,38 @@ grandpa voice set-device "Microphone Array"
 selected device, channels, sample rate, driver/host API, transport, RMS, frame
 count, STT readiness, TTS readiness, and Windows permission guidance.
 
+## Measuring accuracy
+
+```
+grandpa voice accuracy-test
+grandpa voice accuracy-test --json > before.json
+grandpa voice accuracy-test --model small.en --count 5
+```
+
+Ten fixed phrases are shown one at a time; hold the key and read each aloud. The
+report gives a word error rate — `(substitutions + deletions + insertions)` over
+reference words, after lowercasing and stripping punctuation — plus the per-phrase
+operation counts and the signal-to-noise ratio of each recording.
+
+The corpus WER is errors over *all* words, not the mean of the per-phrase rates:
+a mean would weight "Hello" as heavily as a nine-word sentence, so one wrong
+short word would swamp the score and two runs would stop being comparable.
+
+The operation counts say what kind of failure it was. All insertions means the
+model padded — one spoken "hello" returning "Hello. Hello. Hello." scores as two
+insertions. All substitutions means it misheard. The phrase list is fixed because
+a score is only comparable against the same text; `--phrases` exists for
+deliberately measuring something else.
+
+Capture uses the push-to-talk path, so the recording is bounded by the key rather
+than by speech detection. A detection failure would otherwise be scored as a
+recognition failure.
+
+| median SNR | reading |
+| --- | --- |
+| below 10 dB | the recording is the limit; move closer or reduce noise first |
+| 10 dB or more, WER above 0.25 | the recording is adequate; try `--model small.en` |
+
 ## Vocabulary: names the model will not guess
 
 Whisper decodes toward what it has seen in training, so an uncommon proper noun
@@ -116,29 +148,54 @@ on sequences, so "Hari Hara Sudhan" helps "Hari" more than "Hari" alone does.
 
 ### Model size, measured
 
-If the vocabulary setting is not enough, a larger model is the next lever. On
-this machine, CPU int8, decoding the same 3-second input:
+If the vocabulary setting is not enough, the model is the next lever — and on
+measurement it is the **only** one left. Scored over 120 degraded clips of
+synthesised speech, 504 reference words, at four signal-to-noise ratios and
+three noise realisations each:
 
-| model | one-off load | warm decode |
-| --- | --- | --- |
-| `tiny.en` | 6.2s | 1.7s |
-| `base.en` (default) | 6.9s | 1.0s |
-| `small.en` | 17.0s | 3.7s |
+| model | WER | significance vs `base.en` | latency |
+| --- | --- | --- | --- |
+| `small.en` | **0.087** | z = +2.32, significant | 2.85× |
+| `small` | 0.107 | z = +1.26, not significant | 7.14× |
+| `base.en` (default) | 0.133 | — | 1.00× |
+| `base` | 0.177 | z = −1.91, not significant | 2.36× |
+| `distil-small.en` | 0.284 | z = −5.89, significantly worse | 3.09× |
 
-`small.en` costs about **+2.8s per phrase** and **+10s** once at startup, and
-needs a ~480MB download.
+`small.en` is a 35% relative reduction in word errors for 2.85× the decode time
+— about 2.7s per phrase instead of 1.0s — plus a ~480MB download and roughly
+10s more at startup.
 
-Read the warm column with care: it was measured on a synthetic signal, not
-speech, and decode time scales with how many tokens a model emits. The models
-hallucinated different amounts on it, which is why `tiny.en` looks slower than
-`base.en`. The load column is clean; the per-phrase column is indicative only.
+Two results worth knowing because they are counter-intuitive:
 
-Settle it on your own voice, which is the only input that answers the accuracy
-question:
+* **the multilingual models are worse, not better.** `base` scored 0.177 against
+  `base.en`'s 0.133. Reaching for a multilingual model to handle an accent is
+  the obvious move and it does not work here.
+* **`distil-small.en` is much worse** at 0.284, despite existing to be
+  `small.en` at lower cost. It is not a shortcut.
+* **`small.en` with `beam_size=5` costs 76× the latency** — 112s per clip — for
+  no accuracy gain (0.089 against 0.087). Do not combine them.
+
+`beam_size`, `temperature` fallback, `condition_on_previous_text` and
+`vad_filter` were each measured and changed nothing significant. `beam_size=5`
+looked like a win on a 42-word sample (4 errors to 3) and evaporated at 504
+words, z = +0.47.
+
+To switch permanently:
+
+```toml
+[speech]
+model = "small.en"
+```
+
+or `GRANDPA_VOICE_STT_MODEL=small.en` for one session, or `--model small.en` on
+a single command.
+
+Then settle it on your own voice, which is the only input that answers the
+question for your accent and your microphone:
 
 ```powershell
-uv run grandpa voice push-to-talk --model base.en
-uv run grandpa voice push-to-talk --model small.en
+uv run grandpa voice accuracy-test --json > base-en.json
+uv run grandpa voice accuracy-test --model small.en --json > small-en.json
 ```
 
 ## Limitations

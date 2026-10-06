@@ -41,6 +41,26 @@ Expected, per hold:
 Esc or Ctrl+C ends the loop. It never exits silently, and no expected failure
 prints a stack trace.
 
+## Terminal: measure accuracy
+
+```
+grandpa voice accuracy-test
+```
+
+Ten fixed phrases, read one at a time on the same held key, scored as a word
+error rate against what was asked for. `--json` for comparing two runs,
+`--model small.en` to score a different model, `--count 3` for a quick check.
+
+| Step | Expected behavior |
+| --- | --- |
+| Phrase shown | The exact text to read, in bold |
+| Read it | `OK` with the transcript, or `ERR` with the error breakdown |
+| End of run | Word error rate, exact-match count, median SNR, and a verdict |
+| Ctrl+C partway | Scores what was completed and reports it; remaining phrases listed as not scored |
+
+The operation counts distinguish the failure kinds: insertions mean the model
+padded (one "hello" returning three), substitutions mean it misheard.
+
 **No second speech gate.** The automatic path hands audio to Whisper with
 `no_speech_threshold` 0.5, `log_prob_threshold` -0.85 and
 `compression_ratio_threshold` 2.4, and then applies a stricter copy of the first

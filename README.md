@@ -94,6 +94,41 @@ them with faster-whisper, routes the text through the same safety layer used by
 the CLI, and speaks responses through Windows SAPI when available. Voice mode
 does not permit raw shell execution or bypass action confirmation.
 
+### Measuring recognition accuracy
+
+If the words come back wrong, measure before changing anything:
+
+```powershell
+uv run grandpa voice accuracy-test
+```
+
+It shows ten fixed phrases, you hold SPACE and read each one, and it scores what
+came back against what it asked for — a word error rate, plus the signal-to-noise
+ratio of each recording so a bad microphone can be told from a bad model. Run it
+before and after a change and the two numbers are comparable.
+
+```powershell
+uv run grandpa voice accuracy-test --json > before.json
+uv run grandpa voice accuracy-test --model small.en --json > after.json
+```
+
+Roughly: **WER below 0.10** is working, **0.10–0.25** is usable with errors,
+**above 0.25** needs attention. If the median SNR is below 10 dB the recording is
+the limit — move closer to the microphone before trying a larger model.
+
+If the recording is fine and the words are still wrong, the model is the only
+lever that measurably helps — a 35% relative reduction in word errors for about
+2.85× the decode time:
+
+```toml
+[speech]
+model = "small.en"
+```
+
+`docs/user-guide/voice-runtime.md` has the measured table, including three
+things that do *not* help: multilingual models, `distil-small.en`, and
+`beam_size`.
+
 ### Names and words the model will not know
 
 Whisper decodes what it has seen before, so an uncommon name becomes a common

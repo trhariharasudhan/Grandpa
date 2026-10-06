@@ -747,7 +747,29 @@ class SpeechConfig:
     """Speech-to-text settings."""
 
     backend: str = "auto"  # "auto", "faster-whisper", "openai", "deepgram"
-    model: str = "base"  # Whisper model size: tiny, base, small, medium, large-v3
+
+    #: ``base.en``, not ``base``. Measured, not assumed.
+    #:
+    #: This was "base", the multilingual model, and the voice config's own
+    #: ``"base.en"`` fallback was unreachable because this value always won. So
+    #: every user was running multilingual whatever the documentation said.
+    #:
+    #: Scored over 120 degraded clips of synthesised speech, 504 reference
+    #: words, four signal-to-noise ratios and three noise realisations each:
+    #:
+    #:     base.en   WER 0.133   1.00x latency
+    #:     base      WER 0.177   2.36x latency
+    #:
+    #: Worse on both axes at once -- 33% more word errors for 2.4x the decode
+    #: time -- because a multilingual model carries a larger decoder vocabulary
+    #: and runs language identification this assistant does not need. Every
+    #: other part of voice mode assumes English already: the wake phrases, the
+    #: exit phrases and the decoder prompt vocabulary are all English.
+    #:
+    #: A non-English language is handled in load_voice_assistant_config, which
+    #: switches back to the multilingual model rather than feeding an
+    #: English-only model audio it cannot transcribe.
+    model: str = "base.en"  # Whisper model size: tiny, base, small, medium, large-v3
     language: str = ""  # Empty = auto-detect
     device: str = "auto"  # "auto", "cpu", "cuda"
     compute_type: str = "auto"  # "auto", "float16", "int8", "float32"

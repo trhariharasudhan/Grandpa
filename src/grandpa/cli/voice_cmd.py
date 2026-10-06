@@ -510,6 +510,207 @@ def _print_voices() -> None:
         click.echo(voice_name)
 
 
+@voice.command("accuracy-test")
+@click.option("--key", type=click.Choice(sorted(KEY_CODES)), default="space",
+              help="Key to hold while reading each phrase.")
+@click.option("--device", type=int, default=None, help="Microphone input device index.")
+@click.option("--model", default=None, help="Whisper model to score, e.g. small.en.")
+@click.option("--language", default=None, help="Recognition language code.")
+@click.option("--phrases", type=click.Path(exists=True, dir_okay=False), default=None,
+              help="File of phrases, one per line, instead of the fixed ten.")
+@click.option("--count", type=int, default=None,
+              help="Score only the first N phrases.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Print the report as JSON for comparing runs.")
+@handles_voice_errors
+def accuracy_test(
+    key: str,
+    device: int | None,
+    model: str | None,
+    language: str | None,
+    phrases: str | None,
+    count: int | None,
+    as_json: bool,
+) -> None:
+    """Read phrases aloud and get a word error rate.
+
+    Shows a phrase, you hold the key and read it, and it scores what came back
+    against what it asked for. Run it before and after a change and the two
+    numbers are comparable, which an impression of how it sounded is not.
+
+    Uses the push-to-talk capture path, so the recording is bounded by the key
+    rather than by speech detection -- a detection failure would otherwise be
+    scored as a recognition failure.
+    """
+
+    import json as json_module
+
+    from grandpa.voice.accuracy import (
+        DEFAULT_PHRASES,
+        AccuracyReport,
+        PhraseScore,
+        score_phrase,
+    )
+
+    if not WindowsKeyProbe.available():
+        safe_cli_error(
+            "The accuracy test needs the Windows keyboard API (user32) to run "
+            "push-to-talk capture, which is not available here."
+        )
+        raise SystemExit(1)
+
+    if phrases is not None:
+        lines = tuple(
+            line.strip()
+            for line in Path(phrases).read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        )
+        if not lines:
+            raise click.ClickException(f"No phrases found in {phrases}.")
+    else:
+        lines = DEFAULT_PHRASES
+    if count is not None:
+        lines = lines[: max(1, count)]
+
+    config = load_voice_assistant_config(
+        model=model, language=language, microphone=device, tts_enabled=False
+    )
+    capture = MicrophoneCapture(
+        duration_seconds=MAXIMUM_HOLD_SECONDS,
+        device=config.microphone if device is None else device,
+        recovery_attempts=config.microphone_recovery_attempts,
+        vad_config=hold_to_talk_vad_config(MAXIMUM_HOLD_SECONDS),
+    )
+    transcriber = FasterWhisperSpeechToText(
+        language=config.language,
+        model=config.stt_model,
+        device=config.device,
+        compute_type=config.compute_type,
+    )
+    probe = WindowsKeyProbe()
+    report = AccuracyReport(model=config.stt_model)
+
+    click.echo(f"Accuracy test: {len(lines)} phrases, model {config.stt_model}.")
+    click.echo(f"Hold {key.upper()} and read each phrase aloud. Ctrl+C to stop.")
+    click.echo("")
+    try:
+        for number, phrase in enumerate(lines, start=1):
+            click.echo(f"[{number}/{len(lines)}] Read this:")
+            click.secho(f"    {phrase}", bold=True)
+            session = PushToTalkSession(
+                capture=capture,
+                transcriber=transcriber,
+                probe=probe,
+                key=key,
+                responder=None,
+                speaker=None,
+                echo=lambda message: None,
+                on_idle=_console_idle_check,
+            )
+            click.echo(f"    Hold {key.upper()} and read it...")
+            started = time.perf_counter()
+            result = session.run_once()
+            seconds = time.perf_counter() - started
+            if result is None:
+                report.skipped.append(phrase)
+                click.echo("    Skipped.")
+                break
+            audio = result.audio
+            substitutions, deletions, insertions, words = score_phrase(
+                phrase, result.transcript
+            )
+            score = PhraseScore(
+                reference=phrase,
+                actual=result.transcript,
+                substitutions=substitutions,
+                deletions=deletions,
+                insertions=insertions,
+                reference_words=words,
+                seconds=seconds,
+                speech_rms=float(getattr(audio, "speech_window_rms", 0.0) or 0.0),
+                noise_floor=float(getattr(audio, "noise_floor", 0.0) or 0.0),
+                voiced_seconds=float(
+                    getattr(audio, "speech_active_seconds", 0.0) or 0.0
+                ),
+            )
+            report.scores.append(score)
+            marker = click.style("OK ", fg="green") if score.exact else click.style(
+                "ERR", fg="yellow"
+            )
+            click.echo(f"    {marker} heard: {score.actual or '<nothing>'}")
+            if not score.exact:
+                click.echo(
+                    f"        {score.errors} error(s): {substitutions} wrong, "
+                    f"{deletions} missed, {insertions} extra  (wer {score.wer:.2f})"
+                )
+            click.echo("")
+    except KeyboardInterrupt:
+        click.echo("")
+        report.skipped.extend(lines[len(report.scores) :])
+    finally:
+        capture.close()
+
+    _print_accuracy_report(report, as_json=as_json)
+
+
+def _print_accuracy_report(report, *, as_json: bool) -> None:
+    import json as json_module
+
+    if as_json:
+        click.echo(
+            json_module.dumps(
+                {
+                    "model": report.model,
+                    "corpus_wer": round(report.corpus_wer, 4),
+                    "total_errors": report.total_errors,
+                    "total_words": report.total_words,
+                    "exact_matches": report.exact_matches,
+                    "phrases_scored": len(report.scores),
+                    "median_snr_db": round(report.median_snr_db, 2),
+                    "skipped": report.skipped,
+                    "scores": [
+                        {
+                            "reference": score.reference,
+                            "actual": score.actual,
+                            "wer": round(score.wer, 4),
+                            "substitutions": score.substitutions,
+                            "deletions": score.deletions,
+                            "insertions": score.insertions,
+                            "speech_rms": round(score.speech_rms, 1),
+                            "noise_floor": round(score.noise_floor, 1),
+                            "snr_db": round(score.signal_to_noise_db, 2),
+                        }
+                        for score in report.scores
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    click.echo("=" * 58)
+    if not report.scores:
+        click.echo("No phrases were scored.")
+        return
+    click.echo(f"Model:          {report.model}")
+    click.echo(
+        f"Word error rate: {report.corpus_wer:.3f}  "
+        f"({report.total_errors} errors / {report.total_words} words)"
+    )
+    click.echo(
+        f"Exact matches:   {report.exact_matches} of {len(report.scores)} phrases"
+    )
+    if report.median_snr_db:
+        click.echo(f"Median SNR:      {report.median_snr_db:.1f} dB")
+    if report.skipped:
+        click.echo(f"Not scored:      {len(report.skipped)} phrase(s)")
+    click.echo("")
+    click.echo(report.verdict())
+    click.echo("")
+    click.echo("Compare runs with --json. The word error rate is the number to")
+    click.echo("quote; it is only comparable against the same phrase list.")
+
+
 @voice.command("push-to-talk")
 @click.option("--key", type=click.Choice(sorted(KEY_CODES)), default="space",
               help="Key to hold while speaking.")
