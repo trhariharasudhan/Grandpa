@@ -870,36 +870,63 @@ def build_voice_session(
     )
 
 
-#: Below this much voiced audio, a capture is only sent to the model if it was
-#: loud. Set from the live captures: 0.50s and 0.70s of barely-above-threshold
-#: audio each produced a hundred hallucinated words, while a 1.40s capture at
-#: 2949 was real speech.
-MIN_TRANSCRIBE_VOICED_SECONDS = 1.0
-
-#: ...and "loud" means this. The two bad captures measured 289 and 353 in the
-#: speech window; ordinary speech in the same room measured 2949. 500 sits well
-#: clear of the noise and far below real speech, so a short utterance has to be
-#: genuinely spoken to get through.
-MIN_TRANSCRIBE_SPEECH_RMS = 500.0
+#: Less voiced audio than the detector itself needed to call it speech.
+#:
+#: This was 1.0s paired with a 500.0 RMS condition, and both numbers came from a
+#: reference recording rather than from this user's microphone. Measured against
+#: what their machine actually produces, the pair refused real speech:
+#:
+#:     voiced 2.10s  speech_rms  262.7   real speech
+#:     voiced 1.30s  speech_rms  268.3   real speech
+#:     voiced 0.50s  speech_rms  250.0   real speech, REFUSED
+#:     voiced 0.50s  speech_rms  220.9   real speech, REFUSED
+#:     voiced 0.30s  speech_rms  728.9   real speech, Whisper decoded ' Hello.'
+#:     voiced 1.40s  speech_rms 2949.0   real speech
+#:
+#: against the two captures the gate was built to stop:
+#:
+#:     voiced 0.50s  speech_rms  289.0   100 words of "new, new, new"
+#:     voiced 0.70s  speech_rms  353.0   100 words of "new, new, new"
+#:
+#: **No pair of thresholds separates those two sets.** Searched exhaustively over
+#: voiced in 0.05s steps to 2.0s and RMS in 25.0 steps to 2000.0: zero pairs
+#: refuse both bad captures while refusing no real speech. The bad ones sit
+#: inside the real range on both axes -- 289 and 353 within 220.9 to 2949, and
+#: 0.50s and 0.70s within 0.30s to 2.10s. The gate was not mistuned; it was
+#: measuring something that does not distinguish them.
+#:
+#: So the RMS condition is gone rather than retuned. A bar had to be under
+#: 220.9 to be safe, and ``speech_window_rms`` averages only chunks that cleared
+#: the threshold, so it is never below ``minimum_rms`` (180) -- leaving a usable
+#: band of 180 to 220 and about 20 points of margin. Twenty points is the same
+#: knife edge as the 0.4335-against-0.45 that discarded "Hello Grandpa", and
+#: betting on it twice would be a choice, not an oversight.
+#:
+#: What remains is not a confidence judgement. 0.25s is the VAD's own
+#: ``minimum_speech_seconds``: below it, less audio cleared the threshold than
+#: the detector required to declare speech at all, which happens on a cancelled
+#: or timed-out capture where the false-start reset never ran.
+MIN_TRANSCRIBE_VOICED_SECONDS = 0.25
 
 
 def _too_thin_to_transcribe(voiced_seconds: float, speech_rms: float) -> bool:
-    """Whether a capture is too short *and* too quiet to be worth a model call.
+    """Whether a capture holds less voiced audio than could be an utterance.
 
-    Both conditions, never either alone:
+    ``speech_rms`` is accepted and deliberately unused. It is kept in the
+    signature because the loudness condition was removed on evidence, and a
+    caller passing it should not silently think it still matters; the constant
+    above records why.
 
-    * short alone would refuse a clipped "yes", which is 0.3s and perfectly
-      audible;
-    * quiet alone would refuse a long mumble, which is real speech and which the
-      no_speech_prob and avg_logprob gates are there to judge.
-
-    A capture that is both is the shape that made Whisper invent a hundred words
-    from seven tenths of a second.
+    **What this now lets through that it should not:** both captures that
+    produced a hundred hallucinated words -- 0.50s at 289 and 0.70s at 353 --
+    now reach the model, because nothing separates them from real speech at
+    0.50s and 250. The repetition filter caught both of those hallucinations
+    when they happened, and that is the mechanism relied on here: it judges the
+    decoder's output rather than guessing at the audio, which is the only one of
+    the two that can tell these cases apart.
     """
-    return (
-        voiced_seconds < MIN_TRANSCRIBE_VOICED_SECONDS
-        and speech_rms < MIN_TRANSCRIBE_SPEECH_RMS
-    )
+    del speech_rms
+    return voiced_seconds < MIN_TRANSCRIBE_VOICED_SECONDS
 
 
 def is_exit_phrase(text: str) -> bool:

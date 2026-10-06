@@ -161,12 +161,55 @@ CLEAN = StubSegment(text=" open notepad", no_speech_prob=0.1, avg_logprob=-0.3)
 # --- 1. the gate exists, and the normal path goes through it ----------------------
 
 
-def test_the_normal_voice_path_drops_a_segment_whisper_kept() -> None:
-    """The double-gating, demonstrated. 0.47 passes Whisper's 0.5 and fails 0.45."""
+def test_the_normal_voice_path_now_keeps_what_whisper_kept() -> None:
+    """REVERSED DELIBERATELY. This asserted the opposite one commit ago.
+
+    It pinned the automatic path *dropping* a segment Whisper had kept, as
+    evidence of double-gating. The gate it pinned has been removed, so the
+    assertion is inverted to pin the property that replaced it: the automatic
+    path keeps every segment Whisper returns.
+
+    The reversal is on live evidence. Whisper decoded ' Hello.' at
+    no_speech_prob 0.598, kept it, and the filter threw it away; two neighbouring
+    captures of real speech came back as "I could not understand" the same way.
+    """
     stt, _ = _stt([KEPT_BY_WHISPER_DROPPED_BY_US])
 
-    with pytest.raises(VoiceRecognitionError):
-        stt.transcribe(_audio())
+    assert stt.transcribe(_audio()) == "open notepad"
+
+
+def test_the_live_segment_that_was_discarded_now_survives() -> None:
+    """The exact numbers from the report: ' Hello.' at no_speech_prob 0.598."""
+    stt, _ = _stt([StubSegment(text=" Hello.", no_speech_prob=0.598,
+                               avg_logprob=-0.5)])
+
+    assert stt.transcribe(_audio()) == "Hello."
+
+
+def test_whispers_own_rule_is_a_pair_with_a_rescue_not_a_pair_of_floors() -> None:
+    """Why the removed filter was inverted rather than merely stricter.
+
+    faster-whisper 1.2.1, transcribe.py::
+
+        should_skip = result.no_speech_prob > options.no_speech_threshold
+        if (options.log_prob_threshold is not None
+                and avg_logprob > options.log_prob_threshold):
+            # don't skip if the logprob is high enough, despite the no_speech_prob
+            should_skip = False
+
+    A confident decode is rescued from a high no-speech probability. The removed
+    filter was ``no_speech_prob > 0.45 or avg_logprob < -0.85`` -- an ``or``, so
+    no rescue was possible and a high no_speech_prob condemned a segment however
+    well it had decoded.
+    """
+    import inspect
+
+    from faster_whisper import transcribe as fw_transcribe
+
+    source = inspect.getsource(fw_transcribe)
+    assert "don't skip if the logprob is high enough" in source, (
+        "faster-whisper's rescue clause is gone; re-derive the decision above"
+    )
 
 
 def test_and_it_raises_rather_than_returning_empty() -> None:
@@ -177,14 +220,33 @@ def test_and_it_raises_rather_than_returning_empty() -> None:
         stt.transcribe(_audio())
 
 
-def test_the_normal_path_still_applies_every_threshold() -> None:
-    """Unchanged by this commit, asserted so a future relaxation is deliberate."""
+def test_the_normal_path_applies_whispers_thresholds_and_no_others() -> None:
+    """UPDATED DELIBERATELY: these were 0.5 and -0.85, undercutting the library.
+
+    Both now match faster-whisper's own defaults. The automatic path still has
+    confidence gating -- Whisper's -- and no longer has a second layer.
+    """
     options = build_transcription_options("en")
 
-    assert options["no_speech_threshold"] == 0.5
-    assert options["log_prob_threshold"] == -0.85
+    assert options["no_speech_threshold"] == 0.6
+    assert options["log_prob_threshold"] == -1.0
     assert options["compression_ratio_threshold"] == 2.4
     assert options["vad_filter"] is False, "it is not webrtcvad"
+
+
+def test_there_is_no_post_decode_confidence_filter_left() -> None:
+    """A segment Whisper returns reaches the transcript, whatever its numbers."""
+    from grandpa.speech.faster_whisper import segments_whisper_kept
+
+    awful = [
+        StubSegment(text=" one", no_speech_prob=0.99, avg_logprob=-5.0),
+        StubSegment(text=" two", no_speech_prob=0.46, avg_logprob=-0.86),
+    ]
+
+    kept, dropped = segments_whisper_kept(awful)
+
+    assert kept == awful
+    assert dropped == 0
 
 
 # --- 2. trusted audio passes through none of it -----------------------------------

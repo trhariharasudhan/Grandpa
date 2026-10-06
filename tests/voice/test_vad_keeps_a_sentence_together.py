@@ -37,7 +37,6 @@ from __future__ import annotations
 import pytest
 
 from grandpa.voice.cli_session import (
-    MIN_TRANSCRIBE_SPEECH_RMS,
     MIN_TRANSCRIBE_VOICED_SECONDS,
     _too_thin_to_transcribe,
 )
@@ -194,56 +193,126 @@ def test_why_speech_detected_fired_at_a_reported_rms_of_176() -> None:
     assert buffer_rms < detector.current_threshold, buffer_rms
 
 
-# --- 3. the pre-transcription gate -------------------------------------------------
+# --- 3. the pre-transcription gate, re-derived -------------------------------------
+#
+# REWRITTEN DELIBERATELY. This section used to assert a two-condition gate --
+# voiced < 1.0s AND speech_rms < 500 -- and to assert that both numbers bracketed
+# the live evidence. They did bracket the evidence available then, which came
+# from a reference recording. They did not survive this user's microphone.
+#
+# What changed and why: the user reported real speech at 0.50s/250.0 and
+# 0.50s/220.9 being refused, and real speech generally measuring 220-350 where
+# the old threshold assumed 500+. Laid against the two captures the gate existed
+# to stop -- 0.50s/289.0 and 0.70s/353.0 -- the sets overlap on both axes. An
+# exhaustive search over voiced in 0.05s steps to 2.0s and RMS in 25.0 steps to
+# 2000.0 finds ZERO pairs that refuse both bad captures and no real speech.
+#
+# So the loudness condition was removed rather than retuned, and what is left is
+# a duration floor at the VAD's own minimum_speech_seconds. The tests below pin
+# that property: nothing the user measured as speech is refused, and the two
+# captures that hallucinated are now explicitly expected to get through, with the
+# repetition filter named as the mechanism that handles them.
+
+
+#: Every (voiced, speech_rms) the user has reported as real speech.
+MEASURED_REAL_SPEECH = [
+    (2.10, 262.7, "refused by the removed confidence filter"),
+    (1.30, 268.3, "refused by the removed confidence filter"),
+    (0.30, 728.9, "Whisper decoded ' Hello.'"),
+    (0.50, 250.0, "refused by the old marginal gate"),
+    (0.50, 220.9, "refused by the old marginal gate"),
+    (1.40, 2949.0, "earlier live capture"),
+]
+
+#: The two captures that produced a hundred hallucinated words each.
+MEASURED_HALLUCINATIONS = [
+    (0.50, 289.0, "live capture 2"),
+    (0.70, 353.0, "live capture 3"),
+]
 
 
 @pytest.mark.parametrize(
     ("voiced", "speech_rms", "label"),
-    [
-        (0.50, 289.0, "live capture 2"),
-        (0.70, 353.0, "live capture 3"),
-        (0.30, 200.0, "a click"),
-        (0.90, 499.0, "just inside both bounds"),
-    ],
+    MEASURED_REAL_SPEECH,
+    ids=[case[2] for case in MEASURED_REAL_SPEECH],
 )
-def test_short_and_quiet_is_not_transcribed(
+def test_nothing_the_user_measured_as_speech_is_refused(
     voiced: float, speech_rms: float, label: str
 ) -> None:
-    """The captures that produced a hundred hallucinated words each."""
-    assert _too_thin_to_transcribe(voiced, speech_rms) is True, label
-
-
-@pytest.mark.parametrize(
-    ("voiced", "speech_rms", "label"),
-    [
-        (1.40, 2949.0, "live capture 1 -- real speech"),
-        (0.30, 2500.0, "a clipped but audible 'yes'"),
-        (0.20, 3000.0, "a short loud 'stop'"),
-        (1.50, 200.0, "a long quiet mumble -- let the model judge it"),
-        (1.00, 499.0, "long enough, even though quiet"),
-        (0.90, 500.0, "loud enough, even though short"),
-    ],
-)
-def test_anything_short_but_loud_or_long_but_quiet_still_goes_through(
-    voiced: float, speech_rms: float, label: str
-) -> None:
-    """Both conditions, never either alone -- which is the whole design."""
+    """The requirement the old pair of thresholds failed."""
     assert _too_thin_to_transcribe(voiced, speech_rms) is False, label
 
 
-def test_the_gate_thresholds_are_stated() -> None:
-    assert MIN_TRANSCRIBE_VOICED_SECONDS == 1.0
-    assert MIN_TRANSCRIBE_SPEECH_RMS == 500.0
+@pytest.mark.parametrize(
+    ("voiced", "speech_rms", "label"),
+    MEASURED_HALLUCINATIONS,
+    ids=[case[2] for case in MEASURED_HALLUCINATIONS],
+)
+def test_the_hallucinating_captures_now_reach_the_model_and_that_is_accepted(
+    voiced: float, speech_rms: float, label: str
+) -> None:
+    """Stated as an expectation, not hidden as a regression.
+
+    Nothing distinguishes these from real speech at 0.50s and 250.0, so refusing
+    them means refusing that. The repetition filter caught both when they
+    happened; it judges the decoder's output rather than guessing at the audio,
+    which is the only one of the two mechanisms that can tell them apart.
+    """
+    assert _too_thin_to_transcribe(voiced, speech_rms) is False, label
 
 
-def test_the_thresholds_sit_between_the_measured_bad_and_good_captures() -> None:
-    """The numbers are not round guesses; they bracket the live evidence."""
-    # The two captures that hallucinated.
-    for voiced, speech_rms in ((0.50, 289.0), (0.70, 353.0)):
-        assert voiced < MIN_TRANSCRIBE_VOICED_SECONDS
-        assert speech_rms < MIN_TRANSCRIBE_SPEECH_RMS
-    # The capture that was real speech.
-    assert 1.40 >= MIN_TRANSCRIBE_VOICED_SECONDS
-    assert 2949.0 > MIN_TRANSCRIBE_SPEECH_RMS
-    # And the gate sits clear of the noise floor it has to distinguish from.
-    assert MIN_TRANSCRIBE_SPEECH_RMS > 353.0 * 1.4
+def test_no_threshold_pair_could_have_separated_the_two_sets() -> None:
+    """The search that justifies removing the condition, kept executable.
+
+    If a future measurement makes the sets separable again, this fails and the
+    decision above should be revisited rather than inherited.
+    """
+    candidates = [
+        (voiced_bar, rms_bar)
+        for voiced_bar in (step * 0.05 for step in range(1, 41))
+        for rms_bar in (step * 25.0 for step in range(1, 81))
+        if all(
+            voiced < voiced_bar and rms < rms_bar
+            for voiced, rms, _ in MEASURED_HALLUCINATIONS
+        )
+        and not any(
+            voiced < voiced_bar and rms < rms_bar
+            for voiced, rms, _ in MEASURED_REAL_SPEECH
+        )
+    ]
+
+    assert candidates == [], (
+        f"a separating threshold pair now exists ({candidates[:3]}), so the "
+        f"reason the loudness condition was removed no longer holds"
+    )
+
+
+def test_the_overlap_is_on_both_axes() -> None:
+    """Why no pair exists, stated as the two inequalities that cause it."""
+    quietest_real = min(rms for _, rms, _ in MEASURED_REAL_SPEECH)
+    loudest_bad = max(rms for _, rms, _ in MEASURED_HALLUCINATIONS)
+    shortest_real = min(voiced for voiced, _, _ in MEASURED_REAL_SPEECH)
+    longest_bad = max(voiced for voiced, _, _ in MEASURED_HALLUCINATIONS)
+
+    assert quietest_real < loudest_bad, (quietest_real, loudest_bad)
+    assert shortest_real < longest_bad, (shortest_real, longest_bad)
+
+
+def test_the_remaining_floor_is_the_detectors_own_minimum() -> None:
+    """Not a new number: the amount of speech the VAD itself requires."""
+    assert MIN_TRANSCRIBE_VOICED_SECONDS == 0.25
+    assert MIN_TRANSCRIBE_VOICED_SECONDS == SHIPPED.minimum_speech_seconds
+
+
+def test_a_capture_below_the_detectors_own_minimum_is_refused() -> None:
+    """Not vacuous: a cancelled or timed-out capture skips the false-start reset."""
+    assert _too_thin_to_transcribe(0.1, 3000.0) is True
+    assert _too_thin_to_transcribe(0.0, 0.0) is True
+    assert _too_thin_to_transcribe(0.24, 5000.0) is True
+
+
+def test_loudness_no_longer_affects_the_decision_at_all() -> None:
+    """The signature still takes it; it must not change the answer."""
+    for rms in (0.0, 180.0, 220.9, 500.0, 5000.0):
+        assert _too_thin_to_transcribe(0.5, rms) is False
+        assert _too_thin_to_transcribe(0.1, rms) is True

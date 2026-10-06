@@ -12,6 +12,7 @@ from typing import Any, List, Optional
 
 from grandpa.core.registry import SpeechRegistry
 from grandpa.speech._stubs import Segment, SpeechBackend, TranscriptionResult
+from grandpa.speech.vocabulary import build_initial_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -142,8 +143,9 @@ class FasterWhisperBackend(SpeechBackend):
     ) -> TranscriptionResult:
         """Transcribe a closed audio file through the canonical production path.
 
-        ``trust_audio`` skips the confidence filter below as well as relaxing
-        Whisper's own thresholds. See :func:`build_transcription_options`.
+        Whisper's own thresholds are the only confidence judgement. There is no
+        post-decode confidence filter any more; see :func:`segments_whisper_kept`
+        for what used to be here and why it is gone.
         """
 
         model = self._ensure_model()
@@ -151,34 +153,7 @@ class FasterWhisperBackend(SpeechBackend):
         segments_iter, info = model.transcribe(str(path), **options)
         segments_list = list(segments_iter)
 
-        # Filter segments based on confidence metadata to reject background
-        # noise/hallucination.
-        #
-        # This is a second, stricter copy of a judgement Whisper has already
-        # made: no_speech_prob > 0.45 against the no_speech_threshold of 0.5
-        # passed above, and avg_logprob < -0.85 against the identical
-        # log_prob_threshold. A segment Whisper kept can still be dropped here.
-        # Trusted audio skips it, because the user holding a key down has
-        # already answered the question it asks.
-        valid_segments = []
-        dropped = 0
-        for seg in segments_list:
-            no_speech = getattr(seg, "no_speech_prob", 0.0)
-            avg_log = getattr(seg, "avg_logprob", 0.0)
-            # Avoid type errors in unit tests where MagicMock returns mock objects for attributes
-            if not trust_audio and isinstance(no_speech, (int, float)) and isinstance(
-                avg_log, (int, float)
-            ):
-                if no_speech > 0.45 or avg_log < -0.85:
-                    logger.info(
-                        "Ignoring noisy segment %r (no_speech_prob=%f, avg_logprob=%f)",
-                        seg.text,
-                        no_speech,
-                        avg_log,
-                    )
-                    dropped += 1
-                    continue
-            valid_segments.append(seg)
+        valid_segments, dropped = segments_whisper_kept(segments_list)
 
         # Build result
         text = "".join(seg.text for seg in valid_segments).strip()
@@ -263,7 +238,10 @@ def select_compute_type(device: str = "auto", compute_type: str = "auto") -> str
 
 
 def build_transcription_options(
-    language: str | None = None, *, trust_audio: bool = False
+    language: str | None = None,
+    *,
+    trust_audio: bool = False,
+    vocabulary: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     """Return the single production decoding policy used for local STT.
 
@@ -283,16 +261,77 @@ def build_transcription_options(
         "beam_size": 1,
         "temperature": 0.0,
         "condition_on_previous_text": False,
-        "initial_prompt": "Grandpa, Notepad, Chrome, Calculator, VS Code, Explorer, Settings, Terminal.",
+        # The application names Grandpa controls, plus whatever words the user
+        # added. "Hari" decoded as "Harry" -- a confident, plausible, wrong
+        # decode that no threshold can fix, because biasing the decoder is the
+        # only mechanism that addresses it. See grandpa.speech.vocabulary.
+        "initial_prompt": build_initial_prompt(vocabulary),
         "vad_filter": False,
-        # Stricter than faster-whisper's own defaults of 0.6 and -1.0. Kept, so
-        # the automatic path is unchanged by this commit.
-        "no_speech_threshold": None if trust_audio else 0.5,
+        # faster-whisper's own defaults, which these used to undercut at 0.5 and
+        # -0.85. Both were moved on measurement, not preference.
+        #
+        # no_speech_threshold 0.5 -> 0.6. Real speech on this machine measured
+        # no_speech_prob 0.598 -- inside the 0.5-0.6 band. At 0.5 that segment
+        # became a skip candidate and survived only because the log-probability
+        # rescue fired; at 0.6 it is never a candidate at all. Depending on a
+        # rescue for speech the default would not have questioned is the worse
+        # position of the two.
+        #
+        # log_prob_threshold -0.85 -> -1.0. In Whisper's rule this value is the
+        # *rescue* bar, not a floor: a segment above it is kept despite a high
+        # no_speech_prob. So -0.85 rescued strictly less than the default did.
+        # Nothing measured here argues for suppressing more, and one capture
+        # needed the rescue to survive at all.
+        #
+        # compression_ratio_threshold stays at 2.4, which is already the
+        # default, and is the mechanism that catches degenerate loops.
+        "no_speech_threshold": None if trust_audio else 0.6,
         "compression_ratio_threshold": None if trust_audio else 2.4,
-        "log_prob_threshold": None if trust_audio else -0.85,
+        "log_prob_threshold": None if trust_audio else -1.0,
         "language": language or "en",
     }
     return options
+
+
+def segments_whisper_kept(segments_list: list[Any]) -> tuple[list[Any], int]:
+    """Every segment Whisper returned. Nothing is second-guessed here.
+
+    This function is where a post-decode confidence filter used to live, and it
+    is kept as a named no-op because removing it was a deliberate reversal and
+    the reason belongs somewhere a reader will find it.
+
+    The filter dropped any segment with ``no_speech_prob > 0.45`` **or**
+    ``avg_logprob < -0.85``. That was described, including by me, as merely a
+    stricter copy of the thresholds handed to Whisper. It was not. The two rules
+    have different shapes, and faster-whisper 1.2.1's transcribe.py is explicit
+    about its own::
+
+        should_skip = result.no_speech_prob > options.no_speech_threshold
+        if (options.log_prob_threshold is not None
+                and avg_logprob > options.log_prob_threshold):
+            # don't skip if the logprob is high enough, despite the no_speech_prob
+            should_skip = False
+
+    Whisper skips a segment only when ``no_speech_prob`` is high **and** the
+    decode was not confident: a confident decode is explicitly *rescued* from a
+    high no-speech probability. The filter here was an ``or`` with no rescue, so
+    a high ``no_speech_prob`` condemned a segment however well it had decoded.
+    Not stricter -- inverted.
+
+    That is exactly what the live evidence showed. Whisper decoded ``' Hello.'``
+    at ``no_speech_prob=0.598``, which is above the 0.5 it was given, and kept it
+    because the log probability cleared the rescue bar. The filter then threw it
+    away for being above 0.45. Two neighbouring captures at speech RMS 262.7 and
+    268.3, 2.10s and 1.30s of voiced audio, came back as "I could not
+    understand" from the same cause. Push-to-talk, which already bypassed this
+    filter, transcribed the same voice on the same microphone in the same
+    session.
+
+    Whisper's thresholds stay. The repetition filter stays, because it judges a
+    decoder failure mode -- a hundred words of "new, new, new" -- rather than
+    whether speech happened.
+    """
+    return list(segments_list), 0
 
 
 def _empty_reason(

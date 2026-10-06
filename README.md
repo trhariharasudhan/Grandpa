@@ -41,7 +41,8 @@ ollama serve
 uv run grandpa --help
 uv run grandpa doctor
 uv run grandpa chat
-uv run grandpa voice
+uv run grandpa voice push-to-talk   # hold SPACE to talk -- start here
+uv run grandpa voice                # hands-free, detects speech itself
 uv run grandpa voice-operator
 uv run grandpa status
 uv run grandpa start
@@ -61,21 +62,64 @@ Install the local speech stack:
 ```powershell
 uv sync --extra voice
 uv run grandpa voice --diagnose
+```
+
+**Start with push-to-talk.** Hold SPACE, speak, release:
+
+```powershell
+uv run grandpa voice push-to-talk
+```
+
+This is the recommended way in, and the one to come back to if anything goes
+wrong. You decide when the utterance starts and ends, so there is no speech
+detection to get wrong: no level threshold, no adaptive noise floor, no silence
+timeout. `--key ctrl` if SPACE is awkward (a modifier types nothing into
+whatever has focus), `--no-route` to see the transcript without acting on it.
+
+Hands-free mode detects speech by itself:
+
+```powershell
 uv run grandpa voice
 ```
+
+It has to decide when you started talking, from the audio level against a
+threshold derived from a noise floor it estimates as it goes. On a quiet
+microphone that works; on others it has needed tuning, and push-to-talk is the
+answer while it does. If hands-free gives you "I could not understand" on speech
+you know was clear, try push-to-talk on the same microphone — if that works, the
+audio is fine and the detection is at fault.
 
 Grandpa records short phrases only while local voice mode is active, transcribes
 them with faster-whisper, routes the text through the same safety layer used by
 the CLI, and speaks responses through Windows SAPI when available. Voice mode
 does not permit raw shell execution or bypass action confirmation.
 
+### Names and words the model will not know
+
+Whisper decodes what it has seen before, so an uncommon name becomes a common
+one — "Hari" becomes "Harry". Add your own words to bias it:
+
+```toml
+[voice]
+vocabulary = ["Hari Hara Sudhan", "Arjun", "Tiruchirappalli"]
+```
+
+in `~/.grandpa/config.toml`, or `GRANDPA_VOICE_VOCABULARY="Hari,Arjun"` for one
+run. These are added to the application names Grandpa already biases toward; set
+`vocabulary_replaces_defaults = true` to use only your own.
+
 Useful diagnostics:
 
 ```powershell
 uv run grandpa voice --list-microphones
 uv run grandpa voice --list-voices
+uv run grandpa voice microphone-test
 uv run grandpa voice --model tiny.en --device cpu
 ```
+
+`microphone-test` records one supervised phrase and prints every decoding number
+behind it, which is the fastest way to tell a microphone problem from a
+recognition problem.
 
 ## Windows Automation
 

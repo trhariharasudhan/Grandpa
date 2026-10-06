@@ -85,6 +85,62 @@ grandpa voice set-device "Microphone Array"
 selected device, channels, sample rate, driver/host API, transport, RMS, frame
 count, STT readiness, TTS readiness, and Windows permission guidance.
 
+## Vocabulary: names the model will not guess
+
+Whisper decodes toward what it has seen in training, so an uncommon proper noun
+becomes a common one that sounds like it. "Hari" transcribes as "Harry". This is
+not a confidence problem -- the decode is confident and wrong -- so no threshold
+addresses it. What does is `initial_prompt`, which biases the decoder toward
+spellings it would otherwise rank lower. Grandpa already used it for the
+application names it controls; a user vocabulary is the same mechanism.
+
+```toml
+[voice]
+vocabulary = ["Hari Hara Sudhan", "Arjun", "Tiruchirappalli"]
+```
+
+or, for one run:
+
+```powershell
+$env:GRANDPA_VOICE_VOCABULARY = "Hari Hara Sudhan,Arjun"
+```
+
+The environment variable wins over config. Entries are additive to the
+application names, which routing needs; `vocabulary_replaces_defaults = true`
+drops them. Whitespace is normalised, blanks and case-insensitive duplicates are
+dropped, and a malformed setting falls back to the default rather than stopping
+speech recognition.
+
+Include the full name even when only part of it is misheard: Whisper conditions
+on sequences, so "Hari Hara Sudhan" helps "Hari" more than "Hari" alone does.
+
+### Model size, measured
+
+If the vocabulary setting is not enough, a larger model is the next lever. On
+this machine, CPU int8, decoding the same 3-second input:
+
+| model | one-off load | warm decode |
+| --- | --- | --- |
+| `tiny.en` | 6.2s | 1.7s |
+| `base.en` (default) | 6.9s | 1.0s |
+| `small.en` | 17.0s | 3.7s |
+
+`small.en` costs about **+2.8s per phrase** and **+10s** once at startup, and
+needs a ~480MB download.
+
+Read the warm column with care: it was measured on a synthetic signal, not
+speech, and decode time scales with how many tokens a model emits. The models
+hallucinated different amounts on it, which is why `tiny.en` looks slower than
+`base.en`. The load column is clean; the per-phrase column is indicative only.
+
+Settle it on your own voice, which is the only input that answers the accuracy
+question:
+
+```powershell
+uv run grandpa voice push-to-talk --model base.en
+uv run grandpa voice push-to-talk --model small.en
+```
+
 ## Limitations
 
 - PortAudio does not expose the Windows "default communications device" role,

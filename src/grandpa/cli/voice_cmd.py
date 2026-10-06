@@ -152,7 +152,18 @@ def voice(
     diagnose: bool,
     screen_reader: bool,
 ) -> None:
-    """Start Grandpa's offline-first voice assistant or run voice diagnostics."""
+    """Start Grandpa's offline-first voice assistant or run voice diagnostics.
+
+    New here? Use `grandpa voice push-to-talk` instead. Hold SPACE, speak,
+    release: you decide when the utterance begins and ends, so there is no
+    speech detection to get wrong.
+
+    This command is hands-free and has to detect speech itself, from the audio
+    level against a threshold derived from a noise floor it estimates as it
+    goes. If it answers "I could not understand" on speech you know was clear,
+    try push-to-talk on the same microphone -- if that works, the audio is fine
+    and the detection is at fault.
+    """
 
     if ctx.invoked_subcommand is not None:
         return

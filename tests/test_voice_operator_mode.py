@@ -1472,7 +1472,31 @@ def test_vad_rejects_sub_minimum_voiced_duration_on_silence_timeout() -> None:
     assert vad.speech_active_seconds >= 0.25
 
 
-def test_whisper_rejects_noisy_segments_with_high_no_speech_probability() -> None:
+def test_grandpa_no_longer_second_guesses_a_segment_whisper_returned() -> None:
+    """REVERSED DELIBERATELY. This asserted the opposite, as a feature.
+
+    It was named ``test_whisper_rejects_noisy_segments_with_high_no_speech_
+    probability`` and pinned a post-decode filter that dropped any segment with
+    ``no_speech_prob > 0.45`` or ``avg_logprob < -0.85``. That filter has been
+    removed, and the name was itself part of the problem: the rejecting was not
+    Whisper's, it was Grandpa's, on top of Whisper's.
+
+    The two rules have different shapes. faster-whisper skips a segment only when
+    ``no_speech_prob`` is high **and** the decode was not confident -- a
+    confident decode is explicitly rescued. The filter here was an ``or``, so a
+    high no-speech probability condemned a segment however well it decoded.
+
+    Live evidence: Whisper decoded ' Hello.' at ``no_speech_prob=0.598``, kept
+    it, and the filter discarded it. Two neighbouring captures of real speech at
+    speech RMS 262.7 and 268.3 failed the same way, while push-to-talk -- which
+    already bypassed the filter -- transcribed the same voice on the same
+    microphone in the same session.
+
+    A segment this bad now reaches the transcript. That is the intended
+    behaviour: whether the audio held speech is Whisper's judgement to make, and
+    the repetition filter still catches the decoder failure mode that a
+    hallucination actually takes.
+    """
     from types import SimpleNamespace
     from unittest.mock import MagicMock
 
@@ -1493,8 +1517,43 @@ def test_whisper_rejects_noisy_segments_with_high_no_speech_probability() -> Non
     backend._model = mock_model
 
     result = backend.transcribe_file("dummy.wav")
+
+    assert result.text == "hallucinated phrase"
+    assert len(result.segments) == 1
+    assert backend.last_diagnostics.segments_dropped == 0
+
+
+def test_the_repetition_filter_still_catches_a_real_hallucination() -> None:
+    """What now does the job the removed filter was credited with.
+
+    It judges the decoder's output rather than guessing at the audio, which is
+    the only one of the two that could separate the live captures: 0.50s at
+    speech RMS 289 hallucinated, and 0.50s at 250 was real speech.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from grandpa.speech.faster_whisper import FasterWhisperBackend
+
+    backend = FasterWhisperBackend()
+    mock_model = MagicMock()
+    mock_seg = SimpleNamespace(
+        text=" new" * 40,
+        start=0.0,
+        end=1.0,
+        # Numbers that would have sailed through the removed filter.
+        no_speech_prob=0.1,
+        avg_logprob=-0.2,
+        compression_ratio=1.0,
+    )
+    mock_info = SimpleNamespace(language="en", language_probability=0.9, duration=1.0)
+    mock_model.transcribe.return_value = ([mock_seg], mock_info)
+    backend._model = mock_model
+
+    result = backend.transcribe_file("dummy.wav")
+
     assert result.text == ""
-    assert len(result.segments) == 0
+    assert backend.last_diagnostics.empty_reason == "repetition_filtered"
 
 
 def test_whisper_uses_greedy_beam_size_1_for_fast_inference() -> None:
