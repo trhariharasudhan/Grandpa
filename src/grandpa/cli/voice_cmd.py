@@ -546,11 +546,20 @@ def accuracy_test(
     import json as json_module
 
     from grandpa.voice.accuracy import (
+        CAPTURE_FAILURES,
         DEFAULT_PHRASES,
+        MODEL_DOWNLOAD_MB,
+        model_is_cached,
         AccuracyReport,
+        CaptureFailure,
         PhraseScore,
+        quiet_model_downloads,
         score_phrase,
+        warm_transcriber,
     )
+
+    # Before anything else: the download must not draw over the first prompt.
+    quiet_model_downloads()
 
     if not WindowsKeyProbe.available():
         safe_cli_error(
@@ -588,15 +597,47 @@ def accuracy_test(
         compute_type=config.compute_type,
     )
     probe = WindowsKeyProbe()
-    report = AccuracyReport(model=config.stt_model)
+    report = AccuracyReport(model=config.stt_model, requested=len(lines))
 
     click.echo(f"Accuracy test: {len(lines)} phrases, model {config.stt_model}.")
+    click.echo("")
+
+    # Step one, with its own line, because this used to happen silently during
+    # the first prompt: the model was fetched and loaded while "Hold SPACE and
+    # read it" was on screen, so the first phrase was spoken into a transcriber
+    # that did not exist yet and measured against progress bars drawn over the
+    # prompt.
+    size_mb = MODEL_DOWNLOAD_MB.get(config.stt_model)
+    cached = model_is_cached(config.stt_model)
+    if cached:
+        click.echo(f"Loading {config.stt_model} (already downloaded).")
+    elif size_mb:
+        click.echo(
+            f"Downloading {config.stt_model}, about {size_mb} MB. This happens "
+            f"once and can take a minute or two."
+        )
+    else:
+        click.echo(f"Loading {config.stt_model}.")
+    click.echo("Nothing is recorded until this finishes.")
+    warm_started = time.perf_counter()
+    ready, detail = warm_transcriber(transcriber)
+    warm_seconds = time.perf_counter() - warm_started
+    if not ready:
+        capture.close()
+        safe_cli_error(f"The model could not be loaded: {detail}")
+        raise SystemExit(1)
+    click.echo(f"Model ready in {warm_seconds:.1f}s.")
+    click.echo("")
     click.echo(f"Hold {key.upper()} and read each phrase aloud. Ctrl+C to stop.")
     click.echo("")
     try:
         for number, phrase in enumerate(lines, start=1):
             click.echo(f"[{number}/{len(lines)}] Read this:")
             click.secho(f"    {phrase}", bold=True)
+            # The session's own messages carry the reason an empty transcript
+            # was empty -- which gate emptied it -- so they are collected rather
+            # than discarded. Only the useful ones are reprinted.
+            session_messages: list[str] = []
             session = PushToTalkSession(
                 capture=capture,
                 transcriber=transcriber,
@@ -604,7 +645,7 @@ def accuracy_test(
                 key=key,
                 responder=None,
                 speaker=None,
-                echo=lambda message: None,
+                echo=session_messages.append,
                 on_idle=_console_idle_check,
             )
             click.echo(f"    Hold {key.upper()} and read it...")
@@ -616,6 +657,28 @@ def accuracy_test(
                 click.echo("    Skipped.")
                 break
             audio = result.audio
+            # A recording that never happened is not a recognition result.
+            # Scoring these as deletions is what turned two failed holds into
+            # full word errors and produced WER 1.167 on three phrases.
+            if result.reason in CAPTURE_FAILURES:
+                failure = CaptureFailure(
+                    reference=phrase,
+                    reason=result.reason,
+                    held_seconds=result.held_seconds,
+                )
+                report.failures.append(failure)
+                click.echo(
+                    f"    {click.style('SKIP', fg='red')} not scored: "
+                    f"{failure.advice}"
+                )
+                click.echo("    Press the key again to retry this phrase.")
+                click.echo("")
+                retry = session.run_once()
+                if retry is None or retry.reason in CAPTURE_FAILURES:
+                    continue
+                result = retry
+                audio = result.audio
+                report.failures.pop()
             substitutions, deletions, insertions, words = score_phrase(
                 phrase, result.transcript
             )
@@ -638,6 +701,25 @@ def accuracy_test(
                 "ERR", fg="yellow"
             )
             click.echo(f"    {marker} heard: {score.actual or '<nothing>'}")
+            if not score.actual:
+                # Audio was captured and the model returned nothing, which is a
+                # real result -- but the user needs to know it is not the same
+                # fault as the microphone failing, and which gate emptied it.
+                note = next(
+                    (
+                        message
+                        for message in session_messages
+                        if "Nothing recognisable" in message
+                    ),
+                    "",
+                )
+                click.echo(
+                    f"        audio was captured "
+                    f"({score.voiced_seconds:.1f}s voiced, level "
+                    f"{score.speech_rms:.0f}); the model returned nothing."
+                )
+                if note:
+                    click.echo(f"        {note.strip()}")
             if not score.exact:
                 click.echo(
                     f"        {score.errors} error(s): {substitutions} wrong, "
@@ -668,6 +750,17 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
                     "phrases_scored": len(report.scores),
                     "median_snr_db": round(report.median_snr_db, 2),
                     "skipped": report.skipped,
+                    # Held apart from the score: a recording that never
+                    # happened says nothing about recognition.
+                    "representative": report.is_representative,
+                    "capture_failures": [
+                        {
+                            "reference": failure.reference,
+                            "reason": failure.reason,
+                            "held_seconds": round(failure.held_seconds, 2),
+                        }
+                        for failure in report.failures
+                    ],
                     "scores": [
                         {
                             "reference": score.reference,
@@ -691,6 +784,11 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
     click.echo("=" * 58)
     if not report.scores:
         click.echo("No phrases were scored.")
+        for failure in report.failures:
+            click.echo(f"  {failure.reference!r}: {failure.advice}")
+        if report.failures:
+            click.echo("")
+            click.echo(report.verdict())
         return
     click.echo(f"Model:          {report.model}")
     click.echo(
@@ -702,9 +800,20 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
     )
     if report.median_snr_db:
         click.echo(f"Median SNR:      {report.median_snr_db:.1f} dB")
+    if report.failures:
+        click.echo(
+            f"Failed to record: {len(report.failures)} phrase(s), "
+            f"excluded from the score"
+        )
+        for failure in report.failures:
+            click.echo(f"    {failure.reference!r}: {failure.advice}")
     if report.skipped:
-        click.echo(f"Not scored:      {len(report.skipped)} phrase(s)")
+        click.echo(f"Not attempted:   {len(report.skipped)} phrase(s)")
     click.echo("")
+    if not report.is_representative:
+        click.secho(
+            "This number is not comparable to another run.", fg="yellow", bold=True
+        )
     click.echo(report.verdict())
     click.echo("")
     click.echo("Compare runs with --json. The word error rate is the number to")

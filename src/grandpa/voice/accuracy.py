@@ -43,6 +43,88 @@ DEFAULT_PHRASES: tuple[str, ...] = (
 )
 
 
+#: Roughly what each model downloads, so the wait can be named before it starts.
+#: Approximate on purpose -- the point is "this will take a moment and how long",
+#: not an exact byte count.
+MODEL_DOWNLOAD_MB: dict[str, int] = {
+    "tiny.en": 75,
+    "tiny": 75,
+    "base.en": 145,
+    "base": 145,
+    "small.en": 484,
+    "small": 484,
+    "distil-small.en": 332,
+    "medium.en": 1530,
+    "medium": 1530,
+}
+
+
+def model_is_cached(model: str) -> bool:
+    """Whether the weights are already on disk, so the wait can be described.
+
+    "about 484 MB on first use" is alarming when the file is already there, and
+    not alarming enough when it is not. huggingface_hub names a cache directory
+    after the repository, so its presence with a blob in it is the signal.
+    """
+    from pathlib import Path
+
+    from grandpa.speech.faster_whisper import model_cache_dir
+
+    try:
+        root = Path(model_cache_dir())
+    except Exception:
+        return False
+    if not root.is_dir():
+        return False
+    for candidate in root.glob(f"models--*faster-whisper-{model}"):
+        if any(candidate.rglob("*.bin")) or any(candidate.rglob("*.safetensors")):
+            return True
+    return False
+
+
+def quiet_model_downloads() -> None:
+    """Stop huggingface_hub drawing progress bars over the prompt.
+
+    The download prints a live bar to stderr. When it happens during "Hold SPACE
+    and read it", the bar overwrites the phrase the user is supposed to be
+    reading, and they answer a prompt they can no longer see. Warming the model
+    first makes this mostly moot, but a second model or a cache miss can still
+    download later, so the bars are turned off rather than merely out-raced.
+    """
+    import os
+
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    try:
+        from huggingface_hub.utils import disable_progress_bars
+
+        disable_progress_bars()
+    except Exception:
+        # Older or absent huggingface_hub: the environment variable above is
+        # the documented fallback and is already set.
+        pass
+
+
+def warm_transcriber(transcriber: object) -> tuple[bool, str]:
+    """Load the model now, so it is not loaded during the first prompt.
+
+    Returns ``(downloaded_or_loaded, detail)``. The caller prints the detail; a
+    failure is returned rather than raised so the command can report it as a
+    sentence instead of a traceback.
+    """
+    engine = getattr(transcriber, "_engine", None)
+    getter = getattr(engine, "_get_backend", None)
+    if not callable(getter):
+        return False, "no local model to warm"
+    try:
+        backend = getter()
+        ensure = getattr(backend, "_ensure_model", None)
+        if callable(ensure):
+            ensure()
+        return True, "ready"
+    except Exception as exc:  # pragma: no cover - depends on local model state
+        return False, f"{type(exc).__name__}: {exc}"
+
+
 def normalise_for_scoring(text: str) -> list[str]:
     """Lowercase, drop punctuation, split on whitespace.
 
@@ -95,6 +177,38 @@ class PhraseScore:
         return 20 * math.log10(self.speech_rms / self.noise_floor)
 
 
+#: Outcomes that are a recording failure, not a recognition result.
+#:
+#: A phrase where the microphone delivered nothing, or the key was tapped rather
+#: than held, says nothing about the model. Scoring it as deletions put two such
+#: phrases into a live run as full word errors and produced WER 1.167 on three
+#: phrases -- a number about the capture, presented as a number about accuracy.
+CAPTURE_FAILURES = frozenset({"no_audio", "too_short", "cancelled"})
+
+#: What to tell the user for each, since "nothing" is not actionable.
+CAPTURE_FAILURE_ADVICE = {
+    "no_audio": (
+        "the microphone delivered no audio for that hold -- check it with "
+        "`grandpa voice doctor`"
+    ),
+    "too_short": "the key was tapped, not held -- hold it down while you speak",
+    "cancelled": "the hold was cancelled",
+}
+
+
+@dataclass
+class CaptureFailure:
+    """A phrase that never produced a recording. Not scored."""
+
+    reference: str
+    reason: str = ""
+    held_seconds: float = 0.0
+
+    @property
+    def advice(self) -> str:
+        return CAPTURE_FAILURE_ADVICE.get(self.reason, "the capture failed")
+
+
 @dataclass
 class AccuracyReport:
     """Every phrase, plus the corpus totals that are the comparable number."""
@@ -102,6 +216,11 @@ class AccuracyReport:
     scores: list[PhraseScore] = field(default_factory=list)
     model: str = ""
     skipped: list[str] = field(default_factory=list)
+    #: Recording failures, held apart from the score on purpose.
+    failures: list[CaptureFailure] = field(default_factory=list)
+    #: How many phrases the run set out to score, so coverage is measurable
+    #: against the request rather than against an arbitrary floor.
+    requested: int = 0
 
     @property
     def total_errors(self) -> int:
@@ -141,9 +260,42 @@ class AccuracyReport:
             return values[middle]
         return (values[middle - 1] + values[middle]) / 2
 
-    def verdict(self) -> str:
-        """What the number means, so it is not just a number."""
+    @property
+    def is_representative(self) -> bool:
+        """Whether the score covers enough of the list to be worth quoting.
+
+        A live run scored three phrases of ten and reported WER 1.167, and two
+        of those three were recording failures -- so the number described the
+        microphone and was presented as accuracy.
+
+        Measured against what was *asked for*, not an absolute floor, because
+        ``--count 3`` is a legitimate request and three of three is a complete
+        run. Two conditions: most of the requested list was scored, and
+        failures did not outnumber scores.
+        """
         if not self.scores:
+            return False
+        if len(self.failures) >= len(self.scores):
+            return False
+        expected = self.requested or (len(self.scores) + len(self.failures))
+        return len(self.scores) >= 0.6 * expected
+
+    def verdict(self) -> str:
+        """What the number means, so it is not just a number.
+
+        Always gives the quality reading when anything was scored. Whether the
+        run is comparable to another is a separate question, reported separately
+        by ``is_representative`` -- conflating them meant a deliberate
+        ``--count 3`` run got no verdict at all.
+        """
+        if not self.scores:
+            if self.failures:
+                return (
+                    f"Nothing was scored: all {len(self.failures)} attempted "
+                    f"phrase(s) failed to record. This says nothing about "
+                    f"recognition. "
+                    f"{self.failures[0].advice.capitalize()}."
+                )
             return "Nothing was scored."
         wer = self.corpus_wer
         snr = self.median_snr_db

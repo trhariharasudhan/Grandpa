@@ -71,15 +71,62 @@ def test_the_initial_prompt_is_not_empty_because_removing_it_measurably_hurts() 
     assert options["initial_prompt"] == build_initial_prompt()
 
 
-def test_trusted_audio_still_disables_every_threshold() -> None:
-    """Unchanged by this round: push-to-talk refuses nothing."""
+def test_trusted_audio_is_permissive_not_fully_open() -> None:
+    """CHANGED DELIBERATELY: these were all None, which was too far.
+
+    Disabling suppression entirely was right about real speech -- a live
+    capture decoded at no_speech_prob 0.598 and was being discarded -- and
+    wrong about audio with nothing in it. With nothing to suppress a decode the
+    decoder free-runs on its only remaining prior, the initial_prompt, and a
+    hold that captured no usable speech invents text. A live accuracy test
+    scored one such hold as 92 word errors against the word "Hello".
+
+    Measured on no-evidence clips (digital silence, and room noise at 40, 90
+    and 150 RMS for 6 to 12 seconds)::
+
+        fully open     base.en 'The'   small.en "I'm going to show you how to
+                                                 do it."
+        0.80 + rescue  base.en ''      small.en '' (4 of 5)
+
+    and on real speech degraded to the reported conditions, every candidate
+    from 0.99 down to 0.60 kept all six phrases -- so the guard costs nothing.
+    """
     options = build_transcription_options("en", trust_audio=True)
 
-    assert options["no_speech_threshold"] is None
-    assert options["log_prob_threshold"] is None
-    assert options["compression_ratio_threshold"] is None
+    assert options["no_speech_threshold"] == 0.80
+    assert options["log_prob_threshold"] == -1.0
+    # Still more permissive than the automatic path, which is the point.
+    automatic = build_transcription_options("en")
+    assert options["no_speech_threshold"] > automatic["no_speech_threshold"]
     # And the prompt still applies -- it helps, and it refuses nothing.
     assert options["initial_prompt"]
+
+
+def test_the_log_probability_rescue_is_in_force_for_trusted_audio() -> None:
+    """The property the live 0.598 capture needed.
+
+    faster-whisper skips a segment only when no_speech_prob is above the
+    threshold AND the decode was not confident; a confident decode is rescued.
+    The rescue requires log_prob_threshold to be set, so leaving it None would
+    have made the no-speech threshold an unconditional floor.
+    """
+    options = build_transcription_options("en", trust_audio=True)
+
+    assert options["log_prob_threshold"] is not None
+
+
+def test_the_compression_ratio_threshold_is_left_open_under_trust() -> None:
+    """Deliberate, and inert either way.
+
+    This threshold only selects a higher temperature to retry at, and
+    ``temperature`` is the scalar 0.0 with no ladder to climb, so setting it
+    would change nothing. The defence against a degenerate loop is
+    ``_is_hallucinated_repetition``.
+    """
+    options = build_transcription_options("en", trust_audio=True)
+
+    assert options["compression_ratio_threshold"] is None
+    assert options["temperature"] == 0.0
 
 
 def test_the_default_model_is_base_en_not_the_multilingual_base() -> None:

@@ -93,6 +93,22 @@ grandpa voice accuracy-test --json > before.json
 grandpa voice accuracy-test --model small.en --count 5
 ```
 
+The model is downloaded and loaded **before** the first phrase is shown, as its
+own step, and the command says whether it is already on disk. Nothing is
+recorded until it finishes. HuggingFace progress bars are disabled, because they
+used to draw over the prompt the user was reading.
+
+Comparing two models in one sitting, once both are cached:
+
+```
+grandpa voice accuracy-test --model base.en  --json > base-en.json
+grandpa voice accuracy-test --model small.en --json > small-en.json
+```
+
+Budget roughly: 7s to load `base.en` or 17s for `small.en`, then about 10-15s
+per phrase including reading it, so **three to four minutes per model**. First
+use of a model adds its download — 145 MB for `base.en`, 484 MB for `small.en`.
+
 Ten fixed phrases are shown one at a time; hold the key and read each aloud. The
 report gives a word error rate — `(substitutions + deletions + insertions)` over
 reference words, after lowercasing and stripping punctuation — plus the per-phrase
@@ -116,6 +132,20 @@ recognition failure.
 | --- | --- |
 | below 10 dB | the recording is the limit; move closer or reduce noise first |
 | 10 dB or more, WER above 0.25 | the recording is adequate; try `--model small.en` |
+
+A phrase whose recording failed — the microphone delivered nothing, or the key
+was tapped rather than held — is **not scored**. It is reported separately, with
+what to do about it, and the command offers the phrase again. Scoring those as
+word errors turned two failed holds into a word error rate of 1.167, which
+described the microphone and was presented as accuracy.
+
+A phrase where audio *was* captured and the model returned nothing is a real
+recognition result and is scored, with the captured level printed beside it so
+the two cases are distinguishable.
+
+The report says when a run is not comparable to another: if failures outnumber
+scores, or fewer than 60% of the requested phrases were scored, the number is
+flagged rather than quoted.
 
 ## Vocabulary: names the model will not guess
 

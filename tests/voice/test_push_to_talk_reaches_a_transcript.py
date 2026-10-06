@@ -262,16 +262,28 @@ def test_trusted_audio_keeps_the_segment_the_filter_would_drop() -> None:
     assert outcome.segments_dropped == 0
 
 
-def test_trusted_audio_disables_whispers_own_suppression_too() -> None:
-    """All three are Optional[float] in faster-whisper; None disables each."""
+def test_trusted_audio_relaxes_suppression_without_switching_it_off() -> None:
+    """UPDATED: these were asserted as None, and None went too far.
+
+    Fully open let a hold with no usable speech free-run on the initial_prompt
+    and invent text -- 92 word errors against the word "Hello" in a live
+    accuracy test. 0.80 with the log-probability rescue rejected every
+    no-evidence clip measured while keeping every real-speech one, so the
+    property that matters -- trusted audio is never refused for being quiet --
+    survives.
+    """
     stt, backend = _stt([CLEAN])
 
     stt.transcribe_trusted(_audio())
 
     options = backend.model.seen_options[-1]
-    assert options["no_speech_threshold"] is None
-    assert options["log_prob_threshold"] is None
+    assert options["no_speech_threshold"] == 0.80
+    assert options["log_prob_threshold"] == -1.0
     assert options["compression_ratio_threshold"] is None
+    # Still looser than the automatic path.
+    assert options["no_speech_threshold"] > build_transcription_options("en")[
+        "no_speech_threshold"
+    ]
     # The decode itself is otherwise identical.
     assert options["beam_size"] == 1
     assert options["vad_filter"] is False

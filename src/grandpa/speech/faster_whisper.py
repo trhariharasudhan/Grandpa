@@ -285,9 +285,35 @@ def build_transcription_options(
         #
         # compression_ratio_threshold stays at 2.4, which is already the
         # default, and is the mechanism that catches degenerate loops.
-        "no_speech_threshold": None if trust_audio else 0.6,
+        # Trusted audio is permissive, not open.
+        #
+        # These were None under trust_audio, which disabled suppression
+        # entirely. That was right about real speech -- a live capture decoded
+        # at no_speech_prob 0.598 and was being discarded -- and wrong about
+        # audio with nothing in it. With nothing to suppress a decode, the
+        # decoder free-runs on its only remaining prior, the initial_prompt, and
+        # a hold that captured no usable speech invents text. Measured on
+        # no-evidence clips (digital silence, and room noise at 40, 90 and 150
+        # RMS for 6 to 12 seconds):
+        #
+        #     fully open      base.en 'The'      small.en 'I'm going to show
+        #                                        you how to do it.'
+        #     0.80 + rescue   base.en ''         small.en '' (4 of 5)
+        #
+        # and on real speech degraded to the reported conditions, every
+        # candidate from 0.99 down to 0.60 kept all six phrases -- so a guard
+        # here costs nothing. 0.80 is above faster-whisper's own 0.6 default, so
+        # this is still more permissive than the automatic path, and the
+        # log-probability rescue stays in force: a confident decode is kept
+        # however high its no-speech probability, which is the property the
+        # live 0.598 capture needed.
+        "no_speech_threshold": 0.80 if trust_audio else 0.6,
+        # Left open deliberately. This threshold only selects a higher
+        # temperature to retry at, and ``temperature`` here is the scalar 0.0
+        # with no ladder to climb, so setting it would change nothing. The
+        # defence against a degenerate loop is _is_hallucinated_repetition.
         "compression_ratio_threshold": None if trust_audio else 2.4,
-        "log_prob_threshold": None if trust_audio else -1.0,
+        "log_prob_threshold": -1.0,
         "language": language or "en",
     }
     return options
@@ -434,6 +460,35 @@ _LOOP_PERIODS = (1, 2, 3, 4, 5, 6)
 #: Share of chunks the repeated phrase must account for. Unchanged.
 _LOOP_DOMINANCE = 0.65
 
+#: Second, period-independent test: how varied the vocabulary is.
+#:
+#: The period test above chunks at a fixed stride, so it only sees a loop whose
+#: period is one of ``_LOOP_PERIODS`` *and* which tiles the text evenly. A loop
+#: that does neither is invisible to it, and those are not exotic:
+#:
+#:     7-word unit x12           84 words, 6 distinct   MISSED
+#:     8-word unit x10           80 words, 3 distinct   MISSED
+#:     3-word unit + stray/7     91 words, 4 distinct   MISSED
+#:     3-word unit x30           90 words, 3 distinct   caught
+#:
+#: A live accuracy test scored one of these as 92 word errors against a
+#: one-word phrase, which made the measurement meaningless.
+#:
+#: Unique-word ratio needs no alignment at all, and the two populations are far
+#: apart for texts of this length. Measured over the corpus in
+#: tests/speech/test_repetition_filter.py plus the missed shapes above and the
+#: hardest real cases I could construct, counting only texts of 20+ words:
+#:
+#:     highest ratio among loops      0.111  ("Subtitles by the Amara.org...")
+#:     lowest ratio among real speech 0.233  (a 10-word sentence said 3 times)
+#:
+#: so the usable band is (0.111, 0.233]. 0.16 sits at the geometric middle --
+#: 1.44x above the worst loop, 1.46x below the worst real speech. 0.25 was tried
+#: first and is outside the band: it discards a sentence repeated three times,
+#: which the existing corpus treats as real speech.
+_MIN_VARIETY_WORDS = 20
+_MIN_UNIQUE_RATIO = 0.16
+
 
 def _is_hallucinated_repetition(text: str) -> bool:
     """Return True if the transcribed text is a degenerate Whisper repetition loop.
@@ -446,6 +501,12 @@ def _is_hallucinated_repetition(text: str) -> bool:
     words = clean.split()
     if len(words) < 6:
         return False
+    # Period-independent, and checked first because it catches the loops the
+    # stride test structurally cannot see. Only applied to text long enough for
+    # the ratio to mean something: "no no no" is three words and real.
+    if len(words) >= _MIN_VARIETY_WORDS:
+        if len(set(words)) / len(words) < _MIN_UNIQUE_RATIO:
+            return True
     for n in _LOOP_PERIODS:
         chunks = [" ".join(words[i : i + n]) for i in range(0, len(words) - n + 1, n)]
         if len(chunks) < _MIN_LOOP_REPEATS:
