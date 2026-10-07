@@ -203,6 +203,56 @@ def _nothing_actuates(request, monkeypatch) -> None:
         confine_writes(monkeypatch)
 
 
+@pytest.fixture(autouse=True)
+def _host_state_is_stated(request, monkeypatch) -> None:
+    """Pin the live foreground window, and clear the action cooldown.
+
+    Thirteen tests failed on a documentation-only tree because
+    ``desktop_context.active_window_is_protected()`` reads the *real* foreground
+    window title and matches it against "sign in", "login", "password", "bank",
+    "checkout" and others. Chrome's window title follows its active tab, so a
+    sign-in page with focus was enough. The same tree passed on either side of
+    that run, and all the affected tests passed in isolation.
+
+    The protected-window feature is correct -- it is what stops the assistant
+    typing into a password prompt -- so it is not weakened here. What is fixed is
+    tests inheriting their answer from whatever the developer has open.
+
+    A test that needs the real machine asks for it, with a reason, exactly as the
+    other two guards work:
+
+        @pytest.mark.real_host_state(reason="...")
+
+    The cooldown timestamp is reset for the same class of reason: it is module
+    state, wall-clock based, and survives a test.
+    """
+    from tests.host_state import MARKER as HOST_MARKER
+    from tests.host_state import pin_host_state, reason_for, reset_action_cooldown
+
+    own = {mark.name: mark for mark in request.node.own_markers}
+    if HOST_MARKER in own:
+        try:
+            reason_for(own[HOST_MARKER])
+        except ValueError as exc:
+            pytest.fail(str(exc))
+        return
+
+    pin_host_state(monkeypatch)
+    reset_action_cooldown(monkeypatch)
+
+
+@pytest.fixture
+def protected_window(monkeypatch) -> None:
+    """Re-pin the foreground window as a sensitive one.
+
+    For the tests that assert the refusal. Named so a test asks for the case
+    rather than inventing a title and hoping it matches the keyword list.
+    """
+    from tests.host_state import PROTECTED_PROCESS, pin_host_state
+
+    pin_host_state(monkeypatch, PROTECTED_PROCESS)
+
+
 @pytest.fixture(scope="session")
 def _approval_store_root(tmp_path_factory) -> Path:
     """One directory for every test's approval store.
