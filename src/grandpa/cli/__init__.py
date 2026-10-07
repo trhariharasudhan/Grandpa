@@ -305,6 +305,13 @@ cli.add_command(
     )
 )
 cli.add_command(
+    _lazy(
+        "bubble",
+        "grandpa.cli.bubble_cmd:bubble",
+        short_help="Floating desktop assistant. Blocks this terminal.",
+    )
+)
+cli.add_command(
     _lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manage agents.")
 )
 cli.add_command(

@@ -153,8 +153,9 @@ def test_the_marker_requires_a_reason() -> None:
 
 def test_the_marker_is_registered() -> None:
     """An unregistered marker is silently ignored under --strict-markers."""
-    import tomllib
     from pathlib import Path
+
+    import tomllib
 
     import grandpa
 

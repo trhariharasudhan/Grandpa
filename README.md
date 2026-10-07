@@ -41,6 +41,7 @@ ollama serve
 uv run grandpa --help
 uv run grandpa doctor
 uv run grandpa chat
+uv run grandpa bubble               # floating desktop assistant (blocks the terminal)
 uv run grandpa voice push-to-talk   # hold SPACE to talk -- start here
 uv run grandpa voice                # hands-free, detects speech itself
 uv run grandpa voice-operator
@@ -54,6 +55,29 @@ uv run grandpa apps scan
 uv run grandpa projects list
 uv run grandpa reminders add "remind me in 30 minutes to drink water"
 ```
+
+## Desktop Bubble
+
+```powershell
+uv run grandpa bubble
+```
+
+A small borderless window that stays on top: hold SPACE anywhere to talk, type
+in the box to ask, and read the status line for what it is doing. **It blocks
+the terminal** — it owns the window loop — so open a second one if you need it.
+
+The key is read globally, so the bubble hears a hold while another window has
+focus, and it never takes focus itself: you can type into Notepad with the
+bubble visible and every character lands in Notepad. The microphone is refused
+while the model is still loading, and the status says so rather than claiming to
+be ready.
+
+`--key ctrl` if SPACE is awkward (a modifier types nothing into whatever has
+focus), `--position X,Y` to place it, `--model small.en` to score a different
+model. It remembers where you dragged it.
+
+`docs/testing/desktop-ui-manual-qa.md` is the fifteen-step check for whether it
+actually behaves.
 
 ## Voice Assistant
 
