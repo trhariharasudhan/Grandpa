@@ -13,7 +13,13 @@ from grandpa.cli.safe_output import safe_cli_error
 
 
 @click.command("bubble")
-@click.option("--key", default="space", help="Key to hold while speaking.")
+@click.option(
+    "--key",
+    default=None,
+    show_default="f9",
+    help="Key to hold while speaking. A printable key also types into whatever "
+    "has focus; a modifier fires on ordinary shortcuts like Ctrl+C.",
+)
 @click.option("--device", type=int, default=None, help="Microphone input device index.")
 @click.option("--model", default=None, help="Whisper model, e.g. small.en.")
 @click.option(
@@ -23,7 +29,7 @@ from grandpa.cli.safe_output import safe_cli_error
     help="Where to put the bubble. Overrides the remembered position.",
 )
 def bubble(
-    key: str, device: int | None, model: str | None, position: str | None
+    key: str | None, device: int | None, model: str | None, position: str | None
 ) -> None:
     """Show the floating assistant. Blocks this terminal until you close it.
 
@@ -37,18 +43,25 @@ def bubble(
     """
 
     from grandpa.ui.bridge import InProcessBridge
-    from grandpa.ui.bubble import BubbleController
+    from grandpa.ui.bubble import DEFAULT_HOLD_KEY, BubbleController
     from grandpa.ui.tk_view import TkBubbleView
     from grandpa.voice.accuracy import quiet_model_downloads
     from grandpa.voice.config import load_voice_assistant_config
     from grandpa.voice.microphone import MicrophoneCapture
     from grandpa.voice.push_to_talk import (
+        KEY_CODES,
         MAXIMUM_HOLD_SECONDS,
         WindowsKeyProbe,
         hold_to_talk_vad_config,
     )
 
     quiet_model_downloads()
+
+    hold_key = (key or DEFAULT_HOLD_KEY).strip().lower()
+    if hold_key not in KEY_CODES:
+        raise click.ClickException(
+            f"--key wants one of {', '.join(sorted(KEY_CODES))} (got {key!r})."
+        )
 
     if not WindowsKeyProbe.available():
         safe_cli_error(
@@ -82,9 +95,15 @@ def bubble(
         bridge=bridge,
         probe=WindowsKeyProbe(),
         capture=capture,
-        key=key,
+        key=hold_key,
     )
+    view.hold_key = hold_key
     view.on_submit = controller.submit
+    # The other half of the fix. The view swallows the character so it cannot
+    # land in the text box; this makes the press say so, because a key that
+    # produced no character *and* no message is indistinguishable from a dead
+    # key -- which is what was reported.
+    view.on_hold_key = controller.note_key_seen
     view.on_close = lambda: (controller.stop(), None)[1]
 
     start_at = _parse_position(position)
@@ -110,11 +129,21 @@ def bubble(
 
 
 def _hold_poller(controller):
-    """Start a hold when the key goes down, on the tk thread."""
+    """Start a hold when the key goes down, on the tk thread.
+
+    This used to screen the press with ``can_record()`` and return quietly,
+    which is why a held key produced nothing at all -- no indicator, no error,
+    no recording. The controller's refusals each say why, and they only run if
+    it is actually called, so the press is handed over and the decision is made
+    where the explanation lives.
+
+    Only the probe's absence is screened here, because there is nothing to poll
+    without one.
+    """
 
     def poll() -> None:
         probe = controller.probe
-        if probe is None or not controller.can_record():
+        if probe is None:
             return
         try:
             if probe.is_down(controller.key):

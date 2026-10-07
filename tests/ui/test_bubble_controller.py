@@ -134,6 +134,22 @@ class FakeCapture:
         pass
 
 
+def _held_for(seconds: float):
+    """A clock reading 0.0 once, then *seconds* forever.
+
+    The hold's watcher thread calls the clock an unpredictable number of times,
+    so a scripted list is consumed non-deterministically. This is stable
+    whatever order the two threads interleave in.
+    """
+    calls: list[int] = []
+
+    def clock() -> float:
+        calls.append(1)
+        return 0.0 if len(calls) == 1 else seconds
+
+    return clock
+
+
 def _controller(**overrides) -> tuple[BubbleController, FakeView, FakeBridge]:
     view = overrides.pop("view", None) or FakeView()
     bridge = overrides.pop("bridge", None) or FakeBridge()
@@ -141,7 +157,10 @@ def _controller(**overrides) -> tuple[BubbleController, FakeView, FakeBridge]:
         "probe": FakeProbe(),
         "capture": FakeCapture(),
         "sleep": lambda _seconds: None,
-        "clock": lambda: 0.0,
+        # Advances, because record_while_held measures the hold and the
+        # controller now refuses anything under minimum_hold_seconds. A fixed
+        # clock makes every hold a 0.00s tap.
+        "clock": _held_for(1.5),
 
     }
     parts.update(overrides)
@@ -290,7 +309,8 @@ def test_a_hold_without_a_probe_refuses_rather_than_crashing() -> None:
     controller.warm()
 
     assert controller.on_hold() == ""
-    assert "not available" in view.status_lines[-1]
+    assert "no microphone capture" in view.status_lines[-1]
+    assert "F9" in view.status_lines[-1], "the message should name the key seen"
 
 
 # --- 3. the text box ---------------------------------------------------------------

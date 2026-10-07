@@ -48,6 +48,34 @@ STATES_THAT_REFUSE_A_HOLD = frozenset(
 
 DEFAULT_POSITION = (40, 40)
 
+#: The shipped hold key, and the reasoning, in one place so the CLI, the README
+#: and the manual QA cannot disagree about it.
+#:
+#: ``space`` shipped first and was the worst possible choice: the key is read
+#: globally with ``GetAsyncKeyState``, so it also reaches whatever window has
+#: focus -- including the bubble's own text box, where holding it typed a space
+#: and recorded nothing visible.
+#:
+#: Swallowing the character in the entry fixes the bubble (see
+#: ``tk_view.KEY_SYMS``), but not the general case: a printable key still types
+#: into every *other* application while held. So the default has to be a key
+#: that produces no character anywhere.
+#:
+#: That leaves modifiers and function keys, and modifiers are disqualified for a
+#: *global* hold key: ``ctrl`` fires on every Ctrl+C, Ctrl+V and Ctrl+S the user
+#: performs, ``shift`` on every Shift+click and capital letter, and ``alt`` alone
+#: opens the Windows menu bar. Each would start a recording during ordinary work.
+#:
+#: ``f10`` also activates the menu bar in Win32 apps, which leaves ``f8`` and
+#: ``f9``. Both exist on this keyboard layout (``MapVirtualKeyW`` returns
+#: scancodes 66 and 67), and neither is pressed by habit or in combination.
+#:
+#: The residual cost, stated because it was not testable here: on a laptop whose
+#: F-row defaults to media keys, F9 may need ``Fn`` held, in which case the probe
+#: never sees it. The bubble now says when it sees the key, so that failure is
+#: visible rather than silent -- and ``--key`` takes any of the seven.
+DEFAULT_HOLD_KEY = "f9"
+
 
 class BubbleView(Protocol):
     """Everything the controller may ask of a window.
@@ -141,7 +169,16 @@ class BubbleController:
     bridge: Any
     probe: Any = None
     capture: Any = None
-    key: str = "space"
+    #: f9, not space. A global read means the key also reaches whatever has
+    #: focus, so a printable key types into that window -- including the
+    #: bubble's own text box, which is how this default was reported. Modifiers
+    #: type nothing but fire on every shortcut the user performs (Ctrl+C,
+    #: Shift+click, Alt+Tab), and Alt alone opens the Windows menu bar. F9 is
+    #: neither printable nor a shortcut modifier. See DEFAULT_HOLD_KEY.
+    key: str = DEFAULT_HOLD_KEY
+    #: Shortest hold that counts, borrowed from push-to-talk's own value so the
+    #: two paths agree about what a tap is.
+    minimum_hold_seconds: float = 0.2
     #: Injected so tests neither sleep nor wait on a real clock. The hold's
     #: watcher thread belongs to PushToTalkSession, which this delegates to.
     sleep: Any = None
@@ -149,6 +186,9 @@ class BubbleController:
 
     state: BubbleState = field(default=BubbleState.LOADING, init=False)
     last_error: str = field(default="", init=False)
+    #: How many times the view reported the hold key while focused. Carried so a
+    #: test can prove the key was noticed rather than silently dropped.
+    key_seen_count: int = field(default=0, init=False)
     model_name: str = field(default="", init=False)
     position: tuple[int, int] = field(default=DEFAULT_POSITION, init=False)
     _position_path: Path | None = field(default=None, init=False)
@@ -217,29 +257,77 @@ class BubbleController:
             and self.capture is not None
         )
 
+    def note_key_seen(self) -> None:
+        """The hold key was pressed while the bubble had focus.
+
+        Called by the view, which has already stopped the character reaching the
+        text box. The point of this is that the key was *seen*: a held key that
+        produced no indicator, no error and no recording is what the bubble
+        reported before, and silence is indistinguishable from a dead key.
+        """
+        self.key_seen_count += 1
+        if self.state is BubbleState.LOADING:
+            self.last_error = (
+                f"Saw {self.key.upper()} -- still loading the model, so the "
+                f"hold was ignored."
+            )
+        elif self.state in STATES_THAT_REFUSE_A_HOLD:
+            self.last_error = (
+                f"Saw {self.key.upper()} -- busy ({self.state}), so the hold "
+                f"was ignored."
+            )
+        else:
+            self.last_error = ""
+        self._refresh_status()
+
     def on_hold(self) -> str:
         """One press-and-hold: record, transcribe, route.
 
-        Returns the transcript, empty if nothing came back. Refuses while the
-        model is loading rather than recording into a transcriber that does not
-        exist -- the whole reason LOADING is a state.
+        Returns the transcript, empty if nothing came back. Every refusal below
+        says why. The caller must not pre-screen with ``can_record()`` and
+        return quietly -- that is exactly what made a held key produce nothing
+        at all, because the explanations here never ran.
         """
         if self.state is BubbleState.LOADING:
-            self.last_error = "The model is still loading."
+            self.last_error = (
+                f"Saw {self.key.upper()} -- still loading the model, so "
+                f"nothing was recorded."
+            )
             self._refresh_status()
             return ""
-        if not self.can_record():
-            self.last_error = "Voice capture is not available."
+        if self.state in STATES_THAT_REFUSE_A_HOLD:
+            self.last_error = (
+                f"Saw {self.key.upper()} -- already {self.state}, so the hold "
+                f"was ignored."
+            )
+            self._refresh_status()
+            return ""
+        if self.probe is None or self.capture is None:
+            self.last_error = (
+                f"Saw {self.key.upper()} -- no microphone capture is wired up."
+            )
             self._enter(BubbleState.ERROR)
             self._refresh_status()
             return ""
 
         self._enter(BubbleState.RECORDING)
         try:
-            audio = self._record_while_held()
+            audio, held = self._record_while_held()
         except Exception as exc:  # noqa: BLE001 - a UI must not die of a capture
             self.last_error = f"{type(exc).__name__}: {exc}"
             self._enter(BubbleState.ERROR)
+            self._refresh_status()
+            return ""
+
+        # A tap is not an utterance. Checked here rather than left to the
+        # transcriber because the whole point of this round is that a key press
+        # must produce a visible answer, and "that was a 0.08s tap" is one.
+        if held < self.minimum_hold_seconds:
+            self.last_error = (
+                f"That was a {held:.2f}s tap -- hold {self.key.upper()} down "
+                f"while you speak."
+            )
+            self._enter(BubbleState.IDLE)
             self._refresh_status()
             return ""
 
@@ -258,7 +346,7 @@ class BubbleController:
         self.submit(transcript)
         return transcript
 
-    def _record_while_held(self) -> Any:
+    def _record_while_held(self) -> tuple[Any, float]:
         """Delegate to ``PushToTalkSession.record_while_held``, unchanged.
 
         That method is the hold: it spawns the key watcher, hands the capture a
@@ -274,8 +362,8 @@ class BubbleController:
         one method, and its transcriber is never touched by it.
         """
         session = self._hold_session()
-        audio, _held, _reason = session.record_while_held()
-        return audio
+        audio, held, _reason = session.record_while_held()
+        return audio, held
 
     def _hold_session(self) -> Any:
         """A PushToTalkSession wired to this controller's collaborators."""
@@ -350,6 +438,7 @@ class BubbleController:
 
 
 __all__ = [
+    "DEFAULT_HOLD_KEY",
     "DEFAULT_POSITION",
     "STATES_THAT_REFUSE_A_HOLD",
     "STATE_LABELS",

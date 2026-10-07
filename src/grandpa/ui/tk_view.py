@@ -36,6 +36,36 @@ FOCUS_STEALING_CALLS = (
     "tkraise",
 )
 
+#: Our key names mapped to Tk keysyms, so the hold key can be swallowed in the
+#: entry box.
+#:
+#: Holding the key while the bubble has focus used to put a character in the text
+#: box and record nothing a user could see. The two mechanisms can coexist, and
+#: the binding level is what makes it work. Measured, because the obvious
+#: implementation is the wrong one:
+#:
+#:     control: no "break", bound on the entry      entry 'ab '   not suppressed
+#:     instance binding on the entry + "break"      entry 'ab'    SUPPRESSED
+#:     binding on the toplevel + "break"            entry 'ab '   not suppressed
+#:
+#: Tk resolves bindings in bindtags order -- ``('.!entry', 'Entry', '.', 'all')``
+#: -- and the Entry's insertion *is* its class binding. An instance binding runs
+#: first and ``"break"`` stops the class binding; a toplevel binding runs third,
+#: after the character is already in.
+#:
+#: And it cannot eat the global key, because a KeyPress is only delivered to the
+#: focused window: with the bubble unfocused this binding never fires, while
+#: ``GetAsyncKeyState`` never consults focus. Same key, both paths, no conflict.
+KEY_SYMS: dict[str, tuple[str, ...]] = {
+    "space": ("space",),
+    "ctrl": ("Control_L", "Control_R"),
+    "shift": ("Shift_L", "Shift_R"),
+    "alt": ("Alt_L", "Alt_R"),
+    "f8": ("F8",),
+    "f9": ("F9",),
+    "f10": ("F10",),
+}
+
 #: Colour per state, so the indicator is readable at a glance.
 STATE_COLOURS = {
     "loading": "#8a8a8a",
@@ -64,6 +94,12 @@ class TkBubbleView:
     title: str = "Grandpa"
     on_submit: Any = None
     on_close: Any = None
+    #: The hold key, so it can be swallowed in the entry rather than typed.
+    hold_key: str = "f9"
+    #: Called when the hold key is pressed while the bubble has focus. The
+    #: character is already suppressed by then; this is so the bubble can say it
+    #: saw the key instead of appearing to ignore it.
+    on_hold_key: Any = None
     root: Any = field(default=None, init=False)
     _widgets: dict[str, Any] = field(default_factory=dict, init=False)
     _drag_origin: tuple[int, int] = field(default=(0, 0), init=False)
@@ -133,6 +169,13 @@ class TkBubbleView:
         )
         entry.pack(fill="x", padx=10, pady=(0, 6))
         entry.bind("<Return>", self._submit)
+        # On the entry, not the toplevel: a toplevel binding fires after the
+        # class binding that inserts the character, so "break" there is too
+        # late. See KEY_SYMS for the measurement.
+        for keysym in KEY_SYMS.get(self.hold_key.lower(), ()):
+            entry.bind(f"<KeyPress-{keysym}>", self._swallow_hold_key)
+            # The release too, so a key-up cannot insert either.
+            entry.bind(f"<KeyRelease-{keysym}>", lambda _event: "break")
         self._widgets["entry"] = entry
 
         self._widgets["status"] = tk.Label(
@@ -221,6 +264,22 @@ class TkBubbleView:
 
     # --- internals -----------------------------------------------------------
 
+    def _swallow_hold_key(self, _event: Any = None) -> str:
+        """Keep the hold key out of the text box, and say it was seen.
+
+        Returning ``"break"`` stops the Entry's class binding, which is what
+        would otherwise insert the character. The global probe is unaffected --
+        it reads the keyboard, not this window's events -- so the hold still
+        starts; this only stops the character and tells the controller to
+        explain itself rather than appear to do nothing.
+        """
+        if callable(self.on_hold_key):
+            try:
+                self.on_hold_key()
+            except Exception:  # noqa: BLE001 - a keypress must not kill the UI
+                pass
+        return "break"
+
     def _submit(self, _event: Any = None) -> str:
         entry = self._widgets.get("entry")
         text = entry.get() if entry is not None else ""
@@ -245,4 +304,4 @@ class TkBubbleView:
             self.close()
 
 
-__all__ = ["FOCUS_STEALING_CALLS", "STATE_COLOURS", "TkBubbleView"]
+__all__ = ["FOCUS_STEALING_CALLS", "KEY_SYMS", "STATE_COLOURS", "TkBubbleView"]

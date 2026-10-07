@@ -62,7 +62,7 @@ uv run grandpa reminders add "remind me in 30 minutes to drink water"
 uv run grandpa bubble
 ```
 
-A small borderless window that stays on top: hold SPACE anywhere to talk, type
+A small borderless window that stays on top: hold **F9** anywhere to talk, type
 in the box to ask, and read the status line for what it is doing. **It blocks
 the terminal** — it owns the window loop — so open a second one if you need it.
 
@@ -72,9 +72,21 @@ bubble visible and every character lands in Notepad. The microphone is refused
 while the model is still loading, and the status says so rather than claiming to
 be ready.
 
-`--key ctrl` if SPACE is awkward (a modifier types nothing into whatever has
-focus), `--position X,Y` to place it, `--model small.en` to score a different
-model. It remembers where you dragged it.
+**Why F9 and not SPACE or Ctrl.** A global read means the key also reaches
+whatever window has focus. A printable key therefore types into it — SPACE
+shipped first and put a space in the bubble's own text box. Modifiers type
+nothing but fire on the shortcuts you actually use: `--key ctrl` would start a
+recording on every Ctrl+C, Ctrl+V and Ctrl+S, and Alt alone opens the Windows
+menu bar. F9 is neither printable nor a shortcut modifier.
+
+`--key` takes `space`, `ctrl`, `shift`, `alt`, `f8`, `f9` or `f10`, and the
+bubble swallows whichever you pick so it never lands in its own text box.
+`--position X,Y` to place it, `--model small.en` for a different model. It
+remembers where you dragged it.
+
+If F9 does nothing on a laptop whose F-row defaults to media keys, it may need
+`Fn` held — the status line will stay silent because the key never arrives. Try
+`--key f8` or `--key shift`.
 
 `docs/testing/desktop-ui-manual-qa.md` is the fifteen-step check for whether it
 actually behaves.

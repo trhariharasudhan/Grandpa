@@ -20,6 +20,7 @@ one.
 | 1 | Run `grandpa bubble` | A small dark window appears near the top-left. **No title bar**, no minimise or close buttons. |
 | 2 | Look at the state line immediately | A grey dot and **"Loading model..."** — not "Ready". The status line underneath says `loading`. |
 | 3 | Wait | The dot turns green and reads **"Ready"**. Status line shows the model name and `speech ready`. About 7s for `base.en`, 17s for `small.en`. |
+| 3a | While it is still loading, hold F9 | The status line says it **saw F9** and that the model is still loading. It must not stay silent — silence is what made a held key look like a dead key. |
 | 4 | Click another window so the bubble is behind it | The bubble **stays visible on top**. |
 
 If step 2 ever shows "Ready" before step 3, stop and tell me — that is the
@@ -41,15 +42,25 @@ and infuriating.
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| 8 | Click into Notepad first, so the bubble does **not** have focus. Hold SPACE and say "what is the time" | Dot turns red, state **"Recording"** — while Notepad has focus. This is the point of the global key. |
-| 9 | Release SPACE | State goes **"Transcribing..."** then **"Thinking..."**, then back to green "Ready". |
+| 8 | Click into Notepad first, so the bubble does **not** have focus. Hold **F9** and say "what is the time" | Dot turns red, state **"Recording"** — while Notepad has focus. This is the point of the global key. |
+| 9 | Release F9 | State goes **"Transcribing..."** then **"Thinking..."**, then back to green "Ready". |
 | 10 | Read the panes | The grey line shows what it heard in quotes. The reply pane shows Grandpa's answer. |
 | 11 | Select the reply text with the mouse | It **selects** and can be copied with Ctrl+C. |
-| 12 | Tap SPACE briefly without speaking | Nothing is routed. Status line says it heard nothing usable. No reply appears. |
+| 12 | Tap F9 briefly without speaking | Nothing is routed. The status line names the tap: "That was a 0.0Ns tap — hold F9 down while you speak." No reply appears. |
 
-Holding SPACE will also type spaces into Notepad. That is expected — the key is
-read globally and not swallowed. Use `--key ctrl` if that bothers you; a
-modifier types nothing.
+**F9 types nothing**, in Notepad or in the bubble's own text box. SPACE shipped
+first and did both, which is what this round fixed. `--key` still takes `space`
+through `f10` and the bubble swallows whichever you pick, but a printable key
+will still type into *other* windows, and `--key ctrl` fires on every Ctrl+C you
+press.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| 8a | Click the bubble's text box, then hold F9 | The box stays **empty** — no character appears — and recording starts. This is the reported bug; if a character appears, say so. |
+| 8b | With the box focused, hold SPACE after restarting with `--key space` | Same: no space in the box. The swallow is not specific to F9. |
+
+If F9 does nothing at all — no "saw F9" in the status line — your F-row probably
+needs `Fn`. Restart with `--key f8` or `--key shift` and tell me.
 
 ## Text, position, closing
 
