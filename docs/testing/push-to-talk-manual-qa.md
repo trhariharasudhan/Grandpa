@@ -12,7 +12,8 @@ There are two push-to-talk paths. They share the name and nothing else.
 grandpa voice push-to-talk
 ```
 
-Hold F9, speak, release. The recording starts on the key going down and ends
+Hold Ctrl+Win, speak, release. The recording starts when both keys are down
+and ends
 on it coming up; every frame in between is kept. The voice activity detector is
 configured so it cannot refuse or truncate anything -- no threshold, no noise
 floor, no silence timeout -- so this is the path to use when automatic detection
@@ -20,7 +21,7 @@ is misbehaving and when a threshold needs to be ruled out as the cause.
 
 | Option | Effect |
 | --- | --- |
-| `--key f8` | Hold a different key: SPACE, CTRL, SHIFT, ALT, F8, F9, F10. F9 is the default for every command that takes one. A printable key types into whatever has focus (and into this terminal); `ctrl` fires on every Ctrl+C, Ctrl+V and Ctrl+S, so avoid it. |
+| `--key menu` | Hold a different key or combination: any `+`-joined mix of SPACE, CTRL, SHIFT, ALT, WIN, RWIN, MENU, F8, F9, F10. CTRL+WIN is the default for every command that takes one. A printable part types into whatever has focus (and into this terminal); a lone `ctrl` fires on every Ctrl+C, so avoid it on its own. |
 | `--no-route` | Print the transcript and stop. Nothing is acted on. |
 | `--once` | Handle one hold and exit. |
 | `--no-tts` | Print the reply instead of speaking it. |

@@ -15,6 +15,7 @@ guard and default-deny fixture stay armed.
 
 from __future__ import annotations
 
+import queue
 import threading
 from dataclasses import dataclass, field
 from typing import Any
@@ -50,7 +51,13 @@ class WaitingCapture:
     audio: Any = "captured"
     stop_observed: bool = False
 
+    #: When set, capture blocks on this before looking at stop_event. Lets a
+    #: test keep a recording open and check that the caller was not waiting.
+    gate: Any = None
+
     def capture(self, stop_event: threading.Event | None = None, **_kwargs):
+        if self.gate is not None:
+            self.gate.wait(timeout=10.0)
         if stop_event is not None:
             self.stop_observed = stop_event.wait(timeout=5.0)
         return self.audio
@@ -214,14 +221,61 @@ def test_it_returns_to_idle_so_a_second_hold_works() -> None:
 # --- driven through the poller, as the running bubble does -------------------------
 
 
+def _drain(controller, view) -> None:
+    """Wait for the worker, then apply what it queued.
+
+    The hold runs off the view's thread now, because ``capture()`` blocks until
+    the key is released and on the tk thread that froze the window for the whole
+    recording -- so no meter could have animated during one. Updates are queued
+    and applied by the tk tick; here the test is both.
+    """
+    worker = getattr(controller, "_bubble_worker", None)
+    if worker is not None:
+        worker.join(timeout=10.0)
+        assert not worker.is_alive(), "the hold worker never finished"
+    while True:
+        try:
+            update = controller._queued.get_nowait()
+        except queue.Empty:
+            break
+        update()
+
+
 def test_the_poller_drives_the_whole_chain() -> None:
     """The wiring the running command uses, not just the controller."""
     controller, view, bridge, _capture = _ready()
+    controller._queued = queue.SimpleQueue()
+    controller.dispatch = controller._queued.put
 
     _hold_poller(controller)()
+    _drain(controller, view)
 
     assert bridge.sent == ["what is the time"]
     assert view.states == ["recording", "transcribing", "thinking", "idle"]
+
+
+def test_the_poller_returns_before_the_hold_finishes() -> None:
+    """The property that makes a live meter possible at all.
+
+    ``capture()`` blocks until the key is released. If the poller waited for it,
+    the tkinter callback would be inside that block for the whole hold and the
+    window could not redraw -- which is why nothing could be shown while
+    recording before this round.
+    """
+    controller, _view, bridge, capture = _ready()
+    controller._queued = queue.SimpleQueue()
+    controller.dispatch = controller._queued.put
+    release = threading.Event()
+    capture.gate = release
+
+    _hold_poller(controller)()
+
+    # The capture is still blocked, so nothing has been routed yet -- and the
+    # poller has already handed control back.
+    assert bridge.sent == [], "the poller waited for the recording to finish"
+    release.set()
+    _drain(controller, None)
+    assert bridge.sent == ["what is the time"]
 
 
 def test_the_poller_does_nothing_while_the_key_is_up() -> None:

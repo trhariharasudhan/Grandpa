@@ -74,6 +74,7 @@ class MicrophoneCapture:
         vad_config: VoiceActivityConfig | None = None,
         device_manager: MicrophoneDeviceManager | None = None,
         sounddevice: Any = None,
+        on_level: Callable[[float], None] | None = None,
     ) -> None:
         self.duration_seconds = duration_seconds
         self.sample_rate = sample_rate
@@ -86,10 +87,32 @@ class MicrophoneCapture:
         )
         self.device_manager = device_manager
         self.sounddevice = sounddevice
+        #: Called with each chunk's RMS while capturing, for a level
+        #: meter. The value is already computed for the detector below,
+        #: so this costs one call per chunk and no arithmetic. It is a
+        #: constructor argument rather than a parameter of ``capture``
+        #: deliberately: ``PushToTalkSession`` forwards only
+        #: ``stop_event``, and configuring the recorder instead of the
+        #: session means the session needs no change at all.
+        self.on_level = on_level
         self.last_warning: str | None = None
         self.last_device: MicrophoneDevice | None = None
         self.last_error: str | None = None
         self._stream = None
+
+    def _emit_level(self, rms: float) -> None:
+        """Hand one chunk's loudness to the level callback, if any.
+
+        Swallows everything the callback raises, like
+        ``on_speech_start`` above: a meter that fails must not end a
+        recording in progress.
+        """
+        if self.on_level is None:
+            return
+        try:
+            self.on_level(float(rms))
+        except Exception:  # noqa: BLE001 - a meter cannot break capture
+            pass
 
     def capture(
         self,
@@ -188,6 +211,7 @@ class MicrophoneCapture:
                     frames = recording.tobytes()
                     frame_count = _captured_frame_count(recording, chunk_frames)
                     rms = calculate_pcm16_rms(_downmix_pcm16(frames, channels))
+                    self._emit_level(rms)
 
                     if not detector.speech_started:
                         pre_chunks.append(frames)

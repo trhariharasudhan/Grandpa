@@ -46,6 +46,13 @@ from grandpa.voice.vad import VoiceActivityConfig
 #: Deliberately short. A modifier is the natural choice for push-to-talk
 #: because holding it does not type anything, and a function key is the choice
 #: for anyone who uses modifiers for something else.
+#: Virtual-key codes for every key a hold may be built from. Verified present
+#: on this layout with ``MapVirtualKeyW(vk, MAPVK_VK_TO_VSC)``, which returns a
+#: scancode or 0 when the layout has no such key:
+#:
+#:     ctrl 29   shift 42   alt 56   space 57   f8 66   f9 67   f10 68
+#:     win 91    rwin 92    menu 93  capslock 58
+#:     pause 0  <- absent, which is why it is not offered
 KEY_CODES: dict[str, int] = {
     "space": 0x20,
     "ctrl": 0x11,
@@ -54,38 +61,102 @@ KEY_CODES: dict[str, int] = {
     "f8": 0x77,
     "f9": 0x78,
     "f10": 0x79,
+    # VK_LWIN. There is no "either Windows key" virtual key the way there is for
+    # ctrl/shift/alt, so this is the left one -- which is the one a left hand
+    # reaches, and the point of the default below is one-handed holding.
+    "win": 0x5B,
+    "rwin": 0x5C,
+    #: The context-menu key. Offered because it is inert on every layout and
+    #: holdable, for a keyboard where the default combination is awkward.
+    "menu": 0x5D,
 }
+
+#: What separates the parts of a combination, e.g. ``ctrl+win``.
+COMBO_SEPARATOR = "+"
+
+
+def parse_hold_key(spec: str) -> tuple[str, ...]:
+    """Split a hold-key spec into its parts, normalised and validated.
+
+    ``"f9"`` gives ``("f9",)`` and ``"Ctrl+Win"`` gives ``("ctrl", "win")``, so
+    a single key is just a combination of one and the probe has one code path
+    rather than two. Raises :class:`ValueError` naming the offending part, so
+    the CLI can turn it into a message instead of a traceback.
+    """
+    parts = [
+        part.strip().lower()
+        for part in spec.split(COMBO_SEPARATOR)
+        if part.strip()
+    ]
+    if not parts:
+        raise ValueError("a hold key cannot be empty")
+    unknown = [part for part in parts if part not in KEY_CODES]
+    if unknown:
+        raise ValueError(
+            f"unknown key(s) {', '.join(sorted(unknown))}; "
+            f"choose from {', '.join(sorted(KEY_CODES))}"
+        )
+    # Duplicates collapse: "ctrl+ctrl" is "ctrl", not a combination that can
+    # never be satisfied.
+    return tuple(dict.fromkeys(parts))
+
+
+def describe_hold_key(spec: str) -> str:
+    """How the key is written for a person: ``ctrl+win`` -> ``CTRL+WIN``."""
+    try:
+        parts = parse_hold_key(spec)
+    except ValueError:
+        return spec.upper()
+    return COMBO_SEPARATOR.join(part.upper() for part in parts)
 
 #: The shipped hold key for every command that reads one -- ``grandpa bubble``,
 #: ``grandpa voice push-to-talk`` and ``grandpa voice accuracy-test`` -- with the
 #: reasoning, so the commands, the help text, the README and the manual QA cannot
 #: disagree about it.
 #:
-#: ``space`` shipped first and was the worst possible choice: the key is read
-#: globally with ``GetAsyncKeyState``, so it also reaches whatever window has
-#: focus -- including the bubble's own text box, where holding it typed a space
-#: and recorded nothing visible.
+#: The constraint that drives everything: the key is read globally with
+#: ``GetAsyncKeyState``, so whatever it is also reaches whichever window has
+#: focus. Three rounds of consequences:
 #:
-#: Swallowing the character in the entry fixes the bubble (see
-#: ``ui.tk_view.KEY_SYMS``), but not the general case: a printable key still
-#: types into every *other* application while held, and in a terminal it fills
-#: the prompt. So the default has to be a key that produces no character
-#: anywhere.
+#: ``space`` shipped first and was the worst possible choice -- it typed into the
+#: bubble's own text box and recorded nothing visible. Swallowing the character
+#: in the entry fixes the bubble (see ``ui.tk_view.KEY_SYMS``) but not the
+#: general case: a printable key still types into every *other* application while
+#: held, and in a terminal it fills the prompt.
 #:
-#: That leaves modifiers and function keys, and modifiers are disqualified for a
-#: *global* hold key: ``ctrl`` fires on every Ctrl+C, Ctrl+V and Ctrl+S the user
-#: performs, ``shift`` on every Shift+click and capital letter, and ``alt`` alone
-#: opens the Windows menu bar. Each would start a recording during ordinary work.
+#: ``f9`` replaced it and works, but needs ``Fn`` on this laptop, which is
+#: awkward to hold while speaking -- the exact residual cost recorded when f9 was
+#: chosen, now reported from use.
 #:
-#: ``f10`` also activates the menu bar in Win32 apps, which leaves ``f8`` and
-#: ``f9``. Both exist on this keyboard layout (``MapVirtualKeyW`` returns
-#: scancodes 66 and 67), and neither is pressed by habit or in combination.
+#: A **combination** is the way out, because the test is "all of these at once"
+#: and that is a chord no application claims. ``ctrl+win`` is the default:
 #:
-#: The residual cost, stated because it was not testable here: on a laptop whose
-#: F-row defaults to media keys, F9 may need ``Fn`` held, in which case the probe
-#: never sees it. The bubble says when it sees the key, so that failure is
-#: visible rather than silent -- and ``--key`` takes any of the seven.
-DEFAULT_HOLD_KEY = "f9"
+#: * one-handed without ``Fn`` -- left ctrl and left win are adjacent on the
+#:   bottom row, reachable by one hand without looking
+#: * inert together. Ctrl alone is a shortcut prefix and Win alone opens Start,
+#:   but Windows binds nothing to the two held with nothing else
+#: * present on this layout: ``MapVirtualKeyW`` gives ctrl scancode 29 and left
+#:   win 91
+#:
+#: Rejected, with the reason in each case:
+#:
+#: * ``ctrl+shift`` -- Windows binds it to switching keyboard layout when more
+#:   than one is installed, and it prefixes a great many application shortcuts
+#: * ``ctrl+alt`` -- right alt *is* ctrl+alt on layouts with AltGr, so holding it
+#:   types alternate characters
+#: * ``alt+space`` -- opens the window menu
+#: * ``win+shift`` / ``win+alt`` -- prefixes of live Windows shortcuts
+#:   (Win+Shift+S screenshots, Win+Alt+R records)
+#: * ``capslock`` -- a toggle, not a hold: it changes state on press and the
+#:   state outlives the utterance
+#: * ``pause`` -- ``MapVirtualKeyW`` returns scancode 0, so the key is not on
+#:   this keyboard at all
+#:
+#: The residual cost, stated because it was not testable from here: releasing the
+#: Windows key normally opens Start, and Windows suppresses that when another
+#: modifier was held with it. If Start does open on release, ``--key menu`` and
+#: ``--key f8`` are inert single-key alternatives and the manual QA names them.
+DEFAULT_HOLD_KEY = "ctrl+win"
 
 
 #: Longest single utterance a held key can produce, in seconds. A backstop for
@@ -150,12 +221,25 @@ class WindowsKeyProbe:
         return True
 
     def is_down(self, key: str) -> bool:
-        code = KEY_CODES.get(key.lower())
-        if code is None:
+        """True while every part of *key* is held at the same time.
+
+        A combination is read as several independent questions and AND-ed, which
+        is all ``GetAsyncKeyState`` can do -- it reports one key per call and
+        knows nothing about chords. A single key is the one-part case, so
+        nothing about the previous behaviour changes: ``is_down("f9")`` still
+        makes exactly one call with exactly the same test on the result.
+        """
+        try:
+            parts = parse_hold_key(key)
+        except ValueError:
             return False
-        # The low bit means "pressed since last call" and is not wanted; the
-        # high bit (0x8000) means "down now", which is the question.
-        return bool(self._user32.GetAsyncKeyState(code) & 0x8000)
+        for part in parts:
+            code = KEY_CODES[part]
+            # The low bit means "pressed since last call" and is not wanted; the
+            # high bit (0x8000) means "down now", which is the question.
+            if not self._user32.GetAsyncKeyState(code) & 0x8000:
+                return False
+        return True
 
 
 @dataclass
@@ -335,6 +419,7 @@ class PushToTalkSession:
 
 
 __all__ = [
+    "COMBO_SEPARATOR",
     "DEFAULT_HOLD_KEY",
     "KEY_CODES",
     "MAXIMUM_HOLD_SECONDS",
@@ -342,5 +427,7 @@ __all__ = [
     "KeyProbe",
     "PushToTalkSession",
     "WindowsKeyProbe",
+    "describe_hold_key",
     "hold_to_talk_vad_config",
+    "parse_hold_key",
 ]

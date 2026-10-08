@@ -13,6 +13,8 @@ during the first prompt -- at the UI layer instead of the CLI's.
 
 from __future__ import annotations
 
+import math
+from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -24,7 +26,7 @@ from typing import Any, Protocol
 # one source for the UI. The module it comes from is pure standard library,
 # so this does not give bubble.py a heavy import -- and it is not a toolkit
 # import, which is the rule this module actually obeys.
-from grandpa.voice.push_to_talk import DEFAULT_HOLD_KEY
+from grandpa.voice.push_to_talk import DEFAULT_HOLD_KEY, describe_hold_key
 
 
 class BubbleState(StrEnum):
@@ -35,6 +37,7 @@ class BubbleState(StrEnum):
     RECORDING = "recording"
     TRANSCRIBING = "transcribing"
     THINKING = "thinking"
+    SPEAKING = "speaking"
     ERROR = "error"
 
 
@@ -45,6 +48,7 @@ STATE_LABELS: dict[BubbleState, str] = {
     BubbleState.RECORDING: "Recording",
     BubbleState.TRANSCRIBING: "Transcribing...",
     BubbleState.THINKING: "Thinking...",
+    BubbleState.SPEAKING: "Speaking...",
     BubbleState.ERROR: "Error",
 }
 
@@ -55,6 +59,39 @@ STATES_THAT_REFUSE_A_HOLD = frozenset(
 )
 
 DEFAULT_POSITION = (40, 40)
+
+#: How many bars the level meter holds. One capture chunk is 0.1s, so this is
+#: about three seconds of history -- long enough to see a sentence, short enough
+#: that the view redraws a fixed, small number of rectangles.
+METER_BARS = 32
+
+#: The meter's floor and ceiling in PCM16 RMS, from this project's own
+#: measurements rather than a guess:
+#:
+#:     ~90     noise floor logged beside live captures
+#:     200     the VAD's default minimum_rms -- below this it is not speech
+#:     289     the average speech chunk in the recording that read as rms 176
+#:     640-2994 max_rms across the live recordings logged in voice/vad.py
+#:
+#: So the floor sits just above the noise floor and the ceiling just under the
+#: loudest measured peak. The mapping is logarithmic because loudness is
+#: perceived that way: on a linear scale an ordinary 289 would sit in the bottom
+#: ninth of the meter and look like silence.
+METER_FLOOR_RMS = 100.0
+METER_CEILING_RMS = 2500.0
+
+
+def normalise_level(rms: float) -> float:
+    """One chunk's RMS as a 0..1 meter height. Never raises, never exceeds 1."""
+    try:
+        value = float(rms)
+    except (TypeError, ValueError):
+        return 0.0
+    if value <= METER_FLOOR_RMS:
+        return 0.0
+    span = math.log(METER_CEILING_RMS) - math.log(METER_FLOOR_RMS)
+    scaled = (math.log(value) - math.log(METER_FLOOR_RMS)) / span
+    return min(1.0, max(0.0, scaled))
 
 
 class BubbleView(Protocol):
@@ -81,6 +118,13 @@ class BubbleView(Protocol):
 
     def clear_entry(self) -> None:
         """Empty the text box after submitting it."""
+
+    def set_levels(self, levels: tuple[float, ...]) -> None:
+        """Draw the capture level meter. Empty means "not recording".
+
+        Values are already normalised to 0..1 by the controller, so a
+        view never sees an RMS and never reads the microphone itself.
+        """
 
     def position(self) -> tuple[int, int]:
         """Where the window is now, for remembering it."""
@@ -149,12 +193,11 @@ class BubbleController:
     bridge: Any
     probe: Any = None
     capture: Any = None
-    #: f9, not space. A global read means the key also reaches whatever has
-    #: focus, so a printable key types into that window -- including the
-    #: bubble's own text box, which is how this default was reported. Modifiers
-    #: type nothing but fire on every shortcut the user performs (Ctrl+C,
-    #: Shift+click, Alt+Tab), and Alt alone opens the Windows menu bar. F9 is
-    #: neither printable nor a shortcut modifier. See DEFAULT_HOLD_KEY.
+    #: A combination, ``ctrl+win``, not a single key. A global read means the
+    #: key also reaches whatever has focus, so a printable key types into that
+    #: window and a lone modifier fires on every shortcut the user performs. A
+    #: chord satisfies neither: Ctrl+C never satisfies ctrl+win. See
+    #: DEFAULT_HOLD_KEY for what was rejected and why.
     key: str = DEFAULT_HOLD_KEY
     #: Shortest hold that counts, borrowed from push-to-talk's own value so the
     #: two paths agree about what a tap is.
@@ -163,6 +206,18 @@ class BubbleController:
     #: watcher thread belongs to PushToTalkSession, which this delegates to.
     sleep: Any = None
     clock: Any = None
+    #: Speak replies as well as showing them. Text is never replaced by speech.
+    speak_replies: bool = True
+    #: The text-to-speech seam: anything with ``speak(text)`` and ``stop()``.
+    #: ``None`` means replies stay silent, which is what every test uses -- the
+    #: audio guard denies opening a speaker.
+    speaker: Any = None
+    #: How a view update reaches the view. ``None`` applies it immediately on
+    #: the calling thread, which is what tests and any single-threaded driver
+    #: want. The bubble command sets this to a queue put that the tkinter tick
+    #: drains, because a hold and a spoken reply both block and so must run off
+    #: the view's thread -- and tkinter may only be touched from its own.
+    dispatch: Any = None
 
     state: BubbleState = field(default=BubbleState.LOADING, init=False)
     last_error: str = field(default="", init=False)
@@ -172,6 +227,13 @@ class BubbleController:
     model_name: str = field(default="", init=False)
     position: tuple[int, int] = field(default=DEFAULT_POSITION, init=False)
     _position_path: Path | None = field(default=None, init=False)
+    #: Recent capture levels, already normalised, newest last. A bounded deque
+    #: appended from the capture thread and read from the view's thread;
+    #: ``append`` on a bounded deque is atomic in CPython, and a meter that
+    #: misses one frame of three-second history does not need a lock for it.
+    _levels: deque[float] = field(
+        default_factory=lambda: deque(maxlen=METER_BARS), init=False
+    )
 
     def __post_init__(self) -> None:
         import time
@@ -248,12 +310,12 @@ class BubbleController:
         self.key_seen_count += 1
         if self.state is BubbleState.LOADING:
             self.last_error = (
-                f"Saw {self.key.upper()} -- still loading the model, so the "
+                f"Saw {describe_hold_key(self.key)} -- still loading the model, so the "
                 f"hold was ignored."
             )
         elif self.state in STATES_THAT_REFUSE_A_HOLD:
             self.last_error = (
-                f"Saw {self.key.upper()} -- busy ({self.state}), so the hold "
+                f"Saw {describe_hold_key(self.key)} -- busy ({self.state}), so the hold "
                 f"was ignored."
             )
         else:
@@ -268,28 +330,34 @@ class BubbleController:
         return quietly -- that is exactly what made a held key produce nothing
         at all, because the explanations here never ran.
         """
+        # Holding the key during a spoken reply cuts it off and starts a
+        # new utterance. That is why SPEAKING is not in
+        # STATES_THAT_REFUSE_A_HOLD: interrupting is the point.
+        if self.state is BubbleState.SPEAKING:
+            self.interrupt_speech()
         if self.state is BubbleState.LOADING:
             self.last_error = (
-                f"Saw {self.key.upper()} -- still loading the model, so "
+                f"Saw {describe_hold_key(self.key)} -- still loading the model, so "
                 f"nothing was recorded."
             )
             self._refresh_status()
             return ""
         if self.state in STATES_THAT_REFUSE_A_HOLD:
             self.last_error = (
-                f"Saw {self.key.upper()} -- already {self.state}, so the hold "
+                f"Saw {describe_hold_key(self.key)} -- already {self.state}, so the hold "
                 f"was ignored."
             )
             self._refresh_status()
             return ""
         if self.probe is None or self.capture is None:
             self.last_error = (
-                f"Saw {self.key.upper()} -- no microphone capture is wired up."
+                f"Saw {describe_hold_key(self.key)} -- no microphone capture is wired up."
             )
             self._enter(BubbleState.ERROR)
             self._refresh_status()
             return ""
 
+        self._levels.clear()
         self._enter(BubbleState.RECORDING)
         try:
             audio, held = self._record_while_held()
@@ -304,7 +372,7 @@ class BubbleController:
         # must produce a visible answer, and "that was a 0.08s tap" is one.
         if held < self.minimum_hold_seconds:
             self.last_error = (
-                f"That was a {held:.2f}s tap -- hold {self.key.upper()} down "
+                f"That was a {held:.2f}s tap -- hold {describe_hold_key(self.key)} down "
                 f"while you speak."
             )
             self._enter(BubbleState.IDLE)
@@ -316,13 +384,13 @@ class BubbleController:
         transcript = (getattr(outcome, "text", "") or "").strip()
         if not transcript:
             explanation = getattr(outcome, "explanation", "") or "nothing recognisable"
-            self.view.set_transcript("")
+            self._to_view(lambda: self.view.set_transcript(""))
             self.last_error = f"Heard nothing usable -- {explanation}."
             self._enter(BubbleState.IDLE)
             self._refresh_status()
             return ""
 
-        self.view.set_transcript(transcript)
+        self._to_view(lambda: self.view.set_transcript(transcript))
         self.submit(transcript)
         return transcript
 
@@ -370,17 +438,22 @@ class BubbleController:
             return ""
         self._enter(BubbleState.THINKING)
         reply = self.bridge.send(cleaned)
-        self.view.clear_entry()
+        self._to_view(self.view.clear_entry)
         reply_text = (getattr(reply, "text", "") or "").strip()
         if getattr(reply, "failed", False):
             self.last_error = reply_text or "That did not work."
-            self.view.set_reply(reply_text or self.last_error)
+            failed_text = reply_text or self.last_error
+            self._to_view(lambda: self.view.set_reply(failed_text))
             self._enter(BubbleState.ERROR)
         else:
             self.last_error = ""
-            self.view.set_reply(reply_text or "(no reply)")
+            shown = reply_text or "(no reply)"
+            self._to_view(lambda: self.view.set_reply(shown))
             self._enter(BubbleState.IDLE)
         self._refresh_status()
+        # After the text is on screen, never instead of it.
+        if not getattr(reply, "failed", False):
+            self._speak(reply_text)
         return reply_text
 
     # --- status --------------------------------------------------------------
@@ -399,12 +472,109 @@ class BubbleController:
             parts.append(self.last_error)
         return "  |  ".join(parts)
 
+    def _to_view(self, update: Any) -> None:
+        """Apply a view update, here or wherever the dispatcher says.
+
+        Every call that touches the view goes through this. With no dispatcher
+        it is a direct call and nothing has changed; with one, the update is
+        handed to the thread that owns the widgets.
+        """
+        if self.dispatch is None:
+            update()
+            return
+        try:
+            self.dispatch(update)
+        except Exception:  # noqa: BLE001 - a closed window must not raise here
+            pass
+
     def _refresh_status(self) -> None:
-        self.view.set_status_line(self.status_line())
+        line = self.status_line()
+        self._to_view(lambda: self.view.set_status_line(line))
 
     def _enter(self, state: BubbleState) -> None:
+        # The state changes now, on this thread, because the refusal checks and
+        # can_record() read it; only the drawing of it is dispatched.
         self.state = state
-        self.view.set_state(str(state), STATE_LABELS[state])
+        label = STATE_LABELS[state]
+        self._to_view(lambda: self.view.set_state(str(state), label))
+
+    # --- the level meter -----------------------------------------------------
+
+    def note_level(self, rms: float) -> None:
+        """One capture chunk's loudness, from the thread reading the device.
+
+        Deliberately does not touch the view: this runs on whichever thread is
+        inside ``capture()``. It only appends. ``refresh_meter`` moves it to the
+        view, on the view's own thread, once per tick rather than once per
+        chunk -- which is what keeps a meter that updates ten times a second
+        from becoming thirty widget writes.
+        """
+        self._levels.append(normalise_level(rms))
+
+    def meter_levels(self) -> tuple[float, ...]:
+        """The meter as the view should draw it: oldest first, padded to width."""
+        values = tuple(self._levels)
+        if len(values) >= METER_BARS:
+            return values[-METER_BARS:]
+        return (0.0,) * (METER_BARS - len(values)) + values
+
+    def refresh_meter(self) -> None:
+        """Push the meter to the view. Called from the view's own thread."""
+        levels = self.meter_levels() if self.state is BubbleState.RECORDING else ()
+        self._to_view(lambda: self.view.set_levels(levels))
+
+    # --- speech --------------------------------------------------------------
+
+    def toggle_speech(self) -> bool:
+        """Turn spoken replies on or off, and stop anything in progress."""
+        self.speak_replies = not self.speak_replies
+        if not self.speak_replies:
+            self.interrupt_speech()
+        self._refresh_status()
+        return self.speak_replies
+
+    def interrupt_speech(self) -> bool:
+        """Cut a reply off mid-sentence. True if there was an engine to ask."""
+        if self.speaker is None:
+            return False
+        stop = getattr(self.speaker, "stop", None)
+        if not callable(stop):
+            return False
+        try:
+            stop()
+        except Exception:  # noqa: BLE001 - interrupting must not raise
+            return False
+        if self.state is BubbleState.SPEAKING:
+            self._enter(BubbleState.IDLE)
+            self._refresh_status()
+        return True
+
+    def _speak(self, text: str) -> None:
+        """Say the reply. The text is already on screen before this runs.
+
+        A failure here changes the status line and nothing else: the reply
+        arrived and is readable, so losing the audio is not losing the answer.
+        """
+        if not text or not self.speak_replies or self.speaker is None:
+            return
+        self._enter(BubbleState.SPEAKING)
+        self._refresh_status()
+        try:
+            result = self.speaker.speak(text)
+        except Exception as exc:  # noqa: BLE001 - the text already arrived
+            self.last_error = f"Could not speak the reply ({type(exc).__name__})."
+        else:
+            # The engine reports rather than raises; "fallback" means it printed
+            # instead of speaking, which is worth saying once.
+            status = str(getattr(result, "status", "") or "")
+            self.last_error = (
+                "The reply was not spoken: no working speech engine."
+                if status == "fallback"
+                else ""
+            )
+        if self.state is BubbleState.SPEAKING:
+            self._enter(BubbleState.IDLE)
+        self._refresh_status()
 
     def _current_model(self) -> str:
         transcriber = getattr(self.bridge, "transcriber", None)
@@ -420,8 +590,12 @@ class BubbleController:
 __all__ = [
     "DEFAULT_HOLD_KEY",
     "DEFAULT_POSITION",
+    "METER_BARS",
+    "METER_CEILING_RMS",
+    "METER_FLOOR_RMS",
     "STATES_THAT_REFUSE_A_HOLD",
     "STATE_LABELS",
+    "normalise_level",
     "BubbleController",
     "BubbleState",
     "BubbleView",

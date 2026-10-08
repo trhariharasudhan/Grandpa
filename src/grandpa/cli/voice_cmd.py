@@ -31,7 +31,6 @@ from grandpa.voice.errors import VoiceError, VoiceOutputUnavailableError
 from grandpa.voice.microphone import MicrophoneCapture
 from grandpa.voice.push_to_talk import (
     DEFAULT_HOLD_KEY,
-    KEY_CODES,
     MAXIMUM_HOLD_SECONDS,
     PushToTalkSession,
     WindowsKeyProbe,
@@ -41,6 +40,23 @@ from grandpa.voice.speech_output import SpeechOutputEngine
 from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 from grandpa.voice.text_to_speech import list_system_voices
 from grandpa.voice.vad import VoiceActivityConfig
+
+
+def _hold_key_option(ctx, param, value):  # noqa: ANN001 - click callback
+    """Validate ``--key``, which may name a combination like ``ctrl+win``.
+
+    ``click.Choice`` was right while a hold was one key and wrong the moment it
+    could be a chord: ``ctrl+win`` is not a member of ``KEY_CODES``, it is built
+    from two of them.
+    """
+    from grandpa.voice.push_to_talk import parse_hold_key
+
+    raw = (value or "").strip().lower()
+    try:
+        parse_hold_key(raw)
+    except ValueError as exc:
+        raise click.BadParameter(str(exc)) from exc
+    return raw
 
 
 def handles_voice_errors(command):
@@ -512,9 +528,9 @@ def _print_voices() -> None:
 
 
 @voice.command("accuracy-test")
-@click.option("--key", type=click.Choice(sorted(KEY_CODES)),
-              default=DEFAULT_HOLD_KEY, show_default=True,
-              help="Key to hold while reading each phrase.")
+@click.option("--key", default=DEFAULT_HOLD_KEY, show_default=True,
+              callback=_hold_key_option,
+              help="Key or combination to hold while reading each phrase.")
 @click.option("--device", type=int, default=None, help="Microphone input device index.")
 @click.option("--model", default=None, help="Whisper model to score, e.g. small.en.")
 @click.option("--language", default=None, help="Recognition language code.")
@@ -860,9 +876,9 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
 
 
 @voice.command("push-to-talk")
-@click.option("--key", type=click.Choice(sorted(KEY_CODES)),
-              default=DEFAULT_HOLD_KEY, show_default=True,
-              help="Key to hold while speaking.")
+@click.option("--key", default=DEFAULT_HOLD_KEY, show_default=True,
+              callback=_hold_key_option,
+              help="Key or combination to hold while speaking, e.g. ctrl+win.")
 @click.option("--device", type=int, default=None, help="Microphone input device index.")
 @click.option("--no-tts", is_flag=True, help="Print responses instead of speaking.")
 @click.option("--once", is_flag=True, help="Handle one utterance and exit.")

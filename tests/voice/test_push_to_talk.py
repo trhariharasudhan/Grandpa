@@ -18,11 +18,13 @@ import pytest
 
 from grandpa.voice.microphone import CapturedAudio
 from grandpa.voice.push_to_talk import (
+    DEFAULT_HOLD_KEY,
     KEY_CODES,
     MAXIMUM_HOLD_SECONDS,
     PushToTalkSession,
     WindowsKeyProbe,
     hold_to_talk_vad_config,
+    parse_hold_key,
 )
 from grandpa.voice.vad import VoiceActivityDetector
 
@@ -364,16 +366,79 @@ def test_the_probe_ignores_the_pressed_since_last_call_bit() -> None:
 
 
 def test_an_unknown_key_is_never_down() -> None:
+    """Not "menu" any more -- that became a real key when combinations landed.
+
+    A test whose unknown key is quietly promoted to a known one stops testing
+    anything, and this one would have kept passing for the wrong reason.
+    """
+
     class AlwaysDown:
         def GetAsyncKeyState(self, code: int) -> int:
             return 0x8000
 
-    assert WindowsKeyProbe(user32=AlwaysDown()).is_down("menu") is False
+    probe = WindowsKeyProbe(user32=AlwaysDown())
+
+    assert probe.is_down("banana") is False
+    assert probe.is_down("") is False
+    assert probe.is_down("ctrl+banana") is False, (
+        "one unknown part must disqualify the whole combination"
+    )
 
 
 def test_the_offered_keys_do_not_type_anything_or_are_function_keys() -> None:
-    """Holding the key must not flood whatever has focus with characters."""
-    assert set(KEY_CODES) == {"space", "ctrl", "shift", "alt", "f8", "f9", "f10"}
+    """Holding the key must not flood whatever has focus with characters.
+
+    Three keys joined the set when combinations landed: ``win`` and ``rwin``,
+    which the default is built from, and ``menu``, which is inert on every
+    layout and is the fallback when the default chord is awkward. Each was
+    checked present with ``MapVirtualKeyW`` -- win 91, rwin 92, menu 93.
+    """
+    assert set(KEY_CODES) == {
+        "space", "ctrl", "shift", "alt", "f8", "f9", "f10", "win", "rwin", "menu",
+    }
+    # Exactly one offered key types a character, and it is not the default.
+    printable = {name for name in KEY_CODES if name == "space"}
+    assert printable == {"space"}
+    assert "space" not in parse_hold_key(DEFAULT_HOLD_KEY)
+
+
+def test_a_combination_needs_every_part_down_at_once() -> None:
+    """The whole point: a chord no single application claims."""
+
+    class OnlyCtrl:
+        def GetAsyncKeyState(self, code: int) -> int:
+            return 0x8000 if code == KEY_CODES["ctrl"] else 0
+
+    class Both:
+        def GetAsyncKeyState(self, code: int) -> int:
+            return 0x8000 if code in {KEY_CODES["ctrl"], KEY_CODES["win"]} else 0
+
+    assert WindowsKeyProbe(user32=OnlyCtrl()).is_down("ctrl+win") is False
+    assert WindowsKeyProbe(user32=Both()).is_down("ctrl+win") is True
+
+
+def test_a_single_key_still_asks_exactly_one_question() -> None:
+    """Extended, not replaced: the one-key path must not have grown."""
+
+    class Counting:
+        def __init__(self) -> None:
+            self.codes: list[int] = []
+
+        def GetAsyncKeyState(self, code: int) -> int:
+            self.codes.append(code)
+            return 0x8000
+
+    user32 = Counting()
+
+    assert WindowsKeyProbe(user32=user32).is_down("f9") is True
+    assert user32.codes == [KEY_CODES["f9"]]
+
+
+def test_a_spec_is_normalised_and_deduplicated() -> None:
+    assert parse_hold_key(" Ctrl + WIN ") == ("ctrl", "win")
+    assert parse_hold_key("ctrl+ctrl") == ("ctrl",), (
+        "a repeated part must not become a condition that cannot be met"
+    )
 
 
 # --- 5. the command exists and is reachable ----------------------------------------

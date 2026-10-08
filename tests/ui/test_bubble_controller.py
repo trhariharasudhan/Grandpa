@@ -310,7 +310,11 @@ def test_a_hold_without_a_probe_refuses_rather_than_crashing() -> None:
 
     assert controller.on_hold() == ""
     assert "no microphone capture" in view.status_lines[-1]
-    assert "F9" in view.status_lines[-1], "the message should name the key seen"
+    from grandpa.voice.push_to_talk import describe_hold_key
+
+    assert describe_hold_key(controller.key) in view.status_lines[-1], (
+        "the message should name the key seen"
+    )
 
 
 # --- 3. the text box ---------------------------------------------------------------

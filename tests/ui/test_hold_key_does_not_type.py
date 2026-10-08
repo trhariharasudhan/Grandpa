@@ -124,9 +124,24 @@ def test_the_handler_returns_break_so_the_character_is_suppressed() -> None:
 
 
 def test_the_release_is_swallowed_too() -> None:
+    """But only the release of a press that was itself swallowed."""
     tk, _view, _seen = _shown("f9")
 
+    tk.entry_bindings["<KeyPress-F9>"](object())
+
     assert tk.entry_bindings["<KeyRelease-F9>"](object()) == "break"
+
+
+def test_a_release_without_a_swallowed_press_is_let_through() -> None:
+    """The combination case, from the other end.
+
+    Binding Control_L for ``ctrl+win`` means this view sees the key-up of every
+    ordinary Ctrl+C. Swallowing that unconditionally -- which is what the
+    previous single-key code did -- would eat it.
+    """
+    tk, _view, _seen = _shown("f9")
+
+    assert tk.entry_bindings["<KeyRelease-F9>"](object()) is None
 
 
 def test_pressing_the_key_in_the_entry_reports_that_it_was_seen() -> None:
@@ -182,17 +197,32 @@ def test_the_enter_binding_survives() -> None:
 
 
 def test_the_default_is_not_a_printable_key() -> None:
-    """space typed into whatever had focus, including the bubble's own box."""
-    assert DEFAULT_HOLD_KEY == "f9"
-    assert DEFAULT_HOLD_KEY not in {"space"}
+    """space typed into whatever had focus, including the bubble's own box.
 
-
-def test_the_default_is_not_a_shortcut_modifier() -> None:
-    """A global read means ctrl fires on every Ctrl+C the user performs.
-
-    That is why the documented workaround was not promoted to the default.
+    The default is a combination now, so the property is about every part of
+    it: ``ctrl+space`` would be just as bad as ``space``.
     """
-    assert DEFAULT_HOLD_KEY not in {"ctrl", "shift", "alt"}
+    from grandpa.voice.push_to_talk import parse_hold_key
+
+    assert DEFAULT_HOLD_KEY == "ctrl+win"
+    assert "space" not in parse_hold_key(DEFAULT_HOLD_KEY)
+
+
+def test_the_default_is_not_a_lone_shortcut_modifier() -> None:
+    """A global read means a lone ctrl fires on every Ctrl+C performed.
+
+    Restated for combinations: a modifier may be *part* of the default, because
+    the test is "all of these at once" and Ctrl+C never satisfies ctrl+win. What
+    is still forbidden is a default that is one bare modifier.
+    """
+    from grandpa.voice.push_to_talk import parse_hold_key
+
+    parts = parse_hold_key(DEFAULT_HOLD_KEY)
+
+    assert parts != ("ctrl",)
+    assert parts != ("shift",)
+    assert parts != ("alt",)
+    assert len(parts) > 1 or parts[0] not in {"ctrl", "shift", "alt"}
 
 
 def test_the_default_is_not_f10() -> None:
@@ -231,11 +261,21 @@ def test_the_docs_name_the_same_default() -> None:
         ("docs/testing/push-to-talk-manual-qa.md", "push-to-talk manual QA"),
     )
 
+    from grandpa.voice.push_to_talk import describe_hold_key
+
+    # Case-insensitively: prose writes "Ctrl+Win" and a UI chip writes
+    # "CTRL+WIN", and both name the default. The earlier upper-case-only check
+    # failed the README for capitalising a word normally.
+    named = describe_hold_key(DEFAULT_HOLD_KEY).lower()
+
     for relative, label in docs:
         text = (root / relative).read_text(encoding="utf-8")
-        assert DEFAULT_HOLD_KEY.upper() in text, f"{label} does not name the default"
+        assert named in text.lower(), f"{label} does not name the default"
         assert "hold SPACE anywhere" not in text, (
             f"{label} still tells the user to hold SPACE"
+        )
+        assert "hold F9 anywhere" not in text, (
+            f"{label} still tells the user to hold F9"
         )
 
 
@@ -449,3 +489,89 @@ def test_one_constant_feeds_every_command_that_takes_a_hold_key() -> None:
         assert option.default == DEFAULT_HOLD_KEY, (
             f"voice {name} --key defaults to {option.default!r}"
         )
+
+
+# --- 5. a combination is swallowed, and only when it is the whole chord -----------
+#
+# Binding Control_L for ``ctrl+win`` means the entry sees the keystroke of every
+# ordinary Ctrl+C. The predicate is what tells the two apart, and without it the
+# fix for one bug would have created another.
+
+
+def _shown_with(key: str, engaged: bool):
+    tk = RecordingTk()
+    seen: list[int] = []
+    view = TkBubbleView(
+        tkinter_module=tk,
+        hold_key=key,
+        on_hold_key=lambda: seen.append(1),
+        combo_is_down=lambda: engaged,
+    )
+    view.show(position=(10, 10), topmost=True)
+    return tk, view, seen
+
+
+def test_every_part_of_a_combination_is_bound_on_the_entry() -> None:
+    tk, _view, _seen = _shown("ctrl+win")
+
+    for sequence in ("<KeyPress-Control_L>", "<KeyPress-Win_L>"):
+        assert sequence in tk.entry_bindings, f"{sequence} was not bound"
+
+
+def test_the_whole_combination_is_swallowed() -> None:
+    tk, _view, seen = _shown_with("ctrl+win", engaged=True)
+
+    assert tk.entry_bindings["<KeyPress-Control_L>"](object()) == "break"
+    assert seen == [1], "a swallowed key must still be announced"
+
+
+def test_one_part_of_a_combination_is_let_through() -> None:
+    """Ctrl pressed on its own is an ordinary shortcut, not a hold."""
+    tk, _view, seen = _shown_with("ctrl+win", engaged=False)
+
+    assert tk.entry_bindings["<KeyPress-Control_L>"](object()) is None
+    assert seen == [], "a key that was not ours must not be reported as seen"
+
+
+def test_ctrl_still_copies_in_the_text_box() -> None:
+    """The regression the predicate exists to prevent, stated as its own case."""
+    tk, _view, _seen = _shown_with("ctrl+win", engaged=False)
+
+    press = tk.entry_bindings["<KeyPress-Control_L>"](object())
+    release = tk.entry_bindings["<KeyRelease-Control_L>"](object())
+
+    assert press is None and release is None
+
+
+def test_a_printable_part_of_a_combination_is_still_swallowed() -> None:
+    """``--key ctrl+space`` must not put a space in the box."""
+    tk, _view, _seen = _shown_with("ctrl+space", engaged=True)
+
+    assert tk.entry_bindings["<KeyPress-space>"](object()) == "break"
+
+
+def test_a_predicate_that_raises_does_not_swallow() -> None:
+    """Failing open: a broken predicate must not eat the user's typing."""
+    tk = RecordingTk()
+    view = TkBubbleView(
+        tkinter_module=tk,
+        hold_key="ctrl+win",
+        combo_is_down=lambda: (_ for _ in ()).throw(RuntimeError("probe died")),
+    )
+    view.show(position=(0, 0), topmost=True)
+
+    assert tk.entry_bindings["<KeyPress-Control_L>"](object()) is None
+
+
+def test_the_header_names_the_combination() -> None:
+    tk, _view, _seen = _shown("ctrl+win")
+
+    assert "hold CTRL+WIN" in _rendered_texts(tk)
+
+
+def test_an_unusable_spec_binds_nothing_rather_than_crashing() -> None:
+    tk = RecordingTk()
+    view = TkBubbleView(tkinter_module=tk, hold_key="banana")
+    view.show(position=(0, 0), topmost=True)
+
+    assert not [k for k in tk.entry_bindings if "KeyPress" in k and "Return" not in k]

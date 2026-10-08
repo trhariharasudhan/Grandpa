@@ -42,7 +42,7 @@ uv run grandpa --help
 uv run grandpa doctor
 uv run grandpa chat
 uv run grandpa bubble               # floating desktop assistant (blocks the terminal)
-uv run grandpa voice push-to-talk   # hold F9 to talk -- start here
+uv run grandpa voice push-to-talk   # hold Ctrl+Win to talk -- start here
 uv run grandpa voice                # hands-free, detects speech itself
 uv run grandpa voice-operator
 uv run grandpa status
@@ -62,9 +62,10 @@ uv run grandpa reminders add "remind me in 30 minutes to drink water"
 uv run grandpa bubble
 ```
 
-A small borderless window that stays on top: hold **F9** anywhere to talk, type
-in the box to ask, and read the status line for what it is doing. **It blocks
-the terminal** — it owns the window loop — so open a second one if you need it.
+A small borderless window that stays on top: hold **Ctrl+Win** anywhere to talk,
+watch the level meter while you speak, and the reply appears and is read aloud.
+Type in the box to ask the same thing silently. **It blocks the terminal** — it
+owns the window loop — so open a second one if you need it.
 
 The key is read globally, so the bubble hears a hold while another window has
 focus, and it never takes focus itself: you can type into Notepad with the
@@ -72,21 +73,41 @@ bubble visible and every character lands in Notepad. The microphone is refused
 while the model is still loading, and the status says so rather than claiming to
 be ready.
 
-**Why F9 and not SPACE or Ctrl.** A global read means the key also reaches
+**The meter.** While the key is held, the strip under the state line shows what
+the microphone is actually picking up — one bar per 0.1s chunk, about three
+seconds of history. It is the fastest way to tell "it is not hearing me" from
+"it heard me and got the words wrong", which are different problems with
+different fixes.
+
+**The reply is spoken as well as shown.** The text appears first and stays;
+speech is in addition, never instead. Click **speech on/off** in the header to
+mute it, `--no-speak` to start muted, and holding the key cuts a reply off
+mid-sentence and starts a new one. If no speech engine works the text is
+unaffected and the status line says it was not spoken.
+
+**Why Ctrl+Win and not a single key.** A global read means the key also reaches
 whatever window has focus. A printable key therefore types into it — SPACE
-shipped first and put a space in the bubble's own text box. Modifiers type
-nothing but fire on the shortcuts you actually use: `--key ctrl` would start a
-recording on every Ctrl+C, Ctrl+V and Ctrl+S, and Alt alone opens the Windows
-menu bar. F9 is neither printable nor a shortcut modifier.
+shipped first and put a space in the bubble's own text box. A lone modifier
+types nothing but fires on the shortcuts you actually use: `--key ctrl` would
+start a recording on every Ctrl+C. F9 avoided both and worked, but needs `Fn` on
+this laptop, which is awkward to hold while speaking.
 
-`--key` takes `space`, `ctrl`, `shift`, `alt`, `f8`, `f9` or `f10`, and the
-bubble swallows whichever you pick so it never lands in its own text box.
-`--position X,Y` to place it, `--model small.en` for a different model. It
-remembers where you dragged it.
+A combination solves it, because the test is "all of these at once" and that is
+a chord nothing else claims: Ctrl+C never satisfies Ctrl+Win. Both keys are on
+the bottom row and reachable with one hand. Rejected: `ctrl+shift` (Windows uses
+it to switch keyboard layout), `ctrl+alt` (that *is* right-Alt on AltGr
+layouts), `alt+space` (opens the window menu), `win+shift` and `win+alt`
+(prefixes of live Windows shortcuts).
 
-If F9 does nothing on a laptop whose F-row defaults to media keys, it may need
-`Fn` held — the status line will stay silent because the key never arrives. Try
-`--key f8` or `--key shift`.
+`--key` takes any combination of `space`, `ctrl`, `shift`, `alt`, `win`, `rwin`,
+`menu`, `f8`, `f9`, `f10` — joined with `+`, as in `--key ctrl+shift` — and the
+bubble swallows whichever you pick so it never lands in its own text box. One
+part of a combination pressed alone still works normally, so Ctrl+C keeps
+copying. `--position X,Y` to place it, `--model small.en` for a different model.
+It remembers where you dragged it.
+
+If holding Ctrl+Win does nothing, or if releasing it opens the Start menu, try
+`--key menu` or `--key f8` — both are inert single keys — and tell me which.
 
 `docs/testing/desktop-ui-manual-qa.md` is the fifteen-step check for whether it
 actually behaves.
@@ -100,7 +121,7 @@ uv sync --extra voice
 uv run grandpa voice --diagnose
 ```
 
-**Start with push-to-talk.** Hold F9, speak, release:
+**Start with push-to-talk.** Hold Ctrl+Win, speak, release:
 
 ```powershell
 uv run grandpa voice push-to-talk
@@ -109,14 +130,14 @@ uv run grandpa voice push-to-talk
 This is the recommended way in, and the one to come back to if anything goes
 wrong. You decide when the utterance starts and ends, so there is no speech
 detection to get wrong: no level threshold, no adaptive noise floor, no silence
-timeout. `--key f8` or `--key space` if F9 is awkward, `--no-route` to see
-the transcript without acting on it.
+timeout. `--key menu` or `--key f8` if Ctrl+Win is awkward, `--no-route` to
+see the transcript without acting on it.
 
-F9 rather than SPACE because the key is read globally: it reaches whatever
-has focus, so a printable key types into it and fills the terminal while
-you hold it. Avoid `--key ctrl` in particular -- it would start a recording
-on every Ctrl+C, Ctrl+V and Ctrl+S you press. All three commands that take
-a held key share this default.
+A combination rather than a single key because the key is read globally: it
+reaches whatever has focus, so a printable key types into it and fills the
+terminal while you hold it, and a lone modifier fires on every Ctrl+C you
+press. Ctrl+Win is satisfied by neither. All three commands that take a held
+key share this default.
 
 Hands-free mode detects speech by itself:
 
@@ -144,7 +165,7 @@ If the words come back wrong, measure before changing anything:
 uv run grandpa voice accuracy-test
 ```
 
-It shows three phrases, you hold F9 and read each one, and it scores what
+It shows three phrases, you hold Ctrl+Win and read each one, and it scores what
 came back against what it asked for — a word error rate, plus the signal-to-noise
 ratio of each recording so a bad microphone can be told from a bad model. Run it
 before and after a change and the two numbers are comparable.
