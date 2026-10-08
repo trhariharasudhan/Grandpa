@@ -12,7 +12,7 @@ There are two push-to-talk paths. They share the name and nothing else.
 grandpa voice push-to-talk
 ```
 
-Hold SPACE, speak, release. The recording starts on the key going down and ends
+Hold F9, speak, release. The recording starts on the key going down and ends
 on it coming up; every frame in between is kept. The voice activity detector is
 configured so it cannot refuse or truncate anything -- no threshold, no noise
 floor, no silence timeout -- so this is the path to use when automatic detection
@@ -20,7 +20,7 @@ is misbehaving and when a threshold needs to be ruled out as the cause.
 
 | Option | Effect |
 | --- | --- |
-| `--key ctrl` | Hold a different key. SPACE, CTRL, SHIFT, ALT, F8, F9, F10. A modifier types nothing into whatever has focus. |
+| `--key f8` | Hold a different key: SPACE, CTRL, SHIFT, ALT, F8, F9, F10. F9 is the default for every command that takes one. A printable key types into whatever has focus (and into this terminal); `ctrl` fires on every Ctrl+C, Ctrl+V and Ctrl+S, so avoid it. |
 | `--no-route` | Print the transcript and stop. Nothing is acted on. |
 | `--once` | Handle one hold and exit. |
 | `--no-tts` | Print the reply instead of speaking it. |
@@ -47,16 +47,24 @@ prints a stack trace.
 grandpa voice accuracy-test
 ```
 
-Ten fixed phrases, read one at a time on the same held key, scored as a word
-error rate against what was asked for. `--json` for comparing two runs,
-`--model small.en` to score a different model, `--count 3` for a quick check.
+Three phrases by default, read one at a time on the same held key, scored
+as a word error rate against what was asked for. `--json` for comparing two
+runs, `--model small.en` to score a different model, `--count 0` for the
+whole list of ten, `--count 1` for a single phrase.
+
+Three because ten read aloud is more than anyone does, and an abandoned run
+measures nothing. The first three are a plain question, a routed command and
+one long sentence -- sixteen words, no proper nouns. The two phrases containing
+a name are last: they are the known `small.en` loop trigger and they inflate
+the rate for a reason that has nothing to do with general accuracy.
 
 | Step | Expected behavior |
 | --- | --- |
 | Phrase shown | The exact text to read, in bold |
 | Read it | `OK` with the transcript, or `ERR` with the error breakdown |
 | End of run | Word error rate, exact-match count, median SNR, and a verdict |
-| Ctrl+C partway | Scores what was completed and reports it; remaining phrases listed as not scored |
+| Ctrl+C partway | Scores what was completed and reports it; remaining phrases listed as not attempted, and the number marked not comparable with the reason |
+| Stopped before any phrase was read | Says there is no word error rate, names how many were requested and not attempted, and suggests `--count 1`. With `--json`, `corpus_wer` is `null` -- never `0.0`, which would read as perfect |
 
 The operation counts distinguish the failure kinds: insertions mean the model
 padded (one "hello" returning three), substitutions mean it misheard.

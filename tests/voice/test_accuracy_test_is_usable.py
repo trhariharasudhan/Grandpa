@@ -329,3 +329,152 @@ def test_an_all_failures_run_says_it_measured_nothing() -> None:
     assert "Nothing was scored" in verdict
     assert "says nothing about" in verdict
     assert report.is_representative is False
+
+
+# --- the run nobody finishes ------------------------------------------------------
+#
+# Reported: two attempts, both stopped at phrase 1, both producing JSON whose
+# corpus_wer was 0.0 with phrases_scored 0. Ten phrases read aloud is more than
+# the user will do, which is a fact about the user and not a fault in the tool.
+
+
+def _abandoned() -> AccuracyReport:
+    """Requested three, read none. The shape of both live attempts."""
+    from grandpa.voice.accuracy import DEFAULT_PHRASES
+
+    return AccuracyReport(
+        model="base.en", requested=3, skipped=list(DEFAULT_PHRASES[:3])
+    )
+
+
+def test_a_run_abandoned_at_the_first_phrase_has_no_word_error_rate() -> None:
+    """Zero errors out of zero words is not a rate, and 0.0 reads as perfect."""
+    assert _abandoned().corpus_wer is None
+
+
+def test_an_abandoned_run_says_why_it_is_not_comparable() -> None:
+    report = _abandoned()
+
+    assert report.is_representative is False
+    assert "nothing was scored" in report.incomparable_reason
+
+
+def test_the_reason_names_the_coverage_when_a_run_is_cut_short() -> None:
+    """A bare flag told the user the number was wrong, never what was wrong."""
+    report = AccuracyReport(requested=10, scores=[_score("Hello", "Hello")])
+
+    assert "1 of 10" in report.incomparable_reason
+
+
+def test_failures_outnumbering_scores_is_reported_as_a_microphone_problem() -> None:
+    report = AccuracyReport(
+        requested=3,
+        scores=[_score("Hello", "Hello")],
+        failures=[
+            CaptureFailure(reference="a", reason="no_audio"),
+            CaptureFailure(reference="b", reason="no_audio"),
+        ],
+    )
+
+    assert "microphone" in report.incomparable_reason
+
+
+def test_a_complete_short_run_has_no_reason_against_it() -> None:
+    """``--count 3`` is a legitimate request; three of three is complete."""
+    report = AccuracyReport(
+        requested=3,
+        scores=[
+            _score("What is the time", "What is the time"),
+            _score("Type hello in Notepad", "Type hello in Notepad"),
+            _score("Close the window", "Close the window"),
+        ],
+    )
+
+    assert report.incomparable_reason == ""
+    assert report.is_representative is True
+
+
+def test_the_abandoned_run_still_prints_a_report(capsys) -> None:
+    """It printed one line. The user needs to know what it did not measure."""
+    from grandpa.cli.voice_cmd import _print_accuracy_report
+
+    _print_accuracy_report(_abandoned(), as_json=False)
+    out = capsys.readouterr().out
+
+    assert "no word error rate" in out
+    assert "3 phrase(s), 3 not attempted" in out
+    assert "Not comparable" in out
+    assert "--count 1" in out, "it must say how to run something shorter"
+
+
+def test_the_abandoned_json_carries_null_rather_than_zero(capsys) -> None:
+    """The exact artefact the user was handed, asserted on the real printer."""
+    import json
+
+    from grandpa.cli.voice_cmd import _print_accuracy_report
+
+    _print_accuracy_report(_abandoned(), as_json=True)
+    data = json.loads(capsys.readouterr().out)
+
+    assert data["corpus_wer"] is None, "0.0 reads as a perfect score"
+    assert data["phrases_scored"] == 0
+    assert data["phrases_requested"] == 3
+    assert data["representative"] is False
+    assert data["not_comparable_because"]
+    assert len(data["skipped"]) == 3
+
+
+# --- the default is three, and the first three are worth reading -------------------
+
+
+def _accuracy_option(name: str):
+    from grandpa.cli.voice_cmd import voice
+
+    command = voice.get_command(None, "accuracy-test")
+    return next(p for p in command.params if p.name == name)
+
+
+def test_the_default_count_is_three() -> None:
+    assert _accuracy_option("count").default == 3
+
+
+def test_the_help_says_how_to_get_the_whole_list() -> None:
+    assert "0 scores the whole list" in _accuracy_option("count").help
+
+
+def test_zero_means_every_phrase() -> None:
+    """``if count:`` -- 0 falls through to the full list rather than slicing."""
+    from grandpa.voice.accuracy import DEFAULT_PHRASES
+
+    lines = DEFAULT_PHRASES
+    count = 0
+    if count:
+        lines = lines[: max(1, count)]
+
+    assert lines == DEFAULT_PHRASES
+
+
+def test_the_default_sample_is_worth_scoring() -> None:
+    """Three is the default, so the first three have to be a real sample.
+
+    The old order opened with "Hello", the user's name, and "Open Notepad":
+    six words, three of them a proper noun. Too coarse to settle base.en
+    against small.en, which is the only reason this command exists.
+    """
+    from grandpa.voice.accuracy import DEFAULT_PHRASES
+
+    first_three = DEFAULT_PHRASES[:3]
+    words = sum(len(phrase.split()) for phrase in first_three)
+
+    assert words >= 12, f"the default sample is only {words} words"
+    assert not any(NAME in phrase for phrase in first_three), (
+        "the known small.en loop trigger must not dominate the default sample"
+    )
+
+
+def test_the_name_phrases_are_still_in_the_list() -> None:
+    """Moved to the end, not removed: --count 0 still settles the name case."""
+    from grandpa.voice.accuracy import DEFAULT_PHRASES
+
+    assert sum(1 for phrase in DEFAULT_PHRASES if NAME in phrase) == 2
+    assert len(DEFAULT_PHRASES) == 10

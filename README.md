@@ -42,7 +42,7 @@ uv run grandpa --help
 uv run grandpa doctor
 uv run grandpa chat
 uv run grandpa bubble               # floating desktop assistant (blocks the terminal)
-uv run grandpa voice push-to-talk   # hold SPACE to talk -- start here
+uv run grandpa voice push-to-talk   # hold F9 to talk -- start here
 uv run grandpa voice                # hands-free, detects speech itself
 uv run grandpa voice-operator
 uv run grandpa status
@@ -100,7 +100,7 @@ uv sync --extra voice
 uv run grandpa voice --diagnose
 ```
 
-**Start with push-to-talk.** Hold SPACE, speak, release:
+**Start with push-to-talk.** Hold F9, speak, release:
 
 ```powershell
 uv run grandpa voice push-to-talk
@@ -109,8 +109,14 @@ uv run grandpa voice push-to-talk
 This is the recommended way in, and the one to come back to if anything goes
 wrong. You decide when the utterance starts and ends, so there is no speech
 detection to get wrong: no level threshold, no adaptive noise floor, no silence
-timeout. `--key ctrl` if SPACE is awkward (a modifier types nothing into
-whatever has focus), `--no-route` to see the transcript without acting on it.
+timeout. `--key f8` or `--key space` if F9 is awkward, `--no-route` to see
+the transcript without acting on it.
+
+F9 rather than SPACE because the key is read globally: it reaches whatever
+has focus, so a printable key types into it and fills the terminal while
+you hold it. Avoid `--key ctrl` in particular -- it would start a recording
+on every Ctrl+C, Ctrl+V and Ctrl+S you press. All three commands that take
+a held key share this default.
 
 Hands-free mode detects speech by itself:
 
@@ -138,10 +144,15 @@ If the words come back wrong, measure before changing anything:
 uv run grandpa voice accuracy-test
 ```
 
-It shows ten fixed phrases, you hold SPACE and read each one, and it scores what
+It shows three phrases, you hold F9 and read each one, and it scores what
 came back against what it asked for — a word error rate, plus the signal-to-noise
 ratio of each recording so a bad microphone can be told from a bad model. Run it
 before and after a change and the two numbers are comparable.
+
+Three, not ten, because a run nobody finishes measures nothing. `--count 0`
+reads the whole list of ten; `--count 1` is a single phrase. A run you stop
+partway still reports, and says it is not comparable and why — it will not
+hand you a word error rate computed from nothing.
 
 ```powershell
 uv run grandpa voice accuracy-test --json > before.json

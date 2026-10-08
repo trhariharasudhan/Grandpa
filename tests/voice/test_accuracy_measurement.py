@@ -164,9 +164,16 @@ def test_exact_matches_are_counted_separately() -> None:
 
 
 def test_an_empty_report_is_not_a_perfect_score() -> None:
+    """This test was named for the property and then pinned its opposite.
+
+    ``corpus_wer == 0.0`` is what shipped in the JSON of a run abandoned at the
+    first phrase, beside ``phrases_scored 0``. The name said "not a perfect
+    score" while the assertion required exactly the number that reads as one;
+    only the verdict line carried the real guarantee.
+    """
     report = AccuracyReport()
 
-    assert report.corpus_wer == 0.0
+    assert report.corpus_wer is None, "zero errors out of zero words is not a rate"
     assert report.total_words == 0
     assert "Nothing was scored" in report.verdict()
 

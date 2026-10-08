@@ -25,7 +25,6 @@ import inspect
 import pytest
 
 from grandpa.voice.device_manager import (
-    MicrophoneDevice,
     MicrophoneDeviceManager,
     MicrophoneIdentity,
 )

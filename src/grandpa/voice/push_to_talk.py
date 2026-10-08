@@ -56,6 +56,38 @@ KEY_CODES: dict[str, int] = {
     "f10": 0x79,
 }
 
+#: The shipped hold key for every command that reads one -- ``grandpa bubble``,
+#: ``grandpa voice push-to-talk`` and ``grandpa voice accuracy-test`` -- with the
+#: reasoning, so the commands, the help text, the README and the manual QA cannot
+#: disagree about it.
+#:
+#: ``space`` shipped first and was the worst possible choice: the key is read
+#: globally with ``GetAsyncKeyState``, so it also reaches whatever window has
+#: focus -- including the bubble's own text box, where holding it typed a space
+#: and recorded nothing visible.
+#:
+#: Swallowing the character in the entry fixes the bubble (see
+#: ``ui.tk_view.KEY_SYMS``), but not the general case: a printable key still
+#: types into every *other* application while held, and in a terminal it fills
+#: the prompt. So the default has to be a key that produces no character
+#: anywhere.
+#:
+#: That leaves modifiers and function keys, and modifiers are disqualified for a
+#: *global* hold key: ``ctrl`` fires on every Ctrl+C, Ctrl+V and Ctrl+S the user
+#: performs, ``shift`` on every Shift+click and capital letter, and ``alt`` alone
+#: opens the Windows menu bar. Each would start a recording during ordinary work.
+#:
+#: ``f10`` also activates the menu bar in Win32 apps, which leaves ``f8`` and
+#: ``f9``. Both exist on this keyboard layout (``MapVirtualKeyW`` returns
+#: scancodes 66 and 67), and neither is pressed by habit or in combination.
+#:
+#: The residual cost, stated because it was not testable here: on a laptop whose
+#: F-row defaults to media keys, F9 may need ``Fn`` held, in which case the probe
+#: never sees it. The bubble says when it sees the key, so that failure is
+#: visible rather than silent -- and ``--key`` takes any of the seven.
+DEFAULT_HOLD_KEY = "f9"
+
+
 #: Longest single utterance a held key can produce, in seconds. A backstop for
 #: a key that sticks or a user who walks away, not a limit anyone should meet.
 MAXIMUM_HOLD_SECONDS = 60.0
@@ -303,6 +335,7 @@ class PushToTalkSession:
 
 
 __all__ = [
+    "DEFAULT_HOLD_KEY",
     "KEY_CODES",
     "MAXIMUM_HOLD_SECONDS",
     "HoldResult",

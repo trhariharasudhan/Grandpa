@@ -30,6 +30,7 @@ from grandpa.voice.diagnostics import (
 from grandpa.voice.errors import VoiceError, VoiceOutputUnavailableError
 from grandpa.voice.microphone import MicrophoneCapture
 from grandpa.voice.push_to_talk import (
+    DEFAULT_HOLD_KEY,
     KEY_CODES,
     MAXIMUM_HOLD_SECONDS,
     PushToTalkSession,
@@ -511,15 +512,16 @@ def _print_voices() -> None:
 
 
 @voice.command("accuracy-test")
-@click.option("--key", type=click.Choice(sorted(KEY_CODES)), default="space",
+@click.option("--key", type=click.Choice(sorted(KEY_CODES)),
+              default=DEFAULT_HOLD_KEY, show_default=True,
               help="Key to hold while reading each phrase.")
 @click.option("--device", type=int, default=None, help="Microphone input device index.")
 @click.option("--model", default=None, help="Whisper model to score, e.g. small.en.")
 @click.option("--language", default=None, help="Recognition language code.")
 @click.option("--phrases", type=click.Path(exists=True, dir_okay=False), default=None,
               help="File of phrases, one per line, instead of the fixed ten.")
-@click.option("--count", type=int, default=None,
-              help="Score only the first N phrases.")
+@click.option("--count", type=int, default=3, show_default=True,
+              help="How many phrases to score. 0 scores the whole list.")
 @click.option("--json", "as_json", is_flag=True,
               help="Print the report as JSON for comparing runs.")
 @handles_voice_errors
@@ -543,16 +545,15 @@ def accuracy_test(
     scored as a recognition failure.
     """
 
-    import json as json_module
 
     from grandpa.voice.accuracy import (
         CAPTURE_FAILURES,
         DEFAULT_PHRASES,
         MODEL_DOWNLOAD_MB,
-        model_is_cached,
         AccuracyReport,
         CaptureFailure,
         PhraseScore,
+        model_is_cached,
         quiet_model_downloads,
         score_phrase,
         warm_transcriber,
@@ -578,7 +579,10 @@ def accuracy_test(
             raise click.ClickException(f"No phrases found in {phrases}.")
     else:
         lines = DEFAULT_PHRASES
-    if count is not None:
+    # 0 means the whole list. Three is the default because ten phrases
+    # read aloud is more than anyone does -- two runs were abandoned at
+    # phrase 1 -- and an abandoned run measures nothing.
+    if count:
         lines = lines[: max(1, count)]
 
     config = load_voice_assistant_config(
@@ -603,8 +607,9 @@ def accuracy_test(
     click.echo("")
 
     # Step one, with its own line, because this used to happen silently during
-    # the first prompt: the model was fetched and loaded while "Hold SPACE and
-    # read it" was on screen, so the first phrase was spoken into a transcriber
+    # the first prompt: the model was fetched and loaded while the first
+    # prompt to hold and read was on screen, so the phrase was spoken into a
+    # transcriber
     # that did not exist yet and measured against progress bars drawn over the
     # prompt.
     size_mb = MODEL_DOWNLOAD_MB.get(config.stt_model)
@@ -653,7 +658,10 @@ def accuracy_test(
             result = session.run_once()
             seconds = time.perf_counter() - started
             if result is None:
-                report.skipped.append(phrase)
+                # This phrase *and the rest*. Appending only this one
+                # made a run abandoned at phrase 1 report nine phrases
+                # as neither scored nor skipped -- they simply vanished.
+                report.skipped.extend(lines[number - 1 :])
                 click.echo("    Skipped.")
                 break
             audio = result.audio
@@ -743,16 +751,27 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
             json_module.dumps(
                 {
                     "model": report.model,
-                    "corpus_wer": round(report.corpus_wer, 4),
+                    # null, not 0.0, when nothing was scored: zero errors out of
+                    # zero words is not a word error rate, and 0.0 reads as a
+                    # perfect score.
+                    "corpus_wer": (
+                        None
+                        if report.corpus_wer is None
+                        else round(report.corpus_wer, 4)
+                    ),
                     "total_errors": report.total_errors,
                     "total_words": report.total_words,
                     "exact_matches": report.exact_matches,
                     "phrases_scored": len(report.scores),
+                    "phrases_requested": report.requested,
                     "median_snr_db": round(report.median_snr_db, 2),
                     "skipped": report.skipped,
                     # Held apart from the score: a recording that never
                     # happened says nothing about recognition.
                     "representative": report.is_representative,
+                    # The reason, not just the flag, so a JSON run says why it
+                    # cannot be compared without the text report beside it.
+                    "not_comparable_because": report.incomparable_reason,
                     "capture_failures": [
                         {
                             "reference": failure.reference,
@@ -783,12 +802,29 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
 
     click.echo("=" * 58)
     if not report.scores:
-        click.echo("No phrases were scored.")
+        # Still a report. A run abandoned at the first phrase used to print one
+        # line here and, with --json, an object whose corpus_wer was 0.0.
+        click.echo("No phrases were scored, so there is no word error rate.")
+        click.echo(f"Model:           {report.model}")
+        if report.requested:
+            click.echo(
+                f"Requested:       {report.requested} phrase(s), "
+                f"{len(report.skipped)} not attempted"
+            )
         for failure in report.failures:
             click.echo(f"  {failure.reference!r}: {failure.advice}")
+        click.echo("")
+        click.secho(
+            f"Not comparable to another run: {report.incomparable_reason}.",
+            fg="yellow",
+            bold=True,
+        )
+        # Only when it adds something. With no failures the verdict is
+        # "Nothing was scored.", which the line above has just said.
         if report.failures:
-            click.echo("")
             click.echo(report.verdict())
+        click.echo("")
+        click.echo("Try --count 1 for a single phrase if this is too long a sit.")
         return
     click.echo(f"Model:          {report.model}")
     click.echo(
@@ -812,7 +848,10 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
     click.echo("")
     if not report.is_representative:
         click.secho(
-            "This number is not comparable to another run.", fg="yellow", bold=True
+            f"This number is not comparable to another run: "
+            f"{report.incomparable_reason}.",
+            fg="yellow",
+            bold=True,
         )
     click.echo(report.verdict())
     click.echo("")
@@ -821,7 +860,8 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
 
 
 @voice.command("push-to-talk")
-@click.option("--key", type=click.Choice(sorted(KEY_CODES)), default="space",
+@click.option("--key", type=click.Choice(sorted(KEY_CODES)),
+              default=DEFAULT_HOLD_KEY, show_default=True,
               help="Key to hold while speaking.")
 @click.option("--device", type=int, default=None, help="Microphone input device index.")
 @click.option("--no-tts", is_flag=True, help="Print responses instead of speaking.")

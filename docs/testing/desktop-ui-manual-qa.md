@@ -18,6 +18,7 @@ one.
 | # | Do this | Expect |
 | --- | --- | --- |
 | 1 | Run `grandpa bubble` | A small dark window appears near the top-left. **No title bar**, no minimise or close buttons. |
+| 1a | Read the top-right of the header | It says **"hold F9"**. It read "hold SPACE" in the previous build, which is the label this round fixed; if it names any other key, say so. |
 | 2 | Look at the state line immediately | A grey dot and **"Loading model..."** — not "Ready". The status line underneath says `loading`. |
 | 3 | Wait | The dot turns green and reads **"Ready"**. Status line shows the model name and `speech ready`. About 7s for `base.en`, 17s for `small.en`. |
 | 3a | While it is still loading, hold F9 | The status line says it **saw F9** and that the model is still loading. It must not stay silent — silence is what made a held key look like a dead key. |

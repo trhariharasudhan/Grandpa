@@ -212,16 +212,27 @@ def test_the_controller_and_the_cli_agree_on_the_default() -> None:
 
 
 def test_the_docs_name_the_same_default() -> None:
-    """The README and the manual QA cannot drift from the code."""
+    """The README and both manual QA docs cannot drift from the code.
+
+    This test passed throughout the release in which the bubble's own header
+    read "hold SPACE": it reads files, and the window is not a file. The
+    rendered-string tests in section 4 are the part that was missing, and the
+    push-to-talk QA doc is here because all three commands now share the
+    default rather than two of them defaulting to space.
+    """
     from pathlib import Path
 
     import grandpa
 
     root = Path(grandpa.__file__).parents[2]
-    readme = (root / "README.md").read_text(encoding="utf-8")
-    qa = (root / "docs/testing/desktop-ui-manual-qa.md").read_text(encoding="utf-8")
+    docs = (
+        ("README.md", "README"),
+        ("docs/testing/desktop-ui-manual-qa.md", "bubble manual QA"),
+        ("docs/testing/push-to-talk-manual-qa.md", "push-to-talk manual QA"),
+    )
 
-    for text, label in ((readme, "README"), (qa, "manual QA")):
+    for relative, label in docs:
+        text = (root / relative).read_text(encoding="utf-8")
         assert DEFAULT_HOLD_KEY.upper() in text, f"{label} does not name the default"
         assert "hold SPACE anywhere" not in text, (
             f"{label} still tells the user to hold SPACE"
@@ -294,3 +305,147 @@ def test_the_poller_without_a_probe_is_quiet() -> None:
     _hold_poller(controller)()
 
     assert controller.calls == []
+
+
+# --- 4. the window names the key it is actually using -----------------------------
+#
+# The gap this round closed. ``test_the_docs_name_the_same_default`` passed
+# through the whole of the previous change while the header read "hold SPACE",
+# because the view did not read the constant and the test did not read the view.
+
+
+def _rendered_texts(tk: RecordingTk) -> list[str]:
+    """Every string the window puts on screen, from the recorded widget calls."""
+    return [
+        kwargs["text"]
+        for _name, _args, kwargs in tk.calls
+        if isinstance(kwargs.get("text"), str) and kwargs["text"]
+    ]
+
+
+def test_the_header_names_the_default_key() -> None:
+    """The reported bug, at the layer the user actually reads."""
+    tk, _view, _seen = _shown()
+
+    assert f"hold {DEFAULT_HOLD_KEY.upper()}" in _rendered_texts(tk)
+
+
+@pytest.mark.parametrize("key", sorted(KEY_CODES))
+def test_the_header_names_whichever_key_was_chosen(key: str) -> None:
+    tk, _view, _seen = _shown(key)
+
+    assert f"hold {key.upper()}" in _rendered_texts(tk)
+
+
+@pytest.mark.parametrize("key", sorted(KEY_CODES))
+def test_no_rendered_text_names_a_key_the_bubble_is_not_using(key: str) -> None:
+    """The general form, so the next change of default cannot ship this bug.
+
+    Any key name on screen must be the key in use. A hardcoded label fails here
+    whichever key it names.
+    """
+    import re
+
+    tk, _view, _seen = _shown(key)
+    pattern = re.compile(
+        r"\b(" + "|".join(sorted(KEY_CODES)) + r")\b", re.IGNORECASE
+    )
+    for text in _rendered_texts(tk):
+        for found in pattern.findall(text):
+            assert found.lower() == key, (
+                f"the window shows {text!r} while the hold key is {key!r}"
+            )
+
+
+def test_the_view_has_no_second_copy_of_the_default() -> None:
+    """``hold_key: str = "f9"`` was a second copy that happened to agree."""
+    assert TkBubbleView().hold_key == DEFAULT_HOLD_KEY
+
+    import inspect
+
+    import grandpa.ui.tk_view as module
+
+    source = inspect.getsource(module)
+    assert "hold_key: str = DEFAULT_HOLD_KEY" in source
+
+
+def test_the_view_names_no_key_in_a_string_literal() -> None:
+    """Outside the keysym table, which is what the table is for.
+
+    Comments and docstrings are excluded deliberately: the explanation of this
+    bug necessarily contains the word SPACE, and a test that forbids explaining
+    a decision is a test against documenting decisions.
+    """
+    import ast
+    import re
+    from pathlib import Path
+
+    import grandpa.ui.tk_view as module
+
+    tree = ast.parse(Path(module.__file__).read_text(encoding="utf-8"))
+    docstrings = {
+        id(node.value)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
+    }
+    pattern = re.compile(
+        r"\b(" + "|".join(sorted(KEY_CODES)) + r")\b", re.IGNORECASE
+    )
+
+    offenders: list[str] = []
+    for node in tree.body:
+        # The keysym table is allowed to name every key; that is its job.
+        targets = []
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            targets = [node.target.id]
+        elif isinstance(node, ast.Assign):
+            targets = [t.id for t in node.targets if isinstance(t, ast.Name)]
+        if "KEY_SYMS" in targets:
+            continue
+        for sub in ast.walk(node):
+            if (
+                isinstance(sub, ast.Constant)
+                and isinstance(sub.value, str)
+                and id(sub) not in docstrings
+                and pattern.search(sub.value)
+            ):
+                offenders.append(sub.value)
+
+    assert not offenders, f"the view hardcodes a key name: {offenders}"
+
+
+def test_the_command_help_names_the_default_key() -> None:
+    """``--help`` is the first place a user looks, and it said SPACE.
+
+    The docs test read the README and the manual QA. It did not read this.
+    """
+    from click.testing import CliRunner
+
+    from grandpa.cli.bubble_cmd import bubble
+
+    output = CliRunner().invoke(bubble, ["--help"]).output
+
+    assert f"Hold {DEFAULT_HOLD_KEY.upper()} anywhere" in output
+    assert f"[default: ({DEFAULT_HOLD_KEY})]" in output
+    for other in KEY_CODES:
+        if other != DEFAULT_HOLD_KEY:
+            assert f"Hold {other.upper()} anywhere" not in output
+
+
+def test_one_constant_feeds_every_command_that_takes_a_hold_key() -> None:
+    """Three commands read a hold key and two of them defaulted to space.
+
+    The constant lived in the UI package, so "one source" was one source for one
+    command. It now lives beside ``KEY_CODES`` and the UI re-exports it.
+    """
+    from grandpa.cli.voice_cmd import voice
+    from grandpa.voice.push_to_talk import DEFAULT_HOLD_KEY as from_voice
+
+    assert from_voice is DEFAULT_HOLD_KEY, "the UI must re-export, not redefine"
+
+    for name in ("push-to-talk", "accuracy-test"):
+        command = voice.get_command(None, name)
+        option = next(p for p in command.params if p.name == "key")
+        assert option.default == DEFAULT_HOLD_KEY, (
+            f"voice {name} --key defaults to {option.default!r}"
+        )

@@ -25,6 +25,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+# The key's name is the controller's to decide; this module only renders
+# it. Imported rather than repeated: a literal "hold SPACE" in the header
+# outlived the change of default to f9 and shipped, because the constant
+# moved and the copies of it did not. One direction only -- bubble.py
+# imports no toolkit and nothing from here.
+from grandpa.ui.bubble import DEFAULT_HOLD_KEY
+
 #: Calls that would move focus to the bubble. None of them may ever appear.
 FOCUS_STEALING_CALLS = (
     "focus_force",
@@ -95,7 +102,7 @@ class TkBubbleView:
     on_submit: Any = None
     on_close: Any = None
     #: The hold key, so it can be swallowed in the entry rather than typed.
-    hold_key: str = "f9"
+    hold_key: str = DEFAULT_HOLD_KEY
     #: Called when the hold key is pressed while the bubble has focus. The
     #: character is already suppressed by then; this is so the bubble can say it
     #: saw the key instead of appearing to ignore it.
@@ -140,7 +147,7 @@ class TkBubbleView:
         # without this window having focus; clicking here would move focus and
         # the pointer away from whatever is being dictated into.
         self._widgets["hold_hint"] = tk.Label(
-            header, text="hold SPACE", bg=BACKGROUND, fg="#8a8a8a"
+            header, text=self.hold_hint_text(), bg=BACKGROUND, fg="#8a8a8a"
         )
         self._widgets["hold_hint"].pack(side="right")
 
@@ -263,6 +270,15 @@ class TkBubbleView:
             self.root.mainloop()
 
     # --- internals -----------------------------------------------------------
+
+    def hold_hint_text(self) -> str:
+        """What the header tells the user to hold.
+
+        Derived from :attr:`hold_key`, never written out. The window said
+        "hold SPACE" for a whole release after the default became f9, and
+        this label is the one place a user actually reads the key name.
+        """
+        return f"hold {self.hold_key.upper()}"
 
     def _swallow_hold_key(self, _event: Any = None) -> str:
         """Keep the hold key out of the text box, and say it was seen.

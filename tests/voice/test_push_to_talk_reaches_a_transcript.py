@@ -42,7 +42,7 @@ from typing import Any
 
 import pytest
 
-from grandpa.speech._stubs import Segment, TranscriptionResult
+from grandpa.speech._stubs import TranscriptionResult
 from grandpa.speech.faster_whisper import build_transcription_options
 from grandpa.voice.errors import VoiceRecognitionError
 from grandpa.voice.microphone import CapturedAudio

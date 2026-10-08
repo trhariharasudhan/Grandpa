@@ -11,12 +11,32 @@ import click
 
 from grandpa.cli.safe_output import safe_cli_error
 
+# Imported at module level, not inside the callback, because the option's
+# show_default and the help text below are both built from it at import time. It
+# costs nothing: bubble.py re-exports it from push_to_talk, and that chain is
+# pure standard library.
+from grandpa.ui.bubble import DEFAULT_HOLD_KEY
 
-@click.command("bubble")
+#: Built from the constant, because a docstring cannot interpolate one and the
+#: literal that was there said "Hold SPACE" long after the default became f9.
+#: ``--help`` is the first place a user looks for the key.
+_HELP = f"""Show the floating assistant. Blocks this terminal until you close it.
+
+A borderless always-on-top window with a held-key microphone, a text box and a
+status line. Hold {DEFAULT_HOLD_KEY.upper()} anywhere to talk -- the key is read
+globally, so the bubble never needs focus and never takes it. Esc closes it, as
+does Ctrl+C here.
+
+The model is loaded before the bubble reports itself ready; while it loads the
+status says so and a hold is refused rather than recorded into nothing.
+"""
+
+
+@click.command("bubble", help=_HELP)
 @click.option(
     "--key",
     default=None,
-    show_default="f9",
+    show_default=DEFAULT_HOLD_KEY,
     help="Key to hold while speaking. A printable key also types into whatever "
     "has focus; a modifier fires on ordinary shortcuts like Ctrl+C.",
 )
@@ -31,19 +51,14 @@ from grandpa.cli.safe_output import safe_cli_error
 def bubble(
     key: str | None, device: int | None, model: str | None, position: str | None
 ) -> None:
-    """Show the floating assistant. Blocks this terminal until you close it.
+    """Show the floating assistant.
 
-    A borderless always-on-top window with a held-key microphone, a text box and
-    a status line. Hold SPACE anywhere to talk -- the key is read globally, so
-    the bubble never needs focus and never takes it. Esc closes it, as does
-    Ctrl+C here.
-
-    The model is loaded before the bubble reports itself ready; while it loads
-    the status says so and a hold is refused rather than recorded into nothing.
+    The user-facing text is ``_HELP``, which names the hold key from
+    ``DEFAULT_HOLD_KEY`` instead of repeating it. Click uses that, not this.
     """
 
     from grandpa.ui.bridge import InProcessBridge
-    from grandpa.ui.bubble import DEFAULT_HOLD_KEY, BubbleController
+    from grandpa.ui.bubble import BubbleController
     from grandpa.ui.tk_view import TkBubbleView
     from grandpa.voice.accuracy import quiet_model_downloads
     from grandpa.voice.config import load_voice_assistant_config

@@ -2,8 +2,9 @@
 
 Transcription quality was being judged from anecdotes -- "it said 'The top of the
 game'" -- which cannot tell a regression from a bad day, and cannot tell whether
-a change helped. This measures it: ten fixed phrases, read aloud, scored word by
-word against what was asked for.
+a change helped. This measures it: fixed phrases, read aloud, scored word by
+word against what was asked for. Ten of them exist; three are read by
+default, because a run nobody finishes measures nothing.
 
 WER is the standard measure: (substitutions + deletions + insertions) divided by
 the number of words in the reference, after lowercasing and stripping
@@ -29,17 +30,29 @@ from dataclasses import dataclass, field
 #: * commands the assistant actually routes, so the score reflects the job
 #: * one long phrase, because a sentence came back as "The top of the game" and
 #:   longer utterances fail differently from short ones
+#:
+#: Ordered so the first three are worth scoring on their own, because three is
+#: what ``--count`` now defaults to. The old order opened with "Hello",
+#: "Hari Hara Sudhan", "Open Notepad" -- six words, two of them a proper noun --
+#: which is too coarse and too unrepresentative to settle base.en against
+#: small.en. The first three are now a plain question, a routed command and one
+#: long sentence: sixteen words, no proper nouns.
+#:
+#: The name phrases stay in the list and move to the end. They are the known
+#: small.en loop trigger and they inflate WER for a reason that has nothing to do
+#: with general accuracy, so they belong in ``--count 0`` rather than in the
+#: default sample.
 DEFAULT_PHRASES: tuple[str, ...] = (
-    "Hello",
-    "Hari Hara Sudhan",
-    "Open Notepad",
     "What is the time",
-    "Close the window",
-    "My name is Hari Hara Sudhan",
     "Type hello in Notepad",
-    "What is my voice status",
     "Remind me tomorrow at seven to call Arjun",
+    "Hello",
+    "Open Notepad",
+    "Close the window",
+    "What is my voice status",
     "Scroll down and take a screenshot",
+    "Hari Hara Sudhan",
+    "My name is Hari Hara Sudhan",
 )
 
 
@@ -231,15 +244,21 @@ class AccuracyReport:
         return sum(score.reference_words for score in self.scores)
 
     @property
-    def corpus_wer(self) -> float:
-        """Errors over words across the whole run.
+    def corpus_wer(self) -> float | None:
+        """Errors over words across the whole run, or ``None`` if none were.
 
         Not the mean of the per-phrase rates: that would weight "Hello" as
         heavily as a nine-word sentence, so one wrong short word would swamp the
         score.
+
+        ``None`` rather than ``0.0`` when nothing was scored. A run abandoned at
+        the first phrase reported ``corpus_wer 0.0`` beside
+        ``phrases_scored 0``, and zero errors out of zero words reads as a
+        perfect score. There is no rate to report, which is a different
+        statement from a rate of zero.
         """
         if not self.total_words:
-            return 0.0
+            return None
         return self.total_errors / self.total_words
 
     @property
@@ -261,24 +280,49 @@ class AccuracyReport:
         return (values[middle - 1] + values[middle]) / 2
 
     @property
+    def incomparable_reason(self) -> str:
+        """Why this run cannot be compared to another, or ``""`` if it can.
+
+        The flag below used to be the only answer, and a bare "not comparable"
+        tells the user the number is wrong without saying what is wrong with it.
+        Every rule that can disqualify a run states itself here, once, so the
+        text report and the JSON give the same reason.
+
+        Measured against what was *asked for*, not an absolute floor, because
+        ``--count 3`` is a legitimate request and three of three is a complete
+        run.
+        """
+        if not self.scores:
+            if self.failures:
+                return (
+                    f"nothing was scored -- all {len(self.failures)} attempted "
+                    f"phrase(s) failed to record"
+                )
+            return "nothing was scored"
+        if len(self.failures) >= len(self.scores):
+            return (
+                f"{len(self.failures)} phrase(s) failed to record against "
+                f"{len(self.scores)} scored, so the number describes the "
+                f"microphone more than the model"
+            )
+        expected = self.requested or (len(self.scores) + len(self.failures))
+        if len(self.scores) < 0.6 * expected:
+            return (
+                f"only {len(self.scores)} of {expected} requested phrase(s) "
+                f"were scored"
+            )
+        return ""
+
+    @property
     def is_representative(self) -> bool:
         """Whether the score covers enough of the list to be worth quoting.
 
         A live run scored three phrases of ten and reported WER 1.167, and two
         of those three were recording failures -- so the number described the
-        microphone and was presented as accuracy.
-
-        Measured against what was *asked for*, not an absolute floor, because
-        ``--count 3`` is a legitimate request and three of three is a complete
-        run. Two conditions: most of the requested list was scored, and
-        failures did not outnumber scores.
+        microphone and was presented as accuracy. The rules live in
+        :attr:`incomparable_reason`; this is the same question asked as a flag.
         """
-        if not self.scores:
-            return False
-        if len(self.failures) >= len(self.scores):
-            return False
-        expected = self.requested or (len(self.scores) + len(self.failures))
-        return len(self.scores) >= 0.6 * expected
+        return not self.incomparable_reason
 
     def verdict(self) -> str:
         """What the number means, so it is not just a number.
@@ -298,6 +342,11 @@ class AccuracyReport:
                 )
             return "Nothing was scored."
         wer = self.corpus_wer
+        if wer is None:
+            # Unreachable with non-empty scores, since every phrase has a word.
+            # Here so the property can never be formatted as a number by
+            # accident, which is the fault this round is fixing.
+            return "Nothing was scored."
         snr = self.median_snr_db
         if wer <= 0.10:
             quality = "Good. Recognition is working."
