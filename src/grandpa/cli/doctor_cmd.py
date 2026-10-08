@@ -858,9 +858,11 @@ def _check_file_db_ready() -> CheckResult:
 
 
 def _check_scheduler_db_ready() -> CheckResult:
-    from grandpa.task_scheduler import DEFAULT_SCHEDULER_DB
+    from grandpa.task_scheduler import default_scheduler_db
 
-    return _check_existing_sqlite_db("Scheduler database ready", DEFAULT_SCHEDULER_DB)
+    return _check_existing_sqlite_db(
+        "Scheduler database ready", default_scheduler_db()
+    )
 
 
 def _check_scheduler_daemon_ready() -> CheckResult:

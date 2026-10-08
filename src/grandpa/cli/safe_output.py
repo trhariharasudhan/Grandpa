@@ -9,9 +9,19 @@ import click
 
 
 def safe_cli_error(message: str) -> None:
-    """Render an expected error without trusting one console wrapper."""
+    """Render an expected error without trusting one console wrapper.
+
+    Also the one funnel every expected CLI failure already passes
+    through, so recording the last error here needs no new call sites.
+    """
 
     text = str(message)
+    try:
+        from grandpa.diagnostics.oops import record_error
+
+        record_error(text)
+    except Exception:  # noqa: BLE001 - reporting an error must not raise
+        pass
     try:
         click.echo(text, err=True)
         return

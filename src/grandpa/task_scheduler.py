@@ -18,7 +18,23 @@ from typing import Any
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
 
+#: Kept because ``doctor`` and a test import it. Not used as a default any
+#: more: see :func:`default_scheduler_db`.
 DEFAULT_SCHEDULER_DB = DEFAULT_CONFIG_DIR / "scheduler.db"
+
+
+def default_scheduler_db() -> Path:
+    """Where the scheduler database lives, resolved now rather than at import.
+
+    A module-level default computed from ``DEFAULT_CONFIG_DIR`` is evaluated
+    before anything has had a chance to set ``GRANDPA_HOME``, and when it is
+    also a default argument it is bound a second time at definition. The result
+    is one shared database per process regardless of the environment, which is
+    how rows written by one test became visible to another.
+    """
+    from grandpa.runtime_paths import grandpa_home
+
+    return grandpa_home() / "scheduler.db"
 SAFE_ROUTINE_ACTIONS = {
     "open chrome",
     "open edge",
@@ -50,8 +66,8 @@ class SchedulerResult:
 
 
 class SchedulerStore:
-    def __init__(self, db_path: Path | str = DEFAULT_SCHEDULER_DB) -> None:
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path) if db_path is not None else default_scheduler_db()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -252,6 +268,29 @@ class SchedulerStore:
                 (reminder_id,),
             ).fetchone()
         return _reminder_row(row) if row else None
+
+    def set_reminder_enabled(self, reminder_id: int, enabled: bool) -> bool:
+        """Turn a recurring reminder on or off. True if the row existed.
+
+        The ``enabled`` column has been in this schema from the start and
+        nothing ever wrote 0 to it, so a recurring reminder created by chat
+        could be listed by ``grandpa reminders list`` and then cancelled by no
+        command at all.
+        """
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE reminders SET enabled = ?, updated_at = ? WHERE id = ?",
+                (1 if enabled else 0, time.time(), int(reminder_id)),
+            )
+        return cur.rowcount > 0
+
+    def delete_reminder(self, reminder_id: int) -> bool:
+        """Remove a recurring reminder outright. True if the row existed."""
+        with self._connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM reminders WHERE id = ?", (int(reminder_id),)
+            )
+        return cur.rowcount > 0
 
     def list_reminders(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
@@ -949,6 +988,7 @@ def _fallback() -> SchedulerResult:
 
 
 __all__ = [
+    "default_scheduler_db",
     "SchedulerResult",
     "SchedulerStore",
     "handle_scheduler_command",

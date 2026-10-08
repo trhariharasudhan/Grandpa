@@ -108,8 +108,20 @@ sqlite backend, `memory.db` under `GRANDPA_HOME`, chunk size 512 / overlap 64,
 context top-k 5, max 2048 tokens. Doctor reports `Memory database ready`.
 `grandpa memory` exposes a working command group. 125 tests.
 
+Recall is now measured rather than assumed — `grandpa memory recall-test`,
+half a second against a throwaway database:
+
+| Questions | recall@1 | recall@3 | MRR |
+| --- | --- | --- | --- |
+| direct wording (12) | 100% | 100% | 100% |
+| paraphrased (12) | 25% | 33% | 33% |
+
 **Unfinished behind it:** `context_min_score` is 0.0, so retrieval applies no
-relevance floor — every top-k hit is eligible regardless of score.
+relevance floor — every top-k hit is eligible regardless of score. That is
+the same defect the recall numbers show from the other side: the FTS query is
+OR-joined with no stopword filtering, so "what vehicle do I drive" matches
+every fact containing "I" and returns *a* fact rather than none. Memory never
+says it does not know.
 
 ### CLI
 
@@ -210,8 +222,8 @@ today:
 | 5 | `skill list` never finds the 43 skills | **No longer reproduces.** It lists **18** bundled skills (`backup-files` … `web-summarize`). The figure 43 is not reproducible either: there is no `skills/` tree at the repository root. |
 | 8 | Volume/brightness/clipboard/process control have no entry point | **Partly closed, as the inventory already noted.** All are catalogued with real implementations; `process_kill` is still absent entirely. Phrase reachability not verified. |
 | 9 | `grandpa jarvis` understands one command | **Confirmed, and it is exact.** 0 of 8 ordinary phrases routed. |
-| 11 | Reminders never fire on a default install | **Not verified.** The command group works and `reminders list` answers; firing needs the scheduler daemon running over time. |
-| 12 | One-shot reminders become daily | **Not verified.** Same reason. |
+| 11 | Reminders never fire on a default install | **Confirmed, mechanism found, fixed.** `scheduler.enabled` is False by default *and* the tick marked anything more than 10 minutes overdue `failed` without delivering it. So a reminder arrived only if `run-due` ran inside a ten-minute window. Late reminders are now delivered with their lateness in the text. |
+| 12 | One-shot reminders become daily | **Not reproduced.** One-shot and recurring are separate stores and the routing was fixed earlier; what was still broken was that `cancel` and `clear --all` only ever acted on the one-shot store, so a recurring reminder could be listed and never cancelled by anything. Both now act on both. |
 | 13 | Planner invents application names | **Not verified.** |
 | 15 | `python -m grandpa` does not work | **Confirmed.** No `src/grandpa/__main__.py`. |
 | 17 | `file_assistant` misroutes clipboard requests | **Not verified.** |
@@ -249,7 +261,12 @@ In the order they would actually hit it.
    and the write guard then refuses the path. Observed today, exactly that count.
    `GRANDPA_HOME` is for *probes*, never for pytest.
 
-3. **`grandpa jarvis`.** It is advertised in `--help` as "Route Jarvis-style safe
+3. **Asking memory something in your own words.** Direct recall is 100% and
+   paraphrased recall is 25%, and the failure is silent — it returns the
+   nearest keyword match, not nothing. `grandpa memory recall-test` is the
+   measurement.
+
+4. **`grandpa jarvis`.** It is advertised in `--help` as "Route Jarvis-style safe
    local commands", accepts any phrase, and answers *"I don't know how to route
    that Jarvis command yet"* to all of: open notepad, set volume to 30, lock the
    screen, what is the time, take a screenshot, scroll down, close the window,
@@ -257,21 +274,21 @@ In the order they would actually hit it.
    understand: *"open my Grandpa project in VS Code"*. Meanwhile 167 of those
    actions are catalogued and reachable elsewhere.
 
-4. **Deciding which TTS default is real.** `kokoro` in core config, `pyttsx3` on
+5. **Deciding which TTS default is real.** `kokoro` in core config, `pyttsx3` on
    the voice path.
 
-5. **`python -m grandpa`**, which is the obvious way to run a Python package and
+6. **`python -m grandpa`**, which is the obvious way to run a Python package and
    is the one that does not work.
 
-6. **Six desktop-control stacks.** Four of the *routes* into them were removed,
+7. **Six desktop-control stacks.** Four of the *routes* into them were removed,
    so the action layer is the way in; the stacks are still six, and a change to
    desktop behaviour has to establish which one is live.
 
-7. **Nothing in the bubble has been seen working by a human.** Both bugs
+8. **Nothing in the bubble has been seen working by a human.** Both bugs
    reported against it were in the class the suite could not see — a rendered
    string and a focus interaction. `docs/testing/desktop-ui-manual-qa.md` is
    fifteen checks and is unwalked.
 
-8. **The commit guard.** A commit is refused unless the last pytest invocation
+9. **The commit guard.** A commit is refused unless the last pytest invocation
    was a full run against that exact tree. Discovering this mid-commit, after a
    targeted run, costs a 25-minute round trip.

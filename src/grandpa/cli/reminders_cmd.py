@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 
 import click
@@ -75,11 +76,18 @@ def _warn_if_nothing_will_fire(console: Console) -> None:
         "off by default, because it is a background thread and every CLI "
         "command would pay for it."
     )
+    # Not `grandpa scheduler start`: that polls scheduled *tasks* and never
+    # reads reminders.db, so it was advice that delivered nothing. `reminders
+    # watch` runs the reminder service itself.
     console.print(
         "  Deliver what is due now:  [bold]grandpa reminders run-due[/bold]\n"
-        "  Keep one running:         [bold]grandpa scheduler start[/bold]\n"
+        "  Keep one running:         [bold]grandpa reminders watch[/bold]\n"
         "  Turn it on permanently:   [bold]grandpa config set scheduler.enabled "
         "true[/bold]"
+    )
+    console.print(
+        "[dim]Nothing is lost by waiting: a reminder is delivered whenever it is "
+        "next checked, with how late it is in the text.[/dim]"
     )
 
 
@@ -198,14 +206,30 @@ def reminders_clear(status: ReminderStatus | None, clear_all: bool, yes: bool) -
         raise click.ClickException("Use either --status or --all, not both.")
     store = ReminderStore()
     if clear_all:
+        recurring = _recurring_reminders()
+        # Name what is actually in scope. This said "all reminders" while
+        # leaving every recurring one untouched, which is the same command
+        # lying about what it did.
+        extra = (
+            f" and {len(recurring)} recurring reminder(s) in scheduler.db"
+            if recurring
+            else ""
+        )
         if not require_confirmation(
-            "This will delete all reminders, including pending reminders. Continue?",
+            f"This will delete all one-shot reminders, including pending ones"
+            f"{extra}. Continue?",
             yes=yes,
             cancelled="Reminder clear cancelled.",
         ):
             return
         deleted = store.delete()
+        removed_recurring = _delete_recurring(recurring)
         _print_deleted(console, deleted, None)
+        if removed_recurring:
+            console.print(
+                f"[yellow]Also removed {removed_recurring} recurring "
+                f"reminder(s).[/yellow]"
+            )
         return
     statuses: list[ReminderStatus] = (
         [status] if status is not None else ["triggered", "cancelled", "failed"]
@@ -217,13 +241,107 @@ def reminders_clear(status: ReminderStatus | None, clear_all: bool, yes: bool) -
 @reminders.command("cancel")
 @click.argument("reminder_id")
 def reminders_cancel(reminder_id: str) -> None:
-    """Cancel a pending reminder."""
+    """Cancel a reminder, one-shot or recurring.
+
+    Both stores, because ``list`` shows both. Cancelling an id that ``list``
+    had just printed used to answer "Reminder not found" and exit 1, because
+    this command only ever read ``reminders.db`` -- and nothing anywhere could
+    cancel a recurring reminder at all.
+    """
     console = Console()
     reminder = ReminderStore().cancel(reminder_id, now=datetime.now().astimezone())
-    if reminder is None:
-        console.print(f"[red]Reminder not found: {reminder_id}[/red]")
-        raise SystemExit(1)
-    console.print(f"[yellow]Reminder {reminder.id} is {reminder.status}.[/yellow]")
+    if reminder is not None:
+        console.print(f"[yellow]Reminder {reminder.id} is {reminder.status}.[/yellow]")
+        return
+
+    if _cancel_recurring(console, reminder_id):
+        return
+
+    console.print(f"[red]Reminder not found: {reminder_id}[/red]")
+    console.print("[dim]`grandpa reminders list` shows the ids of both kinds.[/dim]")
+    raise SystemExit(1)
+
+
+def _cancel_recurring(console: Console, reminder_id: str) -> bool:
+    """Disable a recurring reminder in scheduler.db. False if it is not one."""
+    try:
+        numeric = int(str(reminder_id).strip())
+    except (TypeError, ValueError):
+        return False
+    try:
+        from grandpa.task_scheduler import SchedulerStore
+
+        store = SchedulerStore()
+        existing = store.get_reminder(numeric)
+        if existing is None:
+            return False
+        if not store.set_reminder_enabled(numeric, False):
+            return False
+    except Exception:  # noqa: BLE001 - a missing scheduler store is simply "no"
+        return False
+    console.print(
+        f"[yellow]Recurring reminder {numeric} is paused.[/yellow] "
+        f"({existing.get('text') or existing.get('name') or ''})"
+    )
+    console.print("[dim]It stays in the list, disabled, so it can be resumed.[/dim]")
+    return True
+
+
+def _delete_recurring(rows: list[dict]) -> int:
+    """Remove recurring reminders. Returns how many went."""
+    if not rows:
+        return 0
+    try:
+        from grandpa.task_scheduler import SchedulerStore
+
+        store = SchedulerStore()
+    except Exception:  # noqa: BLE001 - nothing to delete if there is no store
+        return 0
+    removed = 0
+    for row in rows:
+        try:
+            if store.delete_reminder(int(row.get("id", 0))):
+                removed += 1
+        except Exception:  # noqa: BLE001 - one bad row is not a failed clear
+            continue
+    return removed
+
+
+@reminders.command("watch")
+@click.option(
+    "--interval",
+    default=30,
+    type=int,
+    show_default=True,
+    help="Seconds between checks.",
+)
+def reminders_watch(interval: int) -> None:
+    """Deliver reminders as they come due. Blocks this terminal.
+
+    This is the command the create warning points at. ``grandpa scheduler
+    start`` is a different thing: it polls scheduled *tasks* out of
+    scheduler.db and never reads reminders.db, so it delivered nothing.
+    """
+    console = Console()
+    service = ReminderSchedulerService(
+        ReminderStore(), notifier=FirstWorkingNotifier()
+    )
+    console.print(
+        f"[green]Watching for reminders every {interval}s.[/green] "
+        "Ctrl+C to stop."
+    )
+    delivered = 0
+    try:
+        while True:
+            result = service.tick()
+            for reminder_id in result["triggered"]:
+                delivered += 1
+                console.print(f"[green]Delivered[/green] {reminder_id}")
+            for reminder_id in result["failed"]:
+                console.print(f"[red]Failed[/red] {reminder_id}")
+            time.sleep(max(1, interval))
+    except KeyboardInterrupt:
+        console.print(f"\n[yellow]Stopped.[/yellow] Delivered {delivered}.")
 
 
 @reminders.command("run-due")

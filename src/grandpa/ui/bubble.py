@@ -382,6 +382,21 @@ class BubbleController:
         self._enter(BubbleState.TRANSCRIBING)
         outcome = self.bridge.transcribe(audio)
         transcript = (getattr(outcome, "text", "") or "").strip()
+        # The numbers `grandpa oops` reports for "voice did not hear
+        # me". Recorded whether or not anything was transcribed,
+        # because an empty transcript is the case that needs them.
+        try:
+            from grandpa.diagnostics.oops import record_capture
+
+            record_capture(
+                audio,
+                held_seconds=held,
+                reason=str(getattr(outcome, "reason", "") or ""),
+                model=self.model_name,
+                transcript_len=len(transcript),
+            )
+        except Exception:  # noqa: BLE001 - a breadcrumb cannot break a hold
+            pass
         if not transcript:
             explanation = getattr(outcome, "explanation", "") or "nothing recognisable"
             self._to_view(lambda: self.view.set_transcript(""))

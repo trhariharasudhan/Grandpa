@@ -132,7 +132,18 @@ def test_recent_overdue_reminder_triggers_once_on_startup(tmp_path):
     assert notifier.sent == [reminder.id]
 
 
-def test_stale_overdue_reminder_marked_failed_without_notification(tmp_path):
+def test_a_stale_overdue_reminder_is_delivered_late_not_discarded(tmp_path):
+    """Replaces a test that pinned the discard, which was the whole defect.
+
+    The tick used to mark anything past OVERDUE_GRACE_PERIOD failed and deliver
+    nothing. With ``scheduler.enabled`` False by default, the only way to
+    receive a reminder was to run ``run-due`` inside a ten-minute window around
+    the due time -- so on a default install every reminder was lost. That is
+    findings 11 and 12.
+
+    A late reminder is still information. It is delivered, and the lateness is
+    in the text so the person can judge it.
+    """
     store = _store(tmp_path)
     reminder = store.create("stale overdue", _at(-11 * 60))
     notifier = FakeNotifier()
@@ -140,13 +151,67 @@ def test_stale_overdue_reminder_marked_failed_without_notification(tmp_path):
 
     result = service.tick()
 
-    assert result["triggered"] == []
-    assert result["failed"] == [reminder.id]
-    assert notifier.sent == []
+    assert result["triggered"] == [reminder.id]
+    assert result["failed"] == []
+    assert notifier.sent == [reminder.id]
     saved = store.get(reminder.id)
     assert saved is not None
-    assert saved.status == "failed"
-    assert "older than 10 minutes" in (saved.failure_reason or "")
+    assert saved.status == "triggered"
+
+
+def test_a_late_delivery_says_how_late_it_is(tmp_path):
+    """Otherwise a reminder arriving hours later is indistinguishable from one
+    arriving on time, which is its own way of being wrong."""
+
+    class Capturing:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
+
+        def notify(self, reminder):
+            self.messages.append(reminder.message)
+            from grandpa.reminders import NotificationResult
+
+            return NotificationResult(True, "delivered", "ok")
+
+    store = _store(tmp_path)
+    store.create("call Arjun", _at(-3 * 60 * 60))
+    notifier = Capturing()
+    ReminderSchedulerService(store, notifier=notifier, now_fn=lambda: _at()).tick()
+
+    assert notifier.messages, "nothing was delivered"
+    assert "call Arjun" in notifier.messages[0]
+    assert "late" in notifier.messages[0], notifier.messages[0]
+
+
+def test_an_on_time_reminder_is_not_annotated(tmp_path):
+    class Capturing:
+        def __init__(self) -> None:
+            self.messages: list[str] = []
+
+        def notify(self, reminder):
+            self.messages.append(reminder.message)
+            from grandpa.reminders import NotificationResult
+
+            return NotificationResult(True, "delivered", "ok")
+
+    store = _store(tmp_path)
+    store.create("stand up", _at(-1))
+    notifier = Capturing()
+    ReminderSchedulerService(store, notifier=notifier, now_fn=lambda: _at()).tick()
+
+    assert notifier.messages == ["stand up"]
+
+
+def test_the_lateness_wording_scales(tmp_path):
+    from datetime import timedelta
+
+    from grandpa.reminders import describe_lateness
+
+    assert describe_lateness(timedelta(minutes=2)) == ""
+    assert describe_lateness(timedelta(minutes=10)) == ""
+    assert "minutes late" in describe_lateness(timedelta(minutes=45))
+    assert "hours late" in describe_lateness(timedelta(hours=5))
+    assert "days late" in describe_lateness(timedelta(days=3))
 
 
 def test_notification_failure_marks_failed_without_crashing(tmp_path):

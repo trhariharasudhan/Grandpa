@@ -54,7 +54,66 @@ uv run grandpa screen describe --active-window
 uv run grandpa apps scan
 uv run grandpa projects list
 uv run grandpa reminders add "remind me in 30 minutes to drink water"
+uv run grandpa oops "what just broke"   # log a problem with its context
 ```
+
+## When something breaks
+
+```powershell
+uv run grandpa oops "voice did not hear me"
+```
+
+One command, one sentence. It records what you typed plus the context that
+makes the problem diagnosable, so you do not have to go and find it:
+
+| Recorded | Why that field |
+| --- | --- |
+| the last command you ran | "it broke" nearly always means the command before this one |
+| the last capture's `speech_window_rms`, `noise_floor`, `max_chunk_rms`, voiced seconds | these four settled the voice-detection argument. A capture reported as "rms 176, never crossed 180" had speech chunks averaging 289 — the whole-buffer figure was the misleading one |
+| how long the key was held, and which gate emptied the transcript | "heard nothing" has four distinct causes and they look identical from outside |
+| the speech model, LLM model and configured TTS backend | two of the three have diverged from what actually ran |
+| `scheduler.enabled` | a reminder that never fired is usually this, not a bug |
+| version, platform, Python | identical work on this machine has varied 105× in wall time, and one bug was POSIX-only |
+| the last error you were shown | |
+
+```powershell
+uv run grandpa oops --list              # what you have logged
+uv run grandpa oops --list --context    # with every field
+uv run grandpa oops --export            # one file to hand over
+```
+
+Everything stays on this machine, under `GRANDPA_HOME`. Your note goes through
+the same redaction the screen pipeline uses, so pasting a transcript in will
+not leak a password, key or card number. It deliberately collects nothing
+slow — no `doctor` run, no model load — so it answers instantly.
+
+It also will not fail. Every field is collected independently, the note is
+stored even if every collector breaks, and if the file cannot be written the
+note is printed so you still have it.
+
+## Reminders
+
+```powershell
+uv run grandpa reminders add "remind me in 30 minutes to drink water"
+uv run grandpa reminders list        # one-shot and recurring, in one answer
+uv run grandpa reminders run-due     # deliver anything due now
+uv run grandpa reminders watch       # keep delivering; blocks this terminal
+```
+
+**The scheduler is off by default** and stays off: it is a background thread,
+and starting one inside every CLI command — including `grandpa --help` — costs
+every invocation for a feature most of them do not use.
+
+**Nothing is lost by it being off.** A reminder is delivered whenever it is
+next checked, however late, with how late it is in the text ("call Arjun  (3
+hours late)"). It used to be marked *failed* after ten minutes and never
+delivered, which on a default install meant every reminder was silently lost.
+Delivery is also written to `reminders-delivered.log` under `GRANDPA_HOME`, so
+a reminder that fired while you were not watching a terminal is still there.
+
+`grandpa scheduler start` is a different thing — it polls scheduled *tasks* and
+never reads reminders. Use `reminders watch`, or
+`grandpa config set scheduler.enabled true` to have it always on.
 
 ## Desktop Bubble
 
@@ -197,6 +256,32 @@ model = "small.en"
 things that do *not* help: multilingual models, `distil-small.en`, and
 `beam_size`.
 
+### Measuring memory recall
+
+```powershell
+uv run grandpa memory recall-test
+```
+
+Stores a dozen facts, asks for each one back twice — once reusing the stored
+wording, once deliberately avoiding it — and reports how often the right fact
+comes back. Half a second, against a throwaway database, so it never touches
+your real memory.
+
+Two numbers because they mean different things. The default backend is SQLite
+FTS5 with BM25, which matches keywords, so a direct question failing is a
+defect while a paraphrase failing is what a keyword index does. Measured today:
+
+| Questions | recall@1 | recall@3 |
+| --- | --- | --- |
+| direct wording | 100% | 100% |
+| paraphrased | 25% | 33% |
+
+So memory reliably finds a fact when you use its words, and usually does not
+when you do not. It never returns *nothing* — it returns the closest keyword
+match, which for "what vehicle do I drive" is "I am allergic to peanuts",
+because the query terms are OR-joined and both share the word "I".
+`--misses` lists every question that failed; `--json` compares two runs.
+
 ### Names and words the model will not know
 
 Whisper decodes what it has seen before, so an uncommon name becomes a common
@@ -303,7 +388,14 @@ git diff --check
   `PATH`, or set `GRANDPA_TESSERACT_CMD`.
 - **Server stopped:** use `uv run grandpa start` and `uv run grandpa status`.
 - **Windows notifications unavailable:** reminders still work without the
-  optional toast-notification dependency.
+  optional toast-notification dependency — they are written to
+  `reminders-delivered.log` under `GRANDPA_HOME`.
+- **A reminder did not arrive:** the scheduler is off by default. Run
+  `uv run grandpa reminders run-due` to deliver it now, or
+  `uv run grandpa reminders watch` to keep delivering. Nothing is lost by
+  waiting.
+- **Anything else:** `uv run grandpa oops "what happened"` records it with
+  the context, and `--export` gives one file to hand over.
 
 ## Focused Roadmap
 

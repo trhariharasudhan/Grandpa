@@ -235,6 +235,158 @@ def stats(backend: str | None) -> None:
     console.print(table)
 
 
+@memory.command(name="recall-test")
+@click.option(
+    "--backend",
+    "-b",
+    default=None,
+    help="Measure a different backend than the configured default.",
+)
+@click.option("--top-k", default=5, type=int, show_default=True,
+              help="How many results a query may return.")
+@click.option("--json", "as_json", is_flag=True,
+              help="Print the report as JSON for comparing runs.")
+@click.option("--misses", "show_misses", is_flag=True,
+              help="List every question that did not find its fact.")
+def recall_test_cmd(
+    backend: str | None, top_k: int, as_json: bool, show_misses: bool
+) -> None:
+    """Measure what memory recalls, as a number.
+
+    Stores a dozen facts, asks for each one back twice -- once reusing the
+    stored wording and once deliberately avoiding it -- and reports how often
+    the right fact comes back. Runs in under a second against a throwaway
+    database, so it does not touch your real memory.
+
+    Two numbers because they mean different things: a direct question failing
+    is a defect, a paraphrase failing is what a keyword index does.
+    """
+    import json as json_module
+    import shutil
+    import tempfile
+
+    from grandpa.memory.recall_test import run_recall_test
+
+    console = Console()
+    config = load_config()
+    key = backend or config.memory.default_backend
+
+    from grandpa.tools.storage import load_storage_backends
+
+    load_storage_backends()
+    if not MemoryRegistry.contains(key):
+        raise click.ClickException(
+            f"Memory backend '{key}' not found. "
+            f"Available: {', '.join(MemoryRegistry.keys())}"
+        )
+
+    # A throwaway database. Measuring recall must not add a dozen invented
+    # facts to the user's real memory, which an in-place run would do.
+    scratch = tempfile.mkdtemp(prefix="grandpa-recall-")
+    try:
+        if key == "sqlite":
+            store = MemoryRegistry.create(key, db_path=str(Path(scratch) / "recall.db"))
+        else:
+            store = MemoryRegistry.create(key)
+        report = run_recall_test(store, top_k=top_k)
+        close = getattr(store, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:  # noqa: BLE001 - a scratch store is being thrown away
+                pass
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+    if as_json:
+        click.echo(
+            json_module.dumps(
+                {
+                    "backend": key,
+                    "backend_class": report.backend,
+                    "facts_stored": report.stored,
+                    "queries": len(report.outcomes),
+                    "overall": {
+                        "recall_at_1": _round(report.recall_at_1()),
+                        "recall_at_3": _round(report.recall_at_3()),
+                        "mrr": _round(report.mrr()),
+                    },
+                    "direct": {
+                        "recall_at_1": _round(report.recall_at_1("direct")),
+                        "recall_at_3": _round(report.recall_at_3("direct")),
+                        "mrr": _round(report.mrr("direct")),
+                        "empty": report.empty_results("direct"),
+                    },
+                    "paraphrase": {
+                        "recall_at_1": _round(report.recall_at_1("paraphrase")),
+                        "recall_at_3": _round(report.recall_at_3("paraphrase")),
+                        "mrr": _round(report.mrr("paraphrase")),
+                        "empty": report.empty_results("paraphrase"),
+                    },
+                    "misses": [
+                        {"query": item.query, "kind": item.kind, "rank": item.rank,
+                         "returned": item.returned}
+                        for item in report.misses()
+                    ],
+                },
+                indent=2,
+            )
+        )
+        return
+
+    table = Table(title=f"Memory recall - {key}")
+    table.add_column("Questions")
+    table.add_column("recall@1", justify="right")
+    table.add_column("recall@3", justify="right")
+    table.add_column("MRR", justify="right")
+    table.add_column("no result", justify="right")
+    for label, kind in (("direct wording", "direct"), ("paraphrased", "paraphrase")):
+        table.add_row(
+            f"{label} ({len(report.of_kind(kind))})",
+            _percent(report.recall_at_1(kind)),
+            _percent(report.recall_at_3(kind)),
+            _percent(report.mrr(kind)),
+            str(report.empty_results(kind)),
+        )
+    table.add_row(
+        f"[bold]all ({len(report.outcomes)})[/bold]",
+        f"[bold]{_percent(report.recall_at_1())}[/bold]",
+        f"[bold]{_percent(report.recall_at_3())}[/bold]",
+        f"[bold]{_percent(report.mrr())}[/bold]",
+        f"[bold]{report.empty_results()}[/bold]",
+    )
+    console.print(table)
+    console.print(f"[dim]{report.stored} facts stored, thrown away afterwards.[/dim]")
+    console.print("")
+    console.print(report.verdict())
+
+    missed = report.misses()
+    if missed and show_misses:
+        console.print("")
+        miss_table = Table(title="Questions that did not find their fact")
+        miss_table.add_column("Kind")
+        miss_table.add_column("Question")
+        miss_table.add_column("Rank", justify="right")
+        for item in missed:
+            miss_table.add_row(
+                item.kind, item.query, "none" if not item.rank else str(item.rank)
+            )
+        console.print(miss_table)
+    elif missed:
+        console.print(
+            f"[dim]{len(missed)} question(s) missed. "
+            f"`--misses` lists them, `--json` compares runs.[/dim]"
+        )
+
+
+def _round(value: float | None) -> float | None:
+    return None if value is None else round(value, 4)
+
+
+def _percent(value: float | None) -> str:
+    return "-" if value is None else f"{value * 100:.0f}%"
+
+
 @memory.command(name="remember")
 @click.argument("text")
 @click.option(

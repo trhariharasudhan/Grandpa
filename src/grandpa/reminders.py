@@ -11,7 +11,7 @@ import sys
 import threading
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Literal, Protocol
@@ -20,9 +20,47 @@ from grandpa.core.config import DEFAULT_CONFIG_DIR
 
 logger = logging.getLogger(__name__)
 
+#: Kept because a test imports it. Not used as a default any more: see
+#: :func:`default_reminder_db`.
 DEFAULT_REMINDER_DB = DEFAULT_CONFIG_DIR / "reminders.db"
+
+
+def default_reminder_db() -> Path:
+    """Where the reminder database lives, resolved now rather than at import.
+
+    Same reason as :func:`grandpa.task_scheduler.default_scheduler_db`: an
+    import-time default ignores a ``GRANDPA_HOME`` set afterwards.
+    """
+    from grandpa.runtime_paths import grandpa_home
+
+    return grandpa_home() / "reminders.db"
 ReminderStatus = Literal["pending", "triggered", "cancelled", "failed"]
+#: How late a reminder may be before its delivery says so.
+#:
+#: This used to be the age at which a reminder was *discarded*: the tick marked
+#: anything older failed and never delivered it. Combined with
+#: ``scheduler.enabled`` defaulting to False, that lost every reminder on a
+#: default install -- the only way to receive one was to run ``run-due`` inside
+#: a ten-minute window around the due time, which nobody does.
+#:
+#: A late reminder is still information. "Call Arjun" delivered three hours late
+#: is worth having and a person can judge it; silence is not. So the period now
+#: decides the *wording*, and nothing is dropped for being old.
 OVERDUE_GRACE_PERIOD = timedelta(minutes=10)
+
+
+def describe_lateness(age: timedelta) -> str:
+    """How late, in words a person reads, or "" when it is on time."""
+    seconds = max(0.0, age.total_seconds())
+    if seconds <= OVERDUE_GRACE_PERIOD.total_seconds():
+        return ""
+    minutes = int(seconds // 60)
+    if minutes < 90:
+        return f"{minutes} minutes late"
+    hours = minutes / 60.0
+    if hours < 36:
+        return f"{hours:.0f} hours late"
+    return f"{hours / 24.0:.0f} days late"
 
 
 @dataclass(frozen=True)
@@ -176,8 +214,8 @@ class FirstWorkingNotifier:
 
 
 class ReminderStore:
-    def __init__(self, db_path: Path | str = DEFAULT_REMINDER_DB) -> None:
-        self.db_path = Path(db_path)
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path) if db_path is not None else default_reminder_db()
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init_db()
 
@@ -407,16 +445,18 @@ class ReminderSchedulerService:
         failed: list[str] = []
         for reminder in due:
             age = now - reminder.due_at
-            if age > OVERDUE_GRACE_PERIOD:
-                self.store.mark_failed(
-                    reminder.id,
-                    "Reminder was missed after restart and is older than 10 minutes.",
-                    now=now,
-                )
-                failed.append(reminder.id)
-                continue
+            lateness = describe_lateness(age)
+            # Delivered however late, with the lateness in the text. The branch
+            # that used to live here marked anything past the grace period
+            # failed and delivered nothing, which is how a reminder created on
+            # a default install was guaranteed to be lost.
+            outgoing = (
+                replace(reminder, message=f"{reminder.message}  ({lateness})")
+                if lateness
+                else reminder
+            )
             try:
-                result = self.notifier.notify(reminder)
+                result = self.notifier.notify(outgoing)
                 if result.ok:
                     self.store.mark_triggered(reminder.id, now=now)
                     triggered.append(reminder.id)
@@ -482,7 +522,9 @@ def _row_to_reminder(row: sqlite3.Row) -> Reminder:
 
 __all__ = [
     "DEFAULT_REMINDER_DB",
+    "default_reminder_db",
     "OVERDUE_GRACE_PERIOD",
+    "describe_lateness",
     "REMINDER_ACTIONS",
     "NotificationResult",
     "Reminder",

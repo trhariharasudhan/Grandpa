@@ -108,6 +108,20 @@ def cli(
     setup_logging(verbose=verbose, quiet=quiet)
 
     # Check for updates on interactive commands.
+    if ctx.invoked_subcommand:
+        # One small file replace, so `grandpa oops` can say what was
+        # running when something broke. Guarded on there being a
+        # subcommand, so `grandpa --help` writes nothing, and it never
+        # raises -- a breadcrumb must not be able to fail a command.
+        from grandpa.diagnostics.oops import (
+            command_for_breadcrumb,
+            record_command,
+        )
+
+        # Corroborated against what click parsed, so an embedding's own
+        # command line cannot be recorded as grandpa's.
+        record_command(command_for_breadcrumb(ctx.invoked_subcommand))
+
     if not quiet and ctx.invoked_subcommand:
         from grandpa.cli._version_check import check_for_updates
 
@@ -286,6 +300,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy("notes", "grandpa.cli.notes_cmd:notes", short_help="Manage local notes.")
+)
+cli.add_command(
+    _lazy(
+        "oops",
+        "grandpa.cli.oops_cmd:oops",
+        short_help="Record a problem, with the context that makes it diagnosable.",
+    )
 )
 cli.add_command(
     _lazy(
