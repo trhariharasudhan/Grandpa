@@ -49,6 +49,49 @@ _MONTHS = {
 }
 
 
+#: Duration units, longest spelling first so "min" is not eaten by "m".
+_DURATION_UNITS: tuple[tuple[tuple[str, ...], int], ...] = (
+    (("seconds", "second", "secs", "sec", "s"), 1),
+    (("minutes", "minute", "mins", "min", "m"), 60),
+    (("hours", "hour", "hrs", "hr", "h"), 3600),
+    (("days", "day", "d"), 86400),
+)
+
+_DURATION_PART = re.compile(r"(\d+(?:\.\d+)?)\s*([a-z]+)")
+_DURATION_WHOLE = re.compile(r"^(?:\d+(?:\.\d+)?\s*[a-z]+\s*)+$")
+
+
+def parse_duration(text: str) -> timedelta:
+    """``"2m"``, ``"90s"``, ``"1h30m"``, ``"2 minutes"`` -> a timedelta.
+
+    Permissive about spelling and spacing, because the reason it exists is that
+    the phrase parser is not. Strict about one thing: every number needs a unit.
+    ``--in 5`` could mean seconds or minutes, and guessing is worse than asking.
+    """
+    raw = " ".join(str(text or "").strip().lower().split())
+    if not raw:
+        raise ReminderParseError("A duration is required, for example --in 10m.")
+    if not _DURATION_WHOLE.match(raw):
+        raise ReminderParseError(
+            f"Could not read {text!r} as a duration. Every number needs a unit: "
+            f"--in 10m, --in 90s, --in 2h30m."
+        )
+    total = 0.0
+    for amount, unit in _DURATION_PART.findall(raw):
+        seconds = next(
+            (factor for names, factor in _DURATION_UNITS if unit in names), None
+        )
+        if seconds is None:
+            raise ReminderParseError(
+                f"Unknown duration unit {unit!r}. Use s, m, h or d -- for "
+                f"example --in 90s or --in 2h30m."
+            )
+        total += float(amount) * seconds
+    if total <= 0:
+        raise ReminderParseError(f"A duration must be more than zero (got {text!r}).")
+    return timedelta(seconds=total)
+
+
 def default_reminder_timezone() -> tzinfo:
     """Return Grandpa's configured reminder timezone, falling back locally."""
 

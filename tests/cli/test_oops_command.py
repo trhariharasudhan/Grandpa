@@ -319,14 +319,19 @@ def test_bare_oops_explains_itself(home) -> None:
 
 
 def test_every_collector_is_individually_guarded(home, monkeypatch) -> None:
-    """One missing field must not cost the other six."""
+    """One missing field must not cost the other six.
+
+    The marker changed from "unavailable" to COLLECTOR_FAILED, because
+    "unavailable" was also what an unwritten breadcrumb stored -- and that
+    conflation is why every collector failing looked like a quiet first run.
+    """
     monkeypatch.setattr(
         store, "_models", lambda: (_ for _ in ()).throw(RuntimeError("no config"))
     )
 
     context = store.collect_context()
 
-    assert "unavailable" in context["models"]
+    assert store.COLLECTOR_FAILED in context["models"]
     assert context["version"], "a broken collector took an unrelated one with it"
 
 
@@ -394,3 +399,160 @@ def test_the_module_cannot_reach_the_network() -> None:
 
     for banned in ("requests", "urllib", "httpx", "socket", "http.client"):
         assert banned not in source, f"{banned} has no business in a local log"
+
+
+# --- 7. the first command in a clean shell ----------------------------------------
+#
+# Reported: four notes logged, all four showing "no context recorded". The
+# context was being collected and stored correctly -- four of seven fields had
+# data -- and the summary line read only the other three, the breadcrumbs, which
+# are legitimately absent until some other command has run. With none of those
+# three it printed a claim about all seven.
+
+
+def test_a_note_logged_as_the_first_command_still_carries_context(home) -> None:
+    """The reported bug. No breadcrumbs exist yet, and that is not "no context".
+
+    version, platform, the models and scheduler.enabled are knowable at any
+    moment -- they come from the config and the interpreter -- so a note taken
+    before anything else has run still says something.
+    """
+    result = CliRunner().invoke(cli, ["oops", "first thing in a fresh shell"])
+    assert result.exit_code == 0
+
+    listed = CliRunner().invoke(cli, ["oops", "--list"])
+
+    assert "no context recorded" not in listed.output, (
+        "the summary claimed there was no context while four fields had data"
+    )
+    assert "grandpa " in listed.output, "the version should be in the summary"
+    assert "scheduler" in listed.output, "scheduler.enabled should be in the summary"
+
+
+def test_the_summary_reads_the_durable_fields_not_only_the_breadcrumbs(home) -> None:
+    """Pinned as a property of the summary, independent of the CLI."""
+    from grandpa.diagnostics.oops import NOT_RECORDED, context_summary
+
+    context = {
+        "version": "1.0.1",
+        "platform": {"sys_platform": "win32", "python": "3.11.9"},
+        "models": {
+            "stt_model": "base.en",
+            "llm_model": "grandpa-brain:latest",
+            "scheduler_enabled": False,
+        },
+        "reminders": {"pending": 0, "overdue": 0},
+        "last_command": {NOT_RECORDED: True},
+        "last_capture": {NOT_RECORDED: True},
+        "last_error": {NOT_RECORDED: True},
+    }
+
+    summary = context_summary(context)
+
+    assert "no context recorded" not in summary
+    assert "1.0.1" in summary
+    assert "base.en" in summary
+    assert "scheduler off" in summary
+
+
+def test_the_breadcrumbs_still_reach_the_summary_when_present(home) -> None:
+    """The old behaviour was not wrong, only incomplete."""
+    from grandpa.diagnostics.oops import context_summary
+
+    summary = context_summary(
+        {
+            "version": "1.0.1",
+            "last_command": {"argv": ["voice", "push-to-talk"]},
+            "last_capture": {"speech_window_rms": 289.0, "reason": "no_speech_decoded"},
+            "last_error": {"message": "the model could not be loaded"},
+        }
+    )
+
+    assert "voice push-to-talk" in summary
+    assert "289" in summary
+    assert "no_speech_decoded" in summary
+    assert "could not be loaded" in summary
+
+
+def test_an_overdue_reminder_count_reaches_the_summary(home) -> None:
+    """Because "my reminder never arrived" is a common note, and this answers it."""
+    from grandpa.diagnostics.oops import context_summary
+
+    summary = context_summary(
+        {"version": "1.0.1", "reminders": {"pending": 3, "overdue": 2}}
+    )
+
+    assert "2 overdue" in summary
+
+
+# --- 8. a total collection failure is stated, not hidden --------------------------
+
+
+def test_total_collection_failure_says_so(home) -> None:
+    """A guard that hides total failure is worse than no guard.
+
+    Before this, a collector that raised and a breadcrumb that had never been
+    written both stored "unavailable", so every collector failing looked exactly
+    like an ordinary quiet first run.
+    """
+    from grandpa.diagnostics.oops import (
+        COLLECTOR_FAILED,
+        collection_failed,
+        context_summary,
+    )
+
+    dead = {
+        name: {COLLECTOR_FAILED: "RuntimeError"}
+        for name in (
+            "version",
+            "platform",
+            "models",
+            "reminders",
+            "last_command",
+            "last_capture",
+            "last_error",
+        )
+    }
+
+    assert collection_failed(dead) is True
+    summary = context_summary(dead)
+    assert "COLLECTION FAILED" in summary
+    assert "no context recorded" not in summary
+
+
+def test_a_quiet_first_run_is_not_reported_as_a_failure(home) -> None:
+    """The other half: absent breadcrumbs must not read as broken code."""
+    from grandpa.diagnostics.oops import NOT_RECORDED, collection_failed
+
+    quiet = {
+        "version": "1.0.1",
+        "platform": {"sys_platform": "win32"},
+        "last_command": {NOT_RECORDED: True},
+    }
+
+    assert collection_failed(quiet) is False
+
+
+def test_one_failed_collector_is_named_rather_than_dropped(home) -> None:
+    from grandpa.diagnostics.oops import COLLECTOR_FAILED, context_summary
+
+    summary = context_summary(
+        {"version": "1.0.1", "models": {COLLECTOR_FAILED: "OSError"}}
+    )
+
+    assert "could not read: models" in summary
+    assert "COLLECTION FAILED" not in summary, "one failure is not total failure"
+
+
+def test_a_collector_that_raises_is_marked_as_failed_not_as_absent(home, monkeypatch) -> None:
+    """The distinction the fix turns on."""
+    from grandpa.diagnostics import oops as module
+
+    monkeypatch.setattr(
+        module, "_models", lambda: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+
+    context = module.collect_context()
+
+    assert module.COLLECTOR_FAILED in context["models"]
+    assert module.NOT_RECORDED not in context["models"]

@@ -223,12 +223,112 @@ def record_capture(audio: Any, *, held_seconds: float = 0.0, reason: str = "",
 # =====================================================================
 
 
-def _safe(collector: Any, default: Any = None) -> Any:
-    """Run one collector. Any failure becomes a missing field, never an error."""
+#: A collector raised. Distinct from NOT_RECORDED on purpose: one means the
+#: code failed, the other means nothing has happened yet, and storing both as
+#: "unavailable" is what made total collection failure look like a quiet first
+#: run -- a guard hiding the failure it exists to survive.
+COLLECTOR_FAILED = "collector_failed"
+
+#: The breadcrumb has not been written yet, which on a first command is the
+#: correct and expected state.
+NOT_RECORDED = "none recorded"
+
+
+def _safe(collector: Any) -> Any:
+    """Run one collector. A failure becomes a marked field, never an error."""
     try:
         return collector()
     except Exception as exc:  # noqa: BLE001 - this is the whole point
-        return {"unavailable": f"{type(exc).__name__}"} if default is None else default
+        return {COLLECTOR_FAILED: type(exc).__name__}
+
+
+def collection_failed(context: dict[str, Any] | None) -> bool:
+    """True when *every* collector raised, rather than merely having no news.
+
+    The case this exists for: a note that carries nothing because the collection
+    code is broken must not read like a note taken in a fresh shell.
+    """
+    values = list((context or {}).values())
+    if not values:
+        return True
+    return all(
+        isinstance(value, dict) and COLLECTOR_FAILED in value for value in values
+    )
+
+
+def context_summary(context: dict[str, Any] | None) -> str:
+    """One line worth reading, from the whole context rather than part of it.
+
+    Ordered so the durable facts come first. They are knowable at any moment --
+    they come from the config and the interpreter -- so a note logged as the
+    first command in a clean shell still says something. The breadcrumbs follow
+    when there are any; their absence is not a reason to claim there is no
+    context.
+    """
+    if collection_failed(context):
+        return (
+            "CONTEXT COLLECTION FAILED -- every collector raised. The note is "
+            "stored but carries nothing; this is a bug in oops itself."
+        )
+
+    context = context or {}
+    parts: list[str] = []
+
+    version = context.get("version")
+    platform = context.get("platform")
+    if isinstance(version, str) and version:
+        head = f"grandpa {version}"
+        if isinstance(platform, dict) and platform.get("sys_platform"):
+            head += f" {platform['sys_platform']}/py{platform.get('python', '?')}"
+        parts.append(head)
+
+    models = context.get("models")
+    if isinstance(models, dict) and COLLECTOR_FAILED not in models:
+        engines = [
+            str(models[key])
+            for key in ("stt_model", "llm_model")
+            if models.get(key)
+        ]
+        if engines:
+            parts.append(" + ".join(engines))
+        enabled = models.get("scheduler_enabled")
+        if enabled is not None:
+            parts.append(f"scheduler {'on' if enabled else 'off'}")
+
+    reminders = context.get("reminders")
+    if isinstance(reminders, dict) and COLLECTOR_FAILED not in reminders:
+        overdue = reminders.get("overdue")
+        if overdue:
+            parts.append(f"{overdue} overdue reminder(s)")
+
+    command = context.get("last_command")
+    if isinstance(command, dict) and command.get("argv"):
+        parts.append(
+            "after: grandpa " + " ".join(str(item) for item in command["argv"])
+        )
+
+    capture = context.get("last_capture")
+    if isinstance(capture, dict):
+        level = capture.get("speech_window_rms")
+        if level is not None:
+            parts.append(f"speech rms {level}")
+        if capture.get("reason"):
+            parts.append(f"capture {capture['reason']}")
+
+    error = context.get("last_error")
+    if isinstance(error, dict) and error.get("message"):
+        first = str(error["message"]).splitlines()[0][:60]
+        parts.append(f"last error: {first}")
+
+    failed = sorted(
+        name
+        for name, value in context.items()
+        if isinstance(value, dict) and COLLECTOR_FAILED in value
+    )
+    if failed:
+        parts.append(f"could not read: {', '.join(failed)}")
+
+    return "  |  ".join(parts) or "no context recorded"
 
 
 def _version() -> str:
@@ -283,18 +383,21 @@ def collect_context() -> dict[str, Any]:
     """Everything worth having, with every field independently guarded."""
     directory = diagnostics_dir()
     return {
-        "version": _safe(_version, ""),
-        "platform": _safe(_platform, {}),
+        "version": _safe(_version),
+        "platform": _safe(_platform),
         "models": _safe(_models),
         "reminders": _safe(_reminder_counts),
         "last_command": _safe(
-            lambda: _read_json(directory / _LAST_COMMAND) or {"unavailable": "none recorded"}
+            lambda: _read_json(directory / _LAST_COMMAND)
+            or {NOT_RECORDED: True}
         ),
         "last_capture": _safe(
-            lambda: _read_json(directory / _LAST_CAPTURE) or {"unavailable": "none recorded"}
+            lambda: _read_json(directory / _LAST_CAPTURE)
+            or {NOT_RECORDED: True}
         ),
         "last_error": _safe(
-            lambda: _read_json(directory / _LAST_ERROR) or {"unavailable": "none recorded"}
+            lambda: _read_json(directory / _LAST_ERROR)
+            or {NOT_RECORDED: True}
         ),
     }
 
@@ -334,7 +437,7 @@ def record(note: str, *, context: dict[str, Any] | None = None) -> tuple[bool, P
     entry = {
         "at": _now(),
         "note": _redact(str(note or "").strip()),
-        "context": _redact(context if context is not None else _safe(collect_context, {})),
+        "context": _redact(context if context is not None else _safe(collect_context)),
     }
     path = log_path()
     try:
@@ -401,7 +504,11 @@ def export_to(path: Path | str | None = None) -> Path:
 
 __all__ = [
     "OopsEntry",
+    "COLLECTOR_FAILED",
+    "NOT_RECORDED",
     "collect_context",
+    "collection_failed",
+    "context_summary",
     "command_for_breadcrumb",
     "diagnostics_dir",
     "entries",

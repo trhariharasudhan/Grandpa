@@ -94,11 +94,42 @@ note is printed so you still have it.
 ## Reminders
 
 ```powershell
-uv run grandpa reminders add "remind me in 30 minutes to drink water"
+uv run grandpa reminders add "call amma" --in 10m     # the easy way
 uv run grandpa reminders list        # one-shot and recurring, in one answer
 uv run grandpa reminders run-due     # deliver anything due now
 uv run grandpa reminders watch       # keep delivering; blocks this terminal
 ```
+
+**Use `--in`.** It takes the message exactly as written, so there is no phrasing
+to remember: `--in 10m`, `--in 90s`, `--in 2h30m`, `--in 1d`.
+
+The phrase form still works but has a shape you have to know — a "remind me"
+prefix, spelled-out units, and "tomorrow" before a clock time:
+
+| Phrase | |
+| --- | --- |
+| `remind me in 30 minutes to drink water` | works |
+| `remind me to call amma in 2 minutes` | works |
+| `remind me tomorrow at 7 PM to call amma` | works |
+| `call amma in 2 minutes` | **no** — needs the "remind me" prefix |
+| `remind me in 2m to call amma` | **no** — no `2m` shorthand |
+| `remind me in 90 seconds to call amma` | **no** — no seconds unit |
+| `remind me at 5pm to call amma` | **no** — "at &lt;time&gt;" needs "tomorrow" |
+
+### Check that delivery works
+
+Two commands. The first creates a reminder a minute out, the second waits for
+it:
+
+```powershell
+uv run grandpa reminders add "delivery test" --in 1m
+uv run grandpa reminders watch --interval 10
+```
+
+Within about a minute the watcher prints `[reminder] delivery test` and
+`Delivered rem_...`, then keeps waiting until you press Ctrl+C. The same line
+is appended to `reminders-delivered.log` under `GRANDPA_HOME`, so you can
+confirm it afterwards even if you were not looking.
 
 **The scheduler is off by default** and stays off: it is a background thread,
 and starting one inside every CLI command — including `grandpa --help` — costs

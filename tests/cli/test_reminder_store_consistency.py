@@ -298,3 +298,136 @@ def test_the_two_stores_are_still_separate_files(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("GRANDPA_HOME", str(tmp_path))
 
     assert default_reminder_db() != default_scheduler_db()
+
+
+# --- `reminders add --in` ---------------------------------------------------------
+#
+# Reported: `grandpa reminders add "call amma" --in 2m` -> "No such option".
+# Measured what the phrase form accepts before judging it: it needs a "remind
+# me" prefix, spelled-out units, and "tomorrow" before a clock time -- and its
+# own error message advertises "tomorrow at 7 PM" while rejecting "at 5pm". A
+# reminder whose creation needs an incantation looked up is a reminder that does
+# not get created.
+
+
+def test_the_command_the_user_actually_typed_works(home) -> None:
+    result = CliRunner().invoke(
+        cli, ["reminders", "add", "call amma", "--in", "2m"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Reminder created" in result.output
+
+
+def test_in_takes_the_phrase_as_the_message_verbatim(home) -> None:
+    """No parsing, so there is no phrasing to know."""
+    from grandpa.reminders import ReminderStore
+
+    CliRunner().invoke(cli, ["reminders", "add", "call amma", "--in", "2m"])
+
+    pending = ReminderStore().list(status="pending")
+    assert [item.message for item in pending] == ["call amma"]
+
+
+def test_in_sets_the_due_time_from_now(home) -> None:
+    from grandpa.reminders import ReminderStore
+
+    before = datetime.now().astimezone()
+    CliRunner().invoke(cli, ["reminders", "add", "call amma", "--in", "10m"])
+
+    pending = ReminderStore().list(status="pending")
+    assert len(pending) == 1
+    delta = pending[0].due_at - before
+    assert timedelta(minutes=9) < delta < timedelta(minutes=11)
+
+
+@pytest.mark.parametrize(
+    ("text", "seconds"),
+    [
+        ("2m", 120),
+        ("90s", 90),
+        ("1h30m", 5400),
+        ("2 minutes", 120),
+        ("45 min", 2700),
+        ("2h", 7200),
+        ("1d", 86400),
+        ("2h 30m", 9000),
+    ],
+)
+def test_the_durations_a_person_would_type(text: str, seconds: int) -> None:
+    from grandpa.reminder_parser import parse_duration
+
+    assert parse_duration(text).total_seconds() == seconds
+
+
+@pytest.mark.parametrize("text", ["", "5", "abc", "7x", "0m", "   "])
+def test_an_unusable_duration_is_refused_with_a_reason(text: str) -> None:
+    """Including a bare number: "--in 5" could be seconds or minutes, and
+    guessing is worse than asking."""
+    from grandpa.reminder_parser import ReminderParseError, parse_duration
+
+    with pytest.raises(ReminderParseError):
+        parse_duration(text)
+
+
+def test_seconds_are_supported_although_the_phrase_parser_has_no_seconds(home) -> None:
+    """"remind me in 90 seconds" is rejected by the phrase parser.
+
+    Seconds matter here because verifying delivery needs a reminder due in about
+    a minute, and that was impossible before.
+    """
+    from grandpa.reminder_parser import (
+        ReminderParseError,
+        parse_duration,
+        parse_reminder_phrase,
+    )
+
+    with pytest.raises(ReminderParseError):
+        parse_reminder_phrase("remind me in 90 seconds to call amma")
+
+    assert parse_duration("90s").total_seconds() == 90
+
+
+def test_the_phrase_form_still_works(home) -> None:
+    """--in is an addition, not a replacement."""
+    result = CliRunner().invoke(
+        cli, ["reminders", "add", "remind me in 10 minutes to drink water"]
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "drink water" in result.output
+
+
+def test_a_failed_phrase_points_at_the_way_out(home) -> None:
+    """The user guessed --in once already. Say it rather than let them guess."""
+    result = CliRunner().invoke(cli, ["reminders", "add", "call amma"])
+
+    assert result.exit_code == 1
+    assert "--in" in result.output
+
+
+def test_in_refuses_an_empty_message(home) -> None:
+    result = CliRunner().invoke(cli, ["reminders", "add", "   ", "--in", "2m"])
+
+    assert result.exit_code == 1
+
+
+def test_a_reminder_made_with_in_is_picked_up_when_its_time_comes(home) -> None:
+    """Deterministically, without sleeping for it.
+
+    ``due_pending`` is the query ``run-due`` and ``watch`` both act on, so
+    asking it directly proves the reminder --in created is well formed for
+    delivery rather than merely stored.
+    """
+    from grandpa.reminders import ReminderStore
+
+    CliRunner().invoke(cli, ["reminders", "add", "call amma", "--in", "2m"])
+    store = ReminderStore()
+
+    assert store.due_pending(datetime.now().astimezone()) == [], (
+        "a reminder two minutes away must not be due yet"
+    )
+
+    later = datetime.now().astimezone() + timedelta(minutes=3)
+
+    assert [item.message for item in store.due_pending(later)] == ["call amma"]

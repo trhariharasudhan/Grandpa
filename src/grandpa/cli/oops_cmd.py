@@ -116,29 +116,14 @@ def _print_list(store: object, *, show_context: bool) -> None:
             for key, value in context.items():
                 click.echo(f"   {key}: {value}")
         else:
-            click.echo(f"   {_summarise(context)}")
+            from grandpa.diagnostics.oops import context_summary
+
+            click.echo(f"   {context_summary(context)}")
         click.echo("")
     click.echo("Full detail: grandpa oops --list --context")
     click.echo("One file:    grandpa oops --export")
 
 
-def _summarise(context: dict) -> str:
-    """The one line worth seeing without asking for everything."""
-    parts: list[str] = []
-    command = (context.get("last_command") or {}).get("argv")
-    if command:
-        parts.append("after: grandpa " + " ".join(str(item) for item in command))
-    capture = context.get("last_capture") or {}
-    level = capture.get("speech_window_rms")
-    if level is not None:
-        parts.append(f"speech rms {level}")
-    reason = capture.get("reason")
-    if reason:
-        parts.append(f"capture {reason}")
-    error = (context.get("last_error") or {}).get("message")
-    if error:
-        parts.append(f"last error: {str(error).splitlines()[0][:60]}")
-    return "   ".join(parts) or "no context recorded"
 
 
 __all__ = ["oops"]

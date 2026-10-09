@@ -10,7 +10,11 @@ from rich.console import Console
 from rich.table import Table
 
 from grandpa.cli._tty import require_confirmation
-from grandpa.reminder_parser import ReminderParseError, parse_reminder_phrase
+from grandpa.reminder_parser import (
+    ReminderParseError,
+    parse_duration,
+    parse_reminder_phrase,
+)
 from grandpa.reminders import (
     FirstWorkingNotifier,
     ReminderSchedulerService,
@@ -112,22 +116,60 @@ def reminders_create(message: str, due_at: str) -> None:
 
 @reminders.command("add")
 @click.argument("phrase")
-def reminders_add(phrase: str) -> None:
-    """Create a reminder from a natural-language phrase."""
+@click.option(
+    "--in",
+    "due_in",
+    default=None,
+    metavar="DURATION",
+    help="Create it this far from now -- 10m, 90s, 2h30m -- taking PHRASE as "
+    "the message exactly as written. Without it, PHRASE has to be a sentence "
+    'the parser understands, like "remind me in 10 minutes to call amma".',
+)
+def reminders_add(phrase: str, due_in: str | None) -> None:
+    """Create a reminder, either from a phrase or from --in.
+
+    ``--in`` exists because the phrase form needs a shape you have to know: a
+    "remind me" prefix, spelled-out units, and "tomorrow" before a clock time.
+    With ``--in`` the phrase is just the message.
+    """
     console = Console()
     try:
-        parsed = parse_reminder_phrase(phrase)
-        reminder = ReminderStore().create(
-            parsed.message,
-            parsed.due_at,
-            source={
-                "cli": "grandpa reminders add",
-                "input": phrase,
-                "matched_expression": parsed.matched_expression,
-            },
-        )
+        if due_in is not None:
+            delta = parse_duration(due_in)
+            message = " ".join(phrase.strip().split())
+            if not message:
+                raise ReminderParseError("Reminder text is required.")
+            reminder = ReminderStore().create(
+                message,
+                datetime.now().astimezone() + delta,
+                source={
+                    "cli": "grandpa reminders add --in",
+                    "input": phrase,
+                    "matched_expression": due_in,
+                },
+            )
+        else:
+            parsed = parse_reminder_phrase(phrase)
+            reminder = ReminderStore().create(
+                parsed.message,
+                parsed.due_at,
+                source={
+                    "cli": "grandpa reminders add",
+                    "input": phrase,
+                    "matched_expression": parsed.matched_expression,
+                },
+            )
     except (ReminderParseError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
+        if due_in is None:
+            # The phrase form is the one with rules. Say the way out rather
+            # than leaving the user to guess a second time.
+            console.print(
+                '[dim]Or skip the phrasing entirely: '
+                '[/dim][bold]grandpa reminders add "'
+                + " ".join(phrase.strip().split())[:40]
+                + '" --in 10m[/bold]'
+            )
         raise SystemExit(1) from exc
     console.print(f"[green]Reminder created:[/green] {reminder.id}")
     console.print(f"  Message: {reminder.message}")
