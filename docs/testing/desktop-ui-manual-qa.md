@@ -28,7 +28,39 @@ one.
 If step 3 ever shows "Ready" before step 5, stop and tell me — that is the bug
 the LOADING state exists to prevent.
 
-## B. Not stealing focus
+
+## B. Nothing should be blank
+
+Reported: "the text box is an empty dark strip above the status line. I had to
+ask what it was for." Auditing the rest of the window found three more of the
+same fault, so this section checks all of them before anything happens.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| A1 | Look at the box at the bottom, before typing anything | It has a **visible edge** and reads **"Type a message and press Enter"** in grey. It should look like something you type in. |
+| A2 | Look at the large pane in the middle | It says **"Replies appear here"** and tells you the two ways to ask. It should not be a blank dark rectangle. |
+| A3 | Look above it | A **"heard"** caption and **"nothing heard yet"**. |
+| A4 | Look at the bottom line | A status, not blank. |
+| A5 | Click into the box | The placeholder **disappears** so you type into an empty box. |
+| A6 | Click away without typing | The placeholder **comes back**. |
+| A7 | Click into the box and press Enter without typing | **Nothing is sent.** The placeholder is not a message. |
+
+If any of these is blank, say which — that is the fault this section exists for.
+
+## C. Correcting what it misheard
+
+Reported: "I said 'hello grandpa good morning' and it heard 'An event by Good
+Morning.'" The reply was right and the transcript was wrong, and the only
+remedy was saying all of it again.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| B1 | Hold the key and say something it gets wrong | The **heard** row shows the wrong text, and its caption changes to **"heard — click to correct and resend"**. |
+| B2 | Click the heard row | The wrong text appears **in the box at the bottom**, ready to edit. The caret does not move there on its own — the window never takes focus. |
+| B3 | Fix the wrong word and press Enter | It is sent as if typed. The reply should now make sense. |
+| B4 | Click the heard row before anything has been heard | Nothing happens. |
+
+## D. Not stealing focus
 
 The difference between usable and infuriating.
 
@@ -37,7 +69,7 @@ The difference between usable and infuriating.
 | 7 | Open Notepad, click into it, type | Every character lands **in Notepad**. The bubble does not take the caret. |
 | 8 | Click the bubble's text box, type, click back into Notepad, type | The bubble took focus only from your click, and gave it back. |
 
-## C. The held key
+## E. The held key
 
 **Ctrl+Win**, held together. One hand, no `Fn`.
 
@@ -45,7 +77,7 @@ The difference between usable and infuriating.
 | --- | --- | --- |
 | 9 | Click into Notepad first, so the bubble does **not** have focus. Hold **Ctrl+Win** and say "what is the time" | Dot turns red, state **"Recording"** — while Notepad has focus. This is the point of the global key. |
 | 10 | Release both keys | **"Transcribing..."** then **"Thinking..."**, then back to green. |
-| 11 | Read the panes | The grey line shows what it heard in quotes. The reply pane shows the answer. |
+| 11 | Read the two rows | **heard** shows what it heard, in quotes, with a blue edge beside it. **reply** shows the answer, in its own pane below. The point is telling a misheard sentence from a misunderstood one at a glance. |
 | 12 | Select the reply text with the mouse | It **selects** and copies with Ctrl+C. |
 | 13 | Tap Ctrl+Win briefly without speaking | Nothing is routed. The status names the tap: "That was a 0.0Ns tap — hold CTRL+WIN down while you speak." |
 | 14 | Release Ctrl+Win after a hold | The **Start menu must not open**. If it does, tell me and switch to `--key menu`. |
@@ -61,7 +93,7 @@ The difference between usable and infuriating.
 If holding Ctrl+Win does nothing at all — no "saw CTRL+WIN" in the status line —
 restart with `--key menu` or `--key f8` and tell me.
 
-## D. The meter
+## F. The meter
 
 This is the one I most wanted: proof it is hearing you.
 
@@ -76,7 +108,7 @@ This is the one I most wanted: proof it is hearing you.
 If the bars never move while you are clearly speaking, the microphone is the
 problem and not the words — check with `grandpa voice push-to-talk --no-route`.
 
-## E. The spoken reply
+## G. The spoken reply
 
 | # | Do this | Expect |
 | --- | --- | --- |
@@ -89,7 +121,7 @@ problem and not the words — check with `grandpa voice push-to-talk --no-route`
 The reply text must never be missing because speech failed. If you ever see
 "not spoken" in the status line, the text should still be there in full.
 
-## F. Text, position, closing
+## H. Text, position, closing
 
 | # | Do this | Expect |
 | --- | --- | --- |

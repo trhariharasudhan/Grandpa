@@ -96,8 +96,31 @@ SURFACE = "#1f2024"
 FOREGROUND = "#f2f3f5"
 MUTED = "#8b8f98"
 DIVIDER = "#2a2c31"
-WIDTH = 392
-HEIGHT = 286
+WIDTH = 400
+HEIGHT = 324
+
+#: The input's border. An Entry with no border and the same colour as the pane
+#: above it does not read as something you type in -- which is exactly what was
+#: reported.
+BORDER = "#34373d"
+#: The border when the input has focus, and the accent on the heard row.
+ACCENT = "#5a9cf8"
+
+#: What each pane says when it has nothing to say. An element that is invisible
+#: until it has content has to be *asked* about; one that explains itself does
+#: not. These are the fix for the audit above.
+PLACEHOLDER_ENTRY = "Type a message and press Enter"
+EMPTY_REPLY = (
+    "Replies appear here.\n\n"
+    "Hold {key} anywhere to talk, or type below and press Enter."
+)
+EMPTY_HEARD = "nothing heard yet"
+
+#: Captions. The reported problem behind item 2: when a transcript is wrong,
+#: "did it mishear me or misunderstand me" needs different fixes from the user,
+#: and two unlabelled blocks of text in one pane cannot be told apart.
+CAPTION_HEARD = "heard"
+CAPTION_REPLY = "reply"
 
 #: Type scale. Three sizes only -- state, body, meta -- so the window has a
 #: readable hierarchy without becoming a design exercise.
@@ -141,11 +164,20 @@ class TkBubbleView:
     on_hold_key: Any = None
     #: Called when the speech toggle is clicked.
     on_toggle_speech: Any = None
+    #: Called when the heard row is clicked, to load the transcript into
+    #: the box for correcting. See _edit_transcript.
+    on_edit_transcript: Any = None
     root: Any = field(default=None, init=False)
     _widgets: dict[str, Any] = field(default_factory=dict, init=False)
     _drag_origin: tuple[int, int] = field(default=(0, 0), init=False)
     _swallowed_press: bool = field(default=False, init=False)
     _meter_bars: list[Any] = field(default_factory=list, init=False)
+    #: True while the entry is showing its placeholder rather than
+    #: something the user typed. Submitting must not send it.
+    _placeholder_active: bool = field(default=False, init=False)
+    #: The last transcript, so clicking the heard row can offer it for
+    #: correction without the view having to ask the controller.
+    _last_transcript: str = field(default="", init=False)
 
     def _tk(self) -> Any:
         if self.tkinter_module is None:
@@ -211,33 +243,76 @@ class TkBubbleView:
         ]
         self.set_levels(())
 
-        self._widgets["transcript"] = tk.Label(
-            root, text="", bg=BACKGROUND, fg=MUTED, anchor="w", justify="left",
-            wraplength=WIDTH - 24, font=FONT_BODY,
+        # --- what it heard -------------------------------------------------
+        # Its own captioned row, with a coloured left edge, because the one
+        # thing the user needs at a glance is whether a bad answer came from
+        # mishearing or from misunderstanding. Those need different fixes:
+        # speak differently, or rephrase.
+        heard_row = tk.Frame(root, bg=BACKGROUND)
+        heard_row.pack(fill="x", padx=10, pady=(2, 0))
+        self._widgets["heard_bar"] = tk.Frame(heard_row, bg=DIVIDER, width=3)
+        self._widgets["heard_bar"].pack(side="left", fill="y")
+        heard_text = tk.Frame(heard_row, bg=BACKGROUND)
+        heard_text.pack(side="left", fill="x", expand=True, padx=(7, 0))
+        self._widgets["heard_caption"] = tk.Label(
+            heard_text, text=CAPTION_HEARD, bg=BACKGROUND, fg=MUTED,
+            font=FONT_META, anchor="w",
         )
-        self._widgets["transcript"].pack(fill="x", padx=10, pady=(0, 2))
+        self._widgets["heard_caption"].pack(fill="x")
+        # Constructed with the empty-state text rather than "", so it occupies
+        # its space from the first frame and the layout does not jump when
+        # something is finally heard.
+        self._widgets["transcript"] = tk.Label(
+            heard_text, text=EMPTY_HEARD, bg=BACKGROUND, fg=MUTED, anchor="w",
+            justify="left", wraplength=WIDTH - 44, font=FONT_BODY,
+        )
+        self._widgets["transcript"].pack(fill="x")
+        # Clicking it loads it into the box below to be corrected and resent.
+        for widget in (heard_row, heard_text, self._widgets["transcript"],
+                       self._widgets["heard_caption"]):
+            widget.bind("<Button-1>", self._edit_transcript)
+
+        # --- the reply -----------------------------------------------------
+        self._widgets["reply_caption"] = tk.Label(
+            root, text=CAPTION_REPLY, bg=BACKGROUND, fg=MUTED, font=FONT_META,
+            anchor="w",
+        )
+        self._widgets["reply_caption"].pack(fill="x", padx=10, pady=(6, 1))
 
         # Text, not Label: a reply has to be selectable so it can be copied.
         reply = tk.Text(
-            root, height=6, bg=SURFACE, fg=FOREGROUND, relief="flat", wrap="word",
+            root, height=5, bg=SURFACE, fg=FOREGROUND, relief="flat", wrap="word",
             insertbackground=FOREGROUND, font=FONT_BODY,
             padx=8, pady=6, highlightthickness=0, bd=0,
         )
-        reply.pack(fill="both", expand=True, padx=10, pady=(2, 6))
+        reply.pack(fill="both", expand=True, padx=10, pady=(0, 6))
         # Read-only but still selectable. "disabled" would block selection too.
         reply.bind("<Key>", lambda _event: "break")
         self._widgets["reply"] = reply
+        # The empty state, written now rather than left as a dark rectangle the
+        # size of the window. It said nothing about what the pane was for.
+        self._show_empty_reply()
 
         entry = tk.Entry(
-            root, bg=SURFACE, fg=FOREGROUND, relief="flat",
+            root, bg=SURFACE, fg=MUTED, relief="flat",
             insertbackground=FOREGROUND, font=FONT_BODY,
-            highlightthickness=0, bd=0,
+            # A visible edge, so it reads as an input. With
+            # highlightthickness=0 and the same colour as the pane above, it was
+            # an anonymous dark strip -- the reported fault.
+            highlightthickness=1, highlightbackground=BORDER,
+            highlightcolor=ACCENT, bd=0,
             # Keeps the entry out of the tab order, so the window cannot acquire
             # focus by being tabbed into from elsewhere.
             takefocus=False,
         )
-        entry.pack(fill="x", padx=10, pady=(0, 6))
+        entry.pack(fill="x", padx=10, pady=(0, 6), ipady=4)
         entry.bind("<Return>", self._submit)
+        # A placeholder, because nothing else said the box could be typed in.
+        # Focus-driven rather than key-driven: the entry only takes focus from a
+        # real click (takefocus=False), and a <Key> binding here would sit
+        # alongside the hold-key swallow bindings for no benefit.
+        entry.bind("<FocusIn>", self._hide_placeholder)
+        entry.bind("<FocusOut>", self._show_placeholder)
         # On the entry, not the toplevel: a toplevel binding fires after the
         # class binding that inserts the character, so "break" there is too
         # late. See KEY_SYMS for the measurement.
@@ -248,9 +323,13 @@ class TkBubbleView:
                 # when the matching press was swallowed. See the handler.
                 entry.bind(f"<KeyRelease-{keysym}>", self._release_hold_key)
         self._widgets["entry"] = entry
+        self._show_placeholder()
 
+        # Constructed with text rather than "". It was only ever non-blank
+        # because controller.start() refreshes it immediately, which is the
+        # controller's good manners rather than this widget's correctness.
         self._widgets["status"] = tk.Label(
-            root, text="", bg=BACKGROUND, fg=MUTED, anchor="w",
+            root, text="starting...", bg=BACKGROUND, fg=MUTED, anchor="w",
             wraplength=WIDTH - 24, justify="left", font=FONT_META,
         )
         self._widgets["status"].pack(fill="x", padx=10, pady=(0, 10))
@@ -276,21 +355,66 @@ class TkBubbleView:
             widget.configure(text=text)
 
     def set_transcript(self, text: str) -> None:
+        """Show what was heard, in its own row, visibly not the reply.
+
+        An empty transcript restores the empty state rather than blanking the
+        row: a zero-height label made the layout jump, and a blank strip said
+        nothing about what the row was.
+        """
+        self._last_transcript = text or ""
         widget = self._widgets.get("transcript")
         if widget is not None:
-            widget.configure(text=f"“{text}”" if text else "")
+            try:
+                if text:
+                    widget.configure(text=f"“{text}”", fg=FOREGROUND)
+                else:
+                    widget.configure(text=EMPTY_HEARD, fg=MUTED)
+            except Exception:  # noqa: BLE001
+                pass
+        # The accent edge lights up only when there is something heard, so the
+        # row reads as live rather than as decoration.
+        bar = self._widgets.get("heard_bar")
+        if bar is not None:
+            try:
+                bar.configure(bg=ACCENT if text else DIVIDER)
+            except Exception:  # noqa: BLE001
+                pass
+        caption = self._widgets.get("heard_caption")
+        if caption is not None:
+            try:
+                caption.configure(
+                    text=f"{CAPTION_HEARD}  --  click to correct and resend"
+                    if text
+                    else CAPTION_HEARD
+                )
+            except Exception:  # noqa: BLE001
+                pass
 
     def set_reply(self, text: str) -> None:
+        """Show the reply. An empty one restores the empty state."""
         widget = self._widgets.get("reply")
         if widget is None:
             return
-        widget.delete("1.0", "end")
-        widget.insert("1.0", text)
+        if not text:
+            self._show_empty_reply()
+            return
+        try:
+            widget.delete("1.0", "end")
+            widget.insert("1.0", text)
+            widget.configure(fg=FOREGROUND)
+        except Exception:  # noqa: BLE001
+            pass
 
     def clear_entry(self) -> None:
+        """Empty the box after submitting, and put the placeholder back."""
         widget = self._widgets.get("entry")
         if widget is not None:
-            widget.delete(0, "end")
+            try:
+                widget.delete(0, "end")
+            except Exception:  # noqa: BLE001
+                pass
+        self._placeholder_active = False
+        self._show_placeholder()
 
     def position(self) -> tuple[int, int]:
         if self.root is None:
@@ -341,6 +465,84 @@ class TkBubbleView:
             return parse_hold_key(self.hold_key)
         except ValueError:
             return ()
+
+    # --- empty states --------------------------------------------------------
+    #
+    # Every one of these exists because the audit found an element that was
+    # invisible or meaningless until something filled it. A pane that explains
+    # itself does not have to be asked about.
+
+    def _show_empty_reply(self) -> None:
+        """Write the reply pane's empty state, in the muted colour."""
+        reply = self._widgets.get("reply")
+        if reply is None:
+            return
+        try:
+            reply.delete("1.0", "end")
+            reply.insert("1.0", EMPTY_REPLY.format(key=describe_hold_key(self.hold_key)))
+            reply.configure(fg=MUTED)
+        except Exception:  # noqa: BLE001 - a closed window must not raise
+            pass
+
+    def _show_placeholder(self, _event: Any = None) -> None:
+        """Put the placeholder back, if the box is empty."""
+        entry = self._widgets.get("entry")
+        if entry is None or self._placeholder_active:
+            return
+        try:
+            if entry.get():
+                return
+            entry.insert(0, PLACEHOLDER_ENTRY)
+            entry.configure(fg=MUTED)
+            self._placeholder_active = True
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _hide_placeholder(self, _event: Any = None) -> None:
+        """Take the placeholder out, so it is never mistaken for input."""
+        entry = self._widgets.get("entry")
+        if entry is None or not self._placeholder_active:
+            return
+        try:
+            entry.delete(0, "end")
+            entry.configure(fg=FOREGROUND)
+            self._placeholder_active = False
+        except Exception:  # noqa: BLE001
+            pass
+
+    # --- correcting a transcript ---------------------------------------------
+
+    def set_entry_text(self, text: str) -> None:
+        """Put *text* in the box, ready to be edited and sent.
+
+        Used to correct a mis-heard transcript: the alternative is saying the
+        whole sentence again, and one wrong word does not deserve that.
+        """
+        entry = self._widgets.get("entry")
+        if entry is None:
+            return
+        try:
+            self._placeholder_active = False
+            entry.delete(0, "end")
+            entry.insert(0, text)
+            entry.configure(fg=FOREGROUND)
+            # No focus_set: the window must never take focus on its own. The
+            # text is waiting; the user clicks when they want it.
+            entry.icursor("end")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _edit_transcript(self, _event: Any = None) -> None:
+        """Clicking the heard row offers it for correction."""
+        if not self._last_transcript:
+            return
+        if callable(self.on_edit_transcript):
+            try:
+                self.on_edit_transcript(self._last_transcript)
+                return
+            except Exception:  # noqa: BLE001 - a click must not kill the UI
+                pass
+        self.set_entry_text(self._last_transcript)
 
     # --- the level meter -----------------------------------------------------
 
@@ -448,6 +650,10 @@ class TkBubbleView:
 
     def _submit(self, _event: Any = None) -> str:
         entry = self._widgets.get("entry")
+        if self._placeholder_active:
+            # The box looks full but nothing was typed. Sending the placeholder
+            # would ask the assistant to answer our own prompt.
+            return "break"
         text = entry.get() if entry is not None else ""
         if callable(self.on_submit):
             self.on_submit(text)

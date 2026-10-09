@@ -163,6 +163,17 @@ bubble visible and every character lands in Notepad. The microphone is refused
 while the model is still loading, and the status says so rather than claiming to
 be ready.
 
+**heard, then reply.** The window shows what it *heard* in its own captioned
+row, with a coloured edge, above the *reply* pane. They are separated because a
+wrong answer has two very different causes — it misheard you, or it
+misunderstood you — and they need different things from you: speak differently,
+or rephrase. Two unlabelled blocks of text in one pane could not tell you which.
+
+**Correcting a misheard sentence.** Click the **heard** row and the text drops
+into the box at the bottom, where you can fix the wrong word and press Enter.
+It is sent as if typed, so one bad word no longer costs the whole sentence
+again. The caret does not jump there — the window never takes focus.
+
 **The meter.** While the key is held, the strip under the state line shows what
 the microphone is actually picking up — one bar per 0.1s chunk, about three
 seconds of history. It is the fastest way to tell "it is not hearing me" from

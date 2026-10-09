@@ -119,6 +119,14 @@ class BubbleView(Protocol):
     def clear_entry(self) -> None:
         """Empty the text box after submitting it."""
 
+    def set_entry_text(self, text: str) -> None:
+        """Put text in the box, ready to be edited and sent.
+
+        Used to correct a mis-heard transcript. Presentational: the corrected
+        text goes out through the ordinary submit path, so the controller needs
+        to know nothing about it.
+        """
+
     def set_levels(self, levels: tuple[float, ...]) -> None:
         """Draw the capture level meter. Empty means "not recording".
 
