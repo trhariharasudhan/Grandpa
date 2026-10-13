@@ -16,13 +16,10 @@ palette without pulling in PIL and the orb can read it without pulling in tk.
 
 from __future__ import annotations
 
-#: Neutral. "Nothing to tell you about your request" -- standby.
+#: Neutral. "Nothing to tell you about your request" -- standby, and model
+#: loading, which is not about a request because there isn't one yet. Yellow
+#: would have claimed the system was working on something the user asked for.
 NEUTRAL_WHITE = "#E5E7EB"
-
-#: Model loading. Dimmer than standby and carrying a travelling arc, which is
-#: what says "not ready yet" without claiming to be working on anything the
-#: user asked for.
-NEUTRAL_DIM_LOADING = "#787E8C"
 
 #: Listening. Blue while the microphone is capturing.
 BLUE_LISTENING = "#168BFF"
@@ -62,11 +59,17 @@ PURPLE_EXECUTING_RESERVED = "#A855F7"
 #: State name -> hex. The state names are ``BubbleState`` values, plus
 #: ``unread``, which is the overlay flag.
 #:
-#: ``transcribing`` and ``thinking`` share a hue on purpose: both are
-#: indeterminate processing and the difference is not actionable from across a
-#: room. They are told apart, where it matters, by the panel's own words.
+#: Two pairs share a hue on purpose, and neither pair relies on colour to be
+#: told apart -- which is the property the tests assert:
+#:
+#: * ``transcribing`` and ``thinking`` -- both indeterminate processing, and
+#:   the difference is not actionable from across a room.
+#: * ``idle`` and ``loading`` -- both neutral, because neither is about a
+#:   request. ``loading`` carries a travelling arc and a dimmer glow; idle is a
+#:   complete, still ring. A rotating segment against a closed circle is a
+#:   bigger difference at a glance than two greys would have been.
 RING_COLOURS: dict[str, str] = {
-    "loading": NEUTRAL_DIM_LOADING,
+    "loading": NEUTRAL_WHITE,
     "idle": NEUTRAL_WHITE,
     "recording": BLUE_LISTENING,
     "transcribing": YELLOW_PROCESSING,
@@ -106,7 +109,6 @@ def ring_rgb(state: str, *, unread: bool = False) -> tuple[int, int, int]:
 
 __all__ = [
     "AMBER_UNREAD",
-    "NEUTRAL_DIM_LOADING",
     "BLUE_LISTENING",
     "GREEN_SUCCESS",
     "NEUTRAL_WHITE",

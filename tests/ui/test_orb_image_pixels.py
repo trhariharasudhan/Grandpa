@@ -134,17 +134,85 @@ def test_the_ring_is_the_colour_the_state_says(state: str) -> None:
     assert drawn == style_for(state).colour, f"{state} drew {drawn}"
 
 
-def test_no_two_states_look_alike_except_the_pair_that_should() -> None:
-    """Transcribing and thinking share a look on purpose: both are
-    indeterminate work and the difference is not actionable from across a room.
-    Everything else must be distinguishable."""
+#: Pairs that share a hue, split by *why* -- which turned out to be the part
+#: worth asserting, because the two reasons imply opposite properties.
+#:
+#: Deliberately the same orb entirely. Both are indeterminate processing and
+#: the difference is not actionable from across a room, so there is nothing for
+#: a reader to tell apart and a difference would only be noise. This has been
+#: true since the orb was built; nothing asserted it until now.
+IDENTICAL_BY_DESIGN = {("thinking", "transcribing")}
+
+#: Same hue, different orb. Both are neutral because neither is about a
+#: request -- during loading there is not one yet -- but "not ready" and
+#: "ready" is a distinction a reader acts on, so it is carried by geometry: a
+#: travelling arc at half the glow, against a complete still ring.
+HUE_SHARED_GEOMETRY_DIFFERS = {("idle", "loading")}
+
+SHARED_HUES = IDENTICAL_BY_DESIGN | HUE_SHARED_GEOMETRY_DIFFERS
+
+
+def test_the_states_sharing_a_hue_are_exactly_the_intended_pairs() -> None:
     seen: dict[tuple[int, int, int], list[str]] = {}
     for state in ORB_STYLES:
         seen.setdefault(style_for(state).colour, []).append(state)
 
     shared = {tuple(sorted(names)) for names in seen.values() if len(names) > 1}
 
-    assert shared == {("thinking", "transcribing")}, f"colours shared: {shared}"
+    assert shared == SHARED_HUES, f"colours shared: {shared}"
+
+
+@pytest.mark.parametrize("pair", sorted(IDENTICAL_BY_DESIGN))
+def test_a_pair_that_shares_everything_renders_identically(
+    pair: tuple[str, str],
+) -> None:
+    """Pinned, because "they look the same" is a decision and not an accident.
+    If one of these ever drifts, it should be because somebody meant it."""
+    first, second = (ORB_STYLES[name] for name in pair)
+
+    assert (first.colour, first.arc, first.glow, first.width, first.pulse) == (
+        second.colour, second.arc, second.glow, second.width, second.pulse,
+    )
+    assert np.array_equal(
+        np.asarray(orb_image(pair[0], 0.3, 0.0)),
+        np.asarray(orb_image(pair[1], 0.3, 0.0)),
+    )
+
+
+@pytest.mark.parametrize("pair", sorted(HUE_SHARED_GEOMETRY_DIFFERS))
+def test_a_shared_hue_is_told_apart_by_geometry(pair: tuple[str, str]) -> None:
+    """Not by a second colour that is nearly the first. Two greys a shade apart
+    is the thing this replaced."""
+    first, second = (ORB_STYLES[name] for name in pair)
+
+    assert first.colour == second.colour, f"{pair} no longer shares a hue"
+    assert (first.arc, first.glow, first.width, first.pulse) != (
+        second.arc, second.glow, second.width, second.pulse,
+    ), f"{pair} is identical in both colour and geometry"
+
+
+@pytest.mark.parametrize("pair", sorted(HUE_SHARED_GEOMETRY_DIFFERS))
+def test_a_shared_hue_still_renders_two_different_orbs(pair: tuple[str, str]) -> None:
+    """Asserted on the pixels, because geometry numbers that differ and render
+    the same are the actual risk."""
+    first, second = (alpha_of(orb_image(name, 0.0, 0.0)) for name in pair)
+    differing = float((np.abs(first - second) > 8).mean())
+
+    assert differing > 0.05, (
+        f"{pair} differ in only {differing:.1%} of pixels, which is not a glance apart"
+    )
+
+
+def test_loading_is_dimmer_and_moving_where_idle_is_bright_and_still() -> None:
+    """The specific pair that is new, stated as the two things a reader uses."""
+    loading, idle = ORB_STYLES["loading"], ORB_STYLES["idle"]
+
+    assert loading.colour == idle.colour
+    assert loading.glow < idle.glow
+    assert loading.arc is not None
+    assert idle.arc is None
+    assert is_animated("loading")
+    assert not is_animated("idle")
 
 
 def test_the_unread_ring_overrides_whatever_the_state_is() -> None:
@@ -154,6 +222,28 @@ def test_the_unread_ring_overrides_whatever_the_state_is() -> None:
 
     assert style_for("idle", unread=True) == ORB_STYLES["unread"]
     assert not np.array_equal(np.asarray(plain), np.asarray(flagged))
+
+
+@pytest.mark.parametrize("state", sorted(ORB_STYLES))
+def test_unread_overrides_every_state_including_success(state: str) -> None:
+    """Success is the one worth naming: an automation finished *and* nobody has
+    read the reply is the case where a persistent green would hide the amber.
+    Read off the pixels, not off the style table."""
+    import numpy as np
+
+    flagged = np.asarray(orb_image(state, 0.25, 0.0, unread=True))
+    unread = np.asarray(orb_image("unread", 0.25, 0.0))
+
+    assert np.array_equal(flagged, unread), f"{state} + unread did not render as unread"
+
+
+def test_success_and_unread_do_not_look_alike() -> None:
+    """Green persists and amber must still be able to replace it visibly."""
+    green = alpha_of(orb_image("success", 0.25, 0.0))
+    amber = alpha_of(orb_image("success", 0.25, 0.0, unread=True))
+
+    assert style_for("success").colour != style_for("success", unread=True).colour
+    assert float((np.abs(green - amber) > 8).mean()) > 0.02
 
 
 # --- 3. listening is driven by the level, as pixels -------------------------

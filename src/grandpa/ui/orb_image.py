@@ -83,6 +83,10 @@ class OrbStyle:
 #: the geometry: glow, ring width, arc and pulse. That split is what lets two
 #: states share a hue and still be told apart, as transcribing and thinking do.
 ORB_STYLES: dict[str, OrbStyle] = {
+    # Loading shares idle's neutral hue and is told apart by geometry: a
+    # travelling 90-degree arc at roughly half idle's glow. Hue says
+    # what kind of thing is happening, and during loading the answer is
+    # "nothing about your request" -- there isn't one yet.
     "loading": OrbStyle(ring_rgb("loading"), 0.30, 0.028, arc=(0.0, 90.0)),
     "idle": OrbStyle(ring_rgb("idle"), 0.55, 0.030, pulse=0.0),
     "recording": OrbStyle(ring_rgb("recording"), 1.25, 0.052),
