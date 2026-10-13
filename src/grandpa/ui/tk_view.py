@@ -40,9 +40,25 @@ FOCUS_STEALING_CALLS = (
     "grab_set",
     "grab_set_global",
     "lift",
-    "deiconify",
     "tkraise",
 )
+
+#: ``deiconify`` was on the list above until it was measured. On a borderless
+#: topmost window it does *not* take the foreground: with the panel withdrawn,
+#: the foreground window was the same handle before and after the call, and
+#: never the panel's own. It is kept separate rather than merged into the list
+#: because the safety is conditional -- it is safe as the *undo of a withdraw*,
+#: and a test pins it to that one use. Used to raise an already-visible window
+#: it would be ``lift`` by another name.
+REMAP_CALLS = ("withdraw", "deiconify")
+
+#: Recorded because it is the one hole in the promise, and the recorded-call
+#: tests cannot see it: ``Tk()`` itself takes the foreground when the window
+#: first appears -- measured, the foreground window became the panel's own
+#: handle. No call in this file causes it and none can undo it. Which is why
+#: collapsing is a withdraw and never a destroy-and-rebuild: rebuilding would
+#: take the foreground again on every single expand.
+CREATION_TAKES_FOREGROUND = True
 
 #: Our key names mapped to Tk keysyms, so the hold key can be swallowed in the
 #: entry box.
@@ -178,6 +194,9 @@ class TkBubbleView:
     #: The last transcript, so clicking the heard row can offer it for
     #: correction without the view having to ask the controller.
     _last_transcript: str = field(default="", init=False)
+    #: True while the panel is withdrawn -- collapsed to the orb. The widgets
+    #: still exist and still hold the last exchange.
+    hidden: bool = field(default=False, init=False)
 
     def _tk(self) -> Any:
         if self.tkinter_module is None:
@@ -424,6 +443,38 @@ class TkBubbleView:
         except Exception:
             return (0, 0)
 
+    def hide(self) -> bool:
+        """Take the panel off screen without destroying it.
+
+        Destroying it would lose the last exchange, which is the one thing a
+        collapsed orb cannot show, and rebuilding it would take the foreground
+        again. So the widgets and their contents stay exactly as they are.
+        """
+        if self.root is None:
+            return False
+        try:
+            self.root.withdraw()
+        except Exception:
+            return False
+        self.hidden = True
+        return True
+
+    def unhide(self) -> bool:
+        """Put it back, with everything it was showing still in it.
+
+        The only tk call that re-maps a withdrawn window. Measured not to take
+        the foreground for a borderless topmost window -- see REMAP_CALLS -- and
+        used here and nowhere else.
+        """
+        if self.root is None:
+            return False
+        try:
+            self.root.deiconify()
+        except Exception:
+            return False
+        self.hidden = False
+        return True
+
     def close(self) -> None:
         if self.root is not None:
             try:
@@ -663,11 +714,25 @@ class TkBubbleView:
         self._drag_origin = (int(event.x), int(event.y))
 
     def _drag_move(self, event: Any) -> None:
+        self.move_to(
+            int(event.x_root) - self._drag_origin[0],
+            int(event.y_root) - self._drag_origin[1],
+        )
+
+    def move_to(self, x: int, y: int) -> bool:
+        """Put the panel at a screen position.
+
+        Used by the drag, and by expanding from the orb -- which places the
+        panel while it is still withdrawn, so it never appears at its old spot
+        first and then jump.
+        """
         if self.root is None:
-            return
-        x = int(event.x_root) - self._drag_origin[0]
-        y = int(event.y_root) - self._drag_origin[1]
-        self.root.geometry(f"+{x}+{y}")
+            return False
+        try:
+            self.root.geometry(f"+{int(x)}+{int(y)}")
+        except Exception:
+            return False
+        return True
 
     def _close(self) -> None:
         if callable(self.on_close):
@@ -676,4 +741,11 @@ class TkBubbleView:
             self.close()
 
 
-__all__ = ["FOCUS_STEALING_CALLS", "KEY_SYMS", "STATE_COLOURS", "TkBubbleView"]
+__all__ = [
+    "CREATION_TAKES_FOREGROUND",
+    "FOCUS_STEALING_CALLS",
+    "KEY_SYMS",
+    "REMAP_CALLS",
+    "STATE_COLOURS",
+    "TkBubbleView",
+]

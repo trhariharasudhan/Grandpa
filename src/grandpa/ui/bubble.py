@@ -60,6 +60,10 @@ STATES_THAT_REFUSE_A_HOLD = frozenset(
 
 DEFAULT_POSITION = (40, 40)
 
+#: Where the orb sits on a first run: just clear of the panel's own default
+#: rectangle, so the two do not start on top of each other.
+DEFAULT_ORB_POSITION = (460, 40)
+
 #: How many bars the level meter holds. One capture chunk is 0.1s, so this is
 #: about three seconds of history -- long enough to see a sentence, short enough
 #: that the view redraws a fixed, small number of rectangles.
@@ -141,6 +145,29 @@ class BubbleView(Protocol):
         """Destroy the window."""
 
 
+class OrbSurface(Protocol):
+    """Everything the controller may ask of the orb.
+
+    Smaller than BubbleView because the orb shows one thing: a state. It has no
+    text, which is the point of it -- collapsed is voice-only.
+    """
+
+    def show(self, *, position: tuple[int, int], topmost: bool) -> None:
+        """Put it on screen."""
+
+    def set_state(self, state: str, *, unread: bool) -> None:
+        """What the ring shows."""
+
+    def set_level(self, level: float) -> None:
+        """The live microphone level, 0..1."""
+
+    def position(self) -> tuple[int, int]:
+        """Where it is now."""
+
+    def close(self) -> None:
+        """Destroy the window."""
+
+
 def position_file() -> Path:
     """Where the remembered position lives.
 
@@ -166,8 +193,59 @@ def load_position(path: Path | None = None) -> tuple[int, int]:
         return DEFAULT_POSITION
 
 
-def save_position(position: tuple[int, int], path: Path | None = None) -> bool:
+def load_orb_position(path: Path | None = None) -> tuple[int, int]:
+    """Where the orb was left, or its default. Never raises."""
+    return _read_state(path).get("orb", DEFAULT_ORB_POSITION)
+
+
+def load_collapsed(path: Path | None = None) -> bool:
+    """Whether the bubble was last left collapsed to the orb.
+
+    Absent means collapsed: a first run opens as the orb. See
+    docs/development/orb-survey.md for why that is the chosen default rather
+    than merely the remembered one.
+    """
+    return bool(_read_state(path).get("collapsed", True))
+
+
+def _read_state(path: Path | None = None) -> dict[str, Any]:
+    """The whole remembered window state, normalised. Never raises."""
+    import json
+
+    target = path or position_file()
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    state: dict[str, Any] = {}
+    try:
+        state["panel"] = (int(data["x"]), int(data["y"]))
+    except Exception:
+        pass
+    try:
+        state["orb"] = (int(data["orb_x"]), int(data["orb_y"]))
+    except Exception:
+        pass
+    if "collapsed" in data:
+        state["collapsed"] = bool(data["collapsed"])
+    return state
+
+
+def save_position(
+    position: tuple[int, int],
+    path: Path | None = None,
+    *,
+    collapsed: bool | None = None,
+    orb_position: tuple[int, int] | None = None,
+) -> bool:
     """Remember the position. Returns whether it was written.
+
+    Keys not passed are **merged from whatever is already on disk** rather than
+    dropped. A caller that only knows about the panel's position must not be
+    able to silently erase the collapsed flag: that is how a window forgets
+    which state it was in because an unrelated code path saved.
 
     A UI that cannot write its own position file should still run, so a failure
     is reported rather than raised.
@@ -175,12 +253,23 @@ def save_position(position: tuple[int, int], path: Path | None = None) -> bool:
     import json
 
     target = path or position_file()
+    existing: dict[str, Any] = {}
+    try:
+        loaded = json.loads(target.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            existing = loaded
+    except Exception:
+        existing = {}
+    existing["x"] = int(position[0])
+    existing["y"] = int(position[1])
+    if orb_position is not None:
+        existing["orb_x"] = int(orb_position[0])
+        existing["orb_y"] = int(orb_position[1])
+    if collapsed is not None:
+        existing["collapsed"] = bool(collapsed)
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps({"x": int(position[0]), "y": int(position[1])}),
-            encoding="utf-8",
-        )
+        target.write_text(json.dumps(existing), encoding="utf-8")
         return True
     except Exception:
         return False
@@ -199,6 +288,12 @@ class BubbleController:
 
     view: BubbleView
     bridge: Any
+    #: The orb, or None. Optional because the controller predates it and every
+    #: path through it must still work with the panel alone.
+    orb: Any = None
+    #: Places the panel beside the orb on expand. Injected so the work area is
+    #: not read from a real screen in a test. Called with the orb's position.
+    anchor: Any = None
     probe: Any = None
     capture: Any = None
     #: A combination, ``ctrl+win``, not a single key. A global read means the
@@ -234,6 +329,15 @@ class BubbleController:
     key_seen_count: int = field(default=0, init=False)
     model_name: str = field(default="", init=False)
     position: tuple[int, int] = field(default=DEFAULT_POSITION, init=False)
+    orb_position: tuple[int, int] = field(default=DEFAULT_ORB_POSITION, init=False)
+    #: Collapsed to the orb: voice only, no panel. Set from the remembered
+    #: state by start(), not by the constructor.
+    collapsed: bool = field(default=False, init=False)
+    #: A reply arrived that was never heard and never read. Shown as an amber
+    #: ring on the orb, cleared by expanding, and it never times out -- a
+    #: notification that disappears on its own is a notification that can be
+    #: missed entirely.
+    unread: bool = field(default=False, init=False)
     _position_path: Path | None = field(default=None, init=False)
     #: Recent capture levels, already normalised, newest last. A bounded deque
     #: appended from the capture thread and read from the view's thread;
@@ -263,7 +367,16 @@ class BubbleController:
         """
         self._position_path = position_path
         self.position = load_position(position_path)
+        self.orb_position = load_orb_position(position_path)
+        self.collapsed = load_collapsed(position_path)
+        # Both windows are created now, whichever state is wanted, because
+        # creating a window takes the foreground -- measured -- and a window
+        # built on first expand would take it then instead, every time.
         self.view.show(position=self.position, topmost=True)
+        if self.orb is not None:
+            self.orb.show(position=self.orb_position, topmost=True)
+        if self.collapsed:
+            self._hide_panel()
         self._enter(BubbleState.LOADING)
         self._refresh_status()
 
@@ -286,13 +399,98 @@ class BubbleController:
         return bool(ready)
 
     def stop(self) -> None:
-        """Remember where the window is, then close it."""
+        """Remember where the windows are and which state they were in, then
+        close them."""
         try:
             self.position = tuple(self.view.position())  # type: ignore[assignment]
         except Exception:
             pass
-        save_position(self.position, self._position_path)
+        if self.orb is not None:
+            try:
+                self.orb_position = tuple(self.orb.position())  # type: ignore[assignment]
+            except Exception:
+                pass
+        self._remember()
+        if self.orb is not None:
+            try:
+                self.orb.close()
+            except Exception:  # noqa: BLE001 - closing one must not strand the other
+                pass
         self.view.close()
+
+    def _remember(self) -> bool:
+        return save_position(
+            self.position,
+            self._position_path,
+            collapsed=self.collapsed,
+            orb_position=self.orb_position,
+        )
+
+    # --- collapsed and expanded ----------------------------------------------
+
+    def toggle_collapsed(self) -> bool:
+        """Double-tapping the orb. Returns the new collapsed state."""
+        return self.collapse() if not self.collapsed else self.expand()
+
+    def collapse(self) -> bool:
+        """Voice only: the panel goes away, the orb stays."""
+        self.collapsed = True
+        self._hide_panel()
+        self._remember()
+        self._refresh_orb()
+        return self.collapsed
+
+    def expand(self) -> bool:
+        """The panel comes back, beside the orb, with the last exchange still
+        in it -- and the unread ring clears, because it has now been read."""
+        self.collapsed = False
+        self.unread = False
+        if callable(self.anchor):
+            try:
+                self.position = tuple(self.anchor(self.orb_position))  # type: ignore[assignment]
+            except Exception:  # noqa: BLE001 - a bad anchor must not trap the panel
+                pass
+        placed = self.position
+        self._to_view(lambda: self._unhide_panel(placed))
+        self._remember()
+        self._refresh_orb()
+        return self.collapsed
+
+    def _hide_panel(self) -> None:
+        hide = getattr(self.view, "hide", None)
+        if callable(hide):
+            self._to_view(hide)
+
+    def _unhide_panel(self, position: tuple[int, int]) -> None:
+        """Put the panel back where the anchor said, then re-map it.
+
+        In that order: moving a withdrawn window and then showing it means the
+        user never sees it at the old place first.
+        """
+        move = getattr(self.view, "move_to", None)
+        if callable(move):
+            try:
+                move(position[0], position[1])
+            except Exception:  # noqa: BLE001
+                pass
+        unhide = getattr(self.view, "unhide", None)
+        if callable(unhide):
+            unhide()
+
+    def _mark_unread(self) -> None:
+        """A reply nobody heard and nobody has read."""
+        self.unread = True
+        self._refresh_orb()
+
+    def _refresh_orb(self) -> None:
+        state = str(self.state)
+        unread = self.unread
+        self._to_orb(lambda: self.orb.set_state(state, unread=unread))
+
+    def _to_orb(self, update: Any) -> None:
+        if self.orb is None:
+            return
+        self._to_view(update)
 
     # --- the hold ------------------------------------------------------------
 
@@ -476,7 +674,13 @@ class BubbleController:
         self._refresh_status()
         # After the text is on screen, never instead of it.
         if not getattr(reply, "failed", False):
-            self._speak(reply_text)
+            spoken = self._speak(reply_text)
+            # Collapsed and unspoken means the reply exists and nobody has
+            # encountered it. A failure is left alone deliberately: the orb is
+            # already red for that, and amber would replace the louder signal
+            # with a quieter one.
+            if self.collapsed and not spoken and reply_text:
+                self._mark_unread()
         return reply_text
 
     # --- status --------------------------------------------------------------
@@ -491,6 +695,17 @@ class BubbleController:
         else:
             speech = "speech not ready"
         parts = [model, speech]
+        # Which orb painter is running, so a machine quietly on the flat-disc
+        # fallback is visible rather than merely worse-looking.
+        painter = ""
+        describe = getattr(self.orb, "painter_description", None)
+        if callable(describe):
+            try:
+                painter = str(describe() or "")
+            except Exception:  # noqa: BLE001
+                painter = ""
+        if painter:
+            parts.append(painter)
         if self.last_error:
             parts.append(self.last_error)
         return "  |  ".join(parts)
@@ -520,6 +735,7 @@ class BubbleController:
         self.state = state
         label = STATE_LABELS[state]
         self._to_view(lambda: self.view.set_state(str(state), label))
+        self._refresh_orb()
 
     # --- the level meter -----------------------------------------------------
 
@@ -542,9 +758,18 @@ class BubbleController:
         return (0.0,) * (METER_BARS - len(values)) + values
 
     def refresh_meter(self) -> None:
-        """Push the meter to the view. Called from the view's own thread."""
-        levels = self.meter_levels() if self.state is BubbleState.RECORDING else ()
+        """Push the meter to the view. Called from the view's own thread.
+
+        The orb gets the same numbers: the newest level, which is what makes the
+        ring thicken while the key is held. note_level() cannot do this itself
+        because it runs on the capture thread and tkinter may only be touched
+        from its own.
+        """
+        recording = self.state is BubbleState.RECORDING
+        levels = self.meter_levels() if recording else ()
         self._to_view(lambda: self.view.set_levels(levels))
+        level = levels[-1] if recording and levels else 0.0
+        self._to_orb(lambda: self.orb.set_level(level))
 
     # --- speech --------------------------------------------------------------
 
@@ -572,32 +797,37 @@ class BubbleController:
             self._refresh_status()
         return True
 
-    def _speak(self, text: str) -> None:
+    def _speak(self, text: str) -> bool:
         """Say the reply. The text is already on screen before this runs.
 
-        A failure here changes the status line and nothing else: the reply
-        arrived and is readable, so losing the audio is not losing the answer.
+        Returns whether it was actually spoken, which is what decides the orb's
+        unread ring while collapsed. A failure here changes the status line and
+        nothing else: the reply arrived and is readable, so losing the audio is
+        not losing the answer.
         """
         if not text or not self.speak_replies or self.speaker is None:
-            return
+            return False
+        spoken = True
         self._enter(BubbleState.SPEAKING)
         self._refresh_status()
         try:
             result = self.speaker.speak(text)
         except Exception as exc:  # noqa: BLE001 - the text already arrived
             self.last_error = f"Could not speak the reply ({type(exc).__name__})."
+            spoken = False
         else:
             # The engine reports rather than raises; "fallback" means it printed
             # instead of speaking, which is worth saying once.
             status = str(getattr(result, "status", "") or "")
-            self.last_error = (
-                "The reply was not spoken: no working speech engine."
-                if status == "fallback"
-                else ""
-            )
+            if status == "fallback":
+                self.last_error = "The reply was not spoken: no working speech engine."
+                spoken = False
+            else:
+                self.last_error = ""
         if self.state is BubbleState.SPEAKING:
             self._enter(BubbleState.IDLE)
         self._refresh_status()
+        return spoken
 
     def _current_model(self) -> str:
         transcriber = getattr(self.bridge, "transcriber", None)
@@ -612,6 +842,7 @@ class BubbleController:
 
 __all__ = [
     "DEFAULT_HOLD_KEY",
+    "DEFAULT_ORB_POSITION",
     "DEFAULT_POSITION",
     "METER_BARS",
     "METER_CEILING_RMS",
@@ -622,6 +853,9 @@ __all__ = [
     "BubbleController",
     "BubbleState",
     "BubbleView",
+    "OrbSurface",
+    "load_collapsed",
+    "load_orb_position",
     "load_position",
     "position_file",
     "save_position",

@@ -14,15 +14,96 @@ uv run grandpa bubble
 It blocks this terminal until you close it. Open a second terminal if you want
 one.
 
-## A. Appearing
+## Do this step first: O1
+
+**O1 is the one step to do before any other.** It takes one glance and it
+decides what everything else you are looking at means.
+
+`grandpa bubble` now opens as a floating orb, and the orb is drawn by one of two
+mechanisms. The real one composites per-pixel alpha through Win32 and gives a
+glowing ring with no edge. If that is refused -- a remote desktop session, a
+software renderer, a driver that declines layered windows -- it falls back to the
+same ring on a flat dark disc, which always works and looks worse. Every other
+judgement about how the orb looks depends on which one you have, so establish
+that first rather than reporting a flat disc as ugly glow.
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| 1 | Run `grandpa bubble` | A small dark window near the top-left. **No title bar**, no minimise or close buttons. |
+| O1 | Run `grandpa bubble`, look at the orb, then double-tap it and read the status line | A **glowing ring with no visible edge or box**, and the status line contains **`orb: glow`**. If you see a **dark circle** with a hard edge, the status line will say **`orb: flat disc (...)`** — copy that whole bracket to me and treat every later "how does it look" step as describing the fallback. |
+
+### What it should look like, measured
+
+So you can tell "soft on purpose" from "wrong":
+
+- The glow fades to **nothing** before the window's edge. All four corners of
+  the orb's square are the desktop exactly — read off the screen, not asserted:
+  with the per-pixel path the corners match the backdrop pixel for pixel, where
+  the chroma-key approach the survey rejected left 62.4% of the window as a
+  solid magenta disc.
+- **It will be slightly soft, and that is known.** This display runs at 125%
+  scaling and the process is DPI-unaware, so Windows stretches the orb's 96
+  pixels to 120 as a bitmap. The ring is therefore blurrier than the image it
+  was drawn from. Fixing that means declaring DPI awareness for the whole
+  process, which changes the panel's size and every font in it — a separate
+  decision, not done here. Report it if it bothers you; do not report it as a
+  bug in the glow.
+
+
+## O. The orb
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| O2 | Run `grandpa bubble` on a clean machine (no remembered state) | **Only the orb** appears — no panel. It is voice-only until you ask for more. |
+| O3 | Watch the orb while the model loads | A grey ring with a **travelling arc**. It must not look ready. |
+| O4 | Wait for loading to finish | The ring settles to a **still blue**. It should **stop moving entirely** — no breathing, no pulse. If it keeps animating while idle, say so: a window that animates forever for no reason is the thing the tick was built to avoid. |
+| O5 | Click another window, then look at the orb | It **stays on top** and the other window **keeps the caret**. Type something into that window to be sure. |
+| O6 | Hold CTRL+WIN and talk | The ring turns **brighter and thicker as you talk**, and thins when you stop. This is the only way to tell "it is hearing me" with no panel open. |
+| O7 | Release the key | The ring goes **violet with a travelling arc** while it transcribes and thinks, then **green** while it speaks the reply, then back to still blue. |
+| O8 | Ask something that fails (unplug the microphone, or hold the key for half a second and release) | The ring turns **red** and stays red until the next thing happens. |
+
+### Drag and double-tap — the part most likely to annoy you
+
+These share one mouse button, so they are worth a minute each.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| O9 | Drag the orb across the screen | It follows the cursor. The panel **must not open** — a drag never toggles. |
+| O10 | Drag the orb a long way, let go, then immediately tap once | Nothing opens. A drag then a tap is not a double-tap. |
+| O11 | Double-tap the orb | The panel opens **beside the orb**. |
+| O12 | Double-tap again | The panel goes away. The orb stays. |
+| O13 | Try to double-tap **slowly** — about a second between taps | Nothing happens. The threshold is Windows' own double-click time, read from your settings rather than hardcoded, so if this feels wrong for you it is worth saying: someone with a tremor may have raised it deliberately. |
+| O14 | Drag the orb to the **far right edge**, then double-tap | The panel opens to the orb's **left**, fully on screen. Repeat at the bottom edge: it should open **upward**. Nothing should hang off the screen or sit under the taskbar. |
+| O15 | Tap once anywhere on the orb's **transparent corner** — the empty-looking square area outside the ring | The tap is **swallowed**: the window behind does not get it. This is known and accepted for now. **Tell me how much it bothers you in practice** — about two thirds of the orb's square looks like bare desktop and still takes a click. Making the corners click-through is a second Win32 mechanism and its own decision. |
+
+### Collapsed is voice-only, and the panel remembers
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| O16 | With the panel open, ask something. Double-tap to collapse. Double-tap to open it again | The **same question and reply are still there**. Collapsing hides the panel, it does not throw the conversation away — speech is not reviewable, so this is the only place to read a reply afterwards. |
+| O17 | Collapse the orb, drag it somewhere new, press Esc to close, run `grandpa bubble` again | It reopens **collapsed, where you left the orb**. |
+| O18 | Open the panel, close with Esc, run `grandpa bubble` again | It reopens **with the panel open**. Which state it was in is remembered. |
+
+### The unread ring
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| O19 | Open the panel, click **"speech on"** so it reads **"speech off"**, collapse to the orb | Just the orb, still blue. |
+| O20 | Hold CTRL+WIN, ask a question, and wait | The ring turns **amber** and keeps a slow pulse. Nothing was spoken and nothing is on screen, so the amber is the only sign a reply arrived. |
+| O21 | Leave it amber and go and do something else for several minutes | It is **still amber**. It must never time out — a notification that clears itself is one you can miss entirely. |
+| O22 | Double-tap to open the panel | The reply is there and the ring goes back to **blue**. It has been read. |
+| O23 | Turn speech back on, collapse, and ask something | **No amber ring.** You heard it, so there is nothing unread. |
+| O24 | Collapse, ask something that fails | The ring is **red**, not amber. Red says more than "unread" does, so it is not replaced. |
+
+
+## A. The panel — appearing
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| 1 | Double-tap the orb | A small dark window beside it. **No title bar**, no minimise or close buttons. |
 | 2 | Read the top-right of the header | Two chips: **"hold CTRL+WIN"** and **"speech on"**. If the key chip names anything else, say so — it read "hold SPACE" for a whole release once. |
-| 3 | Look at the state line immediately | A grey dot and **"Loading model..."** — not "Ready". |
+| 3 | Look at the state line immediately (double-tap the orb as soon as it appears) | A grey dot and **"Loading model..."** — not "Ready". |
 | 4 | Watch the window while it loads | It must stay **responsive**: the meter strip is visible and you can drag the window. It used to freeze solid for the whole load. |
-| 5 | Wait | Dot turns green, reads **"Ready"**. Status line shows the model name and `speech ready`. About 7s for `base.en`. |
+| 5 | Wait | Dot turns green, reads **"Ready"**. Status line shows the model name, `speech ready`, and which orb painter is live. About 7s for `base.en`. |
 | 6 | Click another window so the bubble is behind it | The bubble **stays on top**. |
 
 If step 3 ever shows "Ready" before step 5, stop and tell me — that is the bug
@@ -126,8 +207,9 @@ The reply text must never be missing because speech failed. If you ever see
 | # | Do this | Expect |
 | --- | --- | --- |
 | 28 | Click the box, type `what is my voice status`, press Enter | Box clears, "Thinking...", reply appears. Same answer as `grandpa ask`. |
-| 29 | Drag the bubble by its top strip to another corner. Press Esc. Run `grandpa bubble` again | It reopens **where you left it**. |
-| 30 | Press Esc, or Ctrl+C in the terminal | The window closes and the terminal returns to a prompt. |
+| 29 | Drag the panel by its top strip to another corner, collapse, and expand again | The panel comes back **beside the orb**, not where you dragged it. The orb is the thing you place; the panel follows it. Say so if that is the wrong way round for you. |
+| 30 | Press Esc with the panel open, or Ctrl+C in the terminal | Both windows close and the terminal returns to a prompt. |
+| 31 | Collapse to the orb, click the orb once, press Esc | It closes. Esc needs one of the windows to have been clicked first, because neither ever takes focus on its own. Ctrl+C in the terminal always works. |
 
 ## If something is wrong
 
@@ -138,6 +220,9 @@ Both of these mean the pipeline, not the window:
   not, it is the bubble.
 - **Replies are the wrong words** → that is recognition, not the UI. Measure it
   with `grandpa voice accuracy-test` and compare `--model small.en`.
+
+- **The orb is a flat dark circle** → that is the fallback, not a bug in the
+  look. O1 tells you, and the status line says why in brackets.
 
 Tell me the step number and what you saw instead. "Step 19, bars never moved
 while I was talking" is enough to act on.

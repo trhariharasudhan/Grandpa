@@ -25,18 +25,27 @@ from grandpa.voice.push_to_talk import describe_hold_key
 #: ``--help`` is the first place a user looks for the key.
 _HELP = f"""Show the floating assistant. Blocks this terminal until you close it.
 
-A borderless always-on-top window with a held-key microphone, a live level
-meter, a text box and a status line. Hold {describe_hold_key(DEFAULT_HOLD_KEY)}
-anywhere to talk -- the key is read globally, so the bubble never needs focus and
-never takes it. Esc closes it, as does Ctrl+C here.
+It opens as a floating orb: a glowing ring that shows what the assistant is
+doing and nothing else. Double-tap the orb for the panel -- a held-key
+microphone, a live level meter, a text box and a status line -- and double-tap
+again to put it away. Drag the orb to move it; a drag never toggles the panel.
+Which state it was in is remembered, so it opens the way you left it.
 
-While the key is held the meter shows what the microphone is picking up, so
-"it is not hearing me" is distinguishable from "it heard me and got the words
-wrong". Replies appear as text and are also read aloud; --no-speak starts muted,
+Hold {describe_hold_key(DEFAULT_HOLD_KEY)} anywhere to talk -- the key is read
+globally, so neither window needs focus and neither takes it, and the orb alone
+is enough to hold a conversation. Esc closes it once either window has been
+clicked, as does Ctrl+C here.
+
+While the key is held the orb's ring thickens with the microphone level and
+the panel's meter shows the last three seconds of it, so "it is not hearing me"
+is distinguishable from "it heard me and got the words wrong". Replies appear as text and are also read aloud; --no-speak starts muted,
 the header toggles it while running, and holding the key cuts a reply off.
 
 The model is loaded before the bubble reports itself ready; while it loads the
 status says so and a hold is refused rather than recorded into nothing.
+
+With speech off, a reply that arrives while the panel is away leaves an amber
+ring on the orb until you open it. It never times out.
 """
 
 
@@ -63,7 +72,8 @@ status says so and a hold is refused rather than recorded into nothing.
     "--position",
     default=None,
     metavar="X,Y",
-    help="Where to put the bubble. Overrides the remembered position.",
+    help="Where to put the orb. Overrides the remembered position; the panel "
+    "opens beside it.",
 )
 def bubble(
     key: str | None,
@@ -80,7 +90,8 @@ def bubble(
 
     from grandpa.ui.bridge import InProcessBridge
     from grandpa.ui.bubble import BubbleController
-    from grandpa.ui.tk_view import TkBubbleView
+    from grandpa.ui.orb_view import OrbView, anchor_panel_to_orb
+    from grandpa.ui.tk_view import HEIGHT, WIDTH, TkBubbleView
     from grandpa.voice.accuracy import quiet_model_downloads
     from grandpa.voice.config import load_voice_assistant_config
     from grandpa.voice.microphone import MicrophoneCapture
@@ -121,9 +132,15 @@ def bubble(
     # --model has to reach the transcriber, not only the microphone.
     bridge = InProcessBridge(model=model)
     view = TkBubbleView()
+    # The orb is a Toplevel of the panel's window, which is the measured
+    # difference between appearing quietly and taking the foreground -- so its
+    # master is a callable: the panel has no window yet.
+    orb = OrbView(master=lambda: view.root)
     controller = BubbleController(
         view=view,
         bridge=bridge,
+        orb=orb,
+        anchor=lambda orb_at: anchor_panel_to_orb(orb_at, (WIDTH, HEIGHT)),
         probe=WindowsKeyProbe(),
         capture=None,  # set below, once the controller exists to receive levels
         key=hold_key,
@@ -167,13 +184,27 @@ def bubble(
     )
     view.on_close = lambda: (controller.stop(), None)[1]
 
+    # Double-tap toggles; a drag only moves. Both reach the controller, which
+    # owns which state the window is in and remembers it.
+    orb.on_toggle = controller.toggle_collapsed
+    orb.on_move = lambda x, y: setattr(controller, "orb_position", (x, y))
+    orb.on_close = view.on_close
+
     start_at = _parse_position(position)
     controller.start()
     if start_at is not None:
-        controller.position = start_at
-        view.show(position=start_at, topmost=True)
+        # Moved, not re-shown. Calling show() again built a second root window
+        # and left the first one behind.
+        controller.orb_position = start_at
+        orb.move_to(*start_at)
+        if not controller.collapsed:
+            controller.position = anchor_panel_to_orb(start_at, (WIDTH, HEIGHT))
+            view.move_to(*controller.position)
 
-    click.echo("Bubble open. Hold the key to talk; Esc or Ctrl+C to close.")
+    click.echo(
+        "Orb open. Hold the key to talk; double-tap the orb for the panel; "
+        "Esc or Ctrl+C to close."
+    )
 
     view.set_speech_enabled(controller.speak_replies)
 

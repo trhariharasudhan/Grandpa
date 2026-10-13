@@ -1,0 +1,551 @@
+"""The orb's window: it owns the rectangle and the mouse, not the pixels.
+
+tk cannot paint a glow -- measured in the survey -- so this holds a borderless
+always-on-top window and hands its handle to a painter. What tk still does well
+is windows and events, which is all that is asked of it here.
+
+Two measurements shaped this file rather than reasoning about it:
+
+* **The orb is a Toplevel of the panel's root, not a second ``Tk()``.** Creating
+  a root window *does* take the foreground -- measured: the foreground window
+  became the new window's own handle -- while creating a ``Toplevel`` does not.
+  So the orb adds no new focus theft to the one the panel already performs at
+  startup, and both windows are built once at startup rather than per toggle.
+* **The panel's root can be withdrawn while this stays up**, and this window's
+  ``after`` tick keeps firing with the root withdrawn. That is what makes
+  collapsed mode possible without destroying and rebuilding the panel, which
+  would lose the last exchange and take the foreground again.
+
+Everything the panel promised holds here too. Nothing in this file calls
+``focus_force``, ``focus_set``, ``grab_set``, ``lift`` or ``tkraise``, and the
+label is out of the tab order: the orb floats over whatever is being worked in
+and must never take the caret.
+
+The animation tick **cancels** rather than re-arms. That is the opposite of the
+panel's ``pump`` and it is deliberate: the survey measured a 20fps pulse at 0.6%
+of a core, which is nothing for a moment and absurd forever for a thing nobody
+is looking at. A still orb is blitted once and composited by Windows with no
+further work from this process.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from grandpa.ui.orb_image import ORB_SIZE, is_animated, orb_image, orb_on_disc
+
+#: Frames in one pulse cycle. A cycle is a whole number of frames so the loop
+#: closes; the cosine in ``orb_image`` is what makes it seamless.
+PULSE_FRAMES = 24
+
+#: How often the cycle advances while animating. 20fps measured at 0.6% of one
+#: core, against 0.28ms to blit a frame.
+TICK_MS = 50
+
+#: Fallbacks for the Windows metrics, used only when they cannot be read. The
+#: real values come from the system because they are the user's own
+#: accessibility settings -- someone with a tremor may have raised them.
+DEFAULT_DOUBLE_CLICK_MS = 500
+DEFAULT_DRAG_SLOP = 4
+
+#: SM_CXDRAG / SM_CYDRAG: how far the mouse may move before Windows itself
+#: calls it a drag rather than a click.
+SM_CXDRAG = 68
+SM_CYDRAG = 69
+
+#: What shows if every painter fails outright. Matches the panel.
+ORB_WINDOW_BACKGROUND = "#17181b"
+
+
+def system_input_thresholds(user32: Any = None) -> tuple[int, int]:
+    """``(double_click_ms, drag_slop_px)`` from Windows, or the defaults."""
+    try:
+        if user32 is None:
+            import ctypes
+
+            user32 = ctypes.windll.user32
+        double_click = int(user32.GetDoubleClickTime())
+        slop = max(
+            int(user32.GetSystemMetrics(SM_CXDRAG)),
+            int(user32.GetSystemMetrics(SM_CYDRAG)),
+        )
+        return (
+            double_click if double_click > 0 else DEFAULT_DOUBLE_CLICK_MS,
+            slop if slop > 0 else DEFAULT_DRAG_SLOP,
+        )
+    except Exception:  # noqa: BLE001 - not Windows, or no user32
+        return DEFAULT_DOUBLE_CLICK_MS, DEFAULT_DRAG_SLOP
+
+
+#: SPI_GETWORKAREA: the screen minus the taskbar. The panel is placed against
+#: this, not against the full screen, or it opens under the taskbar.
+SPI_GETWORKAREA = 0x0030
+
+#: Gap between the orb and the panel when the panel opens beside it.
+ANCHOR_GAP = 12
+
+#: Used only when the work area cannot be read. 1920x1080 is this machine's.
+DEFAULT_WORK_AREA = (0, 0, 1920, 1080)
+
+
+def work_area(user32: Any = None) -> tuple[int, int, int, int]:
+    """``(left, top, right, bottom)`` of the usable desktop."""
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+
+        if user32 is None:
+            user32 = ctypes.windll.user32
+        rect = wt.RECT()
+        ok = user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
+        if not ok:
+            return DEFAULT_WORK_AREA
+        return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
+    except Exception:  # noqa: BLE001 - not Windows
+        return DEFAULT_WORK_AREA
+
+
+def anchor_panel_to_orb(
+    orb_position: tuple[int, int],
+    panel_size: tuple[int, int],
+    *,
+    orb_size: int = ORB_SIZE,
+    area: tuple[int, int, int, int] | None = None,
+    gap: int = ANCHOR_GAP,
+) -> tuple[int, int]:
+    """Where the panel goes when it expands beside the orb.
+
+    A pure function of four rectangles, so the placement can be asserted at
+    every corner without a screen. Preference is right of the orb and
+    top-aligned with it; each axis **flips** to the other side of the orb if the
+    preferred side would leave the work area, and only clamps if neither side
+    fits -- which, measured at 1920x1080, never happens.
+    """
+    left, top, right, bottom = area if area is not None else work_area()
+    width, height = int(panel_size[0]), int(panel_size[1])
+    orb_x, orb_y = int(orb_position[0]), int(orb_position[1])
+
+    x = orb_x + orb_size + gap
+    if x + width > right:
+        x = orb_x - gap - width  # flip to the orb's left
+    x = max(left, min(x, right - width))
+
+    y = orb_y
+    if y + height > bottom:
+        y = orb_y + orb_size - height  # flip to hang upward from the orb
+    y = max(top, min(y, bottom - height))
+    return int(x), int(y)
+
+
+@dataclass
+class TapTracker:
+    """Tells a tap from a drag, and a double-tap from two separate taps.
+
+    The rule, and why each half of it:
+
+    * a press that never moves beyond the drag slop is a **tap**; one that does
+      is a **drag**, and the orb has already moved by then.
+    * the *maximum* distance from the press point is what counts, not the final
+      one. Moving six pixels and coming back is still a drag -- it moved the orb,
+      and a gesture that moved the orb must never also toggle the panel.
+    * a drag discards any pending first tap, so drag-then-tap is not a double.
+    """
+
+    double_click_ms: int = DEFAULT_DOUBLE_CLICK_MS
+    drag_slop: int = DEFAULT_DRAG_SLOP
+    clock: Any = None
+
+    _press: tuple[int, int] | None = field(default=None, init=False)
+    _max_distance: float = field(default=0.0, init=False)
+    #: None, not 0.0: a monotonic clock that happens to start at zero would
+    #: make the first tap look like no tap at all, and the second tap then
+    #: starts the pair instead of completing it. Real time.monotonic() is
+    #: never 0, which is exactly why this would have survived to a test with
+    #: an injected clock and no further.
+    _last_tap_at: float | None = field(default=None, init=False)
+    dragging: bool = field(default=False, init=False)
+
+    def _now(self) -> float:
+        if self.clock is not None:
+            return float(self.clock())
+        import time
+
+        return time.monotonic()
+
+    def press(self, x: int, y: int) -> None:
+        self._press = (int(x), int(y))
+        self._max_distance = 0.0
+        self.dragging = False
+
+    def motion(self, x: int, y: int) -> bool:
+        """True once this has become a drag."""
+        if self._press is None:
+            return False
+        dx = int(x) - self._press[0]
+        dy = int(y) - self._press[1]
+        self._max_distance = max(self._max_distance, max(abs(dx), abs(dy)))
+        if self._max_distance > self.drag_slop:
+            self.dragging = True
+        return self.dragging
+
+    def release(self) -> str:
+        """``"drag"``, ``"tap"`` or ``"double"``."""
+        was_dragging = self.dragging
+        self._press = None
+        self.dragging = False
+        if was_dragging:
+            self._last_tap_at = None
+            return "drag"
+        now = self._now()
+        if (
+            self._last_tap_at is not None
+            and (now - self._last_tap_at) * 1000.0 <= self.double_click_ms
+        ):
+            self._last_tap_at = None
+            return "double"
+        self._last_tap_at = now
+        return "tap"
+
+
+@dataclass
+class OrbView:
+    """A borderless always-on-top window showing the orb.
+
+    ``tkinter_module`` is the injection point, as in the panel: tests pass a
+    recorder and nothing opens. ``master`` is the panel's root -- given one,
+    this is a ``Toplevel`` of it, which is what keeps it from taking the
+    foreground when it appears.
+    """
+
+    tkinter_module: Any = None
+    #: The panel's root, or a callable returning it. A callable because the
+    #: panel's window does not exist until it is shown, and the orb is built
+    #: before that so the controller can hold both.
+    master: Any = None
+    size: int = ORB_SIZE
+    #: Called with no arguments when the orb is double-tapped.
+    on_toggle: Any = None
+    #: Called with ``(x, y)`` as the orb is dragged.
+    on_move: Any = None
+    #: Called when Escape is pressed with the orb focused -- the same way the
+    #: panel closes. It only arrives if the orb was clicked first, because the
+    #: window never takes focus on its own.
+    on_close: Any = None
+    #: Builds the painter for this view. Injected so a test can supply one that
+    #: refuses, and watch the fallback engage.
+    painter_factory: Any = None
+    #: Reads the input thresholds. Injected for the same reason.
+    thresholds: Any = None
+
+    root: Any = field(default=None, init=False)
+    painter: Any = field(default=None, init=False)
+    tracker: Any = field(default=None, init=False)
+    orb_position: tuple[int, int] = field(default=(40, 40), init=False)
+    state: str = field(default="loading", init=False)
+    unread: bool = field(default=False, init=False)
+    level: float = field(default=0.0, init=False)
+    #: Images the fallback produced, newest last. Carried so a test can prove
+    #: the fallback yields a usable orb rather than merely not raising.
+    shown_images: list[Any] = field(default_factory=list, init=False)
+
+    _label: Any = field(default=None, init=False)
+    _photo: Any = field(default=None, init=False)
+    _frame_index: int = field(default=0, init=False)
+    _tick_id: Any = field(default=None, init=False)
+    _grab_offset: tuple[int, int] = field(default=(0, 0), init=False)
+
+    def _tk(self) -> Any:
+        if self.tkinter_module is None:
+            import tkinter
+
+            self.tkinter_module = tkinter
+        return self.tkinter_module
+
+    # --- lifecycle -----------------------------------------------------------
+
+    def show(self, *, position: tuple[int, int], topmost: bool = True) -> None:
+        tk = self._tk()
+        master = self.master() if callable(self.master) else self.master
+        # A Toplevel when there is a panel to hang off, which is the measured
+        # difference between appearing quietly and taking the foreground.
+        root = tk.Toplevel(master=master) if master is not None else tk.Tk()
+        self.root = root
+        self.orb_position = (int(position[0]), int(position[1]))
+        root.overrideredirect(True)
+        if topmost:
+            root.attributes("-topmost", True)
+        root.geometry(
+            f"{self.size}x{self.size}+{self.orb_position[0]}+{self.orb_position[1]}"
+        )
+        root.configure(bg=ORB_WINDOW_BACKGROUND)
+
+        # The fallback painter needs somewhere to put an image; the layered
+        # painter replaces the whole window surface and ignores this.
+        self._label = tk.Label(
+            root, bd=0, highlightthickness=0, bg=ORB_WINDOW_BACKGROUND,
+            takefocus=False,
+        )
+        self._label.pack(fill="both", expand=True)
+
+        double_click_ms, slop = (
+            self.thresholds() if callable(self.thresholds) else system_input_thresholds()
+        )
+        self.tracker = TapTracker(double_click_ms=double_click_ms, drag_slop=slop)
+
+        # Realise the window before anything asks for its handle, so the one
+        # that gets the layered style is the one that will be on screen.
+        try:
+            root.update_idletasks()
+        except Exception:  # noqa: BLE001 - a recorder has no event loop
+            pass
+
+        for widget in (root, self._label):
+            widget.bind("<ButtonPress-1>", self._on_press)
+            widget.bind("<B1-Motion>", self._on_motion)
+            widget.bind("<ButtonRelease-1>", self._on_release)
+        root.bind("<Escape>", self._on_escape)
+
+        self.painter = self._build_painter()
+        self.redraw()
+
+    def _build_painter(self) -> Any:
+        """The painter, with its fallback already in hand -- not after it fails."""
+        from grandpa.ui.layered import DiscPainter, LayeredPainter, PainterChoice
+
+        if callable(self.painter_factory):
+            return self.painter_factory(self)
+
+        # The handle is passed as a callable, not a number: tk re-creates a
+        # borderless toplevel's window when it maps it, and a handle captured
+        # here is stale before the first frame -- while the blit to it still
+        # reports success. Measured, not guessed.
+        layered = LayeredPainter(hwnd=self.window_handle)
+        return PainterChoice(primary=layered, fallback=DiscPainter(show=self.show_image))
+
+    def window_handle(self) -> int:
+        """The toplevel handle. ``winfo_id`` gives tk's child window."""
+        try:
+            import ctypes
+
+            child = self.root.winfo_id()
+            user32 = ctypes.windll.user32
+            user32.GetParent.argtypes = [ctypes.c_void_p]
+            user32.GetParent.restype = ctypes.c_void_p
+            return int(user32.GetParent(child) or child)
+        except Exception:  # noqa: BLE001 - not Windows
+            try:
+                return int(self.root.winfo_id())
+            except Exception:  # noqa: BLE001
+                return 0
+
+    def show_image(self, image: Any, x: int, y: int) -> None:
+        """The fallback's output: an ordinary tk image in a Label.
+
+        Kept public and recorded in ``shown_images`` because this is the
+        fallback's only visible effect, and a fallback whose output nobody can
+        inspect is indistinguishable from one that silently shows nothing.
+        """
+        self.shown_images.append(image)
+        self.move_window(int(x), int(y))
+        photo = self._photo_for(image)
+        if photo is None:
+            return
+        self._photo = photo  # held, or tk discards it
+        if self._label is not None:
+            self._label.configure(image=photo)
+
+    def _photo_for(self, image: Any) -> Any:
+        """An image tk will display. PIL's own bridge if it is there."""
+        try:
+            from PIL import ImageTk
+
+            return ImageTk.PhotoImage(image.convert("RGB"), master=self.root)
+        except Exception:  # noqa: BLE001 - no ImageTk, or no display
+            return self._photo_by_rows(image)
+
+    def _photo_by_rows(self, image: Any) -> Any:
+        """The ImageTk-free path: build the bitmap a row at a time."""
+        try:
+            tk = self._tk()
+            flat = image.convert("RGB")
+            width, height = flat.size
+            pixels = flat.load()
+            photo = tk.PhotoImage(master=self.root, width=width, height=height)
+            for y in range(height):
+                row = " ".join("#%02x%02x%02x" % pixels[x, y] for x in range(width))
+                photo.put("{" + row + "}", to=(0, y))
+            return photo
+        except Exception:  # noqa: BLE001
+            return None
+
+    def close(self) -> None:
+        self.stop_animation()
+        if self.root is not None:
+            try:
+                self.root.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            self.root = None
+
+    # --- drawing -------------------------------------------------------------
+
+    def set_state(self, state: str, *, unread: bool = False) -> None:
+        """What the ring shows. Starts or stops the tick to match."""
+        if str(state) == self.state and bool(unread) == self.unread:
+            self.redraw()
+            return
+        self.state = str(state)
+        self.unread = bool(unread)
+        self._frame_index = 0
+        self.redraw()
+        if is_animated(self.state, unread=self.unread):
+            self.start_animation()
+        else:
+            self.stop_animation()
+
+    def set_level(self, level: float) -> None:
+        """The live microphone level, 0..1 -- the same number the panel's meter
+        consumes, so the orb answers "is it hearing me" with no panel to look at."""
+        self.level = min(1.0, max(0.0, float(level)))
+        if self.state == "recording":
+            self.redraw()
+
+    def _image_for(self, phase: float) -> Any:
+        """The orb for one phase, in the form the active painter can use.
+
+        The fallback needs an opaque disc; the layered painter needs the alpha.
+        Asking the painter which it is keeps that decision in one place.
+        """
+        builder = orb_on_disc if self.painter_mode() == "disc" else orb_image
+        return builder(self.state, phase, self.level, size=self.size, unread=self.unread)
+
+    def redraw(self) -> bool:
+        """Paint the current frame. False if no painter could."""
+        if self.painter is None:
+            return False
+        phase = (self._frame_index % PULSE_FRAMES) / PULSE_FRAMES
+        image = self._image_for(phase)
+        return bool(
+            self.painter.paint(image, self.orb_position[0], self.orb_position[1])
+        )
+
+    def painter_mode(self) -> str:
+        return str(getattr(self.painter, "mode", "none"))
+
+    def painter_description(self) -> str:
+        """What the status line says, so a machine on the fallback is visible."""
+        describe = getattr(self.painter, "describe", None)
+        return describe() if callable(describe) else ""
+
+    # --- the tick, which cancels rather than re-arms -------------------------
+
+    def start_animation(self) -> None:
+        if self.root is None or self._tick_id is not None:
+            return
+        self._schedule()
+
+    def _schedule(self) -> None:
+        try:
+            self._tick_id = self.root.after(TICK_MS, self._tick)
+        except Exception:  # noqa: BLE001 - a closed window has no loop
+            self._tick_id = None
+
+    def _tick(self) -> None:
+        self._tick_id = None
+        self._frame_index = (self._frame_index + 1) % PULSE_FRAMES
+        self.redraw()
+        # Re-armed only while the state still wants it. This is the whole reason
+        # idle costs nothing instead of 0.6% of a core forever.
+        if is_animated(self.state, unread=self.unread):
+            self._schedule()
+
+    def stop_animation(self) -> None:
+        tick_id, self._tick_id = self._tick_id, None
+        if tick_id is None or self.root is None:
+            return
+        try:
+            self.root.after_cancel(tick_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    @property
+    def animating(self) -> bool:
+        return self._tick_id is not None
+
+    # --- the mouse -----------------------------------------------------------
+
+    def _on_press(self, event: Any) -> None:
+        self._grab_offset = (int(getattr(event, "x", 0)), int(getattr(event, "y", 0)))
+        if self.tracker is not None:
+            self.tracker.press(
+                int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0))
+            )
+
+    def _on_motion(self, event: Any) -> None:
+        if self.tracker is None:
+            return
+        if not self.tracker.motion(
+            int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0))
+        ):
+            return
+        self.move_to(
+            int(getattr(event, "x_root", 0)) - self._grab_offset[0],
+            int(getattr(event, "y_root", 0)) - self._grab_offset[1],
+        )
+
+    def _on_release(self, _event: Any = None) -> None:
+        if self.tracker is None:
+            return
+        if self.tracker.release() == "double" and callable(self.on_toggle):
+            try:
+                self.on_toggle()
+            except Exception:  # noqa: BLE001 - a click must not kill the UI
+                pass
+
+    def _on_escape(self, _event: Any = None) -> None:
+        if callable(self.on_close):
+            try:
+                self.on_close()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def move_window(self, x: int, y: int) -> None:
+        """Move the window only. The layered painter moves it as part of the
+        blit, so this is for the fallback, which cannot."""
+        self.orb_position = (int(x), int(y))
+        if self.root is None:
+            return
+        try:
+            self.root.geometry(f"+{self.orb_position[0]}+{self.orb_position[1]}")
+        except Exception:  # noqa: BLE001
+            pass
+
+    def move_to(self, x: int, y: int) -> None:
+        """Move the orb and repaint it there."""
+        self.move_window(x, y)
+        self.redraw()
+        if callable(self.on_move):
+            try:
+                self.on_move(self.orb_position[0], self.orb_position[1])
+            except Exception:  # noqa: BLE001
+                pass
+
+    def position(self) -> tuple[int, int]:
+        return self.orb_position
+
+
+__all__ = [
+    "ANCHOR_GAP",
+    "DEFAULT_DOUBLE_CLICK_MS",
+    "DEFAULT_DRAG_SLOP",
+    "DEFAULT_WORK_AREA",
+    "ORB_WINDOW_BACKGROUND",
+    "PULSE_FRAMES",
+    "TICK_MS",
+    "OrbView",
+    "TapTracker",
+    "anchor_panel_to_orb",
+    "system_input_thresholds",
+    "work_area",
+]
