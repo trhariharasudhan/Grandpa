@@ -89,6 +89,9 @@ ORB_STYLES: dict[str, OrbStyle] = {
     "transcribing": OrbStyle(ring_rgb("transcribing"), 0.75, 0.034, arc=(0.0, 120.0)),
     "thinking": OrbStyle(ring_rgb("thinking"), 0.75, 0.034, arc=(0.0, 120.0)),
     "speaking": OrbStyle(ring_rgb("speaking"), 1.00, 0.042, pulse=0.35),
+    # Still, like idle and error: it is somewhere the orb rests, so it must
+    # cost nothing to sit in.
+    "success": OrbStyle(ring_rgb("success"), 0.70, 0.034),
     "error": OrbStyle(ring_rgb("error"), 0.85, 0.034),
     "unread": OrbStyle(ring_rgb("unread"), 0.95, 0.038, pulse=0.25),
 }

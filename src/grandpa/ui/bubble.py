@@ -38,6 +38,11 @@ class BubbleState(StrEnum):
     TRANSCRIBING = "transcribing"
     THINKING = "thinking"
     SPEAKING = "speaking"
+    #: An operation completed. A resting state, not a flash: it persists until
+    #: the next thing happens, exactly as ERROR does. The symmetry is the
+    #: argument -- a failure you can still see a minute later is useful, and so
+    #: is a success.
+    SUCCESS = "success"
     ERROR = "error"
 
 
@@ -51,8 +56,52 @@ STATE_LABELS: dict[BubbleState, str] = {
     BubbleState.TRANSCRIBING: "Transcribing...",
     BubbleState.THINKING: "Thinking...",
     BubbleState.SPEAKING: "Speaking...",
+    BubbleState.SUCCESS: "Done",
     BubbleState.ERROR: "Error",
 }
+
+
+def done_kinds() -> frozenset[str]:
+    """The action kinds that mean something on this machine actually changed.
+
+    Derived from the action layer's own ``ActionKind`` literal rather than
+    listed here, so a kind added there cannot be silently missed. Three are
+    excluded, and each exclusion is a claim:
+
+    * ``agent_plan`` -- a plan was produced, not performed.
+    * ``blocked`` -- it was refused. Nothing ran.
+    * ``app_lookup`` -- a question was answered. Nothing changed.
+
+    A kind not in ``ActionKind`` at all is not an action: the conversational
+    paths report ``voice``, ``assistant`` and -- for the "who are you" reply --
+    ``local``, which is why the test is membership in this set and never
+    ``kind != "voice"``.
+    """
+    from typing import get_args
+
+    from grandpa.local_action_result import ActionKind
+
+    return frozenset(get_args(ActionKind)) - {"agent_plan", "blocked", "app_lookup"}
+
+
+#: Kinds excluded from :func:`done_kinds`, named so a test can assert each one
+#: is a real ``ActionKind``. A typo here would exclude nothing and go unnoticed.
+NOT_DONE_KINDS = frozenset({"agent_plan", "blocked", "app_lookup"})
+
+
+def completed_an_operation(reply: Any) -> bool:
+    """Whether this reply means an operation finished, rather than arrived.
+
+    Both halves are required. ``status == "handled"`` is the action layer's own
+    word for "performed" -- it is one of a closed set that also contains
+    ``requires_confirmation``, ``blocked``, ``unsupported``, ``no_match``,
+    ``error`` and ``cancelled``, none of which ran anything. And the kind has
+    to be an action, or every chat answer would turn the ring green and green
+    would mean "a reply arrived", which the resting state already means.
+    """
+    status = str(getattr(reply, "status", "") or "")
+    kind = str(getattr(reply, "kind", "") or "")
+    return status == "handled" and kind in done_kinds()
 
 #: The states in which a hold must not start a recording.
 STATES_THAT_REFUSE_A_HOLD = frozenset(
@@ -677,6 +726,11 @@ class BubbleController:
         # After the text is on screen, never instead of it.
         if not getattr(reply, "failed", False):
             spoken = self._speak(reply_text)
+            # After speaking, not before: _speak returns the state to IDLE when
+            # it finishes, which would have thrown the green away.
+            if completed_an_operation(reply):
+                self._enter(BubbleState.SUCCESS)
+                self._refresh_status()
             # Collapsed and unspoken means the reply exists and nobody has
             # encountered it. A failure is left alone deliberately: the orb is
             # already red for that, and amber would replace the louder signal
@@ -844,6 +898,7 @@ class BubbleController:
 
 __all__ = [
     "DEFAULT_HOLD_KEY",
+    "NOT_DONE_KINDS",
     "DEFAULT_ORB_POSITION",
     "DEFAULT_POSITION",
     "METER_BARS",
@@ -856,6 +911,8 @@ __all__ = [
     "BubbleState",
     "BubbleView",
     "OrbSurface",
+    "completed_an_operation",
+    "done_kinds",
     "load_collapsed",
     "load_orb_position",
     "load_position",
