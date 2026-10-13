@@ -31,6 +31,7 @@ from typing import Any
 # moved and the copies of it did not. One direction only -- bubble.py
 # imports no toolkit and nothing from here.
 from grandpa.ui.bubble import DEFAULT_HOLD_KEY, METER_BARS
+from grandpa.ui.palette import RING_COLOURS
 from grandpa.voice.push_to_talk import describe_hold_key, parse_hold_key
 
 #: Calls that would move focus to the bubble. None of them may ever appear.
@@ -98,14 +99,11 @@ KEY_SYMS: dict[str, tuple[str, ...]] = {
 }
 
 #: Colour per state, so the indicator is readable at a glance.
-STATE_COLOURS = {
-    "loading": "#8a8a8a",
-    "idle": "#4caf50",
-    "recording": "#e53935",
-    "transcribing": "#fb8c00",
-    "thinking": "#1e88e5",
-    "error": "#e53935",
-}
+#: The state dot and the meter bars, from the same palette the orb draws
+#: from. These were separate values and they disagreed with the orb about every
+#: state -- idle was green here and blue there, thinking blue here and violet
+#: there. A colour that means two things means nothing.
+STATE_COLOURS = dict(RING_COLOURS)
 
 BACKGROUND = "#17181b"
 SURFACE = "#1f2024"

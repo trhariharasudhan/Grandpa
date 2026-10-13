@@ -24,6 +24,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
+from grandpa.ui.palette import ring_rgb
+
 #: Default orb size in pixels. Small enough to sit on a desktop unremarked,
 #: large enough that the glow has room to fall off inside its own rectangle.
 ORB_SIZE = 96
@@ -73,18 +75,22 @@ class OrbStyle:
 
 
 #: One style per controller state, plus ``unread`` which is an orb-level flag
-#: rather than a controller state. TRANSCRIBING and THINKING share a visual
-#: deliberately: both are indeterminate work and the difference is not
-#: actionable from across a room.
+#: rather than a controller state.
+#:
+#: **The colours are not here.** They come from :mod:`grandpa.ui.palette`, which
+#: the panel reads too -- the orb and the panel's dot used to disagree about
+#: every state, which is how a colour stops meaning anything. What *is* here is
+#: the geometry: glow, ring width, arc and pulse. That split is what lets two
+#: states share a hue and still be told apart, as transcribing and thinking do.
 ORB_STYLES: dict[str, OrbStyle] = {
-    "loading": OrbStyle((120, 126, 140), 0.30, 0.028, arc=(0.0, 90.0)),
-    "idle": OrbStyle((90, 170, 255), 0.55, 0.030, pulse=0.0),
-    "recording": OrbStyle((90, 200, 255), 1.25, 0.052),
-    "transcribing": OrbStyle((150, 140, 255), 0.75, 0.034, arc=(0.0, 120.0)),
-    "thinking": OrbStyle((150, 140, 255), 0.75, 0.034, arc=(0.0, 120.0)),
-    "speaking": OrbStyle((120, 230, 190), 1.00, 0.042, pulse=0.35),
-    "error": OrbStyle((255, 95, 95), 0.85, 0.034),
-    "unread": OrbStyle((255, 190, 90), 0.95, 0.038, pulse=0.25),
+    "loading": OrbStyle(ring_rgb("loading"), 0.30, 0.028, arc=(0.0, 90.0)),
+    "idle": OrbStyle(ring_rgb("idle"), 0.55, 0.030, pulse=0.0),
+    "recording": OrbStyle(ring_rgb("recording"), 1.25, 0.052),
+    "transcribing": OrbStyle(ring_rgb("transcribing"), 0.75, 0.034, arc=(0.0, 120.0)),
+    "thinking": OrbStyle(ring_rgb("thinking"), 0.75, 0.034, arc=(0.0, 120.0)),
+    "speaking": OrbStyle(ring_rgb("speaking"), 1.00, 0.042, pulse=0.35),
+    "error": OrbStyle(ring_rgb("error"), 0.85, 0.034),
+    "unread": OrbStyle(ring_rgb("unread"), 0.95, 0.038, pulse=0.25),
 }
 
 #: States whose look changes over time, so the caller knows when a tick is

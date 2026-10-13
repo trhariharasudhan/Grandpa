@@ -103,7 +103,7 @@ These share one mouse button, so they are worth a minute each.
 | 2 | Read the top-right of the header | Two chips: **"hold CTRL+WIN"** and **"speech on"**. If the key chip names anything else, say so — it read "hold SPACE" for a whole release once. |
 | 3 | Look at the state line immediately (double-tap the orb as soon as it appears) | A grey dot and **"Loading model..."** — not "Ready". |
 | 4 | Watch the window while it loads | It must stay **responsive**: the meter strip is visible and you can drag the window. It used to freeze solid for the whole load. |
-| 5 | Wait | Dot turns green, reads **"Ready"**. Status line shows the model name, `speech ready`, and which orb painter is live. About 7s for `base.en`. |
+| 5 | Wait | Dot turns **neutral white**, reads **"Standby"** — not "Ready". Status line shows the model name, `speech ready`, and which orb painter is live. About 7s for `base.en`. |
 | 6 | Click another window so the bubble is behind it | The bubble **stays on top**. |
 
 If step 3 ever shows "Ready" before step 5, stop and tell me — that is the bug

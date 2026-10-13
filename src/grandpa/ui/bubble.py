@@ -44,7 +44,9 @@ class BubbleState(StrEnum):
 #: What each state says, so the view does not invent wording.
 STATE_LABELS: dict[BubbleState, str] = {
     BubbleState.LOADING: "Loading model...",
-    BubbleState.IDLE: "Ready",
+    # "Standby", not "Ready": green now means an operation completed, and a
+    # neutral-white ring labelled "Ready" would have contradicted it.
+    BubbleState.IDLE: "Standby",
     BubbleState.RECORDING: "Recording",
     BubbleState.TRANSCRIBING: "Transcribing...",
     BubbleState.THINKING: "Thinking...",
