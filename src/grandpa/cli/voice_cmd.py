@@ -540,6 +540,8 @@ def _print_voices() -> None:
               help="How many phrases to score. 0 scores the whole list.")
 @click.option("--json", "as_json", is_flag=True,
               help="Print the report as JSON for comparing runs.")
+@click.option("--history", "show_history", is_flag=True,
+              help="Show what previous runs have accumulated, and stop.")
 @handles_voice_errors
 def accuracy_test(
     key: str,
@@ -549,6 +551,7 @@ def accuracy_test(
     phrases: str | None,
     count: int | None,
     as_json: bool,
+    show_history: bool,
 ) -> None:
     """Read phrases aloud and get a word error rate.
 
@@ -560,7 +563,11 @@ def accuracy_test(
     rather than by speech detection -- a detection failure would otherwise be
     scored as a recognition failure.
     """
-
+    if show_history:
+        # Before anything is built: this reads the history only, so it must not
+        # load a model or touch the microphone.
+        _print_accuracy_history()
+        return
 
     from grandpa.voice.accuracy import (
         CAPTURE_FAILURES,
@@ -759,6 +766,89 @@ def accuracy_test(
     _print_accuracy_report(report, as_json=as_json)
 
 
+def _interval_json(errors: int, words: int) -> dict:
+    """The interval as data, so a scripted comparison is not left to eyeball it."""
+    from grandpa.voice.accuracy_stats import (
+        one_word_is,
+        resolvable_difference,
+        wer_interval,
+    )
+
+    interval = wer_interval(errors, words)
+    return {
+        "low": None if interval.unavailable else round(interval.low, 4),
+        "high": None if interval.unavailable else round(interval.high, 4),
+        "unavailable": interval.unavailable or None,
+        "one_word_moves_wer_by": round(one_word_is(words), 4) if words else None,
+        "resolvable_difference": (
+            round(resolvable_difference(words), 4) if words else None
+        ),
+    }
+
+
+def _print_accuracy_history() -> None:
+    """What previous runs have accumulated, and what that can settle.
+
+    The point of keeping a history: three phrases is 16 reference words and
+    settles nothing, but twenty runs of three phrases is 320 words and settles
+    a difference of about 0.11 -- without ever asking for a longer sitting.
+    """
+    from rich.console import Console
+    from rich.table import Table
+
+    from grandpa.voice.accuracy_stats import (
+        difference_is_meaningful,
+        load_history,
+        models_in,
+        pooled,
+        resolvable_difference,
+        words_needed,
+    )
+
+    console = Console()
+    runs = load_history()
+    if not runs:
+        console.print("[dim]No runs recorded yet.[/dim]")
+        console.print("Run [bold]grandpa voice accuracy-test[/bold] once and it starts.")
+        return
+
+    table = Table(title="Accuracy history")
+    table.add_column("Model")
+    table.add_column("Runs", justify="right")
+    table.add_column("Words", justify="right")
+    table.add_column("Word error rate (95% CI)")
+    table.add_column("Resolves", justify="right")
+    names = models_in(runs)
+    for name in names:
+        mine = [run for run in runs if run.get("model") == name]
+        interval = pooled(runs, name)
+        table.add_row(
+            name,
+            str(len(mine)),
+            str(interval.words),
+            str(interval),
+            f"{resolvable_difference(interval.words):.2f}",
+        )
+    console.print(table)
+
+    for index, first in enumerate(names):
+        for second in names[index + 1 :]:
+            left, right = pooled(runs, first), pooled(runs, second)
+            meaningful, why = difference_is_meaningful(left, right)
+            console.print("")
+            console.print(f"[bold]{first} vs {second}[/bold]")
+            console.print(
+                f"  {'A real difference' if meaningful else 'Inside the noise'}: {why}"
+            )
+
+    console.print("")
+    console.print(
+        f"[dim]To resolve a 0.10 difference you need about "
+        f"{words_needed(0.10)} reference words per model -- about "
+        f"{words_needed(0.10) // 16} more runs of three phrases.[/dim]"
+    )
+
+
 def _print_accuracy_report(report, *, as_json: bool) -> None:
     import json as json_module
 
@@ -777,6 +867,9 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
                     ),
                     "total_errors": report.total_errors,
                     "total_words": report.total_words,
+                    "confidence_95": _interval_json(
+                        report.total_errors, report.total_words
+                    ),
                     "exact_matches": report.exact_matches,
                     "phrases_scored": len(report.scores),
                     "phrases_requested": report.requested,
@@ -842,11 +935,32 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
         click.echo("")
         click.echo("Try --count 1 for a single phrase if this is too long a sit.")
         return
+    from grandpa.voice.accuracy_stats import (
+        difference_is_meaningful,
+        load_history,
+        one_word_is,
+        pooled,
+        resolvable_difference,
+        wer_interval,
+    )
+
+    interval = wer_interval(report.total_errors, report.total_words)
+
     click.echo(f"Model:          {report.model}")
     click.echo(
-        f"Word error rate: {report.corpus_wer:.3f}  "
+        f"Word error rate: {interval}  "
         f"({report.total_errors} errors / {report.total_words} words)"
     )
+    # The two sentences that stop a 16-word number being over-read. One word is
+    # 1/N of the scale, and the interval is far wider than that, so a run has
+    # to differ by about half the scale before the difference means anything.
+    click.echo(
+        f"                 one word error = 1/{report.total_words} = "
+        f"{one_word_is(report.total_words):.3f}; two runs must differ by "
+        f"{resolvable_difference(report.total_words):.2f} to mean anything"
+    )
+    if interval.unavailable:
+        click.echo(f"                 {interval.unavailable}.")
     click.echo(
         f"Exact matches:   {report.exact_matches} of {len(report.scores)} phrases"
     )
@@ -870,9 +984,50 @@ def _print_accuracy_report(report, *, as_json: bool) -> None:
             bold=True,
         )
     click.echo(report.verdict())
+    # Every run is appended, so repeated short runs accumulate into one sample.
+    # Three phrases is 16 words and settles nothing; twenty runs is 320 words
+    # and settles a 0.11 difference. The user still reads three phrases.
+    from grandpa.voice.accuracy_stats import record_run
+
+    record_run(
+        report.model, report.total_errors, report.total_words, len(report.scores)
+    )
+
+    history = load_history()
+    mine = [run for run in history if run.get("model") == report.model]
+    if len(mine) > 1:
+        across = pooled(history, report.model)
+        click.echo("")
+        click.echo(
+            f"Across {len(mine)} runs of {report.model}: {across}"
+        )
+        click.echo(
+            f"                 {across.words} words total, which resolves a "
+            f"difference of {resolvable_difference(across.words):.2f}"
+        )
+
+    others = sorted(
+        {
+            str(run.get("model"))
+            for run in history
+            if run.get("model") and run.get("model") != report.model
+        }
+    )
+    for other in others:
+        theirs = pooled(history, other)
+        mine_pooled = pooled(history, report.model)
+        meaningful, why = difference_is_meaningful(mine_pooled, theirs)
+        click.echo("")
+        click.echo(f"vs {other}: {theirs}")
+        click.secho(
+            f"  {'A real difference' if meaningful else 'Inside the noise'} -- {why}",
+            fg="green" if meaningful else "yellow",
+        )
+
     click.echo("")
-    click.echo("Compare runs with --json. The word error rate is the number to")
-    click.echo("quote; it is only comparable against the same phrase list.")
+    click.echo("Run it again to grow the sample -- every run is added to the")
+    click.echo("history, so three phrases at a time still converges. --json to")
+    click.echo("compare, --history to see what has accumulated.")
 
 
 @voice.command("push-to-talk")

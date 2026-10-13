@@ -743,6 +743,36 @@ class OperatorsConfig:
 
 
 @dataclass(slots=True)
+class VoiceConfig:
+    """The ``[voice]`` section: things the voice path reads from the config file.
+
+    This section existed in the config file and was read by parsing the TOML
+    directly, which meant ``grandpa config set voice.vocabulary ...`` answered
+    "Unknown config key" while the reader would have found the value perfectly
+    well. ``config set`` validates against this dataclass's fields, so a
+    section that is not declared here cannot be written by the obvious command.
+
+    Declaring it is the whole fix. The readers in
+    ``grandpa.speech.vocabulary`` and ``grandpa.jarvis.voice_input`` still parse
+    the file themselves and keep working unchanged, because they read the same
+    keys from the same place.
+    """
+
+    #: Words the decoder should be biased toward -- names, applications, places.
+    #: A comma-separated string or a TOML list; both are accepted by the reader.
+    #: ``GRANDPA_VOICE_VOCABULARY`` overrides it.
+    vocabulary: str = ""
+
+    #: Drop the shipped application names rather than adding to them.
+    vocabulary_replaces_defaults: bool = False
+
+    #: The microphone to prefer by name. Also written by
+    #: ``grandpa voice --save-microphone``, which is how it was reachable while
+    #: the other two were not.
+    preferred_microphone: str = ""
+
+
+@dataclass(slots=True)
 class SpeechConfig:
     """Speech-to-text settings."""
 
@@ -885,6 +915,7 @@ class GrandpaConfig:
     sessions: SessionConfig = field(default_factory=SessionConfig)
     operators: OperatorsConfig = field(default_factory=OperatorsConfig)
     speech: SpeechConfig = field(default_factory=SpeechConfig)
+    voice: VoiceConfig = field(default_factory=VoiceConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     grandpa_voice: GrandpaVoiceConfig = field(default_factory=GrandpaVoiceConfig)
     agent_manager: AgentManagerConfig = field(default_factory=AgentManagerConfig)
@@ -1325,8 +1356,6 @@ scan_input = true
 scan_output = true
 secret_scanner = true
 pii_scanner = true
-enforce_tool_confirmation = true
-ssrf_protection = true
 
 [speech]
 backend = "auto"

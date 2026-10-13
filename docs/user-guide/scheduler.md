@@ -221,6 +221,9 @@ Scheduler settings live in the `[scheduler]` section of `~/.grandpa/config.toml`
 enabled = false
 db_path = "~/.grandpa/scheduler.db"
 poll_interval = 60
+
+# The agent a scheduled task runs with is not a scheduler setting:
+[agent]
 default_agent = "simple"
 ```
 

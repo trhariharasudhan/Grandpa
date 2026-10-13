@@ -28,8 +28,22 @@ pytestmark = pytest.mark.core
 
 
 @pytest.fixture(autouse=True)
-def _no_inherited_vocabulary(monkeypatch):
+def _no_inherited_vocabulary(monkeypatch, tmp_path_factory):
+    """Neither the environment nor the config file may leak in.
+
+    The env var alone was cleared, which left the tests that assert the shipped
+    default reading whatever ``[voice]`` was in the ambient config.toml. A test
+    about a default that a user's own setting can change is not a test about
+    the default -- and ``voice.vocabulary`` became settable with
+    ``grandpa config set`` this round, so that setting is no longer rare.
+
+    Tests that want a config write over this with ``_write_config``.
+    """
+    from grandpa.core import config as core_config
+
     monkeypatch.delenv(ENV_VARIABLE, raising=False)
+    absent = tmp_path_factory.mktemp("no-config") / "config.toml"
+    monkeypatch.setattr(core_config, "DEFAULT_CONFIG_PATH", absent)
 
 
 def _write_config(tmp_path, monkeypatch, body: str):

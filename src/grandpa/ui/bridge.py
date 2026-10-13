@@ -84,6 +84,9 @@ class InProcessBridge:
     #: so a test can supply doubles without patching module globals.
     responder_factory: Any = None
     transcriber_factory: Any = None
+    #: Override the speech model, as ``--model`` asks for. Passed to the
+    #: default factory; ignored when a transcriber_factory is supplied.
+    model: str | None = None
     _ready: bool = field(default=False, init=False)
 
     def ensure_responder(self) -> Any:
@@ -94,8 +97,10 @@ class InProcessBridge:
 
     def ensure_transcriber(self) -> Any:
         if self.transcriber is None:
-            factory = self.transcriber_factory or _default_transcriber
-            self.transcriber = factory()
+            if self.transcriber_factory is not None:
+                self.transcriber = self.transcriber_factory()
+            else:
+                self.transcriber = _default_transcriber(self.model)
         return self.transcriber
 
     def warm(self) -> tuple[bool, str]:
@@ -191,11 +196,19 @@ def _default_responder() -> Any:
     return VoiceCommandProcessor(model_name=None)
 
 
-def _default_transcriber() -> Any:
+def _default_transcriber(model: str | None = None) -> Any:
+    """The transcriber the bubble uses, built exactly as the accuracy test
+    builds its own so the two paths cannot drift.
+
+    *model* exists because ``grandpa bubble --model small.en`` was silently
+    ignored: this function built its own config with no override while the
+    command passed the flag only to the microphone. Comparing two models in
+    the bubble was therefore impossible, and nothing said so.
+    """
     from grandpa.voice.config import load_voice_assistant_config
     from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 
-    config = load_voice_assistant_config(tts_enabled=False)
+    config = load_voice_assistant_config(model=model, tts_enabled=False)
     return FasterWhisperSpeechToText(
         language=config.language,
         model=config.stt_model,

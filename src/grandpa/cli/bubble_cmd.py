@@ -118,7 +118,8 @@ def bubble(
     config = load_voice_assistant_config(
         model=model, microphone=device, tts_enabled=False
     )
-    bridge = InProcessBridge()
+    # --model has to reach the transcriber, not only the microphone.
+    bridge = InProcessBridge(model=model)
     view = TkBubbleView()
     controller = BubbleController(
         view=view,

@@ -281,6 +281,31 @@ uv run grandpa voice accuracy-test --json > before.json
 uv run grandpa voice accuracy-test --model small.en --json > after.json
 ```
 
+**Read the interval, not just the rate.** Three phrases is 16 reference words,
+so one word error moves the rate by 1/16 = 0.06 and the 95% interval spans
+about ±0.22. Two runs have to differ by **0.44** before the difference means
+anything — which is why two runs of the same model gave 0.562 and 0.750 and
+neither number was wrong.
+
+Every run is appended to a history, so short runs accumulate instead of
+replacing each other:
+
+```powershell
+uv run grandpa voice accuracy-test --history
+```
+
+| Words | Runs of 3 phrases | Can settle a difference of |
+| --- | --- | --- |
+| 16 | 1 | 0.44 |
+| 32 | 2 | 0.33 |
+| 160 | 10 | 0.15 |
+| 320 | 20 | 0.11 |
+
+To resolve a 10-point change you need about **193 reference words** — twelve
+runs of three phrases. The report says this itself rather than leaving the rate
+to be over-read, and when two models are in the history it states whether the
+gap between them is real or inside the noise.
+
 Roughly: **WER below 0.10** is working, **0.10–0.25** is usable with errors,
 **above 0.25** needs attention. If the median SNR is below 10 dB the recording is
 the limit — move closer to the microphone before trying a larger model.
@@ -325,6 +350,17 @@ because the query terms are OR-joined and both share the word "I".
 `--misses` lists every question that failed; `--json` compares two runs.
 
 ### Names and words the model will not know
+
+Bias the decoder toward names it keeps mishearing:
+
+```powershell
+uv run grandpa config set voice.vocabulary "Grandpa, Notepad, Arjun"
+```
+
+`GRANDPA_VOICE_VOCABULARY="Grandpa,Arjun"` overrides it for one run, and
+`voice.vocabulary_replaces_defaults true` drops the shipped application names
+rather than adding to them.
+
 
 Whisper decodes what it has seen before, so an uncommon name becomes a common
 one — "Hari" becomes "Harry". Add your own words to bias it:
