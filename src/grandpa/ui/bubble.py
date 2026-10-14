@@ -120,6 +120,13 @@ DEFAULT_POSITION = (40, 40)
 #: rectangle, so the two do not start on top of each other.
 DEFAULT_ORB_POSITION = (460, 40)
 
+#: How many exchanges the panel keeps. Three, because collapsed is voice-only
+#: and three questions before expanding is an ordinary thing to do -- with one
+#: slot the first two were simply gone. A bounded deque and two compact lines,
+#: not the scrolling log that was considered and rejected: the orb is the
+#: identity and a short exchange suits it.
+EXCHANGE_MEMORY = 3
+
 #: How many bars the level meter holds. One capture chunk is 0.1s, so this is
 #: about three seconds of history -- long enough to see a sentence, short enough
 #: that the view redraws a fixed, small number of rectangles.
@@ -172,6 +179,9 @@ class BubbleView(Protocol):
 
     def set_reply(self, text: str) -> None:
         """Show a reply. Must be selectable."""
+
+    def set_earlier(self, rows: tuple[tuple[str, str], ...]) -> None:
+        """Show the exchanges before the current one, newest first."""
 
     def set_transcript(self, text: str) -> None:
         """Show what was heard, before the reply arrives."""
@@ -401,6 +411,10 @@ class BubbleController:
     #: Collapsed to the orb: voice only, no panel. Set from the remembered
     #: state by start(), not by the constructor.
     collapsed: bool = field(default=False, init=False)
+    #: Whether the microphone stream is held open. Pushed to the orb, which
+    #: marks it on whatever state is showing. False is the open-on-demand
+    #: behaviour, with the measured deaf window.
+    mic_live: bool = field(default=False, init=False)
     #: A reply arrived that was never heard and never read. Shown as an amber
     #: ring on the orb, cleared by expanding, and it never times out -- a
     #: notification that disappears on its own is a notification that can be
@@ -409,6 +423,13 @@ class BubbleController:
     _position_path: Path | None = field(default=None, init=False)
     #: The event bus, once subscribed. None means not watching.
     _action_watch: Any = field(default=None, init=False)
+    #: The last few exchanges, oldest first, as ``(heard, reply)``. Bounded, so
+    #: a long session cannot grow it.
+    _exchanges: deque[tuple[str, str]] = field(
+        default_factory=lambda: deque(maxlen=EXCHANGE_MEMORY), init=False
+    )
+    #: What was heard for the exchange being answered now.
+    _pending_heard: str = field(default="", init=False)
     #: Recent capture levels, already normalised, newest last. A bounded deque
     #: appended from the capture thread and read from the view's thread;
     #: ``append`` on a bounded deque is atomic in CPython, and a meter that
@@ -667,6 +688,15 @@ class BubbleController:
         self._enter(BubbleState.THINKING)
         self._refresh_status()
 
+    def note_mic_live(self, live: bool) -> None:
+        """The microphone stream opened, or went away. Marked on the orb."""
+        self.mic_live = bool(live)
+        push = getattr(self.orb, "set_mic_live", None)
+        if callable(push):
+            flag = self.mic_live
+            self._to_orb(lambda: self.orb.set_mic_live(flag))
+        self._refresh_status()
+
     def _refresh_orb(self) -> None:
         state = str(self.state)
         unread = self.unread
@@ -796,6 +826,7 @@ class BubbleController:
             self._refresh_status()
             return ""
 
+        self._pending_heard = transcript
         self._to_view(lambda: self.view.set_transcript(transcript))
         self.submit(transcript)
         return transcript
@@ -837,11 +868,31 @@ class BubbleController:
 
     # --- the text box --------------------------------------------------------
 
+    def exchanges(self) -> tuple[tuple[str, str], ...]:
+        """The remembered exchanges, oldest first."""
+        return tuple(self._exchanges)
+
+    def _remember_exchange(self, heard: str, reply: str) -> None:
+        """Keep this exchange and push the earlier ones to the panel.
+
+        Earlier rather than all: the current exchange already has the two
+        prominent panes, and repeating it in the strip above would read as
+        having been asked twice.
+        """
+        self._exchanges.append((heard, reply))
+        earlier = tuple(reversed(tuple(self._exchanges)[:-1]))
+        push = getattr(self.view, "set_earlier", None)
+        if callable(push):
+            self._to_view(lambda: self.view.set_earlier(earlier))
+
     def submit(self, text: str) -> str:
         """Route typed or spoken text and show the reply."""
         cleaned = (text or "").strip()
         if not cleaned:
             return ""
+        if not self._pending_heard:
+            # Typed, not spoken: what was "heard" is what was typed.
+            self._pending_heard = cleaned
         self._enter(BubbleState.THINKING)
         reply = self.bridge.send(cleaned)
         self._to_view(self.view.clear_entry)
@@ -856,6 +907,8 @@ class BubbleController:
             shown = reply_text or "(no reply)"
             self._to_view(lambda: self.view.set_reply(shown))
             self._enter(BubbleState.IDLE)
+        self._remember_exchange(self._pending_heard, reply_text or "(no reply)")
+        self._pending_heard = ""
         self._refresh_status()
         # After the text is on screen, never instead of it.
         if not getattr(reply, "failed", False):
@@ -885,6 +938,8 @@ class BubbleController:
         else:
             speech = "speech not ready"
         parts = [model, speech]
+        if self.mic_live:
+            parts.append("mic held open")
         # Which orb painter is running, so a machine quietly on the flat-disc
         # fallback is visible rather than merely worse-looking.
         painter = ""
@@ -1038,6 +1093,7 @@ class BubbleController:
 
 __all__ = [
     "DEFAULT_HOLD_KEY",
+    "EXCHANGE_MEMORY",
     "NOT_DONE_KINDS",
     "DEFAULT_ORB_POSITION",
     "DEFAULT_POSITION",

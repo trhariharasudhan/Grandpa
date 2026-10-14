@@ -266,6 +266,9 @@ class OrbView:
     orb_position: tuple[int, int] = field(default=(40, 40), init=False)
     state: str = field(default="loading", init=False)
     unread: bool = field(default=False, init=False)
+    #: Whether the microphone stream is held open. An overlay on every state
+    #: rather than a state of its own.
+    mic_live: bool = field(default=False, init=False)
     level: float = field(default=0.0, init=False)
     #: The level history, oldest first, as the waveform needs it. One number
     #: cannot describe a shape around a circle.
@@ -430,6 +433,15 @@ class OrbView:
 
     # --- drawing -------------------------------------------------------------
 
+    def set_mic_live(self, live: bool) -> None:
+        """Whether the microphone is held open, which the orb marks."""
+        live = bool(live)
+        if live == self.mic_live:
+            return
+        self.mic_live = live
+        self._frames, self._frames_key = {}, None
+        self.redraw()
+
     def set_state(self, state: str, *, unread: bool = False) -> None:
         """What the ring shows. Starts or stops the tick to match.
 
@@ -485,7 +497,7 @@ class OrbView:
         builder = orb_on_disc if self.painter_mode() == "disc" else orb_image
         return builder(
             self.state, phase, self.level, size=self.size, unread=self.unread,
-            levels=self.levels,
+            levels=self.levels, mic_live=self.mic_live,
         )
 
     def _image_for(self, index: int) -> Any:
@@ -502,7 +514,9 @@ class OrbView:
         if is_live(self.state, unread=self.unread):
             return self._build(phase)
 
-        key = (self.state, self.unread, self.painter_mode(), self.size)
+        key = (
+            self.state, self.unread, self.mic_live, self.painter_mode(), self.size
+        )
         if key != self._frames_key:
             self._frames_key = key
             self._frames = {}

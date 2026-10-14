@@ -135,6 +135,18 @@ EMPTY_REPLY = (
 )
 EMPTY_HEARD = "nothing heard yet"
 
+#: How many earlier exchanges the strip above the current one shows. Two, so
+#: with the current exchange the panel holds three -- enough for the voice-only
+#: case, where three questions can be asked before the panel is ever opened.
+EARLIER_ROWS = 2
+
+#: The separator between what was asked and what came back, on one line.
+EARLIER_JOIN = "  ->  "
+
+#: How long an earlier line may be before it is cut. A compact reminder, not a
+#: second copy of the exchange.
+EARLIER_LIMIT = 58
+
 #: Captions. The reported problem behind item 2: when a transcript is wrong,
 #: "did it mishear me or misunderstand me" needs different fixes from the user,
 #: and two unlabelled blocks of text in one pane cannot be told apart.
@@ -202,6 +214,8 @@ class TkBubbleView:
     #: The last transcript, so clicking the heard row can offer it for
     #: correction without the view having to ask the controller.
     _last_transcript: str = field(default="", init=False)
+    #: The earlier-exchange labels, created once so the layout does not jump.
+    _earlier_rows: list[Any] = field(default_factory=list, init=False)
     #: True while the panel is withdrawn -- collapsed to the orb. The widgets
     #: still exist and still hold the last exchange.
     hidden: bool = field(default=False, init=False)
@@ -299,6 +313,15 @@ class TkBubbleView:
                        self._widgets["heard_caption"]):
             widget.bind("<Button-1>", self._edit_transcript)
 
+        # --- what came before ----------------------------------------------
+        # The strip that holds the earlier exchanges. A Frame only: its rows are
+        # built when there is something to put in them, because a label
+        # constructed with no text is a widget that exists while saying
+        # nothing, which is the fault this window was audited for -- and the
+        # suite's own guard refuses it.
+        self._widgets["earlier"] = tk.Frame(root, bg=BACKGROUND)
+        self._earlier_rows = []
+
         # --- the reply -----------------------------------------------------
         self._widgets["reply_caption"] = tk.Label(
             root, text=CAPTION_REPLY, bg=BACKGROUND, fg=MUTED, font=FONT_META,
@@ -385,6 +408,52 @@ class TkBubbleView:
         widget = self._widgets.get("status")
         if widget is not None:
             widget.configure(text=text)
+
+    @staticmethod
+    def earlier_line(heard: str, reply: str) -> str:
+        """One exchange on one line, cut to length. Pure, so it is testable."""
+        line = f"{heard}{EARLIER_JOIN}{reply}".replace("\n", " ").strip()
+        if len(line) > EARLIER_LIMIT:
+            line = line[: EARLIER_LIMIT - 1].rstrip() + "\u2026"
+        return line
+
+    def set_earlier(self, rows: Any) -> None:
+        """Show up to EARLIER_ROWS previous exchanges, newest first.
+
+        Rows are built on first use with the text they will show, never blank
+        and never packed empty. The strip itself is absent when there is
+        nothing before the current exchange.
+        """
+        strip = self._widgets.get("earlier")
+        if strip is None:
+            return
+        kept = [
+            self.earlier_line(str(heard or ""), str(reply or ""))
+            for heard, reply in tuple(rows or ())[:EARLIER_ROWS]
+        ]
+        tk = self._tk()
+        try:
+            while len(self._earlier_rows) < len(kept):
+                row = tk.Label(
+                    strip, text=kept[len(self._earlier_rows)], bg=BACKGROUND,
+                    fg=MUTED, anchor="w", justify="left", font=FONT_META,
+                )
+                self._earlier_rows.append(row)
+            for index, row in enumerate(self._earlier_rows):
+                if index < len(kept):
+                    row.configure(text=kept[index])
+                    row.pack(fill="x")
+                else:
+                    row.pack_forget()
+            if kept:
+                strip.pack(
+                    fill="x", padx=10, pady=(2, 0),
+                    before=self._widgets["reply_caption"],
+                )
+            else:
+                strip.pack_forget()
+        except Exception:  # noqa: BLE001 - a closed window must not raise
+            pass
 
     def set_transcript(self, text: str) -> None:
         """Show what was heard, in its own row, visibly not the reply.
@@ -765,6 +834,9 @@ class TkBubbleView:
 __all__ = [
     "CREATION_TAKES_FOREGROUND",
     "DRAG_HANDLE_WIDGETS",
+    "EARLIER_JOIN",
+    "EARLIER_LIMIT",
+    "EARLIER_ROWS",
     "FOCUS_STEALING_CALLS",
     "KEY_SYMS",
     "REMAP_CALLS",

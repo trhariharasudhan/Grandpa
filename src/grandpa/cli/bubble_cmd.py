@@ -69,6 +69,15 @@ ring on the orb until you open it. It never times out.
     "interrupts a reply mid-sentence.",
 )
 @click.option(
+    "--no-live-mic",
+    is_flag=True,
+    help="Open the microphone only while the key is held, as earlier versions "
+    "did. The stream takes 245ms on average to open and up to 361ms, and it is "
+    "opened after the key press is noticed, so the first word of a prompt "
+    "utterance is lost -- which is why holding it open is the default. Use this "
+    "to go back to open-on-demand, or set voice.live_microphone = false.",
+)
+@click.option(
     "--position",
     default=None,
     metavar="X,Y",
@@ -80,6 +89,7 @@ def bubble(
     device: int | None,
     model: str | None,
     no_speak: bool,
+    no_live_mic: bool,
     position: str | None,
 ) -> None:
     """Show the floating assistant.
@@ -151,13 +161,39 @@ def bubble(
     # PushToTalkSession is untouched: it forwards only stop_event and never
     # needs to know a meter exists. The RMS handed over is the one the voice
     # detector already computes for every chunk, so this adds no arithmetic.
-    capture = MicrophoneCapture(
-        duration_seconds=MAXIMUM_HOLD_SECONDS,
-        device=config.microphone if device is None else device,
-        recovery_attempts=config.microphone_recovery_attempts,
-        vad_config=hold_to_talk_vad_config(MAXIMUM_HOLD_SECONDS),
-        on_level=controller.note_level,
-    )
+    chosen_device = config.microphone if device is None else device
+
+    def open_on_demand():
+        return MicrophoneCapture(
+            duration_seconds=MAXIMUM_HOLD_SECONDS,
+            device=chosen_device,
+            recovery_attempts=config.microphone_recovery_attempts,
+            vad_config=hold_to_talk_vad_config(MAXIMUM_HOLD_SECONDS),
+            on_level=controller.note_level,
+        )
+
+    # Held open by default, because the stream takes 245ms to start and is
+    # started after the key press is noticed -- up to 392ms of speech that was
+    # never recorded. The pre-roll inside the open-on-demand capture cannot
+    # help: it buffers chunks the stream already produced.
+    capture = None
+    if _live_microphone_wanted(no_live_mic):
+        from grandpa.voice.live_capture import LiveMicrophone
+
+        live = LiveMicrophone(
+            device=chosen_device, on_level=controller.note_level
+        )
+        if live.start():
+            capture = live
+            controller.note_mic_live(True)
+        else:
+            click.echo(
+                "Could not hold the microphone open "
+                f"({live.last_error or 'no reason given'}); opening it per hold "
+                "instead."
+            )
+    if capture is None:
+        capture = open_on_demand()
     controller.capture = capture
 
     # Updates cross threads from here on, so they are queued and applied by the
@@ -206,8 +242,11 @@ def bubble(
         controller.orb_position = start_at
         controller._place_windows()
 
+    opened = "Orb open."
+    if controller.mic_live:
+        opened += " Microphone held open, so the first word is not lost."
     click.echo(
-        "Orb open. Hold the key to talk; double-tap the orb for the panel; "
+        f"{opened} Hold the key to talk; click the orb for the panel; "
         "Esc or Ctrl+C to close."
     )
 
@@ -230,6 +269,22 @@ def bubble(
     finally:
         controller.stop()
         capture.close()
+
+
+def _live_microphone_wanted(no_live_mic: bool) -> bool:
+    """Whether to hold the stream open. The flag wins over the config key.
+
+    Both exist on purpose: the key is how you set it once, the flag is how you
+    rule it out for one run without editing anything.
+    """
+    if no_live_mic:
+        return False
+    try:
+        from grandpa.core.config import load_config
+
+        return bool(getattr(load_config().voice, "live_microphone", True))
+    except Exception:  # noqa: BLE001 - an unreadable config is not a reason to
+        return True  # refuse the better default
 
 
 def _hold_poller(controller):

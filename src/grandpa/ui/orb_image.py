@@ -117,6 +117,16 @@ WAVE_COUNT = 2
 CHASE_SEGMENTS = 12
 CHASE_LIT = 4
 
+#: Where the "the microphone is live" mark sits, as a fraction of the size: a
+#: small concentric ring inside the main one.
+#:
+#: An overlay on whatever state is showing, deliberately, rather than an eighth
+#: state. Standby is neutral white and standby is exactly when the stream is
+#: held open, so a state would have had to be invented for a thing that is true
+#: during all of them. A mark can be true during all of them.
+PIP_RADIUS = 0.085
+PIP_GLOW = 0.45
+
 #: How far out a click still counts as landing on the orb, as a fraction of
 #: the size: the ring's outer edge.
 #:
@@ -324,18 +334,26 @@ def _taper(size: int) -> Any:
     return (ramp * ramp * (3.0 - 2.0 * ramp)).astype(np.float32)
 
 
-def _ring(radius: Any, target: Any, width: float, glow: float) -> Any:
+def _ring(
+    radius: Any, target: Any, width: float, glow: float, *, tight: bool = False
+) -> Any:
     """One ring: a bright core and a soft halo, as Gaussians of the offset.
 
     *target* may be a scalar radius or a per-pixel array, which is the whole
     trick -- a waveform is this same expression with a target that varies by
     angle.
+
+    *tight* keeps only the narrowest halo term. The widest is nine times the
+    stroke, which is most of the orb: measured, a small mark drawn with the
+    full stack added 5304 of alpha out at the main ring, so it brightened the
+    whole orb instead of being a mark on it.
     """
     import numpy as np
 
     offset = radius - target
     weight = np.exp(-((offset / max(width * CORE_SIGMA, 1e-5)) ** 2))
-    for multiple, share in HALO_STACK:
+    stack = HALO_STACK[:1] if tight else HALO_STACK
+    for multiple, share in stack:
         sigma = max(width * multiple, 1e-5)
         weight = weight + np.exp(-((offset / sigma) ** 2)) * (share * glow)
     return weight
@@ -374,7 +392,8 @@ def level_at_angle(levels: Any, turns: Any) -> Any:
 
 
 def _alpha_for(
-    state: str, phase: float, level: float, levels: Any, size: int, unread: bool
+    state: str, phase: float, level: float, levels: Any, size: int, unread: bool,
+    mic_live: bool = False,
 ) -> Any:
     """The alpha channel for one frame. Everything else is colour and wrapping."""
     import numpy as np
@@ -464,6 +483,14 @@ def _alpha_for(
     else:
         weight = _ring(radius, base, width, glow)
 
+    if mic_live:
+        # The mark. Same hue as the state, so it adds information without
+        # claiming to be one, and drawn tight so its halo does not reach the
+        # ring and brighten it.
+        weight = weight + _ring(
+            radius, PIP_RADIUS, style.width, PIP_GLOW, tight=True
+        ) * 0.75
+
     return np.clip(weight * _taper(size) * 255.0, 0, 255).astype(np.uint8)
 
 
@@ -475,6 +502,7 @@ def orb_image(
     size: int = ORB_SIZE,
     unread: bool = False,
     levels: Any = None,
+    mic_live: bool = False,
 ) -> Any:
     """An RGBA orb for *state*.
 
@@ -487,7 +515,7 @@ def orb_image(
     """
     from PIL import Image
 
-    alpha = _alpha_for(state, phase, level, levels, size, unread)
+    alpha = _alpha_for(state, phase, level, levels, size, unread, mic_live)
     out = Image.new("RGBA", (size, size), (*style_for(state, unread=unread).colour, 0))
     out.putalpha(Image.fromarray(alpha))
     return out
@@ -501,6 +529,7 @@ def orb_on_disc(
     size: int = ORB_SIZE,
     unread: bool = False,
     levels: Any = None,
+    mic_live: bool = False,
     background: tuple[int, int, int] = DISC_BACKGROUND,
 ) -> Any:
     """The fallback: the same orb flattened onto an opaque dark disc.
@@ -514,7 +543,10 @@ def orb_on_disc(
     import numpy as np
     from PIL import Image
 
-    glow = orb_image(state, phase, level, size=size, unread=unread, levels=levels)
+    glow = orb_image(
+        state, phase, level, size=size, unread=unread, levels=levels,
+        mic_live=mic_live,
+    )
     radius, _turns = _fields(size)
     edge = np.clip((0.47 - radius) / 0.02, 0.0, 1.0)
     circle = (edge * edge * (3.0 - 2.0 * edge) * 255.0).astype(np.uint8)
@@ -587,6 +619,8 @@ __all__ = [
     "LEVEL_BUCKETS",
     "ORB_SIZE",
     "ORB_STYLES",
+    "PIP_GLOW",
+    "PIP_RADIUS",
     "RING_RADIUS",
     "RING_SCALE",
     "RING_WIDTH",

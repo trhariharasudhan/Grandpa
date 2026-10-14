@@ -766,6 +766,24 @@ class VoiceConfig:
     #: Drop the shipped application names rather than adding to them.
     vocabulary_replaces_defaults: bool = False
 
+    #: Hold the microphone stream open while ``grandpa bubble`` is running, so
+    #: the first word of a held-key utterance is not lost.
+    #:
+    #: Measured: opening and starting a PortAudio stream takes 245ms on average
+    #: and up to 361ms, and the stream is opened only after the key press is
+    #: noticed -- so up to 392ms of speech after the key went down was never
+    #: recorded. Holding it open reduces that to the poll interval.
+    #:
+    #: The cost is that the microphone is live for the session and Windows shows
+    #: its in-use indicator the whole time. That is the honest posture for a
+    #: voice assistant, and the indicator tells the truth; the alternative is no
+    #: indicator and words that disappear. Set it false to go back to
+    #: open-on-demand, deaf window and all.
+    #:
+    #: The pre-roll is a bounded deque in RAM and never reaches disk. See
+    #: ``grandpa.voice.live_capture``.
+    live_microphone: bool = True
+
     #: The microphone to prefer by name. Also written by
     #: ``grandpa voice --save-microphone``, which is how it was reachable while
     #: the other two were not.

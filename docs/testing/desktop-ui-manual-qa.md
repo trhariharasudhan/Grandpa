@@ -92,19 +92,48 @@ These share one mouse button, so they are worth a minute each.
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| O9 | Drag the orb across the screen | It follows the cursor. The panel **must not open** — a drag never toggles. |
-| O10 | Drag the orb a long way, let go, then immediately tap once | Nothing opens. A drag then a tap is not a double-tap. |
-| O11 | Double-tap the orb | The panel opens **beside the orb**. |
-| O12 | Double-tap again | The panel goes away. The orb stays. |
-| O13 | Try to double-tap **slowly** — about a second between taps | Nothing happens. The threshold is Windows' own double-click time, read from your settings rather than hardcoded, so if this feels wrong for you it is worth saying: someone with a tremor may have raised it deliberately. |
-| O14 | Drag the orb to the **far right edge**, then double-tap | The panel opens to the orb's **left**, fully on screen. Repeat at the bottom edge: it should open **upward**. Nothing should hang off the screen or sit under the taskbar. |
+| O9 | Drag the orb across the screen | It follows the cursor. The panel **must not open** — a drag never counts as a click, and the decision is made on release where the drag is already known. |
+| O11 | **Click the orb once** | The panel opens **beside the orb**. One click, not two. |
+| O12 | Click once again | The panel goes away. The orb stays. |
+| O12a | Click the **empty corner** of the orb's square — well outside the ring | **Nothing happens.** Only the ring and its inside answer a click: 27.4% of the orb's square, which is what stops a stray click opening the panel now that one click is enough. |
+| O12b | Press on the ring, move the mouse about five pixels, release | **Nothing opens** and the orb has moved. Five pixels is a drag. |
+| O12c | Press on the ring, wobble two or three pixels, release | The panel **opens**. Two pixels is still a click. |
+| O14 | Drag the orb to the **far right edge**, then click it | The panel opens to the orb's **left**, fully on screen. Repeat at the bottom edge: it should open **upward**. Nothing should hang off the screen or sit under the taskbar. |
 | O15 | Tap once anywhere on the orb's **transparent corner** — the empty-looking square area outside the ring | The tap is **swallowed**: the window behind does not get it. This is known and accepted for now. **Tell me how much it bothers you in practice** — measured at 39% of the orb's square at standby, down from 77% before the window shrank. Making the corners click-through is a second Win32 mechanism and its own decision. |
+
+### They move as one thing
+
+The orb and the panel are two separate native windows — there is no shared
+parent — so this is the section where that shows or does not.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| M1 | With the panel open, drag the **orb** | **Both** move together, the gap between them unchanged. |
+| M2 | With the panel open, drag the panel by its **top strip** | **Both** move together. The orb comes along. |
+| M3 | Try to drag from the **text box**, the **speech chip**, the **heard row** or the **status line** | Nothing moves. Only the header strip and the state label are handles. Dragging from the text box should still let you select text. |
+| M4 | Drag the pair to a corner, collapse, drag the orb somewhere else, expand | The panel reappears **the same distance and direction from the orb** as before. It must never detach. |
+| M5 | Drag them around quickly for a few seconds | No stutter, no gap opening up, no second copy of either window. |
+
+
+### The microphone is held open
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| P1 | Run `grandpa bubble` and read the first line it prints | It says the microphone is held open. Windows shows its microphone-in-use indicator for as long as the bubble runs — that is deliberate and it is telling the truth. |
+| P2 | Look at the orb | A small **second ring inside the main one**. That is the mark saying the stream is live. It is an overlay on whatever state is showing, not a state of its own, so it is there in standby, while listening, while speaking — always. |
+| P3 | Press CTRL+WIN and **start talking immediately**, without the usual beat first | The first word is there. This is the whole point: opening the stream used to take 245ms on average and up to 361ms, all of it after the key was noticed, so up to 392ms of speech was never recorded. It is 30ms now, and 300ms of what you said *before* the key went down is kept too. |
+| P4 | Run `grandpa bubble --no-live-mic` | No mark on the orb, no mention in the first line, and the microphone indicator appears only while you hold the key. Behaviour is exactly what it was: press, wait a beat, then speak. |
+| P5 | Set `voice.live_microphone = false` with `grandpa config set` and run `grandpa bubble` | Same as P4. The flag and the key both work; the flag wins for one run. |
+| P6 | With the bubble running, **unplug the microphone** or disconnect a Bluetooth headset | The mark goes out and the status line stops saying it is held open. The next hold refuses quickly rather than hanging. Reconnect and restart the bubble to get it back — reopening the stream mid-session is not done, and if you want that, say so. |
+
 
 ### Collapsed is voice-only, and the panel remembers
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| O16 | With the panel open, ask something. Double-tap to collapse. Double-tap to open it again | The **same question and reply are still there**. Collapsing hides the panel, it does not throw the conversation away — speech is not reviewable, so this is the only place to read a reply afterwards. |
+| O16 | With the panel open, ask something. Collapse. Open it again | The **same question and reply are still there**. Collapsing hides the panel, it does not throw the conversation away — speech is not reviewable, so this is the only place to read a reply afterwards. |
+| O16a | Collapse to the orb and ask **three** things without opening the panel, then open it | All three are there: the newest in the two big panes, the two before it as single dimmed lines above. It used to keep one, so the first two simply vanished. |
+| O16b | Ask a fourth | The oldest drops off. Three is the limit, deliberately — this is a short exchange, not a chat log. |
 | O17 | Collapse the orb, drag it somewhere new, press Esc to close, run `grandpa bubble` again | It reopens **collapsed, where you left the orb**. |
 | O18 | Open the panel, close with Esc, run `grandpa bubble` again | It reopens **with the panel open**. Which state it was in is remembered. |
 
