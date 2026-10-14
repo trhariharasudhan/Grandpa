@@ -114,7 +114,11 @@ def test_most_of_the_rectangle_is_not_the_orb() -> None:
     invisible = float((alpha < 8).sum()) / alpha.size
     solid = float((alpha > 128).sum()) / alpha.size
 
-    assert 0.5 < invisible < 0.9, f"invisible-but-clickable share is {invisible:.3f}"
+    # 76.7% in the 96px window, 43.8% in the 72px one. The ring occupies more
+    # of a smaller window, and the analytic halo spreads more faint alpha, so
+    # less of the rectangle reads as bare desktop than either the old renderer
+    # or the 73.1% predicted from it.
+    assert 0.3 < invisible < 0.6, f"invisible-but-clickable share is {invisible:.3f}"
     assert solid < 0.2, f"the orb now covers {solid:.3f} of its rectangle"
 
 
@@ -203,16 +207,18 @@ def test_a_shared_hue_still_renders_two_different_orbs(pair: tuple[str, str]) ->
     )
 
 
-def test_loading_is_dimmer_and_moving_where_idle_is_bright_and_still() -> None:
-    """The specific pair that is new, stated as the two things a reader uses."""
+def test_loading_is_dimmer_and_travels_where_idle_only_breathes() -> None:
+    """The pair that shares a hue, stated as the two things a reader uses. Both
+    move now, so the difference is the *kind* of movement: a travelling arc
+    against a ring that only swells."""
     loading, idle = ORB_STYLES["loading"], ORB_STYLES["idle"]
 
     assert loading.colour == idle.colour
     assert loading.glow < idle.glow
+    assert loading.animation == "arc"
+    assert idle.animation == "breathe"
     assert loading.arc is not None
     assert idle.arc is None
-    assert is_animated("loading")
-    assert not is_animated("idle")
 
 
 def test_the_unread_ring_overrides_whatever_the_state_is() -> None:
@@ -302,15 +308,33 @@ def test_the_cycle_closes_so_the_loop_has_no_seam() -> None:
         assert np.array_equal(start, wrapped), f"{state} jumps at the wrap"
 
 
-def test_idle_is_still() -> None:
-    """The survey measured an always-on animation at 0.6% of a core forever.
-    Idle holding still is what makes the tick cancellable."""
-    assert not is_animated("idle")
-    assert "idle" not in ANIMATED_STATES
+def test_idle_breathes_slowly_rather_than_holding_still() -> None:
+    """Idle was still so the tick could be cancelled and cost nothing. It
+    breathes now because the cost was measured rather than assumed: 0.14% of
+    one core at 5 frames a second, against 0.56% at 20. The property that
+    mattered -- a state which holds still cancels its tick -- survives on
+    success and error, and is pinned in test_orb_window.py."""
+    from grandpa.ui.orb_image import fps_for
+
+    assert is_animated("idle")
+    assert "idle" in ANIMATED_STATES
+    assert fps_for("idle") == 5.0, "a breathe that runs forever runs slowly"
 
     frames = [np.asarray(orb_image("idle", i / 6.0, 0.0)) for i in range(6)]
 
-    assert all(np.array_equal(frames[0], frame) for frame in frames[1:])
+    assert any(not np.array_equal(frames[0], frame) for frame in frames[1:])
+
+
+def test_the_breathe_is_subtle_rather_than_a_pulse() -> None:
+    """"Very subtle" was the brief. Measured as the swing in lit area across
+    the cycle, which a throb would blow well past."""
+    areas = [
+        float((alpha_of(orb_image("idle", index / 12.0, 0.0)) > 64).sum())
+        for index in range(12)
+    ]
+    swing = (max(areas) - min(areas)) / max(areas)
+
+    assert 0.01 < swing < 0.30, f"the breathe swings {swing:.1%} of its lit area"
 
 
 def test_an_unread_orb_is_animated_even_though_idle_is_not() -> None:
@@ -353,7 +377,7 @@ def test_the_fallback_is_an_opaque_disc_with_the_same_ring() -> None:
 
 def test_the_fallback_covers_the_rectangle_far_less_than_a_square_would() -> None:
     """A disc, not a tile: the corners still read as desktop."""
-    assert 0.08 < transparent_fraction(orb_on_disc("idle")) < 0.25
+    assert 0.15 < transparent_fraction(orb_on_disc("idle")) < 0.40
 
 
 def test_both_looks_exist_for_every_state() -> None:

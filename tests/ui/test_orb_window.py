@@ -39,7 +39,7 @@ pytestmark = pytest.mark.core
 
 AREA = (0, 0, 1920, 1080)
 PANEL = (400, 324)
-ORB = 96
+ORB = 72
 
 
 class Event:
@@ -440,12 +440,44 @@ def test_an_animated_state_schedules_a_tick() -> None:
     assert any(name.endswith(".after") for name in names(tk))
 
 
-def test_a_still_state_schedules_nothing() -> None:
-    """Idle is still. The survey measured an always-on animation at 0.6% of a
-    core forever, for a thing nobody is looking at."""
-    tk, view, _painter = a_view()
+@pytest.mark.parametrize("state", ["success", "error"])
+def test_a_one_shot_state_stops_ticking_once_it_has_played(state: str) -> None:
+    """**The property the user asked to have pinned.** Idle breathes now, so
+    "a still state cancels its tick" could have quietly stopped being true of
+    anything. It is still true of these two: success ripples once and error
+    flashes twice, and then each holds its final frame with no tick armed.
 
-    view.set_state("idle")
+    This is the mechanism that stops an animation running forever for
+    something nobody is looking at, and it needs at least one state to keep
+    exercising it."""
+    from grandpa.ui.orb_image import frames_for
+
+    tk, view, _painter = a_view()
+    view.set_state(state)
+
+    assert view.animating is True, f"{state} should play once"
+
+    for _ in range(frames_for(state) + 4):
+        tk.run_due()
+
+    assert view.animating is False, f"{state} is still ticking"
+    assert tk.scheduled == {}
+    assert view._finished is True
+
+
+@pytest.mark.parametrize("state", ["success", "error"])
+def test_a_played_out_one_shot_does_not_restart_itself(state: str) -> None:
+    """Re-entering the state it is already in must not flash again -- the
+    status line refreshes often enough that it would strobe."""
+    from grandpa.ui.orb_image import frames_for
+
+    tk, view, _painter = a_view()
+    view.set_state(state)
+    for _ in range(frames_for(state) + 4):
+        tk.run_due()
+
+    view.set_state(state)
+    view.start_animation()
 
     assert view.animating is False
     assert tk.scheduled == {}
@@ -454,24 +486,28 @@ def test_a_still_state_schedules_nothing() -> None:
 def test_the_tick_is_cancelled_rather_than_left_to_re_arm() -> None:
     """The opposite of the panel's pump, deliberately. A tick that re-arms
     unconditionally is a tick that never stops."""
+    from grandpa.ui.orb_image import frames_for
+
     tk, view, _painter = a_view()
     view.set_state("speaking")
     assert view.animating is True
 
-    view.set_state("idle")
+    view.set_state("success")
+    for _ in range(frames_for("success") + 4):
+        tk.run_due()
 
     assert view.animating is False
     assert tk.scheduled == {}
     assert any(name.endswith(".after_cancel") for name in names(tk))
 
 
-def test_a_tick_that_fires_into_a_still_state_does_not_re_arm_itself() -> None:
+def test_a_tick_that_fires_into_a_finished_state_does_not_re_arm_itself() -> None:
     """The other half: the state can change between the schedule and the fire,
     and the fired tick must notice rather than keep the cycle alive."""
     tk, view, _painter = a_view()
     view.set_state("thinking")
-    # The state changes without going through set_state, as a race would.
-    view.state = "idle"
+    # Finished without going through set_state, as a race would leave it.
+    view._finished = True
 
     tk.run_due()
 
@@ -491,12 +527,15 @@ def test_each_tick_advances_the_cycle_and_repaints() -> None:
 
 
 def test_the_cycle_wraps_rather_than_counting_forever() -> None:
+    from grandpa.ui.orb_image import frames_for
+
     tk, view, _painter = a_view()
     view.set_state("speaking")
-    for _ in range(PULSE_FRAMES + 3):
+    frames = frames_for("speaking")
+    for _ in range(frames + 3):
         tk.run_due()
 
-    assert 0 <= view._frame_index < PULSE_FRAMES
+    assert 0 <= view._frame_index < frames
 
 
 def test_starting_the_animation_twice_does_not_stack_two_timers() -> None:
@@ -529,8 +568,26 @@ def test_closing_cancels_the_tick() -> None:
 
 
 def test_the_tick_rate_is_the_measured_one() -> None:
-    """20fps, against 0.28ms to blit a pre-rendered frame."""
+    """20fps by default, against 0.28ms to blit a pre-rendered frame."""
     assert TICK_MS == 50
+
+
+def test_each_state_ticks_at_its_own_measured_rate() -> None:
+    """Not one rate for everything. Idle breathes at 5fps because it runs
+    forever -- 0.14% of a core against 0.56% at 20 -- and the waveform runs at
+    10fps because that is the rate its level history arrives, so a faster tick
+    would redraw the same data."""
+    tk, view, _painter = a_view()
+
+    rates: dict[str, int] = {}
+    for state in ("idle", "recording", "thinking", "speaking"):
+        view.set_state(state)
+        rates[state] = view.tick_ms()
+
+    assert rates["idle"] == 200
+    assert rates["recording"] == 100
+    assert rates["thinking"] == 50
+    assert rates["speaking"] == 50
 
 
 # --- 4. the level ------------------------------------------------------------

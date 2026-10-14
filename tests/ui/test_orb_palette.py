@@ -16,7 +16,7 @@ from grandpa.ui.palette import (
     GREEN_SUCCESS,
     NEUTRAL_WHITE,
     ORANGE_SPEAKING,
-    PURPLE_EXECUTING_RESERVED,
+    PURPLE_EXECUTING,
     RED_ERROR,
     RING_COLOURS,
     YELLOW_PROCESSING,
@@ -109,17 +109,20 @@ def test_the_orb_holds_no_colour_of_its_own() -> None:
 # --- 3. the colour nothing uses ----------------------------------------------
 
 
-def test_the_reserved_purple_is_not_mapped_to_anything() -> None:
-    """"Executing / Automation" was asked for and left out: the span exists but
-    not as one place, and several of the branches around it return without
-    running anything. A purple ring for a staged approval that never executed
-    would be a light that lies. The constant stays so the decision is visible;
-    this asserts no state has quietly picked it up."""
-    assert PURPLE_EXECUTING_RESERVED == "#A855F7"
+def test_purple_is_mapped_now_that_something_real_sets_it() -> None:
+    """It was reserved and unmapped for two rounds, because nothing told the
+    bubble when an automation was running. It is mapped now because
+    ``action_layer.executor`` has exactly one site where a catalogued action is
+    performed, and it announces the span. The state is set from that
+    announcement and from nothing else -- see
+    tests/ui/test_orb_executing_state.py, which asserts no dry run and no
+    staged approval can light it."""
+    assert PURPLE_EXECUTING == "#A855F7"
+    assert RING_COLOURS["executing"] == PURPLE_EXECUTING
 
-    users = [state for state, hex_ in RING_COLOURS.items() if hex_ == PURPLE_EXECUTING_RESERVED]
+    users = [state for state, value in RING_COLOURS.items() if value == PURPLE_EXECUTING]
 
-    assert users == [], f"reserved purple is being used by {users}"
+    assert users == ["executing"], f"purple is also used by {users}"
 
 
 # --- 4. the overlay -----------------------------------------------------------

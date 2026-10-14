@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -706,6 +707,70 @@ def _audit(
 # --- the entry point ----------------------------------------------------------
 
 
+#: The running/finished announcement goes onto this queue, drained by one
+#: daemon thread. Bounded on purpose: if nothing is draining, or a subscriber
+#: is slow enough that the queue fills, announcements are DROPPED. A dropped
+#: indicator is a cosmetic loss; a stalled action is not.
+_ANNOUNCE_QUEUE: Any = None
+_ANNOUNCE_LOCK = threading.Lock()
+ANNOUNCE_QUEUE_SIZE = 64
+#: Counted so a test can prove announcements are dropped rather than blocked.
+ANNOUNCEMENTS_DROPPED = 0
+
+
+def _announce_worker(outbox: Any) -> None:
+    from grandpa.core.events import get_event_bus
+
+    bus = get_event_bus()
+    while True:
+        event_type, payload = outbox.get()
+        try:
+            bus.publish(event_type, payload)
+        except Exception:  # noqa: BLE001 - a subscriber must not reach an action
+            logger.debug("tool-call announcement failed", exc_info=True)
+
+
+def _announce(event_name: str, spec_name: str) -> None:
+    """Say that a catalogued action started or finished. Never blocks, never raises.
+
+    **This is deliberately not a plain publish, and the difference is the
+    point.** ``EventBus.publish`` calls every subscriber inline with no
+    exception handling, so publishing from here would run arbitrary subscriber
+    code on the thread performing a consent-gated action. Catching the
+    exception is not enough on its own: a subscriber that merely *blocks* -- a
+    lock, a socket, a slow redraw -- would stall the action for as long as it
+    liked, and a guard that only handles exceptions would not notice.
+
+    So the announcement is handed to a bounded queue drained by one daemon
+    thread, and the acting thread never touches a subscriber at all. The worst
+    a subscriber can do is let the queue fill, after which announcements are
+    dropped and the action proceeds untouched.
+    """
+    global _ANNOUNCE_QUEUE, ANNOUNCEMENTS_DROPPED
+
+    try:
+        import queue as _queue
+
+        from grandpa.core.events import EventType
+
+        with _ANNOUNCE_LOCK:
+            if _ANNOUNCE_QUEUE is None:
+                _ANNOUNCE_QUEUE = _queue.Queue(maxsize=ANNOUNCE_QUEUE_SIZE)
+                threading.Thread(
+                    target=_announce_worker,
+                    args=(_ANNOUNCE_QUEUE,),
+                    name="grandpa-action-announce",
+                    daemon=True,
+                ).start()
+            outbox = _ANNOUNCE_QUEUE
+        # The action's name and nothing else. ActionRequest has no "target"
+        # attribute -- reaching for one here raised AttributeError on every
+        # real action, on the one line the refusal-path tests never execute.
+        outbox.put_nowait((EventType(event_name), {"action": spec_name}))
+    except Exception:  # noqa: BLE001 - including queue.Full, which is a drop
+        ANNOUNCEMENTS_DROPPED += 1
+
+
 def execute(
     request: ActionRequest,
     confirm_callback: ConfirmCallback | None = None,
@@ -804,6 +869,12 @@ def execute(
             _audit(request, risk=spec.risk, confirmed=False, result=result)
             return result
 
+    # The one place a catalogued action is performed. Everything above this
+    # validates, asks for consent or refuses, each returning early without
+    # running anything; everything below shapes the result and audits. So this
+    # span is the whole of "an automation is running", announced here rather
+    # than guessed at by a caller.
+    _announce("tool_call_start", spec.name)
     try:
         returned = _call(
             spec,
@@ -826,6 +897,8 @@ def execute(
         )
         _audit(request, risk=spec.risk, confirmed=confirmed, result=result)
         return result
+    finally:
+        _announce("tool_call_end", spec.name)
 
     result = _as_result(spec, returned)
     _audit(request, risk=spec.risk, confirmed=confirmed, result=result)

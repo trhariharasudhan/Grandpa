@@ -33,14 +33,27 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from grandpa.ui.orb_image import ORB_SIZE, is_animated, orb_image, orb_on_disc
+from grandpa.ui.orb_image import (
+    LEVEL_BUCKETS,
+    ORB_SIZE,
+    fps_for,
+    frames_for,
+    is_animated,
+    is_live,
+    is_oneshot,
+    orb_image,
+    orb_on_disc,
+)
 
-#: Frames in one pulse cycle. A cycle is a whole number of frames so the loop
-#: closes; the cosine in ``orb_image`` is what makes it seamless.
+#: Frames in one cycle when a state does not say otherwise. Each state does
+#: say otherwise -- see ``orb_image.ORB_STYLES`` -- because a breathe that runs
+#: forever and an arc somebody is waiting on do not want the same rate.
 PULSE_FRAMES = 24
 
-#: How often the cycle advances while animating. 20fps measured at 0.6% of one
-#: core, against 0.28ms to blit a frame.
+#: The default tick, 20fps. Measured at 0.56% of one core for a pre-generated
+#: frame at 0.28ms a blit. Per-state rates come from ``fps_for``: idle breathes
+#: at 5fps for 0.14%, and the waveform runs at 10fps because that is the rate
+#: its data arrives -- 20fps would redraw the same level history twice.
 TICK_MS = 50
 
 #: Fallbacks for the Windows metrics, used only when they cannot be read. The
@@ -245,6 +258,11 @@ class OrbView:
     state: str = field(default="loading", init=False)
     unread: bool = field(default=False, init=False)
     level: float = field(default=0.0, init=False)
+    #: The level history, oldest first, as the waveform needs it. One number
+    #: cannot describe a shape around a circle.
+    levels: tuple[float, ...] = field(
+        default_factory=lambda: (0.0,) * LEVEL_BUCKETS, init=False
+    )
     #: Images the fallback produced, newest last. Carried so a test can prove
     #: the fallback yields a usable orb rather than merely not raising.
     shown_images: list[Any] = field(default_factory=list, init=False)
@@ -254,6 +272,13 @@ class OrbView:
     _frame_index: int = field(default=0, init=False)
     _tick_id: Any = field(default=None, init=False)
     _grab_offset: tuple[int, int] = field(default=(0, 0), init=False)
+    #: Frames already built for the current look, by index. Built on demand so
+    #: entering a state does not stall for a whole cycle, and cleared when the
+    #: look changes so only one state's frames are ever held.
+    _frames: dict[int, Any] = field(default_factory=dict, init=False)
+    _frames_key: Any = field(default=None, init=False)
+    #: True once a one-shot animation has played, so its last frame holds.
+    _finished: bool = field(default=False, init=False)
 
     def _tk(self) -> Any:
         if self.tkinter_module is None:
@@ -391,18 +416,28 @@ class OrbView:
     # --- drawing -------------------------------------------------------------
 
     def set_state(self, state: str, *, unread: bool = False) -> None:
-        """What the ring shows. Starts or stops the tick to match."""
+        """What the ring shows. Starts or stops the tick to match.
+
+        Re-entering the same state does not restart its animation -- a
+        one-shot would otherwise flash again every time the status line
+        refreshed.
+        """
         if str(state) == self.state and bool(unread) == self.unread:
             self.redraw()
             return
         self.state = str(state)
         self.unread = bool(unread)
         self._frame_index = 0
+        self._finished = False
+        # Cancel first, always. Each state ticks at its own rate now, so
+        # leaving the previous timer armed would run the new state at the old
+        # state's rate -- an idle breathe at the speaking rate, four times the
+        # cost it was measured at -- and start_animation() returns early while
+        # a timer exists, so it would never have corrected itself.
+        self.stop_animation()
         self.redraw()
         if is_animated(self.state, unread=self.unread):
             self.start_animation()
-        else:
-            self.stop_animation()
 
     def set_level(self, level: float) -> None:
         """The live microphone level, 0..1 -- the same number the panel's meter
@@ -411,21 +446,63 @@ class OrbView:
         if self.state == "recording":
             self.redraw()
 
-    def _image_for(self, phase: float) -> Any:
+    def set_levels(self, levels: Any) -> None:
+        """The level history the waveform is drawn from, oldest first.
+
+        Stored rather than drawn immediately: the tick is what decides when a
+        frame is painted, and the history arrives faster than that in bursts.
+        """
+        try:
+            values = tuple(
+                min(1.0, max(0.0, float(value))) for value in levels
+            )
+        except Exception:  # noqa: BLE001 - a bad reading must not kill the UI
+            return
+        if values:
+            self.levels = values
+
+    def _build(self, phase: float) -> Any:
         """The orb for one phase, in the form the active painter can use.
 
         The fallback needs an opaque disc; the layered painter needs the alpha.
         Asking the painter which it is keeps that decision in one place.
         """
         builder = orb_on_disc if self.painter_mode() == "disc" else orb_image
-        return builder(self.state, phase, self.level, size=self.size, unread=self.unread)
+        return builder(
+            self.state, phase, self.level, size=self.size, unread=self.unread,
+            levels=self.levels,
+        )
+
+    def _image_for(self, index: int) -> Any:
+        """The frame at *index*, from the cache where there is a cycle to cache.
+
+        The waveform has no cycle: its frames depend on a level history that
+        changes as new chunks arrive, so there is nothing to pre-build and it
+        is drawn live. Measured at 0.466ms a frame, which is why it runs at
+        10fps rather than 20 -- and 10fps is also the rate the levels arrive,
+        so a faster tick would redraw the same data.
+        """
+        frames = frames_for(self.state, unread=self.unread)
+        phase = (index % frames) / frames
+        if is_live(self.state, unread=self.unread):
+            return self._build(phase)
+
+        key = (self.state, self.unread, self.painter_mode(), self.size)
+        if key != self._frames_key:
+            self._frames_key = key
+            self._frames = {}
+        slot = index % frames
+        image = self._frames.get(slot)
+        if image is None:
+            image = self._build(phase)
+            self._frames[slot] = image
+        return image
 
     def redraw(self) -> bool:
         """Paint the current frame. False if no painter could."""
         if self.painter is None:
             return False
-        phase = (self._frame_index % PULSE_FRAMES) / PULSE_FRAMES
-        image = self._image_for(phase)
+        image = self._image_for(self._frame_index)
         return bool(
             self.painter.paint(image, self.orb_position[0], self.orb_position[1])
         )
@@ -441,23 +518,38 @@ class OrbView:
     # --- the tick, which cancels rather than re-arms -------------------------
 
     def start_animation(self) -> None:
-        if self.root is None or self._tick_id is not None:
+        if self.root is None or self._tick_id is not None or self._finished:
             return
         self._schedule()
 
+    def tick_ms(self) -> int:
+        """The interval for the current state, from its own frame rate."""
+        fps = fps_for(self.state, unread=self.unread)
+        return max(1, int(round(1000.0 / fps))) if fps > 0 else TICK_MS
+
     def _schedule(self) -> None:
         try:
-            self._tick_id = self.root.after(TICK_MS, self._tick)
+            self._tick_id = self.root.after(self.tick_ms(), self._tick)
         except Exception:  # noqa: BLE001 - a closed window has no loop
             self._tick_id = None
 
     def _tick(self) -> None:
         self._tick_id = None
-        self._frame_index = (self._frame_index + 1) % PULSE_FRAMES
+        frames = frames_for(self.state, unread=self.unread)
+        last = self._frame_index + 1 >= frames
+        if last and is_oneshot(self.state, unread=self.unread):
+            # One ripple, two flashes: play the cycle once and hold the final
+            # frame. Holding it is what makes success and error resting states
+            # rather than loops, and it is why the tick can still cancel.
+            self._frame_index = frames - 1
+            self._finished = True
+            self.redraw()
+            return
+        self._frame_index = (self._frame_index + 1) % frames
         self.redraw()
-        # Re-armed only while the state still wants it. This is the whole reason
-        # idle costs nothing instead of 0.6% of a core forever.
-        if is_animated(self.state, unread=self.unread):
+        # Re-armed only while the state still wants it. This is what keeps an
+        # animation from running forever for a thing nobody is looking at.
+        if is_animated(self.state, unread=self.unread) and not self._finished:
             self._schedule()
 
     def stop_animation(self) -> None:
@@ -537,11 +629,11 @@ class OrbView:
 
 __all__ = [
     "ANCHOR_GAP",
+    "PULSE_FRAMES",
     "DEFAULT_DOUBLE_CLICK_MS",
     "DEFAULT_DRAG_SLOP",
     "DEFAULT_WORK_AREA",
     "ORB_WINDOW_BACKGROUND",
-    "PULSE_FRAMES",
     "TICK_MS",
     "OrbView",
     "TapTracker",

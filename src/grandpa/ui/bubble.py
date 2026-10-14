@@ -37,6 +37,10 @@ class BubbleState(StrEnum):
     RECORDING = "recording"
     TRANSCRIBING = "transcribing"
     THINKING = "thinking"
+    #: An automation is running right now. Set from the action layer's own
+    #: announcement around the single site where a catalogued action is
+    #: performed, never guessed at from the text of a request.
+    EXECUTING = "executing"
     SPEAKING = "speaking"
     #: An operation completed. A resting state, not a flash: it persists until
     #: the next thing happens, exactly as ERROR does. The symmetry is the
@@ -55,6 +59,7 @@ STATE_LABELS: dict[BubbleState, str] = {
     BubbleState.RECORDING: "Recording",
     BubbleState.TRANSCRIBING: "Transcribing...",
     BubbleState.THINKING: "Thinking...",
+    BubbleState.EXECUTING: "Working...",
     BubbleState.SPEAKING: "Speaking...",
     BubbleState.SUCCESS: "Done",
     BubbleState.ERROR: "Error",
@@ -106,7 +111,7 @@ def completed_an_operation(reply: Any) -> bool:
 #: The states in which a hold must not start a recording.
 STATES_THAT_REFUSE_A_HOLD = frozenset(
     {BubbleState.LOADING, BubbleState.RECORDING, BubbleState.TRANSCRIBING,
-     BubbleState.THINKING}
+     BubbleState.THINKING, BubbleState.EXECUTING}
 )
 
 DEFAULT_POSITION = (40, 40)
@@ -390,6 +395,8 @@ class BubbleController:
     #: missed entirely.
     unread: bool = field(default=False, init=False)
     _position_path: Path | None = field(default=None, init=False)
+    #: The event bus, once subscribed. None means not watching.
+    _action_watch: Any = field(default=None, init=False)
     #: Recent capture levels, already normalised, newest last. A bounded deque
     #: appended from the capture thread and read from the view's thread;
     #: ``append`` on a bounded deque is atomic in CPython, and a meter that
@@ -462,6 +469,7 @@ class BubbleController:
             except Exception:
                 pass
         self._remember()
+        self.unwatch_actions()
         if self.orb is not None:
             try:
                 self.orb.close()
@@ -532,6 +540,60 @@ class BubbleController:
         """A reply nobody heard and nobody has read."""
         self.unread = True
         self._refresh_orb()
+
+    # --- what the action layer says it is doing -------------------------------
+
+    def watch_actions(self) -> bool:
+        """Follow the action layer's running/finished announcements.
+
+        Subscribed rather than polled, and to the events the action layer
+        already publishes -- there is no second state machine here. The
+        callbacks arrive on the announcement thread, so they go through the
+        same dispatcher every other view update uses.
+        """
+        if self._action_watch is not None:
+            return True
+        try:
+            from grandpa.core.events import EventType, get_event_bus
+
+            bus = get_event_bus()
+            bus.subscribe(EventType.TOOL_CALL_START, self._on_action_started)
+            bus.subscribe(EventType.TOOL_CALL_END, self._on_action_finished)
+        except Exception:  # noqa: BLE001 - no bus is not a broken bubble
+            return False
+        self._action_watch = bus
+        return True
+
+    def unwatch_actions(self) -> None:
+        bus, self._action_watch = self._action_watch, None
+        if bus is None:
+            return
+        try:
+            from grandpa.core.events import EventType
+
+            bus.unsubscribe(EventType.TOOL_CALL_START, self._on_action_started)
+            bus.unsubscribe(EventType.TOOL_CALL_END, self._on_action_finished)
+        except Exception:  # noqa: BLE001 - leaving a subscription is not fatal
+            pass
+
+    def _on_action_started(self, _event: Any = None) -> None:
+        """An automation began. Only meaningful while a request is in flight.
+
+        Screened on the current state rather than trusted: this fires for any
+        catalogued action performed anywhere in the process, and the orb should
+        only speak for the one the user just asked for.
+        """
+        if self.state not in {BubbleState.THINKING, BubbleState.EXECUTING}:
+            return
+        self._enter(BubbleState.EXECUTING)
+        self._refresh_status()
+
+    def _on_action_finished(self, _event: Any = None) -> None:
+        """It returned. Back to thinking, because the reply is still coming."""
+        if self.state is not BubbleState.EXECUTING:
+            return
+        self._enter(BubbleState.THINKING)
+        self._refresh_status()
 
     def _refresh_orb(self) -> None:
         state = str(self.state)
@@ -826,6 +888,12 @@ class BubbleController:
         self._to_view(lambda: self.view.set_levels(levels))
         level = levels[-1] if recording and levels else 0.0
         self._to_orb(lambda: self.orb.set_level(level))
+        # The whole history, not just the newest number: the waveform is a
+        # shape around the circle and one reading cannot describe it.
+        history = self.meter_levels() if recording else (0.0,) * METER_BARS
+        push_levels = getattr(self.orb, "set_levels", None)
+        if callable(push_levels):
+            self._to_orb(lambda: self.orb.set_levels(history))
 
     # --- speech --------------------------------------------------------------
 

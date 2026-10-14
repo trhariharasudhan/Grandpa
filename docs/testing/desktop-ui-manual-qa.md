@@ -41,12 +41,14 @@ So you can tell "soft on purpose" from "wrong":
   the chroma-key approach the survey rejected left 62.4% of the window as a
   solid magenta disc.
 - **It will be slightly soft, and that is known.** This display runs at 125%
-  scaling and the process is DPI-unaware, so Windows stretches the orb's 96
-  pixels to 120 as a bitmap. The ring is therefore blurrier than the image it
-  was drawn from. Fixing that means declaring DPI awareness for the whole
-  process, which changes the panel's size and every font in it — a separate
-  decision, not done here. Report it if it bothers you; do not report it as a
-  bug in the glow.
+  scaling and the process is DPI-unaware, so Windows stretches the orb's 72
+  pixels to 90 as a bitmap. Measured over a backdrop, the ring's band is 5
+  physical pixels at half its peak and its peak is 5 times brighter than the
+  glow 4 pixels away — a defined line rather than a smear, but softer-edged
+  than a hard-drawn stroke would be. Fixing that means declaring DPI awareness
+  for the whole process, which changes the panel's size and every font in it —
+  a separate decision, not done here. Report it if it bothers you; do not
+  report it as a bug in the glow.
 
 
 ## O. The orb
@@ -54,12 +56,35 @@ So you can tell "soft on purpose" from "wrong":
 | # | Do this | Expect |
 | --- | --- | --- |
 | O2 | Run `grandpa bubble` on a clean machine (no remembered state) | **Only the orb** appears — no panel. It is voice-only until you ask for more. |
-| O3 | Watch the orb while the model loads | A grey ring with a **travelling arc**. It must not look ready. |
-| O4 | Wait for loading to finish | The ring settles to a **still blue**. It should **stop moving entirely** — no breathing, no pulse. If it keeps animating while idle, say so: a window that animates forever for no reason is the thing the tick was built to avoid. |
+| O3 | Watch the orb while the model loads | A **dim neutral ring with a travelling arc**. It must not look ready. |
+| O4 | Wait for loading to finish | The ring settles to **neutral white** and begins a **very slow breathe** — one swell about every six seconds. If it looks like a pulse or a throb rather than a slow swell, say so. |
 | O5 | Click another window, then look at the orb | It **stays on top** and the other window **keeps the caret**. Type something into that window to be sure. |
-| O6 | Hold CTRL+WIN and talk | The ring turns **brighter and thicker as you talk**, and thins when you stop. This is the only way to tell "it is hearing me" with no panel open. |
-| O7 | Release the key | The ring goes **violet with a travelling arc** while it transcribes and thinks, then **green** while it speaks the reply, then back to still blue. |
-| O8 | Ask something that fails (unplug the microphone, or hold the key for half a second and release) | The ring turns **red** and stays red until the next thing happens. |
+| O6 | Hold CTRL+WIN and say a long sentence, loudly then quietly | The ring turns **blue** and its **edge ripples with your voice** — bumps where you were loud, smooth where you were quiet, travelling round as the history scrolls. Not a uniform pulse. If it moves the same way whatever you say, say so: that is the one failure this animation can have. |
+| O7 | Release the key | **Yellow with two arcs travelling in opposite directions** while it transcribes and thinks, then **orange with waves radiating outward** while it speaks, then **green with a single ripple** that expands once and settles. |
+| O8 | Ask something that fails (unplug the microphone, or hold the key for half a second and release) | The ring **flashes red twice and then holds solid red**. It must not keep flashing. |
+| O9 | Ask for something that opens an app — "open notepad" | While the automation is actually running the ring is **purple with segments chasing round the circle**. It is deliberately indeterminate: it never fills from empty to full, because the action layer reports "running" and "finished" and no fraction in between. If you see it fill like a progress bar, say so. |
+| O10 | Ask a plain question that runs no automation — "what is the time" | **No purple at all.** Yellow, then the reply. Purple only ever means something ran. |
+
+### The seven, side by side
+
+Each state should be tellable from across the room by colour first and motion
+second. The two closest are **success** and **speaking** — both send a ring
+outward, and they happen one after the other. They are meant to be separable
+because green is not orange and because success ripples *once* while speaking
+keeps going. If you cannot tell them apart in use, that is worth knowing.
+
+| state | colour | motion |
+| --- | --- | --- |
+| standby | neutral white | slow breathe, one swell every 6s |
+| listening | blue | the ring's edge follows your voice |
+| transcribing / thinking | yellow | two arcs, opposite directions |
+| speaking | orange | waves radiating outward |
+| working | purple | segments chasing round, never filling |
+| done | green | one ripple, then steady |
+| error | red | two flashes, then solid |
+| loading | dim neutral | one travelling arc |
+| unread reply | amber | slow breathe, never times out |
+
 
 ### Drag and double-tap — the part most likely to annoy you
 
@@ -73,7 +98,7 @@ These share one mouse button, so they are worth a minute each.
 | O12 | Double-tap again | The panel goes away. The orb stays. |
 | O13 | Try to double-tap **slowly** — about a second between taps | Nothing happens. The threshold is Windows' own double-click time, read from your settings rather than hardcoded, so if this feels wrong for you it is worth saying: someone with a tremor may have raised it deliberately. |
 | O14 | Drag the orb to the **far right edge**, then double-tap | The panel opens to the orb's **left**, fully on screen. Repeat at the bottom edge: it should open **upward**. Nothing should hang off the screen or sit under the taskbar. |
-| O15 | Tap once anywhere on the orb's **transparent corner** — the empty-looking square area outside the ring | The tap is **swallowed**: the window behind does not get it. This is known and accepted for now. **Tell me how much it bothers you in practice** — about two thirds of the orb's square looks like bare desktop and still takes a click. Making the corners click-through is a second Win32 mechanism and its own decision. |
+| O15 | Tap once anywhere on the orb's **transparent corner** — the empty-looking square area outside the ring | The tap is **swallowed**: the window behind does not get it. This is known and accepted for now. **Tell me how much it bothers you in practice** — measured at 39% of the orb's square at standby, down from 77% before the window shrank. Making the corners click-through is a second Win32 mechanism and its own decision. |
 
 ### Collapsed is voice-only, and the panel remembers
 

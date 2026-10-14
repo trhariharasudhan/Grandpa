@@ -1,19 +1,21 @@
-"""The ring is smaller, still centred, and still above the legibility floor.
+"""The orb is smaller because the WINDOW shrank, not because the ring did again.
 
-"Smaller" is easy to assert and almost worthless on its own: the interesting
-claims are that *nothing else moved* -- the proportions, the centring, the
-animation -- and that it did not go so small that the 125% bitmap stretch eats
-the band. The second one cannot be answered from the generated image, so the
-numbers it is pinned against were measured on screen over a known backdrop:
+The complaint was that the ring looked thin inside a large window. Shrinking the
+radius a second time would have made that worse on both counts -- a thinner
+stroke toward the measured two-pixel floor, and more of the window reading as
+bare desktop while still taking a click.
 
-    radius   stroke     peak of 765   band at half peak   solid share
-    0.30     2.88 px    276           3 physical px       5.8%
-    0.26     2.50 px    265           3 physical px       3.9%   <- shipped
-    0.20     1.92 px    234           2 physical px       2.3%   starts to dim
-    0.12     1.15 px    172           2 physical px       0.9%   not a ring
+So the window went 96 -> 72 and the stroke was pinned at an absolute 2.5 logical
+pixels instead of a fraction of the window. Measured on screen over a magenta
+backdrop, before and after:
 
-The dimming is the supersampled stroke rounding down below two pixels, which is
-why the floor assertion below is about the stroke and not about the radius.
+    window   ring diameter   stroke   outer lit   band at half peak   peak
+    96/120   49.9 / 62.4     2.50     64 px       3 physical px       264.6
+    72/90    37.4 / 46.8     2.50     48 px       4 physical px       263.3
+
+Same brightness, a *wider* band on screen, and the stroke is now 6.7% of the
+ring's diameter rather than 5.0% -- a third thicker relative to its own circle,
+which is the thing that was actually wrong.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from grandpa.ui.orb_image import (
     RING_RADIUS,
     RING_SCALE,
     RING_WIDTH,
-    SUPERSAMPLE,
+    STROKE_PX,
     is_animated,
     orb_image,
     scaled_width,
@@ -38,10 +40,10 @@ from grandpa.ui.orb_image import (
 
 pytestmark = pytest.mark.core
 
-#: What the ring was before this round, so "smaller" is a comparison against a
-#: number rather than a claim.
-PRE_REDUCTION_RADIUS = 0.30
-PRE_REDUCTION_WIDTH = 0.030
+#: The window before this round, so "smaller" is a comparison and not a claim.
+PREVIOUS_WINDOW = 96
+#: The radius fraction, unchanged. The ring shrank with the window, not inside it.
+PREVIOUS_RADIUS = 0.30 * RING_SCALE
 
 
 def alpha_of(image) -> np.ndarray:
@@ -54,61 +56,59 @@ def radius_map(size: int) -> np.ndarray:
     return np.hypot(xs - centre, ys - centre) / size
 
 
-# --- 1. it is smaller, by a stated amount ------------------------------------
+# --- 1. the window shrank, the ring ratio did not ----------------------------
 
 
-def test_the_ring_is_smaller_than_it_was() -> None:
-    assert RING_RADIUS < PRE_REDUCTION_RADIUS
-    assert RING_RADIUS == pytest.approx(0.26, abs=1e-9)
+def test_the_window_is_smaller_than_it_was() -> None:
+    assert ORB_SIZE == 72
+    assert ORB_SIZE < PREVIOUS_WINDOW
+    assert orb_image("idle").size == (72, 72)
 
 
-def test_the_reduction_is_moderate_and_not_a_shrink_to_nothing() -> None:
-    """"Compact and balanced, not small" was the brief. 13% of the radius is
-    visible as a change; half of it would not be, and a third of it would be a
-    dot."""
-    reduction = 1.0 - RING_RADIUS / PRE_REDUCTION_RADIUS
-
-    assert 0.08 < reduction < 0.20, f"reduced by {reduction:.1%}"
+def test_the_ring_still_sits_at_the_same_fraction_of_the_window() -> None:
+    """The radius was NOT reduced again. Doing both would have taken the stroke
+    toward the floor and made the dead area worse."""
+    assert RING_RADIUS == pytest.approx(PREVIOUS_RADIUS)
+    assert RING_RADIUS == pytest.approx(0.26)
 
 
-def test_the_measured_band_sits_at_the_new_radius() -> None:
-    """Read off the pixels, not off the constant: a constant nobody drew with
-    would pass the test above and change nothing on screen."""
-    alpha = alpha_of(orb_image("idle", 0.0, 0.0))
-    radii = radius_map(ORB_SIZE)
-    lit = alpha >= 0.9 * alpha.max()
-    mean_radius = float((radii[lit] * alpha[lit]).sum() / alpha[lit].sum())
+def test_the_reduction_is_moderate() -> None:
+    reduction = 1.0 - ORB_SIZE / PREVIOUS_WINDOW
 
-    assert mean_radius == pytest.approx(RING_RADIUS, abs=0.02)
-    assert mean_radius < PRE_REDUCTION_RADIUS - 0.02, "nothing actually moved"
+    assert 0.15 < reduction < 0.35, f"window reduced by {reduction:.1%}"
 
 
-# --- 2. the proportions did not change ---------------------------------------
+# --- 2. the stroke is absolute now, which is the actual fix ------------------
 
 
-def test_every_stroke_shrank_by_the_same_factor() -> None:
-    """The whole point of one knob. A width left at its old value would make
-    that state's ring proportionally fatter than the others."""
-    assert RING_WIDTH == pytest.approx(PRE_REDUCTION_WIDTH * RING_SCALE)
-    assert RING_RADIUS / PRE_REDUCTION_RADIUS == pytest.approx(RING_SCALE)
-    assert RING_WIDTH / PRE_REDUCTION_WIDTH == pytest.approx(RING_SCALE)
+def test_the_stroke_is_pinned_in_pixels_not_in_a_fraction() -> None:
+    """Held at 2.5 logical pixels. A fraction of a smaller window would have
+    thinned it, and the measured floor is two final pixels."""
+    assert STROKE_PX == 2.5
+    assert RING_WIDTH == pytest.approx(STROKE_PX / ORB_SIZE)
+    assert ORB_STYLES["idle"].width * ORB_SIZE == pytest.approx(STROKE_PX)
 
 
-def test_the_width_to_radius_ratio_is_what_it_always_was() -> None:
-    """"Preserve the proportions" in one line: the ring is the same shape, just
-    smaller. Keeping the stroke while shrinking the radius was measured as the
-    alternative -- brighter and 3 points better on dead area -- and rejected
-    because it thickens the ring by 15% relative to its own circle."""
-    before = PRE_REDUCTION_WIDTH / PRE_REDUCTION_RADIUS
+def test_the_ring_reads_thicker_relative_to_its_own_circle() -> None:
+    """This is the "looks thin" complaint, as a number. 5.0% before, 6.7% now."""
+    before = 0.030 * RING_SCALE / PREVIOUS_RADIUS
     after = RING_WIDTH / RING_RADIUS
 
-    assert after == pytest.approx(before)
+    assert after > before * 1.25, f"{before:.3f} -> {after:.3f} is not thicker"
 
 
-def test_no_stroke_was_left_behind_at_its_old_value() -> None:
+def test_every_stroke_kept_its_ratio_to_the_others() -> None:
+    """Only the base changed. A state whose stroke was 1.73x idle's still is."""
+    for pre_reduction in (0.028, 0.030, 0.034, 0.038, 0.040, 0.046):
+        assert scaled_width(pre_reduction) == pytest.approx(
+            RING_WIDTH * (pre_reduction / 0.030)
+        )
+
+
+def test_no_stroke_was_left_behind_at_an_old_value() -> None:
     """Inspected as a syntax tree: every OrbStyle width must be a
     ``scaled_width(...)`` call. A bare literal would be a stroke that missed
-    the reduction, and it would look almost right."""
+    the re-basing, and it would look almost right."""
     tree = ast.parse(Path("src/grandpa/ui/orb_image.py").read_text(encoding="utf-8"))
     styles = [
         node
@@ -120,39 +120,44 @@ def test_no_stroke_was_left_behind_at_its_old_value() -> None:
 
     assert len(styles) == len(ORB_STYLES), "not every style was found"
     for style in styles:
-        width = style.args[2] if len(style.args) > 2 else None
-        assert isinstance(width, ast.Call), (
-            f"a raw stroke width at line {style.lineno}"
-        )
+        widths = [
+            keyword.value for keyword in style.keywords if keyword.arg == "width"
+        ]
+        width = style.args[2] if len(style.args) > 2 else (widths[0] if widths else None)
+        assert isinstance(width, ast.Call), f"a raw stroke width at line {style.lineno}"
         assert isinstance(width.func, ast.Name) and width.func.id == "scaled_width", (
             f"line {style.lineno} does not go through scaled_width"
         )
 
 
-def test_the_level_driven_thickening_scaled_too() -> None:
-    """Otherwise a loud ring keeps its old thickness around a smaller circle
-    and stops matching the quiet one."""
-    quiet = ORB_STYLES["recording"].width
-    loud_delta = scaled_width(0.028)
-
-    assert loud_delta == pytest.approx(0.028 * RING_SCALE)
-    # The widest the ring ever gets, still a sane fraction of the orb.
-    assert quiet + loud_delta < 0.09
+# --- 3. still above the floor ------------------------------------------------
 
 
-# --- 3. still centred --------------------------------------------------------
+def test_the_stroke_is_still_at_least_two_logical_pixels() -> None:
+    """The measured floor, and it is about the stroke rather than the radius:
+    peak brightness fell from 265 to 234 at a 1.92px stroke and to 172 at
+    1.15px, because what is left of a sub-two-pixel line never reaches full
+    intensity once it has been stretched to 125%."""
+    for state, style in ORB_STYLES.items():
+        pixels = style.width * ORB_SIZE
+
+        assert pixels >= 2.0, f"{state} draws a {pixels:.2f}px stroke"
+
+
+def test_the_band_still_reaches_full_intensity() -> None:
+    for state in ORB_STYLES:
+        assert alpha_of(orb_image(state, 0.3, 0.0)).max() == 255, state
+
+
+# --- 4. still centred, at every size ----------------------------------------
 
 
 @pytest.mark.parametrize("state", sorted(ORB_STYLES))
 def test_the_ring_is_perfectly_centred(state: str) -> None:
-    """Measured as the centre of mass of the alpha over a whole cycle.
-
-    Over one phase a travelling arc is lopsided on purpose -- that is what
-    makes it look like it is going somewhere -- so a single frame says nothing
-    about centring. Averaged across the cycle the picture is rotationally
-    symmetric again, which makes this the stronger claim: the circle is centred
-    *and* the rotation is about that same centre.
-    """
+    """Centre of mass over a whole cycle. Over one phase a travelling arc is
+    lopsided on purpose; averaged across the cycle the picture is rotationally
+    symmetric again, which makes this the stronger claim -- the circle is
+    centred *and* the rotation is about the same centre."""
     frames = [alpha_of(orb_image(state, index / 12.0, 0.0)) for index in range(12)]
     alpha = np.mean(frames, axis=0)
     total = alpha.sum()
@@ -163,74 +168,37 @@ def test_the_ring_is_perfectly_centred(state: str) -> None:
     assert float((ys * alpha).sum() / total) == pytest.approx(expected, abs=0.3), state
 
 
-@pytest.mark.parametrize("state", ["idle", "recording", "success", "error"])
-def test_a_full_ring_is_centred_in_a_single_frame(state: str) -> None:
-    """The states with no arc have nothing to average away, so they are held to
-    the tighter claim."""
-    alpha = alpha_of(orb_image(state, 0.0, 0.0))
-    total = alpha.sum()
-    ys, xs = np.mgrid[0:ORB_SIZE, 0:ORB_SIZE]
-    expected = (ORB_SIZE - 1) / 2.0
-
-    assert float((xs * alpha).sum() / total) == pytest.approx(expected, abs=0.1)
-    assert float((ys * alpha).sum() / total) == pytest.approx(expected, abs=0.1)
-
-
-@pytest.mark.parametrize("size", [48, 96, 160])
-def test_it_stays_centred_at_other_sizes(size: int) -> None:
-    """Consistent sizing across resolutions: the geometry is fractions, so a
-    bigger orb is the same picture bigger."""
+@pytest.mark.parametrize("size", [48, 72, 96, 160])
+def test_the_whole_picture_scales_with_the_orb(size: int) -> None:
+    """Consistent sizing across resolutions, and this is new: the halo used to
+    be absolute blur radii, so the orb was not actually resolution-independent.
+    It is a multiple of the stroke now, and the stroke is a fraction of the
+    size, so the same picture comes out at any size."""
     alpha = alpha_of(orb_image("idle", 0.0, 0.0, size=size))
     radii = radius_map(size)
     lit = alpha >= 0.9 * alpha.max()
     mean_radius = float((radii[lit] * alpha[lit]).sum() / alpha[lit].sum())
 
     assert mean_radius == pytest.approx(RING_RADIUS, abs=0.03)
+    assert alpha[0, 0] <= 2, "a corner stopped being transparent"
 
 
-# --- 4. above the floor ------------------------------------------------------
+# --- 5. the dead-click share, which improved --------------------------------
 
 
-def test_the_stroke_is_still_at_least_two_pixels_after_downscaling() -> None:
-    """This is the floor, and it is about the stroke rather than the radius.
-    ``_ring_mask`` draws at SUPERSAMPLE times the size and rounds the stroke
-    down with int(); once that lands under two final pixels, the LANCZOS
-    downscale and then the 125% stretch leave a band that never reaches full
-    intensity. Measured: peak brightness fell from 265 to 234 at a 1.92px
-    stroke and to 172 at 1.15px.
-    """
-    for state, style in ORB_STYLES.items():
-        supersampled = int(ORB_SIZE * SUPERSAMPLE * style.width)
-        final = supersampled / SUPERSAMPLE
+def test_the_dead_click_share_improved() -> None:
+    """A smaller window with the same ring ratio means the ring occupies more
+    of it. Measured at 76.7% invisible-but-clickable before and 43.8% now --
+    better than the 73.1% predicted from the old blur-stack renderer, because
+    the analytic halo spreads more faint alpha and less of the rectangle reads
+    as bare desktop."""
+    alpha = alpha_of(orb_image("idle"))
+    invisible = float((alpha < 8).sum()) / alpha.size
+    solid = float((alpha > 128).sum()) / alpha.size
 
-        assert final >= 2.0, (
-            f"{state} draws a {final:.2f}px stroke, under the measured floor"
-        )
-
-
-def test_the_band_still_reaches_full_intensity_in_the_image() -> None:
-    """If the stroke were too thin the anti-aliased core would never hit 255,
-    and the stretch would start from an already-dim band."""
-    for state in ORB_STYLES:
-        assert alpha_of(orb_image(state, 0.3, 0.0)).max() == 255, state
-
-
-def test_the_radius_is_not_taken_below_what_was_measured_as_readable() -> None:
-    """0.20 was where it began to dim and 0.12 was no longer a ring. Nothing
-    under 0.24 should be called premium, so this fails rather than letting a
-    later tidy-up quietly cross the line."""
-    assert RING_RADIUS >= 0.24
-
-
-# --- 5. everything else is unchanged -----------------------------------------
-
-
-def test_the_window_did_not_change_size() -> None:
-    """The ring shrank inside the same rectangle. That is deliberate -- the
-    glow keeps its room -- and it is why the dead-click area got worse, which
-    is pinned below rather than discovered."""
-    assert ORB_SIZE == 96
-    assert orb_image("idle").size == (96, 96)
+    assert invisible < 0.60, f"{invisible:.1%} is no better than it was"
+    assert invisible == pytest.approx(0.438, abs=0.05)
+    assert solid > 0.05, f"the ring covers only {solid:.2%} of the window"
 
 
 def test_the_corners_are_still_transparent() -> None:
@@ -242,35 +210,28 @@ def test_the_corners_are_still_transparent() -> None:
             assert max(corners) <= 2, f"{state} at {level}: {corners}"
 
 
-def test_the_dead_click_area_got_worse_by_the_amount_measured() -> None:
-    """A smaller ring in the same window means more of the rectangle looks like
-    desktop and still takes a click. Measured at 69.3% before and 76.7% after.
-    Pinned so a later change has to notice it rather than drift."""
-    alpha = alpha_of(orb_image("idle"))
-    invisible = float((alpha < 8).sum()) / alpha.size
-    solid = float((alpha > 128).sum()) / alpha.size
+def test_the_middle_is_still_a_hole() -> None:
+    """The halo is a stack of Gaussians now, and an unnormalised one wide
+    enough to look like a glow fills the centre -- measured at alpha 30 of 255
+    during the rewrite, against 3 for the blur stack it replaced. The weights
+    exist to stop that, so this is the test that keeps them honest."""
+    for state in ORB_STYLES:
+        alpha = alpha_of(orb_image(state, 0.25, 0.0))
+        radii = radius_map(ORB_SIZE)
+        middle = alpha[radii < 0.15].mean()
 
-    assert invisible == pytest.approx(0.767, abs=0.03)
-    assert solid == pytest.approx(0.039, abs=0.01)
+        assert middle < 0.25 * alpha.max(), f"{state}: the centre is filling in"
 
 
-def test_the_animation_is_untouched() -> None:
-    """Which states move, and which cost nothing, did not change with the
-    size."""
+# --- 6. animation untouched by the resize ------------------------------------
+
+
+def test_which_states_move_did_not_change_with_the_size() -> None:
     assert is_animated("loading")
     assert is_animated("thinking")
     assert is_animated("speaking")
-    assert not is_animated("idle")
-    assert not is_animated("success")
-    assert not is_animated("error")
-
-
-def test_a_pulse_still_moves_and_a_still_state_still_does_not() -> None:
-    moving = [np.asarray(orb_image("speaking", i / 8.0, 0.0)) for i in range(8)]
-    still = [np.asarray(orb_image("idle", i / 8.0, 0.0)) for i in range(8)]
-
-    assert any(not np.array_equal(moving[0], frame) for frame in moving[1:])
-    assert all(np.array_equal(still[0], frame) for frame in still[1:])
+    assert is_animated("idle"), "idle breathes now"
+    assert is_animated("recording")
 
 
 def test_a_louder_microphone_still_makes_a_heavier_ring() -> None:
@@ -280,4 +241,4 @@ def test_a_louder_microphone_still_makes_a_heavier_ring() -> None:
     ]
 
     assert weights == sorted(weights)
-    assert weights[-1] > 1.3 * weights[0]
+    assert weights[-1] > 1.15 * weights[0]

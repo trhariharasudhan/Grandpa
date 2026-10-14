@@ -45,16 +45,19 @@ ORANGE_SPEAKING = "#FF922B"
 #: *not* spoken, and speaking requires that one is being spoken.
 AMBER_UNREAD = "#FFBE5A"
 
-#: Reserved and deliberately unmapped. The spec that defined this palette asked
-#: for a purple "Executing / Automation" state. There is a real moment -- the
-#: span inside ``grandpa.local.router.handle_local_action`` -- but it is not one
-#: place: there are several execution sites interleaved with branches that
-#: return *without* running anything (a staged approval, a dry run, a refusal).
-#: Lighting purple from any of those would mean a ring that says "running" for
-#: something that never ran. The information is not lost: GREEN_SUCCESS already
-#: says an automation completed. What purple would add is only its duration.
-#: ``tests/ui/test_orb_palette.py`` asserts no state uses this.
-PURPLE_EXECUTING_RESERVED = "#A855F7"
+#: An automation is running right now. Reserved and unmapped for two rounds
+#: because nothing told the bubble when one started: the search stopped at
+#: ``local.router.handle_local_action``, which has several execution sites
+#: interleaved with branches that return *without* running anything.
+#:
+#: It is mapped now because the search went one level further down.
+#: ``action_layer.executor.execute`` has exactly one site where a catalogued
+#: action is performed -- the ``_call`` at line 808. Everything above it
+#: validates, asks for consent or refuses, each returning early; everything
+#: below shapes the result and audits. So "between a tool call started and it
+#: returned" is one place, and the bubble can see it through the event bus that
+#: already carries TOOL_CALL_START and TOOL_CALL_END.
+PURPLE_EXECUTING = "#A855F7"
 
 #: State name -> hex. The state names are ``BubbleState`` values, plus
 #: ``unread``, which is the overlay flag.
@@ -75,6 +78,7 @@ RING_COLOURS: dict[str, str] = {
     "transcribing": YELLOW_PROCESSING,
     "thinking": YELLOW_PROCESSING,
     "speaking": ORANGE_SPEAKING,
+    "executing": PURPLE_EXECUTING,
     "success": GREEN_SUCCESS,
     "error": RED_ERROR,
     "unread": AMBER_UNREAD,
@@ -113,7 +117,7 @@ __all__ = [
     "GREEN_SUCCESS",
     "NEUTRAL_WHITE",
     "ORANGE_SPEAKING",
-    "PURPLE_EXECUTING_RESERVED",
+    "PURPLE_EXECUTING",
     "RED_ERROR",
     "RING_COLOURS",
     "YELLOW_PROCESSING",

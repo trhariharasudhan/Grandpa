@@ -329,16 +329,19 @@ def test_kind_is_optional_so_older_construction_still_works() -> None:
 # --- 5. the look -------------------------------------------------------------
 
 
-def test_success_has_a_look_and_it_is_green_and_still() -> None:
-    from grandpa.ui.orb_image import ORB_STYLES, is_animated
+def test_success_is_green_and_ripples_once_rather_than_looping() -> None:
+    """One ripple expanding out, then steady. Not a loop: success is somewhere
+    the orb rests, so once the ripple has played it must cost nothing to sit
+    in -- which is what one_shot buys and what the tick test pins."""
+    from grandpa.ui.orb_image import ORB_STYLES, STILL_STATES, is_oneshot
     from grandpa.ui.palette import GREEN_SUCCESS, rgb
 
     style = ORB_STYLES["success"]
 
     assert style.colour == rgb(GREEN_SUCCESS)
-    assert style.arc is None
-    assert style.pulse == 0.0
-    assert not is_animated("success"), "a resting state must cost nothing"
+    assert style.animation == "ripple"
+    assert is_oneshot("success")
+    assert "success" in STILL_STATES, "a resting state must end up still"
 
 
 def test_the_label_is_done() -> None:

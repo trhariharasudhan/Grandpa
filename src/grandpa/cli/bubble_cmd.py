@@ -190,6 +190,11 @@ def bubble(
     orb.on_move = lambda x, y: setattr(controller, "orb_position", (x, y))
     orb.on_close = view.on_close
 
+    # Follow the action layer's own running/finished announcements, so the orb
+    # can say "working" for the span an automation is actually running rather
+    # than for a request that looked like one.
+    controller.watch_actions()
+
     start_at = _parse_position(position)
     controller.start()
     if start_at is not None:
