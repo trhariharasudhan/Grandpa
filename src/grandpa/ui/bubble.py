@@ -384,8 +384,20 @@ class BubbleController:
     #: test can prove the key was noticed rather than silently dropped.
     key_seen_count: int = field(default=0, init=False)
     model_name: str = field(default="", init=False)
+    #: Where the panel is. DERIVED from the anchor and the offset below --
+            # written by _place_windows and by nothing else.
     position: tuple[int, int] = field(default=DEFAULT_POSITION, init=False)
+    #: **The anchor.** The orb's top-left, and the single thing a drag moves.
+    #: The orb and the panel are two native windows -- the panel is the Tk
+    #: root, the orb is a Toplevel whose pixels Win32 blits -- so there is no
+    #: shared parent to move. One number that both windows are placed from is
+    #: the whole of what keeps them together; the alternative is two positions
+    #: that agree until they do not.
     orb_position: tuple[int, int] = field(default=DEFAULT_ORB_POSITION, init=False)
+    #: The panel's offset from the anchor. Set once when the panel is first
+    #: placed beside the orb and preserved through every collapse, expand and
+    #: drag, which is what "the panel never detaches" means in practice.
+    panel_offset: tuple[int, int] | None = field(default=None, init=False)
     #: Collapsed to the orb: voice only, no panel. Set from the remembered
     #: state by start(), not by the constructor.
     collapsed: bool = field(default=False, init=False)
@@ -488,8 +500,66 @@ class BubbleController:
     # --- collapsed and expanded ----------------------------------------------
 
     def toggle_collapsed(self) -> bool:
-        """Double-tapping the orb. Returns the new collapsed state."""
+        """One click on the orb. Returns the new collapsed state."""
         return self.collapse() if not self.collapsed else self.expand()
+
+    # --- one component, two windows ------------------------------------------
+
+    def move_component(self, dx: int, dy: int) -> tuple[int, int]:
+        """Move the whole thing by a delta. Returns the new anchor.
+
+        Called by *both* drag handlers -- the orb's and the panel header's --
+        because there is one component and dragging any part of it moves the
+        part. The panel's offset is untouched, so the two cannot drift.
+        """
+        self.orb_position = (
+            int(self.orb_position[0] + dx), int(self.orb_position[1] + dy)
+        )
+        self._place_windows()
+        return self.orb_position
+
+    def _panel_position(self) -> tuple[int, int]:
+        """Where the panel goes for the current anchor."""
+        if self.panel_offset is not None:
+            return (
+                int(self.orb_position[0] + self.panel_offset[0]),
+                int(self.orb_position[1] + self.panel_offset[1]),
+            )
+        if callable(self.anchor):
+            try:
+                return tuple(self.anchor(self.orb_position))  # type: ignore[return-value]
+            except Exception:  # noqa: BLE001 - a bad anchor must not trap the panel
+                pass
+        return self.position
+
+    def _adopt_offset(self) -> None:
+        """Fix the panel's offset from wherever the anchor function puts it.
+
+        Done once, on the first placement, so that afterwards the offset is the
+        thing preserved rather than recomputed -- recomputing on every drag
+        would snap the panel back to the orb's side the moment it was moved.
+        """
+        if self.panel_offset is not None:
+            return
+        placed = self._panel_position()
+        self.panel_offset = (
+            int(placed[0] - self.orb_position[0]),
+            int(placed[1] - self.orb_position[1]),
+        )
+
+    def _place_windows(self) -> None:
+        """Put both windows where the anchor says. The only writer of position."""
+        self._adopt_offset()
+        self.position = self._panel_position()
+        orb_at = self.orb_position
+        panel_at = self.position
+        move_orb = getattr(self.orb, "move_window", None)
+        if callable(move_orb):
+            self._to_orb(lambda: self.orb.move_window(orb_at[0], orb_at[1]))
+            self._to_orb(self.orb.redraw)
+        move_panel = getattr(self.view, "move_to", None)
+        if callable(move_panel) and not self.collapsed:
+            self._to_view(lambda: self.view.move_to(panel_at[0], panel_at[1]))
 
     def collapse(self) -> bool:
         """Voice only: the panel goes away, the orb stays."""
@@ -501,14 +571,16 @@ class BubbleController:
 
     def expand(self) -> bool:
         """The panel comes back, beside the orb, with the last exchange still
-        in it -- and the unread ring clears, because it has now been read."""
+        in it -- and the unread ring clears, because it has now been read.
+
+        Its place comes from the anchor and the stored offset, so a panel that
+        was dragged somewhere comes back where it was left rather than snapping
+        to the orb's side.
+        """
         self.collapsed = False
         self.unread = False
-        if callable(self.anchor):
-            try:
-                self.position = tuple(self.anchor(self.orb_position))  # type: ignore[assignment]
-            except Exception:  # noqa: BLE001 - a bad anchor must not trap the panel
-                pass
+        self._adopt_offset()
+        self.position = self._panel_position()
         placed = self.position
         self._to_view(lambda: self._unhide_panel(placed))
         self._remember()

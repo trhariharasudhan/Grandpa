@@ -45,12 +45,12 @@ from typing import Any
 
 from grandpa.ui.palette import ring_rgb
 
-#: Default orb size in logical pixels. 96 before; measured at 72 the ring reads
-#: a third thicker relative to its own circle, the lit band is *wider* on screen
-#: (4 physical pixels against 3) at equal brightness, and the share of the
-#: window that looks like desktop while still taking a click falls from 76.7% to
-#: 73.1%. See docs/development/orb-survey.md and the ring-size tests.
-ORB_SIZE = 72
+#: Default orb size in logical pixels: 96, then 72, now 64. The ring's radius
+#: and the stroke are both unchanged fractions, so each step is the same
+#: picture smaller -- the identity is in the ratio, not the pixel count. At 64
+#: the ring is 33.3 logical pixels across and the stroke is 2.22, still above
+#: the measured two-pixel floor below which the band dims rather than thins.
+ORB_SIZE = 64
 
 #: The reduction applied to the ring's radius in the round before this one.
 RING_SCALE = 13 / 15
@@ -116,6 +116,18 @@ WAVE_COUNT = 2
 #: Segments in the executing chase, and how many of them are lit at a time.
 CHASE_SEGMENTS = 12
 CHASE_LIT = 4
+
+#: How far out a click still counts as landing on the orb, as a fraction of
+#: the size: the ring's outer edge.
+#:
+#: Geometric rather than alpha-based, and that was decided by measuring. An
+#: alpha threshold makes the click target move with the animation -- at 64px,
+#: pixels above alpha 40 cover 8.0% of the window while loading, 22.7% at
+#: standby and 62.4% while recording. The same click would hit or miss
+#: depending on what the orb happened to be doing, which is not a button. The
+#: ring's outer edge is 27.4% of the rectangle in every state and every frame,
+#: against 73% that is merely non-transparent.
+HIT_RADIUS = RING_RADIUS + RING_WIDTH
 
 #: What the fallback disc is filled with when there is no per-pixel alpha.
 DISC_BACKGROUND = (23, 24, 27)
@@ -525,6 +537,29 @@ def flatten_onto(image: Any, background: tuple[int, int, int]) -> Any:
     return base
 
 
+def is_on_orb(x: float, y: float, *, size: int = ORB_SIZE) -> bool:
+    """Whether a click at *(x, y)* within the orb's window landed on the orb.
+
+    The window is a square and most of it is not the orb: 73% of it is see-
+    through at standby. Without this a stray click in a corner would expand the
+    panel, which is the cost of moving from a double-tap to a single click.
+
+    Pure arithmetic on the position, so it needs no rendered frame and cannot
+    disagree with one.
+    """
+    centre = (size - 1) / 2.0
+    distance = ((float(x) - centre) ** 2 + (float(y) - centre) ** 2) ** 0.5
+    return distance / max(size, 1) <= HIT_RADIUS
+
+
+def responsive_fraction(*, size: int = ORB_SIZE) -> float:
+    """How much of the orb's window answers a click. Measured, not asserted."""
+    import numpy as np
+
+    radius, _turns = _fields(size)
+    return float((np.asarray(radius) <= HIT_RADIUS).mean())
+
+
 def transparent_fraction(image: Any) -> float:
     """How much of the orb's rectangle is fully transparent.
 
@@ -541,6 +576,7 @@ def transparent_fraction(image: Any) -> float:
 
 __all__ = [
     "ANIMATED_STATES",
+    "HIT_RADIUS",
     "CHASE_LIT",
     "CHASE_SEGMENTS",
     "DISC_BACKGROUND",
@@ -568,7 +604,9 @@ __all__ = [
     "is_oneshot",
     "level_at_angle",
     "orb_image",
+    "is_on_orb",
     "orb_on_disc",
+    "responsive_fraction",
     "scaled_width",
     "style_for",
     "transparent_fraction",

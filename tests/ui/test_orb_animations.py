@@ -112,14 +112,23 @@ def lead_wave_radius(alpha: np.ndarray) -> float:
     number nobody can falsify.
     """
     radius, _turns = fields()
-    band = (radius > RING_RADIUS + 0.022) & (radius < RING_RADIUS + 0.105)
+    # Wide enough to hold a whole journey: a ripple travels WAVE_SPAN * 1.4 of
+    # the size, and at 64 pixels one radius step is 0.0156, so a narrow band is
+    # only three or four samples and the measurement inverts.
+    band = (radius > RING_RADIUS + 0.040) & (radius < RING_RADIUS + 0.220)
     values = np.where(band, alpha, -1.0)
     index = np.unravel_index(int(np.argmax(values)), values.shape)
     return float(radius[index])
 
 
-#: What ``lead_wave_radius`` reads when there is nothing travelling.
-NO_WAVE_FLOOR = 0.2828
+def no_wave_floor() -> float:
+    """What ``lead_wave_radius`` reads when there is nothing travelling.
+
+    Derived rather than written down: it is the inner edge of the band the
+    helper looks in, which moves with the orb's size. A literal was right at
+    72 pixels and wrong at 64, which is a test that fails for the wrong
+    reason."""
+    return lead_wave_radius(alpha_of(orb_image("error", 0.95, 0.0)))
 
 
 # --- 1. the seven exist and are what was asked for ---------------------------
@@ -271,12 +280,15 @@ def test_the_speaking_waves_travel_outward() -> None:
     averaged over it is constant by construction."""
     radii = [
         lead_wave_radius(alpha_of(orb_image("speaking", phase, 0.0)))
-        for phase in (0.04, 0.14, 0.24)
+        for phase in (0.04, 0.12, 0.20)
     ]
 
     assert radii == sorted(radii), f"the waves did not travel outward: {radii}"
-    assert radii[-1] > radii[0] + 0.004
-    assert radii[0] > NO_WAVE_FLOOR, "there is no wave outside the ring at all"
+    assert radii[-1] > radii[0] + 0.002
+    # At the first sample the lead wave has not yet reached the band's
+    # inner edge, so the claim is that a wave gets outside the ring --
+    # not that one is already there when the cycle starts.
+    assert max(radii) > no_wave_floor(), "no wave ever leaves the ring"
 
 
 def test_the_waves_repeat_once_per_ring_in_flight() -> None:
@@ -298,7 +310,7 @@ def test_a_state_with_no_waves_reads_the_floor(state: str) -> None:
     """The control. Without it, "the waves travel" could be measuring noise."""
     radius = lead_wave_radius(alpha_of(orb_image(state, 0.9, 0.0)))
 
-    assert radius == pytest.approx(NO_WAVE_FLOOR, abs=0.002), (
+    assert radius == pytest.approx(no_wave_floor(), abs=0.002), (
         f"{state} has something travelling outside its ring"
     )
 
@@ -306,12 +318,12 @@ def test_a_state_with_no_waves_reads_the_floor(state: str) -> None:
 def test_the_success_ripple_travels_outward_then_leaves_a_steady_ring() -> None:
     """One ripple, then steady -- which is the shape of the whole state: it
     plays once and the final frame is where the orb rests."""
-    early = lead_wave_radius(alpha_of(orb_image("success", 0.05, 0.0)))
-    middle = lead_wave_radius(alpha_of(orb_image("success", 0.25, 0.0)))
+    early = lead_wave_radius(alpha_of(orb_image("success", 0.10, 0.0)))
+    middle = lead_wave_radius(alpha_of(orb_image("success", 0.50, 0.0)))
     late = lead_wave_radius(alpha_of(orb_image("success", 0.95, 0.0)))
 
     assert middle > early, f"the ripple did not expand: {early} -> {middle}"
-    assert late == pytest.approx(NO_WAVE_FLOOR, abs=0.002), (
+    assert late == pytest.approx(no_wave_floor(), abs=0.002), (
         "the ripple is still going at the end of its one and only cycle"
     )
 

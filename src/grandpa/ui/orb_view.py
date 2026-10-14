@@ -34,9 +34,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from grandpa.ui.orb_image import (
+    HIT_RADIUS,
     LEVEL_BUCKETS,
     ORB_SIZE,
     fps_for,
+    is_on_orb,
     frames_for,
     is_animated,
     is_live,
@@ -237,9 +239,16 @@ class OrbView:
     #: before that so the controller can hold both.
     master: Any = None
     size: int = ORB_SIZE
-    #: Called with no arguments when the orb is double-tapped.
+    #: Called with no arguments when the orb is clicked once, on release, and
+    #: only when the press landed on the orb itself rather than on the
+    #: transparent part of its window.
     on_toggle: Any = None
-    #: Called with ``(x, y)`` as the orb is dragged.
+    #: Called with ``(dx, dy)`` as the orb is dragged. A delta rather than a
+    #: position, because the controller owns where things are: the orb and the
+    #: panel are one component and a drag moves the pair.
+    on_drag: Any = None
+    #: Called with ``(x, y)`` as the orb is dragged, for a caller that wants the
+    #: position rather than the delta. Both fire; neither is required.
     on_move: Any = None
     #: Called when Escape is pressed with the orb focused -- the same way the
     #: panel closes. It only arrives if the orb was clicked first, because the
@@ -279,6 +288,12 @@ class OrbView:
     _frames_key: Any = field(default=None, init=False)
     #: True once a one-shot animation has played, so its last frame holds.
     _finished: bool = field(default=False, init=False)
+    #: Whether the press that is in progress began on the orb. A press that
+    #: started in a transparent corner may still drag -- the whole window is
+    #: the handle -- but it may not count as a click.
+    _pressed_on_orb: bool = field(default=False, init=False)
+    #: Where the pointer was at the last motion, so a drag can report a delta.
+    _last_pointer: tuple[int, int] = field(default=(0, 0), init=False)
 
     def _tk(self) -> Any:
         if self.tkinter_module is None:
@@ -569,27 +584,56 @@ class OrbView:
 
     def _on_press(self, event: Any) -> None:
         self._grab_offset = (int(getattr(event, "x", 0)), int(getattr(event, "y", 0)))
+        self._pressed_on_orb = is_on_orb(
+            getattr(event, "x", 0), getattr(event, "y", 0), size=self.size
+        )
+        pointer = (
+            int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0))
+        )
+        self._last_pointer = pointer
         if self.tracker is not None:
-            self.tracker.press(
-                int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0))
-            )
+            self.tracker.press(*pointer)
 
     def _on_motion(self, event: Any) -> None:
         if self.tracker is None:
             return
-        if not self.tracker.motion(
+        pointer = (
             int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0))
-        ):
+        )
+        if not self.tracker.motion(*pointer):
             return
+        delta = (
+            pointer[0] - self._last_pointer[0], pointer[1] - self._last_pointer[1]
+        )
+        self._last_pointer = pointer
+        if callable(self.on_drag):
+            # The controller moves both windows. Reporting the delta rather
+            # than moving ourselves is what stops the orb and the panel
+            # drifting apart: there is one place that knows where they are.
+            try:
+                self.on_drag(delta[0], delta[1])
+                return
+            except Exception:  # noqa: BLE001 - a drag must not kill the UI
+                pass
         self.move_to(
-            int(getattr(event, "x_root", 0)) - self._grab_offset[0],
-            int(getattr(event, "y_root", 0)) - self._grab_offset[1],
+            pointer[0] - self._grab_offset[0], pointer[1] - self._grab_offset[1]
         )
 
     def _on_release(self, _event: Any = None) -> None:
+        """One click expands, and the decision is made here.
+
+        On release, because by release a drag is already known: the tracker
+        watches the *maximum* distance from the press, so a press that reached
+        the fifth pixel is a drag before the button comes up and never reports
+        a tap. There is nothing to undo, which is what makes a single click
+        reliable here where it would not be if it fired on press.
+        """
         if self.tracker is None:
             return
-        if self.tracker.release() == "double" and callable(self.on_toggle):
+        outcome = self.tracker.release()
+        if outcome != "tap" or not self._pressed_on_orb:
+            return
+        if callable(self.on_toggle):
             try:
                 self.on_toggle()
             except Exception:  # noqa: BLE001 - a click must not kill the UI
@@ -629,6 +673,7 @@ class OrbView:
 
 __all__ = [
     "ANCHOR_GAP",
+    "HIT_RADIUS",
     "PULSE_FRAMES",
     "DEFAULT_DOUBLE_CLICK_MS",
     "DEFAULT_DRAG_SLOP",

@@ -39,7 +39,7 @@ pytestmark = pytest.mark.core
 
 AREA = (0, 0, 1920, 1080)
 PANEL = (400, 324)
-ORB = 72
+ORB = 64
 
 
 class Event:
@@ -258,28 +258,85 @@ def test_the_window_is_realised_before_its_handle_is_asked_for() -> None:
 # --- 2. the mouse ------------------------------------------------------------
 
 
-def test_a_double_tap_toggles() -> None:
-    clock = [0.0]
-    toggled: list[int] = []
+def a_clickable_view(**kwargs):
+    """A view whose press lands on the orb unless the test says otherwise."""
     tk = RecordingTk()
     view = OrbView(
         tkinter_module=tk,
         painter_factory=lambda _v: Painted(),
         thresholds=lambda: (500, 4),
-        on_toggle=lambda: toggled.append(1),
+        **kwargs,
     )
     view.show(position=(0, 0), topmost=True)
-    view.tracker.clock = lambda: clock[0]
+    view.tracker.clock = lambda: 1.0
+    return tk, view
 
-    press = tk.handlers["<ButtonPress-1>"]
-    release = tk.handlers["<ButtonRelease-1>"]
-    press(Event(x_root=100, y_root=100))
-    release(Event(x_root=100, y_root=100))
-    clock[0] = 0.2
-    press(Event(x_root=101, y_root=100))
-    release(Event(x_root=101, y_root=100))
+
+def on_the_orb(**kwargs) -> Event:
+    """An event at the centre of the window, which is inside the ring."""
+    from grandpa.ui.orb_image import ORB_SIZE
+
+    middle = (ORB_SIZE - 1) // 2
+    return Event(x=middle, y=middle, **kwargs)
+
+
+def test_a_single_click_toggles() -> None:
+    """One click, not two. The decision is on release, where a drag is already
+    known, so there is nothing to undo."""
+    toggled: list[int] = []
+    tk, view = a_clickable_view(on_toggle=lambda: toggled.append(1))
+
+    tk.handlers["<ButtonPress-1>"](on_the_orb(x_root=100, y_root=100))
+    tk.handlers["<ButtonRelease-1>"](on_the_orb(x_root=100, y_root=100))
 
     assert toggled == [1]
+
+
+def test_a_click_on_the_transparent_corner_is_ignored() -> None:
+    """The cost of moving from a double-tap to a single click, and the fix.
+    Most of the window is see-through; a stray click there must not expand the
+    panel."""
+    toggled: list[int] = []
+    tk, view = a_clickable_view(on_toggle=lambda: toggled.append(1))
+
+    tk.handlers["<ButtonPress-1>"](Event(x=0, y=0, x_root=100, y_root=100))
+    tk.handlers["<ButtonRelease-1>"](Event(x=0, y=0, x_root=100, y_root=100))
+
+    assert toggled == []
+
+
+def test_a_press_that_moves_on_the_fifth_pixel_never_counts_as_a_click() -> None:
+    """The case worth naming: slop is 4px, so five pixels is a drag, and the
+    tracker knows it before the button comes up."""
+    toggled: list[int] = []
+    moved: list[tuple[int, int]] = []
+    tk, view = a_clickable_view(
+        on_toggle=lambda: toggled.append(1),
+        on_drag=lambda dx, dy: moved.append((dx, dy)),
+    )
+
+    tk.handlers["<ButtonPress-1>"](on_the_orb(x_root=200, y_root=200))
+    tk.handlers["<B1-Motion>"](on_the_orb(x_root=205, y_root=200))
+    tk.handlers["<ButtonRelease-1>"](on_the_orb(x_root=205, y_root=200))
+
+    assert toggled == []
+    assert moved == [(5, 0)]
+
+
+def test_a_press_that_wanders_within_the_slop_is_still_a_click() -> None:
+    toggled: list[int] = []
+    moved: list[tuple[int, int]] = []
+    tk, view = a_clickable_view(
+        on_toggle=lambda: toggled.append(1),
+        on_drag=lambda dx, dy: moved.append((dx, dy)),
+    )
+
+    tk.handlers["<ButtonPress-1>"](on_the_orb(x_root=200, y_root=200))
+    tk.handlers["<B1-Motion>"](on_the_orb(x_root=203, y_root=202))
+    tk.handlers["<ButtonRelease-1>"](on_the_orb(x_root=203, y_root=202))
+
+    assert toggled == [1]
+    assert moved == []
 
 
 def test_a_drag_never_toggles() -> None:

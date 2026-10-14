@@ -34,6 +34,11 @@ from grandpa.ui.bubble import DEFAULT_HOLD_KEY, METER_BARS
 from grandpa.ui.palette import RING_COLOURS
 from grandpa.voice.push_to_talk import describe_hold_key, parse_hold_key
 
+#: The only widgets a drag may start from: the header strip and the two
+#: non-interactive labels inside it. Everything else in the panel is something
+#: you click, type into or select, and a drag beginning there would fight it.
+DRAG_HANDLE_WIDGETS = ("header", "state", "dot")
+
 #: Calls that would move focus to the bubble. None of them may ever appear.
 FOCUS_STEALING_CALLS = (
     "focus_force",
@@ -181,6 +186,11 @@ class TkBubbleView:
     #: Called when the heard row is clicked, to load the transcript into
     #: the box for correcting. See _edit_transcript.
     on_edit_transcript: Any = None
+    #: Called with ``(dx, dy)`` while the header is dragged. Given one, the
+    #: panel does NOT move itself: the controller owns where both windows are,
+    #: because the orb has to come along. Without it the panel moves alone, as
+    #: it did before the two became one component.
+    on_drag: Any = None
     root: Any = field(default=None, init=False)
     _widgets: dict[str, Any] = field(default_factory=dict, init=False)
     _drag_origin: tuple[int, int] = field(default=(0, 0), init=False)
@@ -351,7 +361,12 @@ class TkBubbleView:
         )
         self._widgets["status"].pack(fill="x", padx=10, pady=(0, 10))
 
-        # Dragging, because overrideredirect removed the title bar.
+        # Dragging, because overrideredirect removed the title bar. Bound to
+        # the header and the two things in it that are not interactive, and to
+        # nothing else: not the entry, not the speech toggle, not the heard row
+        # (which is clickable for correcting), not the status line. A drag that
+        # could start from the text box would steal the caret from a selection.
+        # DRAG_HANDLE_WIDGETS names them so a test can pin the list.
         for widget in (header, self._widgets["state"], self._widgets["dot"]):
             widget.bind("<Button-1>", self._drag_start)
             widget.bind("<B1-Motion>", self._drag_move)
@@ -712,10 +727,18 @@ class TkBubbleView:
         self._drag_origin = (int(event.x), int(event.y))
 
     def _drag_move(self, event: Any) -> None:
-        self.move_to(
+        target = (
             int(event.x_root) - self._drag_origin[0],
             int(event.y_root) - self._drag_origin[1],
         )
+        if callable(self.on_drag):
+            here = self.position()
+            try:
+                self.on_drag(target[0] - here[0], target[1] - here[1])
+                return
+            except Exception:  # noqa: BLE001 - a drag must not kill the UI
+                pass
+        self.move_to(*target)
 
     def move_to(self, x: int, y: int) -> bool:
         """Put the panel at a screen position.
@@ -741,6 +764,7 @@ class TkBubbleView:
 
 __all__ = [
     "CREATION_TAKES_FOREGROUND",
+    "DRAG_HANDLE_WIDGETS",
     "FOCUS_STEALING_CALLS",
     "KEY_SYMS",
     "REMAP_CALLS",

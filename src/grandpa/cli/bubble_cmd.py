@@ -184,11 +184,14 @@ def bubble(
     )
     view.on_close = lambda: (controller.stop(), None)[1]
 
-    # Double-tap toggles; a drag only moves. Both reach the controller, which
-    # owns which state the window is in and remembers it.
+    # One click toggles; a drag only moves. Both reach the controller, which
+    # owns which state the window is in, where both windows are, and remembers
+    # it. The drag handlers report a DELTA and the controller moves the pair --
+    # neither window moves itself, which is what stops them drifting apart.
     orb.on_toggle = controller.toggle_collapsed
-    orb.on_move = lambda x, y: setattr(controller, "orb_position", (x, y))
+    orb.on_drag = controller.move_component
     orb.on_close = view.on_close
+    view.on_drag = controller.move_component
 
     # Follow the action layer's own running/finished announcements, so the orb
     # can say "working" for the span an automation is actually running rather
@@ -201,10 +204,7 @@ def bubble(
         # Moved, not re-shown. Calling show() again built a second root window
         # and left the first one behind.
         controller.orb_position = start_at
-        orb.move_to(*start_at)
-        if not controller.collapsed:
-            controller.position = anchor_panel_to_orb(start_at, (WIDTH, HEIGHT))
-            view.move_to(*controller.position)
+        controller._place_windows()
 
     click.echo(
         "Orb open. Hold the key to talk; double-tap the orb for the panel; "
