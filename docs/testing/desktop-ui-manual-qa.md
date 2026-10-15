@@ -29,7 +29,7 @@ that first rather than reporting a flat disc as ugly glow.
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| O1 | Run `grandpa bubble`, look at the orb, then double-tap it and read the status line | A **glowing ring with no visible edge or box**, and the status line contains **`orb: glow`**. If you see a **dark circle** with a hard edge, the status line will say **`orb: flat disc (...)`** — copy that whole bracket to me and treat every later "how does it look" step as describing the fallback. |
+| O1 | Run `grandpa bubble`, look at the orb, then click it and read the status line | A **glowing ring with no visible edge or box**, and the status line contains **`orb: glow`**. If you see a **dark circle** with a hard edge, the status line will say **`orb: flat disc (...)`** — copy that whole bracket to me and treat every later "how does it look" step as describing the fallback. |
 
 ### What it should look like, measured
 
@@ -95,7 +95,7 @@ These share one mouse button, so they are worth a minute each.
 | O9 | Drag the orb across the screen | It follows the cursor. The panel **must not open** — a drag never counts as a click, and the decision is made on release where the drag is already known. |
 | O11 | **Click the orb once** | The panel opens **beside the orb**. One click, not two. |
 | O12 | Click once again | The panel goes away. The orb stays. |
-| O12a | Click the **empty corner** of the orb's square — well outside the ring | **Nothing happens.** Only the ring and its inside answer a click: 27.4% of the orb's square, which is what stops a stray click opening the panel now that one click is enough. |
+| O12a | Click the **empty corner** of the orb's square — well outside the ring | **Nothing happens.** Only the ring and its inside answer a click: 28.1% of the orb's square, which is what stops a stray click opening the panel now that one click is enough. |
 | O12b | Press on the ring, move the mouse about five pixels, release | **Nothing opens** and the orb has moved. Five pixels is a drag. |
 | O12c | Press on the ring, wobble two or three pixels, release | The panel **opens**. Two pixels is still a click. |
 | O14 | Drag the orb to the **far right edge**, then click it | The panel opens to the orb's **left**, fully on screen. Repeat at the bottom edge: it should open **upward**. Nothing should hang off the screen or sit under the taskbar. |
@@ -113,6 +113,10 @@ parent — so this is the section where that shows or does not.
 | M3 | Try to drag from the **text box**, the **speech chip**, the **heard row** or the **status line** | Nothing moves. Only the header strip and the state label are handles. Dragging from the text box should still let you select text. |
 | M4 | Drag the pair to a corner, collapse, drag the orb somewhere else, expand | The panel reappears **the same distance and direction from the orb** as before. It must never detach. |
 | M5 | Drag them around quickly for a few seconds | No stutter, no gap opening up, no second copy of either window. |
+| M6 | Drag the orb hard into each of the four **corners**, and along each edge | It **stops at the edge** with the whole glowing ring still visible. The window itself may hang about nine pixels over -- that is the transparent padding, and it is deliberate, so the ring can sit flush with the edge instead of stopping short of it. Measured at all four corners: the ring lands between 0.6 and 1535.4 across a 1536-wide work area. |
+| M7 | With the panel open, push the pair into the **right-hand** corners | The orb keeps its corner and the **panel flips to the orb's left**, wholly on screen. The orb is what you place; the panel finds room. |
+| M8 | Drag back from the edge | The panel returns to the side it was on. The flip is not remembered — only borrowed while it is needed. |
+| M9 | If you have a second monitor: drag the orb onto it, then into its corners | It clamps to **that** display's edges, not the main one's. Being stranded on the primary screen was the alternative. |
 
 
 ### The microphone is held open

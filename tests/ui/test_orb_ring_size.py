@@ -41,8 +41,11 @@ from grandpa.ui.orb_image import (
 pytestmark = pytest.mark.core
 
 #: The window before this round, so "smaller" is a comparison and not a claim.
-#: 96 -> 72 -> 64, each step the same picture smaller.
-PREVIOUS_WINDOW = 72
+#: 96 -> 72 -> 64 -> 48. The 72 -> 64 step was reported as invisible and it
+#: was: measured on screen it moved the lit ring from 54 physical pixels to 48,
+#: and a six-pixel change in a forty-eight-pixel object judged from memory is
+#: not a change anyone can see. This step is a quarter off the diameter.
+PREVIOUS_WINDOW = 64
 #: The radius fraction, unchanged. The ring shrank with the window, not inside it.
 PREVIOUS_RADIUS = 0.30 * RING_SCALE
 
@@ -61,9 +64,9 @@ def radius_map(size: int) -> np.ndarray:
 
 
 def test_the_window_is_smaller_than_it_was() -> None:
-    assert ORB_SIZE == 64
+    assert ORB_SIZE == 48
     assert ORB_SIZE < PREVIOUS_WINDOW
-    assert orb_image("idle").size == (64, 64)
+    assert orb_image("idle").size == (48, 48)
 
 
 def test_the_ring_still_sits_at_the_same_fraction_of_the_window() -> None:
@@ -73,21 +76,35 @@ def test_the_ring_still_sits_at_the_same_fraction_of_the_window() -> None:
     assert RING_RADIUS == pytest.approx(0.26)
 
 
-def test_the_reduction_is_moderate() -> None:
+def test_the_reduction_is_moderate_but_visible() -> None:
+    """A quarter, because an eighth was measured as imperceptible. Not more:
+    past this the halo closes over the middle unless the stroke fraction comes
+    down with it, and the ring stops responding to the voice."""
     reduction = 1.0 - ORB_SIZE / PREVIOUS_WINDOW
 
-    assert 0.05 < reduction < 0.25, f"window reduced by {reduction:.1%}"
+    assert 0.18 < reduction < 0.35, f"window reduced by {reduction:.1%}"
 
 
 # --- 2. the stroke is absolute now, which is the actual fix ------------------
 
 
-def test_the_stroke_is_pinned_in_pixels_not_in_a_fraction() -> None:
-    """Held at 2.5 logical pixels. A fraction of a smaller window would have
-    thinned it, and the measured floor is two final pixels."""
-    assert STROKE_PX == 2.5
-    assert RING_WIDTH == pytest.approx(STROKE_PX / ORB_SIZE)
-    assert ORB_STYLES["idle"].width * ORB_SIZE == pytest.approx(STROKE_PX)
+def test_the_stroke_is_a_fraction_again_and_that_is_the_fix() -> None:
+    """**The premise of this test used to be the opposite, and that was the
+    bug.**
+
+    The stroke was pinned at an absolute 2.5 logical pixels to stop a smaller
+    window thinning it. The consequence, measured, is that an absolute stroke
+    is a larger *fraction* of every smaller window -- and the halo is a
+    multiple of the stroke, so it widened until it closed over the middle. At
+    the shipping 64 the middle was already 0.221 of peak; at 56 it passed 0.25
+    and stopped being a hole. That is what blocked the orb getting smaller.
+
+    A fraction scales with the window, so the proportions hold at any size.
+    0.0396 is the fraction the 64px orb had, so the look is carried over
+    exactly rather than re-tuned."""
+    assert RING_WIDTH == pytest.approx(0.0396)
+    assert STROKE_PX == pytest.approx(RING_WIDTH * ORB_SIZE)
+    assert ORB_STYLES["idle"].width == pytest.approx(RING_WIDTH)
 
 
 def test_the_ring_reads_thicker_relative_to_its_own_circle() -> None:
@@ -134,15 +151,51 @@ def test_no_stroke_was_left_behind_at_an_old_value() -> None:
 # --- 3. still above the floor ------------------------------------------------
 
 
-def test_the_stroke_is_still_at_least_two_logical_pixels() -> None:
-    """The measured floor, and it is about the stroke rather than the radius:
-    peak brightness fell from 265 to 234 at a 1.92px stroke and to 172 at
-    1.15px, because what is left of a sub-two-pixel line never reaches full
-    intensity once it has been stretched to 125%."""
-    for state, style in ORB_STYLES.items():
-        pixels = style.width * ORB_SIZE
+def test_the_two_pixel_stroke_floor_no_longer_applies() -> None:
+    """**It was a property of a renderer that no longer exists.**
 
-        assert pixels >= 2.0, f"{state} draws a {pixels:.2f}px stroke"
+    The floor came from the PIL pipeline: ``int(big * width)`` truncated a thin
+    stroke at four times supersampling, and what survived never reached full
+    intensity after the downscale and the 125% stretch -- peak fell from 265 to
+    234 at 1.92px and to 172 at 1.15px. The ring is a Gaussian with a
+    continuous sigma now. Re-measured, peak alpha is a full 255 at every stroke
+    down to 1.5 logical pixels, so inheriting the old floor would have blocked
+    a smaller orb for a reason that had stopped being true.
+
+    What binds instead is below: the middle has to stay a hole."""
+    assert ORB_STYLES["idle"].width * ORB_SIZE < 2.0, (
+        "the stroke is above two pixels, so this test is not proving anything"
+    )
+    for state in ORB_STYLES:
+        assert alpha_of(orb_image(state, 0.3, 0.0)).max() == 255, state
+
+
+def test_the_real_constraint_is_that_the_middle_stays_a_hole() -> None:
+    """The floor that replaced the two-pixel one, stated as the thing measured.
+
+    The halo is a multiple of the stroke, so a bigger stroke fraction widens it
+    until the orb is a glowing disc. Checked in the worst state -- recording,
+    whose stroke is the widest -- and against the level response, because a
+    filled middle shows up there first: the lit area stops rising with the
+    voice because it is already full."""
+    radii = radius_map(ORB_SIZE)
+    worst = max(
+        float(alpha_of(orb_image(state, 0.25, 0.0))[radii < 0.15].mean()) / 255.0
+        for state in ORB_STYLES
+    )
+
+    assert worst < 0.25, f"the middle is {worst:.3f} of peak and filling in"
+
+    lit = [
+        float((alpha_of(orb_image("recording", 0.0, level)) > 64).sum())
+        for level in (0.0, 0.5, 1.0)
+    ]
+
+    assert lit == sorted(lit)
+    assert lit[-1] / lit[0] > 1.25, (
+        f"the ring only gets {lit[-1] / lit[0]:.2f}x heavier at full volume, "
+        "which is what a middle that has filled in looks like"
+    )
 
 
 def test_the_band_still_reaches_full_intensity() -> None:

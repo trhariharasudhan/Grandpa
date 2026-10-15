@@ -100,7 +100,12 @@ def bubble(
 
     from grandpa.ui.bridge import InProcessBridge
     from grandpa.ui.bubble import BubbleController
-    from grandpa.ui.orb_view import OrbView, anchor_panel_to_orb
+    from grandpa.ui.orb_view import (
+        OrbView,
+        anchor_panel_to_orb,
+        clamp_orb_position,
+        work_area_for,
+    )
     from grandpa.ui.tk_view import HEIGHT, WIDTH, TkBubbleView
     from grandpa.voice.accuracy import quiet_model_downloads
     from grandpa.voice.config import load_voice_assistant_config
@@ -151,6 +156,12 @@ def bubble(
         bridge=bridge,
         orb=orb,
         anchor=lambda orb_at: anchor_panel_to_orb(orb_at, (WIDTH, HEIGHT)),
+        # The work area of the monitor the orb is on, not the primary one, so a
+        # second display is somewhere it can live rather than somewhere it gets
+        # stranded.
+        clamp=lambda x, y: clamp_orb_position(x, y),
+        work_area=work_area_for,
+        panel_size=(WIDTH, HEIGHT),
         probe=WindowsKeyProbe(),
         capture=None,  # set below, once the controller exists to receive levels
         key=hold_key,

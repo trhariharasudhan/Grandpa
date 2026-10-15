@@ -45,12 +45,33 @@ from typing import Any
 
 from grandpa.ui.palette import ring_rgb
 
-#: Default orb size in logical pixels: 96, then 72, now 64. The ring's radius
-#: and the stroke are both unchanged fractions, so each step is the same
-#: picture smaller -- the identity is in the ratio, not the pixel count. At 64
-#: the ring is 33.3 logical pixels across and the stroke is 2.22, still above
-#: the measured two-pixel floor below which the band dims rather than thins.
-ORB_SIZE = 64
+#: Default orb size in logical pixels: 96, 72, 64, now 48. The ring's radius
+#: is an unchanged fraction and the stroke is pinned in absolute pixels, so
+#: each step is the same picture smaller.
+#:
+#: 64 was reported as looking identical to 72, and it was: measured on screen,
+#: that step moved the lit ring from 54 physical pixels across to 48. A
+#: six-pixel change in a forty-eight-pixel object, judged from memory across
+#: days, is not a change anyone can see. 48 takes it to 38 -- ten pixels
+#: smaller than 64 and sixteen smaller than 72, a quarter off the diameter.
+#:
+#:     ORB_SIZE   ring diameter   lit on screen   diameter:stroke
+#:     72         46.8 physical   54 px           15.0
+#:     64         41.6            48 px           13.3
+#:     48         31.2            38 px           10.0   <- here
+#:     40         26.0            34 px            8.3    the floor
+#:     32         20.8            28 px            6.7    a donut, not a ring
+#:
+#: **The floor has moved since it was last measured, and it is worth being
+#: precise about why.** Last time it was a two-logical-pixel stroke, because
+#: the radius fraction was what shrank and the stroke shrank with it. The
+#: stroke is pinned at STROKE_PX now, so reducing ORB_SIZE never thins it --
+#: peak brightness held at 265-274 of 765 all the way down to 32, and the
+#: centre stayed a hole at every size. What binds instead is the ratio of the
+#: ring's diameter to its stroke: at 8.3 it is borderline and at 6.7 it reads
+#: as a thick annulus rather than a fine ring. So the floor is about 40, and 48
+#: leaves a margin.
+ORB_SIZE = 48
 
 #: The reduction applied to the ring's radius in the round before this one.
 RING_SCALE = 13 / 15
@@ -58,12 +79,38 @@ RING_SCALE = 13 / 15
 #: How far out the ring sits, as a fraction of the size.
 RING_RADIUS = 0.30 * RING_SCALE
 
-#: The stroke, held at an absolute 2.5 logical pixels of the 72px window rather
-#: than at a ratio of it. That is what keeps the band as bright as it was in the
-#: larger window: the measured floor is two final pixels, below which the band
-#: dims rather than thins.
-STROKE_PX = 2.5
-RING_WIDTH = STROKE_PX / ORB_SIZE
+#: The stroke, as a fraction of the size. It was briefly held at an absolute
+#: 2.5 logical pixels, to stop a smaller window thinning it -- and that is what
+#: blocked the orb getting smaller.
+#:
+#: An absolute stroke is a *larger fraction* of every smaller window, the halo
+#: is defined as a multiple of the stroke, so the halo widens with it and
+#: eventually closes over the middle. Measured, with the stroke pinned at 2.5px:
+#:
+#:     ORB_SIZE   stroke fraction   middle / peak   level response
+#:     72         0.0347            0.195           1.45x
+#:     64         0.0391            0.221           1.36x
+#:     56         0.0446            0.257  <- not a hole any more
+#:     48         0.0521            0.301           1.14x
+#:
+#: So 64 was already at the edge, and the orb could not shrink further without
+#: becoming a glowing disc whose ring barely responds to the voice.
+#:
+#: Returning the stroke to a fraction fixes that, and the old reason for making
+#: it absolute no longer applies. **The two-pixel floor measured for the PIL
+#: pipeline is gone**: it came from ``int(big * width)`` truncating a thin
+#: stroke at four times supersampling, and the renderer draws a Gaussian with a
+#: continuous sigma now. Re-measured, peak alpha is a full 255 at every stroke
+#: down to 1.5 logical pixels.
+#:
+#: 0.0396 is the fraction the shipping 64px orb had, so the look is preserved
+#: exactly while the orb shrinks: at 48 that is a 1.9px stroke, middle/peak
+#: 0.227 and a 1.36x level response -- the same numbers as 64/2.5.
+RING_WIDTH = 0.0396
+
+#: The stroke in logical pixels at the default size, for reference. Derived, so
+#: it cannot drift from the fraction above.
+STROKE_PX = RING_WIDTH * ORB_SIZE
 
 #: The halo, as three Gaussians of the radial offset: each entry is
 #: ``(sigma as a multiple of the stroke, weight)``.
@@ -138,6 +185,22 @@ PIP_GLOW = 0.45
 #: ring's outer edge is 27.4% of the rectangle in every state and every frame,
 #: against 73% that is merely non-transparent.
 HIT_RADIUS = RING_RADIUS + RING_WIDTH
+
+def visible_inset(size: int = ORB_SIZE) -> float:
+    """How far the window may hang off a screen edge with the ring still whole.
+
+    The window is a square and the ring is a circle inside it, so most of the
+    window is transparent padding. Clamping the *window* to the work area would
+    leave a permanent gap between the ring and the screen edge and the orb
+    would look as though it refused to reach the corner. Clamping the ring
+    instead lets the window overhang by exactly the padding.
+
+    Measured from HIT_RADIUS, which is the ring's outer edge, so the same
+    number that decides whether a click landed on the orb decides how far it
+    may travel. One definition of "the orb" rather than two.
+    """
+    return max(0.0, size * (0.5 - HIT_RADIUS))
+
 
 #: What the fallback disc is filled with when there is no per-pixel alpha.
 DISC_BACKGROUND = (23, 24, 27)
@@ -640,6 +703,7 @@ __all__ = [
     "orb_image",
     "is_on_orb",
     "orb_on_disc",
+    "visible_inset",
     "responsive_fraction",
     "scaled_width",
     "style_for",

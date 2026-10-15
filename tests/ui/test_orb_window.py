@@ -39,7 +39,7 @@ pytestmark = pytest.mark.core
 
 AREA = (0, 0, 1920, 1080)
 PANEL = (400, 324)
-ORB = 64
+ORB = 48
 
 
 class Event:
@@ -700,7 +700,10 @@ def test_the_fallback_gets_a_disc_and_the_glow_painter_gets_alpha() -> None:
     view2.redraw()
     glow_image = layered.frames[-1][0]
 
-    assert disc_image.getpixel((48, 48))[3] == 255
+    from grandpa.ui.orb_image import ORB_SIZE
+
+    middle = ORB_SIZE // 2
+    assert disc_image.getpixel((middle, middle))[3] == 255
     assert glow_image.getpixel((0, 0))[3] == 0
 
 

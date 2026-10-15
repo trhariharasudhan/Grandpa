@@ -39,6 +39,7 @@ from grandpa.ui.orb_image import (
     ORB_SIZE,
     fps_for,
     is_on_orb,
+    visible_inset,
     frames_for,
     is_animated,
     is_live,
@@ -119,6 +120,100 @@ def work_area(user32: Any = None) -> tuple[int, int, int, int]:
         return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
     except Exception:  # noqa: BLE001 - not Windows
         return DEFAULT_WORK_AREA
+
+
+#: MonitorFromPoint's "nearest monitor" flag, and the size of MONITORINFO.
+MONITOR_DEFAULTTONEAREST = 0x00000002
+
+
+def work_area_for(
+    point: tuple[int, int], user32: Any = None
+) -> tuple[int, int, int, int]:
+    """The work area of the monitor containing *point*, or the primary one.
+
+    SPI_GETWORKAREA answers for the primary display only, which on a
+    multi-monitor desktop would clamp the orb back onto the main screen the
+    moment it was dragged to a second one -- stranded rather than reachable.
+    MonitorFromPoint answers for the display it is actually on, and
+    DEFAULTTONEAREST means a point already off every screen resolves to the
+    closest monitor rather than failing, which is how an orb that somehow got
+    out comes back.
+    """
+    try:
+        import ctypes
+        import ctypes.wintypes as wt
+
+        if user32 is None:
+            user32 = ctypes.windll.user32
+
+        class MONITORINFO(ctypes.Structure):
+            _fields_ = [
+                ("cbSize", wt.DWORD),
+                ("rcMonitor", wt.RECT),
+                ("rcWork", wt.RECT),
+                ("dwFlags", wt.DWORD),
+            ]
+
+        class POINT(ctypes.Structure):
+            _fields_ = [("x", wt.LONG), ("y", wt.LONG)]
+
+        user32.MonitorFromPoint.argtypes = [POINT, wt.DWORD]
+        user32.MonitorFromPoint.restype = wt.HANDLE
+        monitor = user32.MonitorFromPoint(
+            POINT(int(point[0]), int(point[1])), MONITOR_DEFAULTTONEAREST
+        )
+        if not monitor:
+            return work_area(user32)
+        info = MONITORINFO()
+        info.cbSize = ctypes.sizeof(MONITORINFO)
+        if not user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+            return work_area(user32)
+        rect = info.rcWork
+        if rect.right <= rect.left or rect.bottom <= rect.top:
+            return work_area(user32)
+        return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
+    except Exception:  # noqa: BLE001 - not Windows, or no multi-monitor API
+        return work_area(user32)
+
+
+def clamp_orb_position(
+    x: int,
+    y: int,
+    *,
+    size: int = ORB_SIZE,
+    area: tuple[int, int, int, int] | None = None,
+) -> tuple[int, int]:
+    """Keep the orb's visible ring inside the work area.
+
+    The window may overhang by its own transparent padding -- see
+    ``visible_inset`` -- so the ring can sit snugly in a corner rather than
+    stopping short of it. A pure function of four numbers, so every edge and
+    every corner can be asserted without a screen.
+    """
+    left, top, right, bottom = (
+        area if area is not None else work_area_for((int(x), int(y)))
+    )
+    import math
+
+    inset = visible_inset(size)
+    # Rounded outward to whole pixels BEFORE clamping, not after. Rounding the
+    # result instead let it land half a pixel past the edge, which is invisible
+    # and still makes the bound a lie -- and a test asserting the bound then
+    # needs a tolerance, which is a test that has stopped checking the thing.
+    lowest_x = math.ceil(left - inset)
+    highest_x = math.floor(right - size + inset)
+    lowest_y = math.ceil(top - inset)
+    highest_y = math.floor(bottom - size + inset)
+    # A work area narrower than the visible ring would invert the bounds; centre
+    # it rather than returning something arbitrary.
+    if highest_x < lowest_x:
+        lowest_x = highest_x = round((left + right - size) / 2.0)
+    if highest_y < lowest_y:
+        lowest_y = highest_y = round((top + bottom - size) / 2.0)
+    return (
+        int(min(max(int(x), lowest_x), highest_x)),
+        int(min(max(int(y), lowest_y), highest_y)),
+    )
 
 
 def anchor_panel_to_orb(
@@ -688,6 +783,7 @@ class OrbView:
 __all__ = [
     "ANCHOR_GAP",
     "HIT_RADIUS",
+    "MONITOR_DEFAULTTONEAREST",
     "PULSE_FRAMES",
     "DEFAULT_DOUBLE_CLICK_MS",
     "DEFAULT_DRAG_SLOP",
@@ -697,6 +793,8 @@ __all__ = [
     "OrbView",
     "TapTracker",
     "anchor_panel_to_orb",
+    "clamp_orb_position",
     "system_input_thresholds",
     "work_area",
+    "work_area_for",
 ]

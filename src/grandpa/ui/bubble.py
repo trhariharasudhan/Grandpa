@@ -360,6 +360,16 @@ class BubbleController:
     #: Places the panel beside the orb on expand. Injected so the work area is
     #: not read from a real screen in a test. Called with the orb's position.
     anchor: Any = None
+    #: Keeps the orb's visible ring inside the work area. Called with ``(x, y)``
+    #: and returning a possibly-adjusted ``(x, y)``. Injected for the same
+    #: reason as *anchor*: a test must not depend on this machine's monitors.
+    clamp: Any = None
+    #: The panel's size, so the controller can tell whether the panel still
+    #: fits where the stored offset puts it. Set by the command from the view's
+    #: own constants; bubble.py imports no toolkit and must not read them.
+    panel_size: tuple[int, int] | None = None
+    #: The work area, for the fit check above. Injected, same reasoning.
+    work_area: Any = None
     probe: Any = None
     capture: Any = None
     #: A combination, ``ctrl+win``, not a single key. A global read means the
@@ -458,7 +468,10 @@ class BubbleController:
         """
         self._position_path = position_path
         self.position = load_position(position_path)
-        self.orb_position = load_orb_position(position_path)
+        # Clamped on the way in as well as during a drag: a remembered position
+        # from a larger screen, or from a monitor that is no longer attached,
+        # would otherwise put the orb somewhere it cannot be reached.
+        self.orb_position = self._clamped(*load_orb_position(position_path))
         self.collapsed = load_collapsed(position_path)
         # Both windows are created now, whichever state is wanted, because
         # creating a window takes the foreground -- measured -- and a window
@@ -532,26 +545,82 @@ class BubbleController:
         Called by *both* drag handlers -- the orb's and the panel header's --
         because there is one component and dragging any part of it moves the
         part. The panel's offset is untouched, so the two cannot drift.
+
+        The anchor is clamped on every motion event rather than at the end of
+        the drag, so the orb stops at the edge instead of going over it and
+        being pulled back. Clamping the anchor rather than each window is what
+        keeps the clamp and the coupling from fighting: there is one position,
+        so there is one thing to constrain.
         """
-        self.orb_position = (
+        self.orb_position = self._clamped(
             int(self.orb_position[0] + dx), int(self.orb_position[1] + dy)
         )
         self._place_windows()
         return self.orb_position
 
+    def _clamped(self, x: int, y: int) -> tuple[int, int]:
+        """The anchor, kept where the orb's ring stays on screen."""
+        if not callable(self.clamp):
+            return (int(x), int(y))
+        try:
+            clamped = self.clamp(int(x), int(y))
+            return (int(clamped[0]), int(clamped[1]))
+        except Exception:  # noqa: BLE001 - a bad clamp must not freeze the orb
+            return (int(x), int(y))
+
     def _panel_position(self) -> tuple[int, int]:
-        """Where the panel goes for the current anchor."""
+        """Where the panel goes for the current anchor.
+
+        The stored offset is honoured **while the panel still fits**. Once the
+        orb is close enough to an edge that the offset would put the panel off
+        screen, the anchor function decides instead -- and that already flips
+        the panel to the orb's other side and clamps as a last resort.
+
+        This is the answer to a real tension. The offset exists so a panel
+        dragged somewhere stays there; the flip exists so a panel is reachable
+        at an edge. Clamping the component's whole bounding box would satisfy
+        neither: it would cost 400 pixels of travel and stop the orb reaching
+        the corner at all, which is the thing being asked for. An orb that is
+        reachable whose panel opens off screen is the same bug one layer along,
+        so the offset yields rather than the reachability.
+        """
+        anchored: tuple[int, int] | None = None
+        if callable(self.anchor):
+            try:
+                anchored = tuple(self.anchor(self.orb_position))  # type: ignore[assignment]
+            except Exception:  # noqa: BLE001 - a bad anchor must not trap the panel
+                anchored = None
         if self.panel_offset is not None:
-            return (
+            offset_place = (
                 int(self.orb_position[0] + self.panel_offset[0]),
                 int(self.orb_position[1] + self.panel_offset[1]),
             )
-        if callable(self.anchor):
-            try:
-                return tuple(self.anchor(self.orb_position))  # type: ignore[return-value]
-            except Exception:  # noqa: BLE001 - a bad anchor must not trap the panel
-                pass
+            if self._panel_fits(offset_place) or anchored is None:
+                return offset_place
+            return anchored
+        if anchored is not None:
+            return anchored
         return self.position
+
+    def _panel_fits(self, at: tuple[int, int]) -> bool:
+        """Whether the panel is wholly inside the work area at *at*.
+
+        True when there is nothing to check against -- no size, no work area --
+        because a missing measurement must not move a window that was fine.
+        """
+        if self.panel_size is None or not callable(self.work_area):
+            return True
+        try:
+            left, top, right, bottom = self.work_area(at)
+            width, height = int(self.panel_size[0]), int(self.panel_size[1])
+        except Exception:  # noqa: BLE001
+            return True
+        return (
+            at[0] >= left
+            and at[1] >= top
+            and at[0] + width <= right
+            and at[1] + height <= bottom
+        )
 
     def _adopt_offset(self) -> None:
         """Fix the panel's offset from wherever the anchor function puts it.
