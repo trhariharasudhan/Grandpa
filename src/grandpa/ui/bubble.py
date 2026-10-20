@@ -758,12 +758,15 @@ class BubbleController:
         self._refresh_status()
 
     def note_mic_live(self, live: bool) -> None:
-        """The microphone stream opened, or went away. Marked on the orb."""
+        """The microphone stream opened, or went away.
+
+        Reported in the status line, and in the line the command prints when
+        it starts. **Not on the orb**: the mark that used to carry it was a
+        small concentric ring, and at the 48px orb it measured as a second
+        ring at 80% of the main one's brightness rather than as a mark. See
+        the note where PIP_RADIUS used to be in ``orb_image``.
+        """
         self.mic_live = bool(live)
-        push = getattr(self.orb, "set_mic_live", None)
-        if callable(push):
-            flag = self.mic_live
-            self._to_orb(lambda: self.orb.set_mic_live(flag))
         self._refresh_status()
 
     def _refresh_orb(self) -> None:

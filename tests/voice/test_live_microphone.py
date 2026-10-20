@@ -306,104 +306,170 @@ def test_a_meter_that_raises_does_not_stop_the_reader() -> None:
         mic.close()
 
 
-# --- b) the orb shows it, without an eighth state ---------------------------
+# --- b) the orb shows ONE ring, and the fact is reported in words -----------
+#
+# Round 4 asked for the microphone's state on the orb without an eighth state,
+# and got a small concentric ring. Measured on screen at the 48px orb, that is
+# not a mark on a ring -- it is a second ring: two lit peaks, radius 5 and
+# radius 15 physical pixels, the inner one 80% as bright as the outer. The
+# requirement is withdrawn. The orb draws one ring; the fact is still reported,
+# in words, in the two places below.
 
 
-def test_the_mark_is_an_overlay_on_every_state_not_a_state() -> None:
-    """Standby is neutral white and standby is exactly when the stream is held
-    open, so a state would have had to be invented for something true during
-    all of them. A mark can be true during all of them."""
-    from grandpa.ui.bubble import BubbleState
+def _radial_bands(alpha, share: float = 0.5):
+    """Connected bands of lit pixels, by distance from the centre.
+
+    One ring is one band. Returns a list of ``(inner, outer)`` radii in pixels.
+
+    **Maximum over angles, not mean.** A mean counts angular variation as
+    radial structure: the arc animations light part of the circle so the mean
+    dips where the ring is dark, and the waveform displaces the edge per angle
+    so the mean smears over several radii. Measured, a mean-and-local-maxima
+    counter reported four rings for thinking, which has one. A maximum cannot
+    be dimmed by an arc and is merely widened by a waveform.
+
+    *share* of the brightest radius is the threshold; a halo shoulder sits well
+    under half and a second ring sits well over it. The mark that was removed
+    measured 221 against the ring's 255 with a trough of 40 between them.
+    """
+    alpha = np.asarray(alpha, dtype=np.float32)
+    size = alpha.shape[0]
+    centre = (size - 1) / 2.0
+    ys, xs = np.mgrid[0:size, 0:size]
+    distance = np.hypot(xs - centre, ys - centre)
+    edges = np.arange(0.0, size / 2.0, 0.5)
+    peak_at = np.array([
+        alpha[(distance >= edge) & (distance < edge + 0.5)].max(initial=0.0)
+        for edge in edges
+    ])
+    if peak_at.max() <= 0:
+        return []
+    lit = peak_at >= peak_at.max() * share
+    bands, start = [], None
+    for i, on in enumerate(lit):
+        if on and start is None:
+            start = i
+        elif not on and start is not None:
+            bands.append((float(edges[start]), float(edges[i - 1])))
+            start = None
+    if start is not None:
+        bands.append((float(edges[start]), float(edges[-1])))
+    return bands
+
+
+def test_the_orb_draws_exactly_one_ring() -> None:
+    """The reported fault: "the orb draws TWO rings".
+
+    Every still state, because a peak that only appears mid-animation is still
+    a second ring to look at. The animated ones are checked below with their
+    own phases.
+    """
     from grandpa.ui.orb_image import ORB_STYLES, orb_image
 
-    assert "mic_live" not in ORB_STYLES
-    assert not any(state == "mic_live" for state in BubbleState)
-
+    faults = []
     for state in ORB_STYLES:
-        plain = np.asarray(orb_image(state, 0.25, 0.0))
-        marked = np.asarray(orb_image(state, 0.25, 0.0, mic_live=True))
+        bands = _radial_bands(np.asarray(orb_image(state, 0.0, 0.0))[:, :, 3])
+        if len(bands) != 1:
+            faults.append(f"{state}: {len(bands)} bands at {bands}")
 
-        assert not np.array_equal(plain, marked), f"{state} shows no mark"
+    assert faults == [], "; ".join(faults)
 
 
-def test_the_mark_sits_inside_the_ring_and_leaves_it_alone() -> None:
-    """A second concentric ring, well inside the main one, so it adds
-    information rather than changing the state's own shape."""
-    from grandpa.ui.orb_image import ORB_SIZE, PIP_RADIUS, RING_RADIUS, orb_image
+def test_the_counter_would_notice_a_second_ring() -> None:
+    """The mutation, because a counter that cannot fail proves nothing.
+
+    A ring drawn back in where the microphone mark used to be, at the
+    brightness it used to have, has to be counted.
+    """
     from grandpa.ui import orb_image as module
+    from grandpa.ui.orb_image import ORB_SIZE, orb_image
+
+    alpha = np.asarray(orb_image("idle", 0.0, 0.0))[:, :, 3].astype(np.float32)
+    assert len(_radial_bands(alpha)) == 1, "the orb already has two"
 
     radius, _turns = module._fields(ORB_SIZE)
-    plain = np.asarray(orb_image("idle", 0.0, 0.0))[:, :, 3].astype(float)
-    marked = np.asarray(orb_image("idle", 0.0, 0.0, mic_live=True))[:, :, 3].astype(float)
-    added = marked - plain
+    mark = module._ring(radius, 0.085, 0.0396, 0.45, tight=True) * 0.75
+    with_mark = np.clip(alpha + mark * module._taper(ORB_SIZE) * 255.0, 0, 255)
 
-    assert PIP_RADIUS < RING_RADIUS - 0.05, "the mark is not inside the ring"
-    inner = radius < (RING_RADIUS - 0.05)
-    assert added[inner].sum() > 0, "nothing was added inside"
-    # Stated per pixel, not as a total: alpha is an integer, so a single pixel
-    # differing by one rounding step contributes 1 and a sum threshold is a
-    # pixel count in disguise. With the full halo stack this was 1.72 per
-    # pixel; tight it is under a hundredth.
-    outer = radius > (RING_RADIUS + 0.02)
-    assert float(np.abs(added[outer]).mean()) < 0.05, "the mark reaches the ring"
-    assert float(np.abs(added[outer]).max()) <= 2.0
+    assert len(_radial_bands(with_mark)) == 2, _radial_bands(with_mark)
 
 
-def test_the_corners_stay_transparent_with_the_mark_on() -> None:
-    from grandpa.ui.orb_image import ORB_STYLES, orb_image
+def test_one_ring_at_every_phase_of_every_animation() -> None:
+    """The waves and the ripple travel outward on purpose and are excluded by
+    name: a ring leaving the ring is the animation, not a second ring."""
+    from grandpa.ui.orb_image import ORB_STYLES, orb_image, style_for
 
+    travelling = {"waves", "ripple"}
+    faults = []
     for state in ORB_STYLES:
-        alpha = np.asarray(orb_image(state, 0.5, 1.0, mic_live=True))[:, :, 3]
-        corners = [alpha[0, 0], alpha[0, -1], alpha[-1, 0], alpha[-1, -1]]
+        if style_for(state).animation in travelling:
+            continue
+        for step in range(8):
+            alpha = np.asarray(orb_image(state, step / 8.0, 0.4))[:, :, 3]
+            bands = _radial_bands(alpha)
+            if len(bands) != 1:
+                faults.append(
+                    f"{state} at phase {step / 8.0}: {len(bands)} rings {bands}"
+                )
 
-        assert max(corners) <= 2, f"{state}: {corners}"
+    assert faults == [], "; ".join(faults)
 
 
-def test_the_controller_pushes_the_mark_to_the_orb() -> None:
+def test_the_renderer_takes_no_microphone_flag_any_more() -> None:
+    """A parameter that changes no pixel is a promise the drawing does not
+    keep. It was removed with the mark rather than left accepting a value."""
+    import inspect
+
+    from grandpa.ui.orb_image import orb_image, orb_on_disc
+
+    for function in (orb_image, orb_on_disc):
+        assert "mic_live" not in inspect.signature(function).parameters
+
+
+def test_the_orb_view_is_not_told_about_the_microphone_either() -> None:
+    from grandpa.ui.orb_view import OrbView
+
+    assert not hasattr(OrbView(), "set_mic_live")
+    assert not hasattr(OrbView(), "mic_live")
+
+
+def test_the_status_line_still_says_the_microphone_is_held_open() -> None:
+    """Where the signal lives now. It is the reason removing the mark did not
+    remove the fact."""
     from grandpa.ui.bubble import BubbleController
-
-    class Orb:
-        def __init__(self) -> None:
-            self.live: list[bool] = []
-
-        def set_mic_live(self, live):
-            self.live.append(bool(live))
-
-        def set_state(self, state, *, unread):
-            pass
 
     class Panel:
         def set_status_line(self, text):
             self.status = text
 
-    orb = Orb()
-    controller = BubbleController(view=Panel(), bridge=object(), orb=orb)
+    controller = BubbleController(view=Panel(), bridge=object(), orb=None)
 
     controller.note_mic_live(True)
-
-    assert orb.live == [True]
     assert controller.mic_live is True
     assert "mic held open" in controller.status_line()
 
     controller.note_mic_live(False)
-
-    assert orb.live == [True, False]
     assert "mic held open" not in controller.status_line()
 
 
-def test_the_view_rebuilds_its_frames_when_the_mark_changes() -> None:
-    """The frame cache is keyed on the look, and the mark is part of it."""
-    from grandpa.ui.orb_view import OrbView
+def test_the_command_says_it_on_startup_too() -> None:
+    """The other place, and the one a user sees before the panel is open."""
+    from pathlib import Path
 
-    view = OrbView()
-    view.state = "idle"
-    view._frames = {0: object()}
-    view._frames_key = ("idle", False, False, "layered", 64)
+    source = Path("src/grandpa/cli/bubble_cmd.py").read_text(encoding="utf-8")
 
-    view.set_mic_live(True)
+    assert "controller.mic_live" in source
+    assert "Microphone held open" in source
 
-    assert view.mic_live is True
-    assert view._frames == {}
+
+def test_the_corners_stay_transparent() -> None:
+    from grandpa.ui.orb_image import ORB_STYLES, orb_image
+
+    for state in ORB_STYLES:
+        alpha = np.asarray(orb_image(state, 0.5, 1.0))[:, :, 3]
+        corners = [alpha[0, 0], alpha[0, -1], alpha[-1, 0], alpha[-1, -1]]
+
+        assert max(corners) <= 2, f"{state}: {corners}"
 
 
 # --- c) it can be turned off -------------------------------------------------

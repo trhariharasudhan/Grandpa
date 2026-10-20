@@ -160,20 +160,51 @@ WAVE_SPAN = 0.16
 #: as waves.
 WAVE_COUNT = 2
 
+#: How far the ring's own radius travels while thinking, as a fraction of the
+#: size. The one axis no other state uses.
+#:
+#: Listening displaces the radius *per angle* and leaves the mean where it is.
+#: Speaking and success send separate rings outward while the base ring stays
+#: put. Loading and executing hold the radius fixed and move light around it.
+#: Nothing else moves the ring itself, which is what makes this a glance apart
+#: rather than a variation on something already on screen.
+#:
+#: Measured at 48px on a 125% display, against the ring's own 4.4-physical-pixel
+#: lit band -- which is the scale the eye compares the motion to, not the
+#: diameter:
+#:
+#:     amplitude   of the radius   edge moves (physical)   against the band
+#:     0.015            5.8%            1.85                    0.42
+#:     0.020            7.7%            2.42                    0.55
+#:     0.030           11.5%            3.52                    0.80   <- here
+#:     0.040           15.4%            4.75                    1.08
+#:     0.060           23.1%            7.22                    1.65
+#:
+#: 0.030 and not 0.040: past 1.00 the ring travels further than its own width
+#: each cycle and reads as agitated rather than calm. Corner alpha is 0 at
+#: every amplitude up to 0.060, so none of this costs the transparency.
+SWELL_AMPLITUDE = 0.030
+
 #: Segments in the executing chase, and how many of them are lit at a time.
 CHASE_SEGMENTS = 12
 CHASE_LIT = 4
 
-#: Where the "the microphone is live" mark sits, as a fraction of the size: a
-#: small concentric ring inside the main one.
-#:
-#: An overlay on whatever state is showing, deliberately, rather than an eighth
-#: state. Standby is neutral white and standby is exactly when the stream is
-#: held open, so a state would have had to be invented for a thing that is true
-#: during all of them. A mark can be true during all of them.
-PIP_RADIUS = 0.085
-PIP_GLOW = 0.45
-
+# There was a "the microphone is live" mark here: a small concentric ring at
+# 0.085 of the size, drawn inside the main one. It is gone, and the reason is
+# worth keeping so it is not reinvented.
+#
+# It read as a second ring. Measured on screen over a magenta backdrop at the
+# 48px orb, the radial profile had two lit peaks -- radius 5 and radius 15
+# physical pixels -- and the inner one was 80% as bright as the outer. That is
+# not a mark on a ring, that is two rings. At 72px, where it was designed, the
+# gap between them was proportionally the same but both were larger and the
+# inner one read as a pip; shrinking the orb to 48 is what turned it into a
+# ring of its own.
+#
+# The fact it carried is not lost. The startup line says the microphone is
+# held open and the panel's status line says "mic held open"; what is lost is
+# seeing it without opening the panel. Putting it back means putting it ON the
+# ring -- a brightness floor, a gap, a notch -- not inside it.
 #: How far out a click still counts as landing on the orb, as a fraction of
 #: the size: the ring's outer edge.
 #:
@@ -250,8 +281,9 @@ class OrbStyle:
 #:
 #:   idle         a slow breathe. Nothing is happening and nothing is wrong.
 #:   recording    the ring's edge displaced by your own voice.
-#:   transcribing two arcs travelling in opposite directions: work with no
-#:   thinking     knowable end. Both states share the look deliberately.
+#:   transcribing the ring's own diameter breathing: work with no knowable
+#:   thinking     end. Both states share the look deliberately. The only
+#:                animation that moves the ring itself.
 #:   speaking     waves radiating outward -- Grandpa's output, not yours.
 #:   executing    segments chasing round. Indeterminate on purpose: the signal
 #:                is "running" and "finished", never a fraction.
@@ -277,13 +309,20 @@ ORB_STYLES: dict[str, OrbStyle] = {
         ring_rgb("recording"), 1.05, scaled_width(0.046),
         animation="waveform", fps=10.0, frames=1,
     ),
+    # Both, not just thinking. They share a hue and they shared the animation
+    # deliberately, so leaving transcribing on the old one would have kept the
+    # shape that was objected to on screen under the same yellow.
+    #
+    # 24 frames at 20fps is a 1.2 second cycle, 0.83Hz. Slower than the 1-2Hz
+    # the eye is most sensitive to movement in, which is the point: it has to
+    # be noticed without being urgent.
     "transcribing": OrbStyle(
         ring_rgb("transcribing"), 0.75, scaled_width(0.034),
-        animation="counter_arcs", arc=(0.0, 110.0), fps=20.0, frames=40,
+        animation="swell", fps=20.0, frames=24,
     ),
     "thinking": OrbStyle(
         ring_rgb("thinking"), 0.75, scaled_width(0.034),
-        animation="counter_arcs", arc=(0.0, 110.0), fps=20.0, frames=40,
+        animation="swell", fps=20.0, frames=24,
     ),
     "speaking": OrbStyle(
         ring_rgb("speaking"), 0.95, scaled_width(0.040),
@@ -456,7 +495,6 @@ def level_at_angle(levels: Any, turns: Any) -> Any:
 
 def _alpha_for(
     state: str, phase: float, level: float, levels: Any, size: int, unread: bool,
-    mic_live: bool = False,
 ) -> Any:
     """The alpha channel for one frame. Everything else is colour and wrapping."""
     import numpy as np
@@ -494,12 +532,18 @@ def _alpha_for(
         lit = _arc_weight(turns, (start / 360.0 + phase) % 1.0, extent / 360.0)
         weight = ring * (0.28 + 0.72 * lit)
 
-    elif animation == "counter_arcs":
-        _start, extent = style.arc or (0.0, 110.0)
-        ring = _ring(radius, base, width, glow)
-        one = _arc_weight(turns, phase % 1.0, extent / 360.0)
-        other = _arc_weight(turns, (0.5 - phase) % 1.0, extent / 360.0)
-        weight = ring * (0.24 + 0.76 * np.maximum(one, other))
+    elif animation == "swell":
+        # The ring's own diameter, breathing. Evenly lit all the way round:
+        # nothing travels, nothing leaves, nothing is dimmer than anything
+        # else. It replaced two counter-rotating arcs, which were the only
+        # thing on the orb that showed as TWO separated lit regions -- measured
+        # across all ten styles, every other state showed one -- and which read
+        # as a half-and-half shape turning rather than as one object.
+        #
+        # A sine, so the cycle has no seam and the turn at each end is smooth;
+        # a triangle would snap at the extremes, which is the opposite of calm.
+        breath = math.sin(2.0 * math.pi * phase)
+        weight = _ring(radius, base + SWELL_AMPLITUDE * breath, width, glow)
 
     elif animation == "waves":
         # Rings leaving the ring and fading as they go. Grandpa's own output.
@@ -546,14 +590,6 @@ def _alpha_for(
     else:
         weight = _ring(radius, base, width, glow)
 
-    if mic_live:
-        # The mark. Same hue as the state, so it adds information without
-        # claiming to be one, and drawn tight so its halo does not reach the
-        # ring and brighten it.
-        weight = weight + _ring(
-            radius, PIP_RADIUS, style.width, PIP_GLOW, tight=True
-        ) * 0.75
-
     return np.clip(weight * _taper(size) * 255.0, 0, 255).astype(np.uint8)
 
 
@@ -565,7 +601,6 @@ def orb_image(
     size: int = ORB_SIZE,
     unread: bool = False,
     levels: Any = None,
-    mic_live: bool = False,
 ) -> Any:
     """An RGBA orb for *state*.
 
@@ -578,7 +613,7 @@ def orb_image(
     """
     from PIL import Image
 
-    alpha = _alpha_for(state, phase, level, levels, size, unread, mic_live)
+    alpha = _alpha_for(state, phase, level, levels, size, unread)
     out = Image.new("RGBA", (size, size), (*style_for(state, unread=unread).colour, 0))
     out.putalpha(Image.fromarray(alpha))
     return out
@@ -592,7 +627,6 @@ def orb_on_disc(
     size: int = ORB_SIZE,
     unread: bool = False,
     levels: Any = None,
-    mic_live: bool = False,
     background: tuple[int, int, int] = DISC_BACKGROUND,
 ) -> Any:
     """The fallback: the same orb flattened onto an opaque dark disc.
@@ -608,7 +642,6 @@ def orb_on_disc(
 
     glow = orb_image(
         state, phase, level, size=size, unread=unread, levels=levels,
-        mic_live=mic_live,
     )
     radius, _turns = _fields(size)
     edge = np.clip((0.47 - radius) / 0.02, 0.0, 1.0)
@@ -682,8 +715,6 @@ __all__ = [
     "LEVEL_BUCKETS",
     "ORB_SIZE",
     "ORB_STYLES",
-    "PIP_GLOW",
-    "PIP_RADIUS",
     "RING_RADIUS",
     "RING_SCALE",
     "RING_WIDTH",

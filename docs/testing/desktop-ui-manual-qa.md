@@ -60,7 +60,7 @@ So you can tell "soft on purpose" from "wrong":
 | O4 | Wait for loading to finish | The ring settles to **neutral white** and begins a **very slow breathe** — one swell about every six seconds. If it looks like a pulse or a throb rather than a slow swell, say so. |
 | O5 | Click another window, then look at the orb | It **stays on top** and the other window **keeps the caret**. Type something into that window to be sure. |
 | O6 | Hold CTRL+WIN and say a long sentence, loudly then quietly | The ring turns **blue** and its **edge ripples with your voice** — bumps where you were loud, smooth where you were quiet, travelling round as the history scrolls. Not a uniform pulse. If it moves the same way whatever you say, say so: that is the one failure this animation can have. |
-| O7 | Release the key | **Yellow with two arcs travelling in opposite directions** while it transcribes and thinks, then **orange with waves radiating outward** while it speaks, then **green with a single ripple** that expands once and settles. |
+| O7 | Release the key | **Yellow, and the whole ring slowly swelling and shrinking** while it transcribes and thinks — one even ring breathing its own diameter, nothing travelling round it — then **orange with waves radiating outward** while it speaks, then **green with a single ripple** that expands once and settles. |
 | O8 | Ask something that fails (unplug the microphone, or hold the key for half a second and release) | The ring **flashes red twice and then holds solid red**. It must not keep flashing. |
 | O9 | Ask for something that opens an app — "open notepad" | While the automation is actually running the ring is **purple with segments chasing round the circle**. It is deliberately indeterminate: it never fills from empty to full, because the action layer reports "running" and "finished" and no fraction in between. If you see it fill like a progress bar, say so. |
 | O10 | Ask a plain question that runs no automation — "what is the time" | **No purple at all.** Yellow, then the reply. Purple only ever means something ran. |
@@ -77,7 +77,7 @@ keeps going. If you cannot tell them apart in use, that is worth knowing.
 | --- | --- | --- |
 | standby | neutral white | slow breathe, one swell every 6s |
 | listening | blue | the ring's edge follows your voice |
-| transcribing / thinking | yellow | two arcs, opposite directions |
+| transcribing / thinking | yellow | the ring's own diameter breathing |
 | speaking | orange | waves radiating outward |
 | working | purple | segments chasing round, never filling |
 | done | green | one ripple, then steady |
@@ -124,11 +124,12 @@ parent — so this is the section where that shows or does not.
 | # | Do this | Expect |
 | --- | --- | --- |
 | P1 | Run `grandpa bubble` and read the first line it prints | It says the microphone is held open. Windows shows its microphone-in-use indicator for as long as the bubble runs — that is deliberate and it is telling the truth. |
-| P2 | Look at the orb | A small **second ring inside the main one**. That is the mark saying the stream is live. It is an overlay on whatever state is showing, not a state of its own, so it is there in standby, while listening, while speaking — always. |
+| P2 | Look at the orb | **One ring, and only one.** There used to be a small second ring inside it marking the live stream; at the 48px orb that measured as a second ring rather than a mark — two lit peaks on screen, radius 5 and radius 15 physical pixels, the inner one 80% as bright as the outer — so it is gone. If you see two rings, that is the bug this step exists for. |
 | P3 | Press CTRL+WIN and **start talking immediately**, without the usual beat first | The first word is there. This is the whole point: opening the stream used to take 245ms on average and up to 361ms, all of it after the key was noticed, so up to 392ms of speech was never recorded. It is 30ms now, and 300ms of what you said *before* the key went down is kept too. |
-| P4 | Run `grandpa bubble --no-live-mic` | No mark on the orb, no mention in the first line, and the microphone indicator appears only while you hold the key. Behaviour is exactly what it was: press, wait a beat, then speak. |
+| P4 | Run `grandpa bubble --no-live-mic` | No mention in the first line, no "mic held open" in the status line, and Windows' microphone indicator appears only while you hold the key. The orb looks the same either way now. Behaviour is exactly what it was: press, wait a beat, then speak. |
 | P5 | Set `voice.live_microphone = false` with `grandpa config set` and run `grandpa bubble` | Same as P4. The flag and the key both work; the flag wins for one run. |
-| P6 | With the bubble running, **unplug the microphone** or disconnect a Bluetooth headset | The mark goes out and the status line stops saying it is held open. The next hold refuses quickly rather than hanging. Reconnect and restart the bubble to get it back — reopening the stream mid-session is not done, and if you want that, say so. |
+| P6 | With the bubble running, **unplug the microphone** or disconnect a Bluetooth headset | The status line stops saying "mic held open". The next hold refuses quickly rather than hanging. Reconnect and restart the bubble to get it back — reopening the stream mid-session is not done, and if you want that, say so. |
+| P7 | Open the panel and read the status line | It says **mic held open** while the stream is held. That line and the startup line in P1 are now the only places this is reported — nothing on the orb says it. If you want it back at a glance while collapsed, it has to go *on* the ring (a brightness floor, a notch) rather than inside it. |
 
 
 ### Collapsed is voice-only, and the panel remembers

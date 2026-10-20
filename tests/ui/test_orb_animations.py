@@ -44,8 +44,8 @@ pytestmark = pytest.mark.core
 EXPECTED_ANIMATIONS = {
     "idle": "breathe",
     "recording": "waveform",
-    "transcribing": "counter_arcs",
-    "thinking": "counter_arcs",
+    "transcribing": "swell",
+    "thinking": "swell",
     "speaking": "waves",
     "success": "ripple",
     "error": "flash",
@@ -152,7 +152,7 @@ def test_the_seven_named_animations_are_all_distinct_kinds() -> None:
     }
 
     assert seven == {
-        "breathe", "waveform", "counter_arcs", "waves", "ripple", "flash", "chase",
+        "breathe", "waveform", "swell", "waves", "ripple", "flash", "chase",
     }
 
 
@@ -328,29 +328,108 @@ def test_the_success_ripple_travels_outward_then_leaves_a_steady_ring() -> None:
     )
 
 
-def test_the_counter_arcs_travel_in_opposite_directions() -> None:
-    """Two arcs, not one arc twice. Tracked as the two brightest wedges moving
-    the opposite way round."""
-    def peaks(phase: float) -> tuple[int, int]:
-        profile = angular_profile(alpha_of(orb_image("thinking", phase, 0.0)))
-        order = np.argsort(profile)[::-1]
-        return int(order[0]), int(profile.size)
+# --- the breath -------------------------------------------------------------
+#
+# This replaces the counter-arcs tests. Those asserted two lit regions
+# travelling in opposite directions, which was exactly the shape objected to:
+# measured across all ten styles, thinking was the only state that showed as
+# TWO separated lit arcs and every other state showed one.
 
-    first, bins = peaks(0.0)
-    later, _ = peaks(0.25)
-    # One arc is at phase and the other at 0.5 - phase, so the gap between them
-    # changes with phase -- which a single rotating arc could not do.
-    gap_at_zero = angular_profile(alpha_of(orb_image("thinking", 0.0, 0.0)))
-    gap_at_quarter = angular_profile(alpha_of(orb_image("thinking", 0.25, 0.0)))
 
-    assert first != later, "nothing moved"
-    assert not np.allclose(gap_at_zero, gap_at_quarter)
-    # Two distinct lit regions at a phase where they are apart.
-    profile = angular_profile(alpha_of(orb_image("thinking", 0.125, 0.0)))
-    bright = profile > 0.75 * profile.max()
-    runs = int(np.sum(np.diff(bright.astype(int)) == 1)) + int(bright[0])
+def _lit_radius(alpha) -> float:
+    """The lit ring's radius, as an alpha-weighted centroid.
 
-    assert runs >= 2, f"only {runs} lit arc(s) at a phase where there should be two"
+    A centroid rather than the brightest row: the ring is a few pixels wide
+    and an argmax quantises to whole pixels, which would hide a sub-pixel
+    breath. Half the peak picks out the ring and leaves the halo's tail
+    behind, and it follows the ring wherever it has moved to -- a fixed window
+    would clip the ring as it travels and damp the very swing being measured.
+    """
+    alpha = np.asarray(alpha, dtype=np.float64)
+    size = alpha.shape[0]
+    centre = (size - 1) / 2.0
+    ys, xs = np.mgrid[0:size, 0:size]
+    distance = np.hypot(xs - centre, ys - centre)
+    band = alpha >= alpha.max() * 0.5
+    weight = alpha[band]
+    return float((distance[band] * weight).sum() / weight.sum())
+
+
+@pytest.mark.parametrize("state", ["thinking", "transcribing"])
+def test_the_ring_breathes_its_own_diameter(state: str) -> None:
+    """The one axis no other state uses, which is what makes it a glance
+    apart rather than a variation on something already on screen."""
+    radii = [
+        _lit_radius(alpha_of(orb_image(state, step / 12.0, 0.0)))
+        for step in range(12)
+    ]
+    swing = max(radii) - min(radii)
+
+    assert swing > 1.5, f"the ring barely moves: {swing:.2f}px"
+    assert swing < ORB_SIZE * 0.25, f"the ring is lurching: {swing:.2f}px"
+
+
+@pytest.mark.parametrize("state", ["thinking", "transcribing"])
+def test_the_breath_returns_to_where_it_started(state: str) -> None:
+    """A sine, so the cycle has no seam. A ring that ended a cycle somewhere
+    other than it began would jump once a second."""
+    start = _lit_radius(alpha_of(orb_image(state, 0.0, 0.0)))
+    end = _lit_radius(alpha_of(orb_image(state, 1.0, 0.0)))
+
+    assert start == pytest.approx(end, abs=0.01)
+
+
+@pytest.mark.parametrize("state", ["thinking", "transcribing"])
+def test_the_breath_is_smooth_rather_than_stepped(state: str) -> None:
+    """No frame may move the ring further than a smooth cycle would.
+
+    A triangle wave or a jump at the wrap would snap at the extremes, which
+    is the opposite of what was asked for.
+    """
+    radii = [
+        _lit_radius(alpha_of(orb_image(state, step / 24.0, 0.0)))
+        for step in range(24)
+    ]
+    steps = [abs(radii[i] - radii[i - 1]) for i in range(1, len(radii))]
+    swing = max(radii) - min(radii)
+
+    # A sine over 24 samples moves at most ~13% of its peak-to-peak in one
+    # step. Allowing double that still rejects a snap.
+    assert max(steps) < swing * 0.30, f"largest step {max(steps):.2f} of {swing:.2f}"
+
+
+@pytest.mark.parametrize("state", ["thinking", "transcribing"])
+def test_the_breath_lights_the_whole_ring_evenly(state: str) -> None:
+    """Nothing travels round it and no part of it is dimmer than another --
+    which is what tells it apart from loading's arc and executing's chase."""
+    for step in range(8):
+        profile = angular_profile(alpha_of(orb_image(state, step / 8.0, 0.0)))
+
+        assert profile.min() > 0.9 * profile.max(), (
+            f"{state} at phase {step / 8.0}: a dim side means something is "
+            f"travelling, {profile.min():.0f} against {profile.max():.0f}"
+        )
+
+
+def test_the_breath_is_not_the_waveform_in_disguise() -> None:
+    """Listening also moves the edge -- but per angle, and only when there is
+    sound. The breath moves the whole ring and ignores the level entirely."""
+    quiet = _lit_radius(alpha_of(orb_image("thinking", 0.25, 0.0)))
+    loud = _lit_radius(alpha_of(orb_image("thinking", 0.25, 1.0)))
+
+    assert quiet == pytest.approx(loud, abs=0.01), (
+        "the breath responded to the microphone, which is listening's job"
+    )
+
+
+def test_no_state_still_uses_the_two_arcs() -> None:
+    """The shape that was objected to, gone from the table rather than merely
+    unused by thinking."""
+    from grandpa.ui.orb_image import ORB_STYLES
+
+    assert not any(
+        style.animation == "counter_arcs" for style in ORB_STYLES.values()
+    )
 
 
 def test_the_executing_chase_never_grows_into_a_fraction() -> None:
