@@ -358,8 +358,12 @@ def test_only_the_header_and_its_two_labels_can_start_a_drag() -> None:
         bound.append(ast.unparse(node.iter))
 
     assert len(bound) == 1, f"drag is bound in {len(bound)} places"
-    for name in DRAG_HANDLE_WIDGETS:
-        assert name in bound[0], f"{name} is no longer a drag handle"
+    # The loop iterates the tuple itself, so the list and the code cannot
+    # disagree -- they are the same thing. It used to iterate a parallel
+    # literal of widgets that happened to match, and the panel redesign proved
+    # that was only a convention: it rebuilt the header without registering it
+    # under the name the tuple already gave it, and nothing failed.
+    assert bound[0] == "DRAG_HANDLE_WIDGETS"
     for forbidden in ("entry", "speak", "transcript", "status", "meter", "reply"):
         assert forbidden not in bound[0], f"a drag can now start from {forbidden}"
 

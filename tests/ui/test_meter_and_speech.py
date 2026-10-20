@@ -622,3 +622,84 @@ def test_an_engine_that_cannot_stop_is_reported_as_not_stopped() -> None:
     controller.speaker = NoStop()
 
     assert controller.interrupt_speech() is False
+
+
+# =================================================================================
+# 8. reading a reply again, because the panel grew a button for it
+# =================================================================================
+
+
+def test_nothing_has_been_said_yet_so_there_is_nothing_to_read() -> None:
+    controller, _view, _bridge, speaker = _ready()
+
+    assert controller.last_reply() == ""
+    assert controller.speak_again() is False
+    assert speaker.spoken == []
+
+
+def test_read_says_the_last_reply_again() -> None:
+    controller, _view, _bridge, speaker = _ready()
+    controller.submit("hello")
+
+    assert controller.speak_again() is True
+    assert speaker.spoken == ["It is just past four.", "It is just past four."]
+
+
+def test_read_says_the_newest_reply_and_not_an_older_one() -> None:
+    controller, _view, _bridge, speaker = _ready()
+    controller.submit("hello")
+    controller.bridge.reply = Reply(text="Half past five.")
+    controller.submit("and now")
+    speaker.spoken.clear()
+
+    controller.speak_again()
+
+    assert speaker.spoken == ["Half past five."]
+
+
+def test_read_works_with_automatic_speech_turned_off() -> None:
+    """The switch says whether replies are spoken *automatically*. A click on
+    "read" is not automatic, and refusing it would be the window ignoring a
+    direct instruction."""
+    controller, _view, _bridge, speaker = _ready(speak_replies=False)
+    controller.submit("hello")
+    assert speaker.spoken == [], "the switch still governs the automatic path"
+
+    assert controller.speak_again() is True
+    assert speaker.spoken == ["It is just past four."]
+
+
+def test_turning_speech_off_still_silences_the_automatic_path() -> None:
+    """The mutation that proves the test above is testing the right thing."""
+    controller, _view, _bridge, speaker = _ready(speak_replies=False)
+
+    controller.submit("hello")
+
+    assert speaker.spoken == []
+
+
+def test_read_without_a_speaker_is_harmless() -> None:
+    controller, _view, _bridge, _speaker = _ready()
+    controller.submit("hello")
+    controller.speaker = None
+
+    assert controller.speak_again() is False
+
+
+def test_read_survives_an_engine_that_raises() -> None:
+    controller, view, _bridge, _speaker = _ready(
+        speaker=Speaker(raises=RuntimeError("no voice"))
+    )
+    controller.submit("hello")
+
+    assert controller.speak_again() is False
+    assert "Could not speak" in view.status_lines[-1]
+
+
+def test_stop_asks_the_engine_once_and_cheaply() -> None:
+    """What the panel's stop button does. Stopping *generation* is not here:
+    bridge.send is one blocking call with no cancellation."""
+    controller, _view, _bridge, speaker = _ready()
+
+    assert controller.interrupt_speech() is True
+    assert speaker.stops == 1

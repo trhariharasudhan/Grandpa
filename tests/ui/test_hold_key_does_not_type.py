@@ -363,18 +363,32 @@ def _rendered_texts(tk: RecordingTk) -> list[str]:
     ]
 
 
-def test_the_header_names_the_default_key() -> None:
+def _names_the_key(tk: RecordingTk, key: str) -> bool:
+    """Whether any string the window renders names this hold key.
+
+    A substring search across every rendered text rather than an exact match
+    on one of them. The phrase moved from a header chip to the line under the
+    input during the panel redesign, and the old locator failed while the
+    property it protects -- the window names the key it is actually using,
+    read from the constant -- was still perfectly true. Not caring which
+    widget carries it is the stronger test.
+    """
+    wanted = f"hold {key.upper()}"
+    return any(wanted in text for text in _rendered_texts(tk))
+
+
+def test_the_window_names_the_default_key() -> None:
     """The reported bug, at the layer the user actually reads."""
     tk, _view, _seen = _shown()
 
-    assert f"hold {DEFAULT_HOLD_KEY.upper()}" in _rendered_texts(tk)
+    assert _names_the_key(tk, DEFAULT_HOLD_KEY), _rendered_texts(tk)
 
 
 @pytest.mark.parametrize("key", sorted(KEY_CODES))
-def test_the_header_names_whichever_key_was_chosen(key: str) -> None:
+def test_the_window_names_whichever_key_was_chosen(key: str) -> None:
     tk, _view, _seen = _shown(key)
 
-    assert f"hold {key.upper()}" in _rendered_texts(tk)
+    assert _names_the_key(tk, key), _rendered_texts(tk)
 
 
 @pytest.mark.parametrize("key", sorted(KEY_CODES))
@@ -563,10 +577,11 @@ def test_a_predicate_that_raises_does_not_swallow() -> None:
     assert tk.entry_bindings["<KeyPress-Control_L>"](object()) is None
 
 
-def test_the_header_names_the_combination() -> None:
+def test_the_window_names_the_combination() -> None:
+    """A two-key spec is still named in full, not abbreviated to one half."""
     tk, _view, _seen = _shown("ctrl+win")
 
-    assert "hold CTRL+WIN" in _rendered_texts(tk)
+    assert _names_the_key(tk, "ctrl+win"), _rendered_texts(tk)
 
 
 def test_an_unusable_spec_binds_nothing_rather_than_crashing() -> None:

@@ -155,17 +155,42 @@ parent — so this is the section where that shows or does not.
 
 ## A. The panel — appearing
 
+The panel is 520x512 now and reads as a conversation: a header with the
+product's name, bubbles on alternating sides, and an action row under the
+reply.
+
 | # | Do this | Expect |
 | --- | --- | --- |
-| 1 | Double-tap the orb | A small dark window beside it. **No title bar**, no minimise or close buttons. |
-| 2 | Read the top-right of the header | Two chips: **"hold CTRL+WIN"** and **"speech on"**. If the key chip names anything else, say so — it read "hold SPACE" for a whole release once. |
-| 3 | Look at the state line immediately (double-tap the orb as soon as it appears) | A grey dot and **"Loading model..."** — not "Ready". |
-| 4 | Watch the window while it loads | It must stay **responsive**: the meter strip is visible and you can drag the window. It used to freeze solid for the whole load. |
-| 5 | Wait | Dot turns **neutral white**, reads **"Standby"** — not "Ready". Status line shows the model name, `speech ready`, and which orb painter is live. About 7s for `base.en`. |
-| 6 | Click another window so the bubble is behind it | The bubble **stays on top**. |
+| 1 | Click the orb | A dark window beside it, about 520 wide. **No title bar**, no minimise, no maximise. |
+| 2 | Read the header, left to right | A small **ring** in the state's colour, **"GRANDPA"** over **"Personal AI Assistant"**, then on the right a **"speech on"** chip, a coloured dot with the state's word, and an **x** to close. |
+| 3 | Read the line under the text box | **"Enter to send · hold CTRL+WIN to talk"**. If it names a different key, say so — it read "hold SPACE" for a whole release once. There is deliberately **no** "Shift + Enter for a new line": the box is single-line, so that line would be a lie. |
+| 4 | Look at the state line immediately (click the orb as soon as it appears) | A grey dot and **"Loading model..."** — not "Ready". |
+| 5 | Watch the window while it loads | It must stay **responsive**: the meter strip is visible and you can drag the window by its header. It used to freeze solid for the whole load. |
+| 6 | Wait | Dot turns **neutral white**, reads **"Standby"** — not "Ready". The header's ring turns white too. Status line shows the model name, `speech ready`, and which orb painter is live. About 7s for `base.en`. |
+| 7 | Click another window so the bubble is behind it | The bubble **stays on top**. |
+| 8 | Drag the window | It moves only when you grab the **header**, the state word or the state dot. The bubbles, the buttons, the box and the status line are not handles. |
 
-If step 3 ever shows "Ready" before step 5, stop and tell me — that is the bug
+If step 4 ever shows "Ready" before step 6, stop and tell me — that is the bug
 the LOADING state exists to prevent.
+
+### The corners are square, and that is known
+
+The panel draws itself a rounded border inside a square window, because a
+borderless tk toplevel gets no rounding from Windows 11's compositor —
+measured, the corner pixel is panel-coloured at radius 0.
+
+**It still reads as square, and that is measured too.** The border is drawn on
+a canvas that fills the window, and the content frame sits on top of it:
+opaque, square, inset by three pixels. So all you can see of a 14-pixel round
+is three pixels of straight line at each edge and a nick at each corner. Read
+off the top-left 50x50 at 125%: eight rows of the arc are missing as shipped,
+and unpacking the content makes every row but the outermost show border — so
+the arc is drawn and simply covered.
+
+Rounding it properly needs the window itself rounded, which is `SetWindowRgn`
+or a layered panel: a second Win32 mechanism and its own decision. Do not
+report square corners as a bug. **Do** report it if the three-pixel edge looks
+like a glitch rather than a border.
 
 
 ## B. Nothing should be blank
@@ -176,9 +201,9 @@ same fault, so this section checks all of them before anything happens.
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| A1 | Look at the box at the bottom, before typing anything | It has a **visible edge** and reads **"Type a message and press Enter"** in grey. It should look like something you type in. |
-| A2 | Look at the large pane in the middle | It says **"Replies appear here"** and tells you the two ways to ask. It should not be a blank dark rectangle. |
-| A3 | Look above it | A **"heard"** caption and **"nothing heard yet"**. |
+| A1 | Look at the box at the bottom, before typing anything | It has a **visible edge** and reads **"Message Grandpa..."** in grey, with **"Enter to send · hold ... to talk"** on the line beneath. It should look like something you type in. |
+| A2 | Look at the middle of the window, before anything has been said | A faint **ring**, **"No messages yet"**, and **"Hold ... to talk, or type below"**. Not a blank dark rectangle, and **not** two empty bubbles — the bubbles are not there until there is something in them. |
+| A3 | Ask it something, then look again | The empty state is **gone**, replaced by your message in a **blue bubble on the right** and the reply in a **grey bubble on the left**, each with a small line under it saying who said it and when. |
 | A4 | Look at the bottom line | A status, not blank. |
 | A5 | Click into the box | The placeholder **disappears** so you type into an empty box. |
 | A6 | Click away without typing | The placeholder **comes back**. |
@@ -194,8 +219,8 @@ remedy was saying all of it again.
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| B1 | Hold the key and say something it gets wrong | The **heard** row shows the wrong text, and its caption changes to **"heard — click to correct and resend"**. |
-| B2 | Click the heard row | The wrong text appears **in the box at the bottom**, ready to edit. The caret does not move there on its own — the window never takes focus. |
+| B1 | Hold the key and say something it gets wrong | The **blue bubble on the right** shows the wrong text, and the line under it reads **"you · hh:mm · sent · click to correct"**. |
+| B2 | Click the blue bubble | The wrong text appears **in the box at the bottom**, ready to edit. The caret does not move there on its own — the window never takes focus. |
 | B3 | Fix the wrong word and press Enter | It is sent as if typed. The reply should now make sense. |
 | B4 | Click the heard row before anything has been heard | Nothing happens. |
 
@@ -268,6 +293,39 @@ The reply text must never be missing because speech failed. If you ever see
 | 29 | Drag the panel by its top strip to another corner, collapse, and expand again | The panel comes back **beside the orb**, not where you dragged it. The orb is the thing you place; the panel follows it. Say so if that is the wrong way round for you. |
 | 30 | Press Esc with the panel open, or Ctrl+C in the terminal | Both windows close and the terminal returns to a prompt. |
 | 31 | Collapse to the orb, click the orb once, press Esc | It closes. Esc needs one of the windows to have been clicked first, because neither ever takes focus on its own. Ctrl+C in the terminal always works. |
+
+## I. The action row: copy, read, stop
+
+Three buttons under the reply. They appear once there is a reply to act on and
+not before.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| I1 | Ask something, then look under the grey bubble | Three small outlined buttons: **copy**, **read**, **stop**. |
+| I2 | Click **copy**, then paste somewhere | The reply's text, exactly. Nothing is gated and nothing asks you: this is a button on your own screen, and selecting the reply and pressing Ctrl+C already did the same thing. |
+| I3 | Click **copy** twice, then paste | The reply **once**, not twice. |
+| I4 | Turn speech off (the chip), ask something, then click **read** | It speaks the reply **anyway**. The chip governs whether replies are spoken automatically; clicking read is not automatic. |
+| I5 | While it is speaking, click **stop** | It stops **mid-sentence**, within about a word. If you have to wait for the sentence to finish, say so — the stop is deliberately not queued behind the speech. |
+| I6 | Click **stop** while it is *thinking* rather than speaking | **Nothing happens, and that is correct.** Stop stops speaking, not generating. Routing is one blocking call with no cancellation; stopping it is a separate piece of work and is not built. Report it if you want it, do not report it as broken. |
+| I7 | Click the **x** in the header | The panel closes, the same as pressing Escape. |
+| I8 | Ask something and watch that spot while it thinks | The three buttons are replaced by a **Thinking · · ·** pill in the same place, and come back when the reply lands. They share the slot deliberately: measured, a pill packed as its own row got one pixel of height on a full panel — present to every test, invisible to you, and invisible exactly when you are waiting for it. |
+
+## J. The panel at the screen edges
+
+The panel got 120 pixels wider, which moves the point at which it has to flip
+to the orb's other side.
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| J1 | Drag the orb hard into each of the four corners in turn | The **orb** reaches each corner — its ring sits flush with the edge. The **panel** stays wholly on screen, flipping to the orb's left on the right-hand side. |
+| J2 | Drag back from the right-hand edge | The panel returns to the orb's **right**, where it was. A flip must not be permanent. |
+| J3 | Drag the panel somewhere of your own, then move the orb a little | The panel keeps **your** offset, not the default one — until keeping it would push it off screen. |
+
+Measured on this machine at each corner, 1536x864 work area, panel 520x512:
+the panel's rect was `(51, 0, 571, 512)` top-left, `(965, 0, 1485, 512)`
+top-right, `(51, 352, 571, 864)` bottom-left, `(965, 352, 1485, 864)`
+bottom-right — inside the work area at all four, flipped to the orb's left on
+the right-hand side, with the orb's visible ring flush at `0.6` and `1535.4`.
 
 ## If something is wrong
 

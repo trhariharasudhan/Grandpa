@@ -1102,7 +1102,17 @@ class BubbleController:
         return self.speak_replies
 
     def interrupt_speech(self) -> bool:
-        """Cut a reply off mid-sentence. True if there was an engine to ask."""
+        """Cut a reply off mid-sentence. True if there was an engine to ask.
+
+        Deliberately cheap, and deliberately *not* queued onto the worker:
+        while a reply is being spoken the worker is inside ``speaker.speak``,
+        so a stop queued behind it would arrive only once the thing it stops
+        had finished.
+
+        This is what the panel's "stop" button does, and it stops *speaking*.
+        It does not stop generating: ``bridge.send`` is one blocking call with
+        no cancellation, which is a separate piece of work.
+        """
         if self.speaker is None:
             return False
         stop = getattr(self.speaker, "stop", None)
@@ -1117,7 +1127,24 @@ class BubbleController:
             self._refresh_status()
         return True
 
-    def _speak(self, text: str) -> bool:
+    def last_reply(self) -> str:
+        """The most recent reply, or empty if there has not been one yet."""
+        return self._exchanges[-1][1] if self._exchanges else ""
+
+    def speak_again(self) -> bool:
+        """Say the last reply again, because the user asked for it.
+
+        Bypasses :attr:`speak_replies`, which says whether replies are spoken
+        *automatically*. A click on "read" is not automatic, and refusing it
+        because the automatic setting is off would be the window ignoring a
+        direct instruction.
+
+        Blocks for as long as the speech does, so the caller runs it off the tk
+        thread. "stop" does not -- see :meth:`interrupt_speech`.
+        """
+        return self._speak(self.last_reply(), because_asked=True)
+
+    def _speak(self, text: str, *, because_asked: bool = False) -> bool:
         """Say the reply. The text is already on screen before this runs.
 
         Returns whether it was actually spoken, which is what decides the orb's
@@ -1125,7 +1152,9 @@ class BubbleController:
         nothing else: the reply arrived and is readable, so losing the audio is
         not losing the answer.
         """
-        if not text or not self.speak_replies or self.speaker is None:
+        if not text or self.speaker is None:
+            return False
+        if not self.speak_replies and not because_asked:
             return False
         spoken = True
         self._enter(BubbleState.SPEAKING)

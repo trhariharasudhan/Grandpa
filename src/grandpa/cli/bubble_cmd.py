@@ -231,6 +231,14 @@ def bubble(
     )
     view.on_close = lambda: (controller.stop(), None)[1]
 
+    # The panel's action row. "read" speaks, which blocks for the length of the
+    # reply, so it goes to the worker like submit does. "stop" does NOT: while
+    # a reply is being spoken the worker is inside speaker.speak, and a stop
+    # queued behind it would only arrive once the thing it stops had finished.
+    # It is a cheap call on the tk thread for exactly that reason.
+    view.on_read = lambda: _run_off_thread(controller, controller.speak_again)
+    view.on_stop_speaking = controller.interrupt_speech
+
     # One click toggles; a drag only moves. Both reach the controller, which
     # owns which state the window is in, where both windows are, and remembers
     # it. The drag handlers report a DELTA and the controller moves the pair --

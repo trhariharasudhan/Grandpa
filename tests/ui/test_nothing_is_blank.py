@@ -190,11 +190,20 @@ def test_the_status_line_is_not_blank_at_construction() -> None:
 
 
 def test_the_box_says_what_it_is_for() -> None:
-    """The reported fault. "I had to ask what it was for"."""
+    """The reported fault. "I had to ask what it was for".
+
+    The answer is split across two elements now -- the placeholder names what
+    the box is, the line beneath it says how to send -- so the test checks
+    both rather than requiring one string to carry everything. What it must
+    not become is a box that says neither.
+    """
     tk, _view = _shown()
 
     assert PLACEHOLDER_ENTRY in _inserted(tk)
-    assert "press Enter" in PLACEHOLDER_ENTRY, "it should say how to send"
+    assert PLACEHOLDER_ENTRY.strip(), "the placeholder is empty"
+    assert any(
+        "Enter to send" in text for text in _text_kwargs(tk)
+    ), "nothing tells the user how to send"
 
 
 def test_the_box_has_a_visible_edge() -> None:

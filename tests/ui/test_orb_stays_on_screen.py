@@ -34,11 +34,18 @@ from grandpa.ui.orb_view import (
     clamp_orb_position,
     work_area_for,
 )
+from grandpa.ui.tk_view import HEIGHT as PANEL_HEIGHT
+from grandpa.ui.tk_view import WIDTH as PANEL_WIDTH
 
 pytestmark = pytest.mark.core
 
 AREA = (0, 0, 1536, 864)
-PANEL = (400, 324)
+
+#: The panel the command actually opens, not a literal that happened to match
+#: it once. This was ``(400, 324)`` and the panel became 520x480 in the
+#: redesign, so every flip test below was flipping a window that no longer
+#: existed -- and all of them still passed.
+PANEL = (PANEL_WIDTH, PANEL_HEIGHT)
 
 
 # --- 1. the clamp, as arithmetic ---------------------------------------------
