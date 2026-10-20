@@ -186,8 +186,8 @@ def test_the_status_line_says_loading_before_the_model_is_warm() -> None:
 
     controller.start()
 
-    assert "loading" in view.status_lines[-1]
-    assert "speech ready" not in view.status_lines[-1]
+    assert "loading" in controller.status_line()
+    assert "speech ready" not in controller.status_line()
 
 
 def test_a_hold_during_loading_records_nothing() -> None:
@@ -218,7 +218,7 @@ def test_it_reaches_idle_only_after_warming() -> None:
 
     assert bridge.warmed == 1
     assert controller.state is BubbleState.IDLE
-    assert "speech ready" in view.status_lines[-1]
+    assert "speech ready" in controller.status_line()
 
 
 def test_a_failed_warm_says_so_and_does_not_claim_ready() -> None:
@@ -228,8 +228,11 @@ def test_a_failed_warm_says_so_and_does_not_claim_ready() -> None:
 
     assert controller.warm() is False
     assert controller.state is BubbleState.ERROR
+    # The failure is a fault and reaches the panel; the speech state is
+    # status and does not.
     assert "model not found" in view.status_lines[-1]
-    assert "speech ready" not in view.status_lines[-1]
+    assert "model not found" in controller.status_line()
+    assert "speech ready" not in controller.status_line()
 
 
 # --- 2. the hold ------------------------------------------------------------------
@@ -440,7 +443,7 @@ def test_the_status_line_carries_model_speech_and_error() -> None:
     controller.warm()
     controller.submit("something")
 
-    line = view.status_lines[-1]
+    line = controller.status_line()
     assert "base.en" in line
     assert "speech ready" in line
     assert "no" in line
@@ -453,7 +456,7 @@ def test_the_status_line_is_readable_without_an_error() -> None:
     controller.start()
     controller.warm()
 
-    line = view.status_lines[-1]
+    line = controller.status_line()
     assert line.startswith("small.en")
     assert line.count("|") == 1, line
 
@@ -463,7 +466,7 @@ def test_an_unknown_model_says_so_rather_than_showing_nothing() -> None:
     controller.start()
     controller.warm()
 
-    assert "model unknown" in view.status_lines[-1]
+    assert "model unknown" in controller.status_line()
 
 
 # --- 6. the hold is the production one, not a copy -------------------------------

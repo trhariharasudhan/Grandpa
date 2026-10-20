@@ -26,7 +26,6 @@ import pytest
 
 from grandpa.ui.tk_view import (
     ACTION_COPY,
-    USER_BUBBLE,
     ACTION_HEIGHT,
     ACTION_READ,
     ACTION_STOP,
@@ -42,7 +41,6 @@ from grandpa.ui.tk_view import (
     PANEL_RADIUS,
     PLACEHOLDER_ENTRY,
     PRODUCT_NAME,
-    PRODUCT_TAGLINE,
     THINKING_TEXT,
     WIDTH,
     TkBubbleView,
@@ -283,7 +281,9 @@ def test_the_two_speakers_are_different_colours() -> None:
 
 
 def test_both_bubbles_are_drawn_in_their_own_colour() -> None:
-    tk, _view = _shown()
+    tk, view = _shown()
+    view.set_transcript("what time is it")
+    view.set_reply("It is just past four.")
     fills = {options.get("fill") for options in tk.polygons()}
 
     assert BUBBLE_USER in fills
@@ -291,25 +291,57 @@ def test_both_bubbles_are_drawn_in_their_own_colour() -> None:
 
 
 def test_the_bubbles_use_the_bubble_radius_and_not_the_panel_one() -> None:
+    """The bubbles are drawn when a message arrives, not at show() -- they
+    size themselves to their text, and there is no text until there is.
+
+    The radius is read off the bubble's OWN polygon, found by its fill. An
+    earlier version of this test took the smallest non-zero x across every
+    polygon, which reports radius+1 for a shape drawn at x0=1 and quietly
+    compared the panel's border against the bubble's corner.
+    """
+    from grandpa.ui.tk_view import SPLINE_RADIUS_FACTOR
+
     tk, view = _shown()
-    bubble = tk.polygon_points()
-    wanted = tuple(
-        TkBubbleView.rounded_points(
-            0, 0, USER_BUBBLE[0] - 1, USER_BUBBLE[1] - 1, BUBBLE_RADIUS
-        )
+    view.set_transcript("what time is it")
+
+    bubbles = [
+        args
+        for (_widget, method, args, kwargs) in tk.history
+        if method == "create_polygon" and kwargs.get("fill") == BUBBLE_USER
+    ]
+
+    assert bubbles, "the user's message was not drawn as a bubble"
+    assert BUBBLE_RADIUS != PANEL_RADIUS, "the test would prove nothing"
+
+    points = bubbles[0]
+    xs = sorted({float(value) for value in points[0::2]})
+    ys = sorted({float(value) for value in points[1::2]})
+    radius = xs[1] - xs[0]
+
+    # The corrected radius, or half the bubble's height when that is smaller.
+    # A one-line bubble is short enough that the clamp decides, which is the
+    # clamp doing its job rather than the radius being wrong.
+    wanted = min(
+        BUBBLE_RADIUS * SPLINE_RADIUS_FACTOR, (ys[-1] - ys[0]) / 2.0
     )
 
-    assert wanted in {tuple(points) for points in bubble}
-    assert BUBBLE_RADIUS != PANEL_RADIUS, "the test would prove nothing"
-    assert view._widgets["user_bubble"] is not None
-
+    assert radius == pytest.approx(wanted, abs=0.01), (radius, wanted, ys)
 
 def test_the_speakers_sit_on_opposite_sides() -> None:
     """Which is the whole point of bubbles over two stacked panes."""
     tk, view = _shown()
 
-    assert tk.pack_side(view._widgets["user_bubble"]) == "right"
-    assert tk.pack_side(view._widgets["grandpa_bubble"]) == "left"
+    view.set_transcript("what time is it")
+    view.set_reply("It is just past four.")
+
+    sides = [
+        kwargs.get("side")
+        for _widget, method, _args, kwargs in tk.history
+        if method == "pack" and kwargs.get("side") in {"left", "right"}
+    ]
+
+    assert "right" in sides, "nothing was placed on the user's side"
+    assert "left" in sides, "nothing was placed on Grandpa's side"
 
 
 # --- 4. the empty state ------------------------------------------------------
@@ -322,21 +354,27 @@ def test_a_window_with_no_exchange_shows_the_empty_state() -> None:
     assert EMPTY_TITLE in tk.texts()
 
 
-def test_the_bubbles_are_not_packed_before_there_is_anything_in_them() -> None:
+def test_the_bubbles_are_not_built_before_there_is_anything_in_them() -> None:
+    """Stronger than it was: they are not merely unpacked, they do not exist.
+
+    A row is created when a message arrives, so the empty panel holds no
+    bubble widgets at all.
+    """
     tk, view = _shown()
 
-    for name in ("user_row", "grandpa_row", "actions"):
-        assert tk.packing(view._widgets[name])[-1] == "pack_forget", name
+    assert view.rows() == ()
+    assert tk.packing(view._widgets["actions"])[-1] == "pack_forget"
 
 
 def test_a_reply_replaces_the_empty_state_with_the_conversation() -> None:
     tk, view = _shown()
 
+    view.set_transcript("what time is it")
     view.set_reply("It is just past four.")
 
     assert tk.packing(view._widgets["empty"])[-1] == "pack_forget"
-    for name in ("user_row", "grandpa_row", "actions"):
-        assert tk.packing(view._widgets[name])[-1] == "pack", name
+    assert tk.packing(view._widgets["actions"])[-1] == "pack"
+    assert view.rows() == (("what time is it", "It is just past four."),)
 
 
 def test_a_transcript_alone_is_enough_to_show_the_conversation() -> None:
@@ -346,7 +384,6 @@ def test_a_transcript_alone_is_enough_to_show_the_conversation() -> None:
     view.set_transcript("what time is it")
 
     assert tk.packing(view._widgets["empty"])[-1] == "pack_forget"
-    assert tk.packing(view._widgets["user_row"])[-1] == "pack"
 
 
 def test_an_empty_reply_returns_to_the_empty_state_of_the_reply_bubble() -> None:
@@ -367,7 +404,9 @@ def test_the_header_says_what_the_product_is() -> None:
     texts = tk.texts()
 
     assert PRODUCT_NAME in texts
-    assert PRODUCT_TAGLINE in texts
+    # The tagline is gone with the second header line: a window the user
+    # opened on purpose does not need to introduce itself, and that line was
+    # half of the header's 68 pixels.
 
 
 def test_the_drag_handle_is_the_same_three_widgets_as_before() -> None:
@@ -631,21 +670,14 @@ def test_a_reply_arriving_mid_thought_does_not_leave_both() -> None:
     assert sorted(packed.values()) == ["pack", "pack_forget"], packed
 
 
-def test_the_header_ring_follows_the_state_too() -> None:
-    """So the panel reads as the same object as the orb beside it."""
-    from grandpa.ui.palette import RING_COLOURS
+def test_there_is_no_logo_ring_in_the_header() -> None:
+    """Removed on purpose: the orb is on screen beside this window and
+    two rings is one too many. The header's state dot still carries the
+    colour, so the signal survives and only the duplicate is gone."""
+    _tk, view = _shown()
 
-    tk, view = _shown()
-
-    view.set_state("error", "error")
-
-    recoloured = [
-        (args, kwargs.get("outline"))
-        for widget, method, args, kwargs in tk.history
-        if widget is view._widgets["logo"] and method == "itemconfigure"
-    ]
-    assert ((view._logo_ring,), RING_COLOURS["error"]) in recoloured
-    assert view._logo_ring is not None, "the ring's id was never kept"
+    assert view._widgets.get("logo") is None
+    assert view._logo_ring is None
 
 
 # --- 9. the hint says only what is true --------------------------------------
@@ -865,8 +897,7 @@ def test_a_full_panel_fits_the_window_it_is_drawn_in() -> None:
             time.sleep(0.004)
 
     rows = (
-        "header", "meter", "convo", "user_row", "user_meta", "grandpa_row",
-        "grandpa_meta", "input_row", "hold_hint", "status",
+        "header", "meter", "scroll", "convo", "input_row", "hold_hint",
     )
     view = TkBubbleView(tkinter_module=tkinter, hold_key="ctrl+win")
     try:
@@ -879,7 +910,6 @@ def test_a_full_panel_fits_the_window_it_is_drawn_in() -> None:
             "hours ahead of London, so if you are calling someone there this "
             "evening they will already be well into tomorrow morning."
         )
-        view.set_earlier((("remind me at six", "Set for six o'clock."),))
         settle()
 
         top = view.root.winfo_rooty()
@@ -911,5 +941,148 @@ def test_a_full_panel_fits_the_window_it_is_drawn_in() -> None:
             faults.append(f"the pill is {pill.winfo_height()}px tall")
 
         assert faults == [], "; ".join(faults)
+    finally:
+        view.close()
+
+
+# --- 14. a reply longer than the box must be reachable ------------------------
+#
+# The bug this guards lived thirteen days, through four versions of the panel,
+# because nothing ever asked whether the text fit. Measured with a
+# 600-character reply, every version silently dropped lines: 8 at the first
+# bubble, 5 for two releases after it, 6 in the redesign. None had a
+# scrollbar, an ellipsis, or any mark that more existed.
+#
+# The property is REACHABILITY, not fit. A scroll view is allowed to be
+# taller than its window -- that is what it is for. What must never happen
+# again is text that exists and cannot be got to.
+
+LONG_REPLY = (
+    "It is 4:07 in the afternoon in Chennai, which is nine and a half hours "
+    "ahead of London. If you are calling someone there this evening they will "
+    "already be well into tomorrow morning, so anything you send after about "
+    "eight o'clock your time will land while they are asleep. The working day "
+    "there usually starts around half past nine, which is four in the morning "
+    "for you, and ends around six, which is half past twelve. The overlap you "
+    "actually have is narrow: roughly half past three to six in the afternoon "
+    "your time."
+)
+LONG_HEARD = (
+    "what time is it in Chennai right now and when would be a good time to "
+    "call someone there without waking them up"
+)
+
+
+def _displayed_lines(reply) -> tuple[int, int]:
+    """(total wrapped lines, lines tk is currently displaying).
+
+    ``displaylines``, not ``lines``: a reply has no newlines in it, so
+    counting logical lines reports 1 however far it overflows -- which is
+    precisely the measurement mistake that hid this bug.
+    """
+    total = int(reply.count("1.0", "end", "displaylines")[0])
+    shown, index = 0, "1.0"
+    for _ in range(total + 2):
+        if reply.dlineinfo(index) is not None:
+            shown += 1
+        nxt = reply.index(f"{index} +1displaylines")
+        if nxt == index:
+            break
+        index = nxt
+    return total, shown
+
+
+@pytest.mark.environment(
+    "opens a real tk window and asks tk which lines of a long reply it is "
+    "actually displaying; the only test that can see text that is there and "
+    "cannot be reached"
+)
+def test_every_line_of_a_long_reply_is_reachable() -> None:
+    """The guard for the thirteen-day bug.
+
+    Not "does it fit" -- it is allowed not to fit. Every wrapped line must be
+    reachable by scrolling, and the scrollable region must be at least as
+    tall as the content, so nothing is parked outside it.
+    """
+    import time
+    import tkinter
+
+    view = TkBubbleView(tkinter_module=tkinter, hold_key="ctrl+win")
+    try:
+        view.show(position=(300, 120), topmost=True)
+        view.set_state("idle", "Standby")
+        view.set_transcript(LONG_HEARD)
+        view.set_reply(LONG_REPLY)
+        for _ in range(60):
+            view.root.update()
+            time.sleep(0.004)
+
+        reply = view._widgets["reply"]
+        scroll = view._widgets["scroll"]
+        total, _shown = _displayed_lines(reply)
+
+        assert total > 3, "the reply is too short to prove anything"
+
+        # Walk the view top to bottom and union what tk displays.
+        seen: set[int] = set()
+        steps = 20
+        for step in range(steps + 1):
+            scroll.yview_moveto(step / steps)
+            view.root.update()
+            index = "1.0"
+            for line in range(total + 2):
+                if reply.dlineinfo(index) is not None:
+                    seen.add(line)
+                nxt = reply.index(f"{index} +1displaylines")
+                if nxt == index:
+                    break
+                index = nxt
+
+        assert len(seen) == total, (
+            f"{total - len(seen)} of {total} lines cannot be reached at all"
+        )
+
+        region = scroll.cget("scrollregion")
+        assert region, "there is no scrollable region"
+        _x0, _y0, _x1, y1 = (float(value) for value in str(region).split())
+        content = view._widgets["convo"].winfo_reqheight()
+
+        assert y1 + 1 >= content, (
+            f"the scrollregion is {y1} but the content is {content}: "
+            "part of the conversation is outside the scrollable area"
+        )
+    finally:
+        view.close()
+
+
+@pytest.mark.environment(
+    "opens a real tk window; checks the heard text is not cut either"
+)
+def test_a_long_transcript_is_not_cut_either() -> None:
+    """The other silent truncation, and the one you would least want.
+
+    The transcript bubble overflowed its box by 25 pixels with no ellipsis.
+    It is what you read when a reply looks wrong, so losing its end is worse
+    than losing the end of the reply.
+    """
+    import time
+    import tkinter
+
+    view = TkBubbleView(tkinter_module=tkinter, hold_key="ctrl+win")
+    try:
+        view.show(position=(300, 120), topmost=True)
+        view.set_transcript(LONG_HEARD)
+        for _ in range(60):
+            view.root.update()
+            time.sleep(0.004)
+
+        label = view._rows[-1]["heard_label"] if view._rows else None
+        if label is None:
+            label = view._open_row["heard_label"]
+
+        assert label.winfo_height() >= label.winfo_reqheight(), (
+            f"the transcript needs {label.winfo_reqheight()}px and has "
+            f"{label.winfo_height()}px"
+        )
     finally:
         view.close()

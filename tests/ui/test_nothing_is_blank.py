@@ -159,12 +159,23 @@ def test_no_widget_is_constructed_with_an_empty_string() -> None:
 
 
 def test_every_pane_has_content_by_the_time_show_returns() -> None:
-    """Including the two that cannot carry a text= kwarg at all."""
+    """Nothing on screen says nothing.
+
+    The reply pane used to be checked here, as a Text with a placeholder in
+    it. There is no reply pane any more: a reply is a row built when one
+    arrives, and a row that does not exist cannot be blank -- which is the
+    stronger form of the same property. What is left to check here is the
+    box, and the empty state that stands in for a conversation before there
+    is one.
+    """
     tk, _view = _shown()
     inserted = " ".join(_inserted(tk))
+    texts = [str(value) for value in _text_kwargs(tk)]
 
-    assert "Replies appear here" in inserted, "the reply pane is an empty box"
     assert PLACEHOLDER_ENTRY in inserted, "the text box has no placeholder"
+    assert any("No messages yet" in value for value in texts), (
+        "the empty conversation says nothing"
+    )
 
 
 def test_the_meter_is_drawn_at_rest_rather_than_left_blank() -> None:
@@ -176,14 +187,40 @@ def test_the_meter_is_drawn_at_rest_rather_than_left_blank() -> None:
     assert len(moved) >= METER_BARS
 
 
-def test_the_status_line_is_not_blank_at_construction() -> None:
-    """It was non-blank only because the controller refreshes it immediately.
+def test_no_status_line_is_built_at_all_until_there_is_a_fault() -> None:
+    """The always-present status line is gone, and nothing replaces it empty.
 
-    That is the controller's good manners, not this widget's correctness.
+    It carried the model, the speech state, the microphone and the painter on
+    every frame -- four facts wide, permanently there, and therefore read once
+    and never again. What took its place appears only when something is
+    wrong, and it is built at that moment, with its text. So there is never a
+    widget present while saying nothing.
+
+    That is the rule the test above enforces, applied to the one element it
+    would have been most tempting to exempt from it.
     """
-    tk, _view = _shown()
+    tk, view = _shown()
 
-    assert "starting..." in _text_kwargs(tk)
+    assert view._widgets.get("fault") is None
+    assert "starting..." not in _text_kwargs(tk)
+
+
+def test_a_fault_builds_the_line_and_shows_it() -> None:
+    tk, view = _shown()
+
+    view.set_status_line("orb falling back to a flat disc")
+
+    assert view._widgets.get("fault") is not None
+    assert "orb falling back to a flat disc" in _text_kwargs(tk)
+
+
+def test_an_empty_fault_before_any_fault_builds_nothing() -> None:
+    """The ordinary case: every status refresh, for the whole of a good run."""
+    tk, view = _shown()
+
+    view.set_status_line("")
+
+    assert view._widgets.get("fault") is None
 
 
 # --- 2. the text box reads as a text box -----------------------------------------
@@ -207,13 +244,31 @@ def test_the_box_says_what_it_is_for() -> None:
 
 
 def test_the_box_has_a_visible_edge() -> None:
-    """A borderless box the colour of the pane above it is not an input."""
-    tk, _view = _shown()
+    """A borderless box the colour of the pane above it is not an input.
+
+    The edge moved rather than went. The entry carried a one-pixel highlight
+    ring in the accent colour, which is the thing that read as dated; it sits
+    inside a rounded pill drawn on the canvas behind it now, and that pill's
+    outline is the edge.
+    """
+    from grandpa.ui.tk_view import BORDER, SURFACE
+
+    tk, view = _shown()
     kwargs = next(k for n, _a, k in tk.calls if n == "Entry")
 
-    assert kwargs["highlightthickness"] == 1
-    assert kwargs["highlightbackground"]
-    assert kwargs["highlightcolor"] == ACCENT, "and a focus colour"
+    assert kwargs["highlightthickness"] == 0, "the old ring is still there"
+    assert kwargs["bg"] == SURFACE, "the box is the colour of the pane"
+
+    # The pill is drawn when the field is first laid out, which the recorder
+    # does not do on its own -- so ask for it the way a <Configure> would.
+    view._on_field_resized(type("E", (), {"width": 300})())
+    outlines = {
+        kwargs.get("outline")
+        for name, _args, kwargs in tk.calls
+        if name.endswith("create_polygon")
+    }
+
+    assert BORDER in outlines, "nothing draws the box an edge"
 
 
 def test_the_placeholder_is_removed_when_the_box_is_clicked_into() -> None:
@@ -284,55 +339,78 @@ def test_clearing_the_box_restores_the_placeholder() -> None:
 # --- 3. heard is visibly not the reply -------------------------------------------
 
 
-def test_both_rows_are_captioned() -> None:
+def _last_row_label(view):
+    """The Label inside the newest bubble, whatever row it ended up in."""
+    return view._widgets.get("reply")
+
+
+def test_both_speakers_are_labelled() -> None:
     """The reported need: telling "misheard me" from "misunderstood me".
 
-    Two unlabelled blocks of text in one pane cannot be told apart, and the two
-    need different fixes from the user -- speak differently, or rephrase.
+    Two unlabelled blocks of text cannot be told apart, and the two need
+    different fixes from the user -- speak differently, or rephrase. The
+    labels are per-message meta lines now rather than two fixed captions, so
+    they arrive with their messages.
     """
-    tk, _view = _shown()
-    texts = _text_kwargs(tk)
-
-    assert CAPTION_HEARD in texts
-    assert CAPTION_REPLY in texts
-
-
-def test_the_heard_row_says_so_when_nothing_has_been_heard() -> None:
-    tk, _view = _shown()
-
-    assert EMPTY_HEARD in _text_kwargs(tk)
-
-
-def test_a_transcript_lights_the_accent_edge() -> None:
-    """So the row reads as live rather than as decoration."""
     tk, view = _shown()
-    before = [k.get("bg") for _n, _a, k in tk.calls if k.get("bg") == ACCENT]
+
+    view.set_transcript("hello grandpa")
+    view.set_reply("good morning")
+
+    texts = [str(value) for value in _text_kwargs(tk)]
+
+    assert any(CAPTION_HEARD in value for value in texts), texts
+    assert any(CAPTION_REPLY in value for value in texts), texts
+
+
+def test_an_empty_conversation_says_so() -> None:
+    """What replaced "nothing heard yet" on a permanent row: an empty state
+    for the whole conversation, which goes away the moment there is one."""
+    tk, view = _shown()
+
+    assert any(
+        "No messages yet" in str(value) for value in _text_kwargs(tk)
+    )
+
+
+def test_the_user_bubble_is_drawn_in_the_user_colour() -> None:
+    """What the accent edge was for.
+
+    A three-pixel bar beside a permanent row said "this row is live". There
+    is no permanent row: a message either exists as a bubble or it does not,
+    and the bubble's own colour says whose it is.
+    """
+    from grandpa.ui.tk_view import BUBBLE_GRANDPA, BUBBLE_USER
+
+    tk, view = _shown()
 
     view.set_transcript("hello grandpa good morning")
+    view.set_reply("good morning to you")
 
-    lit = [
-        k.get("bg")
-        for n, _a, k in tk.calls
-        if n.endswith(".configure") and k.get("bg") == ACCENT
-    ]
-    assert not before
-    assert lit, "the accent edge did not light up"
+    fills = {
+        kwargs.get("fill")
+        for name, _args, kwargs in tk.calls
+        if name.endswith("create_polygon")
+    }
+
+    assert BUBBLE_USER in fills, "the user's message has no bubble"
+    assert BUBBLE_GRANDPA in fills, "the reply has no bubble"
+    assert BUBBLE_USER != BUBBLE_GRANDPA
 
 
-def test_an_empty_transcript_restores_the_empty_state(tmp_path) -> None:
-    """Rather than blanking the row, which made the layout jump."""
+def test_an_empty_transcript_creates_no_row_at_all() -> None:
+    """Stronger than blanking one: there is nothing there to be blank.
+
+    This used to assert that an empty transcript restored a placeholder on a
+    reusable Label, because a zero-height label made the layout jump. A row
+    that is never built cannot jump.
+    """
     tk, view = _shown()
-    view.set_transcript("something")
 
     view.set_transcript("")
 
-    configured = [
-        k.get("text")
-        for n, _a, k in tk.calls
-        if n.endswith(".configure") and isinstance(k.get("text"), str)
-    ]
-    assert EMPTY_HEARD in configured
-    assert configured[-1] in {EMPTY_HEARD, CAPTION_HEARD}
+    assert view.rows() == ()
+    assert view._open_row is None
 
 
 def test_the_transcript_is_quoted_so_it_reads_as_speech() -> None:
@@ -340,24 +418,36 @@ def test_the_transcript_is_quoted_so_it_reads_as_speech() -> None:
 
     view.set_transcript("hello grandpa")
 
-    quoted = [
-        k.get("text")
-        for n, _a, k in tk.calls
-        if n.endswith(".configure") and isinstance(k.get("text"), str)
-    ]
-    assert any("hello grandpa" in value and "“" in value for value in quoted)
+    quoted = [str(value) for value in _text_kwargs(tk)]
+
+    assert any(
+        "hello grandpa" in value and "\u201c" in value for value in quoted
+    ), quoted
 
 
-def test_an_empty_reply_restores_the_empty_state() -> None:
+def test_an_empty_reply_adds_nothing() -> None:
     tk, view = _shown()
-    view.set_reply("an answer")
+    view.set_transcript("a question")
 
     view.set_reply("")
 
-    assert any("Replies appear here" in value for value in _inserted(tk)[1:])
+    assert view.rows() == (), "an empty reply completed the exchange"
 
 
 # --- 4. correcting a mis-heard transcript ----------------------------------------
+
+
+def _click_transcript(tk, view):
+    """Click whatever carries the newest transcript.
+
+    By the handler rather than by a widget name: the transcript is a Label in
+    a row now, and which widget it is is exactly the sort of thing this test
+    should not care about.
+    """
+    for widget, _name, sequence, handler in reversed(tk.bound):
+        if sequence == "<Button-1>" and handler == view._edit_transcript:
+            return handler(object())
+    raise AssertionError("nothing is bound to correct the transcript")
 
 
 def test_clicking_the_heard_row_loads_it_into_the_box() -> None:
@@ -370,70 +460,67 @@ def test_clicking_the_heard_row_loads_it_into_the_box() -> None:
     tk, view = _shown()
     view.set_transcript("An event by Good Morning.")
 
-    tk.handler_for(view._widgets["transcript"], "<Button-1>")(object())
+    _click_transcript(tk, view)
 
     assert tk.entry_text[0] == "An event by Good Morning."
     assert view._placeholder_active is False
 
 
 def test_clicking_with_nothing_heard_does_nothing() -> None:
+    """There is no row to click before anything is heard, so the handler is
+    called directly: it must still refuse."""
     tk, view = _shown()
 
-    tk.handler_for(view._widgets["transcript"], "<Button-1>")(object())
+    view._edit_transcript(object())
 
     assert tk.entry_text[0] == PLACEHOLDER_ENTRY
 
 
 def test_a_loaded_transcript_can_be_submitted_as_a_correction() -> None:
-    """It goes out through the ordinary submit path, so nothing new routes."""
-    submitted: list[str] = []
-    tk, view = _shown(on_submit=submitted.append)
+    sent: list[str] = []
+    tk, view = _shown()
+    view.on_submit = sent.append
     view.set_transcript("An event by Good Morning.")
-    tk.handler_for(view._widgets["transcript"], "<Button-1>")(object())
 
+    _click_transcript(tk, view)
     tk.entry_text[0] = "hello grandpa good morning"
-    tk.bindings["<Return>"](object())
+    view._submit(object())
 
-    assert submitted == ["hello grandpa good morning"]
+    assert sent == ["hello grandpa good morning"]
 
 
-def test_the_caption_says_the_row_can_be_corrected() -> None:
-    """Discoverability: a clickable thing that does not say so is not clicked."""
+def test_the_meta_line_says_the_row_can_be_corrected() -> None:
     tk, view = _shown()
 
-    view.set_transcript("something wrong")
+    view.set_transcript("something it got wrong")
 
-    captions = [
-        k.get("text")
-        for n, _a, k in tk.calls
-        if n.endswith(".configure") and isinstance(k.get("text"), str)
-    ]
-    assert any("click to correct" in value for value in captions)
+    assert any(
+        "correct" in str(value) for value in _text_kwargs(tk)
+    ), "nothing tells the user the row can be fixed"
 
 
 def test_an_injected_handler_takes_precedence_over_the_default() -> None:
-    received: list[str] = []
-    tk, view = _shown(on_edit_transcript=received.append)
-    view.set_transcript("misheard")
+    seen: list[str] = []
+    tk, view = _shown()
+    view.on_edit_transcript = seen.append
+    view.set_transcript("wrong words")
 
-    tk.handler_for(view._widgets["transcript"], "<Button-1>")(object())
+    _click_transcript(tk, view)
 
-    assert received == ["misheard"]
+    assert seen == ["wrong words"]
 
 
 def test_a_handler_that_raises_falls_back_to_loading_the_box() -> None:
-    def explode(_text: str) -> None:
-        raise RuntimeError("handler is broken")
+    def boom(_text: str) -> None:
+        raise RuntimeError("the handler is broken")
 
-    tk, view = _shown(on_edit_transcript=explode)
-    view.set_transcript("misheard")
+    tk, view = _shown()
+    view.on_edit_transcript = boom
+    view.set_transcript("wrong words")
 
-    tk.handler_for(view._widgets["transcript"], "<Button-1>")(object())
+    _click_transcript(tk, view)
 
-    assert tk.entry_text[0] == "misheard"
-
-
-# --- 5. the constraints that have held all along ---------------------------------
+    assert tk.entry_text[0] == "wrong words"
 
 
 def test_nothing_added_this_round_steals_focus() -> None:
@@ -444,7 +531,7 @@ def test_nothing_added_this_round_steals_focus() -> None:
     """
     tk, view = _shown()
     view.set_transcript("misheard")
-    tk.handler_for(view._widgets["transcript"], "<Button-1>")(object())
+    _click_transcript(tk, view)
     view.set_entry_text("a correction")
 
     offenders = [

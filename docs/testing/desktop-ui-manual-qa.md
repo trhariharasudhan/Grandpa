@@ -29,7 +29,7 @@ that first rather than reporting a flat disc as ugly glow.
 
 | # | Do this | Expect |
 | --- | --- | --- |
-| O1 | Run `grandpa bubble`, look at the orb, then click it and read the status line | A **glowing ring with no visible edge or box**, and the status line contains **`orb: glow`**. If you see a **dark circle** with a hard edge, the status line will say **`orb: flat disc (...)`** — copy that whole bracket to me and treat every later "how does it look" step as describing the fallback. |
+| O1 | Run `grandpa bubble`, look at the orb, then click it and read the **header** | A **glowing ring with no visible edge or box**, and the header shows one small muted word: **`glow`**. If you see a **dark circle** with a hard edge, the header will say **`disc`** and a coloured line will appear under the input saying why — copy that line to me and treat every later "how does it look" step as describing the fallback. |
 
 ### What it should look like, measured
 
@@ -156,20 +156,23 @@ parent — so this is the section where that shows or does not.
 
 ## A. The panel — appearing
 
-The panel is 520x512 now and reads as a conversation: a header with the
-product's name, bubbles on alternating sides, and an action row under the
-reply.
+The panel is 420x440 now -- smaller in both directions -- and the
+conversation scrolls. A one-line header, bubbles on alternating sides that
+size themselves to their text, and an action row pinned under them.
 
 | # | Do this | Expect |
 | --- | --- | --- |
 | 1 | Click the orb | A dark window beside it, about 520 wide. **No title bar**, no minimise, no maximise. |
-| 2 | Read the header, left to right | A small **ring** in the state's colour, **"GRANDPA"** over **"Personal AI Assistant"**, then on the right a **"speech on"** chip, a coloured dot with the state's word, and an **x** to close. |
+| 2 | Read the header, left to right | **"GRANDPA"** on one line, then on the right a **"speech on"** chip, one small muted word -- **`glow`** or **`disc`** -- a coloured dot with the state's word, and an **x** to close. The logo ring is gone: the orb is on screen beside this window and two rings is one too many. The tagline is gone with the second line of the header. |
 | 3 | Read the line under the text box | **"Enter to send · hold CTRL+WIN to talk"**. If it names a different key, say so — it read "hold SPACE" for a whole release once. There is deliberately **no** "Shift + Enter for a new line": the box is single-line, so that line would be a lie. |
 | 4 | Look at the state line immediately (click the orb as soon as it appears) | A grey dot and **"Loading model..."** — not "Ready". |
 | 5 | Watch the window while it loads | It must stay **responsive**: the meter strip is visible and you can drag the window by its header. It used to freeze solid for the whole load. |
-| 6 | Wait | Dot turns **neutral white**, reads **"Standby"** — not "Ready". The header's ring turns white too. Status line shows the model name, `speech ready`, and which orb painter is live. About 7s for `base.en`. |
+| 6 | Wait | Dot turns **neutral white**, reads **"Standby"** — not "Ready". **There is no status line under the input**: it carried four facts on every frame and was therefore read once and never again. What is left is the painter word in the header, and a coloured line that appears under the input *only* when something is wrong. About 7s for `base.en`. |
 | 7 | Click another window so the bubble is behind it | The bubble **stays on top**. |
-| 8 | Drag the window | It moves only when you grab the **header**, the state word or the state dot. The bubbles, the buttons, the box and the status line are not handles. |
+| 8 | Drag the window | It moves only when you grab the **header**, the state word or the state dot. The bubbles, the buttons and the box are not handles. |
+| 9 | Send several messages, then scroll up with the wheel | The conversation **scrolls**, and the older exchanges are all still there. Up to 200 are kept, for this run only -- they are gone on restart, deliberately. |
+| 10 | Scroll up, then ask something new | The view **stays where you put it** rather than jumping to the bottom. Scroll back down and the next message does follow again. |
+| 11 | Ask for something with a long answer | The whole reply is there. Scroll to read it: no line is cut off, and you can select the text with the mouse. **This was broken for thirteen days** — every version of the panel silently dropped lines off the end of a long reply, with no scrollbar and no ellipsis. If you ever see a reply that stops mid-sentence, that is this bug back. |
 
 If step 4 ever shows "Ready" before step 6, stop and tell me — that is the bug
 the LOADING state exists to prevent.
@@ -322,11 +325,15 @@ to the orb's other side.
 | J2 | Drag back from the right-hand edge | The panel returns to the orb's **right**, where it was. A flip must not be permanent. |
 | J3 | Drag the panel somewhere of your own, then move the orb a little | The panel keeps **your** offset, not the default one — until keeping it would push it off screen. |
 
-Measured on this machine at each corner, 1536x864 work area, panel 520x512:
-the panel's rect was `(51, 0, 571, 512)` top-left, `(965, 0, 1485, 512)`
-top-right, `(51, 352, 571, 864)` bottom-left, `(965, 352, 1485, 864)`
+Measured on this machine at each corner, 1536x864 work area, panel 420x440:
+the panel's rect was `(51, 0, 471, 440)` top-left, `(1065, 0, 1485, 440)`
+top-right, `(51, 424, 471, 864)` bottom-left, `(1065, 424, 1485, 864)`
 bottom-right — inside the work area at all four, flipped to the orb's left on
 the right-hand side, with the orb's visible ring flush at `0.6` and `1535.4`.
+
+The flip threshold moved with the width: the panel stays on the orb's right
+while `orb_x <= 1056`, against `956` at 520 wide. A hundred pixels more travel
+before it has to swap sides.
 
 ## If something is wrong
 

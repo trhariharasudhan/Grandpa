@@ -305,5 +305,8 @@ def test_the_status_line_after_a_successful_hold_carries_no_error() -> None:
     controller.on_hold()
 
     assert controller.last_error == ""
-    assert "base.en" in view.status_lines[-1]
-    assert "speech ready" in view.status_lines[-1]
+    assert "base.en" in controller.status_line()
+    assert "speech ready" in controller.status_line()
+    # And nothing reached the panel, because nothing went wrong. That is the
+    # whole point of the line under the input: it is empty on a good run.
+    assert view.status_lines[-1] == ""

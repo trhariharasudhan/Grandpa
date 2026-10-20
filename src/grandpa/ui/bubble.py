@@ -125,7 +125,24 @@ DEFAULT_ORB_POSITION = (460, 40)
 #: slot the first two were simply gone. A bounded deque and two compact lines,
 #: not the scrolling log that was considered and rejected: the orb is the
 #: identity and a short exchange suits it.
-EXCHANGE_MEMORY = 3
+EXCHANGE_MEMORY = 200
+"""How many exchanges the panel keeps, and can be scrolled back through.
+
+Three, once. The panel showed the current exchange and a one-line summary of
+the two before it, and that was a deliberate decision at the time -- the orb is
+the identity and a short exchange suited it. It was wrong in use: a new message
+pushed the old one away and there was no way back to it.
+
+200 rather than unbounded. Each exchange is eight widgets; measured on this
+machine, 200 is 1600 widgets and 5.5 seconds to build in one go. That build
+never happens -- history is session-only and rows are appended one at a time at
+44ms each -- but the bound is what stops a long day finding the limit.
+
+Session only, deliberately. A transcript store that survives restart already
+exists in this project (``VoiceCommandHistoryStore``), with a cap and a clear
+path; a second one beside it would be two routes under one policy, which is
+the shape this project has spent a long time removing.
+"""
 
 #: How many bars the level meter holds. One capture chunk is 0.1s, so this is
 #: about three seconds of history -- long enough to see a sentence, short enough
@@ -1000,8 +1017,60 @@ class BubbleController:
 
     # --- status --------------------------------------------------------------
 
+    def painter_word(self) -> str:
+        """``glow`` or ``disc``: which orb painter is live, for the header.
+
+        One word, always visible, because the panel's status line is gone and
+        a line that only appears on a fault cannot confirm the good case -- it
+        can only fail to deny it. Confirming the glow painter is running is
+        step O1 of the manual QA, and every later visual judgement depends on
+        knowing which painter drew what is on screen.
+        """
+        describe = getattr(self.orb, "painter_description", None)
+        if not callable(describe):
+            return ""
+        try:
+            text = str(describe() or "")
+        except Exception:  # noqa: BLE001
+            return ""
+        # "orb: glow" -> "glow"; "orb: flat disc (reason)" -> "disc".
+        lowered = text.lower()
+        if "disc" in lowered:
+            return "disc"
+        if "glow" in lowered:
+            return "glow"
+        return ""
+
+    def fault_line(self) -> str:
+        """What is wrong, or empty when nothing is.
+
+        **Only faults.** The line this replaced carried the model name, the
+        speech state, the microphone and the painter on every frame, which
+        made it four facts wide and permanently present -- and a line that is
+        always there is read once and then never again. Each entry here is
+        something that is not working.
+        """
+        faults: list[str] = []
+        if self.state is not BubbleState.LOADING and not self.speech_ready:
+            faults.append("speech engine unavailable")
+        if self.painter_word() == "disc":
+            describe = getattr(self.orb, "painter_description", None)
+            detail = ""
+            try:
+                detail = str(describe() or "") if callable(describe) else ""
+            except Exception:  # noqa: BLE001
+                detail = ""
+            faults.append(detail or "orb falling back to a flat disc")
+        if self.last_error:
+            faults.append(self.last_error)
+        return "  \u00b7  ".join(faults)
+
     def status_line(self) -> str:
-        """Model, speech readiness, last error. In that order."""
+        """Model, speech readiness, last error. In that order.
+
+        Still gathered here and still printed by the command; the panel is
+        sent :meth:`fault_line` instead, and the painter as one word.
+        """
         model = self.model_name or "model unknown"
         if self.state is BubbleState.LOADING:
             speech = "loading"
@@ -1043,8 +1112,20 @@ class BubbleController:
             pass
 
     def _refresh_status(self) -> None:
-        line = self.status_line()
+        """Push what the panel shows: faults, and which painter is live.
+
+        The panel is sent fault_line() rather than status_line(). The line it
+        used to carry held four facts on every frame and was therefore read
+        once and never again; the painter moved to one word in the header,
+        where it can still be glanced at, and everything else is a fault.
+        status_line() is unchanged and is still what the command prints.
+        """
+        line = self.fault_line()
         self._to_view(lambda: self.view.set_status_line(line))
+        push = getattr(self.view, "set_painter", None)
+        if callable(push):
+            word = self.painter_word()
+            self._to_view(lambda: self.view.set_painter(word))
 
     def _enter(self, state: BubbleState) -> None:
         # The state changes now, on this thread, because the refusal checks and
