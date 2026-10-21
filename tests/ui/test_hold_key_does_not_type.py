@@ -373,8 +373,12 @@ def _names_the_key(tk: RecordingTk, key: str) -> bool:
     read from the constant -- was still perfectly true. Not caring which
     widget carries it is the stronger test.
     """
-    wanted = f"hold {key.upper()}"
-    return any(wanted in text for text in _rendered_texts(tk))
+    # Case-insensitively: the phrase lives in the empty state now, which
+    # says "Hold CTRL+WIN to talk, or type below" at the start of a sentence.
+    # The property is that the window names the key it is using, not that it
+    # does so in lower case.
+    wanted = f"hold {key.upper()}".lower()
+    return any(wanted in text.lower() for text in _rendered_texts(tk))
 
 
 def test_the_window_names_the_default_key() -> None:

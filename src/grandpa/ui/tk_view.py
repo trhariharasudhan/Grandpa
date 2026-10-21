@@ -131,8 +131,8 @@ DIVIDER = "#2a2c31"
 #: two font metrics this machine produces, with twelve pixels to spare. A
 #: scrolling list has no such requirement: it is allowed to be taller than the
 #: window, because being taller than the window is what scrolling is for.
-WIDTH = 420
-HEIGHT = 440
+WIDTH = 380
+HEIGHT = 360
 
 #: The bubbles. Grandpa on the left in grey, the user on the right in blue, as
 #: two speakers in a conversation rather than two captioned panes.
@@ -578,9 +578,17 @@ class TkBubbleView:
     ) -> Any:
         """One bubble, as tall as its own text.
 
-        The height is asked of the widget rather than fixed, which is the
-        whole of the truncation fix: the text reports the height it needs and
-        the canvas is built to it, so there is no box for text to fall out of.
+        **The text is a child of the canvas it is drawn in.** It used to be a
+        child of the surrounding row and merely *embedded* in the canvas, and
+        a canvas window that is a sibling of its canvas is stacked against the
+        canvas rather than inside it -- so the canvas painted its background
+        and its rounded polygon over the text. Measured: 0 glyph-coloured
+        pixels out of 16720, with the widget mapped, 286 pixels wide, holding
+        the right text, in a colour that differs from the fill.
+
+        Every other canvas-embedded widget in this file -- the action
+        captions, the input entry -- is a child of its canvas, and every one
+        of them renders.
 
         *selectable* makes it a read-only ``Text`` rather than a ``Label``.
         The reply uses it, and not for neatness: selection is the precedent
@@ -592,50 +600,86 @@ class TkBubbleView:
         row = tk.Frame(parent, bg=BACKGROUND)
         pad = BUBBLE_INSET
         row.pack(fill="x", pady=(0, 2), padx=(pad, 0) if side == "right" else (0, pad))
-        if selectable:
-            label = tk.Text(
-                row, bg=colour, fg=FOREGROUND, relief="flat", wrap="word",
-                insertbackground=FOREGROUND, font=FONT_BODY, padx=0, pady=0,
-                highlightthickness=0, bd=0, takefocus=False, height=1,
-            )
-            label.insert("1.0", text)
-            # Read-only but still selectable. "disabled" would block selection
-            # as well, which is the thing being preserved.
-            label.bind("<Key>", lambda _event: "break")
-            # Measured after it is given its real width, below.
-            height = 0
-        else:
-            label = tk.Label(
-                row, text=text, bg=colour, fg=FOREGROUND, font=FONT_BODY,
-                wraplength=BUBBLE_MAX_WIDTH, justify="left", anchor="nw",
-            )
-            height = self._needed_height(label) + BUBBLE_PAD * 2
+
+        # The size first, from the font rather than from a widget: the canvas
+        # has to exist before the text can be parented to it, so there is
+        # nothing to ask how tall it is.
+        lines, spacing = self._wrapped_size(text)
         width = BUBBLE_MAX_WIDTH + BUBBLE_PAD * 2
+        height = lines * spacing + BUBBLE_PAD * 2
+
         bubble = tk.Canvas(
             row, width=width, height=height, bg=BACKGROUND,
             highlightthickness=0, bd=0, takefocus=False,
         )
         bubble.pack(side=side)
-        window = bubble.create_window(
-            BUBBLE_PAD, BUBBLE_PAD, window=label, anchor="nw",
-            width=BUBBLE_MAX_WIDTH,
-        )
+
         if selectable:
-            # Now that it is the width it will be drawn at, ask how tall its
-            # wrapped text is. Asking before this wrapped it at the Text's
-            # default width, which made the bubble thousands of pixels tall
-            # -- and still lost no text, so only a size check catches it.
-            height = self._text_height(label, text) + BUBBLE_PAD * 2
-            try:
-                bubble.configure(height=height)
-                bubble.itemconfigure(window, height=height - BUBBLE_PAD * 2)
-            except Exception:  # noqa: BLE001
-                pass
+            label = tk.Text(
+                bubble, bg=colour, fg=FOREGROUND, relief="flat", wrap="word",
+                insertbackground=FOREGROUND, font=FONT_BODY, padx=0, pady=0,
+                highlightthickness=0, bd=0, takefocus=False, height=lines,
+            )
+            label.insert("1.0", text)
+            # Read-only but still selectable. "disabled" would block selection
+            # as well, which is the thing being preserved.
+            label.bind("<Key>", lambda _event: "break")
+        else:
+            label = tk.Label(
+                bubble, text=text, bg=colour, fg=FOREGROUND, font=FONT_BODY,
+                wraplength=BUBBLE_MAX_WIDTH, justify="left", anchor="nw",
+            )
+            # A Label adds padding of its own around the text, so the font's
+            # answer is a little short -- 13 pixels, which cut the last line
+            # of a long transcript. It is a child of the canvas now, so it can
+            # simply be asked.
+            asked = self._asked_height(label)
+            if asked > 0:
+                height = asked + BUBBLE_PAD * 2
+
+        inner = height - BUBBLE_PAD * 2
+        try:
+            bubble.configure(height=height)
+        except Exception:  # noqa: BLE001
+            pass
         self._rounded(
             bubble, 0, 0, width - 1, height - 1, BUBBLE_RADIUS,
             fill=colour, outline="",
         )
+        bubble.create_window(
+            BUBBLE_PAD, BUBBLE_PAD, window=label, anchor="nw",
+            width=BUBBLE_MAX_WIDTH, height=inner,
+        )
         return row, bubble, label
+
+    @staticmethod
+    def _asked_height(widget: Any) -> int:
+        """What a widget says it needs, or 0 with no toolkit behind it."""
+        try:
+            widget.update_idletasks()
+            return int(widget.winfo_reqheight())
+        except Exception:  # noqa: BLE001
+            return 0
+
+    def _wrapped_size(self, text: str) -> tuple[int, int]:
+        """``(lines, line height)`` for *text* at the bubble's width.
+
+        From the font, not from a widget. A Text placed in a canvas window
+        does not know its own width until the geometry manager has run, and
+        no amount of ``update()`` makes that happen during the build -- it
+        reports an unrealised width and wraps at one character, which once
+        made a fourteen-line reply 8687 pixels tall.
+        """
+        try:
+            import tkinter.font as tkfont
+
+            font = tkfont.Font(font=FONT_BODY)
+            return (
+                self.wrapped_lines(text, BUBBLE_MAX_WIDTH, font.measure),
+                int(font.metrics("linespace")),
+            )
+        except Exception:  # noqa: BLE001 - no toolkit behind it
+            return 1, 17
 
     @staticmethod
     def wrapped_lines(text: str, width: float, measure: Any) -> int:
@@ -668,39 +712,6 @@ class TkBubbleView:
                     current = candidate
             lines += 1
         return max(1, lines)
-
-    def _text_height(self, widget: Any, text: str) -> int:
-        """How tall the wrapped reply needs to be, in pixels."""
-        try:
-            import tkinter.font as tkfont
-
-            font = tkfont.Font(font=FONT_BODY)
-            lines = self.wrapped_lines(text, BUBBLE_MAX_WIDTH, font.measure)
-            spacing = int(font.metrics("linespace"))
-        except Exception:  # noqa: BLE001 - no toolkit behind it
-            lines, spacing = 1, 17
-        try:
-            widget.configure(height=lines)
-        except Exception:  # noqa: BLE001
-            pass
-        return lines * spacing
-
-    @staticmethod
-    def _needed_height(label: Any) -> int:
-        """How tall the wrapped text is, or a sane default off a real toolkit.
-
-        The recorded-call fake has no geometry, so this has to work without
-        one -- but the number it returns there decides nothing a test asserts,
-        and the real height is what the environment-marked test measures.
-        """
-        try:
-            label.update_idletasks()
-            value = int(label.winfo_reqheight())
-            if value > 0:
-                return value
-        except Exception:  # noqa: BLE001
-            pass
-        return 20
 
     def _meta(self, parent: Any, text: str, *, side: str) -> Any:
         tk = self._tk()
@@ -1082,20 +1093,21 @@ class TkBubbleView:
         self._widgets["entry"] = entry
         self._show_placeholder()
 
-        # Only what is true. The entry is single-line, so there is no
-        # "Shift + Enter for a new line" to promise.
-        self._widgets["hold_hint"] = tk.Label(
-            body, text=self.input_hint_text(),
-            bg=BACKGROUND, fg=MUTED, font=FONT_META, anchor="w",
-        )
+        # There was a hint line here -- "Enter to send - hold CTRL+WIN to
+        # talk". It is gone, with the status line, for the same reason: a
+        # permanent line of text that never changes is read once and then
+        # becomes part of the furniture. The shortcuts are learnable, and the
+        # empty state still names the hold key for someone who has not learnt
+        # it yet.
+        #
+        # Removed rather than left unpacked. A Label that is built and never
+        # shown is visible to every recorded-call test and to no person,
+        # which is how a window ends up asserting things nobody can see.
 
         # From the bottom up, so the conversation above gets the slack rather
         # than taking it. The packer hands out space in pack order, so the
         # frame that expands must come last or the rows below it are pushed
         # off the window -- which is exactly what happened once already.
-        self._widgets["hold_hint"].pack(
-            side="bottom", fill="x", padx=12, pady=(4, 8)
-        )
         self._widgets["input_row"].pack(
             side="bottom", fill="x", padx=12, pady=(6, 0)
         )

@@ -692,14 +692,21 @@ def test_nothing_promises_a_shift_enter_that_does_not_work() -> None:
         assert "Shift" not in text, text
 
 
-def test_the_hint_says_how_to_send_and_how_to_talk() -> None:
+def test_the_hint_line_is_gone_and_not_merely_hidden() -> None:
+    """Removed, not unpacked.
+
+    A Label built and never shown is visible to every recorded-call test and
+    to no person, which is how a window ends up asserting things nobody can
+    see. The hold key is still named -- by the empty state, which is packed.
+    """
     tk, view = _shown()
-    hint = view.input_hint_text()
 
-    assert hint in tk.texts()
-    assert "Enter to send" in hint
-    assert view.hold_hint_text() in hint
-
+    assert view._widgets.get("hold_hint") is None
+    assert not any("Enter to send" in str(value) for value in tk.texts())
+    assert any(
+        view.hold_hint_text().lower() in str(value).lower()
+        for value in tk.texts()
+    ), "nothing on screen names the hold key"
 
 def test_the_hint_is_composed_from_the_one_producer_of_the_key_phrase() -> None:
     """Two places writing "hold F9" is how the window came to say SPACE for a
@@ -897,7 +904,7 @@ def test_a_full_panel_fits_the_window_it_is_drawn_in() -> None:
             time.sleep(0.004)
 
     rows = (
-        "header", "meter", "scroll", "convo", "input_row", "hold_hint",
+        "header", "meter", "scroll", "convo", "input_row",
     )
     view = TkBubbleView(tkinter_module=tkinter, hold_key="ctrl+win")
     try:
@@ -1084,5 +1091,138 @@ def test_a_long_transcript_is_not_cut_either() -> None:
             f"the transcript needs {label.winfo_reqheight()}px and has "
             f"{label.winfo_height()}px"
         )
+    finally:
+        view.close()
+
+
+# --- 15. the text must be VISIBLE, not merely set ----------------------------
+#
+# test_nothing_is_blank audits for widgets built with text="". It caught a
+# painter Label built that way. It did not catch every message bubble
+# rendering empty, because there the text WAS set -- what failed is that it
+# could not be seen: the Text was a child of the canvas's sibling rather than
+# of the canvas, so the canvas painted its background and its rounded polygon
+# over it.
+#
+# Measured at the time: 0 glyph-coloured pixels out of 16720, with the widget
+# mapped, 286 pixels wide, holding the right text, in a colour that differs
+# from the fill. Every check that asks whether the text EXISTS passed.
+#
+# So the property here is different in kind: the glyphs must reach the screen.
+
+
+def _glyph_pixels(widget, foreground: str) -> tuple[int, int]:
+    """(pixels close to *foreground*, pixels looked at) inside *widget*.
+
+    Read off the desktop, because that is the only place the question can be
+    answered. Everything cheaper than this -- is the text set, is the widget
+    mapped, is the foreground different from the background -- was true while
+    the bubbles were blank.
+    """
+    import ctypes
+    import ctypes.wintypes as wt
+
+    import numpy as np
+
+    user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+    user32.GetDC.argtypes, user32.GetDC.restype = [wt.HWND], wt.HDC
+    user32.ReleaseDC.argtypes = [wt.HWND, wt.HDC]
+    gdi32.CreateCompatibleDC.argtypes = [wt.HDC]
+    gdi32.CreateCompatibleDC.restype = wt.HDC
+    gdi32.CreateCompatibleBitmap.argtypes = [wt.HDC, ctypes.c_int, ctypes.c_int]
+    gdi32.CreateCompatibleBitmap.restype = wt.HBITMAP
+    gdi32.SelectObject.argtypes = [wt.HDC, wt.HGDIOBJ]
+    gdi32.SelectObject.restype = wt.HGDIOBJ
+    gdi32.DeleteObject.argtypes = [wt.HGDIOBJ]
+    gdi32.DeleteDC.argtypes = [wt.HDC]
+    gdi32.BitBlt.argtypes = [
+        wt.HDC, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+        wt.HDC, ctypes.c_int, ctypes.c_int, wt.DWORD,
+    ]
+    gdi32.GetDIBits.argtypes = [
+        wt.HDC, wt.HBITMAP, wt.UINT, wt.UINT, ctypes.c_void_p,
+        ctypes.c_void_p, wt.UINT,
+    ]
+
+    class HEADER(ctypes.Structure):
+        _fields_ = [
+            ("biSize", wt.DWORD), ("biWidth", wt.LONG), ("biHeight", wt.LONG),
+            ("biPlanes", wt.WORD), ("biBitCount", wt.WORD),
+            ("biCompression", wt.DWORD), ("biSizeImage", wt.DWORD),
+            ("biXPelsPerMeter", wt.LONG), ("biYPelsPerMeter", wt.LONG),
+            ("biClrUsed", wt.DWORD), ("biClrImportant", wt.DWORD),
+        ]
+
+    scale = 1920.0 / float(user32.GetSystemMetrics(0))
+    x = round(widget.winfo_rootx() * scale)
+    y = round(widget.winfo_rooty() * scale)
+    w = max(1, round(widget.winfo_width() * scale))
+    h = max(1, round(widget.winfo_height() * scale))
+
+    screen = user32.GetDC(None)
+    memory = gdi32.CreateCompatibleDC(screen)
+    bitmap = gdi32.CreateCompatibleBitmap(screen, w, h)
+    gdi32.SelectObject(memory, bitmap)
+    gdi32.BitBlt(memory, 0, 0, w, h, screen, x, y, 0x00CC0020)
+    header = HEADER()
+    header.biSize = ctypes.sizeof(HEADER)
+    header.biWidth, header.biHeight = w, -h
+    header.biPlanes, header.biBitCount = 1, 32
+    buffer = ctypes.create_string_buffer(w * h * 4)
+    gdi32.GetDIBits(memory, bitmap, 0, h, buffer, ctypes.byref(header), 0)
+    gdi32.DeleteObject(bitmap)
+    gdi32.DeleteDC(memory)
+    user32.ReleaseDC(None, screen)
+
+    pixels = np.frombuffer(buffer, dtype=np.uint8).reshape(h, w, 4)
+    rgb = pixels[:, :, [2, 1, 0]].astype(int)
+    wanted = np.array([int(foreground[i:i + 2], 16) for i in (1, 3, 5)])
+    close = int((np.abs(rgb - wanted).sum(axis=2) < 180).sum())
+    return close, w * h
+
+
+@pytest.mark.environment(
+    "opens a real tk window and reads the desktop pixels inside each message "
+    "bubble; the only test that can tell text that is SET from text that is "
+    "SEEN"
+)
+def test_the_text_in_a_bubble_actually_reaches_the_screen() -> None:
+    """The reported fault: every bubble rendered empty.
+
+    Both sides, because the two are built by different branches of the same
+    function and only one of them was exercised by anything else.
+    """
+    import time
+    import tkinter
+
+    from grandpa.ui.tk_view import FOREGROUND
+
+    view = TkBubbleView(tkinter_module=tkinter, hold_key="ctrl+win")
+    try:
+        view.show(position=(300, 120), topmost=True)
+        view.set_state("idle", "Standby")
+        view.set_transcript("what time is it in Chennai")
+        view.set_reply("It is just past four in the afternoon there.")
+        for _ in range(80):
+            view.root.update()
+            time.sleep(0.004)
+
+        row = view._rows[-1]
+        faults = []
+        for key, what in (("row", "the user's message"), ("reply_row", "the reply")):
+            frame = row.get(key)
+            canvas = next(
+                (c for c in frame.winfo_children() if c.winfo_class() == "Canvas"),
+                None,
+            )
+            assert canvas is not None, f"{what} has no bubble"
+            glyphs, looked = _glyph_pixels(canvas, FOREGROUND)
+            if glyphs < 20:
+                faults.append(
+                    f"{what}: {glyphs} glyph pixels of {looked} -- the text is "
+                    "set but nothing of it reaches the screen"
+                )
+
+        assert faults == [], "; ".join(faults)
     finally:
         view.close()

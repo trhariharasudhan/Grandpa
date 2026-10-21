@@ -238,9 +238,11 @@ def test_the_box_says_what_it_is_for() -> None:
 
     assert PLACEHOLDER_ENTRY in _inserted(tk)
     assert PLACEHOLDER_ENTRY.strip(), "the placeholder is empty"
-    assert any(
-        "Enter to send" in text for text in _text_kwargs(tk)
-    ), "nothing tells the user how to send"
+    # The line that said "Enter to send" is gone, with the status line and for
+    # the same reason: a permanent line of unchanging text is read once and
+    # then becomes furniture. What the box IS must still be said, and the
+    # placeholder is what says it.
+    assert "Grandpa" in PLACEHOLDER_ENTRY, "the box does not say what it is"
 
 
 def test_the_box_has_a_visible_edge() -> None:

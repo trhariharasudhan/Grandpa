@@ -156,7 +156,7 @@ parent — so this is the section where that shows or does not.
 
 ## A. The panel — appearing
 
-The panel is 420x440 now -- smaller in both directions -- and the
+The panel is 380x360 now -- smaller in both directions -- and the
 conversation scrolls. A one-line header, bubbles on alternating sides that
 size themselves to their text, and an action row pinned under them.
 
@@ -164,7 +164,7 @@ size themselves to their text, and an action row pinned under them.
 | --- | --- | --- |
 | 1 | Click the orb | A dark window beside it, about 520 wide. **No title bar**, no minimise, no maximise. |
 | 2 | Read the header, left to right | **"GRANDPA"** on one line, then on the right a **"speech on"** chip, one small muted word -- **`glow`** or **`disc`** -- a coloured dot with the state's word, and an **x** to close. The logo ring is gone: the orb is on screen beside this window and two rings is one too many. The tagline is gone with the second line of the header. |
-| 3 | Read the line under the text box | **"Enter to send · hold CTRL+WIN to talk"**. If it names a different key, say so — it read "hold SPACE" for a whole release once. There is deliberately **no** "Shift + Enter for a new line": the box is single-line, so that line would be a lie. |
+| 3 | Read the empty conversation, before anything is said | **"No messages yet"** and **"Hold CTRL+WIN to talk, or type below"**. That is the only place the hold key is named now: the hint line under the input is gone, with the status line, because a permanent line of unchanging text is read once and then becomes furniture. |
 | 4 | Look at the state line immediately (click the orb as soon as it appears) | A grey dot and **"Loading model..."** — not "Ready". |
 | 5 | Watch the window while it loads | It must stay **responsive**: the meter strip is visible and you can drag the window by its header. It used to freeze solid for the whole load. |
 | 6 | Wait | Dot turns **neutral white**, reads **"Standby"** — not "Ready". **There is no status line under the input**: it carried four facts on every frame and was therefore read once and never again. What is left is the painter word in the header, and a coloured line that appears under the input *only* when something is wrong. About 7s for `base.en`. |
@@ -325,15 +325,46 @@ to the orb's other side.
 | J2 | Drag back from the right-hand edge | The panel returns to the orb's **right**, where it was. A flip must not be permanent. |
 | J3 | Drag the panel somewhere of your own, then move the orb a little | The panel keeps **your** offset, not the default one — until keeping it would push it off screen. |
 
-Measured on this machine at each corner, 1536x864 work area, panel 420x440:
-the panel's rect was `(51, 0, 471, 440)` top-left, `(1065, 0, 1485, 440)`
-top-right, `(51, 424, 471, 864)` bottom-left, `(1065, 424, 1485, 864)`
+Measured on this machine at each corner, 1536x864 work area, panel 380x360:
+the panel's rect was `(51, 0, 431, 360)` top-left, `(1105, 0, 1485, 360)`
+top-right, `(51, 504, 431, 864)` bottom-left, `(1105, 504, 1485, 864)`
 bottom-right — inside the work area at all four, flipped to the orb's left on
 the right-hand side, with the orb's visible ring flush at `0.6` and `1535.4`.
 
-The flip threshold moved with the width: the panel stays on the orb's right
-while `orb_x <= 1056`, against `956` at 520 wide. A hundred pixels more travel
-before it has to swap sides.
+The flip threshold moves with the width. Measured on `anchor_panel_to_orb`
+itself rather than computed: the panel stays on the orb's right while
+
+| panel width | `orb_x <=` |
+| --- | --- |
+| 520 | 956 |
+| 420 | 1056 |
+| 380 | 1096 |
+
+### How small this can go
+
+Measured by sweeping the size and watching what the packer does. One exchange
+— a question, a two-line reply and both meta lines — needs **135 pixels** of
+conversation area.
+
+| panel height | conversation area | one exchange fits |
+| --- | --- | --- |
+| 360 (shipped) | 202 px | yes |
+| 320 | 162 px | yes |
+| 300 | 142 px | yes, just |
+| 280 | 122 px | **no** |
+
+So the height floor is about **296**. Below it the newest reply needs
+scrolling the moment it arrives, which defeats the point of the panel being
+open. Nothing goes *missing* even at 240 — the chrome keeps its space and the
+conversation area shrinks — which is the right failure mode, but it is still
+unusable.
+
+The width floor is about **356**, and it is set by the bubbles rather than by
+the chrome: a bubble is `BUBBLE_MAX_WIDTH` + its padding = 304, plus the 28
+of inset that keeps it off the opposite edge, plus the panel's own 24. Narrower
+than that and the bubbles are clipped. Going below 356 means shrinking
+`BUBBLE_MAX_WIDTH` too, and a bubble much under 250 wraps ordinary sentences
+to four or five lines.
 
 ## If something is wrong
 
