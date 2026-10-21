@@ -75,6 +75,25 @@ class Record:
     argv: list[str] = field(default_factory=list)
     counts: dict[str, int] = field(default_factory=dict)
     failed: list[str] = field(default_factory=list)
+    #: Where ``grandpa`` was imported from during the run -- the directory on
+    #: ``sys.path``, normally ``<repo>/src``. Empty when the run never imported
+    #: it, or when it was recorded before this field existed.
+    #:
+    #: The digest proves which files were on DISK. This proves which were
+    #: RUN. Two full runs were started without PYTHONPATH and imported another
+    #: checkout entirely while recording a correct digest of this one.
+    source: str = ""
+    #: False until the run reaches sessionfinish. A killed run leaves this
+    #: false, which is a thing the guard can refuse -- where writing nothing
+    #: at all left a gap it read as silence.
+    complete: bool = True
+    #: The digest taken when the run STARTED. When it differs from ``digest``,
+    #: the tree changed underneath the run and it proved nothing about either
+    #: state of it.
+    started_digest: str = ""
+    #: The process that wrote this, so a stale in-flight record can be told
+    #: from a live one by a human reading the file.
+    pid: int = 0
     version: int = 1
 
     @classmethod
@@ -94,6 +113,10 @@ class Record:
                 argv=list(data.get("argv") or []),
                 counts=dict(data.get("counts") or {}),
                 failed=list(data.get("failed") or []),
+                source=str(data.get("source") or ""),
+                complete=bool(data.get("complete", True)),
+                started_digest=str(data.get("started_digest") or ""),
+                pid=int(data.get("pid") or 0),
                 version=int(data.get("version", 1)),
             )
         except (KeyError, TypeError, ValueError):
@@ -218,8 +241,36 @@ def hatch_reason(message: str) -> str | None:
     return None
 
 
+def changed_underneath(record: "Record") -> bool:
+    """Whether the tree changed while this run was going.
+
+    An empty ``started_digest`` means the record predates the field, not that
+    nothing changed -- those are excluded from counting as a pass by
+    :attr:`Record.complete` handling instead, so this says False for them and
+    the other check does the refusing.
+    """
+    return bool(record.started_digest) and record.started_digest != record.digest
+
+
+def interrupted_runs(
+    records: list[Record], digest: str, now: float, max_age: float = MAX_AGE_SECONDS
+) -> list["Record"]:
+    """Runs that started against this tree and never finished.
+
+    Stale ones are ignored. A terminal closed on a Friday must not block
+    Monday's commit for ever: a guard that blocks work it should not gets
+    switched off, and then it guards nothing at all.
+    """
+    return [
+        record for record in records
+        if not record.complete
+        and record.digest == digest
+        and (now - record.when) <= max_age
+    ]
+
+
 def evidence_for(
-    records: list[Record], digest: str
+    records: list[Record], digest: str, source: str | None = None
 ) -> tuple[Record | None, Record | None]:
     """The newest full pass for this tree, and the newest failure for this tree.
 
@@ -236,7 +287,32 @@ def evidence_for(
     a failure after the last clean run still refuses.
     """
     same_tree = [record for record in records if record.digest == digest]
-    passes = [r for r in same_tree if r.exitstatus == 0 and r.scope == "full"]
+    if source is not None:
+        # A pass only counts when the run imported THIS checkout. The digest
+        # proves which files were on disk; this proves which were run, and two
+        # runs this week had a correct digest for a tree they never executed.
+        #
+        # A record with no source at all does not count either: it predates the
+        # field, or the run never imported grandpa, and in both cases there is
+        # nothing to check. One further run clears it.
+        wanted = Path(source).resolve()
+
+        def ran_here(record: Record) -> bool:
+            if not record.source:
+                return False
+            try:
+                return Path(record.source).resolve() == wanted
+            except OSError:
+                return False
+    else:
+        def ran_here(record: Record) -> bool:
+            return True
+
+    passes = [
+        r for r in same_tree
+        if r.exitstatus == 0 and r.scope == "full" and ran_here(r)
+        and r.complete and not changed_underneath(r)
+    ]
     failures = [r for r in same_tree if r.exitstatus != 0]
     newest_pass = max(passes, key=lambda r: r.when) if passes else None
     newest_failure = max(failures, key=lambda r: r.when) if failures else None
@@ -252,6 +328,7 @@ def verdict(
     message: str,
     *,
     now: float | None = None,
+    source: str | None = None,
 ) -> Verdict:
     """Allow or refuse this commit. Pure, so the past cases can be replayed."""
     now = time.time() if now is None else now
@@ -263,10 +340,37 @@ def verdict(
     else:
         history = list(records)
 
-    passed, failed = evidence_for(history, current_digest)
+    passed, failed = evidence_for(history, current_digest, source)
+    pending = interrupted_runs(history, current_digest, now)
+    torn = [
+        r for r in history
+        if r.digest == current_digest and changed_underneath(r)
+    ]
 
     problem: str | None = None
-    if failed is not None:
+    if pending and passed is None:
+        newest = max(pending, key=lambda r: r.when)
+        age = int(now - newest.when)
+        problem = (
+            "a pytest run of this tree STARTED and never finished.\n"
+            f"      started:  {time.strftime('%H:%M:%S', time.localtime(newest.when))}"
+            f"  ({age}s ago, pid {newest.pid or 'unknown'})\n"
+            f"      pytest {' '.join(newest.argv)}\n"
+            "  It was killed, or it is still going. Either way it proved\n"
+            "  nothing yet. Let it finish, or run the suite again.\n"
+            "  Before this record existed, an interrupted run left no trace at\n"
+            "  all and the guard silently fell back to an older one."
+        )
+    elif torn and passed is None:
+        newest = max(torn, key=lambda r: r.when)
+        problem = (
+            "the tree changed WHILE a run of it was going, so that run proved\n"
+            "  nothing about either state of it.\n"
+            f"      started against: {newest.started_digest[:12]}\n"
+            f"      finished against: {newest.digest[:12]}\n"
+            "  Run the suite again and do not edit the tree while it runs."
+        )
+    elif failed is not None:
         names = "".join(f"\n      {name}" for name in failed.failed[:10])
         more = (
             f"\n      ... and {len(failed.failed) - 10} more"
@@ -290,7 +394,27 @@ def verdict(
             )
         else:
             newest = max(history, key=lambda r: r.when)
-            if newest.digest != current_digest:
+            elsewhere = [
+                r for r in history
+                if r.digest == current_digest and r.exitstatus == 0
+                and r.scope == "full" and r.source
+                and source is not None
+                and Path(r.source).resolve() != Path(source).resolve()
+            ]
+            if elsewhere:
+                ran = max(elsewhere, key=lambda r: r.when)
+                problem = (
+                    "a full run passed for this tree, but it imported a "
+                    "DIFFERENT checkout.\n"
+                    f"      ran against: {ran.source}\n"
+                    f"      this repo:   {source}\n"
+                    "  The digest matches because the files on disk are these "
+                    "files; the\n"
+                    "  run executed someone else's. Set PYTHONPATH to this "
+                    "checkout's src\n"
+                    "  and run it again."
+                )
+            elif newest.digest != current_digest:
                 problem = (
                     "the tree has changed since the last run, so that run did not\n"
                     "  test what is about to be committed.\n"
@@ -364,10 +488,24 @@ def read_records(repo: Path) -> list[Record]:
 
 
 def write_record(repo: Path, record: Record) -> Path:
-    """Append this run to the history, keeping the most recent ``KEEP_RUNS``."""
+    """Add this run to the history, keeping the most recent ``KEEP_RUNS``.
+
+    A run writes twice: once at sessionstart, marked incomplete, and once at
+    sessionfinish with what it proved. The second REPLACES the first rather
+    than appending beside it -- the same run, now finished. Without that the
+    incomplete record would outlive the run that wrote it and refuse every
+    commit afterwards, which is a guard nobody could satisfy.
+
+    Same run means same process and same start time, which is why the finished
+    record carries the start time rather than the finish time.
+    """
     path = record_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
-    history = [*read_records(repo), record][-KEEP_RUNS:]
+    previous = [
+        item for item in read_records(repo)
+        if not (item.pid and item.pid == record.pid and item.when == record.when)
+    ]
+    history = [*previous, record][-KEEP_RUNS:]
     path.write_text(
         json.dumps([asdict(item) for item in history], indent=1, sort_keys=True),
         encoding="utf-8",
@@ -381,6 +519,27 @@ def repo_root(start: Path | None = None) -> Path:
         if (candidate / "pyproject.toml").exists() and (candidate / "src").exists():
             return candidate
     return here
+
+
+def source_root(repo: Path) -> str:
+    """Where a run of THIS repository should import ``grandpa`` from."""
+    return str((repo / "src").resolve())
+
+
+def imported_from_elsewhere(record: "Record", repo: Path) -> bool:
+    """Whether this run imported a different checkout than *repo*.
+
+    An empty ``source`` is not "elsewhere": records written before the field
+    existed have none, and a run that never imported ``grandpa`` has none
+    either. Those are handled by :func:`evidence_for`, which will not accept
+    them as a full pass -- a different thing from calling them wrong.
+    """
+    if not record.source:
+        return False
+    try:
+        return Path(record.source).resolve() != Path(source_root(repo)).resolve()
+    except OSError:
+        return True
 
 
 def audit_head(repo: Path, *, now: float | None = None) -> str | None:
@@ -397,7 +556,9 @@ def audit_head(repo: Path, *, now: float | None = None) -> str | None:
         digest = worktree_digest(repo)
     except (RuntimeError, OSError):
         return None
-    decision = verdict(read_records(repo), digest, message, now=now)
+    decision = verdict(
+        read_records(repo), digest, message, now=now, source=source_root(repo)
+    )
     if decision.allowed:
         return None
     note = (
@@ -448,7 +609,9 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 1
-    decision = verdict(read_records(repo), digest, message)
+    decision = verdict(
+        read_records(repo), digest, message, source=source_root(repo)
+    )
     if decision.allowed:
         print(f"commit guard: {decision.reason}")
         return 0

@@ -342,3 +342,126 @@ def test_the_other_hooks_are_still_registered() -> None:
 
     assert "block_escaped_heredoc.py" in everything
     assert "require_sandboxed_probe.py" in everything
+
+
+# --- work that was finished and never committed --------------------------------
+#
+# The commit check asks which commits are on no remote. A tree with uncommitted
+# modifications has zero of those, so a finished, verified, uncommitted branch
+# read as clean and the turn ended. The user merged and got nothing. Third
+# time, third shape.
+#
+# Narrowed to VERIFIED trees, because the objection above is right: blocking on
+# any dirty tree would fire on every turn of every task. A tree that has passed
+# a full run is not work in progress.
+
+
+@pytest.mark.real_actions(
+    reason="builds a real git repository in tmp_path and asks git about it. A "
+    "git question answered entirely by doubles only proves the doubles. "
+    "Nothing outside tmp_path is touched."
+)
+def test_work_in_progress_is_still_not_reported(tmp_path, monkeypatch) -> None:
+    """The decision from the round this hook was built, kept.
+
+    Nothing has proved this tree is finished, so there is nothing to say about
+    it not being committed.
+    """
+    repo = a_pushed_repo(tmp_path)
+    (repo / "a.txt").write_text("edited, mid-task", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(hook, "_verified_tree", lambda: False)
+
+    assert hook.uncommitted_changes() is None
+
+
+@pytest.mark.real_actions(
+    reason="builds a real git repository in tmp_path and asks git about it. A "
+    "git question answered entirely by doubles only proves the doubles. "
+    "Nothing outside tmp_path is touched."
+)
+def test_a_verified_tree_that_was_never_committed_is_reported(
+    tmp_path, monkeypatch
+) -> None:
+    """The failure that happened: finished, verified, stranded."""
+    repo = a_pushed_repo(tmp_path)
+    (repo / "a.txt").write_text("finished and verified", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(hook, "_verified_tree", lambda: True)
+
+    found = hook.uncommitted_changes()
+
+    assert found is not None
+    _branch, lines = found
+    assert any("a.txt" in line for line in lines)
+
+
+@pytest.mark.real_actions(
+    reason="builds a real git repository in tmp_path and asks git about it. A "
+    "git question answered entirely by doubles only proves the doubles. "
+    "Nothing outside tmp_path is touched."
+)
+def test_a_clean_tree_reports_nothing(tmp_path, monkeypatch) -> None:
+    repo = a_pushed_repo(tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(hook, "_verified_tree", lambda: True)
+
+    assert hook.uncommitted_changes() is None
+
+
+@pytest.mark.real_actions(
+    reason="builds a real git repository in tmp_path and asks git about it. A "
+    "git question answered entirely by doubles only proves the doubles. "
+    "Nothing outside tmp_path is touched."
+)
+def test_untracked_files_do_not_count(tmp_path, monkeypatch) -> None:
+    """Scratch probes, build output and notes."""
+    repo = a_pushed_repo(tmp_path)
+    (repo / "scratch_probe.py").write_text("# notes", encoding="utf-8")
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(hook, "_verified_tree", lambda: True)
+
+    assert hook.uncommitted_changes() is None
+
+
+@pytest.mark.real_actions(
+    reason="builds a real git repository in tmp_path and asks git about it. A "
+    "git question answered entirely by doubles only proves the doubles. "
+    "Nothing outside tmp_path is touched."
+)
+def test_staged_changes_count_too(tmp_path, monkeypatch) -> None:
+    """Staged but uncommitted is still work the user cannot get."""
+    repo = a_pushed_repo(tmp_path)
+    (repo / "a.txt").write_text("changed", encoding="utf-8")
+    git(repo, "add", "a.txt")
+    monkeypatch.chdir(repo)
+    monkeypatch.setattr(hook, "_verified_tree", lambda: True)
+
+    assert hook.uncommitted_changes() is not None
+
+
+@pytest.mark.real_actions(
+    reason="builds a real git repository in tmp_path and asks git about it. A "
+    "git question answered entirely by doubles only proves the doubles. "
+    "Nothing outside tmp_path is touched."
+)
+def test_a_tree_it_cannot_judge_is_never_blocked_on(tmp_path, monkeypatch) -> None:
+    """No record, no scripts directory, an unreadable file -- all False.
+
+    A hook that blocks on a tree it cannot judge is a hook that blocks work
+    for no reason anybody can act on.
+    """
+    repo = a_pushed_repo(tmp_path)
+    (repo / "a.txt").write_text("changed", encoding="utf-8")
+    monkeypatch.chdir(repo)
+
+    # The real _verified_tree, against a repository with no record at all.
+    assert hook._verified_tree() is False
+    assert hook.uncommitted_changes() is None
+
+
+def test_the_message_says_it_passed_rather_than_merely_changed() -> None:
+    """The distinction is the whole reason this fires at all, so the text has
+    to carry it -- otherwise it reads as the wolf-crying rule it is not."""
+    assert "PASSED a full run" in hook.UNCOMMITTED_HINT
+    assert "work in progress" in hook.UNCOMMITTED_HINT

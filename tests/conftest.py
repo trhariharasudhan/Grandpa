@@ -498,9 +498,17 @@ def event_bus() -> EventBus:
 from tests.verification_plugin import (  # noqa: E402
     pytest_runtest_logreport,
     pytest_sessionfinish,
+    pytest_sessionstart,
 )
 
-__all__ = ["pytest_runtest_logreport", "pytest_sessionfinish"]
+__all__ = [
+    "pytest_runtest_logreport",
+    "pytest_sessionfinish",
+    # sessionstart too: a run that is killed writes nothing at finish, so the
+    # guard fell back to an older record and the absence was invisible. The
+    # start record is what makes an interrupted run refusable.
+    "pytest_sessionstart",
+]
 
 
 # ---------------------------------------------------------------------------

@@ -588,3 +588,226 @@ def test_a_failure_after_the_last_clean_run_still_refuses() -> None:
 
     assert not decision.allowed
     assert "test_something_real" in decision.reason
+
+
+# --- which source actually ran ------------------------------------------------
+#
+# The digest proves which files were on DISK. It says nothing about which were
+# imported. Two full runs this week were started with `nohup python -m pytest`
+# and no PYTHONPATH: they collected this checkout's tests, imported the main
+# checkout's source, and wrote a correct digest of this one. One was red and
+# cost a wrong diagnosis. Green, the guard would have taken it as proof of a
+# tree it had never executed.
+
+HERE = "/repo/src"
+ELSEWHERE = "/somewhere/else/src"
+
+
+def test_a_pass_that_imported_this_checkout_is_accepted() -> None:
+    decision = verdict(
+        [passing(source=HERE)], TREE, "feat: a change\n", now=NOW, source=HERE
+    )
+
+    assert decision.allowed
+
+
+def test_a_pass_that_imported_another_checkout_is_refused() -> None:
+    """The real case. The digest matches; the run proved nothing about it."""
+    decision = verdict(
+        [passing(source=ELSEWHERE)], TREE, "feat: a change\n", now=NOW,
+        source=HERE,
+    )
+
+    assert not decision.allowed
+    assert "DIFFERENT checkout" in decision.reason
+    assert ELSEWHERE in decision.reason, "the refusal must name what ran"
+    assert HERE in decision.reason, "and what should have"
+
+
+def test_a_pass_with_no_source_recorded_does_not_count() -> None:
+    """Records written before the field existed, and runs that never imported
+    grandpa at all. Not called wrong -- there is simply nothing to check, and
+    one further run clears it."""
+    decision = verdict(
+        [passing(source="")], TREE, "feat: a change\n", now=NOW, source=HERE
+    )
+
+    assert not decision.allowed
+
+
+def test_the_source_check_is_off_when_no_source_is_given() -> None:
+    """verdict() stays pure and replayable: the past cases in this file call
+    it without a source and must keep meaning what they meant."""
+    decision = verdict(
+        [passing(source=ELSEWHERE)], TREE, "feat: a change\n", now=NOW
+    )
+
+    assert decision.allowed
+
+
+def test_a_failure_still_refuses_whatever_imported_it() -> None:
+    """A run that failed is evidence the tree is broken. Only PASSES have to
+    have run here."""
+    decision = verdict(
+        [passing(exitstatus=1, failed=["t.py::x"], source=HERE)],
+        TREE, "feat: a change\n", now=NOW, source=HERE,
+    )
+
+    assert not decision.allowed
+    assert "FAILED" in decision.reason
+
+
+def test_the_source_is_normalised_before_comparing() -> None:
+    """So a trailing separator is not read as a different checkout."""
+    import os
+
+    decision = verdict(
+        [passing(source=HERE + os.sep)], TREE, "feat: a change\n", now=NOW,
+        source=HERE,
+    )
+
+    assert decision.allowed
+
+
+def test_the_plugin_records_where_grandpa_was_imported_from() -> None:
+    """The other half: the guard can only check what the plugin writes."""
+    import sys
+    from pathlib import Path
+
+    tests_dir = str(Path(__file__).resolve().parent)
+    if tests_dir not in sys.path:
+        sys.path.insert(0, tests_dir)
+    from verification_plugin import _imported_source
+
+    source = _imported_source()
+
+    assert source, "the run imported grandpa but recorded no source"
+    assert Path(source).name == "src", source
+    assert (Path(source) / "grandpa" / "__init__.py").exists()
+
+
+# --- a run that never finished ------------------------------------------------
+#
+# The record was written only at sessionfinish, so a killed run wrote nothing
+# and the guard fell back to an older one. Three runs were killed this week and
+# the only thing that caught it was reading runs.json by hand. Absence was
+# invisible; that was the whole problem.
+
+
+def started(**overrides) -> Record:
+    """A run that began and has not reported."""
+    fields = {
+        "exitstatus": -1,
+        "scope": "full",
+        "digest": TREE,
+        "started_digest": TREE,
+        "when": NOW - 60,
+        "argv": ["-q"],
+        "complete": False,
+        "pid": 4321,
+        "source": HERE,
+    }
+    fields.update(overrides)
+    return Record(**fields)
+
+
+def test_a_run_that_started_and_never_finished_refuses_the_commit() -> None:
+    decision = verdict([started()], TREE, "feat: a change\n", now=NOW, source=HERE)
+
+    assert not decision.allowed
+    assert "STARTED and never finished" in decision.reason
+
+
+def test_the_refusal_names_the_process_and_how_long_ago() -> None:
+    """So a run still going can be told from one that died."""
+    decision = verdict([started()], TREE, "feat: a change\n", now=NOW, source=HERE)
+
+    assert "4321" in decision.reason
+    assert "60s ago" in decision.reason
+
+
+def test_an_incomplete_record_is_not_itself_a_pass() -> None:
+    decision = verdict(
+        [started(exitstatus=0)], TREE, "feat: a change\n", now=NOW, source=HERE
+    )
+
+    assert not decision.allowed
+
+
+def test_a_finished_run_after_an_interrupted_one_is_enough() -> None:
+    """The ordinary recovery: it was killed, you ran it again."""
+    decision = verdict(
+        [started(), passing(source=HERE, started_digest=TREE, when=NOW - 30)],
+        TREE, "feat: a change\n", now=NOW, source=HERE,
+    )
+
+    assert decision.allowed
+
+
+def test_a_stale_in_flight_record_is_ignored() -> None:
+    """A terminal closed on a Friday must not block Monday.
+
+    A guard that blocks work it should not gets switched off, and then it
+    guards nothing -- the reasoning already written into KEEP_RUNS.
+    """
+    decision = verdict(
+        [started(when=NOW - MAX_AGE_SECONDS - 1)],
+        TREE, "feat: a change\n", now=NOW, source=HERE,
+    )
+
+    assert "STARTED and never finished" not in decision.reason
+
+
+def test_an_in_flight_record_for_another_tree_is_not_this_tree_s_problem() -> None:
+    decision = verdict(
+        [started(digest=OTHER_TREE), passing(source=HERE, started_digest=TREE)],
+        TREE, "feat: a change\n", now=NOW, source=HERE,
+    )
+
+    assert decision.allowed
+
+
+# --- a tree that changed while the run was going -------------------------------
+#
+# A run whose tree changed underneath it proved nothing about either state of
+# it. This happened: a panel was edited during a full run, and the result was a
+# ten-failure report against a tree that no longer existed, which then cost a
+# wrong diagnosis.
+
+
+def test_a_run_whose_tree_changed_underneath_it_is_refused() -> None:
+    torn = passing(started_digest=OTHER_TREE, digest=TREE, source=HERE)
+
+    decision = verdict([torn], TREE, "feat: a change\n", now=NOW, source=HERE)
+
+    assert not decision.allowed
+    assert "changed WHILE a run of it was going" in decision.reason
+
+
+def test_the_torn_refusal_names_both_digests() -> None:
+    torn = passing(started_digest=OTHER_TREE, digest=TREE, source=HERE)
+
+    decision = verdict([torn], TREE, "feat: a change\n", now=NOW, source=HERE)
+
+    assert OTHER_TREE[:12] in decision.reason
+    assert TREE[:12] in decision.reason
+
+
+def test_a_run_with_matching_start_and_finish_digests_is_fine() -> None:
+    decision = verdict(
+        [passing(started_digest=TREE, digest=TREE, source=HERE)],
+        TREE, "feat: a change\n", now=NOW, source=HERE,
+    )
+
+    assert decision.allowed
+
+
+def test_a_record_without_a_start_digest_is_not_called_torn() -> None:
+    """Records written before the field existed. They do not count as a pass
+    either, but the refusal must say the right thing about them."""
+    decision = verdict(
+        [passing(started_digest="", source=HERE)],
+        TREE, "feat: a change\n", now=NOW, source=HERE,
+    )
+
+    assert "changed WHILE" not in decision.reason
