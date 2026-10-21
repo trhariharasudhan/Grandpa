@@ -982,6 +982,16 @@ class BubbleController:
         if not self._pending_heard:
             # Typed, not spoken: what was "heard" is what was typed.
             self._pending_heard = cleaned
+        # Show it before routing. **The panel only ever learnt about spoken
+        # messages**: on_hold called set_transcript and submit did not, so a
+        # typed line produced a reply with nothing above it -- no bubble, no
+        # meta line, no empty box. Measured in the running window, the user
+        # row was never built at all.
+        #
+        # What is shown is `cleaned`, the text actually being sent, which is
+        # also what makes a corrected transcript show the correction rather
+        # than the mis-heard original.
+        self._to_view(lambda: self.view.set_transcript(cleaned))
         self._enter(BubbleState.THINKING)
         reply = self.bridge.send(cleaned)
         self._to_view(self.view.clear_entry)
@@ -996,7 +1006,7 @@ class BubbleController:
             shown = reply_text or "(no reply)"
             self._to_view(lambda: self.view.set_reply(shown))
             self._enter(BubbleState.IDLE)
-        self._remember_exchange(self._pending_heard, reply_text or "(no reply)")
+        self._remember_exchange(cleaned, reply_text or "(no reply)")
         self._pending_heard = ""
         self._refresh_status()
         # After the text is on screen, never instead of it.

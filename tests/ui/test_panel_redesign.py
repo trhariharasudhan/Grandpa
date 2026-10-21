@@ -1182,47 +1182,155 @@ def _glyph_pixels(widget, foreground: str) -> tuple[int, int]:
 
 
 @pytest.mark.environment(
-    "opens a real tk window and reads the desktop pixels inside each message "
-    "bubble; the only test that can tell text that is SET from text that is "
-    "SEEN"
+    "opens a real tk window, sends a message through the real submit path, "
+    "and reads the desktop pixels inside the bubbles it produced; the only "
+    "test that can tell a message that was SENT from one that was SEEN"
 )
-def test_the_text_in_a_bubble_actually_reaches_the_screen() -> None:
-    """The reported fault: every bubble rendered empty.
+def test_sending_a_message_puts_both_halves_on_the_screen() -> None:
+    """The reported fault: replies appeared, the user's own words did not.
 
-    Both sides, because the two are built by different branches of the same
-    function and only one of them was exercised by anything else.
+    **This drives the caller, not the builder.** The version before it called
+    ``view.set_transcript`` and ``view.set_reply`` directly and passed the
+    whole time typed messages were vanishing -- because nothing on the typed
+    path ever called ``set_transcript``. It proved a bubble *can* be drawn.
+    This proves that sending a message draws one.
+
+    So: a real controller, the text put in the real entry, Enter pressed
+    through the real binding. Nothing here touches the view's own API.
     """
     import time
     import tkinter
 
+    from grandpa.ui.bubble import BubbleController
     from grandpa.ui.tk_view import FOREGROUND
 
+    class Reply:
+        failed = False
+        status = "ok"
+        kind = None
+        text = "It is just past four in the afternoon."
+
+    class Bridge:
+        """Answers at once: this test is about the window, not the model."""
+
+        speech_ready = True
+        transcriber = type("T", (), {"model": "base.en"})()
+
+        def warm(self):
+            return True, "ready"
+
+        def send(self, text):
+            return Reply()
+
     view = TkBubbleView(tkinter_module=tkinter, hold_key="ctrl+win")
+    controller = BubbleController(
+        view=view, bridge=Bridge(), speak_replies=False
+    )
+    view.on_submit = controller.submit
     try:
         view.show(position=(300, 120), topmost=True)
         view.set_state("idle", "Standby")
-        view.set_transcript("what time is it in Chennai")
-        view.set_reply("It is just past four in the afternoon there.")
+
+        # Type it and send it, the way a person does.
+        entry = view._widgets["entry"]
+        view._hide_placeholder()
+        entry.delete(0, "end")
+        entry.insert(0, "what time is it in Chennai")
+        view._submit(object())
         for _ in range(80):
             view.root.update()
             time.sleep(0.004)
 
+        assert view._rows, "sending a message produced no row at all"
         row = view._rows[-1]
+        heard, reply = row.get("heard", ""), row.get("reply", "")
+
+        assert heard, f"the user's words were not recorded: {view.rows()}"
+        assert reply, "the reply was not recorded"
+
         faults = []
-        for key, what in (("row", "the user's message"), ("reply_row", "the reply")):
+        for key, what in (
+            ("row", "the user's message"),
+            ("reply_row", "the reply"),
+        ):
             frame = row.get(key)
+            if frame is None:
+                faults.append(f"{what}: no row was built at all")
+                continue
             canvas = next(
                 (c for c in frame.winfo_children() if c.winfo_class() == "Canvas"),
                 None,
             )
-            assert canvas is not None, f"{what} has no bubble"
-            glyphs, looked = _glyph_pixels(canvas, FOREGROUND)
-            if glyphs < 20:
+            if canvas is None:
+                faults.append(f"{what}: the row has no bubble")
+                continue
+            lit, looked = _glyph_pixels(canvas, FOREGROUND)
+            if lit < 20:
                 faults.append(
-                    f"{what}: {glyphs} glyph pixels of {looked} -- the text is "
-                    "set but nothing of it reaches the screen"
+                    f"{what}: {lit} glyph pixels of {looked} -- it was sent "
+                    "but nothing of it reaches the screen"
                 )
 
         assert faults == [], "; ".join(faults)
+    finally:
+        view.close()
+
+
+@pytest.mark.environment(
+    "opens a real tk window and sends through the real submit path; checks "
+    "the controller tells the view what it is sending"
+)
+def test_the_controller_shows_what_it_sends_however_it_arrived() -> None:
+    """Typed and corrected text, not only spoken.
+
+    ``on_hold`` called ``set_transcript`` and ``submit`` did not, so one of
+    the two ways of sending drew a bubble and the other drew nothing. Whatever
+    route the text took, by the time it is being sent there is a message to
+    show.
+    """
+    import time
+    import tkinter
+
+    from grandpa.ui.bubble import BubbleController
+
+    class Reply:
+        failed = False
+        status = "ok"
+        kind = None
+        text = "answered"
+
+    class Bridge:
+        speech_ready = True
+        transcriber = type("T", (), {"model": "base.en"})()
+
+        def warm(self):
+            return True, "ready"
+
+        def send(self, text):
+            return Reply()
+
+    view = TkBubbleView(tkinter_module=tkinter, hold_key="ctrl+win")
+    controller = BubbleController(
+        view=view, bridge=Bridge(), speak_replies=False
+    )
+    try:
+        view.show(position=(300, 120), topmost=True)
+
+        controller.submit("typed straight in")
+        for _ in range(40):
+            view.root.update()
+            time.sleep(0.003)
+
+        assert view.rows(), "submit told the view nothing"
+        assert view.rows()[-1][0] == "typed straight in"
+
+        # A corrected transcript shows the CORRECTION, not the mis-heard text.
+        controller._pending_heard = "an event by good morning"
+        controller.submit("hello grandpa good morning")
+        for _ in range(40):
+            view.root.update()
+            time.sleep(0.003)
+
+        assert view.rows()[-1][0] == "hello grandpa good morning", view.rows()
     finally:
         view.close()
