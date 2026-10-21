@@ -1111,8 +1111,19 @@ def test_a_long_transcript_is_not_cut_either() -> None:
 # So the property here is different in kind: the glyphs must reach the screen.
 
 
-def _glyph_pixels(widget, foreground: str) -> tuple[int, int]:
-    """(pixels close to *foreground*, pixels looked at) inside *widget*.
+def _glyph_pixels(
+    widget, foreground: str, fill: str | None = None
+) -> tuple[int, int, bool]:
+    """(glyph pixels, pixels looked at, whether the widget is really visible).
+
+    The third value is the difference between "the text is invisible" and
+    "something is in front of the window". Reading the desktop means reading
+    whatever is on top of it, and in the full suite -- other tests opening
+    their own Tk windows -- the panel was covered and every count came back
+    zero. A test that cannot tell those apart is one that gets ignored.
+
+    Visible means the bubble's own fill colour is somewhere in the pixels. If
+    it is not, we are not looking at the bubble.
 
     Read off the desktop, because that is the only place the question can be
     answered. Everything cheaper than this -- is the text set, is the widget
@@ -1178,7 +1189,11 @@ def _glyph_pixels(widget, foreground: str) -> tuple[int, int]:
     rgb = pixels[:, :, [2, 1, 0]].astype(int)
     wanted = np.array([int(foreground[i:i + 2], 16) for i in (1, 3, 5)])
     close = int((np.abs(rgb - wanted).sum(axis=2) < 180).sum())
-    return close, w * h
+    if fill is None:
+        return close, w * h, True
+    expected = np.array([int(fill[i:i + 2], 16) for i in (1, 3, 5)])
+    showing = bool((np.abs(rgb - expected).sum(axis=2) < 30).sum() > w * h * 0.1)
+    return close, w * h, showing
 
 
 @pytest.mark.environment(
@@ -1248,10 +1263,13 @@ def test_sending_a_message_puts_both_halves_on_the_screen() -> None:
         assert heard, f"the user's words were not recorded: {view.rows()}"
         assert reply, "the reply was not recorded"
 
+        from grandpa.ui.tk_view import BUBBLE_GRANDPA, BUBBLE_USER
+
         faults = []
-        for key, what in (
-            ("row", "the user's message"),
-            ("reply_row", "the reply"),
+        covered = []
+        for key, what, fill in (
+            ("row", "the user's message", BUBBLE_USER),
+            ("reply_row", "the reply", BUBBLE_GRANDPA),
         ):
             frame = row.get(key)
             if frame is None:
@@ -1264,7 +1282,10 @@ def test_sending_a_message_puts_both_halves_on_the_screen() -> None:
             if canvas is None:
                 faults.append(f"{what}: the row has no bubble")
                 continue
-            lit, looked = _glyph_pixels(canvas, FOREGROUND)
+            lit, looked, showing = _glyph_pixels(canvas, FOREGROUND, fill)
+            if not showing:
+                covered.append(what)
+                continue
             if lit < 20:
                 faults.append(
                     f"{what}: {lit} glyph pixels of {looked} -- it was sent "
@@ -1272,6 +1293,12 @@ def test_sending_a_message_puts_both_halves_on_the_screen() -> None:
                 )
 
         assert faults == [], "; ".join(faults)
+        if covered:
+            pytest.skip(
+                "the panel is behind another window, so the desktop pixels are "
+                f"not its own ({', '.join(covered)}). Not a pass: this test "
+                "cannot answer the question while something is on top of it."
+            )
     finally:
         view.close()
 

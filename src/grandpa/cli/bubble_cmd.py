@@ -280,7 +280,7 @@ def bubble(
     if view.root is not None:
         # Warming blocks for seconds, so it goes to a worker too -- on the tk
         # thread it froze the window for the whole model load.
-        view.root.after(10, lambda: _run_off_thread(controller, controller.warm))
+        view.root.after(10, lambda: _warm_in_background(controller))
     try:
         view.run()
     except KeyboardInterrupt:
@@ -333,6 +333,29 @@ def _hold_poller(controller):
             pass
 
     return poll
+
+
+def _warm_in_background(controller) -> None:
+    """Load the speech model on a thread of its own.
+
+    **Not through _run_off_thread.** That permits one job at a time, which is
+    right for work the user asks for and wrong for a warm-up: the warm held
+    the only slot for its whole duration, so a message typed during it was
+    handed to a busy worker and dropped -- measured, with no bubble, no error
+    and no trace. On its own thread the worker stays free and a typed message
+    is routed straight away.
+    """
+    import threading
+
+    def run() -> None:
+        try:
+            controller.warm()
+        except Exception:  # noqa: BLE001 - a warm must not kill the process
+            pass
+
+    threading.Thread(
+        target=run, name="grandpa-warm-speech", daemon=True
+    ).start()
 
 
 def _run_off_thread(controller, work, *args):

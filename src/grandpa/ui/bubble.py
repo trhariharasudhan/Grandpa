@@ -442,6 +442,15 @@ class BubbleController:
     #: marks it on whatever state is showing. False is the open-on-demand
     #: behaviour, with the measured deaf window.
     mic_live: bool = field(default=False, init=False)
+    #: Whether any reply has arrived yet. The first one pays for loading the
+    #: language model -- measured cold at about 79 seconds against 21 for the
+    #: ones after it -- and the window has to say so or it reads as hung.
+    _answered_once: bool = field(default=False, init=False)
+    #: True while the speech warm is still running. Needed because the warm
+    #: no longer holds the single worker slot, so a reply can arrive and move
+    #: the state out of LOADING while the speech model is still loading --
+    #: and "speech engine unavailable" is a false alarm until it has failed.
+    _warming: bool = field(default=False, init=False)
     #: A reply arrived that was never heard and never read. Shown as an amber
     #: ring on the orb, cleared by expanding, and it never times out -- a
     #: notification that disappears on its own is a notification that can be
@@ -503,6 +512,14 @@ class BubbleController:
 
     def warm(self) -> bool:
         """Load the speech model and move out of LOADING."""
+        self._warming = True
+        try:
+            return self._warm()
+        finally:
+            self._warming = False
+            self._refresh_status()
+
+    def _warm(self) -> bool:
         warmer = getattr(self.bridge, "warm", None)
         if not callable(warmer):
             self.model_name = ""
@@ -1006,6 +1023,7 @@ class BubbleController:
             shown = reply_text or "(no reply)"
             self._to_view(lambda: self.view.set_reply(shown))
             self._enter(BubbleState.IDLE)
+        self._answered_once = True
         self._remember_exchange(cleaned, reply_text or "(no reply)")
         self._pending_heard = ""
         self._refresh_status()
@@ -1061,7 +1079,11 @@ class BubbleController:
         something that is not working.
         """
         faults: list[str] = []
-        if self.state is not BubbleState.LOADING and not self.speech_ready:
+        if (
+            self.state is not BubbleState.LOADING
+            and not self.speech_ready
+            and not self._warming
+        ):
             faults.append("speech engine unavailable")
         if self.painter_word() == "disc":
             describe = getattr(self.orb, "painter_description", None)
@@ -1137,11 +1159,46 @@ class BubbleController:
             word = self.painter_word()
             self._to_view(lambda: self.view.set_painter(word))
 
+    def loading_label(self) -> str:
+        """What the header says while the speech model loads.
+
+        "Loading model..." was ambiguous once there were two: the speech model
+        loads in the background at launch, and the language model loads on
+        first use inside Ollama. Naming the one that is actually loading stops
+        the label looking frozen for a minute.
+
+        The STATE stays ``loading``. The orb has one ring and what it is
+        saying is "not usable yet"; a separate state for half-loaded would be
+        a light nobody could read at a glance.
+        """
+        if self.speech_ready:
+            return STATE_LABELS[BubbleState.LOADING]
+        return "Loading speech..."
+
+    def first_reply_is_slow(self) -> bool:
+        """Whether the next reply pays for loading the language model.
+
+        Measured cold: the first reply takes about 79 seconds and later ones
+        about 21. Ollama loads the weights on its first request and that
+        request is the user's first message, so the wait is real and there is
+        nothing in the window that explains it. Saying so is the difference
+        between a slow assistant and a broken one.
+        """
+        return not self._answered_once
+
     def _enter(self, state: BubbleState) -> None:
         # The state changes now, on this thread, because the refusal checks and
         # can_record() read it; only the drawing of it is dispatched.
         self.state = state
         label = STATE_LABELS[state]
+        if state is BubbleState.LOADING:
+            label = self.loading_label()
+        elif state is BubbleState.THINKING and self.first_reply_is_slow():
+            # The first reply loads the language model inside Ollama. Measured
+            # cold at ~79s against ~21s afterwards, and an unexplained minute
+            # and a half of "Thinking..." is indistinguishable from a hang.
+            label = "Loading the model..."
+
         self._to_view(lambda: self.view.set_state(str(state), label))
         self._refresh_orb()
 

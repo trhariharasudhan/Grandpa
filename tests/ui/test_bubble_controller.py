@@ -517,3 +517,86 @@ def test_run_once_is_never_called() -> None:
 
     assert "run_once(" not in code
     assert ".run_once" not in code
+
+
+# --- the warm must not hold the only worker slot ------------------------------
+#
+# Measured in a running window: the speech warm went through _run_off_thread,
+# which permits one job at a time, so a message typed during the warm was
+# handed to a busy worker and dropped -- no bubble, no error, no trace. The
+# warm runs on a thread of its own now.
+
+
+def test_the_warm_does_not_go_through_the_single_worker_slot() -> None:
+    """Mechanical, because the failure was mechanical.
+
+    _run_off_thread exists to stop two user-requested jobs overlapping. A
+    warm-up is not one, and routing it through that slot is what made typing
+    during startup do nothing at all.
+    """
+    import ast as _ast
+    from pathlib import Path as _Path
+
+    tree = _ast.parse(
+        _Path("src/grandpa/cli/bubble_cmd.py").read_text(encoding="utf-8")
+    )
+    warmers = [
+        node for node in _ast.walk(tree)
+        if isinstance(node, _ast.FunctionDef) and node.name == "_warm_in_background"
+    ]
+    assert warmers, "nothing warms in the background any more"
+
+    # The statements, not the docstring: the docstring names the thing it is
+    # there to warn about, and searching it fails on its own explanation.
+    body = warmers[0].body
+    if body and isinstance(body[0], _ast.Expr) and isinstance(
+        getattr(body[0], "value", None), _ast.Constant
+    ):
+        body = body[1:]
+    code = "\n".join(_ast.unparse(node) for node in body)
+
+    assert "_run_off_thread" not in code, (
+        "the warm is back in the single worker slot, which drops anything "
+        "typed while it runs"
+    )
+    assert "Thread" in code, "the warm must have a thread of its own"
+
+
+def test_the_speech_model_is_not_called_unavailable_while_it_loads() -> None:
+    """A false alarm the freed worker made possible.
+
+    With the warm off the worker, a reply can arrive and move the state out of
+    LOADING while the speech model is still loading. "speech engine
+    unavailable" is untrue until the load has actually failed.
+    """
+    controller, _view, bridge = _controller()
+    controller.state = BubbleState.IDLE
+    bridge.speech_ready = False
+
+    controller._warming = True
+    assert "speech engine unavailable" not in controller.fault_line()
+
+    controller._warming = False
+    assert "speech engine unavailable" in controller.fault_line()
+
+
+def test_the_first_reply_says_it_is_loading_the_model() -> None:
+    """Measured cold: the first reply takes about 79 seconds and later ones
+    about 21. A window saying "Thinking..." for a minute and a half is
+    indistinguishable from one that has hung."""
+    controller, _view, _bridge = _controller()
+
+    assert controller.first_reply_is_slow() is True
+
+    controller.submit("hello")
+
+    assert controller.first_reply_is_slow() is False
+
+
+def test_the_loading_label_names_what_is_loading() -> None:
+    """"Loading model..." was ambiguous once the language model loaded
+    separately, inside Ollama, on first use."""
+    controller, _view, bridge = _controller()
+    bridge.speech_ready = False
+
+    assert "speech" in controller.loading_label().lower()
