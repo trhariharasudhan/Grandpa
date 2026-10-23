@@ -436,6 +436,71 @@ class VoiceCommandProcessor:
         )
 
     def _ensure_engine(self) -> None:
+        """Resolve the engine and the model, once per processor.
+
+        The model is ``intelligence.default_model`` unless a caller names one,
+        which means voice and the action layer's tool loop read the same
+        setting. That looks wasteful here, because the voice path sends no
+        tools: by the time :meth:`_generate_response` is reached, dates have
+        gone to ``handle_datetime_intent``, window and app commands to
+        ``handle_local_action``, multi-step goals to the regex
+        ``DeterministicDecomposer``, and reminders and memory to their own
+        parsers. The model only ever gets free-form conversation. So the
+        tool-calling benchmark that chose grandpa-brain tested a capability
+        this path never exercises, and a smaller model looks like free speed.
+
+        It is not. Measured on the voice path, same three-turn conversation,
+        five runs per model, whole conversation, runs 2-5 only (run 1 pays the
+        model load):
+
+        ==============  ===========  ======================================
+        model                         whole conversation, runs 2-5
+        ==============  ===========  ======================================
+        grandpa-brain   qwen3 8.2B    94.30s   96.03s   96.97s   97.80s
+        grandpa-light   gemma3 4.3B   79.09s   79.33s   82.19s   82.73s
+        grandpa-fast    qwen3 4.0B   358.77s  378.02s  439.67s  766.08s
+        grandpa-mini    qwen2 494M    11.52s   11.53s   11.97s   13.64s
+        ==============  ===========  ======================================
+
+        Halving the parameters is not half the time, because on this CPU-only
+        machine *prompt evaluation* dominates and it barely improves with size:
+        grandpa-brain evaluates ~635-700 tokens in 18.6-30.6s and grandpa-light
+        ~642-725 in 21.1-24.0s. Only the 494M model makes it cheap, at
+        ~3.0-3.7s for ~700-785 tokens.
+
+        So there is no middle ground on this hardware, and the two mid-size
+        candidates are worse than their timings suggest:
+
+        grandpa-fast is a qwen3 reasoning model and ``think=False`` does not
+        stop it reasoning. It reasons in the *content* rather than in <think>
+        tags, so :func:`grandpa.response_cleanup.clean_assistant_response` has
+        nothing to strip and the chain of thought becomes the reply -- 991 and
+        1024 completion tokens, the second cut off mid-sentence at the
+        num_predict cap. That is a correctness failure, not a slow one.
+
+        grandpa-light answers general knowledge best of the four, but asked
+        "how do I pick the lock on my own front door" it produced 410 tokens
+        of refusal including unprompted suicide-hotline numbers. That is the
+        wrong posture for someone locked out of their house.
+
+        grandpa-mini is genuinely 8x faster with no overlap between the
+        spreads, and it is fine on short factual questions -- Tokyo, and 17x23
+        = 391. It fails on anything needing explanation: asked why the sky is
+        blue it said the sky "reflects sunlight, which contains red, orange,
+        yellow, green, and other wavelengths of light, making the overall
+        colour appear more uniform and bleached", which is wrong rather than
+        merely thin.
+
+        So the 8.2B model stays, on answer quality rather than on capability.
+        If a per-path model is ever wanted anyway, the shape already exists in
+        this codebase: ``config.server.model or config.intelligence.default_model``
+        in :mod:`grandpa.cli.serve`, and ``[voice]`` is already a declared
+        config section, so it is one field plus the ``or`` below.
+
+        The lever these numbers do point at is prompt *size*, since prompt
+        evaluation is the dominant cost at every size above 494M. See
+        :func:`grandpa.core_ai_brain.build_brain_context`.
+        """
         if self._engine is not None:
             return
         from grandpa.engine import discover_engines, discover_models, get_engine

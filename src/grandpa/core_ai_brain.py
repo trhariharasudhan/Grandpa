@@ -349,6 +349,97 @@ def detect_tone(text: str) -> Tone:
 def build_brain_context(
     analysis: BrainAnalysis, *, store: BrainStore | None = None
 ) -> str:
+    """The system prompt for a conversational turn, rebuilt per request.
+
+    This is rebuilt every turn and it does not have to be. The obvious idea --
+    make it byte-stable so Ollama's prompt cache holds the prefix, the way
+    ``grandpa.action_layer.loop.SYSTEM_PROMPT`` does -- was measured and **it
+    does not work.** Read this before trying it.
+
+    First, where a voice turn's time actually goes. The voice path sends *no
+    tools*: ``VoiceCommandProcessor._generate_response`` passes no ``tools``
+    argument, so the action catalogue's thousands of prompt tokens are the tool
+    loop's cost alone and have nothing to do with this. On the development
+    machine, grandpa-brain (qwen3 8.2B Q4_K_M) running on CPU:
+
+    ======  =======  =======  ======================  ====================
+    turn    wall     load     prompt eval             generate
+    ======  =======  =======  ======================  ====================
+    cold     79.48s   33.38s   38.64s /  631 tok       2.86s /  12 tok
+    warm     23.41s    0.03s   13.55s /  657 tok       9.56s /  33 tok
+    ======  =======  =======  ======================  ====================
+
+    So prompt evaluation is the larger half of a warm turn, and a cache hit
+    would be worth having. Ollama does cache here -- five runs each, model
+    warm, generation pinned to 16 tokens, measuring
+    ``prompt_eval_duration``:
+
+    ===========================  ========================================
+    prompt                       prompt eval
+    ===========================  ========================================
+    changed since last request   3.01s  3.16s  3.16s  3.51s  3.36s
+    byte-identical repeat        0.28s  0.27s  0.26s  0.29s  0.34s
+    ===========================  ========================================
+
+    Tenfold, spreads not overlapping. But an *exact repeat* is the only thing
+    it credits. Three prompt shapes, five consecutive turns each, three
+    repetitions, totalling ``prompt_eval`` over turns 2-5 -- the turns that a
+    stable prefix is supposed to make cheap:
+
+    ==========================================  ==========================
+    shape                                       turns 2-5, prompt eval
+    ==========================================  ==========================
+    system rebuilt per turn (what we do)        18.81s  19.37s  19.41s
+    static system, facts in the user turn       23.49s  23.70s  24.92s
+    static system, facts in a late system msg   19.23s  20.03s  20.28s
+    ==========================================  ==========================
+
+    Nothing. A conversation never re-sends an identical prompt -- it sends a
+    longer one with a shared prefix, and that earns no useful credit. The
+    middle row is the change done properly, and it *regressed* three times out
+    of three, with a mechanism: a matching prefix means every earlier turn must
+    be replayed exactly as it was sent, so the per-turn facts have to stay in
+    the history, which grew the prompt from 579 to 803 tokens by turn 5. The
+    added length cost more than the hoped-for hit would have returned.
+
+    Two traps this walked into, recorded so the next attempt skips them:
+
+    ``prompt_eval_count`` cannot see the cache. It reported 419 tokens for
+    every request in the table above -- identical for the 3.2s misses and the
+    0.28s hits. Only ``prompt_eval_duration`` distinguishes them. Asserting on
+    the count would have "confirmed" either conclusion.
+
+    Ollama caches the last prompt per runner, not a library of them. An early
+    version of the experiment interleaved its arms, so every request found
+    another arm's prompt in the slot; it showed no benefit anywhere and nearly
+    got a real cache reported as worthless. Arms have to run their turns
+    consecutively, as a conversation does.
+
+    And the bar any timing claim here has to clear: three repetitions of the
+    *same bytes* under the same conditions measured 9.69s, 13.83s and 15.90s
+    for turns 2-5. That is +-64% on identical input, wider than any difference
+    between the shapes above. One run proves nothing on this machine.
+
+    What is left, both measured and neither one caching: prompt *size* (cold
+    evaluation runs at ~16 tok/s, so every 100 tokens dropped is ~6s off the
+    first reply), and the fact that ``/api/ps`` reports ``size_vram: 0`` --
+    an 8.2B model generating at 3.5 tok/s entirely on the CPU, which is 9.56s
+    of that warm turn and untouched by anything about prompts.
+
+    That last one is a configuration, not a limit of the machine. Ollama's own
+    log on the development machine says so twice::
+
+        WARN  source=amd.go     AMD driver is too old. Update your AMD driver
+                                to enable GPU inference.
+        INFO  source=runner.go  dropping integrated GPU; to enable, set
+                                OLLAMA_IGPU_ENABLE=1  library=Vulkan
+                                name=Vulkan0 description="AMD Radeon(TM) Graphics"
+
+    Vulkan found the integrated GPU and Ollama declined it by policy. Whether
+    enabling it actually helps is unmeasured -- an iGPU shares system memory,
+    and that log also reports 5.9 GiB available of 15.3 GiB against a 6.7 GB
+    model -- so this is a lead, not a fix.
+    """
     store = store or BrainStore()
     habits = store.habits(limit=5)
     lines = [
