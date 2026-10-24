@@ -61,7 +61,14 @@ GRANDPA_MODEL_ROLES: tuple[GrandpaModelRole, ...] = (
         recommended_memory_gb=6.0,
         context_length=32768,
         fallback_role="mini",
-        legacy_aliases=("qwen:latest", "grandpa-light:latest", "gemma3:4b"),
+        # No legacy aliases. A legacy alias is a former name for *these*
+        # weights, like mini's alias above, which is grandpa-mini's parent model
+        # in Ollama. The three tags that used to sit here were other models:
+        # grandpa-light:latest and gemma3:4b are gemma3 4.3B, and qwen:latest
+        # is a qwen2-architecture 4B. Resolving them to this role made
+        # identity_prompt state "Underlying foundation family: Qwen3" about a
+        # Gemma session, so the model answered "I'm running on Qwen3" when
+        # asked -- faithfully, from a prompt that was wrong.
     ),
     GrandpaModelRole(
         role="brain",
