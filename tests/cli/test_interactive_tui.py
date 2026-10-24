@@ -133,7 +133,11 @@ def test_model_command_updates_current_session() -> None:
     result = INTERACTIVE_COMMANDS.dispatch(session, "/model grandpa-light:latest")
 
     assert result.handled is True
-    assert session.model == "grandpa-fast:latest"
+    # The model the user named, not a substitute. This assertion briefly read
+    # grandpa-fast:latest, because grandpa-light was listed among that role's
+    # legacy_aliases -- so asking for an installed gemma3 model silently handed
+    # back a Qwen3 one, and the identity prompt then told it that it was Qwen3.
+    assert session.model == "grandpa-light:latest"
 
 
 def test_compact_keeps_recent_context() -> None:
