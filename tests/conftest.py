@@ -75,14 +75,36 @@ _RELEASE_TEST_PATHS = {
 #: ``subprocess.Popen(['which', ...])`` at module scope to find a clipboard
 #: helper.
 #:
-#: ``comtypes``: ``comtypes.client.GetModule("UIAutomationCore.dll")`` -- what
-#: ``windows_window_control._uia`` and ``browser_control`` both call -- compiles
-#: the type library into a generated module under ``site-packages/comtypes/gen``
-#: and writes it to disk. ``pycaw`` does the same for the audio endpoint.
-_LAZY_BACKENDS: tuple[tuple[str, str], ...] = (
-    ("pyautogui", "import"),
-    ("comtypes", "uia-typelib"),
-    ("pycaw", "import"),
+#: ``comtypes``/``pycaw``: see ``_WIN_TYPELIBS`` below.
+_LAZY_BACKENDS: tuple[str, ...] = ("pyautogui", "comtypes", "pycaw")
+
+#: COM type libraries the product asks comtypes to compile. ``GetModule``
+#: generates a Python wrapper per library into ``site-packages/comtypes/gen``
+#: and *writes it to disk*, so the first caller pays with a write the guard
+#: refuses. Pre-generating them here means the test-time call imports a module
+#: that already exists.
+#:
+#: Identified however ``GetModule`` will actually accept, which is not uniform:
+#:
+#: * ``UIAutomationCore.dll`` -> ``_944DE083_..._0_1_0.py``, asked for by
+#:   ``windows_window_control._uia`` and ``browser_control``. This one accounted
+#:   for 13 Windows failures. Resolves by bare filename.
+#: * The Speech Object Library -> ``_C866CA3A_..._0_5_4.py``, reached through
+#:   pyttsx3's SAPI driver by anything that probes TTS -- ``doctor`` does, which
+#:   is why six doctor tests and the audio-denied test failed on it once the UIA
+#:   one was fixed. It is given as ``(guid, major, minor)`` because
+#:   ``GetModule("sapi.dll")`` raises *"Error loading type library/DLL"*: the
+#:   library lives at ``System32\\Speech\\Common\\sapi.dll``, which is not on
+#:   the loader path, and hardcoding that absolute path would bind this to one
+#:   machine's layout. The registry triple is the same identity the generated
+#:   filename encodes, and it resolved where the filename did not. Generated,
+#:   not instantiated: a ``SpVoice`` would touch the audio stack, and what is
+#:   wanted here is only the file on disk.
+#:
+#: Add to this list when a new generated module shows up in a write refusal.
+_WIN_TYPELIBS: tuple[object, ...] = (
+    "UIAutomationCore.dll",
+    ("{C866CA3A-32F7-11D2-9602-00C04F8EE628}", 5, 4),
 )
 
 
@@ -90,18 +112,11 @@ def _warm_lazy_backends() -> None:
     """Touch each lazy backend once; pin the ones that are unavailable."""
     import sys
 
-    for name, how in _LAZY_BACKENDS:
+    for name in _LAZY_BACKENDS:
         if sys.modules.get(name, False) is None:
             continue  # already pinned unavailable by an earlier call
         try:
             importlib.import_module(name)
-            if how == "uia-typelib" and sys.platform == "win32":
-                import comtypes.client
-
-                # The call the product makes. Generating the wrapper is the
-                # write; doing it here means the test-time call only imports
-                # the module that now exists.
-                comtypes.client.GetModule("UIAutomationCore.dll")
         except (KeyboardInterrupt, SystemExit):
             # "Any failure means unavailable" does not extend to the user
             # asking the run to stop, which is the one BaseException here that
@@ -112,8 +127,26 @@ def _warm_lazy_backends() -> None:
             # endpoint, whatever the backend raises on hardware it cannot
             # drive -- means the same thing to every caller: there is no
             # backend. Pin it so later imports fail fast and cheaply instead of
-            # re-running module code.
+            # re-running module code. setdefault, not assignment: a module that
+            # imported fine must not be pinned None by a later step's failure.
             sys.modules.setdefault(name, None)  # type: ignore[arg-type]
+
+    if sys.platform != "win32" or sys.modules.get("comtypes") is None:
+        return
+
+    for typelib in _WIN_TYPELIBS:
+        try:
+            import comtypes.client
+
+            comtypes.client.GetModule(typelib)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            # One missing or unregisterable library must not stop the others:
+            # a machine with no speech stack still needs the UIA wrapper. The
+            # test that actually wanted it will fail on its own terms, which is
+            # more informative than this loop guessing.
+            continue
 
 
 def pytest_configure(config: pytest.Config) -> None:
