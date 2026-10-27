@@ -371,6 +371,7 @@ def test_only_the_header_and_its_two_labels_can_start_a_drag() -> None:
 def test_the_panel_reports_a_delta_rather_than_moving_itself() -> None:
     """Given an on_drag it must not call move_to: the controller moves both."""
     from tests.ui.test_bubble_never_takes_focus import RecordingTk
+
     from grandpa.ui.tk_view import TkBubbleView
 
     deltas: list[tuple[int, int]] = []
@@ -391,6 +392,7 @@ def test_the_panel_reports_a_delta_rather_than_moving_itself() -> None:
 def test_without_a_handler_the_panel_still_moves_itself() -> None:
     """So the panel is usable on its own, as it was before the two were joined."""
     from tests.ui.test_bubble_never_takes_focus import RecordingTk
+
     from grandpa.ui.tk_view import TkBubbleView
 
     tk = RecordingTk()

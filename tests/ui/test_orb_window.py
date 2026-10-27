@@ -25,7 +25,6 @@ from grandpa.ui.orb_view import (
     ANCHOR_GAP,
     DEFAULT_DOUBLE_CLICK_MS,
     DEFAULT_DRAG_SLOP,
-    PULSE_FRAMES,
     TICK_MS,
     OrbView,
     TapTracker,
@@ -799,6 +798,7 @@ def test_the_panel_hides_by_withdrawing_not_by_destroying() -> None:
     """Destroying it would lose the last exchange and rebuilding it would take
     the foreground again."""
     from tests.ui.test_bubble_never_takes_focus import RecordingTk as PanelTk
+
     from grandpa.ui.tk_view import TkBubbleView
 
     tk = PanelTk()
@@ -816,6 +816,7 @@ def test_the_panel_hides_by_withdrawing_not_by_destroying() -> None:
 
 def test_the_panel_comes_back_with_deiconify_and_nothing_stronger() -> None:
     from tests.ui.test_bubble_never_takes_focus import RecordingTk as PanelTk
+
     from grandpa.ui.tk_view import TkBubbleView
 
     tk = PanelTk()

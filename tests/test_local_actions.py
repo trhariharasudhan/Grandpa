@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 import grandpa.local.audit
@@ -262,6 +264,21 @@ def _deferred_rows():
         ]
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason=(
+        "Staging depends on `open <tmp_path>` parsing as a folder, and "
+        "parsers._unknown_folder_path recognises only a drive-absolute path "
+        "(^[a-z]:[\\\\/]) or a ~-relative one. On POSIX tmp_path is "
+        "/tmp/pytest-of-... , which matches neither, so the phrase is "
+        "no_match and nothing is ever staged to deny -- the assertion tests "
+        "the path grammar rather than the deferral. Teaching the parser POSIX "
+        "absolute paths would make every absolute path on the filesystem an "
+        "openable folder, which is a worse trade than a marker on a "
+        "Windows-first product. The windows-latest job runs the full suite, "
+        "so this stays covered where the premise holds."
+    ),
+)
 def test_pending_action_can_be_denied(tmp_path):
     # Not "type hello" any more: synthetic input is never staged for a later
     # yes, because a keystroke goes wherever focus is when it is sent.
@@ -275,6 +292,15 @@ def test_pending_action_can_be_denied(tmp_path):
     ]
 
 
+@pytest.mark.skipif(
+    sys.platform != "win32",
+    reason=(
+        "Same root cause as test_pending_action_can_be_denied: on POSIX the "
+        "`open <tmp_path>` phrase is no_match, so pending_action is None and "
+        "the test dies on a TypeError subscripting it rather than measuring "
+        "expiry."
+    ),
+)
 def test_expired_pending_action_is_not_approved(monkeypatch, tmp_path):
     from grandpa import pc_control
 
