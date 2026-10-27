@@ -327,7 +327,22 @@ def test_brightness_unsupported_path(monkeypatch):
     reason="reaches the real grandpa.desktop.control.power.PowerControlService.execute_brightness"
 )
 def test_brightness_get_reports_a_real_level_when_the_backend_is_there(monkeypatch):
-    """The other half, now that the backend can actually be installed."""
+    """The other half, now that the backend can actually be installed.
+
+    Skipped where it is not. ``screen-brightness-control`` lives in the
+    ``desktop-hardware`` extra on purpose -- the comment on it in pyproject.toml
+    says a hard dependency buys nothing on hardware without WMI or DDC/CI -- and
+    CI installs dev, server, voice and screen but not that one. Monkeypatching
+    an attribute on a module that is not installed raises ModuleNotFoundError
+    from ``derive_importpath`` before the test body runs, so this read as a
+    failure on the Linux job rather than as the absent optional backend it is.
+    The other half of the pair, above, fakes the backend away and so needs
+    nothing installed.
+    """
+    pytest.importorskip(
+        "screen_brightness_control",
+        reason="optional desktop-hardware extra; nothing to patch without it",
+    )
     monkeypatch.setattr(
         "screen_brightness_control.get_brightness", lambda *a, **k: [42]
     )
