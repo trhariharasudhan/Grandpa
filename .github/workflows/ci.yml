@@ -241,8 +241,13 @@ jobs:
           key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-
 
+      # --keep-going so one crate's lint does not hide the rest of the
+      # workspace. Without it cargo stops at the first crate that fails, and
+      # since 14 of the 17 crates sit downstream of one another that cost a
+      # whole CI run per crate to discover the next lint. It does not weaken
+      # the gate: -D warnings still fails the job on any single lint.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --keep-going -- -D warnings
 
       - name: Test
         run: cargo test --workspace
