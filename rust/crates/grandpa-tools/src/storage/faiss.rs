@@ -272,12 +272,18 @@ fn embedding_to_bytes(embedding: &[f64]) -> Vec<u8> {
 
 /// Deserialize a byte slice back into a `Vec<f64>`.
 fn bytes_to_embedding(bytes: &[u8]) -> Vec<f64> {
+    // `as_chunks::<8>()` yields `[u8; 8]` directly, where `chunks_exact(8)`
+    // yielded a slice that then needed `try_into()` and a fallback for a length
+    // the iterator had already guaranteed -- so the `unwrap_or([0u8; 8])` here
+    // could never run, and a reader had to work that out to trust it. The
+    // trailing partial chunk is discarded by both: it is `.1` here and skipped
+    // there.
     bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            let arr: [u8; 8] = chunk.try_into().unwrap_or([0u8; 8]);
-            f64::from_le_bytes(arr)
-        })
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .copied()
+        .map(f64::from_le_bytes)
         .collect()
 }
 
