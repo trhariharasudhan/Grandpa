@@ -67,6 +67,128 @@ _RELEASE_TEST_PATHS = {
 }
 
 
+#: Third-party backends that actuate or write the *first* time they are
+#: touched, as a side effect of being loaded rather than of being used.
+#: ``_warm_lazy_backends`` does that touching once, before any guard arms.
+#:
+#: ``pyautogui``: importing it imports ``mouseinfo``, which on POSIX runs
+#: ``subprocess.Popen(['which', ...])`` at module scope to find a clipboard
+#: helper.
+#:
+#: ``comtypes``/``pycaw``: see ``_WIN_TYPELIBS`` below.
+_LAZY_BACKENDS: tuple[str, ...] = ("pyautogui", "comtypes", "pycaw")
+
+#: COM type libraries the product asks comtypes to compile. ``GetModule``
+#: generates a Python wrapper per library into ``site-packages/comtypes/gen``
+#: and *writes it to disk*, so the first caller pays with a write the guard
+#: refuses. Pre-generating them here means the test-time call imports a module
+#: that already exists.
+#:
+#: Identified however ``GetModule`` will actually accept, which is not uniform:
+#:
+#: * ``UIAutomationCore.dll`` -> ``_944DE083_..._0_1_0.py``, asked for by
+#:   ``windows_window_control._uia`` and ``browser_control``. This one accounted
+#:   for 13 Windows failures. Resolves by bare filename.
+#: * The Speech Object Library -> ``_C866CA3A_..._0_5_4.py``, reached through
+#:   pyttsx3's SAPI driver by anything that probes TTS -- ``doctor`` does, which
+#:   is why six doctor tests and the audio-denied test failed on it once the UIA
+#:   one was fixed. It is given as ``(guid, major, minor)`` because
+#:   ``GetModule("sapi.dll")`` raises *"Error loading type library/DLL"*: the
+#:   library lives at ``System32\\Speech\\Common\\sapi.dll``, which is not on
+#:   the loader path, and hardcoding that absolute path would bind this to one
+#:   machine's layout. The registry triple is the same identity the generated
+#:   filename encodes, and it resolved where the filename did not. Generated,
+#:   not instantiated: a ``SpVoice`` would touch the audio stack, and what is
+#:   wanted here is only the file on disk.
+#:
+#: Add to this list when a new generated module shows up in a write refusal.
+_WIN_TYPELIBS: tuple[object, ...] = (
+    "UIAutomationCore.dll",
+    ("{C866CA3A-32F7-11D2-9602-00C04F8EE628}", 5, 4),
+)
+
+
+def _warm_lazy_backends() -> None:
+    """Touch each lazy backend once; pin the ones that are unavailable."""
+    import sys
+
+    for name in _LAZY_BACKENDS:
+        if sys.modules.get(name, False) is None:
+            continue  # already pinned unavailable by an earlier call
+        try:
+            importlib.import_module(name)
+        except (KeyboardInterrupt, SystemExit):
+            # "Any failure means unavailable" does not extend to the user
+            # asking the run to stop, which is the one BaseException here that
+            # is not about the backend.
+            raise
+        except BaseException:
+            # Anything else -- ImportError, a headless DISPLAY error, no audio
+            # endpoint, whatever the backend raises on hardware it cannot
+            # drive -- means the same thing to every caller: there is no
+            # backend. Pin it so later imports fail fast and cheaply instead of
+            # re-running module code. setdefault, not assignment: a module that
+            # imported fine must not be pinned None by a later step's failure.
+            sys.modules.setdefault(name, None)  # type: ignore[arg-type]
+
+    if sys.platform != "win32" or sys.modules.get("comtypes") is None:
+        return
+
+    for typelib in _WIN_TYPELIBS:
+        try:
+            import comtypes.client
+
+            comtypes.client.GetModule(typelib)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            # One missing or unregisterable library must not stop the others:
+            # a machine with no speech stack still needs the UIA wrapper. The
+            # test that actually wanted it will fail on its own terms, which is
+            # more informative than this loop guessing.
+            continue
+
+
+def pytest_configure(config: pytest.Config) -> None:
+    """Warm the lazy desktop backends once, before any guard arms.
+
+    Two guards are armed per test and both are right. ``_nothing_actuates``
+    replaces ``subprocess.Popen``; ``confine_writes`` refuses a write outside
+    the test's scratch space. ``ActuationDenied`` derives from
+    ``BaseException`` on purpose, so the product's ``except Exception``
+    handlers cannot turn a denial into a friendly sentence nobody reads.
+
+    What that combination cannot tell apart is *the product* doing something
+    and *a dependency* doing something while being loaded. Both CI jobs hit it,
+    for the same reason, in two different guards:
+
+    * Linux, 5 failures. ``screen_awareness._available_screenshot_backends``
+      does ``import pyautogui`` inside ``try/except Exception`` -- exactly how
+      a capability probe should be written -- and mouseinfo's module-scope
+      ``Popen`` came back as an unswallowable denial. Screen diagnostics,
+      screen description, OCR redaction and two pc_control API routes went
+      down, none of which actuate anything.
+    * Windows, 12 failures. ``comtypes.client.GetModule`` compiles
+      UIAutomationCore's type library and writes the result into
+      ``site-packages/comtypes/gen`` the first time anyone asks. On a
+      developer's machine that happened months ago, so the directory is
+      already there and tests never write it; on a fresh runner it is the
+      first call that pays, and the write guard refused it -- 8 as ``os.mkdir``
+      on the ``gen`` directory and 4 as ``open`` on the generated module.
+      That is why these failed only in CI and only on a clean checkout.
+
+    Warming fixes it at the cause and leaves both guards at full strength: the
+    side effects happen before any test, and the test-time call then finds a
+    cached module and a directory that exists. The alternative was seventeen
+    ``real_actions`` and ``real_writes`` markers, which would hand real
+    implementations and real write access to tests that need neither, to work
+    around a dependency's first-use behaviour. That is how a marker written for
+    one reason ends up granting another -- which this conftest's own
+    ``_nothing_actuates`` docstring records happening to 395 tests.
+    """
+    _warm_lazy_backends()
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config, items: list[pytest.Item]
 ) -> None:

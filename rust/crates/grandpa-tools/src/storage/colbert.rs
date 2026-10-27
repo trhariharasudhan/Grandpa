@@ -311,12 +311,14 @@ fn token_embeddings_to_bytes(embeddings: &[Vec<f64>]) -> Vec<u8> {
 
 /// Deserialize a flat byte blob back into a `Vec<Vec<f64>>` of token embeddings.
 fn bytes_to_token_embeddings(bytes: &[u8], num_tokens: usize, dim: usize) -> Vec<Vec<f64>> {
+    // See the note in faiss.rs::bytes_to_embedding: `as_chunks::<8>()` hands
+    // back `[u8; 8]`, so the `try_into()` and its unreachable fallback go away.
     let floats: Vec<f64> = bytes
-        .chunks_exact(8)
-        .map(|chunk| {
-            let arr: [u8; 8] = chunk.try_into().unwrap_or([0u8; 8]);
-            f64::from_le_bytes(arr)
-        })
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .copied()
+        .map(f64::from_le_bytes)
         .collect();
 
     floats

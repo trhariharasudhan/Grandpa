@@ -88,6 +88,16 @@ definitions*, at roughly ten tokens a second on this hardware -- and Ollama
 caches that evaluation alongside the loaded model, which is why the warm
 request costs 0.8s for the same 5306 tokens.
 
+**Do not read 5306/0.8 as an evaluation rate.** Those last two rows re-sent a
+*byte-identical* prompt, so 0.8s is the price of a cache hit, not of evaluating
+5306 tokens. Measured separately on the same machine, true warm evaluation of
+an uncached prompt runs at roughly 50-230 tokens a second depending on load --
+two orders of magnitude slower than 5306/0.8 suggests. Reading that figure as a
+rate makes prompt evaluation look free once the model is warm, and it is not:
+on the voice path it is the larger half of a warm turn. See
+:func:`grandpa.core_ai_brain.build_brain_context` for what the cache will and
+will not do for a conversation.
+
 So keep_alive is the fix for the repeated cost: the last row is the same
 request after longer than Ollama's own default would have kept it, and it is
 50x cheaper than the cold one. The first request of all still pays, which is
