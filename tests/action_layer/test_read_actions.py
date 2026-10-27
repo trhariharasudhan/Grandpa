@@ -205,7 +205,19 @@ def test_volume_get_reports_a_level_or_says_why_it_cannot() -> None:
         assert 0 <= result.data["level"] <= 100
         assert isinstance(result.data["muted"], bool)
     else:
-        assert result.error in {"missing_volume_backend", "unsupported"}, result
+        # Three honest answers, not two. desktop/control/power.py raises
+        # missing_volume_backend when pycaw is absent and volume_backend_failed
+        # when it is present and the endpoint will not open -- its comment says
+        # "Not 'the backend is missing' -- it is here and it failed. Say
+        # which." The windows-latest runner is exactly that second case: pycaw
+        # installs fine and there is no audio device, so GetSpeakers raises
+        # COMError 'Element not found'. Leaving that code out of this set made
+        # the product's own distinction read as a test failure.
+        assert result.error in {
+            "missing_volume_backend",
+            "volume_backend_failed",
+            "unsupported",
+        }, result
         assert "pycaw" in result.message or "Windows" in result.message
 
 
