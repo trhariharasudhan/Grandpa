@@ -30,12 +30,13 @@ The DEFERRED.md row (item 70, sandboxing) is also covered by
 `FEATURE-INVENTORY-2.md`; it is counted here only because its Evidence cell
 names DEFERRED.md first. All 43 are settled by the three audits in the brief.
 
-¹ **`FEATURE-INVENTORY-2.md` is not on `main`.** It exists only on the branch
-`audit/feature-inventory-2` (commit `9ece2c39`). It was read from there
-(`git show audit/feature-inventory-2:docs/audit/FEATURE-INVENTORY-2.md`). Anyone
-reading this map from `main` will not find that file; it should be merged or
-moved, because three of its findings are still the best evidence available for
-their items.
+¹ **`FEATURE-INVENTORY-2.md` was not on `main` when this map was written.**
+It existed only on the branch `audit/feature-inventory-2` (commit `9ece2c39`)
+and was read from there
+(`git show audit/feature-inventory-2:docs/audit/FEATURE-INVENTORY-2.md`),
+because three of its findings are still the best evidence available for their
+items. It has since been merged to `main` as `docs/audit/FEATURE-INVENTORY-2.md`
+(PR #7), so the link above resolves for anyone reading this map from `main`.
 
 Counted per group: Brain 4/8, Memory 5/10, Agent execution 4/12, Context and
 knowledge 3/8, Tools 5/10, Models 4/8, Communication 5/8, Security 5/10,
