@@ -92,9 +92,6 @@ def test_directory_properties_match_legacy_behavior(tmp_path):
     _assert_parity(actual, expected)
 
 
-@pytest.mark.real_actions(
-    reason="reaches the real grandpa.files.executor.FileExecutor.execute"
-)
 def test_in_root_symlink_properties_match_legacy_behavior(tmp_path):
     target = tmp_path / "target.txt"
     link = tmp_path / "linked.txt"

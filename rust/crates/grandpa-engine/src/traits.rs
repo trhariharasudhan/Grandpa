@@ -11,15 +11,6 @@ pub type TokenStream = Pin<Box<dyn Stream<Item = StreamItem> + Send>>;
 /// ABC for all inference engine backends.
 ///
 /// Implementations must be thread-safe (`Send + Sync`).
-// async-trait desugars `async fn stream` into a method returning a pinned
-// boxed Future and marks it `#[must_use]`. A Future is already must-use, so
-// clippy 1.99's double_must_use calls that redundant -- and the attribute is
-// in the macro's output, not in this file, so there is nothing here to remove.
-// The toolchain is `stable` in CI, which is how a lint none of us wrote
-// appeared under -D warnings with no Rust change; the same unpinned-upstream
-// move as the pyo3/Python 3.14 break alongside it. Drop this allow when
-// async-trait stops emitting the attribute.
-#[allow(clippy::double_must_use)]
 #[async_trait::async_trait]
 pub trait InferenceEngine: Send + Sync {
     fn engine_id(&self) -> &str;

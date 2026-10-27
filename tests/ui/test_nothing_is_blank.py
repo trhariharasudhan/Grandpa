@@ -26,8 +26,10 @@ from typing import Any
 import pytest
 
 from grandpa.ui.tk_view import (
+    ACCENT,
     CAPTION_HEARD,
     CAPTION_REPLY,
+    EMPTY_HEARD,
     FOCUS_STEALING_CALLS,
     METER_BARS,
     PLACEHOLDER_ENTRY,

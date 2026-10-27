@@ -38,14 +38,14 @@ from grandpa.ui.orb_image import (
     LEVEL_BUCKETS,
     ORB_SIZE,
     fps_for,
+    is_on_orb,
+    visible_inset,
     frames_for,
     is_animated,
     is_live,
-    is_on_orb,
     is_oneshot,
     orb_image,
     orb_on_disc,
-    visible_inset,
 )
 
 #: Frames in one cycle when a state does not say otherwise. Each state does

@@ -214,18 +214,6 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # The workspace contains a pyo3 extension (grandpa-python), so building
-      # it compiles pyo3-ffi, whose build script resolves whatever `python3`
-      # the runner provides. Pinning it is not optional: the ubuntu-latest
-      # image moved to Python 3.14, pyo3 0.23.5 supports at most 3.13, and
-      # that build script fails the whole job before clippy sees a single
-      # lint -- which is why this job went red on main with no Rust change.
-      # Every other job here pins 3.12; this one has to as well.
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -241,13 +229,8 @@ jobs:
           key: rust-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
           restore-keys: rust-${{ runner.os }}-
 
-      # --keep-going so one crate's lint does not hide the rest of the
-      # workspace. Without it cargo stops at the first crate that fails, and
-      # since 14 of the 17 crates sit downstream of one another that cost a
-      # whole CI run per crate to discover the next lint. It does not weaken
-      # the gate: -D warnings still fails the job on any single lint.
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --keep-going -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
         run: cargo test --workspace
