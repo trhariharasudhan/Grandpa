@@ -159,11 +159,24 @@ def run_tool_loop(
         mark = "[green]ok[/green]" if entry.success else f"[red]{entry.error}[/red]"
         console.print(f"  · {entry.action} {mark}")
 
-    from grandpa.action_layer.tool_schema import core_tool_definitions
+    from grandpa.action_layer.catalogue import candidate_domains
+    from grandpa.action_layer.loop import preselect_enabled
+    from grandpa.action_layer.tool_schema import (
+        core_tool_definitions,
+        tool_definitions_for,
+    )
 
-    # The first request carries the core block, not the whole catalogue, so
-    # that is what the estimate has to be based on.
-    warn_if_cold(console, engine, model, core_tool_definitions())
+    # The first request carries the core block plus whatever domain the goal
+    # names -- not the whole catalogue, and no longer core alone. Estimating
+    # from core alone understated it: a goal that selects notes sends 24
+    # definitions and ~1875 tokens while the warning promised 12 and ~971,
+    # which is the one number a waiting user has to go on.
+    first_request = (
+        tool_definitions_for(list(candidate_domains(goal)))
+        if preselect_enabled()
+        else core_tool_definitions()
+    )
+    warn_if_cold(console, engine, model, first_request)
 
     try:
         result = run(

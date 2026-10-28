@@ -117,8 +117,15 @@ def test_load_tools_adds_a_domain_and_the_loop_continues(
         {"content": "Deleted it."},
     )
 
+    # preselect=False: "delete my note" names the notes subject, so
+    # pre-selection would supply it before the first request and this test's
+    # load_tools round trip would never happen.
     result = run(
-        "delete my note", engine=engine, model="stub", confirm_callback=lambda *_: True
+        "delete my note",
+        engine=engine,
+        model="stub",
+        confirm_callback=lambda *_: True,
+        preselect=False,
     )
 
     assert result.loaded_domains == ("notes",)
@@ -189,7 +196,10 @@ def test_loading_the_same_domain_twice_is_harmless() -> None:
         {"content": "Ready."},
     )
 
-    result = run("notes please", engine=engine, model="stub")
+    # preselect=False: this test is about the load_tools round trip, and the
+    # goal says "notes", so pre-selection would hand the domain over before
+    # the first request and there would be no round trip left to test.
+    result = run("notes please", engine=engine, model="stub", preselect=False)
 
     assert result.loaded_domains == ("notes",)
     assert names(engine.requests[1]) == names(engine.requests[2])
@@ -205,7 +215,9 @@ def test_two_domains_both_arrive() -> None:
         {"content": "Ready."},
     )
 
-    result = run("notes and downloads", engine=engine, model="stub")
+    # preselect=False for the same reason: this goal names both subjects, so
+    # pre-selection answers it without either load_tools call.
+    result = run("notes and downloads", engine=engine, model="stub", preselect=False)
 
     assert result.loaded_domains == ("notes", "downloads")
     offered = names(engine.requests[2])

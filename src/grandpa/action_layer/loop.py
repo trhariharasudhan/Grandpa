@@ -27,6 +27,7 @@ from grandpa.action_layer.catalogue import (
     CORE_DOMAINS,
     DOMAINS,
     ActionSpec,
+    candidate_domains,
     get,
     loadable_domains,
 )
@@ -41,6 +42,7 @@ from grandpa.action_layer.tool_schema import (
 
 __all__ = [
     "DEFAULT_STEP_LIMIT",
+    "preselect_enabled",
     "tiering_enabled",
     "ActionTrace",
     "LoopResult",
@@ -60,6 +62,22 @@ def tiering_enabled(default: bool = True) -> bool:
     reconstruction from memory.
     """
     raw = os.environ.get("GRANDPA_TOOL_TIERS", "").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return False
+    if raw in {"1", "true", "yes", "on"}:
+        return True
+    return default
+
+
+def preselect_enabled(default: bool = True) -> bool:
+    """Whether the goal picks its domains before the first request.
+
+    ``GRANDPA_TOOL_PRESELECT=0`` restores waiting for the model to call
+    ``load_tools``, which is what the before/after timings compare against --
+    a switch beats a reconstruction from memory, the same reason
+    :func:`tiering_enabled` has one.
+    """
+    raw = os.environ.get("GRANDPA_TOOL_PRESELECT", "").strip().lower()
     if raw in {"0", "false", "no", "off"}:
         return False
     if raw in {"1", "true", "yes", "on"}:
@@ -391,6 +409,7 @@ def run(
     temperature: float = 0.0,
     on_action: Callable[[ActionTrace], None] | None = None,
     tiered: bool | None = None,
+    preselect: bool | None = None,
 ) -> LoopResult:
     """Let the model pursue ``goal`` with the catalogue as its tools.
 
@@ -398,6 +417,13 @@ def run(
     fetch the rest, which is what makes a cold first request affordable. Pass
     ``tiered=False`` (or an explicit ``actions`` list) to hand over everything
     at once, which is right for a backend that does not pay per prompt token.
+
+    ``preselect`` seeds those loaded domains from ``goal`` before the first
+    request, because the model does not reliably fetch them: measured over six
+    goals and three attempts, ``load_tools`` fired in 1 of 18 runs, and that
+    run failed anyway -- it loaded the tools and then narrated the fetch
+    instead of calling the action. Pass ``preselect=False`` to exercise the
+    ``load_tools`` round trip on its own.
     """
     from grandpa.core.types import Message, Role, ToolCall
 
@@ -408,6 +434,15 @@ def run(
     if actions is not None:
         tools = as_tool_definitions(tuple(actions))
     elif tiered:
+        # Seeded from the goal rather than left empty. Measured, six goals x
+        # three attempts: every goal needing a deferred domain failed, 6/15
+        # overall. load_tools fired in 1 of those 18 runs and that run failed
+        # too, narrating the fetch instead of acting on it. The model uses a
+        # tool put in front of it and does not reliably fetch one, so the goal
+        # picks the domain before the first request. load_tools stays in the
+        # list for whatever the selection misses.
+        if preselect_enabled() if preselect is None else preselect:
+            loaded = list(candidate_domains(goal))
         tools = tool_definitions_for(loaded)
     else:
         tools = as_tool_definitions(CATALOGUE)

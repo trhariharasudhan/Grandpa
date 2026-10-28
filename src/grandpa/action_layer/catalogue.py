@@ -29,6 +29,7 @@ describes the existing stacks without depending on them.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 from enum import Enum
@@ -47,6 +48,7 @@ __all__ = [
     "DOMAINS",
     "EXCLUSIONS",
     "LAYER_OWNED",
+    "candidate_domains",
     "counts_by_risk",
     "domain_of",
     "extended_actions",
@@ -2750,6 +2752,214 @@ def extended_actions(domain: str) -> tuple[ActionSpec, ...]:
     """The specs a domain adds beyond CORE, in catalogue order."""
     wanted = set(DOMAINS.get(domain, ())) - set(CORE_ACTIONS)
     return tuple(spec for spec in CATALOGUE if spec.name in wanted)
+
+
+# --- picking a domain from the request ---------------------------------------
+#
+# ``load_tools`` was supposed to make a deferred domain cost one round trip
+# instead of being unreachable. Measured on grandpa-brain, six goals x three
+# attempts through the tool loop:
+#
+#     notes_list      0/3     volume_up    3/3  (core)
+#     notepad_type    0/3     volume_read  3/3  (core)
+#     file_chain      0/3
+#     screen_describe 0/3     the five goals: 6/15
+#
+# Every goal needing a deferred domain failed; every goal answerable from CORE
+# passed. Telling the model about the meta-tool is not an untried fix: the
+# loop's system prompt already names it and its subjects, and the tool's own
+# description already says "do not say you are unable until you have looked".
+# Both positions are occupied and the goals still failed.
+#
+# ``load_tools`` did fire, in **1 of those 18 runs** -- and that run failed
+# too, which is the more useful finding. It loaded the notes tools and then
+# ended the turn on "I have loaded the tools for managing notes. Let me list
+# your saved notes for you", without calling ``notes_list``. A separate cold
+# run reproduced it exactly. The round trip is where the follow-through goes:
+# the model spends its next turn narrating the fetch instead of acting on it.
+#
+# Failure is not always a refusal, which is worse. Asked to create a file and
+# read it back it called ``open_folder`` -- a CORE action it already had -- on
+# all three attempts, so the loop reported ok for work that never happened.
+#
+# The model is reliable with a tool in front of it and unreliable at fetching
+# one, so the request picks the domain before the first model call. load_tools
+# stays for whatever this misses.
+
+_WORD = re.compile(r"[a-z0-9]+")
+
+_SUBJECT_WEIGHT = 8
+"""The domain's own name. "list my notes" must not be outvoted."""
+
+_NAME_WEIGHT = 4
+"""A word in an action's name. Twelve ``file_*`` actions claim "file"."""
+
+_DESCRIPTION_WEIGHT = 1
+"""A word only the prose uses, counted once per domain however many actions
+repeat it. Letting it accumulate was measured and was worse: "what time is it"
+then bought diagnostics and memory for +1292 tokens and five of fifteen goals
+chose wrongly. A tiebreak must break ties, not manufacture candidates."""
+
+_SELECTION_FLOOR = _NAME_WEIGHT
+"""One action-name match, minimum. This is what makes a request CORE can
+already answer pre-load nothing at all, which is where the cold start is won:
+"what time is it" and "turn the volume up" both select no domain."""
+
+_RUNNER_UP_RATIO = 0.8
+_RUNNER_UP_FLOOR = _NAME_WEIGHT * 2
+"""A second domain needs to score nearly as well as the first AND stand on
+more than a single action-name word. Measured: "delete my note" scored notes 5,
+calendar 4, downloads 4 and files 4 -- "delete" alone, which every one of them
+has. Without this floor that request bought calendar for +785 tokens on the
+strength of one shared verb. A genuine pair looks different: "what is my screen
+brightness set to" scores diagnostics 17 and brightness 16."""
+
+_MIN_PREFIX = 6
+"""Shortest word allowed to match by prefix, and only in one direction: the
+request's word may begin a catalogue word, never the reverse.
+
+Six, not five, because of what the plural rule below now covers. At five,
+"down" in "scroll down the page" reached "downloads" and bought fourteen
+unwanted tools. "remind" is six and still reaches "reminders"."""
+
+_PLURALS = True
+"""Match a singular request word against a plural catalogue word.
+
+Found by a failing test, not by reading: "delete my note" did not match the
+notes domain at all. "note" is four characters, so the prefix rule could not
+apply, and the 5 it scored came entirely from "delete" -- a word calendar,
+downloads and files share. The singular of every plural domain was unreachable.
+Adding one "s" is safer than shortening the prefix: "note"+s is "notes", and
+"down"+s is "downs", which is nothing."""
+
+_SELECTION_STOP = frozenset(
+    """all and any get for from into its list new off out set the this with your
+    active current""".split()
+)
+
+_SELECTION_ALIASES: Mapping[str, str] = MappingProxyType(
+    {
+        "email": "mail",
+        "inbox": "mail",
+        "gmail": "mail",
+        "bookmark": "browser",
+        "tab": "browser",
+    }
+)
+"""Words people say that the catalogue does not spell.
+
+Deliberately tiny, and only for what no derivation can reach: every action in
+the mail domain is named ``gmail_*``, so nothing in it contains "email".
+Weighting cannot close that gap -- raising description weight far enough is
+exactly what broke five of fifteen goals. Every value is asserted to name a
+real loadable domain, so this cannot rot quietly.
+"""
+
+
+def _selection_words(text: str) -> list[str]:
+    return _WORD.findall(text.lower())
+
+
+def _selection_vocabulary() -> dict[str, Counter]:
+    """Which words point at which loadable domain, and how strongly.
+
+    Derived from DOMAINS and the specs rather than hand-written, so a new
+    domain arrives with its own vocabulary instead of needing a keyword table
+    kept in step by hand.
+    """
+    core_words: set[str] = set()
+    for domain in CORE_DOMAINS:
+        core_words.update(_selection_words(domain))
+        for action in DOMAINS[domain]:
+            core_words.update(_selection_words(action.replace("_", " ")))
+
+    vocabulary: dict[str, Counter] = {}
+    for domain in loadable_domains():
+        counter: Counter = Counter()
+        for word in _selection_words(domain):
+            counter[word] += _SUBJECT_WEIGHT
+        for action in DOMAINS[domain]:
+            for word in set(_selection_words(action.replace("_", " "))):
+                counter[word] += _NAME_WEIGHT
+        for action in DOMAINS[domain]:
+            spec = _BY_NAME.get(action)
+            if spec is None:
+                continue
+            for word in set(_selection_words(spec.description)):
+                if word not in counter:
+                    counter[word] += _DESCRIPTION_WEIGHT
+        for word in list(counter):
+            # A CORE word is not evidence for loading anything: it is already
+            # in front of the model. Counting "open" would send half of every
+            # request to files or downloads on a word apps answers.
+            if (
+                word in _SELECTION_STOP
+                or len(word) < 3
+                or word in core_words
+            ):
+                del counter[word]
+        vocabulary[domain] = counter
+
+    for word, domain in _SELECTION_ALIASES.items():
+        if domain in vocabulary:
+            vocabulary[domain][word] = max(
+                vocabulary[domain].get(word, 0), _SUBJECT_WEIGHT
+            )
+    return vocabulary
+
+
+_SELECTION_VOCABULARY: dict[str, Counter] | None = None
+
+
+def _vocabulary() -> dict[str, Counter]:
+    """Built on first use, not at import.
+
+    ``_selection_vocabulary`` reads ``_BY_NAME``, which this module defines
+    below the catalogue it indexes. Building at import raised NameError.
+    """
+    global _SELECTION_VOCABULARY
+    if _SELECTION_VOCABULARY is None:
+        _SELECTION_VOCABULARY = _selection_vocabulary()
+    return _SELECTION_VOCABULARY
+
+
+def _selection_weight(counter: Counter, word: str) -> int:
+    weight = counter.get(word, 0)
+    if not weight and _PLURALS:
+        weight = counter.get(f"{word}s", 0)
+    if not weight and len(word) >= _MIN_PREFIX:
+        weight = max(
+            (count for entry, count in counter.items() if entry.startswith(word)),
+            default=0,
+        )
+    return weight
+
+
+def candidate_domains(request: str, *, limit: int = 2) -> tuple[str, ...]:
+    """Loadable domains ``request`` names, strongest first, possibly none.
+
+    None is the common and correct answer: a request CORE can already answer
+    must not pay for tools it will not call.
+    """
+    asked = [
+        word
+        for word in set(_selection_words(request))
+        if word not in _SELECTION_STOP and len(word) >= 3
+    ]
+    scored: list[tuple[int, str]] = []
+    for domain, counter in _vocabulary().items():
+        score = sum(_selection_weight(counter, word) for word in asked)
+        if score >= _SELECTION_FLOOR:
+            scored.append((score, domain))
+    if not scored:
+        return ()
+    scored.sort(key=lambda row: (-row[0], row[1]))
+    best = scored[0][0]
+    keep = [scored[0][1]]
+    for score, domain in scored[1 : max(1, limit)]:
+        if score >= best * _RUNNER_UP_RATIO and score >= _RUNNER_UP_FLOOR:
+            keep.append(domain)
+    return tuple(keep)
 
 
 _DOMAIN_BY_ACTION: Mapping[str, str] = MappingProxyType(
