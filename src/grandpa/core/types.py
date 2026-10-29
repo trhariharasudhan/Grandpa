@@ -90,6 +90,34 @@ class Conversation:
         return self.messages[-n:]
 
 
+CONVERSATION_WINDOW_MESSAGES = 8
+"""How many prior messages a conversational turn carries -- four exchanges.
+
+Shared so the chat CLI and the panel answer a follow-up the same way. They did
+not: chat sent the model one message and nothing else, so an answer to the
+assistant's own question read as a new topic, while the voice path sent its
+whole unbounded history.
+
+Four exchanges, because both halves of that were measured. Zero history
+reproduces the defect exactly -- asked for weather, told "which city or
+region", answered "salem", the reply was "Hello, Salem! How can I assist you
+today?" -- and two exchanges already resolve it:
+
+    pairs  prompt tok  what it answered
+        0         462  Hello, Salem! How can I assist you today?
+        2         604  I don't have access to live weather data, so I can't
+                       provide current conditions for Salem.
+        4         745  (same, in context)
+       10        1170  (in context, and volunteering extra geography)
+
+The cost is ~71 prompt tokens per exchange, which on this CPU-only machine is
+roughly 0.5-1.5s of prompt evaluation at the 48-130 tok/s rates measured for
+it. Four is two more than the defect needs and still under 300 added tokens;
+ten buys nothing a follow-up uses. The number is deliberately small because
+this path already pays ~20s a turn and prompt evaluation scales with length.
+"""
+
+
 # ---------------------------------------------------------------------------
 # Model / tool / telemetry records
 # ---------------------------------------------------------------------------

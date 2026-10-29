@@ -162,7 +162,11 @@ def test_startup_header_is_compact_and_status_remains_detailed() -> None:
     output = console.export_text()
     assert "██████╗ ██████╗" in output
     assert "Grandpa v" in output
-    assert "| Ollama | grandpa-fast" in output
+    assert "| grandpa-fast" in output
+    # No runtime vendor in the banner. Which backend serves the model is an
+    # implementation detail and this line is the product speaking; the
+    # /status assertions below pin that diagnostics still report it.
+    assert "Ollama" not in output
     assert "Directory" not in output
     assert "Memory" not in output
     assert "Ask anything • / for commands • Alt+Enter for a new line" in output

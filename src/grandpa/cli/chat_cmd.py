@@ -46,6 +46,7 @@ from grandpa.cli.slash_commands import (
     unknown_command_message,
 )
 from grandpa.cli.theme import (
+    CHAT_THEME,
     FAREWELL_TEXT,
     alternate_screen,
     help_commands_text,
@@ -62,7 +63,12 @@ from grandpa.cli.theme import (
     user_prompt,
 )
 from grandpa.core.config import consume_config_recovery_warnings, load_config
-from grandpa.core.types import Message, Role
+from grandpa.core.types import (
+    CONVERSATION_WINDOW_MESSAGES,
+    Conversation,
+    Message,
+    Role,
+)
 from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
@@ -768,6 +774,24 @@ def _desktop_action_confirmer(browser_confirm):
     return _confirm
 
 
+def _recent_exchanges(history: list[Message]) -> list[Message]:
+    """The prior turns an agent should see, newest-last.
+
+    Two things are dropped. The system message, because
+    ``BaseAgent._build_messages`` supplies its own and a second one would
+    either duplicate it or silently suppress it. And the final user message,
+    because that is this turn's input and the agent appends it itself --
+    passing it here would send it twice.
+
+    Capped at :data:`CONVERSATION_WINDOW_MESSAGES`, which carries the reasoning
+    for the number.
+    """
+    prior = [message for message in history if message.role != Role.SYSTEM]
+    if prior and prior[-1].role == Role.USER:
+        prior = prior[:-1]
+    return prior[-CONVERSATION_WINDOW_MESSAGES:]
+
+
 def _handle_natural_assistant_intent(
     text: str,
     *,
@@ -1235,7 +1259,7 @@ def chat(
       /help         — show available commands
       /history      — show conversation history
     """
-    console = Console(stderr=True)
+    console = Console(stderr=True, theme=CHAT_THEME)
 
     config = load_config()
     config_recovery_warnings = consume_config_recovery_warnings()
@@ -2114,7 +2138,28 @@ def chat(
                 thinking.start()
                 try:
                     if agent is not None:
-                        response = agent.run(effective_user_input)
+                        from grandpa.agents._stubs import AgentContext
+
+                        # The agent gets the conversation, not just this turn.
+                        # It took `effective_user_input` alone, so every turn
+                        # was a fresh single-turn prompt: dumped from a real
+                        # session, request 2 was [system, "salem"] and nothing
+                        # else, and the model read an answer to its own
+                        # question as a greeting. model_history was built
+                        # directly above and used only by the branch below.
+                        #
+                        # Nothing new is stored. AgentContext.conversation
+                        # already exists and BaseAgent._build_messages already
+                        # extends the request with it; the call site simply
+                        # never passed one.
+                        response = agent.run(
+                            effective_user_input,
+                            context=AgentContext(
+                                conversation=Conversation(
+                                    messages=_recent_exchanges(history)
+                                )
+                            ),
+                        )
                         content = (
                             response.content
                             if hasattr(response, "content")

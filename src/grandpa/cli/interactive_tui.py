@@ -499,14 +499,17 @@ def render_startup_header(session: InteractiveSession) -> None:
 
     render_logo(session.console)
     session.console.print()
-    engine_label = session.engine_name.replace("_", " ").title()
     from grandpa.intelligence.grandpa_models import get_model_role
 
     entry = get_model_role(session.model)
     model_label = entry.ollama_tag.removesuffix(":latest") if entry else session.model
+    # No runtime vendor here. Which backend serves the model is an
+    # implementation detail of the product, and this banner is the product
+    # speaking. It is display only: /doctor, /config, /info and every engine
+    # error still name the real engine, because those are the surfaces whose
+    # whole job is to say what is actually running.
     session.console.print(
         f"[bold #ffc448]Grandpa v{grandpa.__version__}[/bold #ffc448] "
-        f"[dim]|[/dim] [#ffffff]{engine_label}[/#ffffff] "
         f"[dim]|[/dim] [#ffffff]{model_label}[/#ffffff]"
     )
     session.console.print()

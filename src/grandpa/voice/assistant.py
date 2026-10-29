@@ -9,7 +9,11 @@ from typing import Any
 from grandpa.automation import ScreenAutomationService
 from grandpa.cli.chat_cmd import _handle_natural_assistant_intent
 from grandpa.core.config import GrandpaConfig, load_config
-from grandpa.core.types import Message, Role
+from grandpa.core.types import (
+    CONVERSATION_WINDOW_MESSAGES,
+    Message,
+    Role,
+)
 from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,
@@ -412,7 +416,13 @@ class VoiceCommandProcessor:
             result = self._engine.generate(  # type: ignore[union-attr]
                 [
                     Message(role=Role.SYSTEM, content=system_context),
-                    *self.history,
+                    # Windowed, and windowed to the same number the chat CLI
+                    # uses, so a follow-up behaves the same whichever surface
+                    # asked it. This path was already sending history -- all
+                    # of it, unbounded, growing for the life of the process --
+                    # while chat sent none. Both halves were wrong in opposite
+                    # directions; see CONVERSATION_WINDOW_MESSAGES.
+                    *self.history[-CONVERSATION_WINDOW_MESSAGES:],
                     Message(role=Role.USER, content=effective_text),
                 ],
                 model=self._model,

@@ -4,13 +4,41 @@ from datetime import datetime
 from rich.align import Align
 from rich.console import Console, Group, RenderableType
 from rich.text import Text
+from rich.theme import Theme
 
 from grandpa.cli.slash_commands import command_groups, picker_group_items
 
 ACCENT = "#ffc448"  # border + GRANDPA logo
 TEXT_ACCENT = "#6244c5"  # inside blue text replacement
+INLINE_CODE = "#5fb3b3"  # literal strings in replies -- see CHAT_THEME
 DEFAULT_USERNAME = "Username"
 ASSISTANT_NAME = "Grandpa"
+
+CHAT_THEME = Theme(
+    {
+        # Rich's default for inline code is bold cyan on a BLACK background.
+        # The box and the bold made a literal string read as emphasis, in the
+        # same register as the blue name in the prompt -- two different things
+        # saying "look at me". A muted cyan with no background and no bold
+        # reads as "this is a literal", which is what backticks mean.
+        #
+        # Measured rather than eyeballed, as WCAG contrast against the two dark
+        # backgrounds this is actually read on:
+        #
+        #                              #0c0c0c   #1e1e1e
+        #   rich default cyan          15.60:1   13.30:1   (too loud)
+        #   INLINE_CODE #5fb3b3         8.00:1    6.82:1   (AA is 4.50:1)
+        #
+        # It stays well clear of the orb's thinking amber #ffc448, which it
+        # must not resemble, and of the name blue it was competing with.
+        "markdown.code": INLINE_CODE,
+    }
+)
+"""Console theme for conversational surfaces.
+
+Only inline code is overridden. Fenced blocks keep Rich's own highlighting,
+which goes through ``Syntax`` and is not this style.
+"""
 
 CHAT_STARTUP_TEXT = (
     "Chat Assistant\nType your message and press Enter.\nType exit or quit to leave."
