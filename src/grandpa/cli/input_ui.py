@@ -13,6 +13,7 @@ from grandpa.cli.slash_commands import (
     picker_group_items,
     top_level_commands,
 )
+from grandpa.cli.theme import TEXT_ACCENT
 
 try:
     from prompt_toolkit import Application, PromptSession
@@ -53,10 +54,13 @@ except ImportError:  # pragma: no cover - exercised through monkeypatched fallba
 PROMPT_TOOLKIT_AVAILABLE = Application is not None and PromptSession is not None
 
 USER_PROMPT = "Username > "
-USER_PROMPT_COLOR = "#6244c5"
+# One source for the name blue. It was written out as a literal in three
+# places, so raising its contrast meant finding all three; a fourth would have
+# been missed. theme owns the colour and the measurement behind it.
+USER_PROMPT_COLOR = TEXT_ACCENT
 ASSISTANT_PROMPT_COLOR = "#ffc448"
 PICKER_HIGHLIGHT_COLOR = "#ffc448"
-PICKER_COMMAND_COLOR = "#6244c5"
+PICKER_COMMAND_COLOR = TEXT_ACCENT
 PICKER_TEXT_COLOR = "#ffffff"
 PICKER_BACKGROUND_COLOR = "#181818"
 PICKER_BASE_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} {PICKER_TEXT_COLOR}"

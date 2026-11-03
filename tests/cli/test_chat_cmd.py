@@ -558,9 +558,9 @@ class TestReadInput:
 
     def test_prompt_colors_are_theme_correct(self) -> None:
         assert input_ui.USER_PROMPT == "Username > "
-        assert input_ui.USER_PROMPT_COLOR == "#6244c5"
+        assert input_ui.USER_PROMPT_COLOR == "#818cf8"
         assert input_ui.ASSISTANT_PROMPT_COLOR == "#ffc448"
-        assert theme.TEXT_ACCENT == "#6244c5"
+        assert theme.TEXT_ACCENT == "#818cf8"
 
     def test_render_user_message_uses_purple_prompt(self) -> None:
         console = MagicMock()
@@ -569,7 +569,7 @@ class TestReadInput:
 
         rendered = console.print.call_args.args[0]
         assert rendered.plain == "Username > hi"
-        assert rendered.spans[0].style == "bold #6244c5"
+        assert rendered.spans[0].style == "bold #818cf8"
 
     def test_assistant_prompt_uses_grandpa_label(self) -> None:
         console = MagicMock()
@@ -832,7 +832,7 @@ class TestSlashCommandRegistry:
         assert "class:picker.command" in styles
         assert "class:picker.current" in styles
         assert input_ui.PICKER_BACKGROUND_COLOR == "#181818"
-        assert input_ui.PICKER_COMMAND_COLOR == "#6244c5"
+        assert input_ui.PICKER_COMMAND_COLOR == "#818cf8"
 
     def test_runtime_input_uses_custom_dark_slash_layout(self, monkeypatch) -> None:
         captured = {}
@@ -870,7 +870,7 @@ class TestSlashCommandRegistry:
         styles = input_ui._picker_style_dict()
         assert "bottom-toolbar" not in styles
         assert styles["picker.background"] == "bg:#181818 #ffffff"
-        assert styles["picker.command"] == "bg:#181818 #6244c5"
+        assert styles["picker.command"] == "bg:#181818 #818cf8"
 
     def test_picker_subcommand_suggestions_are_available(self) -> None:
         suggestions = input_ui._subcommand_suggestions("/mode")

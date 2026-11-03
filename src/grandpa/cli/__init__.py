@@ -101,6 +101,20 @@ def cli(
     """Top-level CLI group."""
     from grandpa.cli.log_config import setup_logging
 
+    # Before anything else can print. quiet_model_downloads() has always done
+    # the right thing and was called from three places -- bubble_cmd,
+    # voice_cmd and ui/bridge -- none of which is where onboarding runs. A
+    # huggingface_hub bar drew over an interactive prompt and its text ended
+    # up stored as a display name, greeting the user as "Mr. vocabulary.txt:
+    # 460kB [00:00, 2.65MB/s]" on every launch. Three doors were guarded and
+    # the building had more, so the guard belongs at the entrance: every
+    # command, including the launcher's onboarding, is now covered by one
+    # call. It only sets an environment variable and flips a library flag, so
+    # it is cheap enough to run unconditionally, and it never raises.
+    from grandpa.voice.accuracy import quiet_model_downloads
+
+    quiet_model_downloads()
+
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     ctx.obj["quiet"] = quiet

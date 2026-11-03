@@ -86,8 +86,32 @@ def ensure_profile(
 
     target = config_path(path)
     current = config or load_config(target)
-    if current.user.onboarding_completed:
+
+    # A completed onboarding is not the same as a usable profile. A stored
+    # display name that validate_username now refuses -- the progress bar that
+    # got in before it was strict enough -- left the user greeted as
+    # "Mr. vocabulary.txt: 460kB [00:00, 2.65MB/s]" with no way to discover
+    # why, and the only fix anyone could name was editing config.toml by hand.
+    # Re-asking is the repair, and it happens here rather than in the launcher
+    # so that chat and every other ensure_profile caller gets it too.
+    stored_name_is_usable = True
+    try:
+        validate_username(current.user.username)
+    except ValueError as exc:
+        stored_name_is_usable = False
+        name_problem = str(exc)
+
+    if current.user.onboarding_completed and stored_name_is_usable:
         return current
+    if not stored_name_is_usable:
+        console.print(
+            f"[yellow]The saved display name cannot be used: "
+            f"{name_problem}[/yellow]"
+        )
+        console.print(
+            "[dim]Setting it again now. You can also change it any time with "
+            "[/dim][bold]grandpa profile edit[/bold][dim].[/dim]"
+        )
     if interactive is None:
         interactive = bool(getattr(sys.stdin, "isatty", lambda: False)())
     if not interactive:
@@ -330,7 +354,36 @@ def format_profile_display_name(profile_or_config: LocalProfile | GrandpaConfig)
     return f"{profile.title} {profile.username}".strip()
 
 
+#: Punctuation a person's name can genuinely contain: hyphenated surnames,
+#: apostrophes in either quoting convention, and the full stop in initials.
+NAME_PUNCTUATION = frozenset("-'’.")
+
+
 def validate_username(value: object) -> str:
+    """Normalise a display name, or refuse it.
+
+    This used to check only for control characters and length, and a
+    huggingface_hub progress bar passed both: a real stored profile read
+
+        username = "vocabulary.txt: 460kB [00:00, 2.65MB/s]"
+
+    which has no control characters and is 39 of the 40 allowed. The launcher
+    then greeted the user as "Mr. vocabulary.txt: 460kB [00:00, 2.65MB/s]"
+    every single launch, because nothing in the chain thought it was wrong.
+
+    A blocklist of things that look like progress bars would be endless, so
+    this allows what a name is made of instead: letters, combining marks --
+    required for Tamil and the other Indic scripts this product supports --
+    spaces, and :data:`NAME_PUNCTUATION`. Everything else is refused, which
+    takes out progress bars, paths, URLs, log lines and JSON in one rule
+    rather than five patterns.
+
+    The trade-off, stated rather than hidden: a display name containing a
+    digit is refused. "Marie-Thérèse O'Neill", "J. Smith" and "ஹரி" are fine;
+    "user2" is not. That is deliberate -- digits are what every one of the
+    machine-generated values has in common -- and the refusal names the
+    characters it objected to so it can be acted on.
+    """
     raw = str(value or "")
     if any(unicodedata.category(character).startswith("C") for character in raw):
         raise ValueError("Display name cannot contain control characters.")
@@ -341,6 +394,27 @@ def validate_username(value: object) -> str:
         raise ValueError(
             f"Display name must be {MAX_USERNAME_LENGTH} characters or fewer."
         )
+
+    rejected = sorted(
+        {
+            character
+            for character in normalized
+            if character != " "
+            and character not in NAME_PUNCTUATION
+            and not unicodedata.category(character).startswith(("L", "M"))
+        }
+    )
+    if rejected:
+        shown = " ".join(repr(character) for character in rejected[:6])
+        raise ValueError(
+            f"Display name cannot contain {shown}. A name is letters, spaces, "
+            "and - ' . only -- that value looks like machine output rather "
+            "than a name."
+        )
+    if not any(
+        unicodedata.category(character).startswith("L") for character in normalized
+    ):
+        raise ValueError("Display name must contain at least one letter.")
     return normalized
 
 

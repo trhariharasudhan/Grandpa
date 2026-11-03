@@ -9,8 +9,26 @@ from rich.theme import Theme
 from grandpa.cli.slash_commands import command_groups, picker_group_items
 
 ACCENT = "#ffc448"  # border + GRANDPA logo
-TEXT_ACCENT = "#6244c5"  # inside blue text replacement
+TEXT_ACCENT = "#818cf8"  # the user's name in the prompt -- see below
 INLINE_CODE = "#5fb3b3"  # literal strings in replies -- see CHAT_THEME
+
+# TEXT_ACCENT was #6244c5, which measured 2.94:1 on #0c0c0c and 2.50:1 on
+# #1e1e1e -- below even WCAG's 3:1 large-text floor, and the least readable
+# thing on the screen. It is the user's own name, so it has to be legible.
+#
+# #818cf8 was picked on measurement against four constraints, not by eye:
+#
+#                        #0c0c0c   #1e1e1e   hue   vs INLINE_CODE
+#   #6244c5 (was)         2.94:1    2.50:1   254         112
+#   #818cf8               6.56:1    5.59:1   234          86
+#
+# AA for body text is 4.50:1, so it clears both grounds with margin. Hue 234
+# keeps it indigo-blue and closest of the passing candidates to the old 254,
+# so the prompt still looks like itself. It stays clear of INLINE_CODE, which
+# it must not be confused with, and of ACCENT, the orb's thinking amber.
+#
+# #a5b4fc passed with more headroom (9.81:1 / 8.36:1) and was not taken: it
+# drifts paler and reads less like the original.
 DEFAULT_USERNAME = "Username"
 ASSISTANT_NAME = "Grandpa"
 
@@ -213,11 +231,20 @@ def _command_group(title: str, commands: list[str]) -> str:
 
 
 def resolve_username(config=None) -> str:
-    """Resolve a safe terminal display name from the active config."""
+    """Resolve a safe terminal display name from the active config.
+
+    Validated, not merely trimmed. This collapsed whitespace and truncated,
+    which a progress bar stored as a display name passed intact -- so the
+    greeting was repaired by ``profile_from_config``'s ``_safe_username``
+    while the chat prompt label, which comes through here, still printed the
+    bar. Two readers of one field disagreeing about whether it was usable.
+    """
+    from grandpa.profile import _safe_username
 
     configured = getattr(getattr(config, "user", None), "username", "")
-    normalized = " ".join(str(configured or "").split()).strip()
-    return normalized[:40] or DEFAULT_USERNAME
+    if not str(configured or "").strip():
+        return DEFAULT_USERNAME
+    return _safe_username(configured)[:40] or DEFAULT_USERNAME
 
 
 def user_prompt(username: str = DEFAULT_USERNAME) -> str:
