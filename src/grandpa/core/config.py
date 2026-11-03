@@ -562,7 +562,9 @@ class AgentConfig:
     default_system_prompt: str = (
         "You are a helpful AI assistant running locally on the user's own "
         "hardware through grandpa. You are not a cloud service. Respond "
-        "helpfully, concisely, and accurately."
+        "helpfully, concisely, and accurately. Write plain text only: never "
+        "use emoji, emoticons or decorative symbols, including at the end of "
+        "a reply."
     )
 
     # Backward-compat property for old field name

@@ -15,7 +15,7 @@ from grandpa.browser_intelligence.models import (
 def format_page_analysis_cli(analysis: dict[str, Any]) -> str:
     """Format page analysis for CLI output."""
     lines = [
-        "🌐 **Page Analysis Summary**",
+        "**Page Analysis Summary**",
         f"- **Title**: {analysis.get('title')}",
         f"- **URL**: {analysis.get('url')}",
         f"- **Domain**: {analysis.get('domain')}",
@@ -40,14 +40,14 @@ def format_page_analysis_cli(analysis: dict[str, Any]) -> str:
 def format_extracted_content_cli(extracted: ExtractedContent) -> str:
     """Format extracted section for CLI output."""
     badge = {
-        "success": "✅ SUCCESS",
-        "partial_success": "⚠️ PARTIAL SUCCESS",
-        "not_found": "🔍 NOT FOUND",
-        "unavailable": "❌ UNAVAILABLE",
+        "success": "SUCCESS",
+        "partial_success": "⚠PARTIAL SUCCESS",
+        "not_found": "NOT FOUND",
+        "unavailable": "UNAVAILABLE",
     }.get(extracted.status, extracted.status.upper())
 
     lines = [
-        f"📑 **Extracted Section: {extracted.section_type.title()}**",
+        f"**Extracted Section: {extracted.section_type.title()}**",
         f"- **Status**: {badge}",
         f"- **Message**: {extracted.message}",
         f"- **Source**: {extracted.topic_or_target}"
@@ -66,10 +66,10 @@ def format_extracted_content_cli(extracted: ExtractedContent) -> str:
 
 def format_verification_cli(verification: SourceVerificationResult) -> str:
     """Format verification result for CLI output."""
-    badge = "✅ OFFICIAL" if verification.is_official else "ℹ️ COMMUNITY/THIRD-PARTY"
+    badge = "OFFICIAL" if verification.is_official else "ℹCOMMUNITY/THIRD-PARTY"
     return "\n".join(
         [
-            "🔍 **Source Verification**",
+            "**Source Verification**",
             f"- **URL**: {verification.url}",
             f"- **Domain**: {verification.domain}",
             f"- **Status**: {badge}",
@@ -84,7 +84,7 @@ def format_verification_cli(verification: SourceVerificationResult) -> str:
 def format_comparison_cli(comparison: ComparisonResult) -> str:
     """Format product comparison for CLI output."""
     lines = [
-        f"⚖️ **Comparison: {comparison.item_a} vs {comparison.item_b}**",
+        f"⚖**Comparison: {comparison.item_a} vs {comparison.item_b}**",
         "",
         "| Feature | " + comparison.item_a + " | " + comparison.item_b + " |",
         "| --- | --- | --- |",
@@ -111,7 +111,7 @@ def format_comparison_cli(comparison: ComparisonResult) -> str:
 def format_research_report_cli(report: ResearchReport) -> str:
     """Format web research report for CLI output."""
     lines = [
-        f"🔬 **Web Research Report: {report.topic}**",
+        f"**Web Research Report: {report.topic}**",
         f"- **Sources Visited**: {len(report.sources_visited)}",
         f"- **Verified Sources**: {len(report.verified_sources)}",
         "",

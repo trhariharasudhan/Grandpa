@@ -467,7 +467,7 @@ def show_cmd(id_or_key: str) -> None:
         console.print(f"[yellow]Memory item '{id_or_key}' not found.[/yellow]")
         return
 
-    console.print(f"🔍 [bold]Memory Details: {item.key}[/bold]")
+    console.print(f"[bold]Memory Details: {item.key}[/bold]")
     console.print(f"  ID          : {item.id}")
     console.print(f"  Key         : {item.key}")
     console.print(f"  Category    : {item.category}")
@@ -529,7 +529,7 @@ def clear_cmd(category: str | None, yes: bool) -> None:
         f"all memories in category '{category}'" if category else "ALL stored memories"
     )
     if not require_confirmation(
-        f"⚠️  Are you sure you want to clear {target_desc}?",
+        f"⚠ Are you sure you want to clear {target_desc}?",
         yes=yes,
         cancelled="Memory clear cancelled.",
     ):
@@ -731,7 +731,7 @@ def project_cmd(name: str) -> None:
             if summary_val == "N/A":
                 summary_val = content
 
-    console.print(f"📁 [bold]Project Memory: {name}[/bold]")
+    console.print(f"[bold]Project Memory: {name}[/bold]")
     console.print(f"  Summary       : {summary_val}")
     console.print(f"  Path          : {path_val}")
     console.print(f"  Latest Feature: {feature_val}")
@@ -749,7 +749,7 @@ def explain_cmd(query: str, project: str | None) -> None:
     svc = MemoryService.get_instance()
     explanation = svc.explain_retrieval(query, project_name=project)
 
-    console.print(f"🔍 [bold]Memory Retrieval Explanation for '{query}'[/bold]")
+    console.print(f"[bold]Memory Retrieval Explanation for '{query}'[/bold]")
     console.print(f"  Matched Count : {explanation['matched_count']}")
 
     for match in explanation["matches"]:
@@ -770,7 +770,7 @@ def session_cmd(action: str, key: str | None) -> None:
         memories = svc.short_term.get_session_memories()
         enabled = svc.session_memory_enabled()
         console.print(
-            f"⚡ [bold]Session Memory Status:[/bold] {'[green]ENABLED[/green]' if enabled else '[red]DISABLED[/red]'}"
+            f"[bold]Session Memory Status:[/bold] {'[green]ENABLED[/green]' if enabled else '[red]DISABLED[/red]'}"
         )
         console.print(f"  Buffered Items : {len(memories)}")
         for m in memories:
@@ -803,7 +803,7 @@ def disable_cmd() -> None:
     console = Console()
     svc = MemoryService.get_instance()
     svc.set_session_memory_enabled(False)
-    console.print("🛑 [yellow]Memory retrieval DISABLED for current session.[/yellow]")
+    console.print("[yellow]Memory retrieval DISABLED for current session.[/yellow]")
 
 
 @memory.command(name="enable")
@@ -812,4 +812,4 @@ def enable_cmd() -> None:
     console = Console()
     svc = MemoryService.get_instance()
     svc.set_session_memory_enabled(True)
-    console.print("✅ [green]Memory retrieval ENABLED for current session.[/green]")
+    console.print("[green]Memory retrieval ENABLED for current session.[/green]")

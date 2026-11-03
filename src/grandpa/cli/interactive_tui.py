@@ -11,7 +11,9 @@ from rich.console import Console
 
 import grandpa
 from grandpa.cli.theme import (
+    ACCENT,
     DEFAULT_USERNAME,
+    STRUCTURE,
     render_logo,
     resolve_username,
     user_prompt,
@@ -509,8 +511,8 @@ def render_startup_header(session: InteractiveSession) -> None:
     # error still name the real engine, because those are the surfaces whose
     # whole job is to say what is actually running.
     session.console.print(
-        f"[bold #ffc448]Grandpa v{grandpa.__version__}[/bold #ffc448] "
-        f"[dim]|[/dim] [#ffffff]{model_label}[/#ffffff]"
+        f"[bold {ACCENT}]Grandpa v{grandpa.__version__}[/bold {ACCENT}] "
+        f"[dim]|[/dim] [{STRUCTURE}]{model_label}[/{STRUCTURE}]"
     )
     session.console.print()
     session.console.print(f"[dim]{chat_helper_text(session.console)}[/dim]")

@@ -12,7 +12,9 @@ import click
 from rich.console import Console
 
 from grandpa.cli.theme import (
+    ACCENT,
     FAREWELL_TEXT,
+    PICKER_INVERSE,
     alternate_screen,
     render_status_message,
     resolve_username,
@@ -145,10 +147,10 @@ def run_interactive_menu(
         layout = Layout(Window(FormattedTextControl(get_formatted_text)))
         style = Style.from_dict(
             {
-                "logo": "bold #ffc448",
+                "logo": f"bold {ACCENT}",
                 "username": "bold",
                 "last-used": "italic dim",
-                "selected": "bold #111111 bg:#ffc448",
+                "selected": f"bold {PICKER_INVERSE} bg:{ACCENT}",
             }
         )
 
@@ -164,7 +166,7 @@ def run_interactive_menu(
     except Exception:
         # Fallback to console input
         console.print()
-        console.print(f"[bold #ffc448]{get_logo_text()}[/bold #ffc448]")
+        console.print(f"[bold {ACCENT}]{get_logo_text()}[/bold {ACCENT}]")
         console.print()
         console.print(f"Welcome, [bold]{username}[/bold]")
         if last_used:

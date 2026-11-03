@@ -276,10 +276,50 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 exc_info=True,
             )
 
+        # The clock, before anything that could reach the model. This route
+        # had no deterministic date layer at all, so "what is time" went to a
+        # model with no clock and got an invented answer -- the same defect
+        # the voice and chat paths each fixed separately. Answered from the
+        # system clock and returned; the model never sees it.
+        from types import SimpleNamespace
+
+        from grandpa.core.runtime_context import (
+            answer_datetime,
+            parse_datetime_intent,
+        )
         from grandpa.file_assistant import handle_file_command
         from grandpa.local import handle_local_action
         from grandpa.memory_context import handle_memory_command
         from grandpa.task_scheduler import handle_scheduler_command
+
+        # parse then answer, rather than handle_datetime_intent in one call,
+        # so the kind -- "time", "date", "day", "dispute" -- reaches the
+        # response. The route's local_action.kind already carried it and a
+        # test pins it; collapsing it to "local" would have been a silent API
+        # change dressed up as a bug fix.
+        clock_kind = parse_datetime_intent(effective_user_text)
+        clock_answer = answer_datetime(clock_kind) if clock_kind else None
+        if clock_answer is not None:
+            # tts_text as well as message: _local_action_response reads it
+            # unguarded, and the streaming helper reads the same six
+            # attributes. A namespace missing one of them raises inside the
+            # response builder rather than at the call site.
+            clock_result = SimpleNamespace(
+                message=clock_answer,
+                tts_text=clock_answer,
+                status="handled",
+                kind=clock_kind,
+                target=None,
+                should_fallback=False,
+            )
+            _record_brain_result(brain_analysis, clock_result)
+            if request_body.stream:
+                return await _handle_local_action_stream(
+                    model,
+                    clock_result,
+                    complexity_info,
+                )
+            return _local_action_response(model, clock_result, complexity_info)
 
         memory_result = handle_memory_command(effective_user_text)
         if not memory_result.should_fallback:

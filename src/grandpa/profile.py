@@ -378,11 +378,19 @@ def validate_username(value: object) -> str:
     takes out progress bars, paths, URLs, log lines and JSON in one rule
     rather than five patterns.
 
-    The trade-off, stated rather than hidden: a display name containing a
-    digit is refused. "Marie-Thérèse O'Neill", "J. Smith" and "ஹரி" are fine;
-    "user2" is not. That is deliberate -- digits are what every one of the
-    machine-generated values has in common -- and the refusal names the
-    characters it objected to so it can be acted on.
+    Digits are allowed. The first version of this rule refused them, on the
+    grounds that every machine-generated value contained one -- but so does
+    "user2", and the junk those values are really made of (``:`` ``/`` ``[``
+    ``%`` ``|`` ``{``) is already refused on its own. Digits were never the
+    signal, so requiring their absence cost a legal name and bought nothing.
+
+    The known limit of that choice, measured: ``"INFO 2026-11-03 started"``
+    now passes, because it is letters, digits, spaces and a hyphen and nothing
+    else. A log line that happens to carry no punctuation is indistinguishable
+    from a name by character class, and separating them would need pattern
+    matching on content -- which is the endless-blocklist this rule exists to
+    avoid. A value like that is wrong but harmless: it is a label on a
+    greeting, and ``grandpa profile edit`` changes it.
     """
     raw = str(value or "")
     if any(unicodedata.category(character).startswith("C") for character in raw):
@@ -401,7 +409,9 @@ def validate_username(value: object) -> str:
             for character in normalized
             if character != " "
             and character not in NAME_PUNCTUATION
-            and not unicodedata.category(character).startswith(("L", "M"))
+            # Nd: decimal digits. See the docstring -- they are legal in a
+            # name and were never what distinguished machine output.
+            and not unicodedata.category(character).startswith(("L", "M", "Nd"))
         }
     )
     if rejected:

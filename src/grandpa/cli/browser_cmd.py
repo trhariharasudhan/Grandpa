@@ -90,7 +90,7 @@ def summarize_cmd(summary_type: str) -> None:
     page = read_current_browser_page()
     summarizer = LocalPageSummarizer()
     summary = summarizer.summarize_page(page, summary_type=summary_type)  # type: ignore[arg-type]
-    click.echo(f"📝 [{summary_type.upper()} SUMMARY]\n")
+    click.echo(f"[{summary_type.upper()} SUMMARY]\n")
     click.echo(summary)
 
 
@@ -122,7 +122,7 @@ def history_cmd() -> None:
     memory = BrowserSessionMemory.get_instance()
     ctx = memory.get_summary_context()
     visited = ctx.get("visited_pages", [])
-    click.echo("📜 **Session Navigation History:**")
+    click.echo("**Session Navigation History:**")
     if not visited:
         click.echo("  No visited pages recorded in this session.")
     for i, v in enumerate(visited, 1):
@@ -134,7 +134,7 @@ def context_cmd() -> None:
     memory = BrowserSessionMemory.get_instance()
     ctx = memory.get_summary_context()
     active = ctx.get("last_active_tab") or {}
-    click.echo("🌐 **Browser Session Context:**")
+    click.echo("**Browser Session Context:**")
     click.echo(f"  Active Tab : {active.get('title', 'None')}")
     click.echo(f"  Active URL : {active.get('url', 'None')}")
     click.echo(f"  Total Visited : {len(ctx.get('visited_pages', []))}")
@@ -149,7 +149,7 @@ def debug_cmd() -> None:
     from grandpa.browser_control import get_visible_browser_context
 
     ctx = get_visible_browser_context()
-    click.echo("🔍 **Browser Intelligence Diagnostics:**")
+    click.echo("**Browser Intelligence Diagnostics:**")
     click.echo(f"  Browser Detected  : {ctx.browser or 'None'}")
     click.echo(f"  Process Name      : {ctx.process_name or 'None'}")
     click.echo(f"  HWND              : {ctx.hwnd or 0}")

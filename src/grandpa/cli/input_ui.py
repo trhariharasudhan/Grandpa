@@ -13,7 +13,15 @@ from grandpa.cli.slash_commands import (
     picker_group_items,
     top_level_commands,
 )
-from grandpa.cli.theme import TEXT_ACCENT
+from grandpa.cli.theme import (
+    ACCENT,
+    ASSISTANT,
+    PICKER_BG,
+    PICKER_INVERSE,
+    PICKER_TEXT,
+    STRUCTURE_DIM,
+    TEXT_ACCENT,
+)
 
 try:
     from prompt_toolkit import Application, PromptSession
@@ -58,16 +66,16 @@ USER_PROMPT = "Username > "
 # places, so raising its contrast meant finding all three; a fourth would have
 # been missed. theme owns the colour and the measurement behind it.
 USER_PROMPT_COLOR = TEXT_ACCENT
-ASSISTANT_PROMPT_COLOR = "#ffc448"
-PICKER_HIGHLIGHT_COLOR = "#ffc448"
+ASSISTANT_PROMPT_COLOR = ASSISTANT
+PICKER_HIGHLIGHT_COLOR = ACCENT
 PICKER_COMMAND_COLOR = TEXT_ACCENT
-PICKER_TEXT_COLOR = "#ffffff"
-PICKER_BACKGROUND_COLOR = "#181818"
+PICKER_TEXT_COLOR = PICKER_TEXT
+PICKER_BACKGROUND_COLOR = PICKER_BG
 PICKER_BASE_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} {PICKER_TEXT_COLOR}"
 PICKER_TITLE_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} bold {PICKER_HIGHLIGHT_COLOR}"
 PICKER_COMMAND_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} {PICKER_COMMAND_COLOR}"
 PICKER_CURRENT_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} bold {PICKER_HIGHLIGHT_COLOR}"
-PICKER_DIM_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} #8f8f9a"
+PICKER_DIM_STYLE = f"bg:{PICKER_BACKGROUND_COLOR} {STRUCTURE_DIM}"
 
 
 def read_chat_input(
@@ -711,7 +719,9 @@ def select_from_list(title: str, items: list[str]) -> Optional[str]:
         style=Style.from_dict(
             {
                 "prompt": f"bold {USER_PROMPT_COLOR}",
-                "completion-menu.completion.current": "bold #111111 bg:#ffc448",
+                "completion-menu.completion.current": (
+                    f"bold {PICKER_INVERSE} bg:{ACCENT}"
+                ),
             }
         ),
     )

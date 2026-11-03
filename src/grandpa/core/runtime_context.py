@@ -137,7 +137,12 @@ def parse_datetime_intent(query: str) -> str | None:
     The regexes below are unchanged, including the order they are tried in,
     which is what decides a question that matches more than one.
     """
+    # Punctuation out, THEN whitespace collapsed. Stripping "?" from
+    # "what is time ?" leaves "what is time " with a trailing space, and an
+    # anchored pattern misses it -- which is how the most natural phrasing of
+    # all reached a model with no clock.
     q = re.sub(r"[^\w\s\']", "", query.strip().lower())
+    q = re.sub(r"\s+", " ", q).strip()
 
     # 1. Day of the week / Date today patterns
     day_patterns = [
@@ -145,6 +150,10 @@ def parse_datetime_intent(query: str) -> str | None:
         r"\bwhat\b.*\bday is it\b",
         r"\bwhich\b.*\bday\b.*\btoday\b",
         r"\btoday\'?s\b.*\bday\b",
+        r"^what\s+day$",
+        r"^what\s*'?s\s+(the\s+)?day$",
+        r"^which\s+day$",
+        r"\bwhat\s+day\s+is\s+(it|this)\b",
     ]
     date_patterns = [
         r"\bwhat\b.*\bdate\b.*\btoday\b",
@@ -153,6 +162,15 @@ def parse_datetime_intent(query: str) -> str | None:
         r"\bcurrent\b.*\bdate\b",
         r"\bdate\b.*\btoday\b",
         r"\bwhich\b.*\bday\b.*\btoday\b",
+        # Plain forms, same reason as the time ones above.
+        r"^what\s+is\s+(the\s+)?date$",
+        r"^what\s*'?s\s+(the\s+)?date$",
+        r"^today\s+date$",
+        r"^date\s+today$",
+        r"^the\s+date$",
+        r"^date$",
+        r"\btell me\b.*\bdate\b",
+        r"\bdo you know\b.*\bdate\b",
     ]
 
     # 2. Time patterns
@@ -162,6 +180,19 @@ def parse_datetime_intent(query: str) -> str | None:
         r"\bcurrent\b.*\btime\b",
         r"\bcurrent\b.*\btiming\b",
         r"\bwhat\b.*\bcurrent\b.*\btime\b",
+        # The plain forms. Every one of these used to fall through to a model
+        # that has no clock: asked "what is time ?" at 2:24 pm it answered
+        # 3:45 pm, which it invented. The old set required "time is it" or
+        # "now" or "current", so the shortest and most natural phrasings were
+        # exactly the ones that missed.
+        r"^what\s+is\s+(the\s+)?time$",
+        r"^what\s*'?s\s+(the\s+)?time$",
+        r"^time\s+now$",
+        r"^the\s+time$",
+        r"^time$",
+        r"\btime\s+right\s+now\b",
+        r"\btell me\b.*\btime\b",
+        r"\bdo you know\b.*\btime\b",
     ]
 
     # 3. Year patterns

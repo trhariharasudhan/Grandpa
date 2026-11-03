@@ -129,7 +129,7 @@ class AgentExecutor:
         # 1. Check safety policy
         is_risky, risk_reason = self.is_dangerous(step)
         if is_risky:
-            self.report_progress(f"⚠️ Safety block triggered: {risk_reason}")
+            self.report_progress(f"⚠Safety block triggered: {risk_reason}")
             # Request confirmation
             confirmed = False
             if self.confirm_callback:

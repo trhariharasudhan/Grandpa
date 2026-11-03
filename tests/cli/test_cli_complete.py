@@ -33,12 +33,19 @@ REAL_NAMES = [
     "\u0bb9\u0bb0\u0bbf",  # Tamil, which this product supports
     "Anne-Marie",
     "Zo\u00eb",
+    # Digits are legal. Refusing them cost this name and bought nothing: the
+    # junk machine output is really made of is refused on its own.
+    "user2",
+    "R2D2",
 ]
 
 MACHINE_OUTPUT = [
     "vocabulary.txt: 460kB [00:00, 2.65MB/s]",  # the one that actually got in
     "C:/Users/ASUS/.grandpa",
-    "INFO 2026-11-03 server started",
+    # NOT "INFO 2026-11-03 server started": once digits are legal, that is
+    # letters, digits, spaces and a hyphen, so no character-class rule can
+    # refuse it. Recorded as a known limit on validate_username rather than
+    # asserted here, because asserting it would mean pattern-matching content.
     '{"name": "x"}',
     "https://example.com",
     "model.bin: 100%|##########|",

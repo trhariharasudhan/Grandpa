@@ -675,7 +675,7 @@ class AgentRuntime:
             )
 
         # 2. Execution loop
-        self.executor.report_progress("🚀 Starting Agent V1 runtime loop...")
+        self.executor.report_progress("Starting Agent V1 runtime loop...")
 
         has_failed = False
 

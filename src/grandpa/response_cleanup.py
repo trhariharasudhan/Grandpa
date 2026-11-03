@@ -14,6 +14,156 @@ DEFAULT_FALLBACK = "I couldn't produce a clean response. Please try again."
 GENERATION_ERROR_MESSAGE = "Sorry, generation failed. Please try again."
 LOCAL_ACTION_ERROR_MESSAGE = "I couldn't complete that local action."
 
+#: Codepoint ranges stripped from anything shown to a person.
+#:
+#: Grandpa is text only. A system-prompt instruction is layer one and is not
+#: reliable -- a model that ignores it still puts a smiley on the end of every
+#: reply -- so this is layer two, and it runs at render time where nothing can
+#: get past it.
+#:
+#: Ranges, not a hand-written list of characters, so a new emoji in a future
+#: Unicode release is covered without anyone editing anything.
+#:
+#: STRIPPED:
+#:   1F000-1FAFF  the pictographic planes entire -- emoticons, pictographs,
+#:                transport, supplemental, extended-A, and the regional
+#:                indicators at 1F1E6-1F1FF that make flags
+#:   FE0F         variation selector-16, the "render the previous character as
+#:                an emoji" marker. Meaningless once its base is gone, and
+#:                harmless to remove elsewhere
+#:   2B00-2BFF    misc symbols and arrows, which is where the star and the
+#:                large coloured arrows live. This repo uses none of it
+#:   the default-emoji-presentation members of 2600-27BF -- the subranges
+#:                below. Unicode's own property, written as ranges rather than
+#:                as a list of glyphs
+#:
+#: DELIBERATELY LEFT ALONE, each because this repo uses it as furniture and
+#: none of it is an emoji:
+#:   2500-257F    box drawing, 570 uses -- every table and panel border
+#:   2580-259F    block elements, 168 uses -- the GRANDPA logo is built of
+#:                U+2588
+#:   2800-28FF    Braille, 10 uses -- the spinner frames are Braille cells,
+#:                not emoji
+#:   2190-21FF    arrows, 31 uses of U+2192 in help text
+#:   2000-206F    general punctuation, 336 uses -- en and em dashes, the
+#:                typographic apostrophe, the bullet, the ellipsis
+#:   25A0-25FF    geometric shapes, 3 uses
+#:   200D         the zero-width joiner. It joins emoji sequences, and it is
+#:                also load-bearing in Devanagari and Tamil, which this
+#:                product supports. Stripping it would corrupt a Hindi or
+#:                Tamil name, so it stays and the pictographs around it go
+#:   the non-emoji members of 2600-27BF: U+2696, U+26A0, U+2713, U+2715 are
+#:                used as plain scales/warning/tick/cross marks
+_EMOJI_RANGES = (
+    (0x1F000, 0x1FAFF),
+    (0xFE0F, 0xFE0F),
+    (0x2B00, 0x2BFF),
+    # Default-emoji-presentation inside Misc Symbols and Dingbats.
+    (0x231A, 0x231B),
+    (0x23E9, 0x23EC),
+    (0x23F0, 0x23F0),
+    (0x23F3, 0x23F3),
+    (0x25FD, 0x25FE),
+    (0x2614, 0x2615),
+    (0x2648, 0x2653),
+    (0x267F, 0x267F),
+    (0x2693, 0x2693),
+    (0x26A1, 0x26A1),
+    (0x26AA, 0x26AB),
+    (0x26BD, 0x26BE),
+    (0x26C4, 0x26C5),
+    (0x26CE, 0x26CE),
+    (0x26D4, 0x26D4),
+    (0x26EA, 0x26EA),
+    (0x26F2, 0x26F3),
+    (0x26F5, 0x26F5),
+    (0x26FA, 0x26FA),
+    (0x26FD, 0x26FD),
+    (0x2705, 0x2705),
+    (0x270A, 0x270B),
+    (0x2728, 0x2728),
+    (0x274C, 0x274C),
+    (0x274E, 0x274E),
+    (0x2753, 0x2755),
+    (0x2757, 0x2757),
+    (0x2795, 0x2797),
+    (0x27B0, 0x27B0),
+    (0x27BF, 0x27BF),
+    # Emoji whose DEFAULT presentation is text, so they carry no FE0F and the
+    # subranges above miss them -- a bare U+2764 heart survived the first
+    # version of this and is still an emoji to the person reading it. These
+    # are Unicode's Emoji property, as ranges, minus the four this repo uses
+    # as furniture: U+2696 scales, U+26A0 warning, U+2713 tick, U+2715 cross.
+    (0x2600, 0x2604),
+    (0x260E, 0x260E),
+    (0x2611, 0x2611),
+    (0x2618, 0x2618),
+    (0x261D, 0x261D),
+    (0x2620, 0x2620),
+    (0x2622, 0x2623),
+    (0x2626, 0x2626),
+    (0x262A, 0x262A),
+    (0x262E, 0x262F),
+    (0x2638, 0x263A),
+    (0x2640, 0x2640),
+    (0x2642, 0x2642),
+    (0x265F, 0x2660),
+    (0x2663, 0x2663),
+    (0x2665, 0x2666),
+    (0x2668, 0x2668),
+    (0x267B, 0x267B),
+    (0x267E, 0x267E),
+    (0x2692, 0x2692),
+    (0x2694, 0x2695),
+    (0x2697, 0x2699),
+    (0x269B, 0x269C),
+    (0x26A7, 0x26A7),
+    (0x26B0, 0x26B1),
+    (0x26C8, 0x26C8),
+    (0x26CF, 0x26CF),
+    (0x26D1, 0x26D1),
+    (0x26D3, 0x26D3),
+    (0x26E9, 0x26E9),
+    (0x26F0, 0x26F1),
+    (0x26F4, 0x26F4),
+    (0x26F7, 0x26F9),
+    (0x2702, 0x2702),
+    (0x2708, 0x2709),
+    (0x270C, 0x270D),
+    (0x270F, 0x270F),
+    (0x2712, 0x2712),
+    (0x2714, 0x2714),
+    (0x2716, 0x2716),
+    (0x271D, 0x271D),
+    (0x2721, 0x2721),
+    (0x2733, 0x2734),
+    (0x2744, 0x2744),
+    (0x2747, 0x2747),
+    (0x2763, 0x2764),
+    (0x27A1, 0x27A1),
+)
+
+_EMOJI_RE = re.compile(
+    "[" + "".join(f"{chr(lo)}-{chr(hi)}" for lo, hi in _EMOJI_RANGES) + "]"
+)
+
+
+def strip_emoji(text: str) -> str:
+    """Remove emoji, leaving the furniture alone.
+
+    See :data:`_EMOJI_RANGES` for exactly what goes and what stays. Spacing is
+    tidied afterwards, because an emoji is usually preceded by a space that
+    would otherwise be left dangling at the end of a sentence.
+    """
+    without = _EMOJI_RE.sub("", text)
+    if without == text:
+        return text
+    # " Hello there 🙂" -> "Hello there", not "Hello there ".
+    without = re.sub(r"[ \t]+([,.!?;:])", r"\1", without)
+    without = re.sub(r"[ \t]{2,}", " ", without)
+    return "\n".join(line.rstrip() for line in without.split("\n"))
+
+
 _THINK_BLOCK_RE = re.compile(
     r"<\s*(think|thinking|analysis|reasoning)\s*>.*?<\s*/\s*\1\s*>\s*",
     re.IGNORECASE | re.DOTALL,
@@ -71,6 +221,7 @@ def clean_assistant_response(
     if text is None:
         return fallback
     cleaned = str(text).replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = strip_emoji(cleaned)
     cleaned = _THINK_BLOCK_RE.sub("", cleaned)
     cleaned = _BARE_END_THINK_RE.sub("", cleaned)
     cleaned = _TAG_RE.sub("", cleaned)

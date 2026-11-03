@@ -558,9 +558,11 @@ class TestReadInput:
 
     def test_prompt_colors_are_theme_correct(self) -> None:
         assert input_ui.USER_PROMPT == "Username > "
-        assert input_ui.USER_PROMPT_COLOR == "#818cf8"
-        assert input_ui.ASSISTANT_PROMPT_COLOR == "#ffc448"
-        assert theme.TEXT_ACCENT == "#818cf8"
+        # Against the theme, not against literals. These were three hardcoded
+        # hexes, so changing one colour meant finding every copy of it.
+        assert input_ui.USER_PROMPT_COLOR == theme.STRUCTURE
+        assert input_ui.ASSISTANT_PROMPT_COLOR == theme.ASSISTANT
+        assert theme.TEXT_ACCENT == theme.STRUCTURE
 
     def test_render_user_message_uses_purple_prompt(self) -> None:
         console = MagicMock()
@@ -569,7 +571,7 @@ class TestReadInput:
 
         rendered = console.print.call_args.args[0]
         assert rendered.plain == "Username > hi"
-        assert rendered.spans[0].style == "bold #818cf8"
+        assert rendered.spans[0].style == f"bold {theme.STRUCTURE}"
 
     def test_assistant_prompt_uses_grandpa_label(self) -> None:
         console = MagicMock()
@@ -578,7 +580,7 @@ class TestReadInput:
 
         first_call = console.print.call_args_list[0]
         assert first_call.args[0].plain == "Grandpa >"
-        assert first_call.args[0].style == "bold #ffc448"
+        assert first_call.args[0].style == f"bold {theme.ASSISTANT}"
 
 
 class TestSlashCommandRegistry:
@@ -831,8 +833,8 @@ class TestSlashCommandRegistry:
         assert "class:picker.title" in styles
         assert "class:picker.command" in styles
         assert "class:picker.current" in styles
-        assert input_ui.PICKER_BACKGROUND_COLOR == "#181818"
-        assert input_ui.PICKER_COMMAND_COLOR == "#818cf8"
+        assert input_ui.PICKER_BACKGROUND_COLOR == theme.PICKER_BG
+        assert input_ui.PICKER_COMMAND_COLOR == theme.STRUCTURE
 
     def test_runtime_input_uses_custom_dark_slash_layout(self, monkeypatch) -> None:
         captured = {}
@@ -869,8 +871,12 @@ class TestSlashCommandRegistry:
         assert captured["bindings"] is not None
         styles = input_ui._picker_style_dict()
         assert "bottom-toolbar" not in styles
-        assert styles["picker.background"] == "bg:#181818 #ffffff"
-        assert styles["picker.command"] == "bg:#181818 #818cf8"
+        assert styles["picker.background"] == (
+            f"bg:{theme.PICKER_BG} {theme.PICKER_TEXT}"
+        )
+        assert styles["picker.command"] == (
+            f"bg:{theme.PICKER_BG} {theme.STRUCTURE}"
+        )
 
     def test_picker_subcommand_suggestions_are_available(self) -> None:
         suggestions = input_ui._subcommand_suggestions("/mode")
