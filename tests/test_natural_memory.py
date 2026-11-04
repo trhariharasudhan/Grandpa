@@ -97,4 +97,11 @@ def test_forget_removes_naturally_captured_memory(tmp_path: Path) -> None:
     recalled = handle_memory_command("What is my favorite color?", store=store)
 
     assert "forgot 1" in forgotten.message
-    assert recalled.message == "I do not know your favorite color yet."
+    # The wording changed deliberately: the old frame inlined the user's own
+    # words as if they were a noun, which for "what is my sister name and is
+    # she elder or younger" produced broken English. It is quoted now.
+    assert recalled.message == 'I have no saved value for "favorite color" yet.'
+    # And the behavioural half, which is the point of the change: a miss is no
+    # longer the user's answer. It falls through so the model can use the
+    # conversation history, or say it does not know in its own words.
+    assert recalled.should_fallback is True

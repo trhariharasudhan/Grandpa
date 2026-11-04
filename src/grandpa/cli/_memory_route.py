@@ -14,7 +14,13 @@ from typing import Any
 from grandpa.action_layer.catalogue import get
 from grandpa.action_layer.model import ActionRequest, ActionResult, Origin
 
-__all__ = ["memory_reply", "memory_request", "memory_status", "memory_target"]
+__all__ = [
+    "memory_is_miss",
+    "memory_reply",
+    "memory_request",
+    "memory_status",
+    "memory_target",
+]
 
 # Actions that need the parsed subject; the rest take nothing.
 _WITH_SUBJECT = frozenset(
@@ -49,6 +55,18 @@ def memory_request(text: str, *, origin: Origin = Origin.USER_CHAT):
         requires_confirmation=spec.requires_confirmation,
     )
     return request, subject
+
+
+def memory_is_miss(result: ActionResult) -> bool:
+    """Whether the lookup found nothing, so the caller should keep going.
+
+    A hit may answer directly. A miss may not: "I don't know" depends on the
+    conversation history and on what the model knows, and a lookup against one
+    table cannot see either. Reported -- "what is my sister name and is she
+    elder or younger" was answered from this layer, the model never asked, and
+    a turn later the model answered the same question from history.
+    """
+    return bool(result.data.get("should_fallback"))
 
 
 def memory_reply(result: ActionResult) -> str:

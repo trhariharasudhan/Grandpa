@@ -643,6 +643,13 @@ def _as_result(spec: ActionSpec, returned: Any) -> ActionResult:
         value = getattr(returned, attribute, None)
         if isinstance(value, str) and value:
             data.setdefault(attribute, value)
+    # A domain saying "I looked and found nothing" is not the same as a domain
+    # answering, and the caller has to be able to tell. Three scalars were
+    # carried across and this one was dropped, so a memory MISS arrived at the
+    # chat path indistinguishable from a hit and was printed as the answer.
+    fallback = getattr(returned, "should_fallback", None)
+    if isinstance(fallback, bool) and fallback:
+        data.setdefault("should_fallback", True)
     if not isinstance(returned, (str, bytes)) and not hasattr(returned, "status"):
         data["returned"] = repr(returned)
 

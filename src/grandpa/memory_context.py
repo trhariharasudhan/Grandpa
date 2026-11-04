@@ -112,6 +112,32 @@ class MemoryCommandResult:
     should_fallback: bool = False
 
 
+def _unknown(target: str | None, message: str) -> MemoryCommandResult:
+    """A lookup that found nothing. Falls through to the model.
+
+    Reported: "what is my sister name and is she elder or younger" was
+    answered "I do not know your sister name and is she elder or younger yet."
+    -- the question wrapped in a sentence frame, grammar broken by it, and the
+    model never asked. One turn later the model answered the same question
+    correctly from conversation history, which proves the interception was the
+    only thing stopping it, and one turn after THAT the canned string came
+    back.
+
+    A hit may answer directly: the store knows a fact and says it. A miss may
+    not, because "I don't know" is a judgement about the whole context --
+    conversation history, partially matching memory, and what the model knows
+    on its own -- and a single-table lookup cannot make it. So a miss carries
+    its message for logging and sets ``should_fallback``, and every caller
+    (chat, voice, the HTTP route) already treats that as "keep going".
+
+    The message is kept rather than blanked so the turn is still traceable in
+    the brain record; it simply stops being the user's answer.
+    """
+    return MemoryCommandResult(
+        "handled", "memory", target, message, message, should_fallback=True
+    )
+
+
 class MemoryStore:
     """SQLite-backed personal memory store."""
 
@@ -1037,11 +1063,11 @@ def _recall(store: MemoryStore, query: str) -> MemoryCommandResult:
         results = store.search_memories(query)
     if not results:
         message = "I do not have a matching memory yet."
-        return MemoryCommandResult("handled", "memory", query, message, message)
+        return _unknown(query, message)
     top_score = float(results[0].get("relevance_score", results[0].get("score", 0.0)))
     if top_score < max(SEMANTIC_MIN_CONFIDENCE, 0.35):
         message = "I am not confident I have a matching memory for that yet."
-        return MemoryCommandResult("handled", "memory", query, message, message)
+        return _unknown(query, message)
     lines = ["Here is what I remember:"]
     for item in results[:5]:
         label = _friendly_label(item)
@@ -1081,7 +1107,7 @@ def _preference_recall(store: MemoryStore) -> MemoryCommandResult:
     prefs = MemoryIntelligenceStore(store).preferences()
     if not prefs:
         message = "I do not have clear saved preferences yet."
-        return MemoryCommandResult("handled", "memory", "preferences", message, message)
+        return _unknown("preferences", message)
     lines = ["Here are the preferences I have learned locally:"]
     for item in prefs[:6]:
         confidence = float(item.get("confidence", 0.0))
@@ -1111,7 +1137,7 @@ def _project_recall(store: MemoryStore) -> MemoryCommandResult:
         )
     if not results:
         message = "I do not know which project you are working on yet."
-        return MemoryCommandResult("handled", "memory", "projects", message, message)
+        return _unknown("projects", message)
     lines = ["Here is what I know about your current projects:"]
     for item in results[:5]:
         lines.append(f"- {_friendly_label(item)}: {item['value']}")
@@ -1133,9 +1159,7 @@ def _recall_specific(
             (category, key),
         ).fetchone()
     if not row:
-        return MemoryCommandResult(
-            "handled", "memory", key, empty_message, empty_message
-        )
+        return _unknown(key, empty_message)
     message = f"Your project is {row['value']}."
     return MemoryCommandResult("handled", "memory", key, message, message)
 
@@ -1151,8 +1175,18 @@ def _recall_personal_attribute(
         label = attribute.strip().lower()
         message = f"Your {label} is {item['value']}."
         return MemoryCommandResult("handled", "memory", key, message, message)
-    message = f"I do not know your {attribute.strip().lower()} yet."
-    return MemoryCommandResult("handled", "memory", key, message, message)
+    # The reported defect, and the reason _unknown exists. The attribute is
+    # whatever followed "my" -- the capture is `(.+)$`, so for "what is my
+    # sister name and is she elder or younger" it is the whole clause, not a
+    # noun. Inlined into a sentence frame that produced "I do not know your
+    # sister name and is she elder or younger yet."
+    #
+    # Quoted rather than inlined, so any capture reads as a sentence whatever
+    # it contains. This text is now only a log line -- _unknown falls through
+    # to the model -- but a log line that reads as broken English is still
+    # something someone has to decipher later.
+    message = f'I have no saved value for "{attribute.strip()}" yet.'
+    return _unknown(key, message)
 
 
 def _apps_opened_today(store: MemoryStore) -> MemoryCommandResult:
@@ -1163,7 +1197,7 @@ def _apps_opened_today(store: MemoryStore) -> MemoryCommandResult:
     opened = [row for row in rows if row["action"] == "open"]
     if not opened:
         message = "I do not have any opened app activity for today yet."
-        return MemoryCommandResult("handled", "memory", "apps_today", message, message)
+        return _unknown("apps_today", message)
     names = []
     for row in opened:
         target = row.get("target") or "unknown app"
@@ -1179,9 +1213,7 @@ def _recent_activity(store: MemoryStore) -> MemoryCommandResult:
     rows = store.list_activity(limit=8, since=since)
     if not rows:
         message = "I do not have recent activity recorded yet."
-        return MemoryCommandResult(
-            "handled", "memory", "recent_activity", message, message
-        )
+        return _unknown("recent_activity", message)
     lines = ["Here is your recent local activity:"]
     for row in rows[:6]:
         when = datetime.fromtimestamp(row["created_at"]).strftime("%H:%M")
@@ -1197,7 +1229,7 @@ def _continue_project(store: MemoryStore, topic: str) -> MemoryCommandResult:
     results = store.search_memories(topic)
     if not results:
         message = f"I do not have saved context for your {topic} project yet."
-        return MemoryCommandResult("handled", "memory", topic, message, message)
+        return _unknown(topic, message)
     lines = [f"I found saved context for {topic}:"]
     for item in results[:4]:
         lines.append(f"- {_friendly_label(item)}: {item['value']}")

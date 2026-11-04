@@ -23,7 +23,12 @@ from grandpa.cli._downloads_route import (
 from grandpa.cli._google_route import calendar_request as build_calendar_request
 from grandpa.cli._google_route import gmail_request as build_gmail_request
 from grandpa.cli._google_route import google_reply, google_status
-from grandpa.cli._memory_route import memory_reply, memory_status, memory_target
+from grandpa.cli._memory_route import (
+    memory_is_miss,
+    memory_reply,
+    memory_status,
+    memory_target,
+)
 from grandpa.cli._memory_route import memory_request as build_memory_request
 from grandpa.cli._notes_route import notes_reply, notes_status
 from grandpa.cli._notes_route import notes_request as build_notes_request
@@ -1878,19 +1883,32 @@ def chat(
             memory_request, memory_subject = build_memory_request(effective_user_input)
             if memory_request is not None:
                 memory_result = execute_action(memory_request, _confirm_action)
-                memory_message = memory_reply(memory_result)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=memory_message))
-                remember_conversation("assistant", memory_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=memory_message,
-                    kind="memory",
-                    target=memory_target(memory_result, memory_subject),
-                    status=memory_status(memory_result),
-                )
-                render_assistant_response(console, Markdown(memory_message))
-                continue
+                # Only a HIT answers. This branch used to continue on any
+                # request it could BUILD rather than one that found something,
+                # so a lookup that came up empty printed "I do not know your
+                # ..." and the model never saw the turn -- while the same
+                # question answered correctly from history one turn later.
+                #
+                # On a miss nothing is rendered and nothing is appended, and
+                # execution falls out of this branch into the layers below and
+                # finally the model, which answers with the history it has or
+                # says it does not know in its own words.
+                if not memory_is_miss(memory_result):
+                    memory_message = memory_reply(memory_result)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=memory_message)
+                    )
+                    remember_conversation("assistant", memory_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=memory_message,
+                        kind="memory",
+                        target=memory_target(memory_result, memory_subject),
+                        status=memory_status(memory_result),
+                    )
+                    render_assistant_response(console, Markdown(memory_message))
+                    continue
 
             # Calendar is migrated. It asks for itself, like downloads.
             calendar_request, parsed_event = build_calendar_request(
