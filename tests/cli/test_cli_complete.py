@@ -332,14 +332,21 @@ def test_the_name_colour_clears_aa(background: str) -> None:
     assert ratio >= 4.5, f"{TEXT_ACCENT} on {background} is only {ratio:.2f}:1"
 
 
-def test_the_name_colour_is_still_blue_and_distinct() -> None:
+def test_the_name_colour_is_the_purple_and_distinct() -> None:
+    """It was blue, and that was asserted here as a hue band of 200-250.
+
+    The prompt label is now the palette's purple, #D4AAFB, by instruction when
+    the CLI moved onto the 50% tints. The band moves with it rather than the
+    colour moving back: what this test is for is that the name has a deliberate
+    hue and is not confusable with the two colours drawn next to it.
+    """
     import colorsys
 
     raw = TEXT_ACCENT.lstrip("#")
     r, g, b = (int(raw[i : i + 2], 16) / 255.0 for i in (0, 2, 4))
     hue = colorsys.rgb_to_hls(r, g, b)[0] * 360.0
 
-    assert 200 <= hue <= 250, f"{TEXT_ACCENT} is hue {hue:.0f}, not blue"
+    assert 255 <= hue <= 295, f"{TEXT_ACCENT} is hue {hue:.0f}, not the purple"
     assert TEXT_ACCENT != INLINE_CODE
     assert TEXT_ACCENT != ACCENT
 

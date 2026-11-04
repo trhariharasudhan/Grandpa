@@ -23,25 +23,48 @@ from grandpa.cli.slash_commands import command_groups, picker_group_items
 # Every value below is the measured one. Floors: 4.5:1 for anything carrying
 # meaning, 3:1 for dim structure, against all three grounds the CLI draws on.
 #
-#   base         hex       #0c0c0c   #1e1e1e   #181818   worst
-#   Light Gray   #E5E7EB   15.80:1   13.47:1   14.34:1   13.47:1
-#   Blue         #168BFF    5.75:1    4.90:1    5.22:1    4.90:1
-#   Yellow       #FFD21F   13.50:1   11.50:1   12.25:1   11.50:1
-#   Red          #FF3B45    5.56:1    4.73:1    5.04:1    4.73:1
-#   Purple       #A855F7    4.94:1    4.21:1    4.49:1    4.21:1
-#   Green        #22C55E    8.58:1    7.32:1    7.79:1    7.32:1
-#   Orange       #FF922B    8.75:1    7.46:1    7.95:1    7.46:1
+#   name         hex       #0c0c0c   #1e1e1e   #181818   worst
+#   Light Gray   #F2F3F5   17.62:1   15.02:1   15.99:1   15.02:1
+#   Blue         #8AC5FF   10.72:1    9.14:1    9.73:1    9.14:1
+#   Yellow       #FFE88F   16.01:1   13.65:1   14.54:1   13.65:1
+#   Red          #FF9DA2    9.87:1    8.41:1    8.96:1    8.41:1
+#   Purple       #D4AAFB   10.19:1    8.69:1    9.25:1    8.69:1
+#   Green        #90E2AE   12.74:1   10.86:1   11.56:1   10.86:1
+#   Orange       #FFC895   12.99:1   11.07:1   11.79:1   11.07:1
 #
-# Six of the seven clear 4.5:1 unmodified. Purple is the exception at 4.21:1,
-# so the role that uses it takes tint 5%.
+# Pale on dark passes comfortably: the worst of all seven is 8.41:1, nearly
+# double the 4.5:1 floor. No role needs the ramp to reach contrast any more --
+# the saturated bases did, Purple at 4.21:1, and these do not.
+#
+# CAN A PERSON TELL THEM APART? That is the real question at 50%, where
+# everything is pale and red, orange and yellow crowd together. Measured as
+# CIEDE2000, not hex distance -- two colours 100 apart in RGB can be
+# indistinguishable while two 40 apart are obvious. All 21 pairs, closest
+# first:
+#
+#   Yellow  vs Orange  15.13     <- the closest pair in the whole set
+#   Light   vs Blue    22.28
+#   Light   vs Orange  22.48
+#   Red     vs Orange  23.44     <- error vs warning
+#   Blue    vs Purple  23.93
+#   ... every remaining pair is above 24, up to Yellow vs Purple at 54.91
+#
+# Convention: below 2.3 is the just-noticeable difference, 2.3-5 is visible
+# only side by side, 5-10 is workable apart, above 10 is unambiguous. A
+# terminal shows these on separate lines minutes apart, never adjacent, so the
+# bar is the upper end -- and the WORST pair in the set is 15.13. Error against
+# warning is 23.44, more than double the threshold. The crowding does not
+# materialise, so no tint was adjusted to work around it.
 
-LIGHT_GRAY = "#E5E7EB"
-BLUE = "#168BFF"
-YELLOW = "#FFD21F"
-RED = "#FF3B45"
-PURPLE = "#A855F7"
-GREEN = "#22C55E"
-ORANGE = "#FF922B"
+# The seven at tint 50% -- the soft shades, not the saturated bases. The bases
+# stay in the orb, where they are correct; nothing in the CLI uses them.
+LIGHT_GRAY = "#F2F3F5"
+BLUE = "#8AC5FF"
+YELLOW = "#FFE88F"
+RED = "#FF9DA2"
+PURPLE = "#D4AAFB"
+GREEN = "#90E2AE"
+ORANGE = "#FFC895"
 
 PALETTE = {
     "light_gray": LIGHT_GRAY,
@@ -88,62 +111,96 @@ def shade(colour: str, percent: float) -> str:
 # warning, error and confirmation carries words that say the same thing.
 
 STRUCTURE = LIGHT_GRAY
-"""Body text and structural furniture: rules, labels, the user's prompt."""
+"""#F2F3F5, worst 15.02:1 -- body text, rules, labels, structural furniture."""
 
-STRUCTURE_DIM = shade(LIGHT_GRAY, 40)
-"""#898b8d, worst 4.88:1 -- list numbers, bullets, dim labels.
+INLINE_CODE = shade(LIGHT_GRAY, 20)
+"""#c2c2c4, worst 9.37:1 -- literal strings inside a reply. A grey weight.
 
-The numbered markers in a reply were Blue, which made structure look like
-content and fought the text beside it. A shade rather than a tint, because
-quieter is what was needed: 4.88:1 against body text's 13.47:1 reads as
-clearly subordinate while still clearing the 4.5:1 floor, never mind the 3:1
-one asked for. Shade 50% (#727476, 3.55:1) was the lowest that clears 3:1 and
-was not taken -- markers you have to squint at are a different bug.
+THE CONFLICT, named rather than hidden: all seven colours have a job, and
+inline code appears inside Grandpa's own prose, so there is no role it can
+never sit beside. Sharing with Green would make a literal look like a
+success; with Blue, like something executing. Either turns a quoted string
+into a status.
+
+So it takes a grey weight instead of a colour, which also says the right
+thing: a literal is not a state, and backticks mean "this is text", not
+"look at me". It is the third grey, and all three are perceptually distinct --
+dE00 11.17 from body and 14.02 from the dim markers, both above the
+unambiguous threshold. Rich's default here is bold cyan on a black background,
+which is why it previously read as emphasis.
 """
 
-ASSISTANT = BLUE
-"""Grandpa's own name and label. 4.90:1 at tint 0%."""
+STRUCTURE_DIM = shade(LIGHT_GRAY, 40)
+"""#919293, worst 5.35:1 -- list numbers, bullets, dim labels.
 
-THINKING = YELLOW
-"""The spinner, the thinking pill, and warnings. 11.50:1."""
+The markers were Rich's default cyan, which made structure look like content
+and fought the text beside it. A shade rather than a tint, because quieter is
+what was needed and a white-ward ramp can only brighten. dE00 24.93 from body
+and 14.02 from inline code, so the three greys do not blur into each other.
+Shade 50% (#797a7a, 3.87:1) was the lowest clearing the 3:1 floor and was not
+taken -- markers you have to squint at are a different bug.
+"""
 
-WARNING = YELLOW
+ASSISTANT = YELLOW
+"""#FFE88F, worst 13.65:1 -- Grandpa's own name and label."""
+
+ACCENT = YELLOW
+VOICE = YELLOW
+"""The logo, and voice.
+
+A DELIBERATE SHARE, and the only one on this colour: all three are Grandpa
+himself. His label in the transcript, the logo at startup, and the chrome of a
+spoken session are the same thing wearing different clothes, so giving them
+one colour is the palette being consistent rather than running out.
+"""
+
 ERROR = RED
-"""Errors. 4.73:1."""
+"""#FF9DA2, worst 8.41:1 -- errors."""
 
-ACTION = tint(PURPLE, 5)
-"""#ac5ef7, 4.52:1 -- tool and action execution.
+WARNING = ORANGE
+"""#FFC895, worst 11.07:1 -- warnings.
 
-The only role needing the ramp: Purple's base is 4.21:1, under the floor.
+The pair the pale palette was supposed to break. Measured, error against
+warning is dE00 23.44 -- more than double the unambiguous threshold, and the
+fourth-closest pair of twenty-one rather than the closest. They are
+distinguishable, so Orange is used as it stands.
+
+Yellow is the conventional warning colour and is unavailable here, being
+Grandpa's label. Orange is the next nearest in meaning and sits 15.13 from
+Yellow, which is still unambiguous.
 """
 
 SUCCESS = GREEN
-"""Success and confirmations. 7.32:1."""
+"""#90E2AE, worst 10.86:1 -- success and confirmations."""
 
-VOICE = ORANGE
-"""Voice and speaking. 7.46:1."""
+THINKING = BLUE
+ACTION = BLUE
+"""#8AC5FF, worst 9.14:1 -- the spinner and thinking pill, and tool execution.
 
-ACCENT = YELLOW
-"""The logo and borders.
+Thinking needed a new colour because Yellow is now Grandpa's label. Blue is
+the choice because it reads as work in progress rather than as a verdict, and
+because it is 22.28 from body text and 23.93 from the user's prompt purple --
+the two things it will most often appear beside.
 
-Branding rather than state, and it shares Yellow with thinking/warnings --
-stated plainly because it is the one place a colour carries two meanings. It
-is tolerable because the logo only ever appears at startup and a warning
-always carries words; if the two ever appear together, the words disambiguate.
+A DELIBERATE SHARE with tool execution: both mean "Grandpa is working on it",
+they are sequential rather than simultaneous -- the spinner is replaced by the
+action line -- and nothing is lost by them agreeing.
 """
 
-TEXT_ACCENT = STRUCTURE
-"""The user's name in the prompt.
+TEXT_ACCENT = PURPLE
+"""#D4AAFB, worst 8.69:1 -- the user's own name in the prompt.
 
-Light Gray, per the palette: the prompt is structure, not content. This was
-#818cf8 -- a blue chosen in the previous task to clear AA, which it did at
-5.59:1. It is retired rather than kept: the palette has one blue and it means
-Grandpa's label, so a second blue for the user's name would make the strongest
-signal in the terminal ambiguous.
+Distinct from ASSISTANT's yellow by dE00 54.91, the largest separation in the
+whole set, which is right: whose turn it is should be the least ambiguous
+thing on the screen.
 """
 
-PICKER_TEXT = tint(LIGHT_GRAY, 100)
-"""#ffffff -- the selected row's text in the command picker. Tint 100%."""
+PICKER_TEXT = STRUCTURE
+"""#F2F3F5 -- the selected row's text in the command picker.
+
+Was tint 100%, pure white, which is outside the seven. Light Gray 50% is the
+palette's own lightest value and measures 17.23:1 on the picker background.
+"""
 
 PICKER_BG = shade(LIGHT_GRAY, 90)
 """#171717 -- the picker's own background, near-black by design.
@@ -160,34 +217,11 @@ Measured against ACCENT rather than against a dark ground, because that is
 what it sits on: 11.26:1.
 """
 
-INLINE_CODE = "#5fb3b3"
-"""KEPT, and it is the one colour not from the palette.
-
-Checked against every base before deciding. Green clears 4.5:1 at 7.32:1 and
-Blue at 4.90:1, and both are already spoken for -- Green means success, Blue
-means Grandpa -- so either would make a literal string look like a state.
-Nothing else in the seven is in the cyan range at all. #5fb3b3 measures
-8.00:1 / 6.82:1 / 7.26:1, so it clears the floor on its own merits and stays
-distinct from both.
-"""
-
-# TEXT_ACCENT was #6244c5, which measured 2.94:1 on #0c0c0c and 2.50:1 on
-# #1e1e1e -- below even WCAG's 3:1 large-text floor, and the least readable
-# thing on the screen. It is the user's own name, so it has to be legible.
-#
-# #818cf8 was picked on measurement against four constraints, not by eye:
-#
-#                        #0c0c0c   #1e1e1e   hue   vs INLINE_CODE
-#   #6244c5 (was)         2.94:1    2.50:1   254         112
-#   #818cf8               6.56:1    5.59:1   234          86
-#
-# AA for body text is 4.50:1, so it clears both grounds with margin. Hue 234
-# keeps it indigo-blue and closest of the passing candidates to the old 254,
-# so the prompt still looks like itself. It stays clear of INLINE_CODE, which
-# it must not be confused with, and of ACCENT, the orb's thinking amber.
-#
-# #a5b4fc passed with more headroom (9.81:1 / 8.36:1) and was not taken: it
-# drifts paler and reads less like the original.
+# #5fb3b3 is gone. It was the one colour from outside the palette, kept while
+# the saturated bases were in use because nothing in them was cyan and both
+# candidates that cleared contrast already meant something else. At tint 50%
+# the argument changes: INLINE_CODE is a grey weight now, defined with the
+# other two greys above, so every colour in the CLI comes from the seven.
 DEFAULT_USERNAME = "Username"
 ASSISTANT_NAME = "Grandpa"
 

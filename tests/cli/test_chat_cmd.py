@@ -560,9 +560,9 @@ class TestReadInput:
         assert input_ui.USER_PROMPT == "Username > "
         # Against the theme, not against literals. These were three hardcoded
         # hexes, so changing one colour meant finding every copy of it.
-        assert input_ui.USER_PROMPT_COLOR == theme.STRUCTURE
+        assert input_ui.USER_PROMPT_COLOR == theme.TEXT_ACCENT
         assert input_ui.ASSISTANT_PROMPT_COLOR == theme.ASSISTANT
-        assert theme.TEXT_ACCENT == theme.STRUCTURE
+        assert theme.TEXT_ACCENT == theme.PURPLE
 
     def test_render_user_message_uses_purple_prompt(self) -> None:
         console = MagicMock()
@@ -571,7 +571,7 @@ class TestReadInput:
 
         rendered = console.print.call_args.args[0]
         assert rendered.plain == "Username > hi"
-        assert rendered.spans[0].style == f"bold {theme.STRUCTURE}"
+        assert rendered.spans[0].style == f"bold {theme.TEXT_ACCENT}"
 
     def test_assistant_prompt_uses_grandpa_label(self) -> None:
         console = MagicMock()
@@ -834,7 +834,7 @@ class TestSlashCommandRegistry:
         assert "class:picker.command" in styles
         assert "class:picker.current" in styles
         assert input_ui.PICKER_BACKGROUND_COLOR == theme.PICKER_BG
-        assert input_ui.PICKER_COMMAND_COLOR == theme.STRUCTURE
+        assert input_ui.PICKER_COMMAND_COLOR == theme.TEXT_ACCENT
 
     def test_runtime_input_uses_custom_dark_slash_layout(self, monkeypatch) -> None:
         captured = {}
@@ -875,7 +875,7 @@ class TestSlashCommandRegistry:
             f"bg:{theme.PICKER_BG} {theme.PICKER_TEXT}"
         )
         assert styles["picker.command"] == (
-            f"bg:{theme.PICKER_BG} {theme.STRUCTURE}"
+            f"bg:{theme.PICKER_BG} {theme.TEXT_ACCENT}"
         )
 
     def test_picker_subcommand_suggestions_are_available(self) -> None:

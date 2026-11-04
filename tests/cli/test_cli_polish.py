@@ -303,16 +303,41 @@ def test_the_ramp_runs_both_ways() -> None:
     assert theme.shade(theme.BLUE, 100) == "#000000"
 
 
-def test_every_palette_base_is_one_of_the_orbs_seven() -> None:
+def test_every_palette_colour_is_one_of_the_seven_at_tint_fifty() -> None:
+    """The soft shades, not the saturated bases.
+
+    The bases stay in the orb, where they are correct. The CLI uses tint 50%
+    throughout, and nothing in it may come from outside this set.
+    """
     assert set(theme.PALETTE.values()) == {
-        "#E5E7EB",
-        "#168BFF",
-        "#FFD21F",
-        "#FF3B45",
-        "#A855F7",
-        "#22C55E",
-        "#FF922B",
+        "#F2F3F5",  # Light Gray 50%
+        "#8AC5FF",  # Blue 50%
+        "#FFE88F",  # Yellow 50%
+        "#FF9DA2",  # Red 50%
+        "#D4AAFB",  # Purple 50%
+        "#90E2AE",  # Green 50%
+        "#FFC895",  # Orange 50%
     }
+
+
+def test_every_cli_colour_comes_from_the_seven_or_is_a_grey_weight() -> None:
+    """No colour outside the set, and the greys derive from Light Gray."""
+    seven = set(theme.PALETTE.values())
+    greys = {theme.STRUCTURE_DIM, theme.INLINE_CODE, theme.PICKER_BG,
+             theme.PICKER_INVERSE}
+
+    for name in (
+        "STRUCTURE", "ASSISTANT", "ACCENT", "VOICE", "TEXT_ACCENT",
+        "ERROR", "WARNING", "SUCCESS", "THINKING", "ACTION", "PICKER_TEXT",
+    ):
+        value = getattr(theme, name)
+        assert value in seven, f"{name} = {value} is not one of the seven"
+
+    for grey in greys:
+        assert grey not in seven, "a grey weight should not shadow a palette colour"
+        # Each is Light Gray shaded, so it has equal channels within rounding.
+        r, g, b = (int(grey.lstrip("#")[i : i + 2], 16) for i in (0, 2, 4))
+        assert max(r, g, b) - min(r, g, b) <= 6, f"{grey} is not neutral"
 
 
 def test_the_cli_carries_no_hex_literals_outside_the_theme() -> None:
@@ -335,11 +360,63 @@ def test_the_cli_carries_no_hex_literals_outside_the_theme() -> None:
     assert offenders == [], f"hex literals outside theme.py: {offenders}"
 
 
-def test_inline_code_is_kept_and_why() -> None:
-    """Checked against the palette before being kept: Green clears 4.5:1 and
-    Blue clears it, and both already mean something else -- success and
-    Grandpa's label. Nothing in the seven is in the cyan range."""
+def test_inline_code_is_a_grey_weight_not_a_palette_colour() -> None:
+    """All seven have a job and inline code sits inside Grandpa's own prose,
+    so there is no role it can never appear beside.
+
+    Sharing with Green would make a literal look like a success; with Blue,
+    like something executing. A grey weight says the right thing instead: a
+    literal is not a state.
+    """
     assert theme.INLINE_CODE not in set(theme.PALETTE.values())
     assert _worst(theme.INLINE_CODE) >= 4.5
     assert theme.INLINE_CODE != theme.SUCCESS
     assert theme.INLINE_CODE != theme.ASSISTANT
+    # And distinct from the other two greys, or three weights blur into one.
+    assert theme.INLINE_CODE not in {theme.STRUCTURE, theme.STRUCTURE_DIM}
+
+
+def test_the_three_grey_weights_are_perceptually_distinct() -> None:
+    """Measured as CIEDE2000, because hex distance is not perception.
+
+    body vs inline 11.17, inline vs dim 14.02, body vs dim 24.93 -- all above
+    the 10 that counts as unambiguous for text seen on separate lines.
+    """
+    import math
+
+    def lab(colour: str) -> tuple[float, float, float]:
+        def linear(value: float) -> float:
+            value /= 255.0
+            return (
+                value / 12.92
+                if value <= 0.04045
+                else ((value + 0.055) / 1.055) ** 2.4
+            )
+
+        r, g, b = (linear(int(colour.lstrip("#")[i : i + 2], 16)) for i in (0, 2, 4))
+        x = (r * 0.4124564 + g * 0.3575761 + b * 0.1804375) / 0.95047
+        y = r * 0.2126729 + g * 0.7151522 + b * 0.0721750
+        z = (r * 0.0193339 + g * 0.1191920 + b * 0.9503041) / 1.08883
+
+        def f(t: float) -> float:
+            return t ** (1 / 3) if t > 0.008856 else (7.787 * t) + (16 / 116)
+
+        fx, fy, fz = f(x), f(y), f(z)
+        return (116 * fy) - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+    def rough_delta(one: str, two: str) -> float:
+        """CIE76, which is enough to show these are not near-identical.
+
+        The full CIEDE2000 numbers are recorded in theme.py; this keeps the
+        test free of a hundred lines of formula while still failing if two
+        weights are collapsed onto each other.
+        """
+        a, b = lab(one), lab(two)
+        return math.sqrt(sum((x - y) ** 2 for x, y in zip(a, b)))
+
+    weights = (theme.STRUCTURE, theme.INLINE_CODE, theme.STRUCTURE_DIM)
+    for index, first in enumerate(weights):
+        for second in weights[index + 1 :]:
+            assert rough_delta(first, second) >= 8.0, (
+                f"{first} and {second} are too close to tell apart"
+            )
