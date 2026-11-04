@@ -33,9 +33,25 @@ SENSITIVE_PATTERN = re.compile(
     r"card\s*number|cvv|otp|pin|private\s*key|seed\s*phrase)\b",
     re.IGNORECASE,
 )
+# First person only. "my sister is X" and "my sister name is X" both land here;
+# "she name is X" deliberately does not -- inferring the subject from the
+# previous turn would store a wrong fact, which is worse than storing none.
+_RELATIONS = (
+    "sister",
+    "brother",
+    "mother",
+    "father",
+    "wife",
+    "husband",
+    "son",
+    "daughter",
+    "friend",
+)
 _PERSONAL_FACT_PATTERNS = (
     re.compile(
-        r"^my\s+(?P<key>name|favorite\s+[a-z][a-z0-9]*"
+        r"^my\s+(?P<key>name|"
+        rf"(?:{'|'.join(_RELATIONS)})(?:\s+name)?|"
+        r"favorite\s+[a-z][a-z0-9]*"
         r"(?:\s+[a-z][a-z0-9]*){0,3}|"
         r"preferred\s+(?:browser|editor|language)|timezone|location|profession|"
         r"role|pronouns)\s+is\s+(?P<value>.+)$",
@@ -43,6 +59,33 @@ _PERSONAL_FACT_PATTERNS = (
     ),
     re.compile(r"^my\s+project(?:\s+name)?\s+is\s+(?P<value>.+)$", re.IGNORECASE),
 )
+# A value is a noun phrase, not the rest of the conversation. The capture is
+# `(.+)$`, so "my name is hari what is your name ?" handed the store
+# "hari what is your name ?" and the recall read it straight back.
+#
+# Three families of word mean the sentence did not end where the value did: a
+# question word, anything in the second person (a value about me never mentions
+# you), and a copula or auxiliary (a second verb is a second clause). Plus a
+# first-person possessive, which marks a second fact about me -- "Hari and my
+# sister is Swaathi" is two facts, and guessing which one is the name is
+# guessing. Refuse all four rather than store the wrong half.
+_VALUE_STOP_WORDS = frozenset(
+    {
+        # question words
+        "what", "whats", "who", "whose", "whom", "where", "when", "why",
+        "how", "which",
+        # second person
+        "you", "your", "yours", "u", "ur",
+        # copulas and auxiliaries -- a second verb opens a second clause
+        "is", "are", "was", "were", "do", "does", "did", "can", "could",
+        "will", "would", "should", "shall", "tell",
+        # a second first-person fact
+        "my", "i", "me", "mine",
+    }
+)
+# Six words. The longest honest value in the allowlist is a place or a full
+# name; past six words it is prose, not an answer.
+_MAX_VALUE_WORDS = 6
 _MEMORY_QUERY_STOP_WORDS = {
     "a",
     "about",
@@ -811,12 +854,18 @@ def capture_natural_personal_fact(
         value = match.group("value").strip()
         if not value or _looks_sensitive(value):
             return False
+        if not _value_is_bounded(value):
+            return False
         if index == 1:
             category, key = "project", "project"
         else:
             raw_key = match.group("key").strip()
-            key = _slug(raw_key)
-            category = "people" if key in {"name", "pronouns"} else "preferences"
+            key = _canonical_key(raw_key)
+            category = (
+                "people"
+                if key in {"name", "pronouns", *_RELATIONS}
+                else "preferences"
+            )
         (store or MemoryStore()).remember(
             category,
             key,
@@ -1028,7 +1077,7 @@ def _parse_fact(fact: str) -> dict[str, str]:
             if key is None:
                 raw_key = match.group(1).strip()
                 value = match.group(2).strip()
-                key = _slug(raw_key)
+                key = _canonical_key(raw_key)
                 return {
                     "category": category,
                     "key": key,
@@ -1168,11 +1217,18 @@ def _recall_personal_attribute(
     store: MemoryStore,
     attribute: str,
 ) -> MemoryCommandResult:
-    key = _slug(attribute)
+    key = _canonical_key(attribute)
     for item in store.list_memories(limit=250):
-        if item["key"] != key:
+        # Canonical on both sides, so a row written before the keys agreed --
+        # or by a path that still spells it out in full -- is still found.
+        if _canonical_key(item["key"]) != key:
             continue
         label = attribute.strip().lower()
+        # "your sister name is X" is not English. The relations are only
+        # reachable here now that the write and read keys agree, so this
+        # phrasing is new, not pre-existing.
+        if label.endswith(" name"):
+            label = f"{label[: -len(' name')]}'s name"
         message = f"Your {label} is {item['value']}."
         return MemoryCommandResult("handled", "memory", key, message, message)
     # The reported defect, and the reason _unknown exists. The attribute is
@@ -1367,6 +1423,34 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
 def _slug(text: str) -> str:
     value = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
     return value[:64]
+
+
+def _canonical_key(key: str) -> str:
+    """One key for one fact, however the sentence happened to be phrased.
+
+    Measured, not assumed: a restart proof found that "remember that my sister
+    is Swaathi Sri" stored ``sister`` while "what is my sister name" looked up
+    ``sister_name`` and missed. The row had crossed the restart boundary fine;
+    the two paths simply disagreed about the key. Trailing ``_name`` carries no
+    information -- it is how the question was worded -- so both sides drop it.
+    ``name`` itself is the exception, being the fact and not a qualifier.
+    """
+
+    slug = _slug(key)
+    if slug != "name" and slug.endswith("_name"):
+        return slug[: -len("_name")]
+    return slug
+
+
+def _value_is_bounded(value: str) -> bool:
+    """Whether a captured value is a value, or the rest of the sentence."""
+
+    if "?" in value:
+        return False
+    words = re.findall(r"[a-z0-9']+", value.lower())
+    if not words or len(words) > _MAX_VALUE_WORDS:
+        return False
+    return not _VALUE_STOP_WORDS.intersection(words)
 
 
 def _meaningful_memory_tokens(text: str) -> set[str]:

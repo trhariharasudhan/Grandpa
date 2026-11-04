@@ -396,88 +396,96 @@ def launcher(ctx: click.Context) -> None:
         ("6", "q", "Exit", "exit"),
     ]
 
-    with alternate_screen(enabled=fullscreen):
-        invalid_results = 0
-        while True:
-            # Refresh configs in loop in case profile updated
-            config = load_config()
-            username = resolve_username(config)
-            greeting_name = format_profile_display_name(config)
-            last_used = getattr(config, "last_used_mode", None) or None
+    # The alternate screen wraps the MENU ONLY. It used to wrap this whole
+    # loop, dispatch included, so chat and voice ran inside a screen buffer
+    # the launcher owned and tore down on return -- which is why chat had to
+    # be invoked with fullscreen=False to stop one alternate screen nesting
+    # inside another. The menu is the only thing here that wants a scratch
+    # screen; a mode that wants one can enter its own.
+    invalid_results = 0
+    while True:
+        # Refresh configs in loop in case profile updated
+        config = load_config()
+        username = resolve_username(config)
+        greeting_name = format_profile_display_name(config)
+        last_used = getattr(config, "last_used_mode", None) or None
 
+        with alternate_screen(enabled=fullscreen):
             action = run_interactive_menu(
                 console, "Choose a mode", menu_items, greeting_name, last_used
             )
 
-            if action not in _MAIN_ACTIONS:
-                invalid_results += 1
-                console.print("[yellow]Invalid launcher selection.[/yellow]")
-                if invalid_results >= _MAX_INVALID_MENU_RESULTS:
-                    console.print(
-                        "[yellow]Launcher stopped after repeated invalid selections.[/yellow]"
-                    )
-                    break
-                continue
-            invalid_results = 0
+        if action not in _MAIN_ACTIONS:
+            invalid_results += 1
+            console.print("[yellow]Invalid launcher selection.[/yellow]")
+            if invalid_results >= _MAX_INVALID_MENU_RESULTS:
+                console.print(
+                    "[yellow]Launcher stopped after repeated invalid selections.[/yellow]"
+                )
+                break
+            continue
+        invalid_results = 0
 
-            if action == "exit" or action == "cancel":
+        if action == "exit" or action == "cancel":
+            # No pause. The sleep here existed so the farewell was readable
+            # before the alternate screen was torn down underneath it; the
+            # farewell now prints on the real screen and stays there.
+            render_status_message(console, FAREWELL_TEXT)
+            break
+
+        if action == "chat":
+            from grandpa.cli.chat_cmd import chat as chat_cmd
+
+            save_last_used_mode("Chat Assistant")
+            # fullscreen=False stays. The nesting it guarded against is gone
+            # now that the menu's alternate screen closes before dispatch, but
+            # whether chat should own a screen of its own is a question about
+            # chat, not about this loop.
+            try:
+                ctx.invoke(chat_cmd, tui_mode=True, fullscreen=False)
+            except Exception as e:
+                console.print(f"[red]Chat failed: {e}[/red]")
+                time.sleep(2.0)
+
+        elif action == "voice":
+            from grandpa.cli.voice_cmd import voice as voice_cmd
+
+            save_last_used_mode("Voice Assistant")
+            try:
+                ctx.invoke(
+                    voice_cmd,
+                    no_tts=False,
+                    model=None,
+                    language=None,
+                    stt_device=None,
+                    microphone=None,
+                    wake_word=False,
+                    wake_phrase=(),
+                    no_wake_response=False,
+                    list_microphones=False,
+                    list_voices=False,
+                    diagnose=False,
+                    screen_reader=False,
+                )
+            except Exception as e:
+                console.print(f"[red]Voice session failed: {e}[/red]")
+                time.sleep(2.0)
+
+        elif action == "doctor":
+            save_last_used_mode("Doctor / Health Check")
+            keep_running = run_doctor_action(ctx, console)
+            if not keep_running:
                 render_status_message(console, FAREWELL_TEXT)
-                if fullscreen:
-                    time.sleep(1.0)
                 break
 
-            if action == "chat":
-                from grandpa.cli.chat_cmd import chat as chat_cmd
+        elif action == "profile":
+            keep_running, config, username = run_profile_submenu(
+                ctx, console, config, username
+            )
+            if not keep_running:
+                break
 
-                save_last_used_mode("Chat Assistant")
-                # Invoke chat subcommand with fullscreen=False to prevent nested corruption
-                try:
-                    ctx.invoke(chat_cmd, tui_mode=True, fullscreen=False)
-                except Exception as e:
-                    console.print(f"[red]Chat failed: {e}[/red]")
-                    time.sleep(2.0)
-
-            elif action == "voice":
-                from grandpa.cli.voice_cmd import voice as voice_cmd
-
-                save_last_used_mode("Voice Assistant")
-                try:
-                    ctx.invoke(
-                        voice_cmd,
-                        no_tts=False,
-                        model=None,
-                        language=None,
-                        stt_device=None,
-                        microphone=None,
-                        wake_word=False,
-                        wake_phrase=(),
-                        no_wake_response=False,
-                        list_microphones=False,
-                        list_voices=False,
-                        diagnose=False,
-                        screen_reader=False,
-                    )
-                except Exception as e:
-                    console.print(f"[red]Voice session failed: {e}[/red]")
-                    time.sleep(2.0)
-
-            elif action == "doctor":
-                save_last_used_mode("Doctor / Health Check")
-                keep_running = run_doctor_action(ctx, console)
-                if not keep_running:
-                    render_status_message(console, FAREWELL_TEXT)
-                    if fullscreen:
-                        time.sleep(1.0)
-                    break
-
-            elif action == "profile":
-                keep_running, config, username = run_profile_submenu(
-                    ctx, console, config, username
-                )
-                if not keep_running:
-                    break
-
-            elif action == "settings":
-                keep_running = run_settings_submenu(ctx, console, config, username)
-                if not keep_running:
-                    break
+        elif action == "settings":
+            keep_running = run_settings_submenu(ctx, console, config, username)
+            if not keep_running:
+                break
