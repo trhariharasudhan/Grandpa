@@ -173,6 +173,10 @@ APPROVAL_REQUIRED_ACTIONS = {
     "desktop_navigate",
     "browser_open",
     "browser_search",
+    # Locking ends whatever the user is doing on screen: recoverable, so LOW
+    # tier, but never unasked (V1-T6). Mirrored by the action catalogue's
+    # _ALWAYS_CONFIRM.
+    "system_lock",
 }
 
 INLINE_CONSENT_ACTIONS = {
