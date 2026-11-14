@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from time import time
 from typing import Any, Literal
@@ -109,26 +110,83 @@ class PlannerAnalysis:
         }
 
 
+#: Verbs that act on something already said rather than on the world.
+_REFERENCE_VERB = (
+    r"(?:summari[sz]e|recap|rephrase|reword|rewrite|shorten|condense|simplify"
+    r"|expand(?: on)?|elaborate(?: on)?|explain|clarify|translate|break down"
+    r"|research)"
+)
+#: Ways of saying "the thing you just told me".
+_BACK_REFERENCE = (
+    r"(?:that|this|it|these|those|them|the above|all (?:of )?that"
+    r"|your (?:last )?(?:answer|reply|response)|what you (?:just )?said)"
+)
+#: Words that may follow the object without being its head noun. "summarise
+#: that in 3 points" refers back; "summarise this webpage" does not, because
+#: "webpage" is what the request is about.
+_OBJECT_CLOSER = (
+    r"(?:again|in|into|for|to|as|at|down|up|please|now|instead|more|less"
+    r"|briefly|shorter|better|properly|fully|further|once|twice|too|and|but"
+    r"|so|with|without|by|from|on|off|back|using)"
+)
+#: Words that may precede the verb without being a subject of their own, so
+#: that "can you summarise that" still reads as a bare follow-up while
+#: "research python tutorials and summarize them" does not -- the latter
+#: names its own subject, and "them" points at it rather than at the
+#: conversation.
+_LEAD_IN = (
+    r"(?:(?:hey|ok|okay|so|now|and|then|also|just|please|pls|can|could|would"
+    r"|will|you|try|to)\s+){0,4}"
+)
+_REFERS_TO_PRIOR_TURN = re.compile(
+    rf"^{_LEAD_IN}{_REFERENCE_VERB}\s+(?:me\s+)?{_BACK_REFERENCE}[,.;:!?]*"
+    rf"(?:\s+{_OBJECT_CLOSER}\b.*)?[.!?]*$"
+)
+
+
+def refers_to_prior_turn(request: str) -> bool:
+    """Is the whole of this request about what was just said?
+
+    "summarise that in 3 points" asks the model to work on its own previous
+    answer. There is no topic in it to research, no file in it to organise:
+    the planner would plan a browser search for the literal sentence. Only
+    the model holds what "that" was, so the turn is the model's.
+
+    The reference verb has to be the request's own verb and the
+    back-reference its only object. A request that names a subject and then
+    refers to it -- "research python tutorials and summarize them" -- is a
+    request about tutorials, and the planner is right to take it.
+    """
+    return bool(_REFERS_TO_PRIOR_TURN.match(_clean(request)))
+
+
 def classify_goal(request: str) -> str:
     clean = _clean(request)
-    if any(
-        word in clean for word in ("research", "summarize", "summarise", "tutorial")
-    ):
-        return "browser_research"
-    if any(word in clean for word in ("organize", "organise", "downloads", "archive")):
-        return "file_organization"
-    if any(
-        word in clean
-        for word in (
-            "coding workspace",
-            "code workspace",
-            "developer workspace",
-            "coding setup",
-        )
-    ):
-        return "developer_startup"
-    if any(word in clean for word in ("diagnostic", "status", "readiness")):
-        return "diagnostics"
+    # A follow-up names no subject of its own, so none of the goal classes
+    # below can be read off its words -- "summarise that" is not research.
+    # The dangerous check still runs: a class that exists to refuse is not
+    # something a sentence shape should be able to step around.
+    if not refers_to_prior_turn(clean):
+        if any(
+            word in clean for word in ("research", "summarize", "summarise", "tutorial")
+        ):
+            return "browser_research"
+        if any(
+            word in clean for word in ("organize", "organise", "downloads", "archive")
+        ):
+            return "file_organization"
+        if any(
+            word in clean
+            for word in (
+                "coding workspace",
+                "code workspace",
+                "developer workspace",
+                "coding setup",
+            )
+        ):
+            return "developer_startup"
+        if any(word in clean for word in ("diagnostic", "status", "readiness")):
+            return "diagnostics"
     if any(
         word in clean
         for word in ("delete", "wipe", "format", "shutdown", "payment", "purchase")
@@ -409,4 +467,5 @@ __all__ = [
     "decompose_multi_step_task",
     "estimate_risk",
     "planner_diagnostics",
+    "refers_to_prior_turn",
 ]

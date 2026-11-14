@@ -11,6 +11,7 @@ from grandpa.planner.engine import (
     decompose_multi_step_task,
     estimate_risk,
     planner_diagnostics,
+    refers_to_prior_turn,
 )
 from grandpa.planner.executive import ExecutivePlanner
 from grandpa.planner.models import ExecutionPlan, PlanResult, PlanStep
@@ -30,4 +31,5 @@ __all__ = [
     "decompose_multi_step_task",
     "estimate_risk",
     "planner_diagnostics",
+    "refers_to_prior_turn",
 ]

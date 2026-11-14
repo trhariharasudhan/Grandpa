@@ -223,40 +223,21 @@ def execute_parsed_action(
         )
 
     if result.kind == "agent_plan":
-        from grandpa.agents.goal_mode import create_goal
+        from grandpa.agents.goal_mode import create_goal, describe_goal
 
         goal = create_goal(result.target, execute=True)
-        analysis = goal.plan
-        lines = [
-            f"Agent plan goal {goal.status}: {analysis.get('intent', 'local goal')}.",
-            f"- Phase: {goal.current_phase}",
-            f"- Confidence: {float(analysis.get('confidence', 0.0)):.0%}",
-            f"- Risk: {analysis.get('estimated_risk', 'LOW')}",
-            f"- Skills: {', '.join(analysis.get('required_skills', [])) or 'none'}",
-            f"- Actions taken: {len(goal.actions_taken)}",
-        ]
-        if goal.approvals_needed:
-            lines.append(
-                f"- Approval needed: {', '.join(item.get('step_id', '') for item in goal.approvals_needed)}"
-            )
-        if goal.result_summary:
-            lines.append(goal.result_summary)
-        else:
-            lines.append(
-                str(
-                    analysis.get(
-                        "reasoning_summary", "Grandpa prepared a safe local goal plan."
-                    )
-                )
-            )
+        # The goal says what it did; goal_mode owns that sentence. What the
+        # plan object thinks -- phase, confidence, risk, skill names -- is not
+        # an answer and does not belong in the reply.
+        spoken = describe_goal(goal)
         return LocalActionResult(
             status="handled"
             if goal.status not in {"failed", "cancelled"}
             else "unsupported",
             kind="agent_plan",
             target=goal.goal_id,
-            message="\n".join(lines),
-            tts_text="I processed the autonomous goal safely.",
+            message=spoken,
+            tts_text=spoken,
             permission=result.permission,
         )
 

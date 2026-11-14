@@ -192,7 +192,15 @@ def handle_file_command(
     if command in {"summarize this pdf", "summarise this pdf"}:
         return _summarize_latest_pdf(store)
 
-    match = re.fullmatch(r"summari[sz]e (.+)", command)
+    # Every other pattern here names what it acts on -- "read this file X",
+    # "search files about X". This one took the verb alone and handed the rest
+    # of the sentence to the document search as a filename, so a follow-up in
+    # chat came back as "I could not find a document matching that in 3
+    # points". A document request says so: a document word, or a filename.
+    match = re.fullmatch(
+        r"summari[sz]e (?:the |my |this |that )?(?:file|document|doc|note|pdf|text file) (.+)",
+        command,
+    ) or re.fullmatch(r"summari[sz]e (?:the |my )?(\S+\.[a-z0-9]{1,5})", command)
     if match:
         return _summarize_named_document(match.group(1).strip(), store)
 

@@ -516,7 +516,11 @@ def _act(goal: AgentGoal, analysis: PlannerAnalysis, store: AgentGoalStore) -> N
                 goal.status = "failed"
                 goal.current_phase = "failed"
                 goal.actions_taken = actions
-                goal.result_summary = f"Goal failed at {step.skill}: {retry.message}"
+                # The step's title, not its skill id: this sentence is read by
+                # the user, and "browser.diagnostics" is a module path.
+                goal.result_summary = (
+                    f"Goal failed at {step.title.lower()}: {retry.message}"
+                )
                 store.save(goal)
                 return
     goal.actions_taken = actions
@@ -601,6 +605,30 @@ def _looks_sensitive(text: str) -> bool:
         return False
 
 
+def describe_goal(goal: AgentGoal) -> str:
+    """What to tell the user about a goal run.
+
+    The plan object is how the planner talks to itself. A phase name, a
+    confidence percentage, a risk label and a list of dotted skill names say
+    nothing to the person who asked a question -- they were being printed in
+    chat as the answer. ``result_summary`` is the sentence the goal already
+    writes for a person, and a pending approval is the one piece of plan
+    state that is genuinely theirs, because nothing moves until they answer.
+    """
+    summary = (goal.result_summary or "").strip()
+    if goal.status == "waiting_approval":
+        waiting = "I need your approval before I go any further."
+        return f"{summary} {waiting}".strip() if summary else waiting
+    if summary:
+        return summary
+    if goal.status in {"failed", "cancelled"}:
+        return "I could not complete that."
+    if goal.status in {"queued", "planning"}:
+        # Nothing has run yet, so "done" would be a lie.
+        return "I have a plan ready for that."
+    return "Done."
+
+
 def _goal_from_row(row: sqlite3.Row) -> AgentGoal:
     return AgentGoal(
         goal_id=row["goal_id"],
@@ -639,6 +667,7 @@ __all__ = [
     "cancel_goal",
     "continue_goal",
     "create_goal",
+    "describe_goal",
     "get_goal",
     "goal_events",
     "list_goals",

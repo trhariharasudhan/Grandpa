@@ -76,12 +76,22 @@ def test_agent_runtime_creates_plan_task():
 
 
 def test_local_action_routes_multi_step_goal_to_planner():
+    """The route is still the planner; the reply is no longer the plan object.
+
+    This test used to require ``"Agent plan"`` and ``"desktop.summary"`` in
+    the message, which is what the user was shown when they asked a
+    question: a phase, a confidence percentage, a risk label and a list of
+    dotted skill names. The route is what matters here, so the assertions
+    moved to the result's kind and to a reply that reads as a sentence.
+    """
     result = handle_local_action("set up my coding workspace")
 
     assert result.status == "handled"
     assert result.kind == "agent_plan"
-    assert "Agent plan" in result.message
-    assert "desktop.summary" in result.message
+    assert "coding workspace" in result.message.lower()
+    assert "." in result.message
+    for internal in ("Phase:", "Confidence:", "Risk:", "Skills:", "desktop."):
+        assert internal not in result.message
 
 
 def test_planner_agent_mcp_api_routes():
