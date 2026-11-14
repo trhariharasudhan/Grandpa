@@ -224,6 +224,8 @@ class TestChatCommand:
         engine = StreamingEngine()
         config = GrandpaConfig()
         config.intelligence.default_model = "test-model"
+        # The plain streaming path, which V1-T5 keeps behind this flag.
+        config.tools.chat_tool_loop = False
 
         with (
             patch("grandpa.cli.chat_cmd.load_config", return_value=config),
@@ -874,9 +876,7 @@ class TestSlashCommandRegistry:
         assert styles["picker.background"] == (
             f"bg:{theme.PICKER_BG} {theme.PICKER_TEXT}"
         )
-        assert styles["picker.command"] == (
-            f"bg:{theme.PICKER_BG} {theme.STRUCTURE}"
-        )
+        assert styles["picker.command"] == (f"bg:{theme.PICKER_BG} {theme.STRUCTURE}")
 
     def test_picker_subcommand_suggestions_are_available(self) -> None:
         suggestions = input_ui._subcommand_suggestions("/mode")

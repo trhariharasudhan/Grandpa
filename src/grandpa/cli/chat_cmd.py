@@ -1407,8 +1407,14 @@ def chat(
         Same shape as _confirm_desktop_action. What would happen is shown in
         full first: in chat it was the model, not the user, that chose it.
         """
+        from rich.markup import escape
+
+        # Escaped: Rich read "[y/N]" as a markup tag and printed nothing, so the
+        # question appeared without its answer hint; a spec with brackets in it
+        # (a parameter value) was mangled the same way.
         console.print(
-            f"[yellow]{label}:[/yellow] {spec} ({permission}) [y/N] ",
+            f"[yellow]{label}:[/yellow] {escape(spec)} ({escape(permission)}) "
+            + escape("[y/N] "),
             end="",
         )
         try:
@@ -1521,6 +1527,14 @@ def chat(
         automation_service = ScreenAutomationService(confirm=_confirm_local_change)
 
         # REPL loop
+        # V1-T5: tools on by default; [tools] chat_tool_loop = false restores
+        # the plain reply. An agent named with --agent keeps its own path; the
+        # configured default agent ("simple", a plain chat agent) is what the
+        # loop replaces, and it still answers when the model has no tools.
+        use_tool_loop = (
+            bool(getattr(config.tools, "chat_tool_loop", True)) and not agent_name
+        )
+        tool_loop_notice_shown = False
         while True:
             for note in _notifications.diff(get_status()):
                 render_assistant_response(console, Text(note, style="dim cyan"))
@@ -2135,9 +2149,43 @@ def chat(
                     )
                 model_history.extend(history)
                 thinking = ThinkingAnimation(console)
+                streamed = False
                 thinking.start()
                 try:
-                    if agent is not None:
+                    content = None
+                    if use_tool_loop:
+                        # V1-T5: free text no local route claimed goes to the
+                        # action layer's tool loop, so the model can act. Every
+                        # action still passes the executor and chat's confirm
+                        # callback; the spinner pauses while a question is on
+                        # screen. A model that cannot call tools answers the
+                        # old way below.
+                        from grandpa.cli._tool_loop import chat_tool_turn
+
+                        def _confirm_in_loop(action, parameters, risk):
+                            thinking.stop()
+                            try:
+                                return _confirm_action(action, parameters, risk)
+                            finally:
+                                thinking.start()
+
+                        content = chat_tool_turn(
+                            effective_user_input,
+                            engine=engine,
+                            model=model,
+                            history=_recent_exchanges(history[:-1]),
+                            confirm_callback=_confirm_in_loop,
+                            console=console,
+                        )
+                        if content is None and not tool_loop_notice_shown:
+                            tool_loop_notice_shown = True
+                            console.print(
+                                f"[dim]{model} cannot call tools, so chat is "
+                                "answering without them.[/dim]"
+                            )
+                    if content is not None:
+                        pass
+                    elif agent is not None:
                         from grandpa.agents._stubs import AgentContext
 
                         # The agent gets the conversation, not just this turn.
@@ -2165,24 +2213,24 @@ def chat(
                             if hasattr(response, "content")
                             else str(response)
                         )
+                    elif getattr(engine, "supports_streaming", False) is True:
+                        streamed = True
+                        content = asyncio.run(
+                            _stream_engine_response(
+                                engine,
+                                model_history,
+                                model=model,
+                                console=console,
+                                thinking=thinking,
+                            )
+                        )
                     else:
-                        if getattr(engine, "supports_streaming", False) is True:
-                            content = asyncio.run(
-                                _stream_engine_response(
-                                    engine,
-                                    model_history,
-                                    model=model,
-                                    console=console,
-                                    thinking=thinking,
-                                )
-                            )
-                        else:
-                            result = engine.generate(model_history, model=model)
-                            content = (
-                                result.get("content", "")
-                                if isinstance(result, dict)
-                                else str(result)
-                            )
+                        result = engine.generate(model_history, model=model)
+                        content = (
+                            result.get("content", "")
+                            if isinstance(result, dict)
+                            else str(result)
+                        )
                 finally:
                     thinking.stop()
                 content = clean_assistant_response(content)
@@ -2196,10 +2244,7 @@ def chat(
                 )
 
                 history.append(Message(role=Role.ASSISTANT, content=content))
-                if (
-                    getattr(engine, "supports_streaming", False) is not True
-                    or agent is not None
-                ):
+                if not streamed:
                     render_assistant_response(console, Markdown(content))
             except EngineModelNotFoundError as exc:
                 render_assistant_response(
