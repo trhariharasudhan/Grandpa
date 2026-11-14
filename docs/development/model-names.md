@@ -11,7 +11,17 @@ normal model selection uses stable Grandpa roles.
 | Mini | `grandpa-mini:latest` | Fastest; small machines | no | 1 GB | Qwen2.5 |
 | Coder | `grandpa-coder:latest` | Coding specialist | no | 6 GB | DeepSeek Coder |
 | Eyes | `grandpa-eyes:latest` | Local vision | no | 6 GB | LLaVA |
-| Embeddings | `nomic-embed-text:latest` | Internal semantic memory/RAG | — | 0.5 GB | Nomic BERT |
+| Guard | `grandpa-guard:latest` | Safety classifier for actions | no | 8 GB | Llama Guard 3 |
+| Memory | `grandpa-memory:latest` | Embeddings for semantic memory (a copy of `nomic-embed-text`, which it falls back to) | — | 0.5 GB | Nomic BERT |
+| Ears | `grandpa-ears` (faster-whisper) | Speech-to-text; size from `[speech] model` | — | — | Whisper |
+| Voice | `grandpa-voice` (local TTS) | Text-to-speech; backend from `[tts] backend` | — | — | — |
+
+The code registry for every role above is
+`grandpa.intelligence.odin_registry.ODIN_ROLES`. `grandpa models` lists each role
+as installed, fallback or missing. `grandpa models setup` prints what it would do
+for each missing Ollama role (`ollama create grandpa-<role> -f
+models/Modelfile.<role>`, and `ollama cp nomic-embed-text grandpa-memory`); add
+`--yes` to run it.
 
 ## How the default is chosen
 

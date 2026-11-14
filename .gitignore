@@ -144,6 +144,13 @@ voice_runtime/**/*.ckpt
 voice_runtime/**/*.pt
 voice_runtime/**/*.pth
 voice_runtime/**/*.safetensors
+# FFmpeg is fetched by voice_runtime/scripts/fetch_ffmpeg.py (checksum-pinned).
+voice_runtime/tools/
+
+# Generated tree dumps and the moved MODEL_NAMES stub
+/grandpa_tree.txt
+/grandpa_project_structure.txt
+/MODEL_NAMES.md
 
 # Personal voice-training datasets (scripts remain reviewable)
 voice_runtime/datasets/*/raw/
