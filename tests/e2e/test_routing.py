@@ -69,16 +69,16 @@ def test_jarvis_routes_its_one_intent_and_refuses_everything_else(cli) -> None:
     assert action["action_type"] == "open_app" and action["target"] == "vscode", action
     assert action["dry_run"] is True
 
+    # V1-T7: other phrases go to the action layer's tool loop; --dry-run says
+    # so and runs nothing (no action payload is printed).
     for phrase in ("turn up the volume", "shut down the computer"):
-        refused = cli("jarvis", "--dry-run", *phrase.split())
-        assert refused.returncode == 1, (
-            f"{phrase!r} exited {refused.returncode}: {refused.text}"
+        handed_on = cli("jarvis", "--dry-run", *phrase.split())
+        assert handed_on.returncode == 0, (
+            f"{phrase!r} exited {handed_on.returncode}: {handed_on.text}"
         )
-        assert "I don't know how to route that Jarvis command" in refused.text, (
-            refused.text
-        )
-        assert "{" not in refused.stdout, (
-            f"{phrase!r} produced an action: {refused.text}"
+        assert "Would send this to the action layer" in handed_on.text, handed_on.text
+        assert "{" not in handed_on.stdout, (
+            f"{phrase!r} produced an action: {handed_on.text}"
         )
 
 

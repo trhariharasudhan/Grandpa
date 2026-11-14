@@ -65,7 +65,8 @@ def _confirm_callback(console: Console, auto_approve: bool):
             f"[{colour}]{risk.value}[/{colour}] {action}"
             + (f" ({detail})" if detail else "")
         )
-        console.print("Run it? [y/N] ", end="")
+        # markup=False: Rich read "[y/N]" as a tag and printed only "Run it?".
+        console.print("Run it? [y/N] ", end="", markup=False)
         try:
             answer = input().strip().lower()
         except EOFError:
