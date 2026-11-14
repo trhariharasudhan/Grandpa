@@ -25,6 +25,16 @@ reading a result. This module removes that dependency:
   before an edit does not authorise a commit made after it.
 
 The commit-msg hook calls :func:`verdict`. It refuses; it does not warn.
+
+What counts as enough testing (changed in V1-T4): the full suite takes about
+21 minutes, and requiring it before every commit made the guard the slowest
+step of every change. A commit now needs a passing run of the tests for the
+packages it touches plus the :data:`SMOKE_PATH` smoke run
+(:func:`required_tests`); the full suite runs in CI on every push. Commits that
+touch something every test depends on (dependencies, the package root, the
+test harness, this file), or a source package with no test directory, still
+need the full suite. Everything else about a pass is unchanged: it must be of
+exactly this tree, finished, unfiltered, and import this checkout.
 """
 
 from __future__ import annotations
@@ -94,6 +104,12 @@ class Record:
     #: The process that wrote this, so a stale in-flight record can be told
     #: from a live one by a human reading the file.
     pid: int = 0
+    #: The test paths this run was given, repo-relative POSIX, when positional
+    #: paths were its ONLY narrowing (no -k, -m, --deselect, --lf/--ff). Empty
+    #: for a full run and for any filtered run. This is what lets a run of the
+    #: touched packages count, instead of only a full run: see
+    #: :func:`required_tests`.
+    paths: list[str] = field(default_factory=list)
     version: int = 1
 
     @classmethod
@@ -117,6 +133,7 @@ class Record:
                 complete=bool(data.get("complete", True)),
                 started_digest=str(data.get("started_digest") or ""),
                 pid=int(data.get("pid") or 0),
+                paths=[str(p) for p in (data.get("paths") or [])],
                 version=int(data.get("version", 1)),
             )
         except (KeyError, TypeError, ValueError):
@@ -209,6 +226,143 @@ def scope_from_options(
 
 
 # ---------------------------------------------------------------------------
+# Which tests a commit needs
+# ---------------------------------------------------------------------------
+
+SMOKE_PATH = "tests/action_layer"
+"""Run for every commit, whatever it touches. The action layer is what decides
+whether Grandpa actuates and whether it asks first, so a fast pass of it is the
+floor no commit goes below."""
+
+#: Files whose change can break any test, so a commit touching one still needs
+#: the full suite. Dependency pins, the package root, and the test harness that
+#: every test runs inside (sandbox, guards, this plugin, conftest).
+_FULL_SUITE_FILES = frozenset(
+    {
+        "pyproject.toml",
+        "uv.lock",
+        "src/grandpa/__init__.py",
+        "scripts/commit_verification.py",
+    }
+)
+
+
+def path_only_selection(
+    *,
+    file_or_dir: list[str] | None,
+    keyword: str | None,
+    markexpr: str | None,
+    deselect: list[str] | None,
+    last_failed: bool = False,
+    failed_first: bool = False,
+    invocation_dir: Path | None = None,
+    repo: Path | None = None,
+) -> list[str]:
+    """The run's paths, repo-relative, when paths are its only narrowing.
+
+    A ``-k``, ``-m``, ``--deselect`` or ``--lf`` run returns ``[]``: it did not
+    run everything under its paths, so it proves nothing about a directory.
+    A ``file.py::test_name`` selection is dropped for the same reason.
+    """
+    if not file_or_dir:
+        return []
+    if (keyword or "").strip() or (markexpr or "").strip() or deselect:
+        return []
+    if last_failed or failed_first:
+        return []
+    base = (invocation_dir or Path.cwd()).resolve()
+    root = (repo or base).resolve()
+    out: list[str] = []
+    for raw in file_or_dir:
+        if "::" in raw:
+            continue
+        try:
+            resolved = (base / raw).resolve()
+            rel = resolved.relative_to(root).as_posix()
+        except (OSError, ValueError):
+            continue
+        out.append(rel if rel != "." else "")
+    return out
+
+
+def _tests_for_module(repo: Path, stem: str) -> list[str]:
+    return sorted(
+        p.relative_to(repo).as_posix()
+        for p in (repo / "tests").glob(f"test_{stem}*.py")
+    )
+
+
+def required_tests(touched: list[str], repo: Path) -> frozenset[str] | None:
+    """The test paths that must have passed for a commit touching *touched*.
+
+    ``None`` means "the full suite": something was touched that every test
+    depends on, or a source package that has no test directory to run instead.
+    Otherwise the set always includes :data:`SMOKE_PATH`.
+
+    Mapping, from what is committed to what must pass:
+
+    * ``src/grandpa/<pkg>/...``      -> ``tests/<pkg>`` (full suite if absent)
+    * ``src/grandpa/<module>.py``    -> ``tests/test_<module>*.py`` (same)
+    * ``tests/.../test_*.py``        -> that file
+    * any other file under ``tests/`` (conftest, guards, fixtures) -> full suite
+    * ``<top>/...`` elsewhere        -> ``tests/<top>`` if it exists
+    * docs and other files with no tests -> only the smoke run
+    """
+    required = {SMOKE_PATH}
+    for raw in touched:
+        path = raw.strip().replace("\\", "/")
+        if not path:
+            continue
+        if path in _FULL_SUITE_FILES:
+            return None
+        parts = path.split("/")
+        if parts[0] == "tests":
+            name = parts[-1]
+            if name.startswith("test_") and name.endswith(".py"):
+                required.add(path)
+            elif len(parts) == 2 or parts[1] == "fixtures":
+                # tests/conftest.py, a guard, the sandbox, this plugin, or
+                # shared fixtures: every test runs inside these.
+                return None
+            else:
+                # A package-level conftest or helper: its own directory.
+                required.add("/".join(parts[:-1]))
+            continue
+        if parts[:2] == ["src", "grandpa"] and len(parts) >= 3:
+            if len(parts) == 3:
+                stem = parts[2].removesuffix(".py")
+                found = _tests_for_module(repo, stem)
+                if not found:
+                    return None
+                required.update(found)
+            else:
+                pkg = parts[2]
+                if not (repo / "tests" / pkg).is_dir():
+                    return None
+                required.add(f"tests/{pkg}")
+            continue
+        if parts[0] == "src":
+            return None
+        if len(parts) > 1 and (repo / "tests" / parts[0]).is_dir():
+            required.add(f"tests/{parts[0]}")
+    return frozenset(required)
+
+
+def covers(run_paths: list[str], required: frozenset[str]) -> bool:
+    """Whether a run over *run_paths* ran every path in *required*."""
+
+    def covered(target: str) -> bool:
+        for path in run_paths:
+            if path in ("", "tests"):
+                return True
+            if target == path or target.startswith(path.rstrip("/") + "/"):
+                return True
+        return False
+
+    return bool(run_paths) and all(covered(target) for target in required)
+
+
+# ---------------------------------------------------------------------------
 # The decision
 # ---------------------------------------------------------------------------
 
@@ -262,15 +416,29 @@ def interrupted_runs(
     switched off, and then it guards nothing at all.
     """
     return [
-        record for record in records
+        record
+        for record in records
         if not record.complete
         and record.digest == digest
         and (now - record.when) <= max_age
     ]
 
 
+def _enough(record: Record, required: frozenset[str] | None) -> bool:
+    """A full run is always enough; a path-scoped run is when it covers
+    *required*. ``required=None`` means only a full run will do."""
+    if record.scope == "full":
+        return True
+    if required is None:
+        return False
+    return covers(record.paths, required)
+
+
 def evidence_for(
-    records: list[Record], digest: str, source: str | None = None
+    records: list[Record],
+    digest: str,
+    source: str | None = None,
+    required: frozenset[str] | None = None,
 ) -> tuple[Record | None, Record | None]:
     """The newest full pass for this tree, and the newest failure for this tree.
 
@@ -305,13 +473,18 @@ def evidence_for(
             except OSError:
                 return False
     else:
+
         def ran_here(record: Record) -> bool:
             return True
 
     passes = [
-        r for r in same_tree
-        if r.exitstatus == 0 and r.scope == "full" and ran_here(r)
-        and r.complete and not changed_underneath(r)
+        r
+        for r in same_tree
+        if r.exitstatus == 0
+        and _enough(r, required)
+        and ran_here(r)
+        and r.complete
+        and not changed_underneath(r)
     ]
     failures = [r for r in same_tree if r.exitstatus != 0]
     newest_pass = max(passes, key=lambda r: r.when) if passes else None
@@ -329,9 +502,20 @@ def verdict(
     *,
     now: float | None = None,
     source: str | None = None,
+    required: frozenset[str] | None = None,
 ) -> Verdict:
-    """Allow or refuse this commit. Pure, so the past cases can be replayed."""
+    """Allow or refuse this commit. Pure, so the past cases can be replayed.
+
+    *required* is what :func:`required_tests` says this commit needs. ``None``
+    keeps the strict rule: only a full run counts. Either way the run must have
+    passed, finished, imported this checkout and match the tree exactly.
+    """
     now = time.time() if now is None else now
+    run_hint = (
+        "python -m pytest -q"
+        if required is None
+        else "python -m pytest -q " + " ".join(sorted(required))
+    )
     hatch = hatch_reason(message)
     if records is None:
         history: list[Record] = []
@@ -340,12 +524,9 @@ def verdict(
     else:
         history = list(records)
 
-    passed, failed = evidence_for(history, current_digest, source)
+    passed, failed = evidence_for(history, current_digest, source, required)
     pending = interrupted_runs(history, current_digest, now)
-    torn = [
-        r for r in history
-        if r.digest == current_digest and changed_underneath(r)
-    ]
+    torn = [r for r in history if r.digest == current_digest and changed_underneath(r)]
 
     problem: str | None = None
     if pending and passed is None:
@@ -395,9 +576,12 @@ def verdict(
         else:
             newest = max(history, key=lambda r: r.when)
             elsewhere = [
-                r for r in history
-                if r.digest == current_digest and r.exitstatus == 0
-                and r.scope == "full" and r.source
+                r
+                for r in history
+                if r.digest == current_digest
+                and r.exitstatus == 0
+                and _enough(r, required)
+                and r.source
                 and source is not None
                 and Path(r.source).resolve() != Path(source).resolve()
             ]
@@ -421,14 +605,24 @@ def verdict(
                     f"      tested:     {newest.digest[:12]}\n"
                     f"      committing: {current_digest[:12]}"
                 )
-            else:
+            elif required is None:
                 problem = (
                     "the runs recorded for this tree covered only part of the "
                     "suite,\n"
                     "  the most recent being:\n"
                     f"      pytest {' '.join(newest.argv)}\n"
-                    "  A subset passing is evidence about the subset. Run the whole\n"
+                    "  This commit touches something every test depends on, so a\n"
+                    "  subset passing is evidence about the subset. Run the whole\n"
                     "  suite, or say why not."
+                )
+            else:
+                missing = "".join(f"\n      {p}" for p in sorted(required))
+                problem = (
+                    "no recorded run of this tree covered the tests this commit\n"
+                    f"  needs:{missing}\n"
+                    "  the most recent run being:\n"
+                    f"      pytest {' '.join(newest.argv)}\n"
+                    "  Run those paths (with no -k/-m/--deselect), or the whole suite."
                 )
     elif now - passed.when > MAX_AGE_SECONDS:
         age_hours = (now - passed.when) / 3600
@@ -438,13 +632,20 @@ def verdict(
         )
 
     if problem is None:
+        if passed is not None and passed.scope != "full":
+            return Verdict(
+                True,
+                "the tests for what this commit touches passed against exactly "
+                f"this tree ({', '.join(sorted(required or ()))}). The full "
+                "suite runs in CI.",
+            )
         return Verdict(True, "a full pytest run passed against exactly this tree.")
 
     if hatch is None:
         return Verdict(
             False,
             f"Refusing this commit: {problem}\n\n"
-            f"  Run the suite:   python -m pytest -q\n"
+            f"  Run:   {run_hint}\n"
             f"  Then commit again. The result is recorded by pytest, so you do\n"
             f"  not have to remember to read it.\n\n"
             f"  If this commit genuinely must go in unverified, say why in the\n"
@@ -502,7 +703,8 @@ def write_record(repo: Path, record: Record) -> Path:
     path = record_path(repo)
     path.parent.mkdir(parents=True, exist_ok=True)
     previous = [
-        item for item in read_records(repo)
+        item
+        for item in read_records(repo)
         if not (item.pid and item.pid == record.pid and item.when == record.when)
     ]
     history = [*previous, record][-KEEP_RUNS:]
@@ -542,6 +744,36 @@ def imported_from_elsewhere(record: "Record", repo: Path) -> bool:
         return True
 
 
+def _required_or_full(repo: Path, *git_args: str) -> frozenset[str] | None:
+    """What the files listed by ``git <git_args>`` require; full suite if git
+    cannot say. Fails closed: not knowing what changed means checking it all."""
+    try:
+        listing = _git(repo, *git_args)
+    except (RuntimeError, OSError):
+        return None
+    return required_tests([line for line in listing.splitlines() if line], repo)
+
+
+def staged_requirement(repo: Path) -> frozenset[str] | None:
+    """For the commit being made. ``--cached`` follows ``GIT_INDEX_FILE``, so a
+    ``commit -a`` or a path-limited commit is read as what it will commit."""
+    return _required_or_full(repo, "diff", "--cached", "--name-only", "--no-renames")
+
+
+def head_requirement(repo: Path) -> frozenset[str] | None:
+    """For the commit just made (post-commit)."""
+    return _required_or_full(
+        repo,
+        "diff-tree",
+        "--no-commit-id",
+        "--name-only",
+        "-r",
+        "--root",
+        "--no-renames",
+        "HEAD",
+    )
+
+
 def audit_head(repo: Path, *, now: float | None = None) -> str | None:
     """Record HEAD if it was committed without verification. Returns the note.
 
@@ -557,7 +789,12 @@ def audit_head(repo: Path, *, now: float | None = None) -> str | None:
     except (RuntimeError, OSError):
         return None
     decision = verdict(
-        read_records(repo), digest, message, now=now, source=source_root(repo)
+        read_records(repo),
+        digest,
+        message,
+        now=now,
+        source=source_root(repo),
+        required=head_requirement(repo),
     )
     if decision.allowed:
         return None
@@ -610,7 +847,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
     decision = verdict(
-        read_records(repo), digest, message, source=source_root(repo)
+        read_records(repo),
+        digest,
+        message,
+        source=source_root(repo),
+        required=staged_requirement(repo),
     )
     if decision.allowed:
         print(f"commit guard: {decision.reason}")
