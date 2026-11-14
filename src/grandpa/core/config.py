@@ -544,6 +544,11 @@ class ToolsConfig:
     mcp: MCPConfig = field(default_factory=MCPConfig)
     browser: BrowserConfig = field(default_factory=BrowserConfig)
     enabled: str = ""  # comma-separated default tools
+    # `grandpa chat` sends free text that no local route claimed through the
+    # action layer's tool loop (the path behind `grandpa ask --tool-loop`), so
+    # the model can act, with confirmation for risky actions. False restores
+    # the old plain-chat reply: [tools] chat_tool_loop = false
+    chat_tool_loop: bool = True
     # Extra directory that file search may read, on top of the user's own
     # folders. Empty means user folders and the working directory only.
     workspace: str = ""

@@ -21,7 +21,7 @@ from rich.console import Console
 from grandpa.action_layer.loop import DEFAULT_STEP_LIMIT, ToolsUnsupportedError, run
 from grandpa.action_layer.model import Origin, RiskLevel
 
-__all__ = ["run_tool_loop", "warn_if_cold"]
+__all__ = ["chat_tool_turn", "run_tool_loop", "warn_if_cold"]
 
 # Measured on the development machine: evaluating the tool definitions runs at
 # roughly ten tokens a second, and the catalogue is a few thousand tokens. The
@@ -248,3 +248,49 @@ def run_tool_loop(
     if result.stopped_at_limit:
         return 1
     return 1 if failed and not any(entry.success for entry in result.trace) else 0
+
+
+CHAT_HISTORY_MESSAGES = 8
+"""Earlier chat messages handed to the loop with each turn: enough for "and
+make it 40" to mean the volume, small enough not to swamp a local model."""
+
+
+def chat_tool_turn(
+    goal: str,
+    *,
+    engine: Any,
+    model: str,
+    history: list | None,
+    confirm_callback,
+    console: Console,
+    step_limit: int = DEFAULT_STEP_LIMIT,
+) -> str | None:
+    """One ``grandpa chat`` turn through the action layer's tool loop.
+
+    Returns the reply to show, or ``None`` when this model cannot call tools,
+    so chat answers that turn the old way instead of failing. Every action the
+    model picks goes through the executor with ``Origin.MODEL`` and chat's own
+    confirm callback, so anything that asks in ``grandpa ask --tool-loop``
+    asks here too. Other errors propagate to chat's existing handlers.
+    """
+
+    def announce(entry) -> None:
+        mark = "[green]ok[/green]" if entry.success else f"[red]{entry.error}[/red]"
+        console.print(f"  · {entry.action} {mark}")
+
+    try:
+        result = run(
+            goal,
+            engine=engine,
+            model=model,
+            confirm_callback=confirm_callback,
+            origin=Origin.MODEL,
+            step_limit=step_limit,
+            on_action=announce,
+            history=list(history or [])[-CHAT_HISTORY_MESSAGES:],
+        )
+    except ToolsUnsupportedError:
+        return None
+    if result.stopped_at_limit and not result.text.strip():
+        return "I stopped after the step limit without an answer."
+    return result.text

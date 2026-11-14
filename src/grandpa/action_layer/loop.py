@@ -410,8 +410,13 @@ def run(
     on_action: Callable[[ActionTrace], None] | None = None,
     tiered: bool | None = None,
     preselect: bool | None = None,
+    history: Sequence[Any] | None = None,
 ) -> LoopResult:
     """Let the model pursue ``goal`` with the catalogue as its tools.
+
+    ``history`` is earlier user/assistant messages, placed between the system
+    prompt and ``goal`` so a chat turn keeps its conversation. Tool selection
+    still reads ``goal`` alone.
 
     ``tiered`` sends the core twenty plus ``load_tools`` and lets the model
     fetch the rest, which is what makes a cold first request affordable. Pass
@@ -448,6 +453,7 @@ def run(
         tools = as_tool_definitions(CATALOGUE)
     messages: list[Message] = [
         Message(role=Role.SYSTEM, content=system_prompt),
+        *(history or ()),
         Message(role=Role.USER, content=goal),
     ]
     trace: list[ActionTrace] = []
