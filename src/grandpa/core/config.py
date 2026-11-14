@@ -830,11 +830,18 @@ class SpeechConfig:
     compute_type: str = "auto"  # "auto", "float16", "int8", "float32"
 
 
+#: The one default text-to-speech backend. ``TTSConfig.backend`` and the voice
+#: assistant's ``tts_engine`` both resolve from here, so ``grandpa doctor`` and
+#: ``grandpa voice`` can no longer disagree about which engine speaks. pyttsx3
+#: because it ships with Windows (SAPI5) and needs no model download.
+DEFAULT_TTS_BACKEND = "pyttsx3"
+
+
 @dataclass(slots=True)
 class TTSConfig:
     """Text-to-speech settings."""
 
-    backend: str = "kokoro"  # Default fallback backend
+    backend: str = DEFAULT_TTS_BACKEND
     enabled: bool = True
 
 
