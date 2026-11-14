@@ -83,11 +83,15 @@ F5-TTS 1.1.22:
 
 The script is idempotent and refuses unknown source layouts or package versions.
 
-## Vendored FFmpeg (LGPL-3)
+## FFmpeg (LGPL-3), fetched on setup
 
-`tools/ffmpeg-7.1-lgpl-shared/` is an unmodified prebuilt FFmpeg 7.1 LGPL
-shared build for win64, vendored so the voice runtime works without a separate
-FFmpeg install.
+`tools/ffmpeg-7.1-lgpl-shared/` holds an unmodified prebuilt FFmpeg 7.1 LGPL
+shared build for win64. It is no longer committed: `scripts/setup.ps1` runs
+`scripts/fetch_ffmpeg.py`, which downloads the zip from
+`diagnostics/ffmpeg_asset_url.txt`, refuses it unless its SHA-256 matches
+`diagnostics/ffmpeg_asset.sha256`, and extracts it under `tools/` (ignored by
+git). An `ffmpeg` already on PATH is used instead. To use a zip you downloaded
+yourself: `python scripts/fetch_ffmpeg.py --zip <path>`.
 
 - Upstream build: BtbN/FFmpeg-Builds, `ffmpeg-n7.1-latest-win64-lgpl-shared-7.1`
   <https://github.com/BtbN/FFmpeg-Builds/releases>
