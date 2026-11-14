@@ -80,29 +80,12 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         "/status",
         "Show current runtime status",
         "Core",
-        preview=("/status", "/system", "/model"),
+        preview=("/status", "/doctor", "/model"),
         examples=("what is your status", "is Grandpa running"),
         note="Status checks are read-only.",
         visibility="primary",
         picker_group="Grandpa",
         handler="interactive_tui._status",
-    ),
-    SlashCommand(
-        "/mode",
-        "Assistant modes",
-        "Core",
-        status="Help only / Not persisted yet",
-        subcommands=(
-            "/mode list",
-            "/mode show",
-            "/mode coding",
-            "/mode personal",
-            "/mode system",
-            "/mode automation",
-            "/mode learning",
-        ),
-        note="Mode switching is a safe placeholder for now.",
-        routing="help",
     ),
     SlashCommand(
         "/settings",
@@ -411,16 +394,6 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         note="Deletes and bulk operations require confirmation. Executables are never opened automatically.",
     ),
     SlashCommand(
-        "/system",
-        "System",
-        "Computer",
-        status="Planned / Restricted",
-        subcommands=("/system status", "/system diagnostics", "/system health"),
-        examples=("show system status", "check disk space"),
-        note="No shutdown, restart, or destructive system action is enabled here.",
-        routing="help",
-    ),
-    SlashCommand(
         "/coding",
         "Coding",
         "Developer",
@@ -428,27 +401,6 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         subcommands=("/coding status", "/coding help", "/coding diagnostics"),
         examples=("review this code", "explain this error", "run the tests"),
         note="Coding actions should keep repository changes reviewable.",
-        routing="help",
-    ),
-    SlashCommand(
-        "/git",
-        "Git",
-        "Developer",
-        status="Planned / Partially available",
-        subcommands=("/git status", "/git diff", "/git commit"),
-        examples=("show git status", "summarize my changes"),
-        note="Git commit and push actions require explicit user approval.",
-        routing="help",
-    ),
-    SlashCommand(
-        "/github",
-        "GitHub",
-        "Developer",
-        label="GitHub",
-        status="Planned / Not configured",
-        subcommands=("/github status", "/github prs", "/github issues"),
-        examples=("show my open pull requests", "summarize issue 12"),
-        note="GitHub actions require authenticated local tooling or a configured connector.",
         routing="help",
     ),
     SlashCommand(
@@ -463,16 +415,6 @@ SLASH_COMMANDS: tuple[SlashCommand, ...] = (
         visibility="primary",
         picker_group="Grandpa",
         handler="interactive_tui._voice",
-    ),
-    SlashCommand(
-        "/order",
-        "Order",
-        "Personal",
-        status="Planned / Not configured",
-        subcommands=("/order food", "/order grocery", "/order status"),
-        examples=("order biryani", "reorder groceries"),
-        note="Ordering is a future feature. Grandpa will not place real orders from this command.",
-        routing="help",
     ),
     SlashCommand(
         "/automation",
@@ -509,7 +451,6 @@ _SETTINGS_NAMESPACE = {
     "compact": "/compact",
     "whoami": "/whoami",
     "profile": "/profile",
-    "mode": "/mode",
     "model": "/model",
 }
 
@@ -639,8 +580,6 @@ def command_help_text(name: str) -> str | None:
         return None
     module_name = {
         "/status": "Grandpa Status",
-        "/mode": "Assistant Modes",
-        "/github": "GitHub Module",
     }.get(command.name, f"{command.name.lstrip('/').title()} Module")
     lines = [
         module_name,
@@ -685,10 +624,6 @@ def _preview_label(command: str) -> str:
     label = " ".join(parts[1:])
     label = label.replace("<", "").replace(">", "")
     return label.replace("-", " ").title()
-
-
-def mode_help_text() -> str:
-    return command_help_text("/mode") or ""
 
 
 def unknown_command_message(command: str) -> str:

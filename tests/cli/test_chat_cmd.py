@@ -589,19 +589,38 @@ class TestSlashCommandRegistry:
 
         assert {
             "/help",
-            "/mode",
             "/memory",
             "/reminders",
             "/desktop",
             "/voice",
-            "/order",
-            "/github",
+            "/browser",
+            "/notes",
         } <= names
 
+    def test_the_commands_that_only_described_something_unbuilt_are_gone(self) -> None:
+        """Five entries removed, each for the same measured reason.
+
+        An audit drove every command with a real subcommand and compared the
+        reply against the registry's own card for that name. These five were
+        identical to the card, had no backend module, and nothing in the
+        167-action catalogue implemented their subject. A menu that lists
+        capabilities the product does not have is a menu that misleads.
+
+        /system went for a second reason: what its card described -- status and
+        diagnostics -- is what /status and /doctor already do for real.
+        """
+        names = set(command_names())
+
+        assert not ({"/mode", "/git", "/github", "/order", "/system"} & names)
+
     def test_registry_has_friendly_labels(self) -> None:
+        # /github carried the only label= override in the registry and went
+        # with the unbuilt five, so the derived form is all that is left to
+        # check. The label field itself is kept: it is the hook for a name that
+        # does not title-case cleanly, and the next one will need it.
         assert get_command("/help").display_label == "Help"  # type: ignore[union-attr]
         assert get_command("/status").display_label == "Status"  # type: ignore[union-attr]
-        assert get_command("/github").display_label == "GitHub"  # type: ignore[union-attr]
+        assert get_command("/downloads").display_label == "Downloads"  # type: ignore[union-attr]
 
     def test_default_registry_surface_hides_aliases_and_advanced_commands(self) -> None:
         names = [command.name for command in top_level_commands()]
@@ -663,12 +682,51 @@ class TestSlashCommandRegistry:
         assert "/settings config" in theme.help_commands_text("advanced")
         assert "/desktop" in theme.help_commands_text("all")
 
-    def test_mode_subcommands_exist(self) -> None:
-        command = get_command("/mode")
+    def test_subcommands_exist_on_a_command_that_does_something(self) -> None:
+        # Was /mode, which is gone. /notes is the equivalent shape and its
+        # subcommands were each verified to reach the notes store.
+        command = get_command("/notes")
 
         assert command is not None
-        assert "/mode list" in command.subcommands
-        assert "/mode learning" in command.subcommands
+        assert "/notes list" in command.subcommands
+        assert "/notes create <name>" in command.subcommands
+
+    def test_help_names_exactly_what_the_registry_holds(self) -> None:
+        """Exactness, which the spot-check above does not give.
+
+        test_help_views_use_registry_categories_and_namespaces checks four
+        names by hand. That would have passed happily while /help advertised
+        /mode, /git, /github, /order and /system -- and it did. This compares
+        the two sets, so a name can never again appear in help without a
+        registry entry, or survive in help after its entry is removed.
+
+        /quit is excluded: it is an alias of /exit and deliberately not listed.
+        """
+        import re
+
+        registry = set(command_names()) - {"/quit"}
+        for view in ("commands", "all"):
+            text = theme.help_commands_text(view)
+            listed = {
+                name
+                for name in re.findall(r"/[a-z][a-z0-9-]*", text)
+                if not name.startswith("/help ")
+            }
+            assert listed <= registry, (
+                f"/help {view} advertises names with no registry entry: "
+                f"{sorted(listed - registry)}"
+            )
+
+        everything = {
+            name
+            for name in re.findall(
+                r"/[a-z][a-z0-9-]*", theme.help_commands_text("all")
+            )
+        }
+        assert registry <= everything, (
+            f"registry commands missing from /help all: "
+            f"{sorted(registry - everything)}"
+        )
 
     def test_help_preview_items_exist(self) -> None:
         assert command_preview_items("/help")[:4] == [
@@ -879,11 +937,11 @@ class TestSlashCommandRegistry:
         )
 
     def test_picker_subcommand_suggestions_are_available(self) -> None:
-        suggestions = input_ui._subcommand_suggestions("/mode")
+        suggestions = input_ui._subcommand_suggestions("/memory")
         names = [name for name, _description in suggestions]
 
-        assert "/mode list" in names
-        assert "/mode learning" in names
+        assert "/memory list" in names
+        assert "/memory forget <query or id>" in names
 
     def test_picker_preview_lines_include_selected_command_details(self) -> None:
         assert input_ui._picker_preview_lines("/help")[:4] == [
@@ -892,14 +950,12 @@ class TestSlashCommandRegistry:
             "Help examples",
             "Help modules",
         ]
-        mode_lines = input_ui._picker_preview_lines("/mode")
         memory_lines = input_ui._picker_preview_lines("/memory")
         reminder_lines = input_ui._picker_preview_lines("/reminders")
 
-        assert "Mode list" in mode_lines
-        assert "Mode show" in mode_lines
-        assert "Mode coding" in mode_lines
-        assert not any(line.startswith("/") for line in mode_lines)
+        # The "no raw slashes in the preview" check moves to /memory, since
+        # /mode is gone and it was the command carrying it.
+        assert not any(line.startswith("/") for line in memory_lines)
         assert "Memory list" in memory_lines
         assert "Memory all" in memory_lines
         assert "Memory search <query>" in memory_lines
@@ -907,10 +963,9 @@ class TestSlashCommandRegistry:
         assert "Reminders cancel <id>" in reminder_lines
 
     def test_picker_preview_options_preserve_submit_commands(self) -> None:
-        assert input_ui._command_preview_options("/mode")[0] == ("/mode list", "List")
-        assert input_ui._command_preview_options("/mode")[2] == (
-            "/mode coding",
-            "Coding",
+        assert input_ui._command_preview_options("/memory")[0] == (
+            "/memory list",
+            "List",
         )
         assert input_ui._command_preview_options("/memory")[2] == (
             "/memory search <query>",
@@ -977,21 +1032,30 @@ class TestChatSlashCommands:
         assert "Available" in message
         assert "permission" in message.lower()
 
-    def test_module_help_order(self) -> None:
-        message = _handle_module_slash_command("/order")
+    def test_a_deleted_command_has_no_card_to_render(self) -> None:
+        """The card layer is what made the old audit vacuous.
+
+        _handle_module_slash_command returns the registry's card for any name
+        in the registry, which is why "produces output" passed for every
+        advertised command. With the five unbuilt entries removed there is no
+        card to produce, so they now fall through to the unknown-command
+        message instead of describing a feature that does not exist.
+        """
+        for name in ("/mode", "/order", "/git", "/github", "/system"):
+            assert _handle_module_slash_command(name) is None, name
+
+    def test_module_help_still_works_for_a_half_built_command(self) -> None:
+        """/desktop keeps its card on purpose.
+
+        It is the one card-only command whose subject is thoroughly built:
+        41 of the 167 catalogued actions are implemented in desktop.control,
+        reachable by typing a sentence. The card is honest about that, so the
+        command stays and the wiring is left for its own task.
+        """
+        message = _handle_module_slash_command("/desktop")
 
         assert message is not None
-        assert "Order Module" in message
-        assert "Planned / Not configured" in message
-        assert "will not place real orders" in message
-
-    def test_mode_help(self) -> None:
-        message = _handle_module_slash_command("/mode")
-
-        assert message is not None
-        assert "Assistant Modes" in message
-        assert "/mode list" in message
-        assert "/mode learning" in message
+        assert "Desktop Module" in message
 
     def test_unknown_slash_command_message(self) -> None:
         message = _unknown_slash_command_message("/abc")
