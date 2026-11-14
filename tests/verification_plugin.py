@@ -27,6 +27,7 @@ if str(_SCRIPTS) not in sys.path:
 
 from commit_verification import (  # noqa: E402
     Record,
+    path_only_selection,
     repo_root,
     scope_from_options,
     worktree_digest,
@@ -83,6 +84,7 @@ def pytest_sessionstart(session) -> None:
     record = Record(
         exitstatus=-1,
         scope=_scope_of(config),
+        paths=_paths_of(config, repo),
         digest=digest,
         started_digest=digest,
         when=_STARTED["when"],
@@ -94,6 +96,26 @@ def pytest_sessionstart(session) -> None:
         write_record(repo, record)
     except OSError:  # noqa: BLE001 - a read-only checkout is not a failure
         pass
+
+
+def _paths_of(config, repo: Path) -> list[str]:
+    """The run's test paths, when they were its only narrowing (see
+    ``commit_verification.path_only_selection``)."""
+    option = config.option
+    try:
+        invocation_dir = Path(str(config.invocation_params.dir))
+    except Exception:  # noqa: BLE001 - bookkeeping must not fail a run
+        invocation_dir = Path.cwd()
+    return path_only_selection(
+        file_or_dir=list(getattr(option, "file_or_dir", []) or []),
+        keyword=getattr(option, "keyword", "") or "",
+        markexpr=getattr(option, "markexpr", "") or "",
+        deselect=list(getattr(option, "deselect", []) or []),
+        last_failed=bool(getattr(option, "lf", False)),
+        failed_first=bool(getattr(option, "failedfirst", False)),
+        invocation_dir=invocation_dir,
+        repo=repo,
+    )
 
 
 def _scope_of(config) -> str:
@@ -142,6 +164,7 @@ def pytest_sessionfinish(session, exitstatus) -> None:
         source=_imported_source(),
         exitstatus=int(exitstatus),
         scope=scope,
+        paths=_paths_of(config, repo),
         digest=digest,
         # Taken at sessionstart. When the two differ the tree was edited while
         # the run was going, and the run proved nothing about either state.

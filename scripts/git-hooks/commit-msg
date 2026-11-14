@@ -1,5 +1,6 @@
 #!/bin/sh
-# Refuse a commit whose content has not passed a full pytest run.
+# Refuse a commit whose content has not passed its tests: the touched packages
+# plus the tests/action_layer smoke (or the full suite, for harness changes).
 #
 # commit-msg rather than pre-commit, because the escape hatch is a trailer in
 # the commit message and pre-commit cannot see the message. See
