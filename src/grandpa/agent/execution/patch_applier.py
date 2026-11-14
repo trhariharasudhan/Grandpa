@@ -44,6 +44,7 @@ def apply_patch_proposal(
                 break
 
             applied_changes.append(change.path)
+            drop_stale_bytecode(change.path)
             meta = res.metadata or {}
             if meta.get("backup_path"):
                 backups.append((change.path, meta["backup_path"]))
@@ -69,6 +70,30 @@ def apply_patch_proposal(
     )
 
 
+def drop_stale_bytecode(path: str) -> None:
+    """Delete the cached ``.pyc`` files of a source file that was just rewritten.
+
+    Python decides a ``.pyc`` is current by the source's mtime in whole seconds
+    plus its size. A one-character fix such as ``a - b`` -> ``a + b`` keeps the
+    size, and the diagnose run compiled the file moments earlier, often in the
+    same second. The verification run then imported the OLD bytecode and
+    reported the correct patch as failed -- 2 runs in 6 on Linux, and the
+    intermittent ``test_agent_execution_v2`` failures on windows-latest.
+    Removing the cache forces a recompile from the patched source.
+    """
+    source = Path(path)
+    if source.suffix != ".py":
+        return
+    cache_dir = source.parent / "__pycache__"
+    if not cache_dir.is_dir():
+        return
+    for pyc in cache_dir.glob(f"{source.stem}.*.pyc"):
+        try:
+            pyc.unlink()
+        except OSError:
+            pass
+
+
 def rollback_applied_backups(backups: list[tuple[str, str]]) -> None:
     """Restore pre-existing backups, ensuring only engine-applied changes are reverted."""
     for orig_path, backup_path in backups:
@@ -77,6 +102,7 @@ def rollback_applied_backups(backups: list[tuple[str, str]]) -> None:
             b_path = Path(backup_path)
             if b_path.exists():
                 shutil.copy2(str(b_path), str(o_path))
+                drop_stale_bytecode(orig_path)
                 # Delete backup file after successful restore
                 b_path.unlink(missing_ok=True)
         except Exception:
