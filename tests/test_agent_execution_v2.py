@@ -23,6 +23,7 @@ from grandpa.agent.execution.models import (
     FailureAnalysis,
     PatchProposal,
 )
+from grandpa.agent.execution.report import generate_sanitized_report
 from grandpa.agent.runtime import AgentRuntime
 from grandpa.cli.agent_run_cmd import agent_group
 from grandpa.memory.service import MemoryService
@@ -375,7 +376,10 @@ def test_calculator_fixture_end_to_end(temp_workspace) -> None:
     report = runtime.apply_patch(
         prop.proposal_id, str(temp_workspace), db_path=str(app_db)
     )
-    assert report.final_status == "verified_success"
+    # The full report, not pytest's truncated repr: on windows-latest this has
+    # failed intermittently with only "Status: failed" visible, and the exit
+    # code and summary of the focused run are what say why.
+    assert report.final_status == "verified_success", generate_sanitized_report(report)
 
     # Verify patch actually fixed the calculator.py file
     assert "return a + b" in calc_file.read_text(encoding="utf-8")
@@ -489,4 +493,5 @@ def test_cli_execution(temp_workspace, setup_memory) -> None:
         ],
     )
     assert res_apply.exit_code == 0
-    assert "Final Status  : VERIFIED_SUCCESS" in res_apply.output
+    # Print the whole report on failure (see test_calculator_fixture_end_to_end).
+    assert "Final Status  : VERIFIED_SUCCESS" in res_apply.output, res_apply.output
