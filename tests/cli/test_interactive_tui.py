@@ -324,7 +324,7 @@ def test_tui_voice_command_subcommands(tmp_path, monkeypatch) -> None:
 
     res = INTERACTIVE_COMMANDS.dispatch(session, "/voice status")
     assert "Voice: Enabled" in res.message
-    assert "TTS Backend: kokoro" in res.message
+    assert "TTS Backend: pyttsx3" in res.message
 
     # 3. Test /voice off
     res = INTERACTIVE_COMMANDS.dispatch(session, "/voice off")

@@ -36,7 +36,7 @@ def test_Grandpa_system_has_speech_backend():
 def test_tts_config_defaults():
     cfg = GrandpaConfig()
     assert hasattr(cfg, "tts")
-    assert cfg.tts.backend == "kokoro"
+    assert cfg.tts.backend == "pyttsx3"
 
 
 def test_grandpa_voice_config_defaults():
@@ -121,7 +121,7 @@ def test_old_config_without_voice_sections_remains_compatible(tmp_path):
 
     config = load_config(config_path)
 
-    assert config.tts.backend == "kokoro"
+    assert config.tts.backend == "pyttsx3"
     assert config.tts.enabled is True
     assert config.grandpa_voice.service_url == "http://127.0.0.1:8765"
     assert config.grandpa_voice.synthesis_timeout_seconds == 600.0

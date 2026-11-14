@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from grandpa.core.config import load_config
+from grandpa.core.config import DEFAULT_TTS_BACKEND, load_config
 from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASES
 
 
@@ -23,7 +23,7 @@ class VoiceAssistantConfig:
     minimum_speech_seconds: float = 0.25
     silence_timeout_seconds: float = 1.2
     microphone_recovery_attempts: int = 2
-    tts_engine: str = "pyttsx3"
+    tts_engine: str = DEFAULT_TTS_BACKEND
     tts_rate: int = 175
     tts_volume: float = 1.0
     tts_voice: str = ""
@@ -50,7 +50,8 @@ def load_voice_assistant_config(
 ) -> VoiceAssistantConfig:
     """Load voice config from Grandpa config plus ``GRANDPA_VOICE_*`` overrides."""
 
-    base = load_config().speech
+    loaded = load_config()
+    base = loaded.speech
     return VoiceAssistantConfig(
         stt_model=_model_for_language(
             _first_non_empty(
@@ -60,8 +61,10 @@ def load_voice_assistant_config(
                 "base.en",
             ),
             _first_non_empty(
-                language, os.getenv("GRANDPA_VOICE_LANGUAGE"),
-                getattr(base, "language", ""), "en",
+                language,
+                os.getenv("GRANDPA_VOICE_LANGUAGE"),
+                getattr(base, "language", ""),
+                "en",
             ),
         ),
         language=_first_non_empty(
@@ -101,7 +104,13 @@ def load_voice_assistant_config(
         microphone_recovery_attempts=max(
             0, _env_int("GRANDPA_VOICE_RECOVERY_ATTEMPTS", 2) or 0
         ),
-        tts_engine=_first_non_empty(os.getenv("GRANDPA_VOICE_TTS_ENGINE"), "pyttsx3"),
+        # One source of truth: [tts] backend in config.toml, which defaults to
+        # DEFAULT_TTS_BACKEND. The env var still overrides for one session.
+        tts_engine=_first_non_empty(
+            os.getenv("GRANDPA_VOICE_TTS_ENGINE"),
+            getattr(getattr(loaded, "tts", None), "backend", ""),
+            DEFAULT_TTS_BACKEND,
+        ),
         tts_rate=_env_int("GRANDPA_VOICE_RATE", 175) or 175,
         tts_volume=_env_float("GRANDPA_VOICE_VOLUME", 1.0),
         tts_voice=_first_non_empty(os.getenv("GRANDPA_VOICE_WINDOWS_VOICE"), ""),
