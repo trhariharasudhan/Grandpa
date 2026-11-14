@@ -10,6 +10,7 @@ from typing import Any
 import click
 import httpx
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -431,9 +432,122 @@ def _handle_remove(model_name: str, console: Console) -> None:
     sys.exit(1)
 
 
-@click.group("model")
-def model() -> None:
-    """Manage language models. Also available as 'grandpa models'."""
+@click.group("model", invoke_without_command=True)
+@click.pass_context
+def model(ctx: click.Context) -> None:
+    """Manage models. Also available as 'grandpa models'.
+
+    With no subcommand, lists every Odin role and whether it is installed.
+    """
+    if ctx.invoked_subcommand is None:
+        _render_roles(Console(), as_json=False)
+
+
+def _ollama_client() -> Any:
+    from grandpa.intelligence.odin_registry import HttpOllamaClient
+
+    try:
+        host = load_config().engine.ollama.host
+    except Exception:
+        host = "http://127.0.0.1:11434"
+    return HttpOllamaClient(host)
+
+
+def _ollama_tags(client: Any) -> set[str] | None:
+    try:
+        return client.list_tags()
+    except Exception:
+        return None
+
+
+def _render_roles(console: Console, *, as_json: bool, client: Any = None) -> None:
+    from grandpa.intelligence.odin_registry import role_statuses
+
+    tags = _ollama_tags(client or _ollama_client())
+    statuses = role_statuses(tags)
+    if as_json:
+        click.echo(json.dumps([s.as_dict() for s in statuses], indent=2))
+        return
+    table = Table(title="Grandpa models (Odin roles)")
+    for column in ("Role", "Name", "Runtime", "Status", "Purpose / detail"):
+        table.add_column(column)
+    colours = {"installed": "green", "fallback": "yellow", "missing": "red"}
+    for s in statuses:
+        colour = colours.get(s.status, "white")
+        detail = escape(s.role.purpose + (f" ({s.detail})" if s.detail else ""))
+        table.add_row(
+            s.role.role,
+            s.role.name,
+            s.role.runtime,
+            f"[{colour}]{s.status}[/{colour}]",
+            detail,
+        )
+    console.print(table)
+    if tags is None:
+        console.print(
+            "[yellow]Ollama is not reachable; start it with `ollama serve`.[/yellow]"
+        )
+    elif any(s.status == "missing" and s.role.is_ollama for s in statuses):
+        console.print("Build the missing ones with [cyan]grandpa models setup[/cyan].")
+
+
+@model.command("roles")
+@click.option("--json", "as_json", is_flag=True, default=False, help="JSON output.")
+def roles(as_json: bool) -> None:
+    """List every Odin role with status installed/missing."""
+    _render_roles(Console(), as_json=as_json)
+
+
+@model.command("setup")
+@click.option(
+    "--yes", is_flag=True, default=False, help="Run the plan (default: dry run)."
+)
+@click.option(
+    "--modelfiles",
+    "modelfile_dir",
+    type=click.Path(file_okay=False, path_type=str),
+    default=None,
+    help="Directory holding Modelfile.<role> (default: the repo's models/).",
+)
+def setup(yes: bool, modelfile_dir: str | None) -> None:
+    """Build every missing Ollama role from its Modelfile (dry run unless --yes)."""
+    from pathlib import Path
+
+    from grandpa.intelligence.odin_registry import (
+        DEFAULT_MODELFILE_DIR,
+        plan_setup,
+        run_setup,
+    )
+
+    console = Console()
+    client = _ollama_client()
+    tags = _ollama_tags(client)
+    if tags is None:
+        console.print(
+            "[red]Ollama is not reachable.[/red] Start it with `ollama serve`."
+        )
+        sys.exit(1)
+    folder = Path(modelfile_dir) if modelfile_dir else DEFAULT_MODELFILE_DIR
+    plan = plan_setup(tags, folder)
+    if not plan.steps:
+        console.print("[green]Every Ollama role is already installed.[/green]")
+        return
+    for step in plan.steps:
+        if step.action == "skip":
+            console.print(f"  skip {step.role}: {step.detail}")
+        else:
+            console.print(f"  {step.role}: {step.command}")
+    if not yes:
+        console.print("Dry run. Re-run with [cyan]--yes[/cyan] to do it.")
+        return
+    run_setup(plan, client, folder)
+    failed = [s for s in plan.runnable if not s.done]
+    for step in plan.runnable:
+        mark = "[green]ok[/green]" if step.done else f"[red]failed[/red] {step.error}"
+        extra = f" ({step.detail})" if step.detail and not step.done else ""
+        console.print(f"  {step.role}: {mark}{extra}")
+    if failed:
+        sys.exit(1)
 
 
 @model.command("list")

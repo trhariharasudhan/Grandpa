@@ -56,8 +56,9 @@ Third-party components
 FFmpeg
     voice_runtime/tools/ffmpeg-7.1-lgpl-shared/
 
-    An unmodified prebuilt FFmpeg 7.1 LGPL shared build is vendored for the
-    optional local voice runtime. FFmpeg is licensed under the GNU Lesser
+    An unmodified prebuilt FFmpeg 7.1 LGPL shared build is downloaded on
+    setup (checksum-pinned, not committed) for the optional local voice
+    runtime. FFmpeg is licensed under the GNU Lesser
     General Public License, version 3. Its full license text is included at
     voice_runtime/tools/ffmpeg-7.1-lgpl-shared/
         ffmpeg-n7.1-latest-win64-lgpl-shared-7.1/LICENSE.txt
