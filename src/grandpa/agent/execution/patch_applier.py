@@ -61,12 +61,37 @@ def apply_patch_proposal(
             error_message=err_msg,
         )
 
+    for changed in applied_changes:
+        drop_stale_bytecode(changed)
+
     return PatchApplicationResult(
         proposal_id=proposal.proposal_id,
         success=True,
         applied_changes=applied_changes,
         backups_created=[b[1] for b in backups],
     )
+
+
+def drop_stale_bytecode(source_path: str) -> None:
+    """Delete cached bytecode for a source file the engine just rewrote.
+
+    Python trusts a ``.pyc`` when the source's size and whole-second mtime
+    match. A same-size fix written in the same second as the diagnosis run
+    (``a - b`` -> ``a + b``) is then shadowed by the old bytecode, and the
+    validation run tests the unpatched code. The cache is regenerated on the
+    next import, so deleting it is always safe.
+    """
+    path = Path(source_path)
+    if path.suffix != ".py":
+        return
+    cache_dir = path.parent / "__pycache__"
+    if not cache_dir.is_dir():
+        return
+    for pyc in cache_dir.glob(f"{path.stem}.*.pyc"):
+        try:
+            pyc.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def rollback_applied_backups(backups: list[tuple[str, str]]) -> None:

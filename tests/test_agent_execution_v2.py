@@ -381,6 +381,58 @@ def test_calculator_fixture_end_to_end(temp_workspace) -> None:
     assert "return a + b" in calc_file.read_text(encoding="utf-8")
 
 
+def test_applied_patch_drops_stale_bytecode(temp_workspace) -> None:
+    """A same-size fix in the same second must not run the old bytecode.
+
+    Python accepts a .pyc whose recorded size and whole-second mtime match the
+    source. `a - b` -> `a + b` keeps the size, so when the diagnosis run and
+    the patch land in the same second the validation run imported the old
+    code and reported "failed" (seen intermittently on the Windows runner).
+    """
+    import os
+    import py_compile
+
+    from grandpa.agent.execution.models import PatchFileChange
+    from grandpa.agent.execution.patch_applier import apply_patch_proposal
+    from grandpa.agent.execution.patch_builder import calculate_file_hash
+
+    calc_file = temp_workspace / "calculator.py"
+    calc_file.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    pyc = Path(py_compile.compile(str(calc_file), doraise=True))
+    stat_before = calc_file.stat()
+    assert pyc.exists()
+
+    proposal = PatchProposal(
+        proposal_id="bytecode",
+        goal="fix add",
+        root_cause="wrong operator",
+        affected_files=[str(calc_file)],
+        exact_change_summary="- to +",
+        file_changes=[
+            PatchFileChange(
+                path=str(calc_file),
+                original_hash=calculate_file_hash(str(calc_file)),
+                diff_text=(
+                    "--- a/calculator.py\n"
+                    "+++ b/calculator.py\n"
+                    "@@ -1,2 +1,2 @@\n"
+                    " def add(a, b):\n"
+                    "-    return a - b\n"
+                    "+    return a + b\n"
+                ),
+            )
+        ],
+    )
+    result = apply_patch_proposal(proposal, str(temp_workspace))
+
+    assert result.success, result.error_message
+    # Pin the race: same size, same mtime as when the bytecode was written.
+    os.utime(calc_file, ns=(stat_before.st_atime_ns, stat_before.st_mtime_ns))
+    assert calc_file.stat().st_size == stat_before.st_size
+    assert "return a + b" in calc_file.read_text(encoding="utf-8")
+    assert not pyc.exists()
+
+
 # --- Goal Classification and Success checks (Fix 10) ---
 
 
