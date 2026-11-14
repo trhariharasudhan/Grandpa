@@ -559,12 +559,42 @@ class AgentConfig:
     system_prompt: str = ""  # inline system prompt (takes precedence if set)
     system_prompt_path: str = ""  # path to system prompt file (.txt, .md)
     context_from_memory: bool = True  # inject relevant memory context into prompts
+    #: The system prompt the chat path actually sends. Dumped from a real
+    #: request rather than assumed, because there are two other plausible
+    #: sources and editing either changes nothing: build_brain_context in
+    #: core_ai_brain.py is built for the direct branch, and
+    #: GENERAL_CONVERSATION_PROMPT in prompt/identity.py is not sent on this
+    #: path at all. The default agent is "simple", so the agent branch is live
+    #: and BaseAgent._build_messages falls back to this string.
+    #:
+    #: One paragraph per reported failure. Written as instructions about this
+    #: reply rather than as a description of a good assistant: at 8.2B a
+    #: concrete instruction lands and a principle does not.
     default_system_prompt: str = (
-        "You are a helpful AI assistant running locally on the user's own "
-        "hardware through grandpa. You are not a cloud service. Respond "
-        "helpfully, concisely, and accurately. Write plain text only: never "
-        "use emoji, emoticons or decorative symbols, including at the end of "
-        "a reply."
+        "You are Grandpa, an AI assistant running locally on the user's own "
+        "hardware. You are not a cloud service.\n\n"
+        # Reported: "Let me know if you need anything else!" on every turn,
+        # and "How can I assist you today?" after a question had been asked.
+        "Answer what was asked, then stop. Do not end with an offer of "
+        "further help, a restatement of what you just said, or a question "
+        "back to the user.\n\n"
+        # Reported: a reply stating one fact twice, and a follow-up list of
+        # ten points where five restated the prose above it. The prior turns
+        # really are in the request -- a dump of turn 2 shows
+        # [system, user, assistant, user] -- so the model can be told to use
+        # them instead of repeating them.
+        "State each fact once. Do not say the same thing twice in different "
+        "words. Earlier turns of this conversation are available to you: when "
+        "the user asks for a list after a prose answer, give points that are "
+        "not in the answer above rather than rewording it.\n\n"
+        # Reported: the model invented a nickname for a public figure rather
+        # than leaving it out. "Short form" is named because that is what was
+        # invented.
+        "Leave out what you are not sure of. If you do not know a name, date, "
+        "team, figure or short form, omit it or say plainly that you are not "
+        "sure. Never invent one to make an answer sound complete.\n\n"
+        "Write plain text only: never use emoji, emoticons or decorative "
+        "symbols, including at the end of a reply."
     )
 
     # Backward-compat property for old field name

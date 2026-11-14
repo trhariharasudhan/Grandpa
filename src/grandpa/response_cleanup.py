@@ -230,6 +230,7 @@ def clean_assistant_response(
     cleaned = _normalise_whitespace(cleaned)
     cleaned = _collapse_duplicate_paragraphs(cleaned)
     cleaned = _collapse_duplicate_sentences(cleaned)
+    cleaned = strip_closing_filler(cleaned)
     cleaned = _trim_repeated_tail(cleaned)
     cleaned = _normalise_whitespace(cleaned)
     cleaned = _limit_length(cleaned, max_chars=max_chars)
@@ -328,6 +329,93 @@ def _collapse_duplicate_paragraphs(text: str) -> str:
         kept.append(paragraph)
         seen.add(key)
     return "\n\n".join(kept)
+
+
+# Sentences that are an offer of further help and nothing else. The prompt is
+# told not to write these; this is the backstop, the same two-layer shape the
+# emoji work used -- an instruction the model usually follows, plus a strip for
+# the turns where it does not.
+#
+# Deliberately narrow. Every pattern here is a whole sentence whose only
+# content is "ask me more", so removing it cannot lose an answer. Phrases that
+# merely often accompany filler -- "in summary", "let me explain" -- are NOT
+# here: they can carry the actual point, and the prompt is the right place to
+# discourage them.
+_CLOSING_FILLER_RE = re.compile(
+    r"""(?isx)
+    (?:^|(?<=[.!?\n]))\s*
+    (?:
+        (?:and\s+)?(?:please\s+)?(?:do\s+)?let\s+me\s+know
+            [^.!?\n]*[.!?]
+      | (?:please\s+)?feel\s+free\s+to\s+(?:ask|reach|let)
+            [^.!?\n]*[.!?]
+      | (?:is\s+there|if\s+there(?:'s|\s+is))\s+anything
+            [^.!?\n]*[.!?]
+      | (?:i\s+)?hope\s+(?:this|that)\s+helps[^.!?\n]*[.!?]
+      | how\s+(?:can|may)\s+i\s+(?:assist|help)\s+you[^.!?\n]*[.!?]
+      | (?:i'?m|i\s+am)\s+(?:here|happy)\s+to\s+help[^.!?\n]*[.!?]
+      | (?:that'?s\s+a\s+)?great\s+question[.!?]
+      | if\s+you\s+(?:have|need)\s+any(?:\s+\w+){0,4}\s*
+            (?:questions?|help|more)[^.!?\n]*[.!?]
+    )
+    \s*
+    """
+)
+
+
+_PLEASANTRY_RE = re.compile(
+    r"^(?:hello|hi|hey|greetings|good\s+(?:morning|afternoon|evening)|sure|"
+    r"certainly|of\s+course|okay|ok|no\s+problem|you'?re\s+welcome|thanks|"
+    r"thank\s+you)\b[\s!.,?-]*$",
+    re.IGNORECASE,
+)
+
+
+def _is_pleasantry_only(text: str) -> bool:
+    """Whether what is left after stripping is just a greeting.
+
+    "How can I assist you today?" is filler when it trails an answer and the
+    whole message when it answers "hi". The strip has no conversational
+    context, so it decides on what would remain: if that is only a greeting,
+    the offer WAS the message.
+    """
+
+    remainder = _SPACE_RE.sub(" ", text).strip()
+    if not remainder:
+        return True
+    return all(
+        _PLEASANTRY_RE.match(part.strip())
+        for part in re.split(r"(?<=[.!?])\s+", remainder)
+        if part.strip()
+    )
+
+
+def strip_closing_filler(text: str) -> str:
+    """Remove whole sentences that only offer further help.
+
+    Reported: every single turn ended with "Let me know if you need anything
+    else!", and one opened with "How can I assist you today?" after the
+    question had already been asked -- "after" being the point. The same
+    sentence answering "hi" is a greeting, and a test caught this stripping
+    one down to "Hello!".
+    """
+
+    if not text:
+        return text
+    # To a fixpoint. One pass is not enough: the pattern anchors on the
+    # sentence end before it, and substituting the first of two stacked filler
+    # sentences replaces that very character, so "Hope this helps! Let me know
+    # if you have any other questions." lost only the first half.
+    stripped = text
+    for _ in range(5):
+        once = _CLOSING_FILLER_RE.sub(" ", stripped)
+        if once == stripped:
+            break
+        stripped = once
+    # Never return less than nothing. If a reply was ONLY filler, or only a
+    # greeting plus filler, then the filler was the message and removing it
+    # would leave the user with silence or a bare "Hello!".
+    return text if _is_pleasantry_only(stripped) else stripped
 
 
 def _collapse_duplicate_sentences(text: str) -> str:
