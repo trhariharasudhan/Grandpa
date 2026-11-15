@@ -9,8 +9,8 @@ Two rules decide what is in it:
 
 * **Only what exists.** Every entry names the function that performs it, and
   ``tests/action_layer/test_catalogue_coverage.py`` resolves that dotted path. There
-  are no entries for capabilities Grandpa does not have (process kill, software
-  install, registry write) and none for the stubs the audit found -- those are
+  are no entries for capabilities Grandpa does not have (software install,
+  registry write) and none for the stubs the audit found -- those are
   in :data:`EXCLUSIONS` with a reason.
 * **Including the orphans.** ``volume_*``, ``brightness_*``, ``clipboard_*``,
   ``file_create`` and ``desktop_navigate`` are implemented but no user-facing
@@ -80,6 +80,7 @@ _DIAGNOSTICS = "grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.ex
 _FILES = "grandpa.files.executor.FileExecutor.execute"
 _FILE_READ = _FILES
 _SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
+_PROCESS_KILL = "grandpa.apps.process_kill.kill_process"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
 AUTOMATION_IMPLEMENTATION = _AUTOMATION
 """Public name for the synthetic-input implementation.
@@ -428,6 +429,7 @@ _CALLS: dict[str, _Call] = {
     "monitor_info": _Call(_R_A, target="monitor"),
     "active_process": _Call(_R_A),
     "list_processes": _Call(_R_A),
+    "process_kill": _Call(Binding.FUNCTION_KWARGS),
     "desktop_summary": _Call(_R_A),
     "pc_diagnostics": _Call(_R_A),
     "system_info": _Call(_R_A),
@@ -876,6 +878,25 @@ _CONTEXT_ACTIONS: tuple[ActionSpec, ...] = (
         "List running processes.",
         _DIAGNOSTICS,
         _schema({"limit": _integer("How many processes to return.", minimum=1)}),
+    ),
+    _spec(
+        "process_kill",
+        _HIGH,
+        "Force a running process to end, by executable name or PID. Use "
+        "close_app to close an application normally; this is for one that "
+        "will not close.",
+        _PROCESS_KILL,
+        _schema(
+            {
+                "name": _string(
+                    "Executable name, e.g. 'notepad' or 'chrome.exe'. Every "
+                    "process with exactly this name is ended."
+                ),
+                "pid": _integer("Process ID, instead of a name.", minimum=1),
+            }
+        ),
+        notes="Give a name or a PID, not both. Refuses Windows system "
+        "processes and Grandpa's own process tree whatever was approved.",
     ),
     _spec(
         "desktop_summary",
@@ -2410,6 +2431,12 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
         "screen_capture": (
             "screen_awareness grabs pixels; pc_control has no entry for it."
         ),
+        "process_kill": (
+            "Ending a process outright. pc_control has no entry for it (its "
+            "close_app only asks a window to close), so the layer owns it: HIGH, "
+            "confirmed by the layer, and the implementation still refuses "
+            "system-critical processes and Grandpa's own process tree."
+        ),
         "screen_describe": ("OCR of the screen. No pc_control entry."),
         "screen_active_window": ("The window in front. No pc_control entry."),
         "screen_diagnostics": ("Screen reading readiness. No pc_control entry."),
@@ -2565,6 +2592,10 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "clipboard_history",
         ),
         "display": ("list_monitors", "monitor_info"),
+        # Its own subject, not diagnostics (reads only) and not apps (core, so
+        # sent on every request): a HIGH action reaches the model only when
+        # someone asks about processes.
+        "processes": ("process_kill",),
         "diagnostics": (
             "active_process",
             "list_processes",
@@ -2870,6 +2901,10 @@ _SELECTION_KEYWORDS: Mapping[str, str] = MappingProxyType(
         "shutdown": "system",
         "shut": "system",
         "hibernate": "system",
+        # V1-T9: "kill chrome" names no domain word, and "kill" means one thing.
+        # process_kill is HIGH, so loading it still asks before anything ends.
+        "kill": "processes",
+        "terminate": "processes",
     }
 )
 """Keywords that decide a domain on their own (V1-T6), weighted like the
