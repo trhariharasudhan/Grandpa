@@ -53,6 +53,9 @@ class AvatarController:
     publish: Publish
     bus: Any = None
     """An EventBus, for the action layer's running/finished announcements."""
+    speaker: Any = None
+    """A :class:`grandpa.ui.lipsync.LipSyncSpeaker` to say replies aloud with a
+    moving mouth (A4); ``None`` keeps the avatar silent."""
 
     state: StateMessage = field(default_factory=lambda: StateMessage(AvatarState.IDLE))
     history: deque = field(default_factory=lambda: deque(maxlen=HISTORY_SIZE))
@@ -113,11 +116,36 @@ class AvatarController:
                     bool(getattr(reply, "failed", False)),
                 )
             )
+            if reply_text:
+                self._say(reply_text)
             self._enter(state_for_reply(reply))
             return True
         finally:
             with self._lock:
                 self._busy = False
+
+    def _say(self, text: str) -> None:
+        """Speak the reply, showing ``speaking`` with its mouth track meanwhile.
+
+        The reply is already on screen; speech only adds sound. A question
+        Grandpa asks is spoken too, and the yes/no buttons show once it ends.
+        """
+        if self.speaker is None:
+            return
+
+        def _started(track: Any, start_ms: float) -> None:
+            self._enter(
+                StateMessage(
+                    AvatarState.SPEAKING,
+                    visemes=tuple(track),
+                    speech_start_ms=float(start_ms),
+                )
+            )
+
+        try:
+            self.speaker.speak(text, _started)
+        except Exception:  # noqa: BLE001 - a silent reply is still a reply
+            logger.warning("avatar speech failed", exc_info=True)
 
     # --- the action layer's announcements -------------------------------------
 

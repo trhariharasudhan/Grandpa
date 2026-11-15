@@ -81,7 +81,11 @@ class StateMessage:
     question: str = ""
     """What Grandpa asked, for ``confirm``."""
     visemes: tuple[dict[str, Any], ...] = field(default_factory=tuple)
-    """Mouth shapes with times, for ``speaking`` (empty until Phase A4)."""
+    """Mouth shapes for ``speaking``: ``{"t": ms, "v": viseme, "w": 0..1}`` from
+    :func:`grandpa.ui.lipsync.build_track`, ``t`` counted from playback start."""
+    speech_start_ms: float = 0.0
+    """When playback starts, in ms since the epoch (this PC's clock), for
+    ``speaking``. The page plays the track against ``Date.now()`` minus this."""
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
