@@ -28,7 +28,15 @@ from grandpa.ui.avatar_states import (
     encode,
     parse_inbound,
 )
-from grandpa.ui.avatar_window import INDEX, WEB_DIR, connect_script, run_window
+from grandpa.ui.avatar_window import (
+    COLLAPSED,
+    EXPANDED,
+    INDEX,
+    WEB_DIR,
+    WindowApi,
+    connect_script,
+    run_window,
+)
 
 pytestmark = pytest.mark.core
 
@@ -342,6 +350,62 @@ def test_the_page_knows_every_state_it_animates() -> None:
         assert f'[data-state="{state}"]' in css, state
 
 
+def test_the_page_opens_as_a_ring_and_the_ring_opens_the_panel() -> None:
+    html = INDEX.read_text(encoding="utf-8")
+    css = (WEB_DIR / "avatar.css").read_text(encoding="utf-8")
+    js = (WEB_DIR / "avatar.js").read_text(encoding="utf-8")
+    assert 'data-panel="closed"' in html
+    assert 'id="ring"' in html
+    assert '[data-panel="closed"] #panel { display: none; }' in css
+    assert "set_expanded" in js and "move_by" in js
+    # a drag never toggles
+    assert "if (!wasDrag) setOpen(!isOpen());" in js
+
+
+class FakeWindow:
+    def __init__(self):
+        self.x, self.y = 100, 200
+        self.sizes: list[tuple[int, int]] = []
+        self.moves: list[tuple[int, int]] = []
+
+    def resize(self, width, height):
+        self.sizes.append((width, height))
+
+    def move(self, x, y):
+        self.moves.append((x, y))
+        self.x, self.y = x, y
+
+
+def test_the_window_api_resizes_between_ring_and_panel() -> None:
+    api = WindowApi()
+    window = FakeWindow()
+    api.attach(window)
+
+    assert api.set_expanded(True) is True
+    assert api.set_expanded(False) is False
+    assert window.sizes == [EXPANDED, COLLAPSED]
+    # only a real flag is accepted from the page
+    assert api.set_expanded("yes") is False
+    assert window.sizes == [EXPANDED, COLLAPSED]
+
+
+def test_the_window_api_moves_by_small_clamped_steps_only() -> None:
+    api = WindowApi()
+    window = FakeWindow()
+    api.attach(window)
+
+    api.move_by(5, -3)
+    api.move_by(10_000, 0)
+    api.move_by("5", 1)
+    api.move_by(True, 1)
+    assert window.moves == [(105, 197), (505, 197)]
+
+
+def test_the_page_can_reach_only_the_two_window_methods() -> None:
+    public = {name for name in dir(WindowApi) if not name.startswith("_")}
+    assert public == {"attach", "set_expanded", "move_by"}
+
+
 def test_the_window_is_frameless_on_top_and_gets_the_address_after_load() -> None:
     calls: dict = {}
 
@@ -379,7 +443,9 @@ def test_the_window_is_frameless_on_top_and_gets_the_address_after_load() -> Non
 
     title, url, kwargs = calls["create"]
     assert Path(url) == INDEX
-    assert kwargs["frameless"] and kwargs["on_top"] and kwargs["transparent"]
+    assert kwargs["frameless"] and kwargs["on_top"]
+    assert (kwargs["width"], kwargs["height"]) == COLLAPSED
+    assert isinstance(kwargs["js_api"], WindowApi)
     assert calls["start"]["http_server"] is True
     assert window.js == [connect_script("ws://127.0.0.1:1/avatar?token=t")]
 

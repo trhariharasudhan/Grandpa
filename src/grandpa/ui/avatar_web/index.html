@@ -9,11 +9,15 @@
 <link rel="stylesheet" href="avatar.css">
 </head>
 <body>
-<main id="app" data-state="idle">
-  <section id="presence" class="pywebview-drag-region" aria-live="polite">
-    <div id="orb" aria-hidden="true"><div id="core"></div></div>
-    <p id="label">Connecting...</p>
-    <p id="action"></p>
+<main id="app" data-state="idle" data-panel="closed">
+  <section id="presence" aria-live="polite">
+    <button type="button" id="ring" aria-label="Open Grandpa's chat" aria-expanded="false" title="Standby">
+      <span id="ring-core" aria-hidden="true"></span>
+    </button>
+    <div id="status">
+      <p id="label">Connecting...</p>
+      <p id="action"></p>
+    </div>
   </section>
 
   <section id="panel">

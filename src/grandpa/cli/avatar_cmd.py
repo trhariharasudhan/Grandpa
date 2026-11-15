@@ -14,10 +14,11 @@ from grandpa.cli.safe_output import safe_cli_error
 
 _HELP = """Show Grandpa's avatar window. Blocks this terminal until you close it.
 
-A small always-on-top window with Grandpa's orb and a text panel. Type a
-request and the orb shows what is happening: thinking, working (with the
-action's name), done, error, or waiting for your yes/no. Risky actions still
-ask first, exactly as in `grandpa bubble` and `grandpa voice`.
+It opens as a small glowing ring that stays on top. Click the ring to open
+the chat panel, click it again to close it; drag the ring to move it. The
+ring's colour shows what is happening: thinking, working (with the action's
+name), done, error, or waiting for your yes/no. Risky actions still ask
+first, exactly as in `grandpa bubble` and `grandpa voice`.
 
 --no-window starts only the local connection and prints an address to open in
 a browser, which is useful when the window will not open.
@@ -50,11 +51,8 @@ def build(bridge=None):
     help="Do not open the desktop window; print an address to open in a browser.",
 )
 @click.option("--not-on-top", is_flag=True, help="Let other windows cover it.")
-@click.option(
-    "--opaque", is_flag=True, help="Draw a solid background (if transparency fails)."
-)
 @click.option("--debug", is_flag=True, help="Open the web inspector with the window.")
-def avatar(no_window: bool, not_on_top: bool, opaque: bool, debug: bool) -> None:
+def avatar(no_window: bool, not_on_top: bool, debug: bool) -> None:
     controller, server = build()
     try:
         server.start()
@@ -84,7 +82,6 @@ def avatar(no_window: bool, not_on_top: bool, opaque: bool, debug: bool) -> None
                 run_window(
                     server.url,
                     on_top=not not_on_top,
-                    transparent=not opaque,
                     debug=debug,
                 )
             except RuntimeError as exc:
