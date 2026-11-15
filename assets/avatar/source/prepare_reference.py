@@ -8,7 +8,9 @@ Usage:  python prepare_reference.py <turnaround.png> [out_dir]     (needs Pillow
 3. Replaces the eyepatch over the character's right eye with his mirrored left eye
    (the sheet's "glasses" are an eyepatch; build_realistic adds real glasses).
 
-Writes front/three_quarter/side/back.png (Hunyuan input) and proj_*.png (projection).
+Writes front/three_quarter/side/back.png (Hunyuan input), proj_*.png (projection,
+background filled with the nearest body colour) and mask_*.png (silhouettes:
+build_realistic only lets a view paint where that view actually sees the body).
 The pixel landmarks used by build_realistic.REF were measured on these crops.
 """
 
@@ -33,17 +35,16 @@ EYEPATCH_FIXES = [
 ]
 
 
-def fill_background(rgb: np.ndarray, iterations: int = 60) -> np.ndarray:
-    bg = np.median(
-        np.concatenate(
-            [
-                rgb[:15].reshape(-1, 3),
-                rgb[:, :8].reshape(-1, 3),
-                rgb[:, -8:].reshape(-1, 3),
-            ]
-        ),
-        axis=0,
-    )
+def body_mask(rgb: np.ndarray, sole_row: int = 957) -> np.ndarray:
+    """Silhouette of the character: largest piece, holes filled, no floor shadow."""
+    from scipy import ndimage
+
+    edges = [
+        rgb[:15].reshape(-1, 3),
+        rgb[:, :8].reshape(-1, 3),
+        rgb[:, -8:].reshape(-1, 3),
+    ]
+    bg = np.median(np.concatenate(edges), axis=0)
     mask = np.abs(rgb - bg).sum(axis=2) > 38
     mask = (
         np.asarray(
@@ -53,19 +54,47 @@ def fill_background(rgb: np.ndarray, iterations: int = 60) -> np.ndarray:
         )
         > 128
     )
-    col, known = rgb.copy(), mask.copy()
-    for _ in range(iterations):
-        if known.all():
-            break
-        acc, cnt = np.zeros_like(col), np.zeros(known.shape)
-        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-            k = np.roll(known, (dy, dx), (0, 1))
-            acc += np.roll(col, (dy, dx), (0, 1)) * k[..., None]
-            cnt += k
-        new = (~known) & (cnt > 0)
-        col[new] = acc[new] / cnt[new][:, None]
-        known |= new
-    return col
+    # feet zone: the floor shadow is grey, the feet are warm skin
+    feet = np.zeros_like(mask)
+    feet[int(sole_row * 0.93) :] = True
+    warm = (rgb[..., 0] - rgb[..., 2]) > 15
+    mask &= ~feet | warm
+    mask[sole_row + 2 :] = False
+    labels, n = ndimage.label(mask)
+    if n:
+        sizes = ndimage.sum(mask, labels, range(1, n + 1))
+        mask = labels == (int(np.argmax(sizes)) + 1)
+    mask = ndimage.binary_fill_holes(mask)
+    return ndimage.binary_erosion(mask, iterations=2)
+
+
+def fill_outside(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    """Every pixel outside the mask takes the colour of the nearest body pixel."""
+    from scipy import ndimage
+
+    _d, (iy, ix) = ndimage.distance_transform_edt(~mask, return_indices=True)
+    return rgb[iy, ix]
+
+
+def fill_background(rgb: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    mask = body_mask(rgb)
+    return fill_outside(rgb, mask), mask
+
+
+# the side view also shows the eyepatch (over the eye, towards the temple)
+SIDE_PATCH = (170, 207, 88, 119)  # x0, x1, y0, y1 in side.png
+
+
+def fix_side_eyepatch(rgb: np.ndarray, mask: np.ndarray) -> np.ndarray:
+    x0, x1, y0, y1 = SIDE_PATCH
+    known = mask.copy()
+    known[y0:y1, x0:x1] = False
+    filled = fill_outside(rgb, known)
+    out = rgb.copy()
+    out[y0:y1, x0:x1] = filled[y0:y1, x0:x1]
+    soft = Image.fromarray(out.astype(np.uint8)).filter(ImageFilter.GaussianBlur(3))
+    out[y0:y1, x0:x1] = np.asarray(soft).astype(np.float32)[y0:y1, x0:x1]
+    return out
 
 
 def fix_eyepatch(a: np.ndarray) -> np.ndarray:
@@ -95,12 +124,15 @@ def main() -> int:
     for name, box in BOXES.items():
         crop = sheet.crop(box)
         crop.save(out / f"{name}.png")
-        filled = fill_background(np.asarray(crop).astype(np.float32))
+        filled, mask = fill_background(np.asarray(crop).astype(np.float32))
         if name == "front":
             filled = fix_eyepatch(filled)
+        if name == "side":
+            filled = fix_side_eyepatch(filled, mask)
         Image.fromarray(np.clip(filled, 0, 255).astype(np.uint8)).save(
             out / f"proj_{name}.png"
         )
+        Image.fromarray((mask * 255).astype(np.uint8)).save(out / f"mask_{name}.png")
         print("wrote", out / f"proj_{name}.png")
     return 0
 

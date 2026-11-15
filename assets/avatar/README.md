@@ -7,7 +7,7 @@ from Captain's turnaround reference, **29,338 triangles** (budget 30,000),
 
 | Object | What |
 |---|---|
-| `Grandpa_Head` | head + hair + beard, 2048² colour + normal map (face restored with CodeFormer), a real mouth slit and cavity, the 10 shape keys `AA E I O U FV MBP smile think blink` (rest 0) |
+| `Grandpa_Head` | head + hair + beard, 2048² colour + normal map (face restored with CodeFormer), a real mouth slit, cavity and upper teeth, ~10k triangles (its own budget), the 10 shape keys `AA E I O U FV MBP smile think blink` (rest 0) |
 | `Grandpa_Body` | body + shorts, 2048² colour + normal map |
 | `Grandpa_Glasses` | round gold frames, light gold-tinted lenses |
 
@@ -18,9 +18,10 @@ turnaround.png ──prepare_reference.py──▶ _reference/{front,side,back}.
 proj_front.png ──enhance_reference.py (CodeFormer, Hugging Face)──▶ _reference/proj_front_hd.png (4x, sharp face)
 front.png ──hunyuan_shape.py (Hunyuan3D-2.1, Hugging Face)──▶ _reference/hunyuan_shape.glb (366k faces)
 build_realistic.build(shape, _reference) in Blender:
-    cut the floor disc, size to 1.78 m, decimate to budget, split the head,
+    cut the floor disc, size to 1.78 m, split the head, decimate head and body to
+    their own budgets (head smoothed first, with a skirt so the seam can't crack),
     cut the mouth, UV unwrap, bake colour = reference views projected and blended
-    by surface direction (aligned on the nose tip), bake normals from the 366k mesh,
+    by surface direction, each view masked to its own silhouette (aligned on the nose tip), bake normals from the 366k mesh,
     add glasses, add shape keys
 build_grandpa_avatar.export_glb(path, image_format="JPEG")
 ```

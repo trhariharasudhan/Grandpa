@@ -29,7 +29,7 @@ from mathutils import Matrix, Vector
 from mathutils.bvhtree import BVHTree
 
 HEIGHT = 1.78
-HEAD_TRIANGLES = 9_000
+HEAD_TRIANGLES = 9_700
 BODY_TRIANGLES = 18_500
 HEAD_TEX = 2048  # the face gets the CodeFormer-restored detail
 BODY_TEX = 2048
@@ -159,6 +159,37 @@ def _decimated(me, triangles):
     return low
 
 
+def _subdivided(me, levels=1):
+    """Smooth (Catmull-Clark) subdivision: rounds the generated head, whose
+    source is only ~6.5k triangles, before it is decimated to its budget."""
+    ob = bpy.data.objects.new("_sub", me.copy())
+    gp.collection().objects.link(ob)
+    mod = ob.modifiers.new("Subsurf", "SUBSURF")
+    mod.levels = levels
+    mod.boundary_smooth = "PRESERVE_CORNERS"
+    out = gp.bake(ob)
+    old = ob.data
+    bpy.data.objects.remove(ob, do_unlink=True)
+    bpy.data.meshes.remove(old)
+    for p in out.polygons:
+        p.use_smooth = True
+    return out
+
+
+def _add_skirt(me, depth=0.004):
+    """Extrude the open bottom edge of the head down a few mm into the neck, so the
+    separately decimated head and body can never show a crack between them."""
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    edges = [e for e in bm.edges if e.is_boundary]
+    res = bmesh.ops.extrude_edge_only(bm, edges=edges)
+    new_verts = [g for g in res["geom"] if isinstance(g, bmesh.types.BMVert)]
+    for v in new_verts:
+        v.co.z -= depth
+    bm.to_mesh(me)
+    bm.free()
+
+
 # --------------------------------------------------------------------------
 # reference mapping (pixels <-> metres)
 # --------------------------------------------------------------------------
@@ -229,10 +260,24 @@ def _projection_material(ref_dir, size, target_img):
         )
         tex.extension = "EXTEND"
         nt.links.new(uv.outputs[0], tex.inputs[0])
+        # silhouette mask: a view only paints where it really sees the body
+        mpath = Path(ref_dir) / ("mask_" + name + ".png")
+        mask_out = None
+        if mpath.exists():
+            mtex = nt.nodes.new("ShaderNodeTexImage")
+            mtex.image = bpy.data.images.load(str(mpath), check_existing=True)
+            mtex.image.colorspace_settings.name = "Non-Color"
+            mtex.extension = "CLIP"
+            nt.links.new(uv.outputs[0], mtex.inputs[0])
+            mask_out = mtex.outputs["Color"]
         dot = math_node("MULTIPLY", nrm.outputs[weight_axis], weight_sign)
         wgt = math_node("POWER", math_node("MAXIMUM", dot, 0.0), 8.0)
         # + a small floor on the front view: faces no view sees (under the chin,
         # pointing straight down) would otherwise get zero weight and bake black
+        if mask_out is not None:
+            m = nt.nodes.new("ShaderNodeSeparateColor")
+            nt.links.new(mask_out, m.inputs[0])
+            wgt = math_node("MULTIPLY", wgt, m.outputs[0])
         wgt = math_node("MULTIPLY_ADD", wgt, bias, 0.03 if name == "front" else 0.0)
         return tex.outputs["Color"], wgt
 
@@ -403,7 +448,6 @@ def _split_head(low_me, neck_z):
     for m in (body_me, head_me):
         for p in m.polygons:
             p.use_smooth = True
-        _copy_normals(low_me, m)
     return body_me, head_me
 
 
@@ -460,6 +504,35 @@ def _add_cavity(head_me, mouth, half_width, material_index):
     bm.free()
 
 
+def _add_teeth(head_me, mouth, half_width, material_index):
+    """Upper teeth behind the upper lip: hidden at rest, seen when the jaw opens.
+    Returns the index of their first vertex (shape keys leave them in place)."""
+    bm = bmesh.new()
+    bm.from_mesh(head_me)
+    start = len(bm.verts)
+    teeth = gp.uv_sphere(
+        mouth + Vector((0, 0.011, -0.0012)),
+        (half_width * 0.72, 0.007, 0.0032),
+        u=20,
+        v=8,
+    )
+    for v in teeth.verts:  # follow the dental arch: the sides sit further back
+        v.co.y += 120.0 * (v.co.x - mouth.x) ** 2
+    tmp = bpy.data.meshes.new("_teeth")
+    teeth.to_mesh(tmp)
+    teeth.free()
+    n = len(bm.faces)
+    bm.from_mesh(tmp)
+    bpy.data.meshes.remove(tmp)
+    bm.faces.ensure_lookup_table()
+    for f in bm.faces[n:]:
+        f.material_index = material_index
+        f.smooth = True
+    bm.to_mesh(head_me)
+    bm.free()
+    return start
+
+
 def _shape_keys(head_ob, lm):
     me = head_ob.data
     if me.shape_keys:
@@ -508,7 +581,11 @@ def _shape_keys(head_ob, lm):
         sk = head_ob.shape_key_add(name=name, from_mix=False)
         sk.value = 0.0
         sk.slider_min, sk.slider_max = 0.0, 1.0
+        teeth_start = lm.get("teeth_start", len(base))
         for i, c in enumerate(base):
+            if i >= teeth_start:  # upper teeth belong to the skull
+                sk.data[i].co = c
+                continue
             near, jaw, corner, lower = weights(i, c)
             sx = 1 if c.x >= M.x else -1
             d = Vector()
@@ -640,9 +717,20 @@ def build(shape_glb, ref_dir):
     lm["brow_z"] = HEIGHT - (REF["brow_y"] - REF["top"]) / s
     neck_z = HEIGHT - (REF["chin_y"] - REF["top"]) / s - 0.035
 
-    low_me = _decimated(high_me, HEAD_TRIANGLES + BODY_TRIANGLES)
-    body_me, head_me = _split_head(low_me, neck_z)
-    bpy.data.meshes.remove(low_me)
+    # split first, then decimate each part to its own budget: the head (face,
+    # mouth) gets far more triangles than an even decimation would give it
+    body_hi, head_hi = _split_head(high_me, neck_z)
+    body_me = _decimated(body_hi, BODY_TRIANGLES)
+    head_smooth = _subdivided(head_hi)  # also the normal-bake source for the head
+    head_me = _decimated(head_smooth, HEAD_TRIANGLES - 400)  # room for the skirt
+    bpy.data.meshes.remove(body_hi)
+    bpy.data.meshes.remove(head_hi)
+    _add_skirt(head_me)
+    for m in (body_me, head_me):
+        m.name = "Grandpa_Body" if m is body_me else "Grandpa_Head"
+        for p in m.polygons:
+            p.use_smooth = True
+        _copy_normals(head_smooth if m is head_me else high_me, m)
     slit = _cut_mouth(head_me, lm["mouth"], lm["mouth_hw"])
 
     body = bpy.data.objects.new("Grandpa_Body", body_me)
@@ -653,13 +741,21 @@ def build(shape_glb, ref_dir):
         gp._uv_unwrap(o)
 
     bcol, bnrm = _bake_textures(body, high, ref_dir, BODY_TEX, "GP_RealBody")
-    hcol, hnrm = _bake_textures(head, high, ref_dir, HEAD_TEX, "GP_RealHead")
+    head_high = bpy.data.objects.new("GP_HeadHigh", head_smooth)
+    gp.collection().objects.link(head_high)
+    hcol, hnrm = _bake_textures(head, head_high, ref_dir, HEAD_TEX, "GP_RealHead")
+    bpy.data.objects.remove(head_high, do_unlink=True)
+    bpy.data.meshes.remove(head_smooth)
     body.data.materials.clear()
     body.data.materials.append(_textured_material("GP_RealBody", bcol, bnrm))
     head.data.materials.clear()
     head.data.materials.append(_textured_material("GP_RealHead", hcol, hnrm))
     head.data.materials.append(gp.mats()["mouth"])
     _add_cavity(head.data, lm["mouth"], lm["mouth_hw"], material_index=1)
+    head.data.materials.append(gp.material("GP_Teeth", (0.62, 0.58, 0.5), rough=0.35))
+    lm["teeth_start"] = _add_teeth(
+        head.data, lm["mouth"], lm["mouth_hw"], material_index=2
+    )
     _shape_keys(head, lm)
 
     glasses = _glasses(
