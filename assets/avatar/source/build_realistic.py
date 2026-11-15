@@ -211,7 +211,7 @@ def _surface_point(bvh, x, z, from_front=True):
 # --------------------------------------------------------------------------
 # projection bake: reference views -> UV colour texture
 # --------------------------------------------------------------------------
-def _projection_material(ref_dir, size, target_img):
+def _projection_material(ref_dir, size, target_img, coverage=False):
     mat = bpy.data.materials.new("_GP_Projection")
     try:
         mat.use_nodes = True
@@ -278,8 +278,9 @@ def _projection_material(ref_dir, size, target_img):
             m = nt.nodes.new("ShaderNodeSeparateColor")
             nt.links.new(mask_out, m.inputs[0])
             wgt = math_node("MULTIPLY", wgt, m.outputs[0])
+        raw = wgt  # how well this view really sees the spot (no fallback floor)
         wgt = math_node("MULTIPLY_ADD", wgt, bias, 0.03 if name == "front" else 0.0)
-        return tex.outputs["Color"], wgt
+        return tex.outputs["Color"], wgt, raw
 
     views = [
         view(
@@ -295,9 +296,19 @@ def _projection_material(ref_dir, size, target_img):
             "side", pos.outputs["Y"], -1.0, "X", 1.0
         ),  # left side: the same view mirrored
     ]
+    if coverage:
+        # emit the summed real coverage instead of colour (see _fill_uncovered)
+        cov = views[0][2]
+        for _c, _w, raw in views[1:]:
+            cov = math_node("ADD", cov, raw)
+        nt.links.new(math_node("MINIMUM", cov, 1.0), emit.inputs["Color"])
+        target = nt.nodes.new("ShaderNodeTexImage")
+        target.image = target_img
+        nt.nodes.active = target
+        return mat
     total = None
     acc = None
-    for col, wgt in views:
+    for col, wgt, _raw in views:
         sc = nt.nodes.new("ShaderNodeVectorMath")
         sc.operation = "SCALE"
         nt.links.new(col, sc.inputs[0])
@@ -323,6 +334,39 @@ def _projection_material(ref_dir, size, target_img):
     return mat
 
 
+COVERAGE_MIN = 0.06  # below this no reference view really sees the surface
+
+
+def _fill_uncovered(col_img, cov_img):
+    """Repaint texels no view really sees (inner arms, sides of the legs) with
+    soft skin from the nearest well-covered texels, instead of the flat
+    fallback colour they would otherwise keep."""
+    import numpy as np
+    from scipy import ndimage
+
+    w, h = col_img.size
+    col = np.empty(w * h * 4, dtype=np.float32)
+    col_img.pixels.foreach_get(col)
+    col = col.reshape(h, w, 4)
+    cov = np.empty(w * h * 4, dtype=np.float32)
+    cov_img.pixels.foreach_get(cov)
+    cov = cov.reshape(h, w, 4)[..., 0]
+    good = cov >= COVERAGE_MIN
+    if good.all() or not good.any():
+        return 0
+    _d, (iy, ix) = ndimage.distance_transform_edt(~good, return_indices=True)
+    filled = col[iy, ix]
+    sigma = max(2.0, w / 256.0)
+    for c in range(3):
+        filled[..., c] = ndimage.gaussian_filter(filled[..., c], sigma)
+    # blend: fully filled where coverage is ~0, original where it is ~COVERAGE_MIN
+    t = np.clip(cov / COVERAGE_MIN, 0.0, 1.0)[..., None]
+    out = np.where(good[..., None], col, filled * (1 - t) + col * t)
+    out[..., 3] = 1.0
+    col_img.pixels.foreach_set(out.ravel())
+    return int((~good).sum())
+
+
 def _bake_textures(low_ob, high_ob, ref_dir, size, prefix):
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
@@ -343,6 +387,15 @@ def _bake_textures(low_ob, high_ob, ref_dir, size, prefix):
     bpy.ops.object.bake(
         type="EMIT", margin=48
     )  # wide: mipmaps must not reach the black
+    # 1b) coverage, then repaint the spots no view really sees
+    cov_img = gp._image(prefix + "_Coverage", size, non_color=True)
+    cov_mat = _projection_material(ref_dir, size, cov_img, coverage=True)
+    low_ob.data.materials.clear()
+    low_ob.data.materials.append(cov_mat)
+    bpy.ops.object.bake(type="EMIT", margin=48)
+    _fill_uncovered(col_img, cov_img)
+    bpy.data.materials.remove(cov_mat)
+    bpy.data.images.remove(cov_img)
 
     # 2) normal: detail from the original high-res shape
     low_ob.data.materials.clear()
