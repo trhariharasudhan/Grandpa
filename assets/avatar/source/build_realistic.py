@@ -31,7 +31,7 @@ from mathutils.bvhtree import BVHTree
 HEIGHT = 1.78
 HEAD_TRIANGLES = 9_000
 BODY_TRIANGLES = 18_500
-HEAD_TEX = 1024
+HEAD_TEX = 2048  # the face gets the CodeFormer-restored detail
 BODY_TEX = 2048
 SHAPE_KEYS = gp.SHAPE_KEYS
 
@@ -222,8 +222,10 @@ def _projection_material(ref_dir, size, target_img):
         nt.links.new(u, uv.inputs[0])
         nt.links.new(v, uv.inputs[1])
         tex = nt.nodes.new("ShaderNodeTexImage")
+        path = Path(ref_dir) / info["file"]
+        hd = path.with_name(path.stem + "_hd.png")  # enhance_reference.py, same framing
         tex.image = bpy.data.images.load(
-            str(Path(ref_dir) / info["file"]), check_existing=True
+            str(hd if hd.exists() else path), check_existing=True
         )
         tex.extension = "EXTEND"
         nt.links.new(uv.outputs[0], tex.inputs[0])
