@@ -108,7 +108,25 @@ class ChatMessage:
         return {"type": "chat", "v": PROTOCOL_VERSION, **asdict(self)}
 
 
-def encode(message: StateMessage | ChatMessage | dict[str, Any]) -> str:
+@dataclass(frozen=True, slots=True)
+class ModeMessage:
+    """``{"type": "mode", "character": bool, "reason": ...}`` (A7).
+
+    ``character`` false: show the ring only, never the 3D character, for the
+    rest of this run. Sent when the avatar goes over its GPU or memory budget
+    (or ``--orb-only``), so the PC stays fast while Ollama works.
+    """
+
+    character: bool = True
+    reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"type": "mode", "v": PROTOCOL_VERSION, **asdict(self)}
+
+
+def encode(
+    message: StateMessage | ChatMessage | ModeMessage | dict[str, Any],
+) -> str:
     payload = message if isinstance(message, dict) else message.to_dict()
     return json.dumps(payload, ensure_ascii=False)
 
@@ -157,6 +175,7 @@ __all__ = [
     "AvatarState",
     "ChatMessage",
     "MAX_INBOUND_TEXT",
+    "ModeMessage",
     "PROTOCOL_VERSION",
     "STATE_COLOURS",
     "STATE_LABELS",

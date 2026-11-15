@@ -37,6 +37,13 @@
 //   * canvas at most 2x device pixels, low-power context, no antialiasing.
 //
 // If WebGL or three.js fails, nothing changes: the ring keeps showing.
+//
+// A7, the performance gate: Python watches the window's GPU and RAM and, when
+// they stay over budget, sends {"type": "mode", "character": false}. The page
+// also watches itself: if drawing a frame keeps taking longer than
+// SLOW_FRAME_MS, the iGPU is not keeping up. Either way the character morphs
+// back into the ring once, its renderer is freed, and it does not come back
+// this run.
 import * as THREE from "./vendor/three/three.module.min.js";
 import { GLTFLoader } from "./vendor/three/GLTFLoader.js";
 
@@ -51,6 +58,12 @@ const MAX_TRACK = 2000;
 const MOUTH_EASE = 0.6; // per frame at 30 fps: about one frame behind the sound
 const MORPH_MS = 450; // ring <-> character, well inside A5's 600 ms
 const RIM = 1.4; // the back light; brighter while he comes out of the ring
+// Frames further apart than this on average (under 15 fps against the 30 fps
+// cap) mean the iGPU is not keeping up. Judged only after SLOW_AFTER_FRAMES
+// drawn frames (~3 s), and gaps over GAP_MS (a hidden page) are not counted.
+const SLOW_FRAME_MS = 66;
+const SLOW_AFTER_FRAMES = 90;
+const GAP_MS = 500;
 
 // 0..1 -> 0..1, slow at both ends
 function ease(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
@@ -310,6 +323,7 @@ function create() {
     frames: 0, running: false, kind: "placeholder", triangles: 0, shown: false,
     viseme: "rest", mouthOpen: 0, speechMs: -1, mouthKeys: 0,
     smile: 0, think: 0, brows: 0, faceKeys: 0,
+    frameGapMs: 0, timedFrames: 0, ringOnly: false, ringOnlyReason: "",
     morph: 0, morphing: false, lastMorphMs: 0,
   };
   // 0 = the ring, 1 = the character; "to" is where it is going
@@ -322,6 +336,8 @@ function create() {
   let shown = false;
   let raf = 0;
   let last = 0;
+  let lastDraw = 0;
+  let retired = false; // A7: ring only for the rest of the run
   const started = performance.now();
   let nextBlink = started + 1500;
   const pose = { tilt: 0, nod: 0 };
@@ -382,6 +398,7 @@ function create() {
 
     resize();
     renderer.render(scene, camera);
+    timeFrame(now);
     stats.frames += 1;
   }
 
@@ -501,8 +518,40 @@ function create() {
     start();
   }
 
+  // A7: how far apart frames really are while he is on screen.
+  function timeFrame(now) {
+    const gap = lastDraw ? now - lastDraw : 0;
+    lastDraw = now;
+    if (!(gap > 0) || gap > GAP_MS || morphing()) return;
+    stats.timedFrames += 1;
+    stats.frameGapMs = stats.timedFrames === 1 ? gap : stats.frameGapMs * 0.95 + gap * 0.05;
+    if (stats.timedFrames >= SLOW_AFTER_FRAMES && stats.frameGapMs > SLOW_FRAME_MS) {
+      retire(`slow frames: ${Math.round(1000 / stats.frameGapMs)} fps`);
+    }
+  }
+
+  // A7: back to the ring for good. A visible character morphs out first, then
+  // the renderer (and its model's memory) is freed.
+  function retire(reason) {
+    if (retired) return;
+    retired = true;
+    stats.ringOnly = true;
+    stats.ringOnlyReason = String(reason || "");
+    if (shown || morphing()) {
+      show(false);
+      setTimeout(destroy, MORPH_MS + 50);
+    } else {
+      destroy();
+    }
+  }
+
+  function setMode(msg) {
+    if (msg && msg.character === false) retire(msg.reason || "budget");
+  }
+
   function setState(msg) {
     state = (msg && msg.state) || "idle";
+    if (retired) return;
     if (state === "speaking") {
       const start = Number(msg.speech_start_ms);
       speech = { track: cleanTrack(msg.visemes), start: Number.isFinite(start) && start > 0 ? start : Date.now(), i: 0 };
@@ -514,7 +563,7 @@ function create() {
   }
 
   function load(buffer) {
-    if (!(buffer instanceof ArrayBuffer)) return;
+    if (retired || !(buffer instanceof ArrayBuffer)) return;
     new GLTFLoader().parse(buffer, "", (gltf) => {
       try { use(fromGltf(gltf)); start(); } catch (_) { /* keep the placeholder */ }
     }, () => { /* keep the placeholder */ });
@@ -541,7 +590,7 @@ function create() {
 
   use(buildPlaceholder());
   applyMorph(0);
-  return { setState, load, destroy, stats };
+  return { setState, setMode, load, destroy, stats };
 }
 
 let api = null;
@@ -550,6 +599,8 @@ window.__grandpaCharacter = api; // read by the page tests, never by Python
 if (api) {
   document.addEventListener("grandpa:state", (event) => api.setState(event.detail));
   document.addEventListener("grandpa:character", (event) => api.load(event.detail));
+  document.addEventListener("grandpa:mode", (event) => api.setMode(event.detail));
+  if (window.__grandpaMode) api.setMode(window.__grandpaMode);
   if (window.__grandpaGlb) api.load(window.__grandpaGlb);
   if (window.__grandpaState) api.setState(window.__grandpaState);
 }
