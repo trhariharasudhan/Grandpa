@@ -101,6 +101,9 @@
     app.dataset.state = msg.state;
     document.documentElement.style.setProperty("--glow", msg.colour || "#E5E7EB");
     if (glRing) glRing.setState(msg);
+    // A3: character.js (a module, loaded after this script) follows the state.
+    window.__grandpaState = msg;
+    document.dispatchEvent(new CustomEvent("grandpa:state", { detail: msg }));
     const words = msg.label || msg.state;
     label.textContent = words;
     ring.title = words;
@@ -123,8 +126,16 @@
   function connect() {
     if (!address) { label.textContent = "No connection address."; return; }
     socket = new WebSocket(address);
+    socket.binaryType = "arraybuffer";
     socket.onopen = () => { retry = 500; connected = false; history.textContent = ""; };
     socket.onmessage = (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        // A3: Captain's grandpa.glb, already checked by Python. Kept for a
+        // character.js that has not loaded yet, then handed over.
+        window.__grandpaGlb = event.data;
+        document.dispatchEvent(new CustomEvent("grandpa:character", { detail: event.data }));
+        return;
+      }
       let msg;
       try { msg = JSON.parse(event.data); } catch (_) { return; }
       if (msg.type === "state") { showState(msg); connected = true; }

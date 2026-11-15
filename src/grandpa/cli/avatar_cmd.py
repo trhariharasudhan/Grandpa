@@ -20,6 +20,10 @@ ring's colour shows what is happening: thinking, working (with the action's
 name), done, error, or waiting for your yes/no. Risky actions still ask
 first, exactly as in `grandpa bubble` and `grandpa voice`.
 
+While Grandpa thinks, speaks, works or asks, the ring turns into his 3D head:
+a built-in placeholder, or your own model from assets/avatar/grandpa.glb
+(glTF 2.0, at most 30,000 triangles). The first line printed says which.
+
 --no-window starts only the local connection and prints an address to open in
 a browser, which is useful when the window will not open.
 """
@@ -54,6 +58,10 @@ def build(bridge=None):
 @click.option("--debug", is_flag=True, help="Open the web inspector with the window.")
 def avatar(no_window: bool, not_on_top: bool, debug: bool) -> None:
     controller, server = build()
+    from grandpa.ui.avatar_character import load_character
+
+    server.character, report = load_character()
+    click.echo(report.describe())
     try:
         server.start()
     except RuntimeError as exc:

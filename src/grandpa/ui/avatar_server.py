@@ -15,6 +15,9 @@ Who may connect:
   :data:`grandpa.ui.avatar_states.MAX_INBOUND_TEXT` characters, one at a time.
   It goes to :meth:`AvatarController.submit`, i.e. through the same bridge and
   gates as the tkinter bubble. There is no message that performs an action.
+
+Outbound it also carries, once per connection, Captain's checked character
+model (A3) as one binary frame, announced by ``{"type": "character", "bytes": n}``.
 """
 
 from __future__ import annotations
@@ -30,7 +33,13 @@ from http import HTTPStatus
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from grandpa.ui.avatar_states import ChatMessage, StateMessage, encode, parse_inbound
+from grandpa.ui.avatar_states import (
+    PROTOCOL_VERSION,
+    ChatMessage,
+    StateMessage,
+    encode,
+    parse_inbound,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +62,9 @@ class AvatarServer:
     """Called (on a worker thread) with each valid line the page sends."""
     snapshot: Callable[[], list[StateMessage | ChatMessage]] = list
     """Messages a newly connected page is sent first."""
+    character: bytes | None = None
+    """Captain's checked ``grandpa.glb`` (A3), sent to each page as one binary
+    frame after the snapshot; ``None`` keeps the placeholder head."""
     port: int = 0
     token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
 
@@ -149,6 +161,14 @@ class AvatarServer:
         try:
             for message in self.snapshot():
                 await websocket.send(encode(message))
+            if self.character:
+                announce = {
+                    "type": "character",
+                    "v": PROTOCOL_VERSION,
+                    "bytes": len(self.character),
+                }
+                await websocket.send(encode(announce))
+                await websocket.send(self.character)
             async for raw in websocket:
                 parsed = parse_inbound(raw)
                 if parsed is None:

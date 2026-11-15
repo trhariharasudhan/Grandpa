@@ -43,7 +43,7 @@ That list records only the files carrying an explicit upstream attribution in
 their own docstring; the 223 figure above is the actual derivation scope.
 
 A scan of all tracked source (src/, rust/, scripts/) found no third-party
-copyright or SPDX headers, and no vendored third-party code other than the
+copyright or SPDX headers, and no vendored third-party code other than the three.js files and the
 FFmpeg build recorded below.
 
 Both the upstream work and this derivative are licensed under the Apache
@@ -69,3 +69,12 @@ FFmpeg
 
     Corresponding source and build provenance for this binary distribution
     are recorded in voice_runtime/README.md.
+
+three.js r169
+    src/grandpa/ui/avatar_web/vendor/three/
+
+    three.module.min.js, GLTFLoader.js and BufferGeometryUtils.js from the
+    three.js npm package 0.169.0, vendored so the avatar page loads nothing
+    from the internet. Only the two example modules' import lines were
+    changed (see vendor/three/README.md). Copyright 2010-2024 three.js
+    authors, MIT License; the full text is in vendor/three/LICENSE.

@@ -64,6 +64,14 @@ html, body {
 .gl #ring-gl { display: block; }
 #app.gl[data-panel="open"] #ring-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
 
+/* A3: the character takes the ring's place while thinking, speaking, working or
+   asking. character.js sets "char" only once its WebGL context works. */
+#char-gl { display: none; position: absolute; inset: -22px; width: calc(100% + 44px); height: calc(100% + 44px); pointer-events: none; }
+.char #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
+.char #ring-core, .char #ring-gl { display: none; }
+.char #char-gl { display: block; }
+#app.char[data-panel="open"] #char-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
+
 #status { display: none; min-width: 0; }
 #label { margin: 0; font-weight: 600; }
 #action { margin: 2px 0 0; color: var(--muted); font-size: 12px; }

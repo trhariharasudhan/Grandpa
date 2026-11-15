@@ -163,3 +163,9 @@ voice_runtime/datasets/*/reports/
 *.gguf
 /models/odin/
 /models/Modelfile.*.generated
+
+# Blender build leftovers (A3b avatar)
+assets/avatar/source/_preview/
+assets/avatar/**/*.blend1
+assets/avatar/*.glb.bak
+assets/avatar/source/_reference/

@@ -1,0 +1,6 @@
+# Vendored third-party files are pinned by SHA-256 (vendor/three/SHA256SUMS):
+# never convert their line endings, or Windows autocrlf breaks the checksums.
+src/grandpa/ui/avatar_web/vendor/** -text
+# Binary 3D assets
+*.glb binary
+*.blend binary

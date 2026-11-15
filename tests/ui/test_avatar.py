@@ -330,7 +330,9 @@ def test_the_page_loads_nothing_from_the_internet() -> None:
     text = "".join(
         path.read_text(encoding="utf-8")
         for path in sorted(WEB_DIR.rglob("*"))
-        if path.is_file()
+        # three.js's own comments cite URLs; it is checksum-pinned instead
+        # (tests/ui/test_avatar_character.py), and the CSP below binds it too.
+        if path.is_file() and "vendor" not in path.relative_to(WEB_DIR).parts
     )
     assert "http://" not in text.replace("http://127.0.0.1", "")
     assert "https://" not in text
