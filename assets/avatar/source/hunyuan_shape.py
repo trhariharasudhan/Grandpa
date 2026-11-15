@@ -1,0 +1,52 @@
+"""Shape only: realistic Grandpa geometry from the front reference view.
+
+Usage:  uv run --no-project --with gradio_client python hunyuan_shape.py [seed] [space]
+
+Uses the public Hugging Face space tencent/Hunyuan3D-2.1 (free ZeroGPU, no key).
+Its texture step needs more GPU time than anonymous users get, so only the shape
+is generated here; build_realistic.py textures it by projecting the reference.
+This is the one step that sends an image (front view) to a cloud service.
+Model licence: Tencent Hunyuan 3D 2.1 Community License (see assets/avatar/README.md).
+"""
+
+import shutil
+import sys
+import time
+from pathlib import Path
+
+from gradio_client import Client, handle_file
+
+REF = Path(__file__).resolve().parent / "_reference"
+
+
+def main() -> int:
+    seed = int(sys.argv[1]) if len(sys.argv) > 1 else 1234
+    space = sys.argv[2] if len(sys.argv) > 2 else "tencent/Hunyuan3D-2.1"
+    client = Client(space)
+    t0 = time.time()
+    out_file, _html, stats, used_seed = client.predict(
+        image=handle_file(str(REF / "front.png")),
+        mv_image_front=None,
+        mv_image_back=None,
+        mv_image_left=None,
+        mv_image_right=None,
+        steps=30,
+        guidance_scale=5.0,
+        seed=seed,
+        octree_resolution=320,
+        check_box_rembg=True,
+        num_chunks=8000,
+        randomize_seed=False,
+        api_name="/shape_generation",
+    )
+    if isinstance(out_file, dict):
+        out_file = out_file.get("value") or out_file.get("path")
+    dst = REF / "hunyuan_shape.glb"
+    shutil.copyfile(out_file, dst)
+    print(f"done in {int(time.time() - t0)}s  seed={used_seed}  stats={stats}")
+    print("saved", dst, dst.stat().st_size, "bytes")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
