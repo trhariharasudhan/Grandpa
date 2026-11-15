@@ -3002,12 +3002,19 @@ def _selection_weight(counter: Counter, word: str) -> int:
     return weight
 
 
-def candidate_domains(request: str, *, limit: int = 2) -> tuple[str, ...]:
-    """Loadable domains ``request`` names, strongest first, possibly none.
+_CLAUSE_SPLIT = re.compile(r"[,;]|\b(?:and then|then|and)\b", re.IGNORECASE)
 
-    None is the common and correct answer: a request CORE can already answer
-    must not pay for tools it will not call.
-    """
+"""Where a request of several steps divides (V1-T10).
+
+"open Chrome, search for the weather in Chennai, and save the result to my
+notes" scored notes highest as a whole, and web, which the middle step needs,
+fell below the runner-up ratio: the composed goal reached the model without a
+search tool. Each step now gets its own say -- only its strongest domain, only
+on a real match -- in the slot the whole-request runner-up did not take. The
+bound does not move: still ``limit`` domains in all."""
+
+
+def _scored_domains(request: str) -> list[tuple[int, str]]:
     asked = [
         word
         for word in set(_selection_words(request))
@@ -3018,14 +3025,38 @@ def candidate_domains(request: str, *, limit: int = 2) -> tuple[str, ...]:
         score = sum(_selection_weight(counter, word) for word in asked)
         if score >= _SELECTION_FLOOR:
             scored.append((score, domain))
-    if not scored:
-        return ()
     scored.sort(key=lambda row: (-row[0], row[1]))
-    best = scored[0][0]
-    keep = [scored[0][1]]
-    for score, domain in scored[1 : max(1, limit)]:
-        if score >= best * _RUNNER_UP_RATIO and score >= _RUNNER_UP_FLOOR:
-            keep.append(domain)
+    return scored
+
+
+def candidate_domains(request: str, *, limit: int = 2) -> tuple[str, ...]:
+    """Loadable domains ``request`` names, strongest first, possibly none.
+
+    None is the common and correct answer: a request CORE can already answer
+    must not pay for tools it will not call.
+
+    A request of several steps ("open X, search Y, and save it to my notes")
+    also lets each step add its own strongest domain while fewer than ``limit``
+    are chosen, so a step the whole-request score outvotes still has its tools
+    in front of the model.
+    """
+    scored = _scored_domains(request)
+    keep: list[str] = []
+    if scored:
+        best = scored[0][0]
+        keep.append(scored[0][1])
+        for score, domain in scored[1 : max(1, limit)]:
+            if score >= best * _RUNNER_UP_RATIO and score >= _RUNNER_UP_FLOOR:
+                keep.append(domain)
+
+    clauses = [part for part in _CLAUSE_SPLIT.split(request) if part.strip()]
+    if len(clauses) > 1:
+        for clause in clauses:
+            if len(keep) >= max(1, limit):
+                break
+            step = _scored_domains(clause)
+            if step and step[0][0] >= _RUNNER_UP_FLOOR and step[0][1] not in keep:
+                keep.append(step[0][1])
     return tuple(keep)
 
 
