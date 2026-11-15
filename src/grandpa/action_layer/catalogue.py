@@ -9,8 +9,8 @@ Two rules decide what is in it:
 
 * **Only what exists.** Every entry names the function that performs it, and
   ``tests/action_layer/test_catalogue_coverage.py`` resolves that dotted path. There
-  are no entries for capabilities Grandpa does not have (process kill, software
-  install, registry write) and none for the stubs the audit found -- those are
+  are no entries for capabilities Grandpa does not have (software install,
+  registry write) and none for the stubs the audit found -- those are
   in :data:`EXCLUSIONS` with a reason.
 * **Including the orphans.** ``volume_*``, ``brightness_*``, ``clipboard_*``,
   ``file_create`` and ``desktop_navigate`` are implemented but no user-facing
@@ -80,6 +80,7 @@ _DIAGNOSTICS = "grandpa.desktop.control.diagnostics.DesktopDiagnosticsService.ex
 _FILES = "grandpa.files.executor.FileExecutor.execute"
 _FILE_READ = _FILES
 _SCREEN_DESCRIBE = "grandpa.vision.service.VisionEngine.describe"
+_PROCESS_KILL = "grandpa.apps.process_kill.kill_process"
 _AUTOMATION = "grandpa.desktop.control.automation.AutomationControlService.execute"
 AUTOMATION_IMPLEMENTATION = _AUTOMATION
 """Public name for the synthetic-input implementation.
@@ -428,6 +429,7 @@ _CALLS: dict[str, _Call] = {
     "monitor_info": _Call(_R_A, target="monitor"),
     "active_process": _Call(_R_A),
     "list_processes": _Call(_R_A),
+    "process_kill": _Call(Binding.FUNCTION_KWARGS),
     "desktop_summary": _Call(_R_A),
     "pc_diagnostics": _Call(_R_A),
     "system_info": _Call(_R_A),
@@ -876,6 +878,25 @@ _CONTEXT_ACTIONS: tuple[ActionSpec, ...] = (
         "List running processes.",
         _DIAGNOSTICS,
         _schema({"limit": _integer("How many processes to return.", minimum=1)}),
+    ),
+    _spec(
+        "process_kill",
+        _HIGH,
+        "Force a running process to end, by executable name or PID. Use "
+        "close_app to close an application normally; this is for one that "
+        "will not close.",
+        _PROCESS_KILL,
+        _schema(
+            {
+                "name": _string(
+                    "Executable name, e.g. 'notepad' or 'chrome.exe'. Every "
+                    "process with exactly this name is ended."
+                ),
+                "pid": _integer("Process ID, instead of a name.", minimum=1),
+            }
+        ),
+        notes="Give a name or a PID, not both. Refuses Windows system "
+        "processes and Grandpa's own process tree whatever was approved.",
     ),
     _spec(
         "desktop_summary",
@@ -2410,6 +2431,12 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
         "screen_capture": (
             "screen_awareness grabs pixels; pc_control has no entry for it."
         ),
+        "process_kill": (
+            "Ending a process outright. pc_control has no entry for it (its "
+            "close_app only asks a window to close), so the layer owns it: HIGH, "
+            "confirmed by the layer, and the implementation still refuses "
+            "system-critical processes and Grandpa's own process tree."
+        ),
         "screen_describe": ("OCR of the screen. No pc_control entry."),
         "screen_active_window": ("The window in front. No pc_control entry."),
         "screen_diagnostics": ("Screen reading readiness. No pc_control entry."),
@@ -2565,6 +2592,10 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "clipboard_history",
         ),
         "display": ("list_monitors", "monitor_info"),
+        # Its own subject, not diagnostics (reads only) and not apps (core, so
+        # sent on every request): a HIGH action reaches the model only when
+        # someone asks about processes.
+        "processes": ("process_kill",),
         "diagnostics": (
             "active_process",
             "list_processes",
@@ -2870,6 +2901,10 @@ _SELECTION_KEYWORDS: Mapping[str, str] = MappingProxyType(
         "shutdown": "system",
         "shut": "system",
         "hibernate": "system",
+        # V1-T9: "kill chrome" names no domain word, and "kill" means one thing.
+        # process_kill is HIGH, so loading it still asks before anything ends.
+        "kill": "processes",
+        "terminate": "processes",
     }
 )
 """Keywords that decide a domain on their own (V1-T6), weighted like the
@@ -2967,12 +3002,19 @@ def _selection_weight(counter: Counter, word: str) -> int:
     return weight
 
 
-def candidate_domains(request: str, *, limit: int = 2) -> tuple[str, ...]:
-    """Loadable domains ``request`` names, strongest first, possibly none.
+_CLAUSE_SPLIT = re.compile(r"[,;]|\b(?:and then|then|and)\b", re.IGNORECASE)
 
-    None is the common and correct answer: a request CORE can already answer
-    must not pay for tools it will not call.
-    """
+"""Where a request of several steps divides (V1-T10).
+
+"open Chrome, search for the weather in Chennai, and save the result to my
+notes" scored notes highest as a whole, and web, which the middle step needs,
+fell below the runner-up ratio: the composed goal reached the model without a
+search tool. Each step now gets its own say -- only its strongest domain, only
+on a real match -- in the slot the whole-request runner-up did not take. The
+bound does not move: still ``limit`` domains in all."""
+
+
+def _scored_domains(request: str) -> list[tuple[int, str]]:
     asked = [
         word
         for word in set(_selection_words(request))
@@ -2983,14 +3025,38 @@ def candidate_domains(request: str, *, limit: int = 2) -> tuple[str, ...]:
         score = sum(_selection_weight(counter, word) for word in asked)
         if score >= _SELECTION_FLOOR:
             scored.append((score, domain))
-    if not scored:
-        return ()
     scored.sort(key=lambda row: (-row[0], row[1]))
-    best = scored[0][0]
-    keep = [scored[0][1]]
-    for score, domain in scored[1 : max(1, limit)]:
-        if score >= best * _RUNNER_UP_RATIO and score >= _RUNNER_UP_FLOOR:
-            keep.append(domain)
+    return scored
+
+
+def candidate_domains(request: str, *, limit: int = 2) -> tuple[str, ...]:
+    """Loadable domains ``request`` names, strongest first, possibly none.
+
+    None is the common and correct answer: a request CORE can already answer
+    must not pay for tools it will not call.
+
+    A request of several steps ("open X, search Y, and save it to my notes")
+    also lets each step add its own strongest domain while fewer than ``limit``
+    are chosen, so a step the whole-request score outvotes still has its tools
+    in front of the model.
+    """
+    scored = _scored_domains(request)
+    keep: list[str] = []
+    if scored:
+        best = scored[0][0]
+        keep.append(scored[0][1])
+        for score, domain in scored[1 : max(1, limit)]:
+            if score >= best * _RUNNER_UP_RATIO and score >= _RUNNER_UP_FLOOR:
+                keep.append(domain)
+
+    clauses = [part for part in _CLAUSE_SPLIT.split(request) if part.strip()]
+    if len(clauses) > 1:
+        for clause in clauses:
+            if len(keep) >= max(1, limit):
+                break
+            step = _scored_domains(clause)
+            if step and step[0][0] >= _RUNNER_UP_FLOOR and step[0][1] not in keep:
+                keep.append(step[0][1])
     return tuple(keep)
 
 
