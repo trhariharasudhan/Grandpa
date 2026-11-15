@@ -1,6 +1,13 @@
 """Shape only: realistic Grandpa geometry from the front reference view.
 
-Usage:  uv run --no-project --with gradio_client python hunyuan_shape.py [seed] [space]
+Usage:  uv run --no-project --with gradio_client python hunyuan_shape.py [seed] [octree] [space]
+
+Set HF_TOKEN (a free Hugging Face token) for more ZeroGPU quota than anonymous use.
+Use tencent/Hunyuan3D-2.1: the older tencent/Hunyuan3D-2 at octree 512 fused the
+figure with a large background blob in testing.
+
+octree 512 is the space's maximum and gives the head the most triangles (the
+figure itself is a small part of the output; most faces are the floor disc).
 
 Uses the public Hugging Face space tencent/Hunyuan3D-2.1 (free ZeroGPU, no key).
 Its texture step needs more GPU time than anonymous users get, so only the shape
@@ -21,8 +28,10 @@ REF = Path(__file__).resolve().parent / "_reference"
 
 def main() -> int:
     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 1234
-    space = sys.argv[2] if len(sys.argv) > 2 else "tencent/Hunyuan3D-2.1"
-    client = Client(space)
+    octree = int(sys.argv[2]) if len(sys.argv) > 2 else 512
+    space = sys.argv[3] if len(sys.argv) > 3 else "tencent/Hunyuan3D-2.1"
+    # the 2.1 queue can take minutes to answer; gradio's default read timeout is too short
+    client = Client(space, httpx_kwargs={"timeout": 180})
     t0 = time.time()
     out_file, _html, stats, used_seed = client.predict(
         image=handle_file(str(REF / "front.png")),
@@ -33,7 +42,7 @@ def main() -> int:
         steps=30,
         guidance_scale=5.0,
         seed=seed,
-        octree_resolution=320,
+        octree_resolution=octree,
         check_box_rembg=True,
         num_chunks=8000,
         randomize_seed=False,
