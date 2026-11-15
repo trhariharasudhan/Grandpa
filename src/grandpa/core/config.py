@@ -507,7 +507,9 @@ class StorageConfig:
     default_backend: str = "sqlite"
     db_path: str = field(default_factory=lambda: _in_config_dir("memory.db"))
     context_top_k: int = 5
-    context_min_score: float = 0.0
+    # >0 drops hits that matched nothing but stop words (BM25 ~1e-6) while
+    # keeping every real BM25 and hybrid RRF hit (RRF is ~0.015 at rank 5).
+    context_min_score: float = 0.01
     context_max_tokens: int = 2048
     chunk_size: int = 512
     chunk_overlap: int = 64

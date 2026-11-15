@@ -18,6 +18,10 @@ from grandpa.memory.service import MemoryService
 from grandpa.tools.storage.chunking import ChunkConfig
 from grandpa.tools.storage.ingest import ingest_path
 
+#: ``recall-test --backend personal`` measures the personal memory chat uses
+#: (memory_context), whose embeddings come from Ollama when it is reachable.
+PERSONAL_RECALL_BACKEND = "personal"
+
 
 def _get_backend(backend_key: str | None = None):
     """Instantiate the configured (or overridden) memory backend."""
@@ -240,14 +244,28 @@ def stats(backend: str | None) -> None:
     "--backend",
     "-b",
     default=None,
-    help="Measure a different backend than the configured default.",
+    help="Measure a different backend than the configured default "
+    "('personal' = the chat personal memory with Ollama embeddings).",
 )
-@click.option("--top-k", default=5, type=int, show_default=True,
-              help="How many results a query may return.")
-@click.option("--json", "as_json", is_flag=True,
-              help="Print the report as JSON for comparing runs.")
-@click.option("--misses", "show_misses", is_flag=True,
-              help="List every question that did not find its fact.")
+@click.option(
+    "--top-k",
+    default=5,
+    type=int,
+    show_default=True,
+    help="How many results a query may return.",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Print the report as JSON for comparing runs.",
+)
+@click.option(
+    "--misses",
+    "show_misses",
+    is_flag=True,
+    help="List every question that did not find its fact.",
+)
 def recall_test_cmd(
     backend: str | None, top_k: int, as_json: bool, show_misses: bool
 ) -> None:
@@ -274,7 +292,8 @@ def recall_test_cmd(
     from grandpa.tools.storage import load_storage_backends
 
     load_storage_backends()
-    if not MemoryRegistry.contains(key):
+    personal = key == PERSONAL_RECALL_BACKEND
+    if not personal and not MemoryRegistry.contains(key):
         raise click.ClickException(
             f"Memory backend '{key}' not found. "
             f"Available: {', '.join(MemoryRegistry.keys())}"
@@ -283,8 +302,14 @@ def recall_test_cmd(
     # A throwaway database. Measuring recall must not add a dozen invented
     # facts to the user's real memory, which an in-place run would do.
     scratch = tempfile.mkdtemp(prefix="grandpa-recall-")
+    embedding_model = ""
     try:
-        if key == "sqlite":
+        if personal:
+            from grandpa.memory.recall_test import PersonalMemoryAdapter
+
+            store = PersonalMemoryAdapter(Path(scratch) / "personal_memory.db")
+            embedding_model = store.embedding_model
+        elif key == "sqlite":
             store = MemoryRegistry.create(key, db_path=str(Path(scratch) / "recall.db"))
         else:
             store = MemoryRegistry.create(key)
@@ -304,6 +329,7 @@ def recall_test_cmd(
                 {
                     "backend": key,
                     "backend_class": report.backend,
+                    "embedding_model": embedding_model or None,
                     "facts_stored": report.stored,
                     "queries": len(report.outcomes),
                     "overall": {
@@ -324,8 +350,12 @@ def recall_test_cmd(
                         "empty": report.empty_results("paraphrase"),
                     },
                     "misses": [
-                        {"query": item.query, "kind": item.kind, "rank": item.rank,
-                         "returned": item.returned}
+                        {
+                            "query": item.query,
+                            "kind": item.kind,
+                            "rank": item.rank,
+                            "returned": item.returned,
+                        }
                         for item in report.misses()
                     ],
                 },
@@ -357,6 +387,13 @@ def recall_test_cmd(
     )
     console.print(table)
     console.print(f"[dim]{report.stored} facts stored, thrown away afterwards.[/dim]")
+    if embedding_model:
+        hint = (
+            ""
+            if embedding_model.startswith("ollama:")
+            else " (Ollama embedding model unreachable: offline hash fallback)"
+        )
+        console.print(f"[dim]Embedding model: {embedding_model}{hint}[/dim]")
     console.print("")
     console.print(report.verdict())
 

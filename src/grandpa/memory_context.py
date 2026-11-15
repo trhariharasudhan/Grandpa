@@ -2,11 +2,15 @@
 
 This module is intentionally small and local-first. It stores user-approved
 facts and assistant activity in SQLite under the Grandpa config directory and
-does not call external services.
+does not call external services. The only network call is to the *local*
+Ollama daemon for embeddings (``grandpa-memory`` / ``nomic-embed-text``), so
+memories match by meaning; when Ollama is unreachable it falls back to the
+offline hashed bag-of-words below.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import sqlite3
@@ -28,6 +32,21 @@ DEFAULT_MEMORY_DB = CANONICAL_PERSONAL_MEMORY_DB
 SEMANTIC_DIMENSIONS = 128
 SEMANTIC_MODEL = "grandpa-local-semantic-v1"
 SEMANTIC_MIN_CONFIDENCE = 0.18
+#: ``auto`` (default) uses the local Ollama embedding model when it is
+#: installed and reachable, else the hash; ``hash`` never calls Ollama.
+MEMORY_EMBEDDER_ENV = "GRANDPA_MEMORY_EMBEDDER"
+_OLLAMA_PROBE_TIMEOUT_S = 1.5
+_OLLAMA_EMBED_TIMEOUT_S = 8.0
+_OLLAMA_PROBE_TTL_S = 60.0
+#: Cosine below which two texts are unrelated for nomic-embed-text: unrelated
+#: sentences still score ~0.35-0.45, so raw cosine is rescaled from this floor
+#: to keep 0 meaning "unrelated" like the hash. Not yet calibrated on
+#: Windows; ``grandpa memory recall-test --backend personal`` measures it.
+OLLAMA_SIMILARITY_FLOOR = 0.4
+#: A memory whose meaning matches at least this well is relevant context even
+#: when it shares no words with the question.
+SEMANTIC_CONTEXT_MIN_SCORE = 0.3
+logger = logging.getLogger(__name__)
 SENSITIVE_PATTERN = re.compile(
     r"\b(password|passcode|credential|secret|token|api\s*key|credit\s*card|"
     r"card\s*number|cvv|otp|pin|private\s*key|seed\s*phrase)\b",
@@ -42,6 +61,12 @@ _PERSONAL_FACT_PATTERNS = (
         re.IGNORECASE,
     ),
     re.compile(r"^my\s+project(?:\s+name)?\s+is\s+(?P<value>.+)$", re.IGNORECASE),
+)
+#: "what is my ...", "who do I ...", "when did we ..." -- a question about the
+#: user's own facts, which must get "I don't know" rather than a guess.
+_PERSONAL_QUESTION = re.compile(
+    r"^\s*(what|who|where|when|which|how|do|did|am|is|are)\b.*\b(my|i|we|our|me)\b",
+    re.IGNORECASE,
 )
 _MEMORY_QUERY_STOP_WORDS = {
     "a",
@@ -248,6 +273,16 @@ class MemoryStore:
         source: str = "chat",
     ) -> None:
         now = time.time()
+        # Embed before the transaction so a slow Ollama never holds the lock.
+        embedder = active_memory_embedder()
+        text = _memory_embedding_text(
+            {"category": category, "key": key, "value": value}
+        )
+        try:
+            vector = _embed_texts([text], embedder)[0]
+        except EmbedderUnavailable:
+            embedder = HASH_EMBEDDER
+            vector = _embed_text(text)
         with self._connect() as conn:
             conn.execute(
                 """
@@ -273,7 +308,7 @@ class MemoryStore:
                     "value": value,
                     "source": source,
                 }
-                self._store_embedding(conn, item)
+                self._store_embedding(conn, item, embedder, vector)
 
     def forget(self, query: str) -> int:
         clean_query = query.strip()
@@ -353,9 +388,15 @@ class MemoryStore:
         candidates = self.list_memories(limit=250)
         if category and category != "all":
             candidates = [item for item in candidates if item["category"] == category]
-        self._ensure_embeddings(candidates)
-        query_embedding = _embed_text(query)
-        embeddings = self._load_embeddings(candidates)
+        embedder = active_memory_embedder()
+        try:
+            self._ensure_embeddings(candidates, embedder)
+            query_embedding = _embed_texts([query], embedder, kind="query")[0]
+        except EmbedderUnavailable:
+            embedder = HASH_EMBEDDER
+            self._ensure_embeddings(candidates, embedder)
+            query_embedding = _embed_text(query)
+        embeddings = self._load_embeddings(candidates, embedder)
         habit_scores = self._habit_scores(candidates)
         inferred_categories = _infer_query_categories(query)
         scored: list[tuple[float, float, dict[str, Any]]] = []
@@ -367,7 +408,7 @@ class MemoryStore:
             category_hint = 1 if item["category"] in inferred_categories else 0
             embedding = embeddings.get(int(item["id"]))
             semantic = (
-                _cosine_similarity(query_embedding, embedding) if embedding else 0.0
+                _similarity(query_embedding, embedding, embedder) if embedding else 0.0
             )
             lexical = min(1.0, overlap / max(1, len(query_tokens)))
             confidence = max(semantic, lexical * 0.72, direct * 0.95)
@@ -382,7 +423,8 @@ class MemoryStore:
                 enriched["match_type"] = (
                     "semantic" if semantic >= lexical else "keyword"
                 )
-                enriched["embedding_model"] = SEMANTIC_MODEL
+                enriched["semantic_score"] = round(semantic, 4)
+                enriched["embedding_model"] = embedder.model
                 scored.append((confidence, float(item["updated_at"]), enriched))
         scored.sort(key=lambda pair: (pair[0], pair[1]), reverse=True)
         return [item for _, _, item in scored[:limit]]
@@ -395,11 +437,13 @@ class MemoryStore:
             embeddings = conn.execute(
                 "SELECT COUNT(*) AS count FROM memory_embeddings"
             ).fetchone()["count"]
+        embedder = active_memory_embedder()
         return {
             "enabled": True,
             "backend": "local-sqlite",
-            "embedding_model": SEMANTIC_MODEL,
-            "dimensions": SEMANTIC_DIMENSIONS,
+            "embedding_model": embedder.model,
+            "meaning_based": embedder.is_semantic,
+            "dimensions": None if embedder.is_semantic else SEMANTIC_DIMENSIONS,
             "memories": memories,
             "embeddings": embeddings,
             "local_only": True,
@@ -452,9 +496,17 @@ class MemoryStore:
             ).fetchall()
         return [_row_to_dict(row) for row in rows]
 
-    def _store_embedding(self, conn: sqlite3.Connection, item: dict[str, Any]) -> None:
+    def _store_embedding(
+        self,
+        conn: sqlite3.Connection,
+        item: dict[str, Any],
+        embedder: MemoryEmbedder | None = None,
+        vector: list[float] | None = None,
+    ) -> None:
+        embedder = embedder or HASH_EMBEDDER
         text = _memory_embedding_text(item)
-        embedding = _embed_text(text)
+        embedding = vector if vector is not None else _embed_text(text)
+        source = "ollama" if embedder.is_semantic else "local"
         conn.execute(
             """
             INSERT INTO memory_embeddings(
@@ -472,15 +524,23 @@ class MemoryStore:
             (
                 item["id"],
                 item["updated_at"],
-                SEMANTIC_MODEL,
-                SEMANTIC_DIMENSIONS,
+                embedder.model,
+                len(embedding),
                 _serialize_vector(embedding),
                 text,
-                '{"source":"local"}',
+                f'{{"source":"{source}"}}',
             ),
         )
 
-    def _ensure_embeddings(self, items: list[dict[str, Any]]) -> None:
+    def _ensure_embeddings(
+        self, items: list[dict[str, Any]], embedder: MemoryEmbedder | None = None
+    ) -> None:
+        """(Re-)embed rows that are new, edited, or from another model.
+
+        Raises :class:`EmbedderUnavailable` before writing anything when
+        Ollama fails, so the caller can fall back to the hash cleanly.
+        """
+        embedder = embedder or HASH_EMBEDDER
         if not items:
             return
         ids = [int(item["id"]) for item in items]
@@ -491,35 +551,30 @@ class MemoryStore:
                 f"WHERE memory_id IN ({placeholders})",
                 ids,
             ).fetchall()
-            current = {
-                int(row["memory_id"]): (float(row["updated_at"]), str(row["model"]))
-                for row in rows
-            }
-            for item in items:
-                memory_id = int(item["id"])
-                stored = current.get(memory_id)
-                if stored == (float(item["updated_at"]), SEMANTIC_MODEL):
-                    continue
-                self._store_embedding(conn, item)
-
-    def _embedding_similarity(
-        self, memory_id: int, query_embedding: list[float]
-    ) -> float:
+        current = {
+            int(row["memory_id"]): (float(row["updated_at"]), str(row["model"]))
+            for row in rows
+        }
+        stale = [
+            item
+            for item in items
+            if current.get(int(item["id"]))
+            != (float(item["updated_at"]), embedder.model)
+        ]
+        if not stale:
+            return
+        vectors = _embed_texts(
+            [_memory_embedding_text(item) for item in stale], embedder
+        )
         with self._connect() as conn:
-            row = conn.execute(
-                "SELECT embedding FROM memory_embeddings WHERE memory_id = ?",
-                (memory_id,),
-            ).fetchone()
-        if not row:
-            return 0.0
-        try:
-            embedding = _deserialize_vector(row["embedding"])
-        except ValueError:
-            return 0.0
-        return _cosine_similarity(query_embedding, embedding)
+            for item, vector in zip(stale, vectors):
+                self._store_embedding(conn, item, embedder, vector)
 
-    def _load_embeddings(self, items: list[dict[str, Any]]) -> dict[int, list[float]]:
+    def _load_embeddings(
+        self, items: list[dict[str, Any]], embedder: MemoryEmbedder | None = None
+    ) -> dict[int, list[float]]:
         """Load all candidate vectors in one query instead of one query per result."""
+        embedder = embedder or HASH_EMBEDDER
         if not items:
             return {}
         ids = [int(item["id"]) for item in items]
@@ -527,13 +582,16 @@ class MemoryStore:
         with self._connect() as conn:
             rows = conn.execute(
                 f"SELECT memory_id, embedding FROM memory_embeddings "
-                f"WHERE memory_id IN ({placeholders})",
-                ids,
+                f"WHERE model = ? AND memory_id IN ({placeholders})",
+                [embedder.model, *ids],
             ).fetchall()
+        dimensions = None if embedder.is_semantic else SEMANTIC_DIMENSIONS
         vectors: dict[int, list[float]] = {}
         for row in rows:
             try:
-                vectors[int(row["memory_id"])] = _deserialize_vector(row["embedding"])
+                vectors[int(row["memory_id"])] = _deserialize_vector(
+                    row["embedding"], dimensions
+                )
             except ValueError:
                 continue
         return vectors
@@ -820,11 +878,24 @@ def build_personal_memory_context(
         candidate_tokens = _meaningful_memory_tokens(
             f"{item['category']} {item['key']} {item['value']}"
         )
-        if query_tokens.issubset(candidate_tokens):
+        # Same words, or (with the Ollama embedder) the same meaning.
+        by_meaning = (
+            str(item.get("embedding_model", "")).startswith("ollama:")
+            and float(item.get("semantic_score", 0.0)) >= SEMANTIC_CONTEXT_MIN_SCORE
+        )
+        if query_tokens.issubset(candidate_tokens) or by_meaning:
             relevant.append(item)
         if len(relevant) >= limit:
             break
     if not relevant:
+        if _PERSONAL_QUESTION.search(query):
+            return (
+                "Grandpa verified personal memory context:\n"
+                "- No stored memory matches this question. If it asks for a "
+                "personal fact the user would have told you (a name, a date, a "
+                "preference), say you don't know; do not guess. Questions about "
+                "this computer are still answered with tools."
+            )
         return ""
     lines = [
         "Grandpa verified personal memory context:",
@@ -1036,11 +1107,11 @@ def _recall(store: MemoryStore, query: str) -> MemoryCommandResult:
     except Exception:
         results = store.search_memories(query)
     if not results:
-        message = "I do not have a matching memory yet."
+        message = "I don't know. I have no memory that matches that."
         return MemoryCommandResult("handled", "memory", query, message, message)
     top_score = float(results[0].get("relevance_score", results[0].get("score", 0.0)))
     if top_score < max(SEMANTIC_MIN_CONFIDENCE, 0.35):
-        message = "I am not confident I have a matching memory for that yet."
+        message = "I don't know. No memory matches that closely enough."
         return MemoryCommandResult("handled", "memory", query, message, message)
     lines = ["Here is what I remember:"]
     for item in results[:5]:
@@ -1291,7 +1362,127 @@ def _memory_embedding_text(item: dict[str, Any]) -> str:
     return " ".join(parts)
 
 
+@dataclass(frozen=True)
+class MemoryEmbedder:
+    """Which embedding model produced a vector; stored with every row."""
+
+    model: str
+    ollama_tag: str | None = None
+    host: str | None = None
+
+    @property
+    def is_semantic(self) -> bool:
+        return self.ollama_tag is not None
+
+
+HASH_EMBEDDER = MemoryEmbedder(SEMANTIC_MODEL)
+_embedder_cache: tuple[float, MemoryEmbedder] | None = None
+
+
+class EmbedderUnavailable(RuntimeError):
+    """Ollama failed mid-request; the caller retries with the hash."""
+
+
+def _ollama_host() -> str:
+    from grandpa.runtime.ollama_adapter import normalize_ollama_host
+
+    return normalize_ollama_host(os.environ.get("OLLAMA_HOST"))
+
+
+def _probe_ollama_embedder() -> MemoryEmbedder | None:
+    host = _ollama_host()
+    try:
+        import httpx
+
+        response = httpx.get(f"{host}/api/tags", timeout=_OLLAMA_PROBE_TIMEOUT_S)
+        response.raise_for_status()
+        names = [
+            str(model.get("name") or model.get("model") or "")
+            for model in response.json().get("models", [])
+        ]
+    except Exception:  # noqa: BLE001 - unreachable Ollama means the hash
+        return None
+    from grandpa.intelligence.odin_registry import (
+        normalize_tag,
+        resolve_memory_embedding_tag,
+    )
+
+    installed = {normalize_tag(name) for name in names if name}
+    tag = resolve_memory_embedding_tag(installed)
+    if tag not in installed:
+        return None
+    return MemoryEmbedder(f"ollama:{tag}", tag, host)
+
+
+def active_memory_embedder() -> MemoryEmbedder:
+    """The Ollama embedder when installed and reachable, else the hash.
+
+    Probed at most once a minute, so a search does not pay a round trip to
+    find out Ollama is down.
+    """
+    global _embedder_cache
+    if os.environ.get(MEMORY_EMBEDDER_ENV, "auto").strip().lower() == "hash":
+        return HASH_EMBEDDER
+    now = time.monotonic()
+    if _embedder_cache and now - _embedder_cache[0] < _OLLAMA_PROBE_TTL_S:
+        return _embedder_cache[1]
+    chosen = _probe_ollama_embedder() or HASH_EMBEDDER
+    _embedder_cache = (now, chosen)
+    return chosen
+
+
+def reset_memory_embedder_cache() -> None:
+    global _embedder_cache
+    _embedder_cache = None
+
+
+def _embed_texts(
+    texts: list[str], embedder: MemoryEmbedder, *, kind: str = "document"
+) -> list[list[float]]:
+    """Embed *texts*; raise :class:`EmbedderUnavailable` if Ollama fails."""
+    global _embedder_cache
+    if not embedder.is_semantic or not texts:
+        return [_embed_text(text) for text in texts]
+    tag = str(embedder.ollama_tag)
+    # nomic-embed-text was trained with task prefixes; grandpa-memory is a copy.
+    prefix = ""
+    if "nomic" in tag or tag.startswith("grandpa-memory"):
+        prefix = "search_query: " if kind == "query" else "search_document: "
+    try:
+        import httpx
+
+        response = httpx.post(
+            f"{embedder.host}/api/embed",
+            json={"model": tag, "input": [prefix + text for text in texts]},
+            timeout=_OLLAMA_EMBED_TIMEOUT_S,
+        )
+        response.raise_for_status()
+        raw = response.json().get("embeddings") or []
+        if len(raw) != len(texts):
+            raise ValueError("Ollama returned the wrong number of embeddings")
+    except Exception as exc:  # noqa: BLE001 - any failure means the hash
+        logger.info("memory embeddings: Ollama unavailable (%s); using hash", exc)
+        _embedder_cache = (time.monotonic(), HASH_EMBEDDER)
+        raise EmbedderUnavailable(str(exc)) from exc
+    vectors: list[list[float]] = []
+    for row in raw:
+        values = [float(value) for value in row]
+        norm = sqrt(sum(value * value for value in values)) or 1.0
+        vectors.append([value / norm for value in values])
+    return vectors
+
+
+def _similarity(
+    left: list[float], right: list[float], embedder: MemoryEmbedder
+) -> float:
+    cosine = _cosine_similarity(left, right)
+    if not embedder.is_semantic:
+        return cosine
+    return max(0.0, (cosine - OLLAMA_SIMILARITY_FLOOR) / (1 - OLLAMA_SIMILARITY_FLOOR))
+
+
 def _embed_text(text: str, dimensions: int = SEMANTIC_DIMENSIONS) -> list[float]:
+    """Offline fallback: hashed bag of words plus character trigrams."""
     vector = [0.0] * dimensions
     tokens = _expanded_tokens(text)
     for token in tokens:
@@ -1319,9 +1510,11 @@ def _serialize_vector(vector: list[float]) -> str:
     return ",".join(f"{value:.6f}" for value in vector)
 
 
-def _deserialize_vector(raw: str) -> list[float]:
+def _deserialize_vector(
+    raw: str, dimensions: int | None = SEMANTIC_DIMENSIONS
+) -> list[float]:
     values = [float(part) for part in raw.split(",") if part]
-    if len(values) != SEMANTIC_DIMENSIONS:
+    if not values or (dimensions is not None and len(values) != dimensions):
         raise ValueError("unexpected memory embedding dimensions")
     return values
 

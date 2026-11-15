@@ -279,6 +279,20 @@ def _clean_registries() -> None:
 
 
 @pytest.fixture(autouse=True)
+def _memory_embeddings_are_offline(monkeypatch) -> None:
+    """Personal memory uses the offline hash embedder in tests.
+
+    With Ollama running on the developer's machine, memory scores would come
+    from a real model and differ from CI. A test that wants the Ollama path
+    sets ``GRANDPA_MEMORY_EMBEDDER=auto`` and fakes the HTTP calls.
+    """
+    from grandpa.memory_context import MEMORY_EMBEDDER_ENV, reset_memory_embedder_cache
+
+    monkeypatch.setenv(MEMORY_EMBEDDER_ENV, "hash")
+    reset_memory_embedder_cache()
+
+
+@pytest.fixture(autouse=True)
 def _nothing_actuates(request, monkeypatch) -> None:
     """Replace every catalogued implementation, and the primitives beneath them.
 

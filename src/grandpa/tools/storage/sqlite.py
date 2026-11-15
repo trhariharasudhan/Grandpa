@@ -23,15 +23,29 @@ def _check_fts5(conn: sqlite3.Connection) -> bool:
         return False
 
 
+#: Question words that match nearly every stored fact. OR-joined, "what
+#: vehicle do I drive" used to return *a* fact on "I" alone, so memory never
+#: came back empty and never said it did not know.
+_FTS_STOP_WORDS = frozenset(
+    "a an the is am are was were be do does did i me my we our us you your "
+    "what who whom where when which why how of to in on at for with and or "
+    "it its this that have has had can could should would will there".split()
+)
+
+
 def _quote_fts_query(query: str) -> str:
-    """Convert a plain user query into safe FTS5 terms."""
+    """Convert a plain user query into safe FTS5 terms, without stop words.
+
+    A query made only of stop words keeps them, so it still finds something.
+    """
     terms = [term for term in (part.strip('"') for part in query.split()) if term]
     cleaned = []
     for term in terms:
         token = "".join(ch for ch in term if ch.isalnum() or ch in {"_", "-"})
         if token:
-            cleaned.append(f'"{token}"')
-    return " OR ".join(cleaned)
+            cleaned.append(token)
+    content = [token for token in cleaned if token.casefold() not in _FTS_STOP_WORDS]
+    return " OR ".join(f'"{token}"' for token in (content or cleaned))
 
 
 @MemoryRegistry.register("sqlite")
