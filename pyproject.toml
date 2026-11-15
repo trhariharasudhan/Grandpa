@@ -54,6 +54,8 @@ dev = [
     "respx>=0.22",
     "ruff>=0.4",
     "pre-commit>=3.0",
+    # The avatar's socket is tested for real on loopback.
+    "websockets>=13.0",
 ]
 tools-search = [
     "tavily-python>=0.3",
@@ -93,6 +95,12 @@ pdf = ["pdfplumber>=0.10"]
 scheduler = ["croniter>=2.0"]
 security-signing = ["cryptography>=43"]
 tray = ["pystray>=0.19.5", "pillow>=12.1.1"]
+# Phase A presence: `grandpa avatar`. pywebview hosts the page (WebView2 on
+# Windows); websockets carries states between Python and the page.
+avatar = [
+    "pywebview>=5.0; sys_platform == 'win32'",
+    "websockets>=13.0",
+]
 windows-notifications = ["winotify>=1.1; sys_platform == 'win32'"]
 speech = ["faster-whisper>=1.0"]
 native = ["llama-cpp-python>=0.3.0"]

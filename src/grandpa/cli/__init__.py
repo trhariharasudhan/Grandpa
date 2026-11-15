@@ -347,6 +347,13 @@ cli.add_command(
     )
 )
 cli.add_command(
+    _lazy(
+        "avatar",
+        "grandpa.cli.avatar_cmd:avatar",
+        short_help="Grandpa's avatar window (orb + text). Blocks this terminal.",
+    )
+)
+cli.add_command(
     _lazy("agents", "grandpa.cli.agent_cmd:agent", short_help="Manage agents.")
 )
 cli.add_command(
