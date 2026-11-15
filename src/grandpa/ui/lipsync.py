@@ -351,7 +351,11 @@ class LipSyncSpeaker:
 
 
 def default_speaker() -> tuple[LipSyncSpeaker | None, str]:
-    """The speaker ``grandpa avatar`` uses, and one line saying why or why not."""
+    """The speaker ``grandpa avatar`` uses, and one line saying why or why not.
+
+    English (and Thanglish) replies use Piper when it is installed, else
+    pyttsx3; replies written mostly in Tamil script use the MMS Tamil voice
+    when it is installed."""
     import importlib.util
 
     try:
@@ -362,25 +366,58 @@ def default_speaker() -> tuple[LipSyncSpeaker | None, str]:
             return None, "Voice: off (tts.enabled is false in your config)."
     except Exception:  # noqa: BLE001 - a broken config should not stop the window
         pass
+    english: Callable[[str, Path], None] | None = None
+    label = ""
     if os.environ.get(ENV_VOICE_ENGINE, "").strip().lower() != "pyttsx3":
-        speaker = _piper_speaker()
-        if speaker is not None:
-            return speaker
-    if importlib.util.find_spec("pyttsx3") is None:
+        piper = _piper_synth()
+        if piper is not None:
+            english, label = piper
+    if english is None and importlib.util.find_spec("pyttsx3") is not None:
+        english, label = synthesize_wav_pyttsx3, "pyttsx3"
+    tamil = _tamil_synth()
+    if english is None and tamil is None:
         return None, "Voice: off (pyttsx3 is not installed)."
-    return LipSyncSpeaker(), "Voice: on, pyttsx3 with lip-sync (--quiet turns it off)."
+    if tamil is None:
+        return LipSyncSpeaker(
+            synthesize=english
+        ), f"Voice: on, {label} with lip-sync (--quiet turns it off)."
+
+    def by_script(text: str, path: Path) -> None:
+        from grandpa.speech.tamil_tts import is_tamil
+
+        if english is None or is_tamil(text):
+            tamil(text, path)
+        else:
+            english(text, path)
+
+    both = f"{label} + Tamil (MMS)" if english else "Tamil (MMS) only"
+    return LipSyncSpeaker(
+        synthesize=by_script
+    ), f"Voice: on, {both} with lip-sync (--quiet turns it off)."
 
 
 ENV_VOICE_ENGINE = "GRANDPA_AVATAR_VOICE"
 """Set to ``pyttsx3`` to keep the old Windows voice even when Piper is installed."""
 
 
-def _piper_speaker() -> tuple[LipSyncSpeaker, str] | None:
+def _warm(load: Callable[[], Any], name: str) -> None:
+    """Load a voice in the background so the first reply does not wait for it."""
+    import threading
+
+    def run() -> None:
+        try:
+            load()
+        except Exception:  # noqa: BLE001
+            logger.warning("%s voice could not be loaded", name, exc_info=True)
+
+    threading.Thread(target=run, name=f"{name}-warm", daemon=True).start()
+
+
+def _piper_synth() -> tuple[Callable[[str, Path], None], str] | None:
     """Piper (a local neural voice) when its package and a voice are installed.
 
-    The voice is loaded in the background right away, so the first reply does
-    not wait for it (loading takes ~1.5 s on the Vivobook; speaking a reply
-    then takes ~0.13 s per second of audio)."""
+    Loading takes ~1.5-6 s on the Vivobook; speaking a reply then takes ~0.13 s
+    per second of audio."""
     try:
         from grandpa.speech import piper_tts
     except Exception:  # noqa: BLE001 - an optional voice must not stop the window
@@ -388,23 +425,22 @@ def _piper_speaker() -> tuple[LipSyncSpeaker, str] | None:
     if not piper_tts.ready():
         return None
     model = piper_tts.voice_path()
-
-    def warm() -> None:
-        try:
-            piper_tts._load(model)
-        except Exception:  # noqa: BLE001
-            logger.warning("Piper voice could not be loaded", exc_info=True)
-
-    import threading
-
-    threading.Thread(target=warm, name="piper-warm", daemon=True).start()
-    speaker = LipSyncSpeaker(
-        synthesize=lambda text, path: piper_tts.synthesize_wav(text, path)
-    )
+    _warm(lambda: piper_tts._load(model), "piper")
     return (
-        speaker,
-        f"Voice: on, Piper ({model.stem}) with lip-sync (--quiet turns it off).",
-    )
+        lambda text, path: piper_tts.synthesize_wav(text, path)
+    ), f"Piper ({model.stem})"
+
+
+def _tamil_synth() -> Callable[[str, Path], None] | None:
+    """The MMS Tamil voice (sherpa-onnx) when its package and model are installed."""
+    try:
+        from grandpa.speech import tamil_tts
+    except Exception:  # noqa: BLE001
+        return None
+    if not tamil_tts.ready():
+        return None
+    _warm(lambda: tamil_tts._load(tamil_tts.model_dir()), "tamil")
+    return lambda text, path: tamil_tts.synthesize_wav(text, path)
 
 
 __all__ = [
