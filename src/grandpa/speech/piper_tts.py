@@ -26,7 +26,12 @@ from typing import Any, List
 from grandpa.core.registry import TTSRegistry
 from grandpa.speech.tts import TTSBackend, TTSResult
 
-VOICES_DIR = Path.home() / ".Grandpa" / "voices"
+
+def voices_dir() -> Path:
+    """Where Piper voices live, resolved when asked (never at import)."""
+    return Path.home() / ".Grandpa" / "voices"
+
+
 ENV_VOICE = "GRANDPA_PIPER_VOICE"
 DEFAULT_VOICE = "en_GB-alan-medium"
 """A calm, mature British male voice: the closest stock Piper voice to a wise grandpa."""
@@ -43,7 +48,7 @@ def voice_path(voice: str | None = None) -> Path | None:
     choice = (voice or os.environ.get(ENV_VOICE, "") or DEFAULT_VOICE).strip()
     path = Path(choice).expanduser()
     if path.suffix != ".onnx":
-        path = VOICES_DIR / f"{choice}.onnx"
+        path = voices_dir() / f"{choice}.onnx"
     config = path.with_name(path.name + ".json")
     return path if path.is_file() and config.is_file() else None
 
@@ -79,7 +84,7 @@ def synthesize_wav(
     model = voice_path(voice)
     if model is None:
         raise RuntimeError(
-            f"No Piper voice found (looked for {voice or os.environ.get(ENV_VOICE) or DEFAULT_VOICE} in {VOICES_DIR})."
+            f"No Piper voice found (looked for {voice or os.environ.get(ENV_VOICE) or DEFAULT_VOICE} in {voices_dir()})."
         )
     engine = _load(model)
     with wave.open(str(path), "wb") as wav:
@@ -94,13 +99,14 @@ def synthesize_wav(
 
 
 def download_voice(
-    voice: str = DEFAULT_VOICE, dest: Path = VOICES_DIR, timeout: float = 300.0
+    voice: str = DEFAULT_VOICE, dest: Path | None = None, timeout: float = 300.0
 ) -> Path:
     """Fetch ``<voice>.onnx`` and its ``.json`` from the Piper voice collection.
 
     ``voice`` is ``<lang>-<name>-<quality>``, for example ``en_GB-alan-medium``.
     Files already present are kept.
     """
+    dest = voices_dir() if dest is None else dest
     lang, name, quality = voice.split("-", 2)
     dest.mkdir(parents=True, exist_ok=True)
     for ext in (".onnx", ".onnx.json"):
@@ -173,11 +179,12 @@ class PiperTTSBackend(TTSBackend):
         )
 
     def available_voices(self) -> List[str]:
-        if not VOICES_DIR.is_dir():
+        folder = voices_dir()
+        if not folder.is_dir():
             return []
         return sorted(
             p.stem
-            for p in VOICES_DIR.glob("*.onnx")
+            for p in folder.glob("*.onnx")
             if p.with_name(p.name + ".json").is_file()
         )
 
@@ -190,7 +197,7 @@ __all__ = [
     "ENV_VOICE",
     "LENGTH_SCALE",
     "PiperTTSBackend",
-    "VOICES_DIR",
+    "voices_dir",
     "download_voice",
     "piper_installed",
     "ready",

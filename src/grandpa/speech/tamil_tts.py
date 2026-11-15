@@ -29,7 +29,8 @@ from typing import Any, List
 from grandpa.core.registry import TTSRegistry
 from grandpa.speech.tts import TTSBackend, TTSResult
 
-MODEL_DIR = Path.home() / ".Grandpa" / "voices" / "mms-tam"
+MODEL_SUBDIR = ("voices", "mms-tam")
+"""Under ~/.Grandpa, resolved by :func:`model_dir` when asked (never at import)."""
 ENV_MODEL_DIR = "GRANDPA_TAMIL_VOICE_DIR"
 MODEL_URL = "https://huggingface.co/willwade/mms-tts-multilingual-models-onnx/resolve/main/tam/{file}"
 FILES = ("tokens.txt", "model.onnx")
@@ -58,7 +59,11 @@ def is_tamil(text: str, threshold: float = 0.5) -> bool:
 
 def model_dir() -> Path:
     custom = os.environ.get(ENV_MODEL_DIR, "").strip()
-    return Path(custom).expanduser() if custom else MODEL_DIR
+    return (
+        Path(custom).expanduser()
+        if custom
+        else Path.home() / ".Grandpa" / Path(*MODEL_SUBDIR)
+    )
 
 
 def model_ready() -> bool:
@@ -215,7 +220,7 @@ if __name__ == "__main__":
 
 
 __all__ = [
-    "MODEL_DIR",
+    "MODEL_SUBDIR",
     "clean_for_model",
     "TamilTTSBackend",
     "download",

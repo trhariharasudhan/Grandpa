@@ -64,7 +64,7 @@ def fake_piper(monkeypatch, tmp_path):
     module.__spec__ = types.SimpleNamespace(name="piper")
     monkeypatch.setitem(sys.modules, "piper", module)
     monkeypatch.setattr(piper_tts, "piper_installed", lambda: True)
-    monkeypatch.setattr(piper_tts, "VOICES_DIR", tmp_path)
+    monkeypatch.setattr(piper_tts, "voices_dir", lambda: tmp_path)
     monkeypatch.delenv(piper_tts.ENV_VOICE, raising=False)
     monkeypatch.delenv(lipsync.ENV_VOICE_ENGINE, raising=False)
     piper_tts._loaded.clear()

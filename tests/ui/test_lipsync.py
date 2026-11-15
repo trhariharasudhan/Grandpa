@@ -293,11 +293,12 @@ def test_each_sentence_gets_its_own_track() -> None:
 def test_the_first_sound_waits_for_one_sentence_not_the_whole_reply() -> None:
     voice = TimedVoice(synth_s=0.15, play_s=0.2)
     speaker = LipSyncSpeaker(synthesize=voice.synthesize, play=voice.play)
-    begin = time.time()
     speaker.speak(REPLY, lambda *_a: None)
-    first_play = next(t for kind, _x, t in voice.events if kind == "play")
-    # One synthesis (0.15 s) plus the lead, far below all three (0.45 s).
-    assert first_play - begin < 0.3
+    kinds = [kind for kind, _x, _t in voice.events]
+    # The first sound comes after one synthesis, before the last one is made.
+    # Order, not seconds: a slow CI machine stretches every sleep alike.
+    assert kinds[0] == "synth"
+    assert kinds.index("play") < len(kinds) - 1 - kinds[::-1].index("synth")
 
 
 def test_the_next_sentence_is_made_while_this_one_plays() -> None:
