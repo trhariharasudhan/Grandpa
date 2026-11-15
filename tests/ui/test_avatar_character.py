@@ -268,9 +268,10 @@ def test_the_character_keeps_to_its_budget() -> None:
     assert f"const MAX_TRIANGLES = {MAX_TRIANGLES};" in js
     assert 'powerPreference: "low-power"' in js and "antialias: false" in js
     assert "document.hidden" in js and "visibilitychange" in js
-    # it draws only while shown; the ring is paused while it is
-    assert "if (!shown || document.hidden)" in js
-    assert "ring.setPaused(value)" in js
+    # it draws only while shown or morphing; the ring is paused while it shows
+    assert "if (!shown && !morphing())" in js
+    assert "if (document.hidden)" in js
+    assert "ring.setPaused(true)" in js and "ring.setPaused(false)" in js
     assert "function setPaused(value)" in _js("ring.js")
 
 
@@ -309,3 +310,48 @@ def test_js_is_served_as_javascript(monkeypatch) -> None:
     monkeypatch.setitem(mimetypes.types_map, ".js", "text/plain")  # a bad registry
     ensure_js_mime()
     assert mimetypes.guess_type("character.js")[0] == "text/javascript"
+
+
+# --- A5: the ring <-> character morph -------------------------------------------
+
+
+def _block(js: str, start: str) -> str:
+    body = js[js.index(start) :]
+    return body[: body.index("\n  }\n")]
+
+
+def test_the_morph_is_inside_600_ms() -> None:
+    js = _js("character.js")
+    ms = int(re.search(r"const MORPH_MS = (\d+);", js).group(1))
+    # one frame at 30 fps can land on top before the morph is seen to end
+    assert 0 < ms and ms + 1000 / 30 < 600
+
+
+def test_one_clock_drives_both_canvases() -> None:
+    js = _js("character.js")
+    body = _block(js, "function applyMorph(m)")
+    assert "canvas.style.opacity = String(m)" in body
+    assert "ringCanvas.style.opacity = String(1 - m)" in body
+    # CSS runs no timer of its own for the swap, so the two cannot drift
+    css = (WEB_DIR / "avatar.css").read_text(encoding="utf-8")
+    assert "transition" not in css[css.index("/* A3: the character") :]
+
+
+def test_the_ring_pauses_only_after_the_morph_and_returns_at_once() -> None:
+    js = _js("character.js")
+    settle = _block(js, "function settle(now)")
+    assert "morph.to === 1" in settle and "ring.setPaused(true)" in settle
+    assert 'app.classList.remove("char")' in settle
+    show = _block(js, "function show(value)")
+    assert "ring.setPaused(false)" in show  # back: the ring draws from the first frame
+    assert "ring.setPaused(true)" not in show  # in: not before the morph has ended
+
+
+def test_reduced_motion_or_a_hidden_page_ends_a_morph_at_once() -> None:
+    js = _js("character.js")
+    assert "reduceMotion || document.hidden ? 1" in js
+    # the character canvas shows only once WebGL works; a lost context drops it
+    assert 'app.classList.add("char-ready")' in js
+    assert 'app.classList.remove("char", "char-ready")' in js
+    css = (WEB_DIR / "avatar.css").read_text(encoding="utf-8")
+    assert ".char-ready #char-gl { display: block; }" in css

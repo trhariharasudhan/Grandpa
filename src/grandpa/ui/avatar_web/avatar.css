@@ -65,12 +65,16 @@ html, body {
 #app.gl[data-panel="open"] #ring-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
 
 /* A3: the character takes the ring's place while thinking, speaking, working or
-   asking. character.js sets "char" only once its WebGL context works. */
-#char-gl { display: none; position: absolute; inset: -22px; width: calc(100% + 44px); height: calc(100% + 44px); pointer-events: none; }
+   asking. character.js sets "char-ready" once its WebGL context works and
+   "char" from the start of a morph to its end.
+   A5: the morph itself (opacity and scale of both canvases) is set by
+   character.js frame by frame, from one clock; CSS only places the canvases. */
+#char-gl { display: none; position: absolute; inset: -22px; width: calc(100% + 44px); height: calc(100% + 44px); pointer-events: none; opacity: 0; transform-origin: 50% 50%; }
+#ring-gl { transform-origin: 50% 50%; }
+.char-ready #char-gl { display: block; }
 .char #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
-.char #ring-core, .char #ring-gl { display: none; }
-.char #char-gl { display: block; }
-#app.char[data-panel="open"] #char-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
+.char #ring-core { display: none; }
+#app.char-ready[data-panel="open"] #char-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
 
 #status { display: none; min-width: 0; }
 #label { margin: 0; font-weight: 600; }

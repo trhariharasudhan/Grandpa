@@ -1,6 +1,13 @@
 // A3: Grandpa's character -- the 3D head that replaces the ring while he is
 // thinking, speaking, working or asking. The ring stays for idle, listening,
-// done and error. (A5 makes the swap a morph; this is a plain swap.)
+// done and error.
+//
+// A5, the morph: ring and character never just swap. Over MORPH_MS the ring
+// swells and fades while Grandpa grows out of its light, and back again. One
+// clock (this page's frames) drives both canvases, so they cannot drift. The
+// ring keeps drawing until the morph has finished, then pauses; on the way back
+// it starts again at once. Reduced motion, or a hidden page, ends a morph at
+// once.
 //
 // Two sources, one pipeline:
 //   * a placeholder head built here from a few low-poly shapes (an original
@@ -36,6 +43,11 @@ const BLINK_MS = 150;
 const VISEMES = ["AA", "E", "I", "O", "U", "FV", "MBP"];
 const MAX_TRACK = 2000;
 const MOUTH_EASE = 0.6; // per frame at 30 fps: about one frame behind the sound
+const MORPH_MS = 450; // ring <-> character, well inside A5's 600 ms
+const RIM = 1.4; // the back light; brighter while he comes out of the ring
+
+// 0..1 -> 0..1, slow at both ends
+function ease(p) { return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2; }
 
 // The placeholder's mouth per viseme: [open, wide] at full weight.
 const MOUTH = {
@@ -241,6 +253,8 @@ function create() {
     canvas, alpha: true, antialias: false, powerPreference: "low-power", premultipliedAlpha: true,
   });
   renderer.setClearColor(0x000000, 0);
+  app.classList.add("char-ready"); // CSS shows this canvas only once WebGL works
+  const ringCanvas = document.getElementById("ring-gl");
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 50);
@@ -250,7 +264,7 @@ function create() {
   key.position.set(1.5, 2, 3);
   scene.add(key);
   // the state colour lights him from behind, so he glows like the ring
-  const rim = new THREE.DirectionalLight(0xe5e7eb, 1.4);
+  const rim = new THREE.DirectionalLight(0xe5e7eb, RIM);
   rim.position.set(-1.5, 1, -2.5);
   scene.add(rim);
 
@@ -258,7 +272,10 @@ function create() {
   const stats = {
     frames: 0, running: false, kind: "placeholder", triangles: 0, shown: false,
     viseme: "rest", mouthOpen: 0, speechMs: -1, mouthKeys: 0,
+    morph: 0, morphing: false, lastMorphMs: 0,
   };
+  // 0 = the ring, 1 = the character; "to" is where it is going
+  const morph = { from: 0, to: 0, start: 0, value: 0 };
   let character = null;
   let speech = null; // { track, start, i }
   const mouth = {}; // eased weights per viseme
@@ -306,6 +323,7 @@ function create() {
     pose.tilt += (target[0] - pose.tilt) * k;
     pose.nod += (target[1] - pose.nod) * k;
     rim.color.lerp(rimTarget, k);
+    rim.intensity = RIM + 2.2 * (1 - morph.value);
 
     const root = character.root;
     const breathe = reduceMotion ? 0 : Math.sin(t * 1.6);
@@ -351,21 +369,58 @@ function create() {
     stats.mouthOpen = VISEMES.reduce((sum, v) => sum + mouth[v] * (MOUTH[v][0]), 0);
   }
 
+  function morphing() { return morph.value !== morph.to; }
+
+  // Both canvases, from one value: the character grows out of the ring's light.
+  function applyMorph(m) {
+    canvas.style.opacity = String(m);
+    canvas.style.transform = `scale(${(0.55 + 0.45 * m).toFixed(4)})`;
+    if (ringCanvas) {
+      ringCanvas.style.opacity = String(1 - m);
+      ringCanvas.style.transform = `scale(${(1 + 0.35 * m).toFixed(4)})`;
+    }
+    stats.morph = m;
+  }
+
+  function stepMorph(now) {
+    if (!morphing()) return;
+    const p = reduceMotion || document.hidden ? 1 : Math.min(1, Math.max(0, (now - morph.start) / MORPH_MS));
+    morph.value = p >= 1 ? morph.to : morph.from + (morph.to - morph.from) * ease(p);
+    applyMorph(morph.value);
+    if (p >= 1) settle(now);
+  }
+
+  // A morph has ended: only now does the ring pause, or the character leave.
+  function settle(now) {
+    stats.morphing = false;
+    stats.lastMorphMs = Math.max(0, Math.round(now - morph.start));
+    const ring = window.__grandpaRing;
+    if (morph.to === 1) {
+      if (ring && ring.setPaused) ring.setPaused(true);
+    } else {
+      app.classList.remove("char");
+    }
+  }
+
   function loop(now) {
     raf = 0;
-    if (!shown || document.hidden) { stats.running = false; return; }
-    const budget = state === "confirm" ? WAITING_FRAME_MS : FRAME_MS;
+    if (document.hidden) { stepMorph(now); stats.running = false; return; }
+    if (!shown && !morphing()) { stats.running = false; return; }
+    const budget = state === "confirm" && !morphing() ? WAITING_FRAME_MS : FRAME_MS;
     if (now - last >= budget - 1) {
       last = now;
-      draw(now);
-      if (reduceMotion) { stats.running = false; return; } // one still frame
+      stepMorph(now);
+      if (shown || morphing() || morph.value > 0) draw(now);
+      if (reduceMotion && !morphing()) { stats.running = false; return; } // one still frame
     }
+    if (!shown && !morphing()) { stats.running = false; return; }
     raf = requestAnimationFrame(loop);
     stats.running = true;
   }
 
   function start() {
-    if (raf || !shown || document.hidden) return;
+    if (raf || (!shown && !morphing())) return;
+    if (document.hidden) { stepMorph(performance.now()); return; }
     raf = requestAnimationFrame(loop);
     stats.running = true;
   }
@@ -380,10 +435,18 @@ function create() {
     if (value === shown) { if (shown) start(); return; }
     shown = value;
     stats.shown = value;
-    app.classList.toggle("char", value);
+    const now = performance.now();
+    morph.from = morph.value;
+    morph.to = value ? 1 : 0;
+    morph.start = now;
+    stats.morphing = true;
     const ring = window.__grandpaRing;
-    if (ring && ring.setPaused) ring.setPaused(value);
-    if (value) start(); else stop();
+    if (value) {
+      app.classList.add("char");
+    } else if (ring && ring.setPaused) {
+      ring.setPaused(false); // the ring draws again from the first frame back
+    }
+    start();
   }
 
   function setState(msg) {
@@ -405,15 +468,27 @@ function create() {
     }, () => { /* keep the placeholder */ });
   }
 
+  // WebGL is gone: back to the ring at once, no morph (nothing left to draw it).
   function destroy() {
-    show(false);
+    stop();
+    shown = false;
+    stats.shown = false;
+    stats.morphing = false;
+    morph.from = morph.to = morph.value = 0;
+    applyMorph(0);
+    app.classList.remove("char", "char-ready");
+    const ring = window.__grandpaRing;
+    if (ring && ring.setPaused) ring.setPaused(false);
     renderer.dispose();
   }
 
-  document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else start(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { stop(); stepMorph(performance.now()); } else start();
+  });
   canvas.addEventListener("webglcontextlost", (event) => { event.preventDefault(); destroy(); });
 
   use(buildPlaceholder());
+  applyMorph(0);
   return { setState, load, destroy, stats };
 }
 
