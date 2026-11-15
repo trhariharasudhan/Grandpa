@@ -498,6 +498,9 @@ def default_speaker() -> tuple[LipSyncSpeaker | None, str]:
     if english is None and importlib.util.find_spec("pyttsx3") is not None:
         english, label = synthesize_wav_pyttsx3, "pyttsx3"
     tamil = _tamil_synth()
+    cloud = _cloud_synth()
+    if cloud is not None:
+        return _with_cloud(cloud, english, label, tamil)
     if english is None and tamil is None:
         return None, "Voice: off (pyttsx3 is not installed)."
     if tamil is None:
@@ -520,7 +523,63 @@ def default_speaker() -> tuple[LipSyncSpeaker | None, str]:
 
 
 ENV_VOICE_ENGINE = "GRANDPA_AVATAR_VOICE"
-"""Set to ``pyttsx3`` to keep the old Windows voice even when Piper is installed."""
+"""``pyttsx3`` keeps the old Windows voice even when Piper is installed;
+``piper`` (or ``local``) keeps every voice on this PC even when an ElevenLabs
+key is set."""
+
+Synth = Callable[[str, Path], None]
+
+
+def _cloud_synth() -> Any | None:
+    """The ElevenLabs module, when a key is set and the user has not asked to stay local."""
+    if os.environ.get(ENV_VOICE_ENGINE, "").strip().lower() in {
+        "pyttsx3",
+        "piper",
+        "local",
+    }:
+        return None
+    try:
+        from grandpa.speech import elevenlabs_tts
+    except Exception:  # noqa: BLE001
+        return None
+    return elevenlabs_tts if elevenlabs_tts.api_key() else None
+
+
+def _with_cloud(
+    cloud: Any, english: Synth | None, label: str, tamil: Synth | None
+) -> tuple[LipSyncSpeaker, str]:
+    """Captain's cloned voice first; the local voices when the cloud fails.
+
+    One failure (no Wi-Fi, no credits, a bad key) puts the cloud in a short
+    cool-down, so the rest of the reply is said locally without waiting on a
+    timeout per sentence."""
+    from grandpa.speech.tamil_tts import is_tamil
+
+    def say(text: str, path: Path) -> None:
+        in_tamil = is_tamil(text)
+        local = tamil if (in_tamil and tamil is not None) else english
+        if cloud.ready():
+            try:
+                cloud.synthesize_wav(text, path, tamil=in_tamil)
+                return
+            except Exception:  # noqa: BLE001 - fall back, never go silent
+                logger.warning(
+                    "ElevenLabs voice failed; using the local voice for %ds",
+                    int(cloud.COOLDOWN_S),
+                    exc_info=True,
+                )
+                cloud.mark_down()
+        if local is None:
+            raise RuntimeError("the cloud voice failed and no local voice is installed")
+        local(text, path)
+
+    backups = [b for b in (label or None, "Tamil (MMS)" if tamil else None) if b]
+    backup = f", falls back to {' + '.join(backups)}" if backups else ""
+    line = (
+        f"Voice: on, your ElevenLabs voice ({cloud.voice_id()}, {cloud.model_id()})"
+        f"{backup}, with lip-sync (--quiet turns it off). Replies are sent to ElevenLabs."
+    )
+    return LipSyncSpeaker(synthesize=say), line
 
 
 def _warm(load: Callable[[], Any], name: str) -> None:
