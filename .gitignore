@@ -168,3 +168,4 @@ voice_runtime/datasets/*/reports/
 assets/avatar/source/_preview/
 assets/avatar/**/*.blend1
 assets/avatar/*.glb.bak
+assets/avatar/source/_reference/
