@@ -163,6 +163,7 @@
     let lastTick = started;
     let raf = 0;
     let destroyed = false;
+    let paused = false; // A3: the character is showing instead of the ring
 
     function resize() {
       const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
@@ -208,7 +209,7 @@
 
     function loop(now) {
       raf = 0;
-      if (destroyed || document.hidden) { stats.running = false; return; }
+      if (destroyed || paused || document.hidden) { stats.running = false; return; }
       const budget = RESTING.has(target.state) ? RESTING_FRAME_MS : FRAME_MS;
       if (now - last >= budget - 1) {
         last = now;
@@ -220,7 +221,7 @@
     }
 
     function start() {
-      if (destroyed || raf || document.hidden) return;
+      if (destroyed || paused || raf || document.hidden) return;
       lastTick = performance.now();
       raf = requestAnimationFrame(loop);
       stats.running = true;
@@ -255,7 +256,19 @@
     }
 
     start();
-    return { setState, destroy, stats };
+    // A3: while the character is on screen the ring draws nothing at all.
+    function setPaused(value) {
+      paused = Boolean(value);
+      if (paused) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        stats.running = false;
+      } else {
+        start();
+      }
+    }
+
+    return { setState, setPaused, destroy, stats };
   }
 
   window.GrandpaRing = { create, FRAME_MS, RESTING_FRAME_MS, MOTION };

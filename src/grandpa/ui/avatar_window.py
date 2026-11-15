@@ -46,6 +46,19 @@ def missing_pywebview() -> RuntimeError:
     )
 
 
+def ensure_js_mime() -> None:
+    """Serve ``.js`` as JavaScript, whatever the Windows registry says.
+
+    character.js (A3) is an ES module, and a browser refuses a module served as
+    ``text/plain`` -- which is what Python's ``mimetypes`` reports for ``.js``
+    on Windows machines whose registry maps it that way. Both servers (ours for
+    --no-window and pywebview's) ask ``mimetypes``.
+    """
+    import mimetypes
+
+    mimetypes.add_type("text/javascript", ".js")
+
+
 def connect_script(ws_url: str) -> str:
     """The one line of JS the window runs: hand the page its address."""
     return f"window.grandpaConnect({json.dumps(ws_url)});"
@@ -103,6 +116,7 @@ def serve_page() -> tuple[Any, int]:
         def log_message(self, *_args: Any) -> None:  # noqa: D401 - silence
             return
 
+    ensure_js_mime()
     handler = functools.partial(_Quiet, directory=str(WEB_DIR))
     server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(
@@ -132,6 +146,7 @@ def run_window(
         except ImportError as exc:
             raise missing_pywebview() from exc
 
+    ensure_js_mime()
     api = WindowApi()
     width, height = COLLAPSED
     window = webview_module.create_window(
@@ -164,6 +179,7 @@ __all__ = [
     "WindowApi",
     "browser_address",
     "connect_script",
+    "ensure_js_mime",
     "missing_pywebview",
     "run_window",
     "serve_page",
