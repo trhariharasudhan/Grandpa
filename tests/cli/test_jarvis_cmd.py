@@ -75,11 +75,19 @@ def test_jarvis_unknown_command(monkeypatch, tmp_path: Path) -> None:
         lambda: [tmp_path],
     )
 
+    # V1-T7: an unclaimed phrase goes to the action layer's tool loop instead of
+    # "I don't know how to route that". Its exit code becomes jarvis's.
+    seen: list[str] = []
+    monkeypatch.setattr(
+        "grandpa.cli._tool_loop.run_tool_loop",
+        lambda goal, **_: seen.append(goal) or 1,
+    )
+
     result = CliRunner().invoke(cli, ["jarvis", "make me coffee"])
 
+    assert seen == ["make me coffee"]
     assert result.exit_code != 0
-    assert "don't know how to route" in result.output
-    assert "Try: open my Grandpa project in VS Code" in result.output
+    assert "don't know how to route" not in result.output
     assert "Traceback" not in result.output
 
 
@@ -210,13 +218,18 @@ def test_jarvis_voice_non_interactive_mode_does_not_hang(monkeypatch) -> None:
         "grandpa.cli.jarvis_cmd.listen_for_jarvis_command",
         lambda: JarvisVoiceTranscript("make me coffee", "test"),
     )
+    seen: list[str] = []
+    monkeypatch.setattr(
+        "grandpa.cli._tool_loop.run_tool_loop",
+        lambda goal, **_: seen.append(goal) or 1,
+    )
 
     result = CliRunner().invoke(cli, ["jarvis", "--voice"])
 
     assert result.exit_code != 0
     assert "Speak now. Press Ctrl+C to cancel." in result.output
     assert "Recognized: make me coffee" in result.output
-    assert "Try: open my Grandpa project in VS Code" in result.output
+    assert seen == ["make me coffee"]
     assert "Traceback" not in result.output
 
 
@@ -228,8 +241,9 @@ def test_jarvis_voice_unknown_recognized_text_exits_cleanly(monkeypatch) -> None
 
     result = CliRunner().invoke(cli, ["jarvis", "--voice", "--dry-run"])
 
-    assert result.exit_code != 0
-    assert "I don't know how to route that Jarvis command yet." in result.output
+    # --dry-run never reaches the model: it says where the phrase would go.
+    assert result.exit_code == 0
+    assert "Would send this to the action layer's tool loop" in result.output
+    assert "Nothing was" in result.output
     assert "Recognized: Pintak Raja Pintak Raja Pintak Raja" in result.output
-    assert "Try: open my Grandpa project in VS Code" in result.output
     assert "Traceback" not in result.output

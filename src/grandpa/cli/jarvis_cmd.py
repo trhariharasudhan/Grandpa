@@ -72,12 +72,34 @@ def _run_jarvis_text(
 ) -> None:
     result = route_jarvis_command(text, dry_run=dry_run)
 
+    if result.payload is None and result.status != "blocked":
+        # V1-T7: jarvis understood one phrase ("open my Grandpa project in VS
+        # Code") and answered "I don't know how to route that" to everything
+        # else, while 167 actions sat catalogued. Anything its own router does
+        # not claim now goes to the same action-layer tool loop as `grandpa
+        # ask --tool-loop` and chat: the model picks catalogued actions, and
+        # every one passes the executor, which asks before anything that needs
+        # confirming (and refuses those when there is no terminal to ask).
+        if dry_run:
+            from grandpa.action_layer.catalogue import candidate_domains
+
+            domains = ", ".join(candidate_domains(text)) or "core only"
+            console.print(
+                "Would send this to the action layer's tool loop "
+                f"(tools: {domains}). Nothing was run."
+            )
+            return
+        from grandpa.cli._tool_loop import run_tool_loop
+
+        code = run_tool_loop(text)
+        if code:
+            raise SystemExit(code)
+        return
+
     if result.payload is None:
-        style = "red" if result.status == "blocked" else "yellow"
-        console.print(f"[{style}]{result.message}[/{style}]")
+        console.print(f"[red]{result.message}[/red]")
         if not recognized:
             console.print(f"Recognized: {text}")
-        console.print("Try: open my Grandpa project in VS Code")
         raise SystemExit(1)
 
     console.print(result.message)
