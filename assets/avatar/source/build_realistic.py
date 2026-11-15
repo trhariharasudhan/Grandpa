@@ -211,7 +211,7 @@ def _surface_point(bvh, x, z, from_front=True):
 # --------------------------------------------------------------------------
 # projection bake: reference views -> UV colour texture
 # --------------------------------------------------------------------------
-def _projection_material(ref_dir, size, target_img):
+def _projection_material(ref_dir, size, target_img, coverage=False):
     mat = bpy.data.materials.new("_GP_Projection")
     try:
         mat.use_nodes = True
@@ -278,8 +278,9 @@ def _projection_material(ref_dir, size, target_img):
             m = nt.nodes.new("ShaderNodeSeparateColor")
             nt.links.new(mask_out, m.inputs[0])
             wgt = math_node("MULTIPLY", wgt, m.outputs[0])
+        raw = wgt  # how well this view really sees the spot (no fallback floor)
         wgt = math_node("MULTIPLY_ADD", wgt, bias, 0.03 if name == "front" else 0.0)
-        return tex.outputs["Color"], wgt
+        return tex.outputs["Color"], wgt, raw
 
     views = [
         view(
@@ -295,9 +296,19 @@ def _projection_material(ref_dir, size, target_img):
             "side", pos.outputs["Y"], -1.0, "X", 1.0
         ),  # left side: the same view mirrored
     ]
+    if coverage:
+        # emit the summed real coverage instead of colour (see _fill_uncovered)
+        cov = views[0][2]
+        for _c, _w, raw in views[1:]:
+            cov = math_node("ADD", cov, raw)
+        nt.links.new(math_node("MINIMUM", cov, 1.0), emit.inputs["Color"])
+        target = nt.nodes.new("ShaderNodeTexImage")
+        target.image = target_img
+        nt.nodes.active = target
+        return mat
     total = None
     acc = None
-    for col, wgt in views:
+    for col, wgt, _raw in views:
         sc = nt.nodes.new("ShaderNodeVectorMath")
         sc.operation = "SCALE"
         nt.links.new(col, sc.inputs[0])
@@ -323,6 +334,97 @@ def _projection_material(ref_dir, size, target_img):
     return mat
 
 
+COVERAGE_MIN = 0.06  # below this no reference view really sees the surface
+
+
+def _nearest_fill(rgb, valid):
+    """Every invalid pixel takes the colour of its nearest valid pixel (jump
+    flooding: log2(size) passes of 9 shifted comparisons). numpy only, since
+    Blender's bundled Python has no scipy."""
+    import numpy as np
+
+    h, w = valid.shape
+    ys, xs = np.mgrid[0:h, 0:w]
+    sy = np.where(valid, ys, -1)
+    sx = np.where(valid, xs, -1)
+    big = np.int64(1) << 40
+
+    def dist(py, px):
+        return np.where(
+            py < 0,
+            big,
+            (py - ys).astype(np.int64) ** 2 + (px - xs).astype(np.int64) ** 2,
+        )
+
+    best = dist(sy, sx)
+    step = 1 << int(np.ceil(np.log2(max(h, w))))
+    while step >= 1:
+        for dy in (-step, 0, step):
+            for dx in (-step, 0, step):
+                if dy == 0 and dx == 0:
+                    continue
+                ny = np.roll(sy, (dy, dx), (0, 1))
+                nx = np.roll(sx, (dy, dx), (0, 1))
+                d = dist(ny, nx)
+                better = d < best
+                sy = np.where(better, ny, sy)
+                sx = np.where(better, nx, sx)
+                best = np.minimum(best, d)
+        step //= 2
+    ok = sy >= 0
+    out = rgb.copy()
+    out[ok] = rgb[sy[ok], sx[ok]]
+    return out
+
+
+def _box_blur(img, r):
+    import numpy as np
+
+    for axis in (0, 1):
+        c = np.cumsum(
+            np.pad(
+                img,
+                [(r + 1, r) if a == axis else (0, 0) for a in range(img.ndim)],
+                mode="edge",
+            ),
+            axis=axis,
+        )
+        hi = np.take(c, range(2 * r + 1, c.shape[axis]), axis=axis)
+        lo = np.take(c, range(0, c.shape[axis] - 2 * r - 1), axis=axis)
+        img = (hi - lo) / (2 * r + 1)
+    return img
+
+
+def _fill_uncovered(col_img, cov_img):
+    """Repaint texels no view really sees (inner arms, sides of the legs) with
+    soft colour from the nearest well-covered texels, instead of the flat
+    fallback colour they would otherwise keep."""
+    import numpy as np
+
+    w, h = col_img.size
+    col = np.empty(w * h * 4, dtype=np.float32)
+    col_img.pixels.foreach_get(col)
+    col = col.reshape(h, w, 4)
+    cov = np.empty(w * h * 4, dtype=np.float32)
+    cov_img.pixels.foreach_get(cov)
+    cov = cov.reshape(h, w, 4)[..., 0]
+    good = cov >= COVERAGE_MIN
+    if good.all() or not good.any():
+        return 0
+    filled = _nearest_fill(col[..., :3], good)
+    r = max(2, w // 512)
+    for _ in range(2):  # ~gaussian
+        filled = _box_blur(filled, r)
+    t = np.clip(cov / COVERAGE_MIN, 0.0, 1.0)[..., None]
+    out = col.copy()
+    out[..., :3] = np.where(
+        good[..., None], col[..., :3], filled * (1 - t) + col[..., :3] * t
+    )
+    out[..., 3] = 1.0
+    col_img.pixels.foreach_set(out.ravel())
+    return int((~good).sum())
+
+
 def _bake_textures(low_ob, high_ob, ref_dir, size, prefix):
     scene = bpy.context.scene
     scene.render.engine = "CYCLES"
@@ -343,6 +445,15 @@ def _bake_textures(low_ob, high_ob, ref_dir, size, prefix):
     bpy.ops.object.bake(
         type="EMIT", margin=48
     )  # wide: mipmaps must not reach the black
+    # 1b) coverage, then repaint the spots no view really sees
+    cov_img = gp._image(prefix + "_Coverage", size, non_color=True)
+    cov_mat = _projection_material(ref_dir, size, cov_img, coverage=True)
+    low_ob.data.materials.clear()
+    low_ob.data.materials.append(cov_mat)
+    bpy.ops.object.bake(type="EMIT", margin=48)
+    _fill_uncovered(col_img, cov_img)
+    bpy.data.materials.remove(cov_mat)
+    bpy.data.images.remove(cov_img)
 
     # 2) normal: detail from the original high-res shape
     low_ob.data.materials.clear()
