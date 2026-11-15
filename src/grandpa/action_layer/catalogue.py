@@ -185,6 +185,10 @@ _ALWAYS_CONFIRM = frozenset(
         # target. close_app is close_window under another name, so both.
         "close_app",
         "close_window",
+        # Locking ends whatever the user is doing on screen. It is recoverable,
+        # so its tier stays LOW, but a model must not do it unasked (V1-T6);
+        # the power service already rates it HIGH (desktop/control/power.py).
+        "system_lock",
         # browser_form_fill and browser_download are in pc_control's set too,
         # but are excluded from this catalogue as stubs -- see EXCLUSIONS.
     }
@@ -806,6 +810,7 @@ _BRIGHTNESS_ACTIONS: tuple[ActionSpec, ...] = (
 )
 
 _SYSTEM_ACTIONS: tuple[ActionSpec, ...] = (
+    # LOW tier (recoverable), but on _ALWAYS_CONFIRM so it asks first (V1-T6).
     _spec("system_lock", _LOW, "Lock the workstation.", _SYSTEM),
     _spec("system_sleep", _HIGH, "Put the machine to sleep.", _SYSTEM),
     _spec("system_restart", _HIGH, "Restart the machine.", _SYSTEM),
@@ -2856,6 +2861,32 @@ real loadable domain, so this cannot rot quietly.
 """
 
 
+_SELECTION_KEYWORDS: Mapping[str, str] = MappingProxyType(
+    {
+        "lock": "system",
+        "unlock": "system",
+        "reboot": "system",
+        "restart": "system",
+        "shutdown": "system",
+        "shut": "system",
+        "hibernate": "system",
+    }
+)
+"""Keywords that decide a domain on their own (V1-T6), weighted like the
+domain's own name.
+
+Found by the T6 phrases, not by reading: "lock the screen" chose diagnostics
+(its "screen" is in four action names) and never offered ``system_lock``;
+"restart my computer" chose inventory; "shut down the pc" and "reboot" chose
+nothing. Each of these words names one thing a person means by it -- the
+machine's power state -- so it is safe to let it win. Every value is asserted to
+name a real loadable domain, like ``_SELECTION_ALIASES``. The actions it loads
+still ask before they run: system_lock is MEDIUM, the rest HIGH.
+"""
+
+_KEYWORD_WEIGHT = _SUBJECT_WEIGHT * 3
+
+
 def _selection_words(text: str) -> list[str]:
     return _WORD.findall(text.lower())
 
@@ -2892,11 +2923,7 @@ def _selection_vocabulary() -> dict[str, Counter]:
             # A CORE word is not evidence for loading anything: it is already
             # in front of the model. Counting "open" would send half of every
             # request to files or downloads on a word apps answers.
-            if (
-                word in _SELECTION_STOP
-                or len(word) < 3
-                or word in core_words
-            ):
+            if word in _SELECTION_STOP or len(word) < 3 or word in core_words:
                 del counter[word]
         vocabulary[domain] = counter
 
@@ -2904,6 +2931,11 @@ def _selection_vocabulary() -> dict[str, Counter]:
         if domain in vocabulary:
             vocabulary[domain][word] = max(
                 vocabulary[domain].get(word, 0), _SUBJECT_WEIGHT
+            )
+    for word, domain in _SELECTION_KEYWORDS.items():
+        if domain in vocabulary:
+            vocabulary[domain][word] = max(
+                vocabulary[domain].get(word, 0), _KEYWORD_WEIGHT
             )
     return vocabulary
 
