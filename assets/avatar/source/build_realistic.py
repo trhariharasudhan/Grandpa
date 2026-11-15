@@ -337,12 +337,69 @@ def _projection_material(ref_dir, size, target_img, coverage=False):
 COVERAGE_MIN = 0.06  # below this no reference view really sees the surface
 
 
+def _nearest_fill(rgb, valid):
+    """Every invalid pixel takes the colour of its nearest valid pixel (jump
+    flooding: log2(size) passes of 9 shifted comparisons). numpy only, since
+    Blender's bundled Python has no scipy."""
+    import numpy as np
+
+    h, w = valid.shape
+    ys, xs = np.mgrid[0:h, 0:w]
+    sy = np.where(valid, ys, -1)
+    sx = np.where(valid, xs, -1)
+    big = np.int64(1) << 40
+
+    def dist(py, px):
+        return np.where(
+            py < 0,
+            big,
+            (py - ys).astype(np.int64) ** 2 + (px - xs).astype(np.int64) ** 2,
+        )
+
+    best = dist(sy, sx)
+    step = 1 << int(np.ceil(np.log2(max(h, w))))
+    while step >= 1:
+        for dy in (-step, 0, step):
+            for dx in (-step, 0, step):
+                if dy == 0 and dx == 0:
+                    continue
+                ny = np.roll(sy, (dy, dx), (0, 1))
+                nx = np.roll(sx, (dy, dx), (0, 1))
+                d = dist(ny, nx)
+                better = d < best
+                sy = np.where(better, ny, sy)
+                sx = np.where(better, nx, sx)
+                best = np.minimum(best, d)
+        step //= 2
+    ok = sy >= 0
+    out = rgb.copy()
+    out[ok] = rgb[sy[ok], sx[ok]]
+    return out
+
+
+def _box_blur(img, r):
+    import numpy as np
+
+    for axis in (0, 1):
+        c = np.cumsum(
+            np.pad(
+                img,
+                [(r + 1, r) if a == axis else (0, 0) for a in range(img.ndim)],
+                mode="edge",
+            ),
+            axis=axis,
+        )
+        hi = np.take(c, range(2 * r + 1, c.shape[axis]), axis=axis)
+        lo = np.take(c, range(0, c.shape[axis] - 2 * r - 1), axis=axis)
+        img = (hi - lo) / (2 * r + 1)
+    return img
+
+
 def _fill_uncovered(col_img, cov_img):
     """Repaint texels no view really sees (inner arms, sides of the legs) with
-    soft skin from the nearest well-covered texels, instead of the flat
+    soft colour from the nearest well-covered texels, instead of the flat
     fallback colour they would otherwise keep."""
     import numpy as np
-    from scipy import ndimage
 
     w, h = col_img.size
     col = np.empty(w * h * 4, dtype=np.float32)
@@ -354,14 +411,15 @@ def _fill_uncovered(col_img, cov_img):
     good = cov >= COVERAGE_MIN
     if good.all() or not good.any():
         return 0
-    _d, (iy, ix) = ndimage.distance_transform_edt(~good, return_indices=True)
-    filled = col[iy, ix]
-    sigma = max(2.0, w / 256.0)
-    for c in range(3):
-        filled[..., c] = ndimage.gaussian_filter(filled[..., c], sigma)
-    # blend: fully filled where coverage is ~0, original where it is ~COVERAGE_MIN
+    filled = _nearest_fill(col[..., :3], good)
+    r = max(2, w // 512)
+    for _ in range(2):  # ~gaussian
+        filled = _box_blur(filled, r)
     t = np.clip(cov / COVERAGE_MIN, 0.0, 1.0)[..., None]
-    out = np.where(good[..., None], col, filled * (1 - t) + col * t)
+    out = col.copy()
+    out[..., :3] = np.where(
+        good[..., None], col[..., :3], filled * (1 - t) + col[..., :3] * t
+    )
     out[..., 3] = 1.0
     col_img.pixels.foreach_set(out.ravel())
     return int((~good).sum())

@@ -1,6 +1,6 @@
 """Prepare the turnaround sheet for projection onto the generated body.
 
-Usage:  python prepare_reference.py <turnaround.png> [out_dir]     (needs Pillow + numpy)
+Usage:  python prepare_reference.py <turnaround.png> [out_dir]     (needs Pillow, numpy, scipy)
 
 1. Crops the four views (front, 3/4, side, back) from a 1536x1024 turnaround sheet.
 2. Fills the grey studio background with the nearest character colours, so the
