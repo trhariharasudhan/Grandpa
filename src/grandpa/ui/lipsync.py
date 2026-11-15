@@ -362,9 +362,49 @@ def default_speaker() -> tuple[LipSyncSpeaker | None, str]:
             return None, "Voice: off (tts.enabled is false in your config)."
     except Exception:  # noqa: BLE001 - a broken config should not stop the window
         pass
+    if os.environ.get(ENV_VOICE_ENGINE, "").strip().lower() != "pyttsx3":
+        speaker = _piper_speaker()
+        if speaker is not None:
+            return speaker
     if importlib.util.find_spec("pyttsx3") is None:
         return None, "Voice: off (pyttsx3 is not installed)."
     return LipSyncSpeaker(), "Voice: on, pyttsx3 with lip-sync (--quiet turns it off)."
+
+
+ENV_VOICE_ENGINE = "GRANDPA_AVATAR_VOICE"
+"""Set to ``pyttsx3`` to keep the old Windows voice even when Piper is installed."""
+
+
+def _piper_speaker() -> tuple[LipSyncSpeaker, str] | None:
+    """Piper (a local neural voice) when its package and a voice are installed.
+
+    The voice is loaded in the background right away, so the first reply does
+    not wait for it (loading takes ~1.5 s on the Vivobook; speaking a reply
+    then takes ~0.13 s per second of audio)."""
+    try:
+        from grandpa.speech import piper_tts
+    except Exception:  # noqa: BLE001 - an optional voice must not stop the window
+        return None
+    if not piper_tts.ready():
+        return None
+    model = piper_tts.voice_path()
+
+    def warm() -> None:
+        try:
+            piper_tts._load(model)
+        except Exception:  # noqa: BLE001
+            logger.warning("Piper voice could not be loaded", exc_info=True)
+
+    import threading
+
+    threading.Thread(target=warm, name="piper-warm", daemon=True).start()
+    speaker = LipSyncSpeaker(
+        synthesize=lambda text, path: piper_tts.synthesize_wav(text, path)
+    )
+    return (
+        speaker,
+        f"Voice: on, Piper ({model.stem}) with lip-sync (--quiet turns it off).",
+    )
 
 
 __all__ = [

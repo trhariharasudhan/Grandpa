@@ -154,7 +154,7 @@ class SpeechOutputEngine:
         return result
 
     def _speak_with_engine(self, engine: str, text: str) -> None:
-        if engine in {"grandpa_voice", "kokoro"}:
+        if engine in {"grandpa_voice", "kokoro", "piper"}:
             import grandpa.speech  # noqa: F401 - registers local TTS backends
             from grandpa.core.registry import TTSRegistry
 
@@ -201,7 +201,9 @@ class SpeechOutputEngine:
         import grandpa.speech  # noqa: F401 - registers local TTS backends
         from grandpa.core.registry import TTSRegistry
 
-        if configured_backend == "grandpa_voice":
+        if configured_backend == "piper":
+            ordered = ["piper", "pyttsx3", "grandpa_voice", "kokoro"]
+        elif configured_backend == "grandpa_voice":
             ordered = ["grandpa_voice", "pyttsx3", "kokoro"]
         elif configured_backend == "kokoro":
             ordered = ["kokoro", "pyttsx3", "grandpa_voice"]
