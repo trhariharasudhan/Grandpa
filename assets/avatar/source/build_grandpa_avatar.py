@@ -356,6 +356,23 @@ def _muscles(co, n):
     return d
 
 
+def _uv_unwrap(ob):
+    if not ob.data.uv_layers:
+        ob.data.uv_layers.new(name="UVMap")
+    bpy.context.view_layer.update()
+    for o in bpy.context.view_layer.objects:
+        if o is not None:
+            o.select_set(False)
+    ob.select_set(True)
+    bpy.context.view_layer.objects.active = ob
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(
+        angle_limit=math.radians(72), island_margin=0.003, area_weight=0.0
+    )
+    bpy.ops.object.mode_set(mode="OBJECT")
+
+
 def stage_body():
     collection()
     ensure_root()
@@ -459,8 +476,11 @@ def stage_body():
     tmp = bpy.data.objects.new("GP_BodyDense", dense)
     collection().objects.link(tmp)
     tris = sum(len(p.vertices) - 2 for p in dense.polygons)
+    # UVs on the clean quad mesh (few, large islands), kept through the decimate
+    _uv_unwrap(tmp)
     dec = tmp.modifiers.new("Decimate", "DECIMATE")
     dec.ratio = min(1.0, BODY_TRIANGLES / max(tris, 1))
+    dec.delimit = {"UV"}
     body_me = bake(tmp)
     bpy.data.objects.remove(tmp, do_unlink=True)
     bpy.data.meshes.remove(dense)
@@ -474,6 +494,33 @@ def stage_body():
 # Stage 2: head
 # --------------------------------------------------------------------------
 GROUPS = ("lid_L", "lid_R", "brow_L", "brow_R", "eyes")
+
+
+def _edge_levels(bm, max_level=3):
+    """How many edge-steps each vertex is from an open (cut) edge, capped."""
+    level = {v: max_level for v in bm.verts}
+    frontier = {v for e in bm.edges if e.is_boundary for v in e.verts}
+    for d in range(max_level):
+        nxt = set()
+        for v in frontier:
+            if level[v] > d:
+                level[v] = d
+                nxt.update(e.other_vert(v) for e in v.link_edges)
+        frontier = {v for v in nxt if level[v] > d}
+    return level
+
+
+def _relax_cut(bm, iterations=8, factor=0.5):
+    """Smooth the zigzag of a vertex-deletion cut along the cut line itself."""
+    for _ in range(iterations):
+        moves = []
+        for v in bm.verts:
+            ring = [e.other_vert(v) for e in v.link_edges if e.is_boundary]
+            if len(ring) == 2:
+                mid = (ring[0].co + ring[1].co) / 2
+                moves.append((v, v.co.lerp(mid, factor)))
+        for v, co in moves:
+            v.co = co
 
 
 def stage_head():
@@ -602,12 +649,16 @@ def stage_head():
         if z > zcut or y > 0.03 or mouth_hole:
             kill.append(v)
     bmesh.ops.delete(beard, geom=kill, context="VERTS")
+    _relax_cut(beard)
+    level = _edge_levels(beard)
     for v in beard.verts:
         x, y, z = v.co
         if z < HEAD_C.z:
             v.co.x *= 1 - 0.18 * smoothstep(0.0, -0.1, z - HEAD_C.z)
         n = (v.co - HEAD_C).normalized()
-        thick = 0.009 + 0.012 * smoothstep(1.58, 1.53, z)
+        # thin at the cut edge so the beard grows out of the skin, no cliff
+        taper = 0.12 + 0.88 * smoothstep(0.0, 2.5, level[v])
+        thick = (0.009 + 0.012 * smoothstep(1.58, 1.53, z)) * taper
         v.co += n * thick
         # beard length: chin hangs lower, little wave
         v.co.z -= 0.035 * smoothstep(1.575, 1.535, z) * gauss(x * x, 0.04)
@@ -630,7 +681,12 @@ def stage_hair(seed=7):
 
     cap_c = HEAD_C + Vector((0, 0.006, 0.004))
     cap_r = Vector((HEAD_R.x + 0.010, HEAD_R.y + 0.010, HEAD_R.z + 0.010))
-    cap = uv_sphere(cap_c, cap_r, u=32, v=20)
+    cap = uv_sphere(
+        cap_c,
+        Vector((HEAD_R.x, HEAD_R.y, HEAD_R.z)) + Vector((0.0015,) * 3),
+        u=40,
+        v=26,
+    )
     kill = []
     for v in cap.verts:
         x, y, z = v.co
@@ -640,9 +696,15 @@ def stage_hair(seed=7):
         if z < 1.565 or (y < -0.02 and z < hairline):
             kill.append(v)
     bmesh.ops.delete(cap, geom=kill, context="VERTS")
+    _relax_cut(cap)
+    level = _edge_levels(cap)
     for v in cap.verts:
         n = (v.co - cap_c).normalized()
-        v.co += n * 0.0035 * math.sin(math.atan2(v.co.x, v.co.y) * 14 + v.co.z * 60)
+        taper = smoothstep(0.0, 2.5, level[v])  # hair thins out at the hairline
+        v.co += n * (
+            0.0085 * taper
+            + 0.0035 * taper * math.sin(math.atan2(v.co.x, v.co.y) * 14 + v.co.z * 60)
+        )
     b.add(cap, "hair")
 
     # back sheet: one wavy layer that gives the long hair its volume
@@ -998,6 +1060,155 @@ def stage_shape_keys():
 
 
 # --------------------------------------------------------------------------
+# Stage 7: bake muscle detail (normal map) and contact shadows (AO) for the body
+# --------------------------------------------------------------------------
+BAKE_SIZE = 1024
+
+
+def _select_only(objs, active):
+    bpy.context.view_layer.update()
+    for o in bpy.context.view_layer.objects:
+        if o is not None:
+            o.select_set(False)
+    for o in objs:
+        o.hide_set(False)
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = active
+
+
+def _image(name, size, non_color):
+    old = bpy.data.images.get(name)
+    if old is not None:
+        bpy.data.images.remove(old)
+    img = bpy.data.images.new(name, size, size, alpha=False, float_buffer=False)
+    img.colorspace_settings.name = "Non-Color" if non_color else "sRGB"
+    img.file_format = "PNG"
+    return img
+
+
+def stage_bake(size=BAKE_SIZE):
+    """Bake the dense sculpt onto Grandpa_Body: a normal map plus AO in the colour.
+
+    The viewer (three.js) has no ambient occlusion, so the AO is multiplied into
+    the base colour: the shadows between pecs, abs, delts and lats are what make
+    the build read as muscular at a small window size.
+    """
+    import numpy as np
+
+    body = bpy.data.objects.get("Grandpa_Body")
+    dense = bpy.data.meshes.get("GP_BodyDenseCache")
+    if body is None or dense is None:
+        raise RuntimeError("build the body first (stage_body)")
+    scene = bpy.context.scene
+    prev_engine = scene.render.engine
+    scene.render.engine = "CYCLES"
+    scene.cycles.samples = 64
+    try:
+        scene.cycles.device = "CPU"
+    except Exception:
+        pass
+
+    # UVs come from stage_body (unwrapped before decimation); fall back if missing
+    if not body.data.uv_layers:
+        _uv_unwrap(body)
+
+    # body-only material with image nodes (the head keeps the plain skin)
+    skin_rgb = (
+        mats()["skin"]
+        .node_tree.nodes["Principled BSDF"]
+        .inputs["Base Color"]
+        .default_value[:3]
+    )
+    mat = bpy.data.materials.get("GP_SkinBody") or bpy.data.materials.new("GP_SkinBody")
+    try:
+        mat.use_nodes = True
+    except Exception:
+        pass
+    nt = mat.node_tree
+    nt.nodes.clear()
+    out = nt.nodes.new("ShaderNodeOutputMaterial")
+    bsdf = nt.nodes.new("ShaderNodeBsdfPrincipled")
+    bsdf.inputs["Roughness"].default_value = 0.48
+    nt.links.new(bsdf.outputs[0], out.inputs[0])
+    col_img = _image("GP_Body_Color", size, non_color=False)
+    nrm_img = _image("GP_Body_Normal", size, non_color=True)
+    col_node = nt.nodes.new("ShaderNodeTexImage")
+    col_node.image = col_img
+    nrm_node = nt.nodes.new("ShaderNodeTexImage")
+    nrm_node.image = nrm_img
+    nmap = nt.nodes.new("ShaderNodeNormalMap")
+    body.data.materials.clear()
+    body.data.materials.append(mat)
+
+    # high-poly source, as a temporary object; smooth-shaded, or every facet
+    # bakes into the normal map as a waffle pattern
+    for poly in dense.polygons:
+        poly.use_smooth = True
+    high = bpy.data.objects.new("GP_BodyHigh", dense)
+    collection().objects.link(high)
+    _select_only([high, body], body)
+    common = dict(
+        use_selected_to_active=True,
+        cage_extrusion=0.012,
+        max_ray_distance=0.02,
+        margin=8,
+    )
+
+    # 1) normal map (tangent space), detail from the dense sculpt
+    nt.nodes.active = nrm_node
+    bpy.ops.object.bake(type="NORMAL", normal_space="TANGENT", **common)
+    # 2) ambient occlusion from the whole avatar (hair, shorts, arms shade the body)
+    ao_img = _image("GP_Body_AO", size, non_color=True)
+    ao_node = nt.nodes.new("ShaderNodeTexImage")
+    ao_node.image = ao_img
+    nt.nodes.active = ao_node
+    # hair and glasses would throw blotchy shadows on the back; they are left out
+    skip = [bpy.data.objects.get(n) for n in ("Grandpa_Hair", "Grandpa_Glasses")]
+    skip = [o for o in skip if o is not None]
+    for o in skip:
+        o.hide_render = True
+    # the high-poly copy sits on the body surface: it must be gone before AO
+    bpy.data.objects.remove(high, do_unlink=True)
+    _select_only([body], body)
+    scene.world = scene.world or bpy.data.worlds.new("World")
+    scene.world.light_settings.distance = (
+        0.045  # muscle creases only; arm-to-torso gaps stay lit
+    )
+    bpy.ops.object.bake(type="AO", margin=8)
+    for o in skip:
+        o.hide_render = False
+
+    # colour = skin * AO (soft), a touch warmer in the creases
+    ao = np.empty(size * size * 4, dtype=np.float32)
+    ao_img.pixels.foreach_get(ao)
+    a = ao.reshape(-1, 4)[:, 0]
+    shade = 0.22 + 0.78 * np.clip(a, 0.0, 1.0) ** 1.8
+    rgb = np.array(skin_rgb, dtype=np.float32)
+    lin = rgb[None, :] * shade[:, None]
+    lin[:, 0] *= 1.0 + 0.12 * (1.0 - shade)  # warmer shadows
+    srgb = np.where(
+        lin <= 0.0031308,
+        lin * 12.92,
+        1.055 * np.power(np.clip(lin, 0, None), 1 / 2.4) - 0.055,
+    )
+    px = np.ones((size * size, 4), dtype=np.float32)
+    px[:, :3] = np.clip(srgb, 0.0, 1.0)
+    col_img.pixels.foreach_set(px.ravel())
+    nt.nodes.remove(ao_node)
+    bpy.data.images.remove(ao_img)
+    for img in (col_img, nrm_img):
+        img.pack()
+
+    # final material wiring: colour + normal map
+    nt.links.new(col_node.outputs["Color"], bsdf.inputs["Base Color"])
+    nt.links.new(nrm_node.outputs["Color"], nmap.inputs["Color"])
+    nmap.inputs["Strength"].default_value = 1.6  # exported as normalTexture.scale
+    nt.links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
+    scene.render.engine = prev_engine
+    return {"baked": [col_img.name, nrm_img.name], "bake_size": size}
+
+
+# --------------------------------------------------------------------------
 # export + checks
 # --------------------------------------------------------------------------
 def tri_count(ob):
@@ -1018,8 +1229,10 @@ def export_glb(path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if os.path.exists(path):
         os.replace(path, path + ".bak")
+    bpy.context.view_layer.update()
     for o in bpy.context.view_layer.objects:
-        o.select_set(False)
+        if o is not None:
+            o.select_set(False)
     for o in collection().objects:
         o.select_set(True)
     kw = dict(
@@ -1055,6 +1268,7 @@ def build_all():
         stage_glasses,
         stage_dress,
         stage_shape_keys,
+        stage_bake,
     ):
         out.update(st())
     out.update(report())

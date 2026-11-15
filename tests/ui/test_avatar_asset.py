@@ -74,3 +74,25 @@ def test_build_script_matches_the_checker() -> None:
     source = BUILD_SCRIPT.read_text(encoding="utf-8")
     assert f"MAX_TRIANGLES = {MAX_TRIANGLES:_}" in source
     assert repr(SHAPE_KEYS).replace("'", '"') in source
+
+
+def test_body_textures_are_embedded(glb_bytes: bytes) -> None:
+    # Normal map + AO colour baked in stage_bake, stored inside the .glb.
+    gltf = _gltf_json(glb_bytes)
+    images = gltf.get("images") or []
+    assert len(images) >= 2
+    assert all("bufferView" in img and "uri" not in img for img in images)
+    body = next(n for n in gltf["nodes"] if n.get("name") == "Grandpa_Body")
+    prims = gltf["meshes"][body["mesh"]]["primitives"]
+    material = gltf["materials"][prims[0]["material"]]
+    assert "normalTexture" in material
+    assert "baseColorTexture" in material["pbrMetallicRoughness"]
+
+
+def test_viewer_frames_the_head_node() -> None:
+    # character.js frames head-and-chest on this node name; keep them in step.
+    js = (REPO / "src" / "grandpa" / "ui" / "avatar_web" / "character.js").read_text(
+        encoding="utf-8"
+    )
+    assert 'const FRAME_NODE = "Grandpa_Head";' in js
+    assert '"Grandpa_Head"' in BUILD_SCRIPT.read_text(encoding="utf-8")
