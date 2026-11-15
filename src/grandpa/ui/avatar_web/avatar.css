@@ -57,6 +57,13 @@ html, body {
 @keyframes spin    { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { #ring, #ring-core { animation: none !important; } }
 
+/* A2: with WebGL the shader draws the ring; the CSS ring above is the fallback. */
+#ring-gl { display: none; position: absolute; inset: -22px; width: calc(100% + 44px); height: calc(100% + 44px); pointer-events: none; }
+.gl #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
+.gl #ring-core { display: none; }
+.gl #ring-gl { display: block; }
+#app.gl[data-panel="open"] #ring-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
+
 #status { display: none; min-width: 0; }
 #label { margin: 0; font-weight: 600; }
 #action { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
