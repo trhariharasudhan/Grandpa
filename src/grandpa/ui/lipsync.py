@@ -300,58 +300,185 @@ def play_wav(path: Path) -> None:
 OnStart = Callable[[tuple[dict[str, Any], ...], float], None]
 
 
+MIN_SENTENCE_CHARS = 24
+"""A sentence shorter than this ("Okay.", "Sure!") is said together with the
+next one: a separate synthesis for two words costs more than it saves."""
+_SENTENCE_END = re.compile(r"(?<=[.!?\u0964])\s+|\n+")
+"""Where one sentence ends: . ! ? or the Devanagari danda, then a space, or a
+line break. A dot inside "3.5" or "e.g" has no space after it and stays put."""
+
+
+def split_sentences(text: str, min_chars: int = MIN_SENTENCE_CHARS) -> list[str]:
+    """The reply cut into sentences, short ones joined to the next."""
+    parts = [p.strip() for p in _SENTENCE_END.split(text) if p and p.strip()]
+    chunks: list[str] = []
+    pending = ""
+    for part in parts:
+        pending = f"{pending} {part}".strip() if pending else part
+        if len(pending) >= min_chars:
+            chunks.append(pending)
+            pending = ""
+    if pending:
+        if chunks and len(pending) < min_chars:
+            chunks[-1] = f"{chunks[-1]} {pending}"
+        else:
+            chunks.append(pending)
+    return chunks
+
+
+@dataclass(frozen=True, slots=True)
+class _Clip:
+    text: str
+    path: Path
+    samples: Sequence[float]
+    rate: int
+
+    @property
+    def duration_ms(self) -> int:
+        return int(len(self.samples) * 1000 / self.rate) if self.rate else 0
+
+
 @dataclass
 class LipSyncSpeaker:
-    """Says one reply aloud and hands the mouth track over just before."""
+    """Says one reply aloud and hands the mouth track over just before.
+
+    A reply of several sentences is *streamed*: the first sentence is
+    synthesised and starts playing, and while it plays the next one is
+    synthesised, so Grandpa starts talking after one sentence's synthesis
+    instead of the whole reply's. Each sentence gets its own ``on_start`` call
+    with its own track and start time. Synthesis always runs in the calling
+    thread (pyttsx3 and SAPI dislike being moved between threads); only
+    playback runs on a helper thread.
+    """
 
     synthesize: Callable[[str, Path], None] = synthesize_wav_pyttsx3
     play: Callable[[Path], None] = play_wav
     clock: Callable[[], float] = time.time
     sleep: Callable[[float], None] = time.sleep
     lead_ms: int = LEAD_MS
-    max_chars: int = 360
+    max_chars: int = 600
+    stream: bool = True
 
     def speak(self, text: str, on_start: OnStart) -> bool:
-        """Synthesise, publish the track with ``on_start``, play. False if silent."""
+        """Synthesise, publish each track with ``on_start``, play. False if silent."""
         from grandpa.voice.text_to_speech import clean_text_for_speech
 
         clean = clean_text_for_speech(text, max_chars=self.max_chars)
         if not clean:
             return False
+        chunks = split_sentences(clean) if self.stream else [clean]
+        if not chunks:
+            return False
+        if len(chunks) == 1:
+            clip = self._synth(chunks[0])
+            if clip is None:
+                return False
+            try:
+                return self._play_clip(clip, on_start)
+            finally:
+                clip.path.unlink(missing_ok=True)
+        return self._speak_stream(chunks, on_start)
+
+    # --- one sentence ---------------------------------------------------------
+
+    def _synth(self, text: str) -> _Clip | None:
         handle, name = tempfile.mkstemp(prefix="grandpa-say-", suffix=".wav")
         os.close(handle)
         path = Path(name)
         try:
-            return self._speak_file(clean, path, on_start)
-        finally:
-            path.unlink(missing_ok=True)
-
-    def _speak_file(self, clean: str, path: Path, on_start: OnStart) -> bool:
-        try:
-            self.synthesize(clean, path)
+            self.synthesize(text, path)
             samples, rate = read_wav(path)
         except Exception:  # noqa: BLE001 - no voice is not a broken avatar
             logger.warning("avatar speech could not be synthesised", exc_info=True)
-            return False
-        duration_ms = int(len(samples) * 1000 / rate) if rate else 0
-        if duration_ms <= 0:
-            return False
-        track = build_track(clean, duration_ms, envelope(samples, rate))
+            path.unlink(missing_ok=True)
+            return None
+        clip = _Clip(text, path, samples, rate)
+        if clip.duration_ms <= 0:
+            path.unlink(missing_ok=True)
+            return None
+        return clip
+
+    def _publish(self, clip: _Clip, on_start: OnStart) -> float:
+        """Hand the page this clip's track; the wall-clock ms it will start."""
+        track = build_track(
+            clip.text, clip.duration_ms, envelope(clip.samples, clip.rate)
+        )
         start_ms = self.clock() * 1000 + self.lead_ms
         on_start(track, start_ms)
+        return start_ms
+
+    def _wait_until(self, start_ms: float) -> None:
         wait = start_ms / 1000 - self.clock()
         if wait > 0:
             self.sleep(wait)
+
+    def _play_clip(self, clip: _Clip, on_start: OnStart) -> bool:
+        self._wait_until(self._publish(clip, on_start))
         try:
-            self.play(path)
+            self.play(clip.path)
         except Exception:  # noqa: BLE001
             logger.warning("avatar speech could not be played", exc_info=True)
             return False
         return True
 
+    # --- several sentences ----------------------------------------------------
+
+    def _speak_stream(self, chunks: list[str], on_start: OnStart) -> bool:
+        import threading
+
+        clip = self._synth(chunks[0])
+        if clip is None:
+            return False
+        spoken = False
+        player: threading.Thread | None = None
+        failed = threading.Event()
+        pending: list[_Clip] = []
+
+        def _play(c: _Clip) -> None:
+            try:
+                self.play(c.path)
+            except Exception:  # noqa: BLE001
+                logger.warning("avatar speech could not be played", exc_info=True)
+                failed.set()
+
+        try:
+            for index in range(len(chunks)):
+                if clip is None:
+                    break
+                if player is not None:
+                    player.join()  # the previous sentence has finished
+                if failed.is_set():
+                    break
+                self._wait_until(self._publish(clip, on_start))
+                player = threading.Thread(
+                    target=_play, args=(clip,), name="grandpa-say", daemon=True
+                )
+                player.start()
+                spoken = True
+                pending.append(clip)
+                # Synthesise the next sentence while this one plays.
+                clip = (
+                    self._synth(chunks[index + 1]) if index + 1 < len(chunks) else None
+                )
+        finally:
+            if player is not None:
+                player.join()  # never delete a WAV that is still playing
+            if clip is not None:
+                pending.append(clip)
+            for c in pending:
+                try:
+                    c.path.unlink(missing_ok=True)
+                except OSError:
+                    logger.debug("could not remove %s", c.path)
+        return spoken and not failed.is_set()
+
 
 def default_speaker() -> tuple[LipSyncSpeaker | None, str]:
-    """The speaker ``grandpa avatar`` uses, and one line saying why or why not."""
+    """The speaker ``grandpa avatar`` uses, and one line saying why or why not.
+
+    English (and Thanglish) replies use Piper when it is installed, else
+    pyttsx3; replies written mostly in Tamil script use the MMS Tamil voice
+    when it is installed."""
     import importlib.util
 
     try:
@@ -362,9 +489,81 @@ def default_speaker() -> tuple[LipSyncSpeaker | None, str]:
             return None, "Voice: off (tts.enabled is false in your config)."
     except Exception:  # noqa: BLE001 - a broken config should not stop the window
         pass
-    if importlib.util.find_spec("pyttsx3") is None:
+    english: Callable[[str, Path], None] | None = None
+    label = ""
+    if os.environ.get(ENV_VOICE_ENGINE, "").strip().lower() != "pyttsx3":
+        piper = _piper_synth()
+        if piper is not None:
+            english, label = piper
+    if english is None and importlib.util.find_spec("pyttsx3") is not None:
+        english, label = synthesize_wav_pyttsx3, "pyttsx3"
+    tamil = _tamil_synth()
+    if english is None and tamil is None:
         return None, "Voice: off (pyttsx3 is not installed)."
-    return LipSyncSpeaker(), "Voice: on, pyttsx3 with lip-sync (--quiet turns it off)."
+    if tamil is None:
+        return LipSyncSpeaker(
+            synthesize=english
+        ), f"Voice: on, {label} with lip-sync (--quiet turns it off)."
+
+    def by_script(text: str, path: Path) -> None:
+        from grandpa.speech.tamil_tts import is_tamil
+
+        if english is None or is_tamil(text):
+            tamil(text, path)
+        else:
+            english(text, path)
+
+    both = f"{label} + Tamil (MMS)" if english else "Tamil (MMS) only"
+    return LipSyncSpeaker(
+        synthesize=by_script
+    ), f"Voice: on, {both} with lip-sync (--quiet turns it off)."
+
+
+ENV_VOICE_ENGINE = "GRANDPA_AVATAR_VOICE"
+"""Set to ``pyttsx3`` to keep the old Windows voice even when Piper is installed."""
+
+
+def _warm(load: Callable[[], Any], name: str) -> None:
+    """Load a voice in the background so the first reply does not wait for it."""
+    import threading
+
+    def run() -> None:
+        try:
+            load()
+        except Exception:  # noqa: BLE001
+            logger.warning("%s voice could not be loaded", name, exc_info=True)
+
+    threading.Thread(target=run, name=f"{name}-warm", daemon=True).start()
+
+
+def _piper_synth() -> tuple[Callable[[str, Path], None], str] | None:
+    """Piper (a local neural voice) when its package and a voice are installed.
+
+    Loading takes ~1.5-6 s on the Vivobook; speaking a reply then takes ~0.13 s
+    per second of audio."""
+    try:
+        from grandpa.speech import piper_tts
+    except Exception:  # noqa: BLE001 - an optional voice must not stop the window
+        return None
+    if not piper_tts.ready():
+        return None
+    model = piper_tts.voice_path()
+    _warm(lambda: piper_tts._load(model), "piper")
+    return (
+        lambda text, path: piper_tts.synthesize_wav(text, path)
+    ), f"Piper ({model.stem})"
+
+
+def _tamil_synth() -> Callable[[str, Path], None] | None:
+    """The MMS Tamil voice (sherpa-onnx) when its package and model are installed."""
+    try:
+        from grandpa.speech import tamil_tts
+    except Exception:  # noqa: BLE001
+        return None
+    if not tamil_tts.ready():
+        return None
+    _warm(lambda: tamil_tts._load(tamil_tts.model_dir()), "tamil")
+    return lambda text, path: tamil_tts.synthesize_wav(text, path)
 
 
 __all__ = [
