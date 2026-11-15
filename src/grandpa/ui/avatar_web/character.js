@@ -225,6 +225,7 @@ function fromGltf(gltf) {
   return {
     root: holder,
     kind: "glb",
+    mouthKeys: new Set(mouthKeys.map((entry) => entry[2])).size,
     setBlink(closed) { for (const [node, index] of blinkers) node.morphTargetInfluences[index] = closed; },
     setMouth(weights) {
       for (const [node, index, viseme] of mouthKeys) node.morphTargetInfluences[index] = weights[viseme] || 0;
@@ -256,7 +257,7 @@ function create() {
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const stats = {
     frames: 0, running: false, kind: "placeholder", triangles: 0, shown: false,
-    viseme: "rest", mouthOpen: 0, speechMs: -1,
+    viseme: "rest", mouthOpen: 0, speechMs: -1, mouthKeys: 0,
   };
   let character = null;
   let speech = null; // { track, start, i }
@@ -282,6 +283,7 @@ function create() {
     scene.add(character.root);
     stats.kind = character.kind;
     stats.triangles = countTriangles(character.root);
+    stats.mouthKeys = character.mouthKeys || 0; // shape keys the mouth drives (a .glb)
   }
 
   function resize() {
