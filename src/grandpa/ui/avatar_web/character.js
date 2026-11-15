@@ -129,14 +129,36 @@ function buildPlaceholder() {
 
 // --- Captain's .glb ---------------------------------------------------------
 
+const FRAME_NODE = "Grandpa_Head";
+const BUST_BELOW_HEAD = 0.7; // chest kept below the head, in head heights (the camera shows ~1.5x the box)
+
+function frameBox(root) {
+  const whole = new THREE.Box3().setFromObject(root);
+  const head = root.getObjectByName(FRAME_NODE);
+  if (!head) return whole;
+  const hb = new THREE.Box3().setFromObject(head);
+  const h = hb.max.y - hb.min.y;
+  if (!(h > 0) || h > 0.6 * (whole.max.y - whole.min.y)) return whole; // a head-only model
+  const bottom = hb.min.y - BUST_BELOW_HEAD * h;
+  const c = hb.getCenter(new THREE.Vector3());
+  const half = (hb.max.y - bottom) / 2;
+  return new THREE.Box3(
+    new THREE.Vector3(c.x - half, bottom, c.z - half),
+    new THREE.Vector3(c.x + half, hb.max.y, c.z + half),
+  );
+}
+
 function fromGltf(gltf) {
   const root = gltf.scene || (gltf.scenes && gltf.scenes[0]);
   if (!root) throw new Error("no scene");
   const triangles = countTriangles(root);
   if (triangles === 0 || triangles > MAX_TRIANGLES) throw new Error("triangle budget");
 
-  // fit it into the same space as the placeholder: about 2.3 units tall, centred
-  const box = new THREE.Box3().setFromObject(root);
+  // fit it into the same space as the placeholder: about 2.3 units tall, centred.
+  // A full-body model with a head node is framed head-and-chest instead (A3b),
+  // or the face would be a few pixels in the small window.
+  root.updateMatrixWorld(true);
+  const box = frameBox(root);
   const size = box.getSize(new THREE.Vector3());
   const centre = box.getCenter(new THREE.Vector3());
   const scale = 2.3 / Math.max(size.x, size.y, size.z, 1e-6);
