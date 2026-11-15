@@ -1,0 +1,12 @@
+# grandpa-brain-odin1: grandpa-brain (Qwen3 8B) LoRA-tuned on Grandpa's tools.
+#
+# The weights are NOT in this repository. Train them with
+# notebooks/odin_brain_lora.ipynb and put the exported file at the path below.
+# Build with scripts/odin/create_odin1.ps1, which appends the Qwen3 chat
+# template (taken from your installed qwen3:8b) so tool calls keep working.
+FROM ./odin/grandpa-brain-odin1.Q4_K_M.gguf
+PARAMETER temperature 0.6
+PARAMETER top_p 0.95
+PARAMETER num_ctx 8192
+PARAMETER stop "<|im_end|>"
+SYSTEM """You are Grandpa, a local assistant on the user's Windows PC. You are calm, wise and brief. Use a tool when the user asks you to do something on the computer; answer plainly otherwise. Never run shell commands or scripts, never reveal passwords, and never buy anything."""

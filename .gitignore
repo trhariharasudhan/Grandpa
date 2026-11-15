@@ -158,3 +158,8 @@ voice_runtime/datasets/*/processed/
 voice_runtime/datasets/*/wavs/
 voice_runtime/datasets/*/metadata/
 voice_runtime/datasets/*/reports/
+
+# Odin model weights and the Modelfile create_odin1.ps1 generates (O3)
+*.gguf
+/models/odin/
+/models/Modelfile.*.generated
