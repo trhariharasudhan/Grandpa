@@ -697,6 +697,106 @@ def remove(model_name: str) -> None:
     _handle_remove(model_name, console)
 
 
+def _eval_engine() -> Any:
+    """The engine `grandpa models eval` talks to (patched in tests)."""
+    from grandpa.engine import get_engine
+
+    resolved = get_engine(load_config(), None)
+    return resolved[1] if resolved else None
+
+
+def _render_eval(console: Console, reports: list) -> None:
+    def pct(value) -> str:
+        return "-" if value is None else f"{value:.0%}"
+
+    table = Table(title="grandpa models eval")
+    table.add_column("Metric")
+    for report in reports:
+        table.add_column(escape(report.model))
+    rows = (
+        (
+            "Tool-call accuracy",
+            lambda r: f"{pct(r.tool_accuracy)} ({r.tool_correct}/{r.tool_expected})",
+        ),
+        (
+            "Argument accuracy",
+            lambda r: f"{pct(r.argument_accuracy)} ({r.args_correct}/{r.args_checked})",
+        ),
+        (
+            "Refusal correctness",
+            lambda r: (
+                f"{pct(r.refusal_correctness)} ({r.refusals_correct}/{r.refusals})"
+            ),
+        ),
+        ("5-goal benchmark", lambda r: f"{r.goals_passed}/{r.goals}"),
+        (
+            "Median latency",
+            lambda r: "-" if r.latency_median_s is None else f"{r.latency_median_s}s",
+        ),
+        ("Errors", lambda r: str(len(r.errors))),
+    )
+    for label, value in rows:
+        table.add_row(label, *(value(report) for report in reports))
+    console.print(table)
+
+
+@model.command("eval")
+@click.argument("tag")
+@click.option("--baseline", default=None, help="Compare against this tag too.")
+@click.option(
+    "--dataset",
+    type=click.Path(dir_okay=False, path_type=str),
+    default=None,
+    help="Held-out JSONL (default: runtime/odin/eval.jsonl, else built in memory).",
+)
+@click.option("--limit", type=int, default=None, help="Use only the first N examples.")
+@click.option("--no-benchmark", is_flag=True, default=False, help="Skip the 5 goals.")
+@click.option("--json", "as_json", is_flag=True, default=False, help="JSON output.")
+def eval_cmd(
+    tag: str,
+    baseline: str | None,
+    dataset: str | None,
+    limit: int | None,
+    no_benchmark: bool,
+    as_json: bool,
+) -> None:
+    """Score a model on the O2 held-out split and the 5-goal benchmark.
+
+    No action is performed: the benchmark records the tools the model calls
+    instead of running them. The default model is never changed.
+    """
+    from pathlib import Path
+
+    from grandpa.intelligence.model_eval import evaluate, load_eval_rows, recommend
+
+    console = Console(stderr=as_json)
+    engine = _eval_engine()
+    if engine is None:
+        console.print("[red]No engine is available.[/red] Start Ollama and try again.")
+        sys.exit(1)
+    rows = load_eval_rows(Path(dataset) if dataset else None)
+    tags = [tag] + ([baseline] if baseline else [])
+    reports = []
+    for name in tags:
+        console.print(f"Evaluating {escape(name)} ...")
+        reports.append(
+            evaluate(
+                name, engine=engine, rows=rows, limit=limit, benchmark=not no_benchmark
+            )
+        )
+    advice = recommend(reports[0], reports[1]) if baseline else None
+    if as_json:
+        payload = {"reports": [r.as_dict() for r in reports], "recommendation": advice}
+        click.echo(json.dumps(payload, indent=2))
+        return
+    _render_eval(console, reports)
+    if advice:
+        console.print(f"Recommendation: {escape(advice)}")
+        console.print(
+            "[dim]Nothing was changed; the default model is still yours to pick.[/dim]"
+        )
+
+
 __all__ = [
     "find_model_spec",
     "model",

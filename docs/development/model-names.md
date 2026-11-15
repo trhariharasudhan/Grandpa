@@ -23,6 +23,11 @@ for each missing Ollama role (`ollama create grandpa-<role> -f
 models/Modelfile.<role>`, and `ollama cp nomic-embed-text grandpa-memory`); add
 `--yes` to run it.
 
+`grandpa models eval <tag> [--baseline <tag>]` scores any tag on the O2 held-out
+split and the five-goal benchmark below (tool-call accuracy, argument accuracy,
+refusal correctness, latency) without performing any action, and prints a
+recommendation. It never changes the default.
+
 ## How the default is chosen
 
 `core.config.recommend_model()` picks on available memory, not a constant:
