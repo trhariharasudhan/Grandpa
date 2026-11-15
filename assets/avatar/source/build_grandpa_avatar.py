@@ -1222,7 +1222,7 @@ def report():
     return {"triangles": per, "total": sum(per.values()), "budget": MAX_TRIANGLES}
 
 
-def export_glb(path):
+def export_glb(path, image_format="AUTO"):
     rep = report()
     if rep["total"] > MAX_TRIANGLES:
         raise RuntimeError(f"{rep['total']} triangles > budget {MAX_TRIANGLES}")
@@ -1246,11 +1246,13 @@ def export_glb(path):
         export_cameras=False,
         export_lights=False,
         export_yup=True,
+        export_image_format=image_format,
+        export_jpeg_quality=90,
     )
     try:
         bpy.ops.export_scene.gltf(**kw)
     except TypeError:
-        for k in ("export_animations", "export_morph_normal"):
+        for k in ("export_animations", "export_morph_normal", "export_jpeg_quality"):
             kw.pop(k, None)
         bpy.ops.export_scene.gltf(**kw)
     rep["path"] = path
