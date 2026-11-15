@@ -24,12 +24,15 @@ While Grandpa thinks, speaks, works or asks, the ring turns into his 3D head:
 a built-in placeholder, or your own model from assets/avatar/grandpa.glb
 (glTF 2.0, at most 30,000 triangles). The first line printed says which.
 
+Grandpa says each reply aloud (pyttsx3) and his mouth moves with the words.
+--quiet keeps him silent; so does tts.enabled = false in your config.
+
 --no-window starts only the local connection and prints an address to open in
 a browser, which is useful when the window will not open.
 """
 
 
-def build(bridge=None):
+def build(bridge=None, speaker=None):
     """The controller and server, wired together. Separate for tests."""
     from grandpa.ui.avatar_controller import AvatarController
     from grandpa.ui.avatar_server import AvatarServer
@@ -42,7 +45,9 @@ def build(bridge=None):
         if server is not None:
             server.broadcast(message)
 
-    controller = AvatarController(bridge=bridge or InProcessBridge(), publish=publish)
+    controller = AvatarController(
+        bridge=bridge or InProcessBridge(), publish=publish, speaker=speaker
+    )
     server = AvatarServer(on_send=controller.submit, snapshot=controller.snapshot)
     holder["server"] = server
     return controller, server
@@ -56,12 +61,20 @@ def build(bridge=None):
 )
 @click.option("--not-on-top", is_flag=True, help="Let other windows cover it.")
 @click.option("--debug", is_flag=True, help="Open the web inspector with the window.")
-def avatar(no_window: bool, not_on_top: bool, debug: bool) -> None:
-    controller, server = build()
+@click.option("--quiet", is_flag=True, help="Do not say replies aloud.")
+def avatar(no_window: bool, not_on_top: bool, debug: bool, quiet: bool) -> None:
     from grandpa.ui.avatar_character import load_character
+    from grandpa.ui.lipsync import default_speaker
+
+    if quiet:
+        speaker, voice_line = None, "Voice: off (--quiet)."
+    else:
+        speaker, voice_line = default_speaker()
+    controller, server = build(speaker=speaker)
 
     server.character, report = load_character()
     click.echo(report.describe())
+    click.echo(voice_line)
     try:
         server.start()
     except RuntimeError as exc:

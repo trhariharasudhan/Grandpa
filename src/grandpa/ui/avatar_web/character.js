@@ -10,7 +10,13 @@
 //     it (glTF 2.0, <= 30k triangles, embedded, size) and sends it over the
 //     page's own WebSocket; avatar.js hands it over as "grandpa:character".
 // Both breathe and blink. A .glb blinks with its "blink" shape key when it has
-// one; the other shape keys (AA/E/I/O/U/FV/MBP, smile, think) are for A4/A6.
+// one; smile and think are for A6.
+//
+// A4, lip-sync: a "speaking" state carries a mouth track from Python
+// ({t: ms, v: viseme, w: 0..1}) and speech_start_ms, when playback starts by
+// this PC's clock. The mouth follows Date.now() - speech_start_ms, so the
+// socket's delay does not shift it. A .glb moves its AA/E/I/O/U/FV/MBP shape
+// keys; the placeholder opens, widens and rounds its own mouth.
 //
 // Budget, as for the ring (Ryzen 5 7520U iGPU, shared with Ollama):
 //   * at most 30 frames per second, 20 while waiting for a yes/no;
@@ -27,6 +33,30 @@ const MAX_DPR = 2;
 const MAX_TRIANGLES = 30000;
 const SHOW_IN = new Set(["thinking", "speaking", "working", "confirm"]);
 const BLINK_MS = 150;
+const VISEMES = ["AA", "E", "I", "O", "U", "FV", "MBP"];
+const MAX_TRACK = 2000;
+const MOUTH_EASE = 0.6; // per frame at 30 fps: about one frame behind the sound
+
+// The placeholder's mouth per viseme: [open, wide] at full weight.
+const MOUTH = {
+  AA: [1.0, 0.8], E: [0.5, 1.0], I: [0.35, 1.1], O: [0.8, 0.55],
+  U: [0.4, 0.45], FV: [0.12, 0.9], MBP: [0.0, 0.8], rest: [0.0, 0.8],
+};
+
+// Python's track, checked: only known shapes, numeric times, in order.
+function cleanTrack(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const entry of raw.slice(0, MAX_TRACK)) {
+    if (!entry || typeof entry !== "object") continue;
+    const t = Number(entry.t), w = Number(entry.w);
+    const v = entry.v === "rest" || VISEMES.includes(entry.v) ? entry.v : null;
+    if (!v || !Number.isFinite(t) || !Number.isFinite(w)) continue;
+    if (out.length && t < out[out.length - 1].t) continue;
+    out.push({ t, v, w: Math.max(0, Math.min(1, w)) });
+  }
+  return out;
+}
 
 // How the head holds itself per state: [tilt (z), nod (x)] in radians.
 const POSE = {
@@ -98,6 +128,11 @@ function buildPlaceholder() {
   moustache.scale.set(2.0, 0.55, 0.7);
   moustache.position.set(0, -0.3, 0.86);
   head.add(moustache);
+  // the mouth, under the moustache: a dark lens that opens with the words
+  const mouth = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 6), dark);
+  mouth.position.set(0, -0.46, 0.84);
+  mouth.scale.set(1.0, 0.06, 0.45);
+  head.add(mouth);
 
   // eyes (they blink by squashing), behind round gold glasses
   const eyes = [];
@@ -124,6 +159,16 @@ function buildPlaceholder() {
     root: head,
     kind: "placeholder",
     setBlink(closed) { for (const eye of eyes) eye.scale.y = 1 - 0.9 * closed; },
+    setMouth(weights) {
+      let open = 0, wide = 0, total = 0;
+      for (const [name, w] of Object.entries(weights)) {
+        const shape = MOUTH[name];
+        if (!shape || w <= 0) continue;
+        open += shape[0] * w; wide += shape[1] * w; total += w;
+      }
+      const width = total > 0 ? wide / total : MOUTH.rest[1];
+      mouth.scale.set(0.55 + 0.6 * width, 0.06 + 0.9 * Math.min(1, open), 0.45);
+    },
   };
 }
 
@@ -168,16 +213,23 @@ function fromGltf(gltf) {
   holder.scale.setScalar(scale);
 
   const blinkers = [];
+  const mouthKeys = []; // [node, index, viseme]
   root.traverse((node) => {
     if (!node.isMesh || !node.morphTargetDictionary || !node.morphTargetInfluences) return;
     for (const [name, index] of Object.entries(node.morphTargetDictionary)) {
       if (name.toLowerCase() === "blink") blinkers.push([node, index]);
+      const viseme = VISEMES.find((v) => v.toLowerCase() === name.toLowerCase());
+      if (viseme) mouthKeys.push([node, index, viseme]);
     }
   });
   return {
     root: holder,
     kind: "glb",
+    mouthKeys: new Set(mouthKeys.map((entry) => entry[2])).size,
     setBlink(closed) { for (const [node, index] of blinkers) node.morphTargetInfluences[index] = closed; },
+    setMouth(weights) {
+      for (const [node, index, viseme] of mouthKeys) node.morphTargetInfluences[index] = weights[viseme] || 0;
+    },
   };
 }
 
@@ -203,8 +255,13 @@ function create() {
   scene.add(rim);
 
   const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const stats = { frames: 0, running: false, kind: "placeholder", triangles: 0, shown: false };
+  const stats = {
+    frames: 0, running: false, kind: "placeholder", triangles: 0, shown: false,
+    viseme: "rest", mouthOpen: 0, speechMs: -1, mouthKeys: 0,
+  };
   let character = null;
+  let speech = null; // { track, start, i }
+  const mouth = {}; // eased weights per viseme
   let state = "idle";
   let shown = false;
   let raf = 0;
@@ -226,6 +283,7 @@ function create() {
     scene.add(character.root);
     stats.kind = character.kind;
     stats.triangles = countTriangles(character.root);
+    stats.mouthKeys = character.mouthKeys || 0; // shape keys the mouth drives (a .glb)
   }
 
   function resize() {
@@ -261,10 +319,36 @@ function create() {
       else closed = p < 0.5 ? p * 2 : (1 - p) * 2;
     }
     character.setBlink(closed);
+    speak();
 
     resize();
     renderer.render(scene, camera);
     stats.frames += 1;
+  }
+
+  // Where the mouth should be now, from the track and this PC's clock.
+  function speak() {
+    let target = "rest", weight = 0;
+    stats.speechMs = -1;
+    if (speech && state === "speaking") {
+      const elapsed = Date.now() - speech.start;
+      const track = speech.track;
+      stats.speechMs = elapsed;
+      if (elapsed >= 0 && track.length) {
+        while (speech.i + 1 < track.length && track[speech.i + 1].t <= elapsed) speech.i += 1;
+        if (elapsed < track[track.length - 1].t) {
+          target = track[speech.i].v;
+          weight = track[speech.i].w;
+        }
+      }
+    }
+    for (const v of VISEMES) {
+      const goal = v === target ? weight : 0;
+      mouth[v] = (mouth[v] || 0) + (goal - (mouth[v] || 0)) * MOUTH_EASE;
+    }
+    character.setMouth(mouth);
+    stats.viseme = weight > 0 ? target : "rest";
+    stats.mouthOpen = VISEMES.reduce((sum, v) => sum + mouth[v] * (MOUTH[v][0]), 0);
   }
 
   function loop(now) {
@@ -304,6 +388,12 @@ function create() {
 
   function setState(msg) {
     state = (msg && msg.state) || "idle";
+    if (state === "speaking") {
+      const start = Number(msg.speech_start_ms);
+      speech = { track: cleanTrack(msg.visemes), start: Number.isFinite(start) && start > 0 ? start : Date.now(), i: 0 };
+    } else {
+      speech = null;
+    }
     if (msg && /^#[0-9a-f]{6}$/i.test(msg.colour || "")) rimTarget.set(msg.colour);
     show(SHOW_IN.has(state));
   }
