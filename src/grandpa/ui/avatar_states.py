@@ -120,7 +120,12 @@ MAX_INBOUND_TEXT = 2000
 def parse_inbound(raw: str | bytes) -> tuple[str, str] | None:
     """``(kind, text)`` for a message the page sent, or ``None`` if invalid.
 
-    The page may send exactly one thing: ``{"type": "send", "text": "..."}``.
+    The page may send exactly two things:
+
+    * ``{"type": "send", "text": "..."}`` -- a typed line, or Yes/No;
+    * ``{"type": "talk"}`` -- click-to-talk (A6): listen for one spoken line,
+      which then goes the same way as a typed one. It carries nothing else.
+
     Anything else -- unknown types, missing or non-string text, oversize lines
     -- is dropped, so the socket cannot become a second, looser way in.
     """
@@ -135,6 +140,8 @@ def parse_inbound(raw: str | bytes) -> tuple[str, str] | None:
         data = json.loads(raw)
     except (TypeError, ValueError):
         return None
+    if isinstance(data, dict) and data.get("type") == "talk" and len(data) == 1:
+        return ("talk", "")
     if not isinstance(data, dict) or data.get("type") != "send":
         return None
     text = data.get("text")

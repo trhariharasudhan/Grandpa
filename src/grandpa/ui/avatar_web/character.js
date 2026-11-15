@@ -17,7 +17,13 @@
 //     it (glTF 2.0, <= 30k triangles, embedded, size) and sends it over the
 //     page's own WebSocket; avatar.js hands it over as "grandpa:character".
 // Both breathe and blink. A .glb blinks with its "blink" shape key when it has
-// one; smile and think are for A6.
+// one.
+//
+// A6, expressions: each state has a face (EXPRESSION): a smile while speaking
+// and as he goes back after "done", a thoughtful look while thinking, a
+// focused one while working, raised brows when he asks. A .glb uses its
+// "smile" and "think" shape keys when it has them; the placeholder widens its
+// mouth and moves its brows. The face eases towards its target, never jumps.
 //
 // A4, lip-sync: a "speaking" state carries a mouth track from Python
 // ({t: ms, v: viseme, w: 0..1}) and speech_start_ms, when playback starts by
@@ -71,6 +77,19 @@ function cleanTrack(raw) {
 }
 
 // How the head holds itself per state: [tilt (z), nod (x)] in radians.
+// A6: the face per state, each 0..1 except brows (-1 down .. 1 up).
+const EXPRESSION = {
+  idle:      { smile: 0.15, think: 0.0, brows: 0.0 },
+  listening: { smile: 0.2,  think: 0.0, brows: 0.4 },
+  thinking:  { smile: 0.0,  think: 1.0, brows: 0.2 },
+  speaking:  { smile: 0.35, think: 0.0, brows: 0.1 },
+  working:   { smile: 0.05, think: 0.5, brows: -0.3 },
+  done:      { smile: 1.0,  think: 0.0, brows: 0.3 },
+  error:     { smile: 0.0,  think: 0.4, brows: -0.6 },
+  confirm:   { smile: 0.2,  think: 0.0, brows: 0.8 },
+};
+const FACE_EASE = 0.15; // per frame at 30 fps: about a fifth of a second
+
 const POSE = {
   thinking: [0.10, -0.10],
   speaking: [0.0, 0.0],
@@ -96,6 +115,8 @@ function countTriangles(root) {
 
 function buildPlaceholder() {
   const head = new THREE.Group();
+  const brows = []; // [mesh, side]
+  let smile = 0;
   const skin = new THREE.MeshStandardMaterial({ color: 0xd8a585, roughness: 0.85, flatShading: true });
   const white = new THREE.MeshStandardMaterial({ color: 0xeceae4, roughness: 1.0, flatShading: true });
   const dark = new THREE.MeshStandardMaterial({ color: 0x2a2320, roughness: 0.5, flatShading: true });
@@ -126,6 +147,7 @@ function buildPlaceholder() {
     brow.position.set(side * 0.3, 0.33, 0.83);
     brow.rotation.z = side * -0.12;
     head.add(brow);
+    brows.push([brow, side]);
   }
   const back = new THREE.Mesh(new THREE.IcosahedronGeometry(0.6, 0), white);
   back.scale.set(1.3, 0.8, 0.6);
@@ -179,7 +201,17 @@ function buildPlaceholder() {
         open += shape[0] * w; wide += shape[1] * w; total += w;
       }
       const width = total > 0 ? wide / total : MOUTH.rest[1];
-      mouth.scale.set(0.55 + 0.6 * width, 0.06 + 0.9 * Math.min(1, open), 0.45);
+      mouth.scale.set(0.55 + 0.6 * width + 0.3 * smile, 0.06 + 0.9 * Math.min(1, open), 0.45);
+      mouth.position.y = -0.46 + 0.03 * smile; // a smile lifts the mouth a little
+    },
+    // A6: a smile widens the mouth; brows rise or knit; "think" lifts one brow.
+    setExpression(face) {
+      smile = face.smile;
+      for (const [brow, side] of brows) {
+        const lift = 0.06 * face.brows + (side > 0 ? 0.05 : -0.02) * face.think;
+        brow.position.y = 0.33 + lift;
+        brow.rotation.z = side * (-0.12 + 0.18 * Math.min(0, face.brows));
+      }
     },
   };
 }
@@ -225,11 +257,14 @@ function fromGltf(gltf) {
   holder.scale.setScalar(scale);
 
   const blinkers = [];
+  const faceKeys = []; // [node, index, "smile" | "think"] (A6)
   const mouthKeys = []; // [node, index, viseme]
   root.traverse((node) => {
     if (!node.isMesh || !node.morphTargetDictionary || !node.morphTargetInfluences) return;
     for (const [name, index] of Object.entries(node.morphTargetDictionary)) {
       if (name.toLowerCase() === "blink") blinkers.push([node, index]);
+      if (name.toLowerCase() === "smile") faceKeys.push([node, index, "smile"]);
+      if (name.toLowerCase() === "think") faceKeys.push([node, index, "think"]);
       const viseme = VISEMES.find((v) => v.toLowerCase() === name.toLowerCase());
       if (viseme) mouthKeys.push([node, index, viseme]);
     }
@@ -238,7 +273,9 @@ function fromGltf(gltf) {
     root: holder,
     kind: "glb",
     mouthKeys: new Set(mouthKeys.map((entry) => entry[2])).size,
+    faceKeys: new Set(faceKeys.map((entry) => entry[2])).size,
     setBlink(closed) { for (const [node, index] of blinkers) node.morphTargetInfluences[index] = closed; },
+    setExpression(face) { for (const [node, index, key] of faceKeys) node.morphTargetInfluences[index] = face[key]; },
     setMouth(weights) {
       for (const [node, index, viseme] of mouthKeys) node.morphTargetInfluences[index] = weights[viseme] || 0;
     },
@@ -272,6 +309,7 @@ function create() {
   const stats = {
     frames: 0, running: false, kind: "placeholder", triangles: 0, shown: false,
     viseme: "rest", mouthOpen: 0, speechMs: -1, mouthKeys: 0,
+    smile: 0, think: 0, brows: 0, faceKeys: 0,
     morph: 0, morphing: false, lastMorphMs: 0,
   };
   // 0 = the ring, 1 = the character; "to" is where it is going
@@ -279,6 +317,7 @@ function create() {
   let character = null;
   let speech = null; // { track, start, i }
   const mouth = {}; // eased weights per viseme
+  const face = { smile: 0, think: 0, brows: 0 }; // eased expression (A6)
   let state = "idle";
   let shown = false;
   let raf = 0;
@@ -301,6 +340,7 @@ function create() {
     stats.kind = character.kind;
     stats.triangles = countTriangles(character.root);
     stats.mouthKeys = character.mouthKeys || 0; // shape keys the mouth drives (a .glb)
+    stats.faceKeys = character.faceKeys || 0; // smile/think shape keys found (a .glb)
   }
 
   function resize() {
@@ -337,11 +377,23 @@ function create() {
       else closed = p < 0.5 ? p * 2 : (1 - p) * 2;
     }
     character.setBlink(closed);
+    expressFace();
     speak();
 
     resize();
     renderer.render(scene, camera);
     stats.frames += 1;
+  }
+
+  // A6: the face eases towards this state's expression (at once with reduced motion).
+  function expressFace() {
+    const goal = EXPRESSION[state] || EXPRESSION.idle;
+    const k = reduceMotion ? 1 : FACE_EASE;
+    for (const key of ["smile", "think", "brows"]) face[key] += (goal[key] - face[key]) * k;
+    character.setExpression(face);
+    stats.smile = face.smile;
+    stats.think = face.think;
+    stats.brows = face.brows;
   }
 
   // Where the mouth should be now, from the track and this PC's clock.

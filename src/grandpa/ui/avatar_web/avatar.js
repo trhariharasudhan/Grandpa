@@ -15,6 +15,7 @@
   const form = document.getElementById("entry");
   const input = document.getElementById("text");
   const sendButton = document.getElementById("send");
+  const talkButton = document.getElementById("talk");
 
   const BUSY = new Set(["thinking", "working", "listening"]);
   const DRAG_THRESHOLD = 4; // pixels before a press counts as a drag
@@ -57,6 +58,7 @@
   // click and opens or closes the panel. A drag never toggles.
   let press = null;
   ring.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return; // only the left button drags or toggles
     press = { x: event.screenX, y: event.screenY, dragging: false };
     ring.setPointerCapture(event.pointerId);
   });
@@ -74,11 +76,14 @@
     }
   });
   ring.addEventListener("pointerup", (event) => {
-    const wasDrag = press && press.dragging;
+    if (!press) return; // a right-click, or a press that began elsewhere
+    const wasDrag = press.dragging;
     press = null;
     try { ring.releasePointerCapture(event.pointerId); } catch (_) { /* already released */ }
     if (!wasDrag) setOpen(!isOpen());
   });
+  // A6: a right-click on the ring (or on Grandpa) talks without opening the panel.
+  ring.addEventListener("contextmenu", (event) => { event.preventDefault(); talk(); });
   ring.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setOpen(!isOpen()); }
   });
@@ -115,6 +120,15 @@
     const busy = BUSY.has(msg.state);
     input.disabled = busy;
     sendButton.disabled = busy;
+    talkButton.disabled = busy || asking; // a yes/no is answered with the buttons
+    talkButton.textContent = msg.state === "listening" ? "Listening..." : "Talk";
+  }
+
+  // A6, click-to-talk: ask Python to listen for one sentence. The message
+  // carries nothing; what is heard is routed like typed text.
+  function talk() {
+    if (talkButton.disabled || !socket || socket.readyState !== WebSocket.OPEN) return;
+    socket.send(JSON.stringify({ type: "talk" }));
   }
 
   function send(text) {
@@ -154,6 +168,7 @@
     send(input.value);
     input.value = "";
   });
+  talkButton.addEventListener("click", talk);
   document.getElementById("yes").addEventListener("click", () => send("yes"));
   document.getElementById("no").addEventListener("click", () => send("no"));
 
