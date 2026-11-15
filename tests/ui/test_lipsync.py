@@ -12,7 +12,7 @@ import math
 import re
 import time
 import wave
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
@@ -28,6 +28,7 @@ from grandpa.ui.lipsync import (
     build_track,
     envelope,
     read_wav,
+    split_sentences,
     text_to_tokens,
 )
 
@@ -220,6 +221,134 @@ def test_no_voice_means_no_mouth_and_no_crash() -> None:
 def test_nothing_to_say_is_silent() -> None:
     speaker = LipSyncSpeaker(synthesize=FakeVoice().synthesize, play=FakeVoice().play)
     assert speaker.speak("```code only```", lambda *_a: None) is False
+
+
+# --- saying it: one sentence at a time ------------------------------------------
+
+
+def test_a_reply_is_cut_into_sentences() -> None:
+    assert split_sentences(
+        "The time is ten o'clock. Volume is now thirty percent! Anything else?"
+    ) == [
+        "The time is ten o'clock.",
+        "Volume is now thirty percent! Anything else?",
+    ]
+
+
+def test_short_sentences_ride_with_the_next() -> None:
+    assert split_sentences("Okay. Sure. I opened Notepad for you just now.") == [
+        "Okay. Sure. I opened Notepad for you just now."
+    ]
+
+
+def test_numbers_and_tamil_are_not_cut_mid_sentence() -> None:
+    assert split_sentences("Python 3.12 is installed on this computer already.") == [
+        "Python 3.12 is installed on this computer already."
+    ]
+    tamil = "வணக்கம் கேப்டன், எப்படி இருக்கீங்க? இன்னைக்கு என்ன வேலை பண்ணலாம்?"
+    assert split_sentences(tamil) == [
+        "வணக்கம் கேப்டன், எப்படி இருக்கீங்க?",
+        "இன்னைக்கு என்ன வேலை பண்ணலாம்?",
+    ]
+
+
+@dataclass
+class TimedVoice:
+    """Synthesis takes ``synth_s`` per sentence, playback ``play_s``."""
+
+    synth_s: float = 0.05
+    play_s: float = 0.05
+    events: list = field(default_factory=list)
+
+    def synthesize(self, text: str, path: Path) -> None:
+        time.sleep(self.synth_s)
+        self.events.append(("synth", text, time.time()))
+        _write_wav(path, _tone(200))
+
+    def play(self, path: Path) -> None:
+        self.events.append(("play", path.name, time.time()))
+        time.sleep(self.play_s)
+
+
+REPLY = (
+    "The weather in Bengaluru is pleasant today. "
+    "It will be around twenty six degrees this evening. "
+    "Carry an umbrella just in case it rains later."
+)
+
+
+def test_each_sentence_gets_its_own_track() -> None:
+    voice = TimedVoice()
+    started: list = []
+    speaker = LipSyncSpeaker(synthesize=voice.synthesize, play=voice.play)
+    assert speaker.speak(REPLY, lambda track, at: started.append((track, at)))
+    assert len(started) == 3
+    starts = [at for _track, at in started]
+    assert starts == sorted(starts)
+    plays = [e for e in voice.events if e[0] == "play"]
+    assert len(plays) == 3
+    assert len({name for _k, name, _t in plays}) == 3  # one WAV per sentence
+
+
+def test_the_first_sound_waits_for_one_sentence_not_the_whole_reply() -> None:
+    voice = TimedVoice(synth_s=0.15, play_s=0.2)
+    speaker = LipSyncSpeaker(synthesize=voice.synthesize, play=voice.play)
+    speaker.speak(REPLY, lambda *_a: None)
+    kinds = [kind for kind, _x, _t in voice.events]
+    # The first sound comes after one synthesis, before the last one is made.
+    # Order, not seconds: a slow CI machine stretches every sleep alike.
+    assert kinds[0] == "synth"
+    assert kinds.index("play") < len(kinds) - 1 - kinds[::-1].index("synth")
+
+
+def test_the_next_sentence_is_made_while_this_one_plays() -> None:
+    voice = TimedVoice(synth_s=0.05, play_s=0.3)
+    speaker = LipSyncSpeaker(synthesize=voice.synthesize, play=voice.play)
+    speaker.speak(REPLY, lambda *_a: None)
+    kinds = [kind for kind, *_ in voice.events]
+    assert kinds[:3] == ["synth", "play", "synth"]
+
+
+def test_a_sentence_never_starts_before_the_last_one_ends() -> None:
+    voice = TimedVoice(synth_s=0.01, play_s=0.15)
+    speaker = LipSyncSpeaker(synthesize=voice.synthesize, play=voice.play)
+    speaker.speak(REPLY, lambda *_a: None)
+    plays = [t for kind, _x, t in voice.events if kind == "play"]
+    assert all(b - a >= 0.14 for a, b in zip(plays, plays[1:], strict=False))
+
+
+def test_a_voice_that_breaks_mid_reply_stops_cleanly(tmp_path) -> None:
+    calls: list[str] = []
+
+    def synth(text: str, path: Path) -> None:
+        calls.append(text)
+        if len(calls) > 1:
+            raise RuntimeError("voice crashed")
+        _write_wav(path, _tone(200))
+
+    started: list = []
+    speaker = LipSyncSpeaker(synthesize=synth, play=lambda _p: None)
+    assert speaker.speak(REPLY, lambda *a: started.append(a)) is True
+    assert len(started) == 1  # the first sentence was said, the rest skipped
+
+
+def test_streaming_can_be_switched_off() -> None:
+    voice = TimedVoice(synth_s=0.0, play_s=0.0)
+    started: list = []
+    speaker = LipSyncSpeaker(synthesize=voice.synthesize, play=voice.play, stream=False)
+    speaker.speak(REPLY, lambda *a: started.append(a))
+    assert len(started) == 1
+
+
+def test_no_wav_is_left_behind() -> None:
+    import tempfile as tf
+
+    before = set(Path(tf.gettempdir()).glob("grandpa-say-*.wav"))
+    voice = TimedVoice(synth_s=0.0, play_s=0.0)
+    LipSyncSpeaker(synthesize=voice.synthesize, play=voice.play).speak(
+        REPLY, lambda *_a: None
+    )
+    assert set(Path(tf.gettempdir()).glob("grandpa-say-*.wav")) == before
 
 
 # --- the controller -------------------------------------------------------------
