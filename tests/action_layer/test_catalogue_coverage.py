@@ -152,6 +152,8 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     # browser awareness: every one is a read of the visible page.
     # the application inventory: every one is a read.
     "system_info": ("LOW", NONE),
+    # ending a process outright: HIGH, and the layer asks before calling.
+    "process_kill": ("HIGH", LAYER),
     # the screen by OCR: reads, guarded by redaction and a refusal of
     # credential screens rather than by asking.
     "screen_capture": ("LOW", NONE),
@@ -338,6 +340,7 @@ def test_confirmation_is_not_decoration() -> None:
         "gmail_label",
         "gmail_trash",
         "browser_page",
+        "process_kill",
     }, asking
 
 
