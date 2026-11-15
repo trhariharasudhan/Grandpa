@@ -185,6 +185,40 @@ class RecallReport:
         return " ".join(lines)
 
 
+@dataclass
+class _PersonalResult:
+    content: str
+    score: float
+
+
+class PersonalMemoryAdapter:
+    """``store``/``retrieve`` over :class:`grandpa.memory_context.MemoryStore`.
+
+    That is the personal memory ``grandpa chat`` reads, and the one whose
+    vectors come from the Ollama embedding model. Searching goes through
+    ``search_memories`` unchanged, so this measures the real path.
+    """
+
+    def __init__(self, db_path: Any) -> None:
+        from grandpa.memory_context import MemoryStore, active_memory_embedder
+
+        self._store = MemoryStore(db_path)
+        self.embedding_model = active_memory_embedder().model
+
+    def store(self, content: str, *, source: str = "") -> None:
+        key = source.rsplit("/", 1)[-1] or str(abs(hash(content)))
+        self._store.remember("note", key, content, source="recall-test")
+
+    def retrieve(self, query: str, *, top_k: int = 5) -> list[_PersonalResult]:
+        return [
+            _PersonalResult(str(item["value"]), float(item.get("score", 0.0)))
+            for item in self._store.search_memories(query, limit=top_k)
+        ]
+
+    def close(self) -> None:
+        self._store.close()
+
+
 def run_recall_test(backend: Any, *, top_k: int = 5) -> RecallReport:
     """Store the corpus, ask every question, and score where the fact landed.
 
@@ -219,6 +253,7 @@ def run_recall_test(backend: Any, *, top_k: int = 5) -> RecallReport:
 
 __all__ = [
     "FACTS",
+    "PersonalMemoryAdapter",
     "QUERIES",
     "QueryOutcome",
     "RecallReport",

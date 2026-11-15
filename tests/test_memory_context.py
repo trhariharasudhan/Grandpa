@@ -179,7 +179,7 @@ def test_semantic_low_confidence_does_not_invent_memory(tmp_path):
     )
 
     assert result.status == "handled"
-    assert "not confident" in result.message or "do not have" in result.message
+    assert result.message.startswith("I don't know")
 
 
 @pytest.mark.real_actions(
