@@ -322,20 +322,45 @@ def test_a_page_with_the_token_chats_and_sees_states(running) -> None:
 
 
 def test_the_page_ships_with_the_package() -> None:
-    for name in ("index.html", "avatar.js", "avatar.css"):
+    for name in ("index.html", "avatar.js", "avatar.css", "ring.js"):
         assert (WEB_DIR / name).is_file(), name
 
 
 def test_the_page_loads_nothing_from_the_internet() -> None:
     text = "".join(
-        (WEB_DIR / n).read_text(encoding="utf-8")
-        for n in ("index.html", "avatar.js", "avatar.css")
+        path.read_text(encoding="utf-8")
+        for path in sorted(WEB_DIR.rglob("*"))
+        if path.is_file()
     )
     assert "http://" not in text.replace("http://127.0.0.1", "")
     assert "https://" not in text
     html = INDEX.read_text(encoding="utf-8")
     assert "default-src 'none'" in html
     assert "connect-src ws://127.0.0.1:*" in html
+
+
+def test_the_shader_ring_keeps_to_its_budget() -> None:
+    """A2's budget, as written in ring.js. Measured in Chromium: idle 20 fps,
+    thinking 30 fps, 0 frames while hidden (see the PR)."""
+    ring = (WEB_DIR / "ring.js").read_text(encoding="utf-8")
+    assert "const FRAME_MS = 1000 / 30;" in ring
+    assert "const RESTING_FRAME_MS = 1000 / 20;" in ring
+    assert "visibilitychange" in ring and "document.hidden" in ring
+    assert "const MAX_DPR = 2;" in ring
+    assert 'powerPreference: "low-power"' in ring
+    # every state the server can send has its own motion
+    for state in AvatarState:
+        assert f"    {state}:" in ring, state
+
+
+def test_the_shader_ring_loads_before_the_page_script_and_falls_back() -> None:
+    html = INDEX.read_text(encoding="utf-8")
+    assert html.index('src="ring.js"') < html.index('src="avatar.js"')
+    js = (WEB_DIR / "avatar.js").read_text(encoding="utf-8")
+    css = (WEB_DIR / "avatar.css").read_text(encoding="utf-8")
+    # without WebGL, create() returns null, "gl" is never set, the CSS ring stays
+    assert 'if (glRing) app.classList.add("gl");' in js
+    assert ".gl #ring-gl { display: block; }" in css
 
 
 def test_the_page_renders_text_never_html() -> None:

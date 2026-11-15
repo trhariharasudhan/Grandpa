@@ -23,6 +23,14 @@
   let connected = false;
   let address = new URLSearchParams(location.hash.slice(1)).get("ws");
 
+  // A2: the shader ring, when WebGL works. Otherwise the CSS ring stays.
+  let glRing = null;
+  try {
+    glRing = window.GrandpaRing ? window.GrandpaRing.create(document.getElementById("ring-gl")) : null;
+  } catch (_) { glRing = null; }
+  if (glRing) app.classList.add("gl");
+  window.__grandpaRing = glRing; // read by the page tests, never by Python
+
   // --- the window (pywebview js_api; absent in a browser tab) --------------
 
   function windowApi() {
@@ -92,6 +100,7 @@
   function showState(msg) {
     app.dataset.state = msg.state;
     document.documentElement.style.setProperty("--glow", msg.colour || "#E5E7EB");
+    if (glRing) glRing.setState(msg);
     const words = msg.label || msg.state;
     label.textContent = words;
     ring.title = words;

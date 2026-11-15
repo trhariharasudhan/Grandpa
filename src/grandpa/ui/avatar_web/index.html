@@ -13,6 +13,7 @@
   <section id="presence" aria-live="polite">
     <button type="button" id="ring" aria-label="Open Grandpa's chat" aria-expanded="false" title="Standby">
       <span id="ring-core" aria-hidden="true"></span>
+      <canvas id="ring-gl" aria-hidden="true"></canvas>
     </button>
     <div id="status">
       <p id="label">Connecting...</p>
@@ -33,6 +34,7 @@
     </form>
   </section>
 </main>
+<script src="ring.js"></script>
 <script src="avatar.js"></script>
 </body>
 </html>
