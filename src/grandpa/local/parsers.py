@@ -16,6 +16,23 @@ from pathlib import Path
 from grandpa.local.types import ConfirmationCallback
 from grandpa.local_action_result import LocalActionResult
 
+READ_WINDOW_PHRASES = frozenset(
+    {
+        "read the active window",
+        "read active window",
+        "read this window",
+        "read the window",
+        "read the current window",
+        "read the active page",
+        "read the current page",
+        "read this document",
+        "read this to me",
+        "what does this window say",
+    }
+)
+"""C2: read the window in front. grandpa.screen.intents has the same set (a
+test keeps them equal); "read this page" stays with browser awareness."""
+
 logger = logging.getLogger(__name__)
 
 
@@ -935,6 +952,15 @@ def _parse_screen_action(command: str) -> LocalActionResult:
             target="active_window",
             message="Checking the active window.",
             tts_text="Checking the active window.",
+        )
+
+    if command in READ_WINDOW_PHRASES:
+        return LocalActionResult(
+            status="handled",
+            kind="screen",
+            target="read_window",
+            message="Reading the active window.",
+            tts_text="Reading the active window.",
         )
 
     if command in {

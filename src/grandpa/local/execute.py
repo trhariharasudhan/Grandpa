@@ -123,6 +123,18 @@ def execute_parsed_action(
                 tts_text=info.message,
             )
 
+        if result.target == "read_window":
+            from grandpa.screen_awareness import read_window_answer
+
+            answer = read_window_answer()
+            return LocalActionResult(
+                status=answer.status,
+                kind="screen",
+                target=result.target,
+                message=answer.message,
+                tts_text=answer.message[:600],
+            )
+
         if result.target == "screen_diagnostics":
             diagnostics = screen_diagnostics()
             screenshot = diagnostics.get("screenshot", {})

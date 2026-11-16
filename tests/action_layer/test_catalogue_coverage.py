@@ -159,6 +159,8 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     "screen_capture": ("LOW", NONE),
     "screen_describe": ("LOW", NONE),
     "screen_active_window": ("LOW", NONE),
+    # C2: reads the window in front; password fields skipped, text redacted.
+    "read_window": ("LOW", NONE),
     "screen_diagnostics": ("LOW", NONE),
     "apps_scan": ("LOW", NONE),
     "apps_list": ("LOW", NONE),

@@ -26,6 +26,8 @@ def handle_screen_command(
             return manager.capture(save=True)
         if action == "describe":
             return manager.describe()
+        if action == "read_window":
+            return manager.read_window()
         if action == "read":
             return manager.read()
         if action == "error":
@@ -62,9 +64,22 @@ def _match_action(normalized: str) -> str | None:
             "summarize my screen",
             "summarise my screen",
         },
-        "read": {
+        # C2: the window in front, from its own text (OCR only as a fallback).
+        # "read this page" stays with browser awareness, which knows the URL.
+        # grandpa.local.parsers.READ_WINDOW_PHRASES is the same set (tested).
+        "read_window": {
             "read the active window",
             "read active window",
+            "read this window",
+            "read the window",
+            "read the current window",
+            "read the active page",
+            "read the current page",
+            "read this document",
+            "read this to me",
+            "what does this window say",
+        },
+        "read": {
             "read the visible text",
             "read visible text",
             "read my screen",
