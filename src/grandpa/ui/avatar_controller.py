@@ -20,7 +20,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from grandpa.ui.avatar_states import AvatarState, ChatMessage, StateMessage
+from grandpa.ui.avatar_states import (
+    AvatarState,
+    ChatMessage,
+    ModeMessage,
+    StateMessage,
+)
 from grandpa.ui.bubble import completed_an_operation
 
 logger = logging.getLogger(__name__)
@@ -32,9 +37,10 @@ CONFIRM_STATUSES = frozenset({"requires_confirmation", "needs_confirmation"})
 
 NO_MICROPHONE = "Talking is off here (no microphone). Please type instead."
 NOTHING_HEARD = "I did not catch that. Click Talk and try again, or type it."
+RING_ONLY_NOTE = "To keep your PC fast I will show only my ring for now"
 
 
-Publish = Callable[[StateMessage | ChatMessage], None]
+Publish = Callable[[StateMessage | ChatMessage | ModeMessage], None]
 
 
 def state_for_reply(reply: Any) -> StateMessage:
@@ -65,6 +71,7 @@ class AvatarController:
 
     state: StateMessage = field(default_factory=lambda: StateMessage(AvatarState.IDLE))
     history: deque = field(default_factory=lambda: deque(maxlen=HISTORY_SIZE))
+    mode: ModeMessage = field(default_factory=ModeMessage)
     _lock: threading.Lock = field(default_factory=threading.Lock, init=False)
     _busy: bool = field(default=False, init=False)
     _watching: bool = field(default=False, init=False)
@@ -79,15 +86,33 @@ class AvatarController:
         self.history.append(message)
         self._emit(message)
 
-    def _emit(self, message: StateMessage | ChatMessage) -> None:
+    def _emit(self, message: StateMessage | ChatMessage | ModeMessage) -> None:
         try:
             self.publish(message)
         except Exception:  # noqa: BLE001 - a dead page must not break a request
             logger.debug("avatar publish failed", exc_info=True)
 
-    def snapshot(self) -> list[StateMessage | ChatMessage]:
-        """What a page that just connected needs: the chat so far, then the state."""
-        return [*self.history, self.state]
+    def snapshot(self) -> list[StateMessage | ChatMessage | ModeMessage]:
+        """What a page that just connected needs: the mode, the chat, the state."""
+        head = [] if self.mode.character else [self.mode]
+        return [*head, *self.history, self.state]
+
+    # --- A7: the performance gate ----------------------------------------------
+
+    def ring_only(self, reason: str, *, announce: bool = True) -> bool:
+        """Show only the ring from now on (A7). Returns False if it already was.
+
+        Once per run: a fallback that flapped back would cost the PC more than
+        it saves. ``announce`` says why in the chat.
+        """
+        with self._lock:
+            if not self.mode.character:
+                return False
+            self.mode = ModeMessage(character=False, reason=reason)
+        self._emit(self.mode)
+        if announce:
+            self._chat(ChatMessage("grandpa", f"{RING_ONLY_NOTE} ({reason})"))
+        return True
 
     @property
     def busy(self) -> bool:
@@ -245,5 +270,6 @@ __all__ = [
     "HISTORY_SIZE",
     "NOTHING_HEARD",
     "NO_MICROPHONE",
+    "RING_ONLY_NOTE",
     "state_for_reply",
 ]

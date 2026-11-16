@@ -154,6 +154,11 @@
       try { msg = JSON.parse(event.data); } catch (_) { return; }
       if (msg.type === "state") { showState(msg); connected = true; }
       else if (msg.type === "chat") addLine(msg.role, msg.text, msg.failed);
+      else if (msg.type === "mode") {
+        // A7: over budget (or --orb-only): the ring only, for the rest of the run.
+        window.__grandpaMode = msg;
+        document.dispatchEvent(new CustomEvent("grandpa:mode", { detail: msg }));
+      }
     };
     socket.onclose = () => {
       label.textContent = "Reconnecting...";

@@ -32,6 +32,12 @@ stop, then answers as if you had typed it. --no-mic turns Talk off.
 A tray icon (next to the clock) shows or hides the window and quits it.
 --no-tray leaves it out.
 
+To keep the PC fast while Ollama works, the window stays within 20% of the
+GPU and 300 MB of RAM. If it stays over for 30 seconds, Grandpa shows only
+his ring for the rest of the run, and so does the page by itself if its
+frames get slow. --orb-only starts that way; --no-budget turns the check
+off; --perf-log prints the window's use every 10 seconds.
+
 Grandpa says each reply aloud (pyttsx3) and his mouth moves with the words.
 --quiet keeps him silent; so does tts.enabled = false in your config.
 
@@ -87,6 +93,26 @@ def microphone_listener(bridge, *, device=None, capture_factory=None):
     return listen
 
 
+def budget_watch(controller, echo, *, perf_log=False, fall_back=True, sample=None):
+    """A7: watch the window's GPU and RAM; over budget, show only the ring."""
+    from grandpa.ui.avatar_budget import BudgetWatch, sample_window
+
+    def on_over(reasons):
+        reason = "; ".join(reasons)
+        if fall_back and controller.ring_only(reason):
+            echo(f"Over budget ({reason}): showing only the ring from now on.")
+
+    def on_sample(reading):
+        if perf_log:
+            echo(reading.describe())
+
+    return BudgetWatch(
+        sample or sample_window,
+        on_over if fall_back else (lambda _reasons: None),
+        on_sample=on_sample,
+    )
+
+
 def build(bridge=None, speaker=None, listener=None):
     """The controller and server, wired together. Separate for tests."""
     from grandpa.ui.avatar_controller import AvatarController
@@ -126,6 +152,19 @@ def build(bridge=None, speaker=None, listener=None):
 @click.option("--quiet", is_flag=True, help="Do not say replies aloud.")
 @click.option("--no-mic", is_flag=True, help="Turn click-to-talk off.")
 @click.option("--no-tray", is_flag=True, help="Do not show the tray icon.")
+@click.option(
+    "--orb-only", is_flag=True, help="Show only the ring, never the 3D character."
+)
+@click.option(
+    "--no-budget",
+    is_flag=True,
+    help="Do not fall back to the ring when over the GPU/RAM budget.",
+)
+@click.option(
+    "--perf-log",
+    is_flag=True,
+    help="Print the window's RAM and GPU use every 10 seconds.",
+)
 def avatar(
     no_window: bool,
     not_on_top: bool,
@@ -133,6 +172,9 @@ def avatar(
     quiet: bool,
     no_mic: bool,
     no_tray: bool,
+    orb_only: bool,
+    no_budget: bool,
+    perf_log: bool,
 ) -> None:
     from grandpa.ui.avatar_character import load_character
     from grandpa.ui.bridge import InProcessBridge
@@ -146,8 +188,12 @@ def avatar(
     listener = None if no_mic else microphone_listener(bridge)
     controller, server = build(bridge=bridge, speaker=speaker, listener=listener)
 
-    server.character, report = load_character()
-    click.echo(report.describe())
+    if orb_only:
+        controller.ring_only("--orb-only", announce=False)
+        click.echo("Character: off (--orb-only); the ring only.")
+    else:
+        server.character, report = load_character()
+        click.echo(report.describe())
     click.echo(voice_line)
     click.echo(
         "Talk: off (--no-mic)." if no_mic else "Talk: click Talk in the chat panel."
@@ -158,6 +204,7 @@ def avatar(
         safe_cli_error(str(exc))
         raise SystemExit(1) from None
     controller.watch_actions()
+    watch = None
 
     try:
         if no_window:
@@ -176,6 +223,17 @@ def avatar(
         else:
             from grandpa.ui.avatar_window import run_window
 
+            if not no_budget or perf_log:
+                watch = budget_watch(
+                    controller, click.echo, perf_log=perf_log, fall_back=not no_budget
+                )
+                watch.start()
+                click.echo(
+                    "Budget: off (--no-budget)."
+                    if no_budget
+                    else f"Budget: ring only if the window stays over "
+                    f"{watch.budget.gpu_pct:.0f}% GPU or {watch.budget.ram_mb:.0f} MB."
+                )
             try:
                 run_window(
                     server.url,
@@ -188,8 +246,10 @@ def avatar(
                 safe_cli_error(str(exc))
                 raise SystemExit(1) from None
     finally:
+        if watch is not None:
+            watch.stop()
         controller.unwatch_actions()
         server.stop()
 
 
-__all__ = ["TALK_SECONDS", "avatar", "build", "microphone_listener"]
+__all__ = ["TALK_SECONDS", "avatar", "budget_watch", "build", "microphone_listener"]

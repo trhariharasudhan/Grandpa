@@ -58,9 +58,26 @@ The first lines printed say which head is used (placeholder or your
 | A6-Y4 | Click **Quit Grandpa** | The window closes, the icon goes, and the terminal returns to the prompt. |
 | A6-Y5 | Run `uv run grandpa avatar --no-tray` | No tray icon; everything else works. Without the tray extra installed, the start-up line says how to install it. |
 
-## Budget (quick look; A7 measures it properly)
+## Budget (quick look)
 
 | # | Do this | Expect |
 | --- | --- | --- |
 | A6-B1 | Task Manager > Performance > GPU while idle (ring only) | iGPU use low (A2's target: at most 15%). |
-| A6-B2 | Hide the window from the tray and wait 10 seconds | GPU use for the window should drop to about zero (the page stops drawing when WebView2 reports it hidden). Not verified yet: if it does not drop, say so in an issue; A7 will handle it. |
+| A6-B2 | Hide the window from the tray and wait 10 seconds | GPU use for the window should drop to about zero (the page stops drawing when WebView2 reports it hidden). Not verified yet: if it does not drop, say so in an issue. |
+
+## A7: the performance gate, with Ollama generating
+
+Two terminals. In the first, make Ollama work (`ollama run grandpa-brain "Write a 600-word story about a lighthouse keeper."`). In the second:
+
+```powershell
+uv run grandpa avatar --perf-log
+```
+
+| # | Do this | Expect |
+| --- | --- | --- |
+| A7-1 | Read the start-up lines | `Budget: ring only if the window stays over 20% GPU or 300 MB.` |
+| A7-2 | Watch the `avatar window: RAM ... MB, GPU ...%` lines every 10 s, ring only, while Ollama generates | Copy 3 lines into an issue or PR comment. Target: GPU at most 20%, RAM at most 300 MB. `GPU n/a` means the counters could not be read; say so. |
+| A7-3 | Ask something so his head shows, while Ollama is still generating; watch 3 more lines | Same targets with the character. If it stays over for 3 lines (30 s), the terminal prints `Over budget (...)`, he says he will show only his ring, and his head does not come back this run. |
+| A7-4 | Run `uv run grandpa avatar --orb-only` and ask something | Only the ring, never the head. |
+| A7-5 | Run `uv run grandpa avatar --no-budget --perf-log` | Numbers are printed but he never falls back. |
+| A7-6 | (If A7-3 never fell back) Task Manager > the WebView2 processes under Python | Their memory roughly matches the RAM line (it counts private memory, so Task Manager's "Memory" column should be close). |
