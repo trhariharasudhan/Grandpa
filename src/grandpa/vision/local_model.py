@@ -47,6 +47,8 @@ def analyze_image_with_local_model(
     filename: str | None,
     mime_type: str | None,
     prompt: str | None,
+    *,
+    timeout: float = 120.0,
 ) -> dict[str, Any]:
     if not data:
         return _response(False, None, "", "Empty image file.")
@@ -57,7 +59,7 @@ def analyze_image_with_local_model(
     image_payload = base64.b64encode(data).decode("ascii")
 
     try:
-        with httpx.Client(base_url=host, timeout=120.0) as client:
+        with httpx.Client(base_url=host, timeout=timeout) as client:
             tags = client.get("/api/tags", timeout=5.0)
             tags.raise_for_status()
             installed = _installed_models(tags.json())

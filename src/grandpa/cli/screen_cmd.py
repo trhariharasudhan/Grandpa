@@ -16,8 +16,8 @@ def screen() -> None:
     """Inspect the Windows screen without interacting with it."""
 
 
-def _service() -> ScreenVisionService:
-    return ScreenVisionService()
+def _service(**kwargs) -> ScreenVisionService:
+    return ScreenVisionService(**kwargs)
 
 
 def _run(operation) -> None:
@@ -81,8 +81,20 @@ def read(monitor: int | None, active_window: bool, language: str | None) -> None
 
 @screen.command("describe")
 @_capture_options
-def describe(monitor: int | None, active_window: bool) -> None:
-    _run(lambda: _service().describe(monitor=monitor, active_window=active_window))
+@click.option(
+    "--no-eyes",
+    is_flag=True,
+    help="Skip the grandpa-eyes vision model; describe from OCR only.",
+)
+def describe(monitor: int | None, active_window: bool, no_eyes: bool) -> None:
+    """What's on my screen: OCR plus the grandpa-eyes vision model."""
+    from grandpa.screen.eyes import look
+
+    _run(
+        lambda: _service(eyes=None if no_eyes else look).describe(
+            monitor=monitor, active_window=active_window
+        )
+    )
 
 
 @screen.command("error")

@@ -101,10 +101,12 @@ class ScreenContext:
     suggestions: tuple[str, ...] = ()
     windows: tuple[dict[str, Any], ...] = ()
     diagnostics: dict[str, Any] | None = None
+    eyes_summary: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "supported": self.supported,
+            "eyes_summary": self.eyes_summary,
             "window_title": self.window_title,
             "app_name": self.app_name,
             "screenshot_path": self.screenshot_path,
@@ -218,8 +220,16 @@ def _discard_screenshot(path: str | None) -> None:
         logger.warning("Could not remove a sensitive screenshot at %s", path)
 
 
-def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
-    """Capture available screen context and extract local OCR text if possible."""
+def describe_screen(
+    *, include_ocr: bool = True, include_eyes: bool = True
+) -> ScreenContext:
+    """Capture the screen, read it with local OCR, and ask grandpa-eyes about it.
+
+    The vision model (``grandpa.screen.eyes``) runs only after the credential
+    check has passed, and is skipped quietly when Ollama or the model is not
+    there. Its answer leads the message, because it is the part that reads like
+    an answer to "what's on my screen?".
+    """
     window = get_active_window_info()
     screenshot = capture_screenshot()
 
@@ -247,12 +257,33 @@ def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
             message=SENSITIVE_SCREEN_MESSAGE,
         )
 
+    eyes = None
+    if include_eyes and screenshot.screenshot_path:
+        from grandpa.screen.eyes import look
+
+        eyes = look(
+            screenshot.screenshot_path,
+            ocr_text=ocr.text,
+            window_title=window.window_title,
+        )
+        if eyes.sensitive:
+            # OCR missed it but the model's own words say credential screen.
+            _discard_screenshot(screenshot.screenshot_path)
+            return ScreenContext(
+                supported=True,
+                window_title=window.window_title,
+                app_name=window.app_name,
+                message=SENSITIVE_SCREEN_MESSAGE,
+            )
+
     elements = detect_ui_elements(ocr.text)
     popup = classify_popup_or_error(ocr.text, window_title=window.window_title)
     suggestions = build_navigation_suggestions(elements, popup, window.app_name)
     windows = get_visible_windows()
 
     parts: list[str] = []
+    if eyes is not None and eyes.available:
+        parts.append(f"Grandpa sees: {eyes.text}")
     if window.supported:
         parts.append(f"Active window: {window.window_title}")
         if window.app_name:
@@ -297,6 +328,9 @@ def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
             or "OCR text is not available. Install/configure Tesseract to read screen text."
         )
 
+    if eyes is not None and not eyes.available and eyes.note:
+        parts.append(f"Vision model not used: {eyes.note}")
+
     context = ScreenContext(
         supported=window.supported or screenshot.supported,
         window_title=window.window_title,
@@ -310,6 +344,7 @@ def describe_screen(*, include_ocr: bool = True) -> ScreenContext:
         windows=tuple(windows),
         diagnostics=screen_diagnostics(window=window, screenshot=screenshot, ocr=ocr),
         message="\n".join(parts),
+        eyes_summary=eyes.text if eyes is not None and eyes.available else "",
     )
     _record_visual_context(context)
     return context

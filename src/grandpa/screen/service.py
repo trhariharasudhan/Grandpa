@@ -6,6 +6,7 @@ import logging
 import platform
 import re
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from grandpa.screen.analyzer import DeterministicScreenAnalyzer, detect_visible_
 from grandpa.screen.capture import ScreenCapture, available_capture_backend
 from grandpa.screen.config import ScreenConfig
 from grandpa.screen.errors import OcrUnavailableError, SensitiveScreenDetectedError
+from grandpa.screen.eyes import EyesSummary
 from grandpa.screen.models import OcrResult, ScreenCommandResult, ScreenDiagnosticResult
 from grandpa.screen.ocr import TesseractOcrEngine
 from grandpa.screen.redaction import is_sensitive_screen, redact_screen_text
@@ -35,11 +37,14 @@ class ScreenVisionService:
         capture: ScreenCapture | None = None,
         ocr: TesseractOcrEngine | None = None,
         analyzer: Any | None = None,
+        eyes: Callable[..., EyesSummary] | None = None,
     ) -> None:
         self.config = config or ScreenConfig.load()
         self.capture_backend = capture or ScreenCapture(self.config)
         self.ocr_engine = ocr or TesseractOcrEngine(self.config)
         self.analyzer = analyzer or DeterministicScreenAnalyzer()
+        # Optional: grandpa.screen.eyes.look, given by `grandpa screen describe`.
+        self.eyes = eyes
 
     def capture(
         self,
@@ -142,14 +147,28 @@ class ScreenVisionService:
         description = self.analyzer.describe(
             screenshot, safe_ocr, active_window=active, windows=windows
         )
+        summary = description.summary
+        eyes_model = None
+        if self.eyes is not None:
+            eyes = self.eyes(
+                screenshot.image, ocr_text=safe_ocr.text, window_title=title or ""
+            )
+            if eyes.sensitive:
+                raise SensitiveScreenDetectedError(SENSITIVE_MESSAGE)
+            if eyes.available:
+                summary = f"Grandpa sees: {eyes.text}\n\n{summary}"
+                eyes_model = eyes.model
+            elif eyes.note:
+                summary = f"{summary}\n\nVision model not used: {eyes.note}"
         return ScreenCommandResult(
             "handled",
-            description.summary,
-            _spoken_excerpt(description.summary, limit=420),
+            summary,
+            _spoken_excerpt(summary, limit=420),
             "describe",
             data={
                 "content_type": description.content_type,
                 "error_detected": description.error.error_detected,
+                "eyes_model": eyes_model,
             },
         )
 
