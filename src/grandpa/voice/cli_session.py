@@ -29,7 +29,11 @@ from grandpa.voice.presenter import VoicePresenter
 from grandpa.voice.speech_to_text import FasterWhisperSpeechToText
 from grandpa.voice.text_to_speech import GrandpaTextToSpeech
 from grandpa.voice.vad import VoiceActivityConfig
-from grandpa.voice.wake_word import DEFAULT_WAKE_PHRASES, WakeWordDetector
+from grandpa.voice.wake_word import (
+    DEFAULT_WAKE_PHRASES,
+    WakeWordDetector,
+    strip_leading_wake_phrase,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -325,6 +329,18 @@ class VoiceSession:
                 self.presenter.print_status(
                     "No command heard. Returning to wake-word mode."
                 )
+                continue
+            # "Hey Grandpa, set volume to 30" in one breath: the capture often
+            # opens on the tail of the wake phrase. Drop it, and if that was
+            # all he heard, keep listening for the command itself.
+            phrases = (
+                self.wake_detector.phrases
+                if self.wake_detector is not None
+                else DEFAULT_WAKE_PHRASES
+            )
+            command = strip_leading_wake_phrase(command, phrases)
+            if not command:
+                listen_now = True
                 continue
             self._barged_in = False
             self._handle_transcript(command, stop)

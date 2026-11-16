@@ -150,6 +150,31 @@ def normalize_wake_text(value: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def strip_leading_wake_phrase(
+    transcript: str, phrases: tuple[str, ...] = DEFAULT_WAKE_PHRASES
+) -> str:
+    """Drop a wake phrase the command capture caught at its start.
+
+    B5: with the audio wake word, "Hey Grandpa, set volume to 30" said in one
+    breath often reaches Whisper as "Grandpa, set volume to 30.", because the
+    command capture opens while the tail of the wake phrase is still being
+    spoken. Only a phrase at the very start is removed (a "grandpa" later in
+    the sentence is part of the command), and the rest keeps its own case and
+    punctuation. Returns "" when the transcript was nothing but the phrase.
+    """
+
+    text = str(transcript)
+    for phrase in sorted(phrases, key=len, reverse=True):
+        words = normalize_wake_text(phrase).split()
+        if not words:
+            continue
+        pattern = r"^\W*" + r"\W+".join(re.escape(w) for w in words) + r"\b\W*"
+        match = re.match(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return text[match.end() :].strip()
+    return text.strip()
+
+
 def _word_sequence_index(words: list[str], phrase_words: list[str]) -> int | None:
     phrase_len = len(phrase_words)
     if not phrase_words or phrase_len > len(words):
