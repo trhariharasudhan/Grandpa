@@ -224,7 +224,13 @@ class DesktopParser:
             return DesktopAction("volume", "volume_mute", label="Volume")
         if command in {"unmute", "unmute sound", "unmute volume"}:
             return DesktopAction("volume", "volume_unmute", label="Volume")
-        match = re.fullmatch(r"(?:set )?volume(?: to)? (\d{1,3})%?", command)
+        # B5: "Set the volume to 30 percent." is how Whisper writes the spoken
+        # command; the short "volume 30" form still matches as before.
+        match = re.fullmatch(
+            r"(?:(?:set|change|turn) )?(?:the |my )?volume(?: level)?(?: to)? "
+            r"(\d{1,3})(?: ?%| percent)?",
+            command,
+        )
         if not match:
             return None
         level = clamp_volume(int(match.group(1)))
