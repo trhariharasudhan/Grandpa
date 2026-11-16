@@ -79,6 +79,22 @@ def read(monitor: int | None, active_window: bool, language: str | None) -> None
     )
 
 
+@screen.command("window")
+@click.option(
+    "--language", default=None, help="Tesseract language for the OCR fallback."
+)
+@click.option(
+    "--max-chars",
+    type=click.IntRange(200, 50000),
+    default=6000,
+    show_default=True,
+    help="Stop reading after this many characters.",
+)
+def window(language: str | None, max_chars: int) -> None:
+    """Read the window in front: its own text, else OCR of that window."""
+    _run(lambda: _service().read_window(language=language, max_chars=max_chars))
+
+
 @screen.command("describe")
 @_capture_options
 @click.option(

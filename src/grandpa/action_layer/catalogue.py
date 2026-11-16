@@ -436,6 +436,7 @@ _CALLS: dict[str, _Call] = {
     "screen_capture": _Call(Binding.FUNCTION_KWARGS),
     "screen_describe": _Call(Binding.FUNCTION_KWARGS),
     "screen_active_window": _Call(Binding.FUNCTION_KWARGS),
+    "read_window": _Call(Binding.FUNCTION_KWARGS),
     "screen_diagnostics": _Call(Binding.FUNCTION_KWARGS),
     "screenshot_describe": _Call(Binding.SERVICE_ONLY),
     # files
@@ -2230,6 +2231,16 @@ _SCREEN_ACTIONS: tuple[ActionSpec, ...] = (
         _schema({}),
     ),
     _spec(
+        "read_window",
+        _LOW,
+        "Read out the text of the window in front: a web page, a document, a dialog.",
+        f"{_SCREEN}.read_window_answer",
+        _schema({}),
+        notes="Reads the accessibility tree, skipping password fields, and "
+        "falls back to OCR of that one window. Text is redacted; a credential "
+        "screen is refused by its title before reading and by its text after.",
+    ),
+    _spec(
         "screen_diagnostics",
         _LOW,
         "Report what screen reading can do on this machine.",
@@ -2439,6 +2450,7 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
         ),
         "screen_describe": ("OCR of the screen. No pc_control entry."),
         "screen_active_window": ("The window in front. No pc_control entry."),
+        "read_window": ("The text of the window in front (C2). No pc_control entry."),
         "screen_diagnostics": ("Screen reading readiness. No pc_control entry."),
         "system_info": (
             "Platform facts. pc_control has no entry for them: the answer lived "
@@ -2567,6 +2579,9 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "maximize_window",
             "restore_window",
             "close_window",
+            # C2. Here, not in diagnostics: one more "screen" action name there
+            # outweighed brightness for "what is my screen brightness set to".
+            "read_window",
         ),
         "system": (
             "system_lock",

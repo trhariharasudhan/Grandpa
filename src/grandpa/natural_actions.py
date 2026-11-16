@@ -97,6 +97,7 @@ MIGRATED: dict[tuple[str, str], MappedRequest | Callable[[str], MappedRequest]] 
     ("screenshot", "screen"): ("screen_capture", {}),
     ("screen", "screen_context"): ("screen_describe", {}),
     ("screen", "active_window"): ("screen_active_window", {}),
+    ("screen", "read_window"): ("read_window", {}),
     ("screen", "screen_diagnostics"): ("screen_diagnostics", {}),
 }
 """Filled a tranche at a time; see the phase report for the order."""

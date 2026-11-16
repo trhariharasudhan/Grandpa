@@ -15,9 +15,20 @@ from grandpa.screen.capture import ScreenCapture, available_capture_backend
 from grandpa.screen.config import ScreenConfig
 from grandpa.screen.errors import OcrUnavailableError, SensitiveScreenDetectedError
 from grandpa.screen.eyes import EyesSummary
-from grandpa.screen.models import OcrResult, ScreenCommandResult, ScreenDiagnosticResult
+from grandpa.screen.models import (
+    OcrResult,
+    ScreenCommandResult,
+    ScreenDiagnosticResult,
+    WindowInfo,
+)
 from grandpa.screen.ocr import TesseractOcrEngine
 from grandpa.screen.redaction import is_sensitive_screen, redact_screen_text
+from grandpa.screen.window_text import (
+    DEFAULT_MAX_CHARS,
+    NodeReader,
+    collect_text,
+    read_uia_nodes,
+)
 from grandpa.screen.windows import (
     get_active_window,
     list_monitors,
@@ -38,6 +49,8 @@ class ScreenVisionService:
         ocr: TesseractOcrEngine | None = None,
         analyzer: Any | None = None,
         eyes: Callable[..., EyesSummary] | None = None,
+        window_reader: NodeReader | None = None,
+        active_window_provider: Callable[[], WindowInfo] | None = None,
     ) -> None:
         self.config = config or ScreenConfig.load()
         self.capture_backend = capture or ScreenCapture(self.config)
@@ -45,6 +58,8 @@ class ScreenVisionService:
         self.analyzer = analyzer or DeterministicScreenAnalyzer()
         # Optional: grandpa.screen.eyes.look, given by `grandpa screen describe`.
         self.eyes = eyes
+        self.window_reader = window_reader or read_uia_nodes
+        self.active_window_provider = active_window_provider or get_active_window
 
     def capture(
         self,
@@ -117,6 +132,70 @@ class ScreenVisionService:
                 "character_count": len(redacted.text),
                 "word_count": ocr.word_count,
                 "confidence": ocr.confidence,
+            },
+        )
+
+    def read_window(
+        self, *, language: str | None = None, max_chars: int = DEFAULT_MAX_CHARS
+    ) -> ScreenCommandResult:
+        """Read the window in front: a page, a document, a dialog (C2).
+
+        The accessibility tree first, because it is the application's own text
+        and it marks password fields, which are skipped. OCR of that one window
+        only when the tree has nothing (games, remote desktops, some Electron
+        apps). Either way the credential check runs on the title before
+        anything is read and on the text after, and the text is redacted.
+        """
+        window = self.active_window_provider()
+        title = window.title or "the active window"
+        if is_sensitive_screen(title=window.title):
+            raise SensitiveScreenDetectedError(SENSITIVE_MESSAGE)
+        text, truncated = collect_text(
+            self.window_reader(window.handle), max_chars=max_chars
+        )
+        source = "accessibility"
+        if not text:
+            screenshot = self.capture_backend.capture(active_window=True)
+            ocr = self._safe_ocr(screenshot.image, language=language)
+            if not ocr.available:
+                return ScreenCommandResult(
+                    "unsupported",
+                    f"{title} exposes no readable text, and OCR is not "
+                    f"available: {ocr.message}",
+                    "I could not read that window.",
+                    "read_window",
+                )
+            text = ocr.text.strip()
+            if len(text) > max_chars:
+                text, truncated = text[:max_chars].rstrip(), True
+            source = "ocr"
+        if is_sensitive_screen(title=window.title, text=text):
+            logger.warning("Sensitive window detected; window text suppressed")
+            raise SensitiveScreenDetectedError(SENSITIVE_MESSAGE)
+        redacted = redact_screen_text(text)
+        app = f" ({window.process_name})" if window.process_name else ""
+        if not redacted.text.strip():
+            return ScreenCommandResult(
+                "handled",
+                f"{title}{app} shows no readable text.",
+                "That window shows no readable text.",
+                "read_window",
+                data={"source": source, "title": window.title},
+            )
+        how = "its own text" if source == "accessibility" else "OCR"
+        more = "\n\n(Only the first part is shown.)" if truncated else ""
+        return ScreenCommandResult(
+            "handled",
+            f"{title}{app}, read from {how}:\n{redacted.text}{more}",
+            f"{title} says: {_spoken_excerpt(redacted.text, limit=600)}",
+            "read_window",
+            data={
+                "source": source,
+                "title": window.title,
+                "process_name": window.process_name,
+                "character_count": len(redacted.text),
+                "truncated": truncated,
+                "redactions": redacted.count,
             },
         )
 
