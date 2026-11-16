@@ -295,6 +295,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "wake",
+        "grandpa.cli.wake_cmd:wake",
+        short_help='The "Hey Grandpa" wake word.',
+    )
+)
+cli.add_command(
+    _lazy(
         "voice",
         "grandpa.cli.voice_cmd:voice",
         short_help="Start voice assistant or run voice diagnostics.",

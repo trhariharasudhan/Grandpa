@@ -111,7 +111,14 @@ piper = [
 tamil-voice = [
     "sherpa-onnx>=1.10",
 ]
-windows-notifications = ["winotify>=1.1; sys_platform == 'win32'"]
+# B1: "Hey Grandpa" wake word, local (ONNX on the CPU). Feature models are
+# fetched once with: grandpa wake setup
+wake = [
+    "openwakeword>=0.6",
+    "numpy>=1.24",
+    "sounddevice>=0.4.6",
+]
+windows-notifications =["winotify>=1.1; sys_platform == 'win32'"]
 speech = ["faster-whisper>=1.0"]
 native = ["llama-cpp-python>=0.3.0"]
 screen = [
