@@ -106,3 +106,6 @@ html, body {
 #text { flex: 1; background: rgba(255,255,255,0.08); color: var(--ink); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 7px 9px; }
 #panel button { background: rgba(255,255,255,0.14); color: var(--ink); border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
 button:disabled, input:disabled { opacity: 0.5; cursor: default; }
+
+/* A6: click-to-talk. While listening the button says so and glows blue. */
+#app[data-state="listening"] #talk { background: rgba(96,165,250,0.35); }

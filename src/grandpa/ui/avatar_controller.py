@@ -30,6 +30,9 @@ HISTORY_SIZE = 50
 
 CONFIRM_STATUSES = frozenset({"requires_confirmation", "needs_confirmation"})
 
+NO_MICROPHONE = "Talking is off here (no microphone). Please type instead."
+NOTHING_HEARD = "I did not catch that. Click Talk and try again, or type it."
+
 
 Publish = Callable[[StateMessage | ChatMessage], None]
 
@@ -56,6 +59,9 @@ class AvatarController:
     speaker: Any = None
     """A :class:`grandpa.ui.lipsync.LipSyncSpeaker` to say replies aloud with a
     moving mouth (A4); ``None`` keeps the avatar silent."""
+    listener: Callable[[], Any] | None = None
+    """Click-to-talk (A6): records one line and returns its words (a str or a
+    :class:`grandpa.ui.bridge.BridgeTranscript`). ``None``: no microphone."""
 
     state: StateMessage = field(default_factory=lambda: StateMessage(AvatarState.IDLE))
     history: deque = field(default_factory=lambda: deque(maxlen=HISTORY_SIZE))
@@ -99,30 +105,75 @@ class AvatarController:
                 return False
             self._busy = True
         try:
-            self._chat(ChatMessage("user", cleaned))
-            self._enter(StateMessage(AvatarState.THINKING))
-            try:
-                reply = self.bridge.send(cleaned)
-            except Exception as exc:  # noqa: BLE001 - the bridge should not raise
-                logger.exception("avatar send failed")
-                self._chat(ChatMessage("grandpa", f"That did not work: {exc}", True))
-                self._enter(StateMessage(AvatarState.ERROR))
-                return True
-            reply_text = str(getattr(reply, "text", "") or "").strip()
-            self._chat(
-                ChatMessage(
-                    "grandpa",
-                    reply_text or "(no reply)",
-                    bool(getattr(reply, "failed", False)),
-                )
-            )
-            if reply_text:
-                self._say(reply_text)
-            self._enter(state_for_reply(reply))
+            self._route(cleaned)
             return True
         finally:
             with self._lock:
                 self._busy = False
+
+    def talk(self) -> bool:
+        """Click-to-talk (A6): listen for one line, then route it like a typed one.
+
+        ``listening`` shows while the microphone records. What was heard goes
+        through :meth:`_route`, the same path as :meth:`submit`, so a spoken
+        line meets exactly the confirmations a typed one does. Nothing heard,
+        or a microphone that fails, is said in the chat and nothing is routed.
+        Returns False, doing nothing, while a request is in flight.
+        """
+        if self.listener is None:
+            self._chat(ChatMessage("grandpa", NO_MICROPHONE, True))
+            return False
+        with self._lock:
+            if self._busy:
+                return False
+            self._busy = True
+        try:
+            self._enter(StateMessage(AvatarState.LISTENING))
+            try:
+                heard = self.listener()
+            except Exception as exc:  # noqa: BLE001 - a dead mic is not a crash
+                logger.warning("avatar listen failed", exc_info=True)
+                first = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+                self._chat(
+                    ChatMessage(
+                        "grandpa", f"I could not use the microphone: {first}", True
+                    )
+                )
+                self._enter(StateMessage(AvatarState.ERROR))
+                return True
+            text = str(getattr(heard, "text", heard) or "").strip()
+            if not text:
+                self._chat(ChatMessage("grandpa", NOTHING_HEARD))
+                self._enter(StateMessage(AvatarState.IDLE))
+                return True
+            self._route(text)
+            return True
+        finally:
+            with self._lock:
+                self._busy = False
+
+    def _route(self, cleaned: str) -> None:
+        """One line through the bridge. The caller holds ``_busy``."""
+        self._chat(ChatMessage("user", cleaned))
+        self._enter(StateMessage(AvatarState.THINKING))
+        try:
+            reply = self.bridge.send(cleaned)
+        except Exception as exc:  # noqa: BLE001 - the bridge should not raise
+            logger.exception("avatar send failed")
+            self._chat(ChatMessage("grandpa", f"That did not work: {exc}", True))
+            self._enter(StateMessage(AvatarState.ERROR))
+            return
+        reply_text = str(getattr(reply, "text", "") or "").strip()
+        self._chat(
+            ChatMessage(
+                "grandpa",
+                reply_text or "(no reply)",
+                bool(getattr(reply, "failed", False)),
+            )
+        )
+        if reply_text:
+            self._say(reply_text)
+        self._enter(state_for_reply(reply))
 
     def _say(self, text: str) -> None:
         """Speak the reply, showing ``speaking`` with its mouth track meanwhile.
@@ -189,4 +240,10 @@ class AvatarController:
             self._enter(StateMessage(AvatarState.THINKING))
 
 
-__all__ = ["AvatarController", "HISTORY_SIZE", "state_for_reply"]
+__all__ = [
+    "AvatarController",
+    "HISTORY_SIZE",
+    "NOTHING_HEARD",
+    "NO_MICROPHONE",
+    "state_for_reply",
+]

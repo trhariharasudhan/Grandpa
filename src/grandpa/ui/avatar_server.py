@@ -11,10 +11,12 @@ Who may connect:
   the connection URL (``?token=...``). Another program on this PC cannot drive
   Grandpa through it by guessing the port. A page without it is refused at the
   handshake, before a single message.
-* **One kind of inbound message.** ``{"type": "send", "text": ...}``, at most
+* **Two kinds of inbound message.** ``{"type": "send", "text": ...}``, at most
   :data:`grandpa.ui.avatar_states.MAX_INBOUND_TEXT` characters, one at a time.
   It goes to :meth:`AvatarController.submit`, i.e. through the same bridge and
-  gates as the tkinter bubble. There is no message that performs an action.
+  gates as the tkinter bubble. ``{"type": "talk"}`` (A6, click-to-talk) asks
+  :meth:`AvatarController.talk` to listen for one line, which is then routed
+  exactly like a typed one. There is no message that performs an action.
 
 Outbound it also carries, once per connection, Captain's checked character
 model (A3) as one binary frame, announced by ``{"type": "character", "bytes": n}``.
@@ -60,6 +62,9 @@ class AvatarServer:
 
     on_send: Callable[[str], Any]
     """Called (on a worker thread) with each valid line the page sends."""
+    on_talk: Callable[[], Any] | None = None
+    """Called (on a worker thread) when the page asks to talk (A6). ``None``
+    ignores the request."""
     snapshot: Callable[[], list[StateMessage | ChatMessage]] = list
     """Messages a newly connected page is sent first."""
     character: bytes | None = None
@@ -173,8 +178,12 @@ class AvatarServer:
                 parsed = parse_inbound(raw)
                 if parsed is None:
                     continue
-                _kind, text = parsed
+                kind, text = parsed
                 loop = asyncio.get_running_loop()
+                if kind == "talk":
+                    if self.on_talk is not None:
+                        loop.run_in_executor(self._worker, self._call_talk)
+                    continue
                 loop.run_in_executor(self._worker, self._call_send, text)
         except Exception:  # noqa: BLE001 - a dropped page is ordinary
             logger.debug("avatar connection ended", exc_info=True)
@@ -186,6 +195,12 @@ class AvatarServer:
             self.on_send(text)
         except Exception:  # noqa: BLE001
             logger.exception("avatar request failed")
+
+    def _call_talk(self) -> None:
+        try:
+            self.on_talk()
+        except Exception:  # noqa: BLE001
+            logger.exception("avatar talk failed")
 
     # --- outbound -------------------------------------------------------------
 

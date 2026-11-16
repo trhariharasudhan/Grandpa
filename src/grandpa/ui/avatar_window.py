@@ -132,12 +132,105 @@ def browser_address(ws_url: str, page_port: int) -> str:
     return f"http://127.0.0.1:{page_port}/index.html#ws={quote(ws_url, safe='')}"
 
 
+TRAY_OFF = "Tray: off (install the tray extra: uv sync --extra avatar --extra tray)."
+
+
+class AvatarTray:
+    """The tray icon (A6): left-click shows or hides the window; Quit closes it.
+
+    It only shows, hides and closes this one window. It reaches nothing in
+    Grandpa, so it cannot become a way around a confirmation.
+    """
+
+    def __init__(self, window: Any, pystray_module: Any, image: Any = None) -> None:
+        self._window = window
+        self._pystray = pystray_module
+        self._image = image
+        self.visible = True
+        self.icon: Any = None
+        self._lock = threading.Lock()
+
+    def toggle(self, *_args: Any) -> bool:
+        with self._lock:
+            if self.visible:
+                self._window.hide()
+            else:
+                self._window.show()
+            self.visible = not self.visible
+        self._refresh()
+        return self.visible
+
+    def quit(self, *_args: Any) -> None:
+        self.stop()
+        self._window.destroy()
+
+    def label(self, *_args: Any) -> str:
+        return "Hide Grandpa" if self.visible else "Show Grandpa"
+
+    def menu(self) -> Any:
+        item = self._pystray.MenuItem
+        return self._pystray.Menu(
+            item(self.label, self.toggle, default=True),
+            item("Quit Grandpa", self.quit),
+        )
+
+    def start(self) -> None:
+        if self._image is None:
+            from grandpa.tray import create_placeholder_icon
+
+            self._image = create_placeholder_icon()
+        self.icon = self._pystray.Icon(
+            "grandpa-avatar", icon=self._image, title="Grandpa", menu=self.menu()
+        )
+        run_detached = getattr(self.icon, "run_detached", None)
+        if callable(run_detached):
+            run_detached()
+        else:  # pragma: no cover - older pystray
+            threading.Thread(
+                target=self.icon.run, name="grandpa-avatar-tray", daemon=True
+            ).start()
+
+    def stop(self) -> None:
+        icon, self.icon = self.icon, None
+        if icon is not None:
+            try:
+                icon.stop()
+            except Exception:  # noqa: BLE001 - the window still closes
+                pass
+
+    def _refresh(self) -> None:
+        update = getattr(self.icon, "update_menu", None)
+        if callable(update):
+            try:
+                update()
+            except Exception:  # noqa: BLE001 - a stale label is harmless
+                pass
+
+
+def start_tray(window: Any, *, pystray_module: Any = None) -> AvatarTray | None:
+    """Start the tray icon for ``window``; ``None`` when pystray is missing."""
+    if pystray_module is None:
+        try:
+            import pystray as pystray_module
+        except Exception:  # noqa: BLE001 - ImportError, or no display backend
+            return None
+    tray = AvatarTray(window, pystray_module)
+    try:
+        tray.start()
+    except Exception:  # noqa: BLE001 - no tray is not a broken avatar
+        return None
+    return tray
+
+
 def run_window(
     ws_url: str,
     *,
     on_top: bool = True,
     debug: bool = False,
+    tray: bool = False,
+    echo: Any = None,
     webview_module: Any = None,
+    pystray_module: Any = None,
 ) -> None:
     """Open the window and block until it is closed (pywebview owns the loop)."""
     if webview_module is None:
@@ -167,10 +260,24 @@ def run_window(
         window.evaluate_js(connect_script(ws_url))
 
     window.events.loaded += _hand_over
-    webview_module.start(http_server=True, debug=debug)
+    icon = None
+    if tray:
+        icon = start_tray(window, pystray_module=pystray_module)
+        if echo is not None:
+            echo(
+                "Tray: click the Grandpa icon to show or hide him."
+                if icon
+                else TRAY_OFF
+            )
+    try:
+        webview_module.start(http_server=True, debug=debug)
+    finally:
+        if icon is not None:
+            icon.stop()
 
 
 __all__ = [
+    "AvatarTray",
     "BACKGROUND",
     "COLLAPSED",
     "EXPANDED",
@@ -183,4 +290,6 @@ __all__ = [
     "missing_pywebview",
     "run_window",
     "serve_page",
+    "start_tray",
+    "TRAY_OFF",
 ]
