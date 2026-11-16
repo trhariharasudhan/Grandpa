@@ -143,6 +143,13 @@ class VoiceSession:
     _last_spoken_at: float | None = field(default=None, init=False, repr=False)
     _last_timing: dict[str, float] = field(default_factory=dict, init=False, repr=False)
     _last_quiet_message: str | None = field(default=None, init=False, repr=False)
+    #: B2: an always-listening "Hey Grandpa" source (``hands_free.WakeGate``).
+    #: When set, it replaces the transcript-based wake loop: nothing is sent to
+    #: Whisper until the wake model fires, and saying "Hey Grandpa" while he is
+    #: speaking stops the reply and listens (barge-in).
+    audio_wake: object | None = None
+    barge_in_enabled: bool = True
+    _barged_in: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         if self.presenter is None:
@@ -184,7 +191,9 @@ class VoiceSession:
                     self.presenter.print_error(msg)
                     return 1
 
-            if self.wake_word_enabled:
+            if self.audio_wake is not None:
+                self._run_audio_wake_loop(stop)
+            elif self.wake_word_enabled:
                 self._run_wake_word_loop(stop)
             else:
                 self._run_direct_loop(stop)
@@ -274,6 +283,55 @@ class VoiceSession:
             self._handle_transcript(command, stop)
             if not stop.is_set():
                 self.presenter.print_status("Returning to wake-word mode...")
+
+    def _run_audio_wake_loop(self, stop: threading.Event) -> None:
+        """B2: idle on the wake model, then one VAD-captured command.
+
+        Whisper never runs while he is idle: only the small wake model hears
+        the room. After "Hey Grandpa" the ordinary microphone capture takes
+        the command (speech start to trailing silence). A barge-in during the
+        reply skips the wait and listens for the next command at once.
+        """
+
+        gate = self.audio_wake
+        gate.start()
+        label = getattr(gate, "label", "Hey Grandpa")
+        listen_now = False
+        while not stop.is_set():
+            if not listen_now:
+                self.state = VoiceSessionState.WAITING_FOR_WAKE_WORD
+                self.presenter.print_status(f"Say '{_spoken_label(label)}'...")
+                event = None
+                while event is None and not stop.is_set():
+                    event = gate.wait_for_wake(stop, timeout=0.5)
+                if stop.is_set():
+                    break
+                self.state = VoiceSessionState.WAKE_DETECTED
+                self.presenter.print_status("Wake word detected.")
+                if self.wake_response_enabled:
+                    self.presenter.print_assistant_message(self.wake_response_text)
+                    self._speak(self.wake_response_text)
+                if stop.is_set():
+                    break
+            listen_now = False
+            gate.clear()
+            self.state = VoiceSessionState.LISTENING_FOR_COMMAND
+            command = self._listen_for_transcript(
+                "Listening for command...", quiet_empty=True
+            )
+            if stop.is_set():
+                break
+            if command is None:
+                self.presenter.print_status(
+                    "No command heard. Returning to wake-word mode."
+                )
+                continue
+            self._barged_in = False
+            self._handle_transcript(command, stop)
+            if self._barged_in and not stop.is_set():
+                self.presenter.print_status("Stopped. Listening...")
+                listen_now = True
+            gate.clear()
 
     def _listen_for_transcript(
         self, prompt: str | None = None, *, quiet_empty: bool = False
@@ -593,15 +651,24 @@ class VoiceSession:
             return
         stop = self.stop_event or threading.Event()
         self._reset_microphone()
+        self._barged_in = False
+        utterance_stop, done = self._start_barge_in_watch(stop)
         try:
-            self.speaker.speak(text, stop_event=stop)
-            if not self._wait_for_speaker(stop) or stop.is_set():
-                return
+            self.speaker.speak(text, stop_event=utterance_stop)
+            finished = self._wait_for_speaker(utterance_stop)
         except Exception as exc:
             self.presenter.print_error(
                 f"Text-to-speech is unavailable. TTS failed: {type(exc).__name__}: {exc}"
             )
             logger.warning("Voice assistant TTS error: %s", exc)
+            return
+        finally:
+            done.set()
+        if self._barged_in:
+            # Interrupted on purpose: no echo window and no cooldown, so the
+            # loop goes straight to listening for what the user says next.
+            return
+        if not finished or stop.is_set():
             return
         self._last_spoken_text = normalize_echo_text(text)
         self._last_spoken_at = self.clock()
@@ -609,6 +676,45 @@ class VoiceSession:
         if cooldown_seconds and self.cooldown_wait(stop, cooldown_seconds):
             return
         self._reset_microphone()
+
+    def _start_barge_in_watch(
+        self, stop: threading.Event
+    ) -> tuple[threading.Event, threading.Event]:
+        """While a reply plays, a "Hey Grandpa" stops it (B2 barge-in).
+
+        Returns the event the speaker should obey and a ``done`` event the
+        caller sets when speech is over. Without an audio wake source, or with
+        barge-in off, the speaker simply obeys the session's own stop.
+        """
+
+        done = threading.Event()
+        gate = self.audio_wake
+        if gate is None or not self.barge_in_enabled:
+            return stop, done
+        gate.clear()
+        utterance_stop = threading.Event()
+
+        def watch() -> None:
+            while not done.is_set():
+                if stop.is_set():
+                    utterance_stop.set()
+                    return
+                try:
+                    event = gate.wait_for_wake(stop, timeout=0.05)
+                except Exception:  # noqa: BLE001 - a dead mic must not kill speech
+                    logger.debug("barge-in watch stopped", exc_info=True)
+                    return
+                if event is not None and not done.is_set():
+                    self._barged_in = True
+                    utterance_stop.set()
+                    stopper = getattr(self.speaker, "stop", None)
+                    if callable(stopper):
+                        stopper()
+                    logger.info("barge-in: %s", getattr(event, "describe", str)())
+                    return
+
+        threading.Thread(target=watch, name="grandpa-barge-in", daemon=True).start()
+        return utterance_stop, done
 
     def _wait_for_speaker(self, stop: threading.Event) -> bool:
         if self.speaker is None:
@@ -733,6 +839,12 @@ class VoiceSession:
         )
 
     def _cleanup(self) -> None:
+        gate_stop = getattr(self.audio_wake, "stop", None)
+        if callable(gate_stop):
+            try:
+                gate_stop()
+            except Exception:
+                logger.debug("Wake-word microphone cleanup failed", exc_info=True)
         closer = getattr(self.microphone, "close", None)
         if closer is not None:
             try:
@@ -767,6 +879,8 @@ def build_voice_session(
     transcriber: Transcriber | None = None,
     speaker: Speaker | None = None,
     phrase_duration_limit: float | None = None,
+    audio_wake: object | None = None,
+    barge_in: bool = True,
     debug: bool = False,
 ) -> VoiceSession:
     """Construct the default offline voice session components."""
@@ -867,6 +981,8 @@ def build_voice_session(
         # WARNING on an ordinary run, because a user who waited ten minutes should
         # not have had to know to re-run with a flag to find out why.
         debug=debug or verbose,
+        audio_wake=audio_wake,
+        barge_in_enabled=barge_in,
     )
 
 
@@ -927,6 +1043,16 @@ def _too_thin_to_transcribe(voiced_seconds: float, speech_rms: float) -> bool:
     """
     del speech_rms
     return voiced_seconds < MIN_TRANSCRIBE_VOICED_SECONDS
+
+
+def _spoken_label(label: str) -> str:
+    """``hey_grandpa`` / ``hey_grandpa.onnx`` -> ``Hey Grandpa``."""
+
+    stem = str(label or "").rsplit("/", 1)[-1].rsplit("\\", 1)[-1]
+    if stem.lower().endswith(".onnx") or stem.lower().endswith(".tflite"):
+        stem = stem.rsplit(".", 1)[0]
+    words = stem.replace("_", " ").replace("-", " ").split()
+    return " ".join(word.capitalize() for word in words) or "Hey Grandpa"
 
 
 def is_exit_phrase(text: str) -> bool:
