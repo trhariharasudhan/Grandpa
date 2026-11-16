@@ -138,6 +138,23 @@ def handles_voice_errors(command):
     help='Do not speak the "Yes?" wake acknowledgement.',
 )
 @click.option(
+    "--hey-grandpa",
+    is_flag=True,
+    help='Always listen for "Hey Grandpa" with the local wake model (B2). '
+    "Say it again while he talks to interrupt him.",
+)
+@click.option(
+    "--wake-model",
+    default=None,
+    help="Wake model for --hey-grandpa: a .onnx file or a built-in name such "
+    "as hey_mycroft. Default: ~/.Grandpa/wakeword/hey_grandpa.onnx",
+)
+@click.option(
+    "--no-barge-in",
+    is_flag=True,
+    help="With --hey-grandpa: do not let the wake word interrupt a reply.",
+)
+@click.option(
     "--list-microphones", is_flag=True, help="List input microphone devices and exit."
 )
 @click.option("--list-voices", is_flag=True, help="List local TTS voices and exit.")
@@ -164,6 +181,9 @@ def voice(
     wake_word: bool,
     wake_phrase: tuple[str, ...],
     no_wake_response: bool,
+    hey_grandpa: bool,
+    wake_model: str | None,
+    no_barge_in: bool,
     list_microphones: bool,
     list_voices: bool,
     diagnose: bool,
@@ -195,6 +215,10 @@ def voice(
         _print_diagnostics(run_voice_doctor(duration_seconds=0))
         return
 
+    audio_wake = None
+    if hey_grandpa:
+        audio_wake = _hey_grandpa_gate(wake_model, microphone)
+
     try:
         config = load_voice_assistant_config(
             model=model,
@@ -202,7 +226,7 @@ def voice(
             device=stt_device,
             microphone=microphone,
             tts_enabled=not no_tts,
-            wake_word_enabled=wake_word,
+            wake_word_enabled=wake_word or hey_grandpa,
             wake_phrases=wake_phrase or None,
             wake_response_enabled=not no_wake_response,
         )
@@ -219,6 +243,8 @@ def voice(
             quiet=ctx.obj.get("quiet", False) if ctx.obj else False,
             verbose=ctx.obj.get("verbose", False) if ctx.obj else False,
             screen_reader=screen_reader,
+            audio_wake=audio_wake,
+            barge_in=not no_barge_in,
         )
         raise SystemExit(session.run())
     except VoiceError as exc:
@@ -229,6 +255,24 @@ def voice(
         safe_cli_error(f"Voice mode could not initialize: {type(exc).__name__}: {exc}")
         safe_cli_error(f"Technical details were written to: {log_path}")
         raise SystemExit(1) from None
+
+
+def _hey_grandpa_gate(wake_model: str | None, microphone: int | None):
+    """The B2 wake source, or a clear message saying what is missing."""
+
+    from grandpa.voice import wake_engine as we
+    from grandpa.voice.hands_free import WakeGate
+
+    try:
+        engine = we.WakeWordEngine(we.WakeEngineConfig.from_env(model=wake_model))
+    except (we.WakeEngineUnavailable, ValueError) as exc:
+        safe_cli_error(str(exc))
+        safe_cli_error(
+            "Without a wake model, use `grandpa voice push-to-talk`, or "
+            "`grandpa voice --wake-word` (wake phrase found by Whisper)."
+        )
+        raise SystemExit(1) from None
+    return WakeGate(engine, device=microphone)
 
 
 @voice.command("doctor")

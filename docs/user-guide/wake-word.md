@@ -72,5 +72,18 @@ Licence note: openWakeWord's code is Apache-2.0; its *built-in* models
 (`hey_mycroft` etc.) are CC-BY-NC-SA 4.0. Your own trained model is not one of
 those built-ins.
 
-Next (B2): the voice loop listens for the wake word all the time and starts a
-command after it; push-to-talk stays.
+## Hands-free: `grandpa voice --hey-grandpa` (B2)
+
+```powershell
+grandpa voice --hey-grandpa                      # your hey_grandpa.onnx
+grandpa voice --hey-grandpa --wake-model hey_mycroft   # check with a built-in
+grandpa voice --hey-grandpa --no-barge-in        # never interrupt a reply
+```
+
+* While idle only the small wake model hears the room. Whisper does not run.
+* After "Hey Grandpa" he says "Yes?" (turn off with `--no-wake-response`), then
+  the normal speech detector records your command until you stop talking.
+* **Barge-in:** say "Hey Grandpa" while he is answering and he stops at once
+  and listens for the next command.
+* Confirmations work as before: risky actions still ask, and you answer by voice.
+* `grandpa voice push-to-talk` is unchanged and still the most reliable option.
