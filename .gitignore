@@ -169,3 +169,7 @@ assets/avatar/source/_preview/
 assets/avatar/**/*.blend1
 assets/avatar/*.glb.bak
 assets/avatar/source/_reference/
+
+# B1: trained wake models stay local (docs/user-guide/wake-word.md)
+assets/wakeword/*.onnx
+assets/wakeword/*.tflite

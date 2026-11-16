@@ -146,6 +146,7 @@ nav:
   - User Guide:
       - CLI: user-guide/cli.md
       - Voice Operator: user-guide/voice-operator.md
+      - Wake Word: user-guide/wake-word.md
       - Windows Automation: user-guide/windows-automation.md
       - Screen and OCR: user-guide/screen-and-ocr.md
       - Memory: user-guide/memory.md
