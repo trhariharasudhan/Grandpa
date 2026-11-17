@@ -985,7 +985,66 @@ def _parse_screen_action(command: str) -> LocalActionResult:
             tts_text="Analyzing the current screen.",
         )
 
+    name = _screen_click_target(command)
+    if name:
+        return LocalActionResult(
+            status="handled",
+            kind="screen",
+            target=f"click|{name}",
+            message=f'Pressing "{name}" in the window in front.',
+            tts_text=f"Pressing {name}.",
+        )
+
     return LocalActionResult(status="no_match")
+
+
+# Shapes other parsers own ("click the center of the screen" is a mouse click,
+# "click the first video" a browser one), and words that name no control.
+_NOT_SCREEN_CLICK_TARGETS = frozenset(
+    {
+        "center of the screen",
+        "highlighted button",
+        "first video",
+        "here",
+        "it",
+        "this",
+        "that",
+        "there",
+        "button",
+        "link",
+        "mouse",
+    }
+)
+
+
+def _screen_click_target(command: str) -> str:
+    """C3: "click Save", "click on the OK button", "press the Don't Save button".
+
+    "press X" only with a control word after it, so "press enter" and other
+    keys stay with the keyboard. Coordinates ("click 300 400") are not names.
+    """
+    match = re.fullmatch(
+        r"(?:click|tap)(?:\s+on)?\s+(?:the\s+)?(.+?)"
+        r"(?:\s+(?:button|link|tab|menu item|menu|option|checkbox))?",
+        command,
+    ) or re.fullmatch(
+        r"press(?:\s+on)?\s+(?:the\s+)?(.+?)\s+(?:button|link|tab|option)",
+        command,
+    )
+    if not match:
+        return ""
+    whole = re.sub(r"^(?:click|tap|press)(?:\s+on)?\s+(?:the\s+)?", "", command)
+    if whole in _NOT_SCREEN_CLICK_TARGETS:
+        return ""
+    name = match.group(1).strip().strip("\"'").strip()
+    if (
+        not name
+        or name in _NOT_SCREEN_CLICK_TARGETS
+        or re.fullmatch(r"[\d\s,x]+", name)
+        or name.startswith(("at ", "the center", "first "))
+    ):
+        return ""
+    return name
 
 
 def _parse_browser_action(command: str) -> LocalActionResult:

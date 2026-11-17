@@ -826,6 +826,27 @@ def read_window_answer() -> ScreenAnswer:
     return ScreenAnswer(result.status, result.message)
 
 
+def screen_click_answer(target: str) -> ScreenAnswer:
+    """Press the control ``target`` names in the window in front (C3).
+
+    Asked first by the caller (screen_click is on the always-confirm list).
+    Credential screens, password fields, greyed-out controls and controls that
+    pay, sign in, submit, send or delete are refused whatever was approved.
+    """
+    from grandpa.screen.errors import ScreenError, SensitiveScreenDetectedError
+    from grandpa.screen.service import ScreenVisionService
+
+    if not str(target or "").strip():
+        return ScreenAnswer("error", "Say which button or link to press.")
+    try:
+        result = ScreenVisionService().click(str(target))
+    except SensitiveScreenDetectedError as exc:
+        return ScreenAnswer("blocked", str(exc))
+    except ScreenError as exc:
+        return ScreenAnswer("unsupported", str(exc))
+    return ScreenAnswer(result.status, result.message)
+
+
 def screen_diagnostics_answer() -> ScreenAnswer:
     """Report what screen awareness can do on this machine."""
     diagnostics = screen_diagnostics()

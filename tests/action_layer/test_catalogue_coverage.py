@@ -161,6 +161,8 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     "screen_active_window": ("LOW", NONE),
     # C2: reads the window in front; password fields skipped, text redacted.
     "read_window": ("LOW", NONE),
+    # C3: presses a named control in the window in front; asks every time.
+    "screen_click": ("MEDIUM", LAYER),
     "screen_diagnostics": ("LOW", NONE),
     "apps_scan": ("LOW", NONE),
     "apps_list": ("LOW", NONE),
@@ -343,6 +345,8 @@ def test_confirmation_is_not_decoration() -> None:
         "gmail_trash",
         "browser_page",
         "process_kill",
+        # C3: a press in another app acts on the user's behalf there.
+        "screen_click",
     }, asking
 
 

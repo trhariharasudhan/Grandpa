@@ -190,6 +190,11 @@ _ALWAYS_CONFIRM = frozenset(
         # so its tier stays LOW, but a model must not do it unasked (V1-T6);
         # the power service already rates it HIGH (desktop/control/power.py).
         "system_lock",
+        # C3: pressing a named button or link in the window in front. It is
+        # not synthetic input -- UI Automation presses the element itself --
+        # but it acts on the user's behalf in an app a model chose to act in,
+        # so it asks every time, and the ask names the control.
+        "screen_click",
         # browser_form_fill and browser_download are in pc_control's set too,
         # but are excluded from this catalogue as stubs -- see EXCLUSIONS.
     }
@@ -437,6 +442,7 @@ _CALLS: dict[str, _Call] = {
     "screen_describe": _Call(Binding.FUNCTION_KWARGS),
     "screen_active_window": _Call(Binding.FUNCTION_KWARGS),
     "read_window": _Call(Binding.FUNCTION_KWARGS),
+    "screen_click": _Call(Binding.FUNCTION_KWARGS),
     "screen_diagnostics": _Call(Binding.FUNCTION_KWARGS),
     "screenshot_describe": _Call(Binding.SERVICE_ONLY),
     # files
@@ -2241,6 +2247,25 @@ _SCREEN_ACTIONS: tuple[ActionSpec, ...] = (
         "screen is refused by its title before reading and by its text after.",
     ),
     _spec(
+        "screen_click",
+        _MEDIUM,
+        "Press a button, link, tab or menu item in the window in front, by "
+        "the name shown on it, e.g. 'Save' or 'Don't Save'.",
+        f"{_SCREEN}.screen_click_answer",
+        _schema(
+            {
+                "target": _string(
+                    "The control's visible name, exactly as shown, e.g. 'OK'."
+                )
+            },
+            ("target",),
+        ),
+        notes="On the approval list. Presses through UI Automation, not the "
+        "mouse. Refuses credential screens, password fields, greyed-out "
+        "controls, and anything that pays, signs in, submits, sends or "
+        "deletes, whatever was approved. An unclear name presses nothing.",
+    ),
+    _spec(
         "screen_diagnostics",
         _LOW,
         "Report what screen reading can do on this machine.",
@@ -2451,6 +2476,9 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
         "screen_describe": ("OCR of the screen. No pc_control entry."),
         "screen_active_window": ("The window in front. No pc_control entry."),
         "read_window": ("The text of the window in front (C2). No pc_control entry."),
+        "screen_click": (
+            "Press a named control in the window in front (C3). No pc_control entry."
+        ),
         "screen_diagnostics": ("Screen reading readiness. No pc_control entry."),
         "system_info": (
             "Platform facts. pc_control has no entry for them: the answer lived "
@@ -2582,6 +2610,8 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             # C2. Here, not in diagnostics: one more "screen" action name there
             # outweighed brightness for "what is my screen brightness set to".
             "read_window",
+            # C3: press a named control in the window in front.
+            "screen_click",
         ),
         "system": (
             "system_lock",
