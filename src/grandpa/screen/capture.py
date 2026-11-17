@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import datetime
 from importlib import util as importlib_util
@@ -20,6 +21,7 @@ from grandpa.screen.errors import (
     ScreenCaptureError,
 )
 from grandpa.screen.models import ScreenshotResult
+from grandpa.screen.privacy import check_capture
 from grandpa.screen.windows import (
     get_active_window,
     list_monitors,
@@ -34,8 +36,14 @@ def available_capture_backend() -> str:
 
 
 class ScreenCapture:
-    def __init__(self, config: ScreenConfig | None = None) -> None:
+    def __init__(
+        self,
+        config: ScreenConfig | None = None,
+        *,
+        privacy_check: Callable[..., None] | None = None,
+    ) -> None:
         self.config = config or ScreenConfig.load()
+        self.privacy_check = privacy_check or check_capture
 
     def capture(
         self,
@@ -88,6 +96,12 @@ class ScreenCapture:
             available_capture_backend(),
             selected_monitor,
         )
+        # C4: before a single pixel. A listed app on screen (or, for an
+        # active-window capture, in front) or a focused password box refuses.
+        if capture_source == "active_window":
+            self.privacy_check(window=window)
+        else:
+            self.privacy_check(region=region)
         image, backend = self._capture_region(region)
         if _is_black_image(image):
             raise ScreenCaptureError(

@@ -95,6 +95,60 @@ def window(language: str | None, max_chars: int) -> None:
     _run(lambda: _service().read_window(language=language, max_chars=max_chars))
 
 
+@screen.group("private", invoke_without_command=True)
+@click.pass_context
+def private(ctx: click.Context) -> None:
+    """Apps Grandpa never looks at (screenshots, OCR, reading, pressing)."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from grandpa.screen.privacy import (
+        DEFAULT_BLOCKED_APPS,
+        DEFAULT_BLOCKED_TITLES,
+        blocklist_path,
+        read_user_entries,
+    )
+
+    click.echo("Built in (always on):")
+    click.echo("  apps:   " + ", ".join(sorted(DEFAULT_BLOCKED_APPS)))
+    click.echo("  titles: " + ", ".join(DEFAULT_BLOCKED_TITLES))
+    entries = read_user_entries()
+    click.echo(f"Yours ({blocklist_path()}):")
+    click.echo("  " + (", ".join(entries) if entries else "(none yet)"))
+    click.echo("Add one: grandpa screen private add whatsapp.exe")
+    click.echo("Also refused: any capture while the cursor is in a password box.")
+
+
+@private.command("add")
+@click.argument("entry", nargs=-1, required=True)
+def private_add(entry: tuple[str, ...]) -> None:
+    """Add an app (whatsapp.exe) or words from a window title (salary)."""
+    from grandpa.screen.privacy import add_user_entry
+
+    value = " ".join(entry)
+    try:
+        added = add_user_entry(value)
+    except ValueError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(
+        f"Added {value.strip().casefold()}. Grandpa will not look at it."
+        if added
+        else f"{value.strip().casefold()} is already on the list."
+    )
+
+
+@private.command("remove")
+@click.argument("entry", nargs=-1, required=True)
+def private_remove(entry: tuple[str, ...]) -> None:
+    """Remove one of your own entries (built-in ones always stay)."""
+    from grandpa.screen.privacy import remove_user_entry
+
+    value = " ".join(entry).strip().casefold()
+    if remove_user_entry(value):
+        click.echo(f"Removed {value}.")
+    else:
+        click.echo(f"{value} is not one of your entries; nothing changed.")
+
+
 @screen.command("click")
 @click.argument("name", nargs=-1, required=True)
 def click_control(name: tuple[str, ...]) -> None:
