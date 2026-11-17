@@ -273,6 +273,13 @@ class DeviceStore:
                 self._log(conn, "revoked", device_id=device_id)
             return bool(cur.rowcount)
 
+    def log_event(
+        self, event: str, *, device_id: str | None = None, detail: str = ""
+    ) -> None:
+        """Add one line to the device log (``grandpa devices log``)."""
+        with self._connect() as conn:
+            self._log(conn, event, device_id=device_id, detail=detail)
+
     def events(self, limit: int = 50) -> list[dict]:
         with self._connect() as conn:
             rows = conn.execute(
