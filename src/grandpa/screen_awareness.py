@@ -171,6 +171,18 @@ def capture_screenshot() -> ScreenContext:
             app_name=window.app_name,
             message=SENSITIVE_SCREEN_MESSAGE,
         )
+    # C4: a private app anywhere on screen, or the focus in a password box.
+    from grandpa.screen.privacy import PrivateWindowError, check_capture
+
+    try:
+        check_capture()
+    except PrivateWindowError as exc:
+        return ScreenContext(
+            supported=True,
+            window_title=window.window_title,
+            app_name=window.app_name,
+            message=str(exc),
+        )
 
     target_dir = Path.home() / ".grandpa" / "screenshots"
     target_dir.mkdir(parents=True, exist_ok=True)

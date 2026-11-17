@@ -22,6 +22,7 @@ from grandpa.screen.models import (
     WindowInfo,
 )
 from grandpa.screen.ocr import TesseractOcrEngine
+from grandpa.screen.privacy import check_window
 from grandpa.screen.redaction import is_sensitive_screen, redact_screen_text
 from grandpa.screen.window_click import (
     ControlReader,
@@ -163,6 +164,7 @@ class ScreenVisionService:
         title = window.title or "the active window"
         if is_sensitive_screen(title=window.title):
             raise SensitiveScreenDetectedError(SENSITIVE_MESSAGE)
+        check_window(window)  # C4: a private app is never read
         text, truncated = collect_text(
             self.window_reader(window.handle), max_chars=max_chars
         )
@@ -226,6 +228,7 @@ class ScreenVisionService:
         title = window.title or "the active window"
         if is_sensitive_screen(title=window.title):
             raise SensitiveScreenDetectedError(SENSITIVE_MESSAGE)
+        check_window(window)  # C4: nothing is pressed in a private app
         text, _ = collect_text(self.window_reader(window.handle))
         if text and is_sensitive_screen(title=window.title, text=text):
             logger.warning("Sensitive window detected; click refused")
