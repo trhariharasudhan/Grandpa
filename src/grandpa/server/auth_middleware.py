@@ -45,8 +45,14 @@ PAIRING_PATH = "/v1/devices/pair"
 #: API key: everything else under /v1/ and /api/ still needs the key. D2 adds
 #: the command and voice routes, which run the action layer with no way to
 #: confirm, so anything that needs a yes is refused (see grandpa.devices.commands).
+#: D3 adds the read-only notifications outbox.
 DEVICE_ALLOWED_PATHS = frozenset(
-    {"/v1/devices/me", "/v1/devices/command", "/v1/devices/voice"}
+    {
+        "/v1/devices/me",
+        "/v1/devices/command",
+        "/v1/devices/voice",
+        "/v1/devices/notifications",
+    }
 )
 
 

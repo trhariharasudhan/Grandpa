@@ -332,7 +332,8 @@ def test_application_startup_starts_and_shutdown_stops_scheduler(monkeypatch):
     class FakeDaemon:
         instances: list["FakeDaemon"] = []
 
-        def __init__(self):
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
             self.started = False
             self.stopped = False
             FakeDaemon.instances.append(self)
@@ -359,6 +360,10 @@ def test_application_startup_starts_and_shutdown_stops_scheduler(monkeypatch):
         assert FakeDaemon.instances[-1].stopped is False
 
     assert FakeDaemon.instances[-1].stopped is True
+    from grandpa.devices.notifications import PhoneReminderNotifier
+
+    notifier = FakeDaemon.instances[-1].kwargs["reminder_notifier"]
+    assert isinstance(notifier, PhoneReminderNotifier)
 
 
 def test_missing_windows_notification_backend_gives_setup_guidance(
