@@ -8,6 +8,7 @@ import time
 from fastapi import FastAPI
 
 from grandpa.server.api_routes import include_all_routes
+from grandpa.server.device_routes import router as device_router
 from grandpa.server.routes import router
 from grandpa.server.upload_router import router as upload_router
 
@@ -122,6 +123,7 @@ def create_app(
 
     app.include_router(router)
     app.include_router(upload_router)
+    app.include_router(device_router)
     include_all_routes(app)
 
     # Add security headers middleware

@@ -37,37 +37,72 @@ def api_key_from_env() -> str:
     return legacy
 
 
+#: The one API route a phone may call before it has a token: it trades a
+#: pairing code (opened on the PC by ``grandpa devices pair``) for one.
+PAIRING_PATH = "/v1/devices/pair"
+
+#: The routes a paired device's token opens (D1). A device token is not the
+#: API key: everything else under /v1/ and /api/ still needs the key. D2 adds
+#: routes here one at a time, each behind its own confirmation rules.
+DEVICE_ALLOWED_PATHS = frozenset({"/v1/devices/me"})
+
+
 class AuthMiddleware:
     """Validate bearer credentials on protected HTTP and WebSocket routes.
 
     Health and other non-API routes are exempt. All API routes are protected
-    when an API key is configured.
+    when an API key is configured. A paired device's token (``gp_dev_...``)
+    is accepted only on ``DEVICE_ALLOWED_PATHS``.
     """
 
-    def __init__(self, app: ASGIApp, api_key: str = "") -> None:
+    def __init__(self, app: ASGIApp, api_key: str = "", device_store=None) -> None:
         self.app = app
         self._api_key = api_key or api_key_from_env()
+        self._device_store = device_store
+
+    def _devices(self):
+        if self._device_store is None:
+            from grandpa.devices import DeviceStore
+
+            self._device_store = DeviceStore()
+        return self._device_store
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         scope_type = scope.get("type")
+        path = scope.get("path", "")
         if (
             not self._api_key
             or scope_type not in {"http", "websocket"}
-            or not self._requires_auth(scope.get("path", ""))
+            or not self._requires_auth(path)
+            or (
+                scope_type == "http"
+                and path == PAIRING_PATH
+                and scope.get("method") == "POST"
+            )
         ):
             await self.app(scope, receive, send)
             return
 
         auth = self._authorization_header(scope)
         scheme, separator, token = auth.partition(" ")
-        valid = (
-            bool(separator)
-            and scheme.lower() == "bearer"
-            and secrets.compare_digest(token, self._api_key)
-        )
+        bearer = bool(separator) and scheme.lower() == "bearer"
+        valid = bearer and secrets.compare_digest(token, self._api_key)
         if valid:
             await self.app(scope, receive, send)
             return
+
+        if bearer and path in DEVICE_ALLOWED_PATHS:
+            from grandpa.devices import DEVICE_TOKEN_PREFIX
+
+            if token.startswith(DEVICE_TOKEN_PREFIX):
+                try:
+                    device = self._devices().authenticate(token)
+                except Exception as exc:  # a broken store must fail closed
+                    logger.warning("Device token check failed: %s", exc)
+                    device = None
+                if device is not None:
+                    await self.app(scope, receive, send)
+                    return
 
         if scope_type == "websocket":
             await send({"type": "websocket.close", "code": 1008})
