@@ -230,6 +230,9 @@ def _confirmation_summary(command: str, result: LocalActionResult) -> str:
         if result.target.startswith("click|"):
             return "Confirmation required before clicking the screen."
         return "Confirmation required before controlling the active app."
+    if result.kind == "screen" and result.target.startswith("click|"):
+        name = result.target.split("|", 1)[1]
+        return f'Confirmation required before pressing "{name}" in the window in front.'
     if result.kind == "folder":
         return "Confirmation required before opening that folder."
     if result.kind in {"url", "browser"} and parsers._is_browser_navigation(
@@ -284,6 +287,14 @@ def classify_permission(command: str, result: LocalActionResult) -> PermissionSt
             word in result.target.lower()
             for word in ("submit", "checkout", "payment", "purchase", "buy", "login")
         ):
+            return "blocked"
+        return "requires_confirmation"
+    if result.kind == "screen" and result.target.startswith("click|"):
+        # C3: pressing a named control. Refused before anyone is asked when
+        # the name pays, signs in, submits, sends or deletes; asked otherwise.
+        from grandpa.screen.window_click import is_risky
+
+        if is_risky(result.target.split("|", 1)[1]):
             return "blocked"
         return "requires_confirmation"
     if result.kind == "browser" and result.target.startswith(

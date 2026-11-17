@@ -23,6 +23,15 @@ from grandpa.screen.models import (
 )
 from grandpa.screen.ocr import TesseractOcrEngine
 from grandpa.screen.redaction import is_sensitive_screen, redact_screen_text
+from grandpa.screen.window_click import (
+    ControlReader,
+    Presser,
+    find_control,
+    is_risky,
+    press,
+    read_uia_controls,
+    visible_names,
+)
 from grandpa.screen.window_text import (
     DEFAULT_MAX_CHARS,
     NodeReader,
@@ -51,6 +60,8 @@ class ScreenVisionService:
         eyes: Callable[..., EyesSummary] | None = None,
         window_reader: NodeReader | None = None,
         active_window_provider: Callable[[], WindowInfo] | None = None,
+        control_reader: ControlReader | None = None,
+        presser: Presser | None = None,
     ) -> None:
         self.config = config or ScreenConfig.load()
         self.capture_backend = capture or ScreenCapture(self.config)
@@ -60,6 +71,8 @@ class ScreenVisionService:
         self.eyes = eyes
         self.window_reader = window_reader or read_uia_nodes
         self.active_window_provider = active_window_provider or get_active_window
+        self.control_reader = control_reader or read_uia_controls
+        self.presser = presser or press
 
     def capture(
         self,
@@ -197,6 +210,117 @@ class ScreenVisionService:
                 "truncated": truncated,
                 "redactions": redacted.count,
             },
+        )
+
+    def find_click(
+        self, target: str, *, window: WindowInfo | None = None
+    ) -> ScreenCommandResult:
+        """Find the control ``target`` names in the window in front (C3).
+
+        Presses nothing. ``status`` is "handled" when exactly one pressable,
+        allowed control matches; ``data["window"]`` is the window it is in, to
+        hand back to ``click`` so the press goes to the window that was named
+        even if a confirmation prompt took the focus meanwhile.
+        """
+        window = window or self.active_window_provider()
+        title = window.title or "the active window"
+        if is_sensitive_screen(title=window.title):
+            raise SensitiveScreenDetectedError(SENSITIVE_MESSAGE)
+        text, _ = collect_text(self.window_reader(window.handle))
+        if text and is_sensitive_screen(title=window.title, text=text):
+            logger.warning("Sensitive window detected; click refused")
+            raise SensitiveScreenDetectedError(SENSITIVE_MESSAGE)
+        controls = self.control_reader(window.handle)
+        if not controls:
+            return ScreenCommandResult(
+                "unsupported",
+                f"{title} exposes no buttons or links I can press.",
+                "I cannot press anything in that window.",
+                "screen_click",
+                data={"window": window},
+            )
+        match = find_control(controls, target)
+        if match.control is None:
+            if match.ambiguous:
+                names = ", ".join(
+                    f'"{item.name}"' for item in match.candidates[:6] if item.name
+                )
+                message = (
+                    f'More than one control in {title} matches "{target}": '
+                    f"{names}. Say the full name."
+                )
+                spoken = f'More than one thing matches "{target}". Say the full name.'
+            else:
+                names = ", ".join(f'"{name}"' for name in visible_names(controls))
+                message = f'I could not find "{target}" in {title}.' + (
+                    f" I can see: {names}." if names else ""
+                )
+                spoken = f'I could not find "{target}" in that window.'
+            return ScreenCommandResult(
+                "not_found", message, spoken, "screen_click", data={"window": window}
+            )
+        control = match.control
+        if control.is_password:
+            return ScreenCommandResult(
+                "blocked",
+                "That is a password field. I never press or read those.",
+                "That is a password field. I will not touch it.",
+                "screen_click",
+            )
+        if is_risky(control.name):
+            return ScreenCommandResult(
+                "blocked",
+                f"I will not press {control.label}: it could pay, sign in, "
+                "submit, send or delete something. Please press it yourself.",
+                f"Please press {control.label} yourself.",
+                "screen_click",
+            )
+        if not control.is_enabled:
+            return ScreenCommandResult(
+                "unsupported",
+                f"{control.label.capitalize()} in {title} is greyed out.",
+                f"{control.label.capitalize()} is greyed out.",
+                "screen_click",
+                data={"window": window},
+            )
+        return ScreenCommandResult(
+            "handled",
+            f"Found {control.label} in {title}.",
+            f"Found {control.label}.",
+            "screen_click",
+            data={"window": window, "control": control, "label": control.label},
+        )
+
+    def click(
+        self, target: str, *, window: WindowInfo | None = None
+    ) -> ScreenCommandResult:
+        """Press the control ``target`` names (C3). The caller has asked first.
+
+        Everything ``find_click`` refuses is refused here too, freshly: the
+        tree is walked again at press time, so the press goes to what is there
+        now, not to what was there when the user was asked.
+        """
+        found = self.find_click(target, window=window)
+        if found.status != "handled":
+            return found
+        window = found.data["window"]
+        control = found.data["control"]
+        title = window.title or "the active window"
+        if not self.presser(control):
+            return ScreenCommandResult(
+                "unsupported",
+                f"{control.label.capitalize()} in {title} cannot be pressed "
+                "through accessibility.",
+                f"I could not press {control.label}.",
+                "screen_click",
+            )
+        logger.info("Pressed %s in %s", control.label, title)
+        return ScreenCommandResult(
+            "handled",
+            f"Pressed {control.label} in {title}.",
+            f"Pressed {control.label}.",
+            "screen_click",
+            data={"title": window.title, "control": control.name},
         )
 
     def describe(

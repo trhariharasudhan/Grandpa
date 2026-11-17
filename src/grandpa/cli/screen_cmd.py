@@ -95,6 +95,31 @@ def window(language: str | None, max_chars: int) -> None:
     _run(lambda: _service().read_window(language=language, max_chars=max_chars))
 
 
+@screen.command("click")
+@click.argument("name", nargs=-1, required=True)
+def click_control(name: tuple[str, ...]) -> None:
+    """Press a button or link in the window in front, by its name (asks first).
+
+    The window is the one in front when this starts; the press goes to that
+    window even after you click back into this terminal to answer.
+    """
+    target = " ".join(name).strip()
+    service = _service()
+
+    def run():
+        found = service.find_click(target)
+        if found.status != "handled":
+            return found
+        window = found.data["window"]
+        title = window.title or "the active window"
+        if not click.confirm(f"Press {found.data['label']} in {title}?", default=False):
+            click.echo("Cancelled. Nothing was pressed.")
+            return None
+        return service.click(target, window=window)
+
+    _run(run)
+
+
 @screen.command("describe")
 @_capture_options
 @click.option(

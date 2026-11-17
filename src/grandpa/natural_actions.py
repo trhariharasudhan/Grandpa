@@ -156,6 +156,12 @@ _PREFIXED: dict[tuple[str, str], Callable[[str], MappedRequest]] = {
     # same parser produces for "type hello in notepad". That is focus plus type,
     # two actions, and one catalogued action cannot honestly stand for it.
     ("automation", "type|"): lambda text: ("keyboard_type", {"text": text}),
+    # --- C3: press a named control in the window in front --------------------
+    #
+    # "click Save". Not synthetic input: UI Automation presses the element by
+    # name, so no coordinates can drift. screen_click is on the always-confirm
+    # list, and local.permissions refuses risky names before anyone is asked.
+    ("screen", "click|"): lambda name: ("screen_click", {"target": name}),
 }
 """Shapes matched by kind and target *prefix*, e.g. ("window", "focus|")."""
 
