@@ -43,8 +43,11 @@ PAIRING_PATH = "/v1/devices/pair"
 
 #: The routes a paired device's token opens (D1). A device token is not the
 #: API key: everything else under /v1/ and /api/ still needs the key. D2 adds
-#: routes here one at a time, each behind its own confirmation rules.
-DEVICE_ALLOWED_PATHS = frozenset({"/v1/devices/me"})
+#: the command and voice routes, which run the action layer with no way to
+#: confirm, so anything that needs a yes is refused (see grandpa.devices.commands).
+DEVICE_ALLOWED_PATHS = frozenset(
+    {"/v1/devices/me", "/v1/devices/command", "/v1/devices/voice"}
+)
 
 
 class AuthMiddleware:
