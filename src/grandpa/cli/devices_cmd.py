@@ -5,6 +5,7 @@
   returns at once).
 * ``list``   -- paired devices and when each was last seen.
 * ``revoke`` -- stop a device's token at once.
+* ``notify`` -- send a notification to every paired phone (D3).
 * ``log``    -- the pairing log (who paired, refused codes, revocations).
 """
 
@@ -116,6 +117,19 @@ def revoke(device_id: str) -> None:
         click.echo(f"Revoked {device_id}. Its token no longer works.")
     else:
         raise click.ClickException(f"No active device with id {device_id}.")
+
+
+@devices.command()
+@click.argument("message")
+@click.option("--title", default="Grandpa", show_default=True)
+def notify(message: str, title: str) -> None:
+    """Send a notification to every paired phone (they pick it up next poll)."""
+    new_id = DeviceStore().push_notification(title, message, kind="manual")
+    if new_id is None:
+        raise click.ClickException(
+            "No paired phone to notify. Pair one with: grandpa devices pair"
+        )
+    click.echo(f"Queued notification {new_id} for paired phones.")
 
 
 @devices.command("log")

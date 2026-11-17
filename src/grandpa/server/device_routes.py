@@ -10,6 +10,9 @@
 
 Both run the action-layer tool loop; anything needing a yes is refused and
 listed in ``needs_pc_confirmation``.
+
+* ``GET /v1/devices/notifications?after=<id>`` -- reminders and other
+  notifications made since the phone last asked (D3).
 """
 
 from __future__ import annotations
@@ -115,6 +118,22 @@ def device_command(req: CommandRequest, request: Request) -> dict[str, Any]:
     """``{"text": "set volume to 30"}`` → ``{"reply", "actions", "needs_pc_confirmation"}``."""
     device = _device(request)
     return {"text": req.text, **_run(request, device, req.text)}
+
+
+@router.get("/v1/devices/notifications")
+async def device_notifications(
+    request: Request, after: int = 0, limit: int = 50
+) -> dict[str, Any]:
+    """New notifications for this phone (D3): ``?after=<last id seen>``.
+
+    The phone keeps ``last_id`` and sends it back as ``after`` next time.
+    """
+    device = _device(request)
+    items = _store(request).notifications_for(device, after=after, limit=limit)
+    return {
+        "notifications": [n.as_dict() for n in items],
+        "last_id": items[-1].id if items else max(0, after),
+    }
 
 
 @router.post("/v1/devices/voice")

@@ -106,9 +106,13 @@ def create_app(
         logger.debug("PC control approval store init skipped: %s", exc)
 
     try:
+        from grandpa.devices.notifications import PhoneReminderNotifier
         from grandpa.scheduler_daemon import BackgroundSchedulerDaemon
 
-        routine_scheduler = BackgroundSchedulerDaemon()
+        # Reminders still go to the PC first; paired phones get a copy (D3).
+        routine_scheduler = BackgroundSchedulerDaemon(
+            reminder_notifier=PhoneReminderNotifier()
+        )
         app.state.routine_scheduler_daemon = routine_scheduler
 
         @app.on_event("startup")

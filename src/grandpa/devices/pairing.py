@@ -117,6 +117,9 @@ class DeviceStore:
                 );
                 """
             )
+            from grandpa.devices.notifications import SCHEMA
+
+            conn.executescript(SCHEMA)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -279,6 +282,22 @@ class DeviceStore:
         """Add one line to the device log (``grandpa devices log``)."""
         with self._connect() as conn:
             self._log(conn, event, device_id=device_id, detail=detail)
+
+    # -- notifications (D3) -------------------------------------------------
+
+    def push_notification(
+        self, title: str, body: str, *, kind: str = "info", now: float | None = None
+    ) -> int | None:
+        """Queue a notification for paired phones (None when none is paired)."""
+        from grandpa.devices.notifications import push
+
+        return push(self, title, body, kind=kind, now=now)
+
+    def notifications_for(self, device: Device, after: int = 0, limit: int = 50):
+        """What ``device`` has not seen: newer than ``after``, made after it paired."""
+        from grandpa.devices.notifications import since
+
+        return since(self, device, after, limit=limit)
 
     def events(self, limit: int = 50) -> list[dict]:
         with self._connect() as conn:
