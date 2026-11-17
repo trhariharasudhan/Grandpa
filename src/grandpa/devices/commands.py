@@ -8,8 +8,10 @@ difference is who can say yes:
 * Anything that needs confirmation is **refused**, not asked about: the loop
   runs with no confirm callback, which makes the executor answer
   ``confirmation_required`` and do nothing. The reply lists those actions so
-  the phone can say "that needs a yes on the PC". D4 adds a way to confirm
-  from the phone itself.
+  the phone can say "that needs a yes on the PC". Since D4 each one is also
+  kept as a pending request (``grandpa.devices.approvals``) that someone at
+  the PC can approve with ``grandpa devices approve <id>``. The phone itself
+  can never say yes.
 
 Every command is written to the device log (``grandpa devices log``) with
 the device that sent it, and each device is limited to
@@ -66,12 +68,14 @@ class PhoneCommandResult:
     reply: str
     actions: list[dict[str, Any]] = field(default_factory=list)
     needs_pc_confirmation: list[str] = field(default_factory=list)
+    pending: list[dict[str, Any]] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {
             "reply": self.reply,
             "actions": self.actions,
             "needs_pc_confirmation": self.needs_pc_confirmation,
+            "pending": self.pending,
         }
 
 
@@ -122,16 +126,48 @@ def run_phone_command(
         }
         for entry in result.trace
     ]
-    waiting = [e.action for e in result.trace if e.error == CONFIRMATION_REQUIRED]
+    waiting = [e for e in result.trace if e.error == CONFIRMATION_REQUIRED]
+    pending = _queue_for_pc(waiting, device_id=device_id, command=command, store=store)
     reply = result.text.strip() or "Done."
     if waiting:
         reply += (
-            "\n\nThese need a yes on the PC, so I did not do them: "
-            + ", ".join(dict.fromkeys(waiting))
-            + "."
+            "\n\nThese need a yes on the PC, so I did not do them yet: "
+            + ", ".join(f"#{p['id']} {p['action']}" for p in pending)
+            + ". They wait 10 minutes for someone at the PC to run "
+            "`grandpa devices approve <number>`."
         )
     done = ", ".join(
         f"{a['action']}={'ok' if a['success'] else a['error']}" for a in actions
     )
     store.log_event("command_done", device_id=device_id, detail=done or "no actions")
-    return PhoneCommandResult(reply, actions, list(dict.fromkeys(waiting)))
+    return PhoneCommandResult(
+        reply, actions, list(dict.fromkeys(e.action for e in waiting)), pending
+    )
+
+
+def _queue_for_pc(
+    waiting: list[Any], *, device_id: str, command: str, store: Any
+) -> list[dict[str, Any]]:
+    """Keep each refused action as a request someone at the PC can approve (D4).
+
+    The same action with the same arguments twice in one command is kept once.
+    """
+    from grandpa.devices.approvals import queue
+
+    pending: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for entry in waiting:
+        parameters = dict(entry.parameters or {})
+        key = entry.action + repr(sorted(parameters.items()))
+        if key in seen:
+            continue
+        seen.add(key)
+        new_id = queue(
+            store,
+            device_id=device_id,
+            action=entry.action,
+            parameters=parameters,
+            command=command,
+        )
+        pending.append({"id": new_id, "action": entry.action, "parameters": parameters})
+    return pending

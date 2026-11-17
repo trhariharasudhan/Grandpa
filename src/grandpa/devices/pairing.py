@@ -120,6 +120,9 @@ class DeviceStore:
             from grandpa.devices.notifications import SCHEMA
 
             conn.executescript(SCHEMA)
+            from grandpa.devices.approvals import SCHEMA as APPROVALS_SCHEMA
+
+            conn.executescript(APPROVALS_SCHEMA)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

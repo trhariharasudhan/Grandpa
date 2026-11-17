@@ -52,6 +52,9 @@ DEVICE_ALLOWED_PATHS = frozenset(
         "/v1/devices/command",
         "/v1/devices/voice",
         "/v1/devices/notifications",
+        # D4: read-only. A phone can see its own waiting requests; approving
+        # one is only ever done at the PC (``grandpa devices approve``).
+        "/v1/devices/pending",
     }
 )
 
