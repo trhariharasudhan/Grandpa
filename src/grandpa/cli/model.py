@@ -445,12 +445,18 @@ def model(ctx: click.Context) -> None:
 
 def _ollama_client() -> Any:
     from grandpa.intelligence.odin_registry import HttpOllamaClient
+    from grandpa.runtime.ollama_adapter import normalize_ollama_host
 
+    # The same host the chat engine uses. engine.ollama.host defaults to "",
+    # and an empty host used to become a request to "/api/tags", so `grandpa
+    # models` said "Ollama not reachable" while chat worked fine.
     try:
         host = load_config().engine.ollama.host
     except Exception:
-        host = "http://127.0.0.1:11434"
-    return HttpOllamaClient(host)
+        host = ""
+    return HttpOllamaClient(
+        normalize_ollama_host(host or os.environ.get("OLLAMA_HOST"))
+    )
 
 
 def _ollama_tags(client: Any) -> set[str] | None:

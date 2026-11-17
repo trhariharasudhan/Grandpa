@@ -189,3 +189,33 @@ def test_cli_setup_yes_runs(fake_client):
         "grandpa-memory:latest",
     ) in fake_client.calls
     assert any(call[0] == "create" for call in fake_client.calls)
+
+
+@pytest.mark.parametrize(
+    ("configured", "env", "expected"),
+    [
+        ("", None, "http://127.0.0.1:11434"),
+        ("", "0.0.0.0:11434", "http://0.0.0.0:11434"),
+        ("http://192.168.1.5:11434/", "ignored:1", "http://192.168.1.5:11434"),
+    ],
+)
+def test_models_uses_the_same_ollama_host_as_chat(
+    monkeypatch, configured, env, expected
+):
+    """engine.ollama.host defaults to "". It used to reach "/api/tags", so
+    `grandpa models` said "Ollama not reachable" while chat worked (issue on
+    Captain's Vivobook, 2026-11-17)."""
+    from types import SimpleNamespace
+
+    from grandpa.cli import model as model_cmd
+
+    config = SimpleNamespace(
+        engine=SimpleNamespace(ollama=SimpleNamespace(host=configured))
+    )
+    monkeypatch.setattr(model_cmd, "load_config", lambda: config)
+    if env is None:
+        monkeypatch.delenv("OLLAMA_HOST", raising=False)
+    else:
+        monkeypatch.setenv("OLLAMA_HOST", env)
+
+    assert model_cmd._ollama_client().host == expected
