@@ -8,8 +8,12 @@
 * ``POST /v1/devices/command`` -- ``{"text": "set volume to 30"}`` (D2).
 * ``POST /v1/devices/voice`` -- raw audio body, ``?format=wav`` (D2).
 
-Both run the action-layer tool loop; anything needing a yes is refused and
-listed in ``needs_pc_confirmation``.
+Both run the action-layer tool loop; anything needing a yes is not done,
+listed in ``needs_pc_confirmation``, and kept as a request in ``pending``
+for someone at the PC to approve (D4).
+
+* ``GET /v1/devices/pending`` -- this phone's requests and what became of
+  them (D4). Read-only: there is no route that approves.
 
 * ``GET /v1/devices/notifications?after=<id>`` -- reminders and other
   notifications made since the phone last asked (D3).
@@ -134,6 +138,21 @@ async def device_notifications(
         "notifications": [n.as_dict() for n in items],
         "last_id": items[-1].id if items else max(0, after),
     }
+
+
+@router.get("/v1/devices/pending")
+async def device_pending(request: Request, limit: int = 20) -> dict[str, Any]:
+    """This phone's requests that need a yes on the PC, newest first (D4)."""
+    from grandpa.devices.approvals import list_pending
+
+    device = _device(request)
+    items = list_pending(
+        _store(request),
+        device_id=device.device_id,
+        include_decided=True,
+        limit=max(1, min(limit, 50)),
+    )
+    return {"pending": [p.as_dict() for p in items]}
 
 
 @router.post("/v1/devices/voice")
