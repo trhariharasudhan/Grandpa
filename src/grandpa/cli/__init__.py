@@ -295,6 +295,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "devices",
+        "grandpa.cli.devices_cmd:devices",
+        short_help="Pair phones on your Wi-Fi.",
+    )
+)
+cli.add_command(
+    _lazy(
         "wake",
         "grandpa.cli.wake_cmd:wake",
         short_help='The "Hey Grandpa" wake word.',
