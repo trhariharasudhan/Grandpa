@@ -135,6 +135,7 @@ nav:
   - Home: index.md
   - Getting Started:
       - Installation: getting-started/installation.md
+      - Launcher: getting-started/launcher.md
       - Quick Start: getting-started/quickstart.md
       - Daily Use Setup: getting-started/daily-use-setup.md
       - Configuration: getting-started/configuration.md

@@ -206,6 +206,10 @@ class TestRuntimeEnvironmentChecks:
                 return_value=candidates,
             ),
             patch("grandpa.cli.doctor_cmd._project_root", return_value=project_root),
+            patch(
+                "grandpa.cli.doctor_cmd._probe_executable",
+                return_value=("works", "Grandpa 1.0"),
+            ),
         ):
             results = _check_runtime_environment()
 
