@@ -18,7 +18,7 @@
 [CmdletBinding()]
 param(
   # The Grandpa checkout the shim runs. Default: the repo this script is in.
-  [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
+  [string]$RepoRoot = "",
   # Where the shim goes.
   [string]$BinDir = (Join-Path $env:LOCALAPPDATA "Grandpa\bin"),
   # Write the shim but leave PATH alone (used by the tests).
@@ -61,6 +61,12 @@ if ($Uninstall) {
   exit 0
 }
 
+if (-not $RepoRoot) {
+  # Windows PowerShell 5.1 leaves $PSScriptRoot empty inside param() defaults,
+  # so the default is worked out here instead.
+  $here = if ($PSScriptRoot) { $PSScriptRoot } else { Split-Path -Parent $MyInvocation.MyCommand.Path }
+  $RepoRoot = Split-Path -Parent $here
+}
 $RepoRoot = (Resolve-Path $RepoRoot).Path.TrimEnd("\")
 if (-not (Test-Path (Join-Path $RepoRoot "pyproject.toml"))) {
   throw "$RepoRoot is not a Grandpa checkout (no pyproject.toml). Pass -RepoRoot D:\Grandpa."

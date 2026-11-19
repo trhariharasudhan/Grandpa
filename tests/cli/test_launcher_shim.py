@@ -55,6 +55,11 @@ def test_installer_writes_a_shim_that_runs_the_module() -> None:
     assert "DoNotExpandEnvironmentNames" in text
     assert "ExpandString" in text
     assert "-NoPath" in text or "$NoPath" in text
+    # Windows PowerShell 5.1 leaves $PSScriptRoot empty in param() defaults.
+    param_block = text.split("[CmdletBinding()]", 1)[1].split(
+        "$ErrorActionPreference", 1
+    )[0]
+    assert "$PSScriptRoot" not in param_block
 
 
 def test_cmd_files_are_checked_out_with_crlf() -> None:
