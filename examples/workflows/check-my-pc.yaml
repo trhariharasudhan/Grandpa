@@ -1,0 +1,25 @@
+# A read-only routine, except one step that lowers a loud volume.
+# Copy it into your workflow folder (%USERPROFILE%\.grandpa\workflows), then:
+#   uv run python -m grandpa workflow run check-my-pc          (dry run)
+#   uv run python -m grandpa workflow run check-my-pc --yes    (really run)
+name: check-my-pc
+description: System info, volume and brightness
+vars:
+  quiet_level: 30
+steps:
+  - id: system
+    action: system_info
+    timeout: 30
+  - id: volume
+    action: volume_get
+    retries: 1
+    continue_on_error: true
+  - id: brightness
+    action: brightness_get
+    continue_on_error: true
+  # Only when the volume is above quiet_level (try: --var quiet_level=10).
+  - id: quieter
+    action: volume_set
+    params:
+      level: "{{ vars.quiet_level }}"
+    when: steps.volume.ok and steps.volume.data.level > vars.quiet_level
