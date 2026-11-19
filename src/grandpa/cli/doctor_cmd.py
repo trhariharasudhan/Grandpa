@@ -657,6 +657,34 @@ def _check_security_profile() -> CheckResult:
         )
 
 
+def _check_credentials_at_rest() -> CheckResult:
+    """Where tokens and API keys are kept, and whether any are still plain text."""
+    name = "Credentials at rest"
+    try:
+        from grandpa.cli.vault_cmd import plaintext_leftovers
+        from grandpa.security.secret_store import SecretStore
+
+        store = SecretStore()
+        left = plaintext_leftovers()
+    except Exception as exc:
+        return CheckResult(name, "warn", f"Could not check: {type(exc).__name__}")
+    if not store.secure:
+        return CheckResult(
+            name,
+            "warn",
+            store.describe(),
+            details="Fix (Linux): uv pip install keyring secretstorage, then: grandpa vault migrate",
+        )
+    if left:
+        return CheckResult(
+            name,
+            "warn",
+            f"{store.describe()}; still plain text: {', '.join(left)}",
+            details="Fix: uv run python -m grandpa vault migrate",
+        )
+    return CheckResult(name, "ok", store.describe())
+
+
 def _ollama_host(config: Any | None = None) -> str:
     from grandpa.engine.ollama import normalize_ollama_host
 
@@ -1361,6 +1389,7 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         _check_config_parses(),
         _check_rest_api_installed(),
         _check_security_profile(),
+        _check_credentials_at_rest(),
     ]
 
     ai_engines = []

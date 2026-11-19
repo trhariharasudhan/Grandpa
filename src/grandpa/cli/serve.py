@@ -25,42 +25,116 @@ from grandpa.intelligence import (
 logger = logging.getLogger(__name__)
 
 
-def _generate_and_persist_api_key(console: Console) -> str:
-    """Mint a local API key on first run and write it to ``config.toml``.
+#: Name of the server API key in the secret store (``grandpa vault get`` shows it).
+API_KEY_SECRET = "server.api_key"
 
-    Returns the key. If it cannot be persisted the key is still returned and
-    used for this process, so the server stays authenticated either way — the
-    operator just has to re-read it from the console next start.
-    """
+
+def _config_path() -> Path:
+    from grandpa.core.config import DEFAULT_CONFIG_DIR
+
+    return Path(os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml"))
+
+
+def _blank_config_api_key(config_path: Path) -> bool:
+    """Remove a plaintext ``[server.auth] api_key`` from config.toml."""
     import tomlkit
 
-    from grandpa.core.config import DEFAULT_CONFIG_DIR
+    try:
+        doc = tomlkit.parse(config_path.read_text(encoding="utf-8"))
+        auth_table = doc.get("server", {}).get("auth")
+        if auth_table is None or not str(auth_table.get("api_key", "")).strip():
+            return False
+        auth_table["api_key"] = ""
+        config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+        return True
+    except (OSError, ValueError, AttributeError) as exc:
+        logger.debug(
+            "Could not clear the API key from config.toml: %s", type(exc).__name__
+        )
+        return False
+
+
+def _resolve_api_key(config, console: Console) -> str:
+    """The API key: environment, then the encrypted store, then config.toml.
+
+    A key still sitting in plain text in config.toml is moved into the
+    encrypted store once and blanked in the file. Without an encrypted store
+    (no DPAPI, no keyring) the config value is used as before.
+    """
+    from grandpa.security.secret_store import SecretStore, SecretStoreError
+    from grandpa.server.auth_middleware import api_key_from_env
+
+    env_key = api_key_from_env()
+    if env_key:
+        return env_key
+    plain = config.server.auth.api_key.strip()
+    try:
+        store = SecretStore()
+        if not store.secure:
+            return plain
+        if plain:
+            store.set(API_KEY_SECRET, plain)
+            if store.get(API_KEY_SECRET) == plain and _blank_config_api_key(
+                _config_path()
+            ):
+                console.print(
+                    "[green]Moved the API key out of config.toml[/green] into the "
+                    f"{store.describe()} store. Show it with: grandpa vault get {API_KEY_SECRET}"
+                )
+            return plain
+        return (store.get(API_KEY_SECRET) or "").strip()
+    except SecretStoreError as exc:
+        logger.warning("Secret store unavailable (%s); using config.toml.", exc)
+        return plain
+
+
+def _generate_and_persist_api_key(console: Console) -> str:
+    """Mint a local API key on first run and keep it for the next start.
+
+    It goes into the encrypted secret store when there is one (DPAPI on
+    Windows), otherwise into ``config.toml`` as before. Returns the key. If it
+    cannot be persisted the key is still returned and used for this process, so
+    the server stays authenticated either way.
+    """
+    from grandpa.security.secret_store import SecretStore, SecretStoreError
     from grandpa.server.auth_middleware import API_KEY_ENV, generate_api_key
 
     key = generate_api_key()
-    config_path = Path(
-        os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
-    )
-    persisted = False
+    saved_to = ""
     try:
-        if config_path.exists():
-            doc = tomlkit.parse(config_path.read_text(encoding="utf-8"))
-        else:
-            doc = tomlkit.document()
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-        server_table = doc.get("server")
-        if server_table is None:
-            server_table = tomlkit.table()
-            doc["server"] = server_table
-        auth_table = server_table.get("auth")
-        if auth_table is None:
-            auth_table = tomlkit.table()
-            server_table["auth"] = auth_table
-        auth_table["api_key"] = key
-        config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
-        persisted = True
-    except OSError as exc:
-        logger.debug("Could not persist generated API key: %s", exc)
+        store = SecretStore()
+        if store.secure:
+            store.set(API_KEY_SECRET, key)
+            saved_to = (
+                f"the {store.describe()} store "
+                f"(show it again: grandpa vault get {API_KEY_SECRET})"
+            )
+    except SecretStoreError as exc:
+        logger.debug("Could not store generated API key: %s", exc)
+
+    if not saved_to:
+        import tomlkit
+
+        config_path = _config_path()
+        try:
+            if config_path.exists():
+                doc = tomlkit.parse(config_path.read_text(encoding="utf-8"))
+            else:
+                doc = tomlkit.document()
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+            server_table = doc.get("server")
+            if server_table is None:
+                server_table = tomlkit.table()
+                doc["server"] = server_table
+            auth_table = server_table.get("auth")
+            if auth_table is None:
+                auth_table = tomlkit.table()
+                server_table["auth"] = auth_table
+            auth_table["api_key"] = key
+            config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
+            saved_to = str(config_path)
+        except OSError as exc:
+            logger.debug("Could not persist generated API key: %s", exc)
 
     console.print(
         "\n[green bold]Generated a local API key[/green bold] "
@@ -68,8 +142,8 @@ def _generate_and_persist_api_key(console: Console) -> str:
         f"  Key: [cyan]{key}[/cyan]\n"
         "  Use: [cyan]Authorization: Bearer <key>[/cyan]\n"
         + (
-            f"  Saved to: [cyan]{config_path}[/cyan]\n"
-            if persisted
+            f"  Saved to: [cyan]{saved_to}[/cyan]\n"
+            if saved_to
             else "  [yellow]Could not save it — set "
             f"{API_KEY_ENV} to reuse this key.[/yellow]\n"
         )
@@ -359,12 +433,9 @@ def serve(
     # The API is loopback-first and authenticated by default. Every route under
     # /v1 and /api can read personal memory or drive the desktop, so an
     # unauthenticated bind is opt-in via --no-auth rather than the default.
-    from grandpa.server.auth_middleware import (
-        api_key_from_env,
-        check_bind_safety,
-    )
+    from grandpa.server.auth_middleware import check_bind_safety
 
-    api_key = api_key_from_env() or config.server.auth.api_key.strip()
+    api_key = _resolve_api_key(config, console)
 
     if no_auth:
         if api_key:
