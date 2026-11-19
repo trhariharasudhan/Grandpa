@@ -70,7 +70,14 @@ VOICE_SETTINGS: dict[str, Any] = {
 _down_until = 0.0
 _down_lock = threading.Lock()
 
-CACHE_DIR = Path.home() / ".Grandpa" / "voice-cache" / "elevenlabs"
+
+def default_cache_dir() -> Path:
+    """Where ElevenLabs clips are cached: ``~/.Grandpa/voice-cache/elevenlabs``.
+
+    Resolved when used, never at import (tests/test_no_import_time_paths.py)."""
+    return Path.home() / ".Grandpa" / "voice-cache" / "elevenlabs"
+
+
 ENV_CACHE = "GRANDPA_ELEVENLABS_CACHE"
 """Set to ``0`` to turn the audio cache off."""
 CACHE_MAX_BYTES = 200 * 1024 * 1024
@@ -132,7 +139,7 @@ def _cache_put(key: str, pcm: bytes, directory: Path, max_bytes: int) -> None:
 
 def cache_stats(directory: Path | None = None) -> tuple[int, int]:
     """(clips, bytes) in the cache."""
-    files = list((directory or CACHE_DIR).glob("*.pcm"))
+    files = list((directory or default_cache_dir()).glob("*.pcm"))
     return len(files), sum(f.stat().st_size for f in files)
 
 
@@ -190,7 +197,7 @@ def synthesize_pcm(
     credits, no network wait."""
     voice = voice or voice_id()
     model = model or model_id()
-    cache_dir = cache_dir or CACHE_DIR
+    cache_dir = cache_dir or default_cache_dir()
     cached_key = cache_key(text, voice, model, language) if cache_enabled() else ""
     if cached_key:
         hit = _cache_get(cached_key, cache_dir)
@@ -315,7 +322,7 @@ def status_line() -> tuple[str, str]:
 
 
 __all__ = [
-    "CACHE_DIR",
+    "default_cache_dir",
     "DEFAULT_MODEL",
     "cache_key",
     "cache_stats",

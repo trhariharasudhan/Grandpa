@@ -45,7 +45,7 @@ class FakeClient:
 
 @pytest.fixture(autouse=True)
 def _clean_env(monkeypatch, tmp_path):
-    monkeypatch.setattr(el, "CACHE_DIR", tmp_path / "voice-cache")
+    monkeypatch.setattr(el, "default_cache_dir", lambda: tmp_path / "voice-cache")
     for name in (
         *el.ENV_KEYS,
         el.ENV_VOICE,
