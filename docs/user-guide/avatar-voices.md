@@ -43,3 +43,18 @@ ElevenLabs. To keep everything on this PC, leave the key unset or set
 | `GRANDPA_AVATAR_VOICE` | — | `piper`/`local` = stay offline, `pyttsx3` = old Windows voice |
 
 Never paste the API key into chat, code, `config.yaml` or a commit.
+
+## Your own voice, fully offline (no ElevenLabs)
+
+The ElevenLabs clone lives on ElevenLabs' servers, so it stops working when the subscription ends. To keep Captain's voice for good, Grandpa gets a **local Piper voice** trained on recordings of that voice:
+
+1. Record the training set while credits last (about 36 minutes of audio, roughly 20k credits on Flash):
+   ```powershell
+   $env:ELEVENLABS_API_KEY = [Environment]::GetEnvironmentVariable('ELEVENLABS_API_KEY','User')
+   uv run python scripts/odin/voice/make_voice_dataset.py --out D:\GrandpaVoice\achchuu --credits-left <left>
+   ```
+   You can run it again safely: lines that are already recorded are skipped.
+2. Train it on Colab with `notebooks/grandpa_voice_piper.ipynb` (T4 GPU, 5–7 hours; it resumes after a disconnect).
+3. Copy `grandpa-achchuu.onnx` and `.onnx.json` to `~\.Grandpa\voices`, then set `GRANDPA_PIPER_VOICE=grandpa-achchuu`.
+
+The local voice runs on the CPU at about 0.13× real time on the Vivobook, and it needs no internet.
