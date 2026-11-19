@@ -169,7 +169,6 @@ def synthesize_wav(
     pcm_to_wav(pcm, path)
 
 
-@TTSRegistry.register("elevenlabs")
 class ElevenLabsTTSBackend(TTSBackend):
     """ElevenLabs: cloud TTS in a cloned voice (opt-in, needs an API key)."""
 
@@ -202,6 +201,12 @@ class ElevenLabsTTSBackend(TTSBackend):
 
     def health(self) -> bool:
         return ready()
+
+
+# ``python -m grandpa.speech.elevenlabs_tts`` imports this file twice (once
+# through the grandpa.speech package, once as __main__): register only once.
+if "elevenlabs" not in TTSRegistry.keys():
+    TTSRegistry.register("elevenlabs")(ElevenLabsTTSBackend)
 
 
 __all__ = [
@@ -243,4 +248,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    from grandpa.speech import elevenlabs_tts as _module  # the copy the app uses
+
+    raise SystemExit(_module.main())
