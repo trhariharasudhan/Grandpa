@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import dataclass
 from pathlib import Path
 
 from grandpa.core.config import DEFAULT_CONFIG_DIR
+from grandpa.security.secret_store import StoredToken
 
 CALENDAR_CREDENTIALS_DIR = DEFAULT_CONFIG_DIR / "credentials"
 CALENDAR_TOKEN_PATH = CALENDAR_CREDENTIALS_DIR / "calendar_token.json"
@@ -41,6 +41,9 @@ class CalendarAuthManager:
     ) -> None:
         self.token_path = Path(token_path)
         self.client_secret_path = Path(client_secret_path)
+        # The token is a refresh token: kept encrypted (DPAPI on Windows),
+        # the old plain JSON file is moved in on first use.
+        self._token = StoredToken("calendar.token", self.token_path)
 
     def status(self) -> CalendarAuthStatus:
         if not self.client_secret_path.exists():
@@ -51,7 +54,7 @@ class CalendarAuthManager:
                 token_path=self.token_path,
                 client_secret_path=self.client_secret_path,
             )
-        if not self.token_path.exists():
+        if not self._token.exists():
             return CalendarAuthStatus(
                 configured=True,
                 ready=False,
@@ -70,10 +73,7 @@ class CalendarAuthManager:
         )
 
     def disconnect(self) -> bool:
-        if self.token_path.exists():
-            self.token_path.unlink()
-            return True
-        return False
+        return self._token.clear()
 
     def setup(self, *, scopes: tuple[str, ...] = DEFAULT_SCOPES) -> CalendarAuthStatus:
         self._ensure_dependencies()
@@ -84,8 +84,9 @@ class CalendarAuthManager:
         from google_auth_oauthlib.flow import InstalledAppFlow
 
         creds = None
-        if self.token_path.exists():
-            creds = Credentials.from_authorized_user_file(str(self.token_path), scopes)
+        info = self._token.load()
+        if info:
+            creds = Credentials.from_authorized_user_info(info, scopes)
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         if not creds or not creds.valid:
@@ -101,11 +102,12 @@ class CalendarAuthManager:
         from google.auth.transport.requests import Request
         from google.oauth2.credentials import Credentials
 
-        if not self.token_path.exists():
+        info = self._token.load()
+        if not info:
             raise CalendarNotConfiguredError(
                 "Google Calendar is not connected. Run `grandpa calendar setup`."
             )
-        creds = Credentials.from_authorized_user_file(str(self.token_path), scopes)
+        creds = Credentials.from_authorized_user_info(info, scopes)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
             self._write_token(json.loads(creds.to_json()))
@@ -116,16 +118,11 @@ class CalendarAuthManager:
         return creds
 
     def _write_token(self, payload: dict) -> None:
-        self.token_path.parent.mkdir(parents=True, exist_ok=True)
-        self.token_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-        try:
-            os.chmod(self.token_path, 0o600)
-        except OSError:
-            pass
+        self._token.save(payload)
 
     def _account_from_token(self) -> str:
         try:
-            data = json.loads(self.token_path.read_text(encoding="utf-8"))
+            data = self._token.load() or {}
         except Exception:
             return ""
         return str(data.get("account") or data.get("client_id") or "")

@@ -9,6 +9,15 @@ import pytest
 from click.testing import CliRunner
 
 from grandpa.cli.vault_cmd import vault
+from grandpa.security import secret_store
+from grandpa.security.secret_store import PlainFileBackend
+
+
+@pytest.fixture(autouse=True)
+def _isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Each test gets its own empty store; the shared test home is not used."""
+    backend = PlainFileBackend(tmp_path / "secrets")
+    monkeypatch.setattr(secret_store, "default_backend", lambda: backend)
 
 
 class TestVaultCmd:

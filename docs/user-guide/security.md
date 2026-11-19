@@ -46,6 +46,35 @@ The security module has four independently usable components:
 
 ---
 
+## Credentials at rest
+
+Tokens, passwords and API keys Grandpa keeps are stored in one place,
+`grandpa.security.secret_store`, never in plain text when the machine has
+something better:
+
+| Machine | Where secrets go |
+| --- | --- |
+| Windows | Windows DPAPI: `~/.grandpa/secrets/<name>.dpapi`, readable only by your Windows user on this PC |
+| Linux / Pironman | the `keyring` package (Secret Service, KWallet) when installed |
+| neither | a `0600` file; `grandpa doctor` shows a warning |
+
+What is kept there: the local API server key (`server.api_key`), the Gmail and
+Calendar OAuth tokens (`gmail.token`, `calendar.token`) and everything stored
+with `grandpa vault set`. Older installs kept these in plain text
+(`config.toml`, `credentials/*_token.json`, `vault.enc` with its key beside it);
+they are moved in automatically the first time they are used, or all at once:
+
+```powershell
+uv run python -m grandpa vault migrate   # moves everything, lists what is left
+uv run python -m grandpa vault list      # names only, never values
+uv run python -m grandpa vault get server.api_key
+```
+
+Values are never written to logs. `GRANDPA_SECRET_BACKEND=dpapi|keyring|file`
+forces a backend.
+
+---
+
 ## GuardrailsEngine
 
 `GuardrailsEngine` wraps any `InferenceEngine` and scans both the input messages and the output content. It is not registered in `EngineRegistry` — you create it directly by wrapping an existing engine instance.

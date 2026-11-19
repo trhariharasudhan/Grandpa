@@ -418,6 +418,19 @@ def _private_approval_store(monkeypatch, _approval_store_root: Path) -> None:
         monkeypatch.setenv("GRANDPA_PC_CONTROL_DB", str(path))
 
 
+@pytest.fixture(autouse=True)
+def _private_secret_store(monkeypatch, _approval_store_root: Path) -> None:
+    """Give each test its own secret store folder (E1).
+
+    The test home is shared by the whole session, so a token one test stored
+    would otherwise be found by the next. The folder is only created if a test
+    stores something.
+    """
+    if not os.environ.get("GRANDPA_SECRETS_DIR"):
+        path = _approval_store_root / f"secrets-{uuid4().hex}"
+        monkeypatch.setenv("GRANDPA_SECRETS_DIR", str(path))
+
+
 # ---------------------------------------------------------------------------
 # Hardware fixtures
 # ---------------------------------------------------------------------------
