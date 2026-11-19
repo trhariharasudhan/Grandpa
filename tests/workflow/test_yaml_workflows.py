@@ -310,10 +310,10 @@ def test_risky_step_runs_after_yes_and_the_wait_is_not_timed(
     wf_dir: Path, actuators: Actuators
 ) -> None:
     def slow_yes(action, parameters, risk):
-        time.sleep(0.4)
+        time.sleep(2.0)
         return True
 
-    path = write(wf_dir, "risky", RISKY.replace("retries: 3", "timeout: 0.2"))
+    path = write(wf_dir, "risky", RISKY.replace("retries: 3", "timeout: 1.0"))
     result = WorkflowEngine().run(load_yaml_workflow(path), confirm_callback=slow_yes)
     assert result.success, result.steps[0].output
     assert actuators.names() == ["empty_recycle_bin"]
