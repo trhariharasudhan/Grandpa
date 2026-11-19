@@ -154,6 +154,24 @@ def run_cmd(
         dry_run=not execute,
         confirm_callback=_terminal_confirm if execute else None,
     )
+    if execute:
+        from grandpa.workflow.triggers import record_run
+
+        record_run(
+            graph.name,
+            origin="user_cli",
+            ok=result.success,
+            status="completed" if result.success else "failed",
+            steps=[
+                {
+                    "id": s.node_id,
+                    "ok": s.success,
+                    "skipped": bool(s.metadata.get("skipped")),
+                    "error": s.metadata.get("error"),
+                }
+                for s in result.steps
+            ],
+        )
     for step in result.steps:
         meta = step.metadata
         if meta.get("skipped"):
@@ -171,3 +189,149 @@ def run_cmd(
         click.echo(f"{graph.name} stopped: a step failed.", err=True)
         raise SystemExit(1)
     click.echo(f"{graph.name}: {'done' if execute else 'dry run finished'}.")
+
+
+# --- triggers (F2) -------------------------------------------------------------
+
+
+@workflow.group("trigger")
+def trigger() -> None:
+    """Start a workflow by time, a new file, an app starting, or a phrase."""
+
+
+@trigger.command("add")
+@click.argument("name")
+@click.option(
+    "--at", "schedule", help="HH:MM, daily:HH:MM, weekly:<0-6>:HH:MM, hourly."
+)
+@click.option(
+    "--file-in",
+    "folder",
+    type=click.Path(file_okay=False, path_type=Path),
+    help="Run when a new file appears in this folder.",
+)
+@click.option("--pattern", default="*", show_default=True, help="With --file-in.")
+@click.option("--app", help="Run when this program starts, e.g. code.exe.")
+@click.option(
+    "--phrase", help='Run when you say or type this, e.g. "run my morning routine".'
+)
+@_dir_option
+def trigger_add(
+    name: str,
+    schedule: str | None,
+    folder: Path | None,
+    pattern: str,
+    app: str | None,
+    phrase: str | None,
+    directory: Path | None,
+) -> None:
+    """Add a trigger for workflow NAME (give exactly one of the options)."""
+    from grandpa.workflow.triggers import TriggerError, TriggerStore
+
+    chosen = [
+        (kind, value)
+        for kind, value in (
+            ("time", schedule),
+            ("file", folder),
+            ("app", app),
+            ("phrase", phrase),
+        )
+        if value
+    ]
+    if len(chosen) != 1:
+        raise click.UsageError("Give exactly one of --at, --file-in, --app, --phrase.")
+    graph = _load(name, directory)
+    kind, value = chosen[0]
+    spec: dict[str, Any] = {
+        "time": {"schedule": value},
+        "file": {"folder": str(value), "pattern": pattern},
+        "app": {"app": value},
+        "phrase": {"phrase": value},
+    }[kind]
+    try:
+        added = TriggerStore().add(graph.name, kind, spec)
+    except TriggerError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Trigger {added.id}: run {added.workflow} {added.describe()}.")
+    if kind != "phrase":
+        click.echo(
+            "Time, file and app triggers are checked while Grandpa's background "
+            "service runs (grandpa serve), or once with: grandpa workflow trigger check"
+        )
+    risky = _risky_steps(graph)
+    if risky:
+        click.echo(
+            "Note: a triggered run cannot ask you, so these steps will be refused: "
+            + ", ".join(risky)
+        )
+
+
+def _risky_steps(graph: Any) -> list[str]:
+    from grandpa.action_layer.catalogue import get as catalogue_get
+
+    return [
+        f"{node.id} ({node.action})"
+        for node in graph.nodes
+        if catalogue_get(node.action).requires_confirmation
+    ]
+
+
+@trigger.command("list")
+def trigger_list() -> None:
+    """Show every trigger."""
+    from grandpa.workflow.triggers import TriggerStore
+
+    triggers = TriggerStore().list()
+    if not triggers:
+        click.echo("No triggers yet. Add one with: grandpa workflow trigger add")
+        return
+    for t in triggers:
+        state = "on    " if t.enabled else "paused"
+        last = f"  last: {t.last_status}" if t.last_status else ""
+        click.echo(f"  {t.id:>3}  {state}  {t.workflow:<20} {t.describe()}{last}")
+
+
+def _set(trigger_id: int, enabled: bool) -> None:
+    from grandpa.workflow.triggers import TriggerStore
+
+    changed = TriggerStore().set_enabled(trigger_id, enabled)
+    if changed is None:
+        raise click.ClickException(f"No trigger {trigger_id}.")
+    click.echo(f"Trigger {trigger_id} {'resumed' if enabled else 'paused'}.")
+
+
+@trigger.command("pause")
+@click.argument("trigger_id", type=int)
+def trigger_pause(trigger_id: int) -> None:
+    """Stop a trigger from firing (keeps it)."""
+    _set(trigger_id, False)
+
+
+@trigger.command("resume")
+@click.argument("trigger_id", type=int)
+def trigger_resume(trigger_id: int) -> None:
+    """Let a paused trigger fire again."""
+    _set(trigger_id, True)
+
+
+@trigger.command("remove")
+@click.argument("trigger_id", type=int)
+def trigger_remove(trigger_id: int) -> None:
+    """Delete a trigger."""
+    from grandpa.workflow.triggers import TriggerStore
+
+    if not TriggerStore().remove(trigger_id):
+        raise click.ClickException(f"No trigger {trigger_id}.")
+    click.echo(f"Trigger {trigger_id} removed.")
+
+
+@trigger.command("check")
+def trigger_check() -> None:
+    """Check the time, file and app triggers once, now."""
+    from grandpa.workflow.triggers import check_triggers
+
+    fired = check_triggers()
+    if not fired:
+        click.echo("Nothing to run right now.")
+    for item in fired:
+        click.echo(f"Trigger {item['trigger']}: {item['message']}")
