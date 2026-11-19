@@ -139,6 +139,7 @@ nav:
       - Quick Start: getting-started/quickstart.md
       - Daily Use Setup: getting-started/daily-use-setup.md
       - Configuration: getting-started/configuration.md
+      - Workflows: getting-started/workflows.md
   - Architecture:
       - Overview: architecture/overview.md
       - Domain Boundaries: architecture/domain-architecture.md

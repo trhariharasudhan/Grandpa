@@ -218,6 +218,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "workflow",
+        "grandpa.cli.workflow_cmd:workflow",
+        short_help="List, check and run YAML workflows.",
+    )
+)
+cli.add_command(
+    _lazy(
         "plan",
         "grandpa.cli.plan_cmd:plan",
         short_help="Create and run verified multi-step plans.",

@@ -37,6 +37,7 @@ ActionKind = Literal[
     "app_lookup",
     "pc_control",
     "agent_plan",
+    "workflow",
     "blocked",
 ]
 

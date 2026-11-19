@@ -36,6 +36,35 @@ def refuse_confirmation(spec: str, permission: str) -> bool:
     return False
 
 
+def _workflow_phrase(text: str, origin: str | None) -> LocalActionResult | None:
+    """Run a workflow whose phrase trigger ``text`` says (F2), if one does.
+
+    The workflow runs with no way to ask for a yes, so any step that needs one
+    is refused by the action executor, whoever said the phrase.
+    """
+    try:
+        from grandpa.workflow.triggers import run_phrase
+
+        outcome = run_phrase(text, origin=origin or "chat")
+    except Exception:  # noqa: BLE001 - a broken trigger store must not break chat
+        logger.warning("workflow phrase check failed", exc_info=True)
+        return None
+    if outcome is None:
+        return None
+    name = outcome.get("workflow", "the workflow")
+    short = (
+        f"Done: {name}." if outcome["ok"] else f"{name} stopped: a step did not run."
+    )
+    return LocalActionResult(
+        status="handled" if outcome["ok"] else "error",
+        kind="workflow",
+        target=str(name),
+        message=outcome["message"],
+        tts_text=short,
+        permission="allowed",
+    )
+
+
 def handle_local_action(
     text: str,
     *,
@@ -99,6 +128,10 @@ def handle_local_action(
         audit.audit_decision(command, result, "blocked")
         audit.log_attempt(command, result)
         return result
+
+    workflow_result = _workflow_phrase(text, deferred_origin) if execute else None
+    if workflow_result is not None:
+        return workflow_result
 
     if parsers._is_safe_desktop_operator_request(command):
         result = parsers._parse_desktop_operator_action(command)

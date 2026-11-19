@@ -14,6 +14,8 @@ class NodeType(str, Enum):
     PARALLEL = "parallel"
     LOOP = "loop"
     TRANSFORM = "transform"
+    ACTION = "action"
+    """One catalogued action (``grandpa.action_layer``), run through its executor."""
 
 
 @dataclass(slots=True)
@@ -29,6 +31,17 @@ class WorkflowNode:
     max_iterations: int = 10
     # For transform nodes
     transform_expr: str = ""
+    # For action nodes (YAML workflows): the catalogued action and its
+    # parameters, which may hold ``{{ ... }}`` templates.
+    action: str = ""
+    params: Dict[str, Any] = field(default_factory=dict)
+    # Run the step only when this condition holds (see workflow.expressions).
+    when: str = ""
+    retries: int = 0
+    retry_delay_seconds: float = 1.0
+    timeout_seconds: float = 60.0
+    continue_on_error: bool = False
+    description: str = ""
 
 
 @dataclass(slots=True)

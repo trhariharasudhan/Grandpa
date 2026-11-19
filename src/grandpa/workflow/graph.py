@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict, deque
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from grandpa.workflow.types import WorkflowEdge, WorkflowNode
 
@@ -17,6 +17,10 @@ class WorkflowGraph:
 
     def __init__(self, name: str = "") -> None:
         self.name = name
+        self.description = ""
+        # Default values for ``{{ vars.* }}`` in a YAML workflow.
+        self.variables: Dict[str, Any] = {}
+        self.source = ""
         self._nodes: Dict[str, WorkflowNode] = {}
         self._edges: List[WorkflowEdge] = []
         self._adjacency: Dict[str, List[str]] = defaultdict(list)
