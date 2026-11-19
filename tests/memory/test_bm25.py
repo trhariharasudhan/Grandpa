@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
-
-rank_bm25 = pytest.importorskip("rank_bm25")
-
-from grandpa.core.events import EventBus, EventType  # noqa: E402
-from grandpa.core.registry import MemoryRegistry  # noqa: E402
-from grandpa.tools.storage.bm25 import BM25Memory  # noqa: E402
+from grandpa.core.events import EventBus, EventType
+from grandpa.core.registry import MemoryRegistry
+from grandpa.tools.storage.bm25 import BM25Memory
 
 
 def _make_backend() -> BM25Memory:
