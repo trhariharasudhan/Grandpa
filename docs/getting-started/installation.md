@@ -41,6 +41,9 @@ uv run grandpa doctor
 uv run grandpa --help
 ```
 
+If Windows blocks `grandpa.exe` (Smart App Control / Device Guard), use
+`.\grandpa.cmd doctor` or install the PATH shim: see [Launcher](launcher.md).
+
 ## First Session
 
 ```powershell

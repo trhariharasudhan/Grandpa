@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any, Dict, List, Optional
 
 import click
@@ -227,7 +227,95 @@ def _check_runtime_environment() -> list[CheckResult]:
             )
         )
 
+    checks.append(_check_launcher(project_root, active))
     return checks
+
+
+# Windows error codes for "you may not run this program": 1260 group policy,
+# 4551 Application Control / Smart App Control, 225 flagged as a virus.
+_BLOCKED_WINERRORS = frozenset({225, 1260, 4551})
+_LAUNCHER_FIX = (
+    "Fix: powershell -ExecutionPolicy Bypass -File scripts\\install_launcher.ps1\n"
+    "Then open a new terminal and run `grandpa doctor`, "
+    "or run `.\\grandpa.cmd ...` from the repo folder."
+)
+
+
+def _probe_executable(path: str) -> tuple[str, str]:
+    """Run ``path --version``: ("works" | "blocked" | "failed", detail)."""
+    try:
+        proc = subprocess.run(
+            [path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return "failed", "did not answer within 30 s"
+    except OSError as exc:
+        if getattr(exc, "winerror", None) in _BLOCKED_WINERRORS:
+            return "blocked", "blocked by Windows (Smart App Control / Device Guard)"
+        return "failed", str(exc)
+    if proc.returncode == 0:
+        version = (proc.stdout or "").strip().splitlines()
+        return "works", version[-1] if version else "exit code 0"
+    output = f"{proc.stdout or ''}{proc.stderr or ''}".casefold()
+    if any(
+        marker in output
+        for marker in ("group policy", "application control", "smart app control")
+    ):
+        return "blocked", "blocked by Windows (Smart App Control / Device Guard)"
+    return "failed", f"exit code {proc.returncode}"
+
+
+def _active_launcher(active: str) -> str:
+    """How this process was started, in the words the docs use."""
+    launcher = os.environ.get("GRANDPA_LAUNCHER", "").strip()
+    if launcher == "grandpa.cmd":
+        return "grandpa.cmd (repo folder)"
+    if launcher == "shim":
+        return "grandpa (shim from scripts\\install_launcher.ps1)"
+    if PureWindowsPath(active).name.casefold() in {"grandpa", "grandpa.exe"}:
+        return PureWindowsPath(active).name
+    return "python -m grandpa"
+
+
+def _check_launcher(project_root: Path | None, active: str) -> CheckResult:
+    """Which ways of starting Grandpa work on this machine (E0).
+
+    On Captain's laptop Windows refuses to run ``.venv\\Scripts\\grandpa.exe``;
+    ``grandpa.cmd`` and the PATH shim go through ``uv run python -m grandpa``
+    instead, so this line says which of them is there and whether the .exe is
+    blocked."""
+    running = _active_launcher(active)
+    if sys.platform != "win32":
+        return CheckResult("Launcher", "ok", f"Running via {running}")
+
+    lines = [f"Running via: {running}"]
+    shim = shutil.which("grandpa.cmd")
+    lines.append(f"grandpa shim on PATH: {shim or 'not installed'}")
+    if project_root and (project_root / "grandpa.cmd").exists():
+        lines.append(f"Repo launcher: {project_root / 'grandpa.cmd'}")
+
+    exe_state = "missing"
+    exe = project_root / ".venv" / "Scripts" / "grandpa.exe" if project_root else None
+    if exe is not None and exe.exists():
+        exe_state, detail = _probe_executable(str(exe))
+        lines.append(f"{exe}: {exe_state} ({detail})")
+
+    if exe_state == "blocked" and not shim:
+        return CheckResult(
+            "Launcher",
+            "warn",
+            f"grandpa.exe is blocked by Windows; running via {running}",
+            details="\n".join([*lines, _LAUNCHER_FIX]),
+        )
+    if exe_state == "blocked":
+        message = f"grandpa.exe is blocked; the grandpa shim works ({running})"
+    else:
+        message = f"Running via {running}"
+    return CheckResult("Launcher", "ok", message, details="\n".join(lines))
 
 
 def _check_legacy_runtime_state() -> CheckResult:

@@ -4,3 +4,5 @@ src/grandpa/ui/avatar_web/vendor/** -text
 # Binary 3D assets
 *.glb binary
 *.blend binary
+# Windows batch files misparse with LF endings: always check them out as CRLF.
+*.cmd text eol=crlf
