@@ -44,7 +44,8 @@ class FakeClient:
 
 
 @pytest.fixture(autouse=True)
-def _clean_env(monkeypatch):
+def _clean_env(monkeypatch, tmp_path):
+    monkeypatch.setattr(el, "CACHE_DIR", tmp_path / "voice-cache")
     for name in (
         *el.ENV_KEYS,
         el.ENV_VOICE,
@@ -185,3 +186,60 @@ def test_the_command_line_runs_without_a_double_registration(monkeypatch) -> Non
     with pytest.raises(SystemExit) as done:
         runpy.run_module("grandpa.speech.elevenlabs_tts", run_name="__main__")
     assert done.value.code == 2  # usage, not ValueError
+
+
+# --- H1: the audio cache and the doctor line ----------------------------------
+
+
+def test_a_sentence_said_twice_is_fetched_once(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk-test")
+    client = FakeClient()
+    first = el.synthesize_pcm("Done. Anything else?", client=client, cache_dir=tmp_path)
+    second = el.synthesize_pcm(
+        "Done. Anything else?", client=client, cache_dir=tmp_path
+    )
+    assert first == second
+    assert len(client.calls) == 1  # the second one cost nothing
+    el.synthesize_pcm("Opening Chrome now.", client=client, cache_dir=tmp_path)
+    assert len(client.calls) == 2
+
+
+def test_the_cache_works_without_the_network_or_a_key(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk-test")
+    el.synthesize_pcm("Good morning Captain.", client=FakeClient(), cache_dir=tmp_path)
+    monkeypatch.delenv("ELEVENLABS_API_KEY")
+    assert el.synthesize_pcm(
+        "Good morning Captain.", client=FakeClient(500), cache_dir=tmp_path
+    )
+
+
+def test_a_different_voice_or_language_is_a_different_clip() -> None:
+    a = el.cache_key("Vanakkam", "v1", "m", None)
+    assert a != el.cache_key("Vanakkam", "v2", "m", None)
+    assert a != el.cache_key("Vanakkam", "v1", "m", "ta")
+    assert a != el.cache_key("Vanakkam", "v1", "m2", None)
+
+
+def test_the_cache_can_be_turned_off(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk-test")
+    monkeypatch.setenv(el.ENV_CACHE, "0")
+    client = FakeClient()
+    el.synthesize_pcm("Hi.", client=client, cache_dir=tmp_path)
+    el.synthesize_pcm("Hi.", client=client, cache_dir=tmp_path)
+    assert len(client.calls) == 2 and not list(tmp_path.glob("*.pcm"))
+
+
+def test_the_cache_stays_under_its_size_cap(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(el, "CACHE_MAX_BYTES", 30_000)
+    for i in range(5):
+        el._cache_put(f"k{i}", b"\x00" * 10_000, tmp_path, el.CACHE_MAX_BYTES)
+    clips, size = el.cache_stats(tmp_path)
+    assert size <= 30_000 and clips == 3
+
+
+def test_the_doctor_line_never_shows_the_key(monkeypatch) -> None:
+    assert el.status_line()[0] == "info"
+    monkeypatch.setenv("ELEVENLABS_API_KEY", "sk-very-secret-123")
+    status, message = el.status_line()
+    assert status == "ok" and "sk-very-secret" not in message
+    assert el.DEFAULT_VOICE_ID in message

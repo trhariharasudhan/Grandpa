@@ -42,4 +42,12 @@ ElevenLabs. To keep everything on this PC, leave the key unset or set
 | `GRANDPA_ELEVENLABS_MODEL` | `eleven_flash_v2_5` | `eleven_multilingual_v2` sounds richer but is slower and costs 2x |
 | `GRANDPA_AVATAR_VOICE` | — | `piper`/`local` = stay offline, `pyttsx3` = old Windows voice |
 
+| `GRANDPA_ELEVENLABS_CACHE` | on | `0` turns the audio cache off |
+
+**Audio cache:** each sentence said in the cloud voice is kept in
+`~\.Grandpa\voice-cache\elevenlabs` (200 MB at most, oldest clips removed first).
+When the same sentence is said again ("Done. Anything else?"), it plays from disk
+without a request, so it uses no credits and needs no internet. `grandpa doctor` shows the
+voice status and the cache size, but never the key.
+
 Never paste the API key into chat, code, `config.yaml` or a commit.

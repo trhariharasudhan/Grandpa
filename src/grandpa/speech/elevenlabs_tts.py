@@ -70,6 +70,71 @@ VOICE_SETTINGS: dict[str, Any] = {
 _down_until = 0.0
 _down_lock = threading.Lock()
 
+CACHE_DIR = Path.home() / ".Grandpa" / "voice-cache" / "elevenlabs"
+ENV_CACHE = "GRANDPA_ELEVENLABS_CACHE"
+"""Set to ``0`` to turn the audio cache off."""
+CACHE_MAX_BYTES = 200 * 1024 * 1024
+"""About 70 minutes of 24 kHz speech; the oldest clips go first."""
+_cache_lock = threading.Lock()
+
+
+def cache_enabled() -> bool:
+    return os.environ.get(ENV_CACHE, "1").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
+
+
+def cache_key(text: str, voice: str, model: str, language: str | None) -> str:
+    """Same words, voice, model, language and settings give the same audio."""
+    import hashlib
+    import json
+
+    blob = json.dumps(
+        [text, voice, model, language or "", VOICE_SETTINGS, OUTPUT_FORMAT],
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
+def _cache_get(key: str, directory: Path) -> bytes | None:
+    path = directory / f"{key}.pcm"
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    try:
+        os.utime(path)  # recently used clips are kept longest
+    except OSError:
+        pass
+    return data or None
+
+
+def _cache_put(key: str, pcm: bytes, directory: Path, max_bytes: int) -> None:
+    with _cache_lock:
+        try:
+            directory.mkdir(parents=True, exist_ok=True)
+            tmp = directory / f"{key}.part"
+            tmp.write_bytes(pcm)
+            tmp.replace(directory / f"{key}.pcm")
+            files = sorted(directory.glob("*.pcm"), key=lambda f: f.stat().st_mtime)
+            total = sum(f.stat().st_size for f in files)
+            while files and total > max_bytes:
+                oldest = files.pop(0)
+                total -= oldest.stat().st_size
+                oldest.unlink(missing_ok=True)
+        except OSError:
+            logger.debug("voice cache write failed", exc_info=True)
+
+
+def cache_stats(directory: Path | None = None) -> tuple[int, int]:
+    """(clips, bytes) in the cache."""
+    files = list((directory or CACHE_DIR).glob("*.pcm"))
+    return len(files), sum(f.stat().st_size for f in files)
+
 
 def api_key() -> str:
     for name in ENV_KEYS:
@@ -117,14 +182,26 @@ def synthesize_pcm(
     language: str | None = None,
     model: str | None = None,
     client: Any = None,
+    cache_dir: Path | None = None,
 ) -> bytes:
-    """Raw 16-bit mono PCM at :data:`SAMPLE_RATE` for ``text``."""
+    """Raw 16-bit mono PCM at :data:`SAMPLE_RATE` for ``text``.
+
+    A sentence said before comes from the on-disk cache: no request, no
+    credits, no network wait."""
+    voice = voice or voice_id()
+    model = model or model_id()
+    cache_dir = cache_dir or CACHE_DIR
+    cached_key = cache_key(text, voice, model, language) if cache_enabled() else ""
+    if cached_key:
+        hit = _cache_get(cached_key, cache_dir)
+        if hit is not None:
+            return hit
     key = api_key()
     if not key:
         raise RuntimeError("No ElevenLabs API key (set ELEVENLABS_API_KEY).")
     body: dict[str, Any] = {
         "text": text,
-        "model_id": model or model_id(),
+        "model_id": model,
         "voice_settings": VOICE_SETTINGS,
     }
     if language:
@@ -133,7 +210,7 @@ def synthesize_pcm(
 
     post = client.post if client is not None else httpx.post
     response = post(
-        API_URL.format(voice_id=voice or voice_id()),
+        API_URL.format(voice_id=voice),
         params={"output_format": OUTPUT_FORMAT},
         headers={"xi-api-key": key, "Content-Type": "application/json"},
         json=body,
@@ -145,7 +222,10 @@ def synthesize_pcm(
     data = response.content
     if not data:
         raise RuntimeError("ElevenLabs returned no audio.")
-    return data[: len(data) // 2 * 2]
+    data = data[: len(data) // 2 * 2]
+    if cached_key:
+        _cache_put(cached_key, data, cache_dir, CACHE_MAX_BYTES)
+    return data
 
 
 def pcm_to_wav(pcm: bytes, path: Path | io.BytesIO, rate: int = SAMPLE_RATE) -> None:
@@ -157,7 +237,12 @@ def pcm_to_wav(pcm: bytes, path: Path | io.BytesIO, rate: int = SAMPLE_RATE) -> 
 
 
 def synthesize_wav(
-    text: str, path: Path, *, tamil: bool = False, client: Any = None
+    text: str,
+    path: Path,
+    *,
+    tamil: bool = False,
+    client: Any = None,
+    cache_dir: Path | None = None,
 ) -> None:
     """Write ``text`` in the cloned voice to the WAV file ``path``."""
     pcm = synthesize_pcm(
@@ -165,6 +250,7 @@ def synthesize_wav(
         voice=voice_id(tamil),
         language="ta" if tamil else None,
         client=client,
+        cache_dir=cache_dir,
     )
     pcm_to_wav(pcm, path)
 
@@ -209,8 +295,31 @@ if "elevenlabs" not in TTSRegistry.keys():
     TTSRegistry.register("elevenlabs")(ElevenLabsTTSBackend)
 
 
+def status_line() -> tuple[str, str]:
+    """(status, message) for ``grandpa doctor``; never shows the key itself."""
+    if not api_key():
+        return (
+            "info",
+            "Not set up (optional): set ELEVENLABS_API_KEY to speak in your cloned voice",
+        )
+    clips, size = cache_stats()
+    tamil = os.environ.get(ENV_TAMIL_VOICE, "").strip()
+    parts = [
+        f"Key set; voice {voice_id()} ({model_id()})",
+        f"Tamil voice {tamil}" if tamil else "Tamil uses the same voice",
+        f"cache {clips} clips, {size / 2**20:.1f} MB"
+        if cache_enabled()
+        else "cache off",
+    ]
+    return "ok", "; ".join(parts)
+
+
 __all__ = [
+    "CACHE_DIR",
     "DEFAULT_MODEL",
+    "cache_key",
+    "cache_stats",
+    "status_line",
     "DEFAULT_VOICE_ID",
     "ElevenLabsTTSBackend",
     "api_key",
