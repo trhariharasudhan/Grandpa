@@ -47,8 +47,11 @@ def _key() -> str:
     sys.exit("Set ELEVENLABS_API_KEY first.")
 
 
-def credits_left(client: httpx.Client) -> tuple[int, int]:
+def credits_left(client: httpx.Client) -> tuple[int, int] | None:
+    """(left, used), or None when the key may not read the account (TTS-only key)."""
     r = client.get(f"{API}/user/subscription", timeout=20)
+    if r.status_code in (401, 403):
+        return None
     r.raise_for_status()
     data = r.json()
     return int(data["character_limit"]) - int(data["character_count"]), int(
@@ -96,6 +99,12 @@ def main() -> int:
         "--limit", type=int, default=0, help="only the first N lines (a test run)"
     )
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument(
+        "--credits-left",
+        type=int,
+        default=0,
+        help="credits left on the account, for a Text-to-Speech-only key that cannot read it",
+    )
     args = ap.parse_args()
 
     lines = build()
@@ -114,8 +123,15 @@ def main() -> int:
     )
 
     client = httpx.Client(headers={"xi-api-key": _key()})
-    left, used_at_start = credits_left(client)
-    print(f"credits left: {left}")
+    state = credits_left(client)
+    if state is None:
+        if not args.credits_left:
+            sys.exit("This key cannot read the balance: pass --credits-left <number>.")
+        left, used_at_start = args.credits_left, None
+        print(f"credits left (as given): {left}")
+    else:
+        left, used_at_start = state
+        print(f"credits left: {left}")
     spent_chars = 0
     seconds = 0.0
     failed = 0
@@ -149,12 +165,14 @@ def main() -> int:
                     f"  {n}/{len(futures)} done, {seconds / 60:.1f} min of audio",
                     flush=True,
                 )
-    left_now, used_now = credits_left(client)
     have = len(list(wavs.glob("*.wav")))
     print(
-        f"recorded {have}/{len(lines)} lines this folder; this run made {seconds / 60:.1f} min; "
-        f"credits used this run {used_now - used_at_start}, left {left_now}"
+        f"recorded {have}/{len(lines)} lines in this folder; this run made "
+        f"{seconds / 60:.1f} min of audio from {spent_chars} characters"
     )
+    state = credits_left(client)
+    if state is not None and used_at_start is not None:
+        print(f"credits used this run {state[1] - used_at_start}, left {state[0]}")
     return 0 if failed == 0 else 1
 
 
