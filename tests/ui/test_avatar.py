@@ -485,3 +485,58 @@ def test_the_command_is_registered() -> None:
     result = CliRunner().invoke(cli, ["avatar", "--help"])
     assert result.exit_code == 0, result.output
     assert "--no-window" in result.output
+
+
+def test_the_voices_load_only_after_the_server_is_up(monkeypatch) -> None:
+    """Loading MMS Tamil (~5 s, holding Python's lock) used to make the
+    server miss its start deadline: "The avatar server did not start in time"."""
+    from click.testing import CliRunner
+
+    from grandpa.cli import avatar_cmd
+    from grandpa.ui import avatar_character, avatar_window, lipsync
+
+    order: list[str] = []
+
+    class Server:
+        url = "ws://127.0.0.1:1/avatar?token=t"
+        character = None
+
+        def start(self, timeout: float = 5.0) -> int:
+            order.append(f"server {timeout:.0f}s")
+            return 1
+
+        def stop(self) -> None:
+            pass
+
+    class Controller:
+        speaker = None
+
+        def watch_actions(self) -> None:
+            pass
+
+        def unwatch_actions(self) -> None:
+            pass
+
+    controller = Controller()
+    monkeypatch.setattr(avatar_cmd, "build", lambda **_k: (controller, Server()))
+    monkeypatch.setattr(
+        lipsync,
+        "default_speaker",
+        lambda: (order.append("voices") or "SPEAKER", "Voice: on, test."),
+    )
+
+    class Report:
+        def describe(self) -> str:
+            return "Character: test."
+
+    monkeypatch.setattr(avatar_character, "load_character", lambda: (None, Report()))
+    monkeypatch.setattr(
+        avatar_window, "run_window", lambda *a, **k: order.append("window")
+    )
+    result = CliRunner().invoke(
+        avatar_cmd.avatar, ["--no-mic", "--no-tray", "--no-budget"]
+    )
+    assert result.exit_code == 0, result.output
+    assert order == ["server 20s", "voices", "window"]
+    assert controller.speaker == "SPEAKER"
+    assert "Voice: on, test." in result.output
