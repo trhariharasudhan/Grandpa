@@ -49,6 +49,10 @@ TALK_SECONDS = 10.0
 """Longest a click-to-talk recording runs; it usually ends at the first pause."""
 
 
+SERVER_START_TIMEOUT_S = 20.0
+"""A slow, busy laptop (Ollama loading, antivirus scanning) can take longer than 5 s."""
+
+
 def microphone_listener(bridge, *, device=None, capture_factory=None):
     """Click-to-talk's listener: record one line, transcribe it with ``bridge``.
 
@@ -180,13 +184,11 @@ def avatar(
     from grandpa.ui.bridge import InProcessBridge
     from grandpa.ui.lipsync import default_speaker
 
-    if quiet:
-        speaker, voice_line = None, "Voice: off (--quiet)."
-    else:
-        speaker, voice_line = default_speaker()
     bridge = InProcessBridge()
     listener = None if no_mic else microphone_listener(bridge)
-    controller, server = build(bridge=bridge, speaker=speaker, listener=listener)
+    # The voices are chosen after the server is up: loading them (the MMS Tamil
+    # model holds Python's lock for ~5 s) used to starve the server's start.
+    controller, server = build(bridge=bridge, speaker=None, listener=listener)
 
     if orb_only:
         controller.ring_only("--orb-only", announce=False)
@@ -194,15 +196,19 @@ def avatar(
     else:
         server.character, report = load_character()
         click.echo(report.describe())
+    try:
+        server.start(timeout=SERVER_START_TIMEOUT_S)
+    except RuntimeError as exc:
+        safe_cli_error(str(exc))
+        raise SystemExit(1) from None
+    if quiet:
+        voice_line = "Voice: off (--quiet)."
+    else:
+        controller.speaker, voice_line = default_speaker()
     click.echo(voice_line)
     click.echo(
         "Talk: off (--no-mic)." if no_mic else "Talk: click Talk in the chat panel."
     )
-    try:
-        server.start()
-    except RuntimeError as exc:
-        safe_cli_error(str(exc))
-        raise SystemExit(1) from None
     controller.watch_actions()
     watch = None
 
