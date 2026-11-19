@@ -174,3 +174,14 @@ def test_the_backend_is_registered() -> None:
     if "elevenlabs" not in TTSRegistry.keys():  # conftest clears registries
         TTSRegistry.register("elevenlabs")(el.ElevenLabsTTSBackend)
     assert "elevenlabs" in TTSRegistry.keys()
+
+
+def test_the_command_line_runs_without_a_double_registration(monkeypatch) -> None:
+    """``python -m grandpa.speech.elevenlabs_tts`` used to crash on import."""
+    import runpy
+    import sys
+
+    monkeypatch.setattr(sys, "argv", ["elevenlabs_tts"])
+    with pytest.raises(SystemExit) as done:
+        runpy.run_module("grandpa.speech.elevenlabs_tts", run_name="__main__")
+    assert done.value.code == 2  # usage, not ValueError
