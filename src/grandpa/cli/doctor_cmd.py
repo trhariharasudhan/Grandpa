@@ -333,6 +333,24 @@ def _engine_is_configured(key: str, config: Any | None = None) -> bool:
     return key in _active_engine_keys(config)
 
 
+def _check_rust_bridge() -> CheckResult:
+    """Say whether the optional Rust binding or the Python fallback is in use.
+
+    Either is fine: every caller has a Python path, so this is "ok" both ways.
+    """
+    from grandpa._rust_bridge import rust_status
+
+    active, message = rust_status()
+    return CheckResult(
+        "Rust bridge",
+        "ok",
+        message,
+        details=None
+        if active
+        else "Optional. Build it with: uv run maturin develop -m rust/crates/grandpa-python/Cargo.toml",
+    )
+
+
 def _check_engines() -> List[CheckResult]:
     """Probe active engines and list inactive integrations as informational."""
     results: List[CheckResult] = []
@@ -1384,6 +1402,7 @@ def _build_doctor_dashboard() -> List[DoctorSection]:
         else:
             ai_engines.append(check)
     ai_engines.append(_check_default_model())
+    ai_engines.append(_check_rust_bridge())
     ai_engines.append(
         _check_odin_support_model("Embedding model", "nomic-embed-text:latest")
     )

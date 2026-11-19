@@ -58,6 +58,23 @@ def rust_available() -> bool:
 RUST_AVAILABLE: bool = rust_available()
 
 
+def rust_status() -> tuple[bool, str]:
+    """Which implementation is active, for ``grandpa doctor``.
+
+    Actually imports the binding (a built but broken ``.pyd`` is found by
+    ``find_spec`` and still fails to load), and never raises.
+    """
+    try:
+        module = get_rust_module()
+    except Exception as exc:  # ImportError, or a DLL load error on Windows
+        reason = (
+            "not built" if isinstance(exc, ModuleNotFoundError) else type(exc).__name__
+        )
+        return False, f"pure-Python fallback active (grandpa_rust {reason})"
+    version = getattr(module, "__version__", "")
+    return True, f"Rust binding active{f' ({version})' if version else ''}"
+
+
 # ---------------------------------------------------------------------------
 # JSON -> Python dataclass converters
 # ---------------------------------------------------------------------------
@@ -156,11 +173,8 @@ def retrieval_results_from_json(json_str: str) -> list:
 
 def optimization_store_from_rust(path: str = ":memory:") -> object | None:
     """Get a Rust-backed OptimizationStore, or None if Rust unavailable."""
-    mod = get_rust_module()
-    if mod is None:
-        return None
     try:
-        return mod.OptimizationStore(path)
+        return get_rust_module().OptimizationStore(path)
     except Exception:
         return None
 
@@ -199,6 +213,7 @@ __all__ = [
     "optimization_store_from_rust",
     "retrieval_results_from_json",
     "rust_available",
+    "rust_status",
     "scan_result_from_json",
     "trial_result_from_json",
 ]
