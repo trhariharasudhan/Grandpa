@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import os
+import queue
+import shutil
 import subprocess
+import threading
+import time
 from abc import ABC, abstractmethod
+from collections import deque
 from typing import TYPE_CHECKING, Any, List, Optional
 
 from grandpa.mcp.protocol import MCPRequest, MCPResponse
@@ -51,63 +58,195 @@ class InProcessTransport(MCPTransport):
         """No resources to release."""
 
 
+class MCPTimeoutError(TimeoutError):
+    """An MCP server did not answer in time. Its process has been killed."""
+
+
 class StdioTransport(MCPTransport):
     """JSON-RPC over stdin/stdout subprocess transport.
 
     Launches a subprocess and communicates via JSON lines on
     stdin/stdout.
+
+    Two background threads read the child's stdout and stderr, so a server
+    that logs a lot can never fill a pipe and freeze, and a request can wait
+    with a deadline instead of blocking on ``readline``. Lines that are not
+    the answer to the request just sent (server notifications, log lines,
+    requests from the server, late answers) are skipped.
+
+    ``timeout`` is per request, in seconds; ``None`` waits forever (the old
+    behaviour). When it runs out the process is killed and
+    :class:`MCPTimeoutError` is raised: a server that hung once is not
+    trusted with the next request.
     """
 
-    def __init__(self, command: List[str]) -> None:
-        self._command = command
+    def __init__(
+        self,
+        command: List[str],
+        *,
+        timeout: Optional[float] = None,
+        env: Optional[dict] = None,
+        cwd: Optional[str] = None,
+    ) -> None:
+        self._command = list(command)
+        self._timeout = timeout
+        self._env = env
+        self._cwd = cwd
         self._process: Optional[subprocess.Popen[str]] = None
+        self._lines: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._stderr_tail: "deque[str]" = deque(maxlen=40)
+        self._lock = threading.Lock()
         self._start()
 
     def _start(self) -> None:
         """Start the subprocess."""
+        command = list(self._command)
+        if command:
+            # Popen does not try PATHEXT on Windows, so "npx" would never
+            # find npx.cmd. shutil.which does.
+            found = shutil.which(command[0])
+            if found:
+                command[0] = found
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0
         self._process = subprocess.Popen(
-            self._command,
+            command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=self._env,
+            cwd=self._cwd,
+            creationflags=flags,
         )
+        proc = self._process
+        threading.Thread(
+            target=self._pump,
+            args=(proc.stdout, self._lines),
+            name="mcp-stdio-out",
+            daemon=True,
+        ).start()
+        threading.Thread(
+            target=self._drain,
+            args=(proc.stderr, self._stderr_tail),
+            name="mcp-stdio-err",
+            daemon=True,
+        ).start()
+
+    @staticmethod
+    def _pump(stream: Any, lines: "queue.Queue[Optional[str]]") -> None:
+        try:
+            for line in stream:
+                lines.put(line)
+        except (OSError, ValueError):
+            pass
+        finally:
+            lines.put(None)  # end of output: the process is gone
+
+    @staticmethod
+    def _drain(stream: Any, tail: "deque[str]") -> None:
+        try:
+            for line in stream:
+                tail.append(line.rstrip())
+        except (OSError, ValueError):
+            pass
+
+    @property
+    def stderr_tail(self) -> List[str]:
+        """The last lines the server wrote to stderr, for error messages."""
+        return list(self._stderr_tail)
+
+    @property
+    def running(self) -> bool:
+        return self._process is not None and self._process.poll() is None
+
+    def _write(self, request: MCPRequest) -> None:
+        proc = self._process
+        if proc is None or proc.stdin is None:
+            raise RuntimeError("Transport process is not running")
+        try:
+            proc.stdin.write(request.to_json() + "\n")
+            proc.stdin.flush()
+        except (OSError, ValueError) as exc:
+            raise RuntimeError(
+                f"MCP server process is not accepting input: {exc}"
+            ) from exc
 
     def send(self, request: MCPRequest) -> MCPResponse:
-        """Write request as JSON line, read response line."""
-        proc = self._process
-        if proc is None or proc.stdin is None or proc.stdout is None:
-            raise RuntimeError("Transport process is not running")
-
-        line = request.to_json() + "\n"
-        proc.stdin.write(line)
-        proc.stdin.flush()
-
-        response_line = proc.stdout.readline()
-        if not response_line:
-            raise RuntimeError("No response from subprocess")
-        return MCPResponse.from_json(response_line.strip())
+        """Write request as a JSON line, read lines until its response arrives."""
+        with self._lock:
+            self._write(request)
+            deadline = (
+                None if self._timeout is None else time.monotonic() + self._timeout
+            )
+            while True:
+                remaining = None
+                if deadline is not None:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        self._kill()
+                        raise MCPTimeoutError(
+                            f"MCP server did not answer {request.method!r} within "
+                            f"{self._timeout:g} s, so it was stopped"
+                        )
+                try:
+                    line = self._lines.get(timeout=remaining)
+                except queue.Empty:
+                    continue  # the deadline check above raises
+                if line is None:
+                    self._lines.put(None)  # keep reporting "gone" to later calls
+                    raise RuntimeError("No response from subprocess")
+                text = line.strip()
+                if not text:
+                    continue
+                try:
+                    parsed = json.loads(text)
+                except ValueError:
+                    continue  # a log line on stdout
+                if not isinstance(parsed, dict) or "method" in parsed:
+                    continue  # a notification or a request from the server
+                if parsed.get("id") != request.id:
+                    continue  # a late answer to an earlier, abandoned request
+                return MCPResponse.from_json(text)
 
     def send_notification(self, request: MCPRequest) -> None:
         """Send a JSON-RPC notification — write only, never read.
 
         Overrides the base implementation: stdio servers do not reply
-        to notifications, so the default ``send()`` would block forever
-        on ``proc.stdout.readline()``.
+        to notifications, so the default ``send()`` would wait forever.
         """
+        with self._lock:
+            self._write(request)
+
+    def _kill(self) -> None:
         proc = self._process
-        if proc is None or proc.stdin is None:
-            raise RuntimeError("Transport process is not running")
-        line = request.to_json() + "\n"
-        proc.stdin.write(line)
-        proc.stdin.flush()
+        if proc is None:
+            return
+        try:
+            proc.kill()
+            proc.wait(timeout=5)
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+        self._process = None
 
     def close(self) -> None:
-        """Terminate the subprocess."""
-        if self._process is not None:
-            self._process.terminate()
-            self._process.wait(timeout=5)
-            self._process = None
+        """Terminate the subprocess, and kill it if it does not stop."""
+        proc = self._process
+        if proc is None:
+            return
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+        except OSError:
+            pass
+        self._process = None
 
 
 class StreamableHTTPTransport(MCPTransport):
@@ -241,6 +380,7 @@ SSETransport = StreamableHTTPTransport
 
 __all__ = [
     "InProcessTransport",
+    "MCPTimeoutError",
     "MCPTransport",
     "SSETransport",
     "StdioTransport",

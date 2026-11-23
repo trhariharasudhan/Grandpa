@@ -48,6 +48,7 @@ __all__ = [
     "DOMAINS",
     "EXCLUSIONS",
     "LAYER_OWNED",
+    "MCP_PREFIX",
     "candidate_domains",
     "counts_by_risk",
     "domain_of",
@@ -371,6 +372,19 @@ class Binding(str, Enum):
     keeping the conventions in one table: adding one is a single, reviewable
     entry rather than a branch buried in a dispatch chain.
     """
+
+    MCP_TOOL = "mcp_tool"
+    """``function(action_name, arguments)`` -- grandpa.mcp.servers.call_action.
+
+    A tool on an external MCP server listed in ``mcp.toml``. These entries are
+    not in :data:`CATALOGUE`: they exist only while a configured server offers
+    them, so :func:`get` builds them on demand from names starting with
+    :data:`MCP_PREFIX`. Every one is HIGH and asks first.
+    """
+
+
+MCP_PREFIX = "mcp__"
+"""Action names ``mcp__<server>__<tool>`` belong to external MCP servers."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -3196,7 +3210,17 @@ def get(name: str) -> ActionSpec:
     Raises ``KeyError`` for anything not catalogued -- including the excluded
     actions, which exist as names but are not capabilities.
     """
-    return _BY_NAME[name]
+    try:
+        return _BY_NAME[name]
+    except KeyError:
+        if not name.startswith(MCP_PREFIX):
+            raise
+    # An external MCP tool (G1). Imported here, not at module scope, so the
+    # catalogue stays cheap to import. Raises KeyError when MCP is switched
+    # off, the server is not configured, or the tool is not on its allow list.
+    from grandpa.mcp.servers import spec_for
+
+    return spec_for(name)
 
 
 def counts_by_risk() -> dict[RiskLevel, int]:

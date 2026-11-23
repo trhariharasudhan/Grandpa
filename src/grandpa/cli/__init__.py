@@ -225,6 +225,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "mcp",
+        "grandpa.cli.mcp_cmd:mcp",
+        short_help="External MCP servers: list, test, call, off/on.",
+    )
+)
+cli.add_command(
+    _lazy(
         "plan",
         "grandpa.cli.plan_cmd:plan",
         short_help="Create and run verified multi-step plans.",
