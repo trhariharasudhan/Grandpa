@@ -42,6 +42,8 @@ dependencies = [
     "tomli>=2.0; python_version < '3.11'",
     "tomlkit>=0.12",
     "psutil>=7.2.2",
+    # Workflow files (grandpa workflow). safe_load only.
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
