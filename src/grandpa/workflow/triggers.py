@@ -29,10 +29,11 @@ import logging
 import re
 import sqlite3
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Iterator
 
 logger = logging.getLogger(__name__)
 
@@ -134,9 +135,25 @@ class TriggerStore:
     def __init__(self, db_path: Path | str | None = None) -> None:
         self.db_path = Path(db_path) if db_path else triggers_db_path()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """Commit on success, roll back on error, and always close.
+
+        ``with sqlite3.connect(...)`` alone only commits: the connection stays
+        open until the garbage collector finalizes it, at an arbitrary moment
+        on an arbitrary thread. This store is opened on every chat turn (the
+        phrase check), so it closes what it opens.
+        """
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.db_path)
+        try:
+            with conn:
+                yield self._prepare(conn)
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _prepare(conn: sqlite3.Connection) -> sqlite3.Connection:
         conn.row_factory = sqlite3.Row
         conn.execute(
             """
