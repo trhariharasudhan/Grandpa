@@ -101,6 +101,7 @@ _REMINDERS = "grandpa.reminders.execute_reminder_action"
 _SCHEDULER = "grandpa.task_scheduler.execute_scheduler_action"
 _WEB_SEARCH = "grandpa.web_search.automation.WebSearchAutomation.execute"
 _CLOCK = "grandpa.core.runtime_context.answer_datetime"
+_BRIEFING = "grandpa.briefing"
 _CALENDAR = "grandpa.calendar.automation.CalendarAutomation.execute"
 _GMAIL = "grandpa.gmail.automation.GmailAutomation.execute"
 
@@ -571,6 +572,11 @@ _CALLS: dict[str, _Call] = {
     "web_clear_cache": _Call(Binding.WEB_SEARCH_ACTION, alias="clear_cache"),
     # the clock
     "datetime_now": _Call(Binding.FUNCTION_KWARGS),
+    # the morning briefing (F3): plain functions returning an ActionResult
+    "weather_now": _Call(Binding.FUNCTION_KWARGS),
+    "battery_status": _Call(Binding.FUNCTION_KWARGS),
+    "reminders_today": _Call(Binding.FUNCTION_KWARGS),
+    "speak_text": _Call(Binding.FUNCTION_KWARGS),
     # calendar
     "calendar_status": _Call(Binding.CALENDAR_ACTION, alias="status"),
     "calendar_setup": _Call(Binding.CALENDAR_ACTION, alias="setup"),
@@ -1928,6 +1934,47 @@ _CLOCK_ACTIONS: tuple[ActionSpec, ...] = (
 )
 
 
+# --- the morning briefing (F3) -------------------------------------------------
+#
+# Three small reads and one way to say them, for a workflow to string together:
+# weather, battery, today's reminders, then speak the lot. All LOW: three only
+# read, and speaking aloud changes nothing on the machine.
+
+_BRIEFING_ACTIONS: tuple[ActionSpec, ...] = (
+    _spec(
+        "weather_now",
+        _LOW,
+        "Today's weather for a city: temperature now, the high and low, and "
+        "the chance of rain.",
+        f"{_BRIEFING}.weather_now",
+        _schema({"city": _string("City name, e.g. 'Bengaluru'.", default="Bengaluru")}),
+        notes="Asks Open-Meteo (no account, no key); only the city name and "
+        "its coordinates leave the PC.",
+    ),
+    _spec(
+        "battery_status",
+        _LOW,
+        "Report the battery level and whether the charger is plugged in.",
+        f"{_BRIEFING}.battery_status",
+    ),
+    _spec(
+        "reminders_today",
+        _LOW,
+        "List the pending reminders due today (or overdue), earliest first.",
+        f"{_BRIEFING}.reminders_today",
+    ),
+    _spec(
+        "speak_text",
+        _LOW,
+        "Say a piece of text aloud in Grandpa's configured voice.",
+        f"{_BRIEFING}.speak_text",
+        _schema({"text": _string("What to say.")}, ("text",)),
+        notes="Uses the avatar's voice chain: ElevenLabs when a key is set, "
+        "else Piper or the local voice.",
+    ),
+)
+
+
 # --- calendar and mail --------------------------------------------------------
 #
 # Both already had execute(action, confirmed=, confirm=) -- the notes shape --
@@ -2296,6 +2343,7 @@ CATALOGUE: tuple[ActionSpec, ...] = (
     *_SCHEDULER_ACTIONS,
     *_WEB_SEARCH_ACTIONS,
     *_CLOCK_ACTIONS,
+    *_BRIEFING_ACTIONS,
     *_CALENDAR_ACTIONS,
     *_GMAIL_ACTIONS,
 )
@@ -2554,6 +2602,18 @@ LAYER_OWNED: Mapping[str, str] = MappingProxyType(
         "browser_focus_address_bar": (
             "Ctrl+L through grandpa.browser. No pc_control equivalent."
         ),
+        **{
+            name: (
+                "The morning briefing (F3). New capabilities with no "
+                "pc_control equivalent: plain reads, and speaking aloud."
+            )
+            for name in (
+                "weather_now",
+                "battery_status",
+                "reminders_today",
+                "speak_text",
+            )
+        },
         "datetime_now": (
             "The system clock, migrated seventh. handle_datetime_intent was "
             "split into parse_datetime_intent and answer_datetime first -- the "
@@ -2647,6 +2707,7 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "desktop_summary",
             "pc_diagnostics",
             "system_info",
+            "battery_status",
             "screen_capture",
             "screen_describe",
             "screen_active_window",
@@ -2745,7 +2806,12 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "memory_forget",
             "memory_clear",
         ),
-        "reminders": ("reminder_create", "reminder_list", "reminder_cancel"),
+        "reminders": (
+            "reminder_create",
+            "reminder_list",
+            "reminder_cancel",
+            "reminders_today",
+        ),
         "clock": ("datetime_now",),
         "calendar": tuple(f"calendar_{name}" for name in CALENDAR_NAMES),
         "mail": tuple(f"gmail_{name}" for name in GMAIL_NAMES),
@@ -2754,6 +2820,7 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "web_sources",
             "web_search_status",
             "web_clear_cache",
+            "weather_now",
         ),
         "routines": (
             "routine_create_morning",
@@ -2763,6 +2830,7 @@ DOMAINS: Mapping[str, tuple[str, ...]] = MappingProxyType(
             "routine_disable",
             "routine_run",
             "routine_create_reminder",
+            "speak_text",
         ),
     }
 )

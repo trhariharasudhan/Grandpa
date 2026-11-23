@@ -1,0 +1,36 @@
+# Good morning: weather, today's reminders and the battery, said aloud.
+# Copy it into your workflow folder (%USERPROFILE%\.grandpa\workflows), then:
+#   uv run python -m grandpa workflow run morning-routine          (dry run)
+#   uv run python -m grandpa workflow run morning-routine --yes    (really run)
+#   uv run python -m grandpa workflow run morning-routine --yes --var city=Chennai
+# Nothing here changes your PC; every step only reads, and the last one speaks.
+name: morning-routine
+description: Weather, today's reminders and battery, spoken in Grandpa's voice
+vars:
+  city: Bengaluru
+  name: Captain
+steps:
+  - id: weather
+    action: weather_now
+    params:
+      city: "{{ vars.city }}"
+    timeout: 20
+    retries: 1
+    retry_delay: 2
+    continue_on_error: true
+  - id: reminders
+    action: reminders_today
+    continue_on_error: true
+  - id: battery
+    action: battery_status
+    continue_on_error: true
+  - id: say
+    action: speak_text
+    params:
+      text: >-
+        Good morning {{ vars.name }}.
+        {{ steps.weather.message }}
+        {{ steps.reminders.message }}
+        {{ steps.battery.message }}
+    timeout: 120
+    continue_on_error: true

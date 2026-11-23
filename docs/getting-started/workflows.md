@@ -48,3 +48,23 @@ steps:
   run as Python.
 - A step that fails stops the workflow unless it has `continue_on_error: true`.
   A step that was declined, timed out or had bad parameters is never retried.
+
+## Sample: morning routine
+
+`examples/workflows/morning-routine.yaml` says good morning with the weather
+(Bengaluru by default), today's reminders and the battery level, spoken in
+Grandpa's configured voice (your ElevenLabs voice when its key is set, else
+Piper or the local voice). Every step only reads; nothing on the PC changes.
+
+```powershell
+Copy-Item examples\workflows\morning-routine.yaml $env:USERPROFILE\.grandpa\workflows\
+uv run python -m grandpa workflow run morning-routine                      # dry run
+uv run python -m grandpa workflow run morning-routine --yes                # say it
+uv run python -m grandpa workflow run morning-routine --yes --var city=Chennai
+```
+
+The weather comes from [Open-Meteo](https://open-meteo.com) (free, no key);
+only the city name and its coordinates leave the PC. With no internet the
+routine still says the reminders and battery. The actions it uses --
+`weather_now`, `reminders_today`, `battery_status`, `speak_text` -- can be
+steps in your own workflows too.
