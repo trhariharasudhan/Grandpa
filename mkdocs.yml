@@ -140,6 +140,7 @@ nav:
       - Daily Use Setup: getting-started/daily-use-setup.md
       - Configuration: getting-started/configuration.md
       - Workflows: getting-started/workflows.md
+      - MCP servers: getting-started/mcp.md
   - Architecture:
       - Overview: architecture/overview.md
       - Domain Boundaries: architecture/domain-architecture.md
