@@ -1,0 +1,39 @@
+# The sample plugin. Copy this folder to %USERPROFILE%\.grandpa\plugins\<name>
+# to start your own; docs/getting-started/plugins.md explains every field.
+
+[plugin]
+name = "hello"
+version = "0.1.0"
+description = "A sample plugin: greets you, and tells the time through Grandpa's clock."
+module = "plugin.py"
+# What this plugin may do. "actions:datetime_now" lets it run that one Grandpa
+# action through ctx.run_action, with the normal checks. Anything not listed
+# here is refused.
+permissions = ["actions:datetime_now"]
+
+[config.greeting]
+default = "Vanakkam"
+description = "The word used to greet."
+
+[[tools]]
+name = "greet"
+description = "Greet someone by name."
+function = "greet"
+risk = "low"
+required = ["name"]
+
+[tools.parameters]
+name = { type = "string", description = "Who to greet." }
+
+[[tools]]
+name = "greet_with_time"
+description = "Greet someone and tell them the time."
+function = "greet_with_time"
+risk = "low"
+
+[tools.parameters]
+name = { type = "string", description = "Who to greet.", default = "Captain" }
+
+[[events]]
+on = "workflow_end"
+handler = "on_workflow_end"

@@ -49,6 +49,7 @@ __all__ = [
     "EXCLUSIONS",
     "LAYER_OWNED",
     "MCP_PREFIX",
+    "PLUGIN_PREFIX",
     "candidate_domains",
     "counts_by_risk",
     "domain_of",
@@ -382,9 +383,22 @@ class Binding(str, Enum):
     :data:`MCP_PREFIX`. Every one is HIGH and asks first.
     """
 
+    PLUGIN_TOOL = "plugin_tool"
+    """``function(action_name, arguments, confirm_callback)`` --
+    grandpa.plugins.host.call_action.
+
+    A tool declared in an enabled plugin's ``plugin.toml``. Like MCP tools these
+    are built on demand, from names starting with :data:`PLUGIN_PREFIX`. The
+    callback is handed over so actions the plugin runs in turn ask the user the
+    same way; the plugin never gets to answer for the user.
+    """
+
 
 MCP_PREFIX = "mcp__"
 """Action names ``mcp__<server>__<tool>`` belong to external MCP servers."""
+
+PLUGIN_PREFIX = "plugin__"
+"""Action names ``plugin__<plugin>__<tool>`` belong to enabled plugins (G2)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -3213,6 +3227,12 @@ def get(name: str) -> ActionSpec:
     try:
         return _BY_NAME[name]
     except KeyError:
+        if name.startswith(PLUGIN_PREFIX):
+            # A plugin tool (G2). KeyError unless the plugin is enabled and its
+            # files are unchanged since it was enabled.
+            from grandpa.plugins.host import spec_for as plugin_spec_for
+
+            return plugin_spec_for(name)
         if not name.startswith(MCP_PREFIX):
             raise
     # An external MCP tool (G1). Imported here, not at module scope, so the

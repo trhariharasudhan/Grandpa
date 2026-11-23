@@ -141,6 +141,7 @@ nav:
       - Configuration: getting-started/configuration.md
       - Workflows: getting-started/workflows.md
       - MCP servers: getting-started/mcp.md
+      - Plugins: getting-started/plugins.md
   - Architecture:
       - Overview: architecture/overview.md
       - Domain Boundaries: architecture/domain-architecture.md

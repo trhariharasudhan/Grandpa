@@ -232,6 +232,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "plugin",
+        "grandpa.cli.plugin_cmd:plugin",
+        short_help="Plugins: list, enable, disable, call.",
+    )
+)
+cli.add_command(
+    _lazy(
         "plan",
         "grandpa.cli.plan_cmd:plan",
         short_help="Create and run verified multi-step plans.",
