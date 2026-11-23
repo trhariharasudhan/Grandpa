@@ -259,6 +259,11 @@ EXPECTED_LAYER_RISK: dict[str, tuple[str, Confirmation]] = {
     "web_clear_cache": ("LOW", NONE),
     # the clock
     "datetime_now": ("LOW", NONE),
+    # the morning briefing (F3): three reads, and speaking aloud.
+    "weather_now": ("LOW", NONE),
+    "battery_status": ("LOW", NONE),
+    "reminders_today": ("LOW", NONE),
+    "speak_text": ("LOW", NONE),
     # calendar: reading is LOW, connecting and changing are MEDIUM, deleting an
     # event is HIGH. Everything that changes asks through the domain, because
     # the prompt quotes the event it matched.
