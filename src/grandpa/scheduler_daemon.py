@@ -85,7 +85,9 @@ class BackgroundSchedulerDaemon:
             try:
                 routine_result = execute_due_once(self.store, now=self._last_tick_at)
                 reminder_result = self.reminder_scheduler.tick()
+                workflow_runs = self._check_workflow_triggers(self._last_tick_at)
                 result = {
+                    "workflow_triggers_fired": len(workflow_runs),
                     "status": "ok",
                     "routines": routine_result,
                     "reminders": reminder_result,
@@ -103,6 +105,17 @@ class BackgroundSchedulerDaemon:
                 self._last_error = str(exc)
                 logger.exception("Routine scheduler daemon tick failed")
                 return {"status": "error", "message": str(exc)}
+
+    @staticmethod
+    def _check_workflow_triggers(now: float) -> list[dict[str, Any]]:
+        """Time, file and app triggers for workflows. Never breaks the tick."""
+        try:
+            from grandpa.workflow.triggers import check_triggers
+
+            return check_triggers(now)
+        except Exception:  # noqa: BLE001 - reminders must keep firing
+            logger.warning("workflow trigger check failed", exc_info=True)
+            return []
 
     def status(self) -> dict[str, Any]:
         thread_running = bool(self._thread and self._thread.is_alive())
