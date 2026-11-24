@@ -617,7 +617,11 @@
     else withContext(() => queue(text));
     input.value = ""; attached = []; drawAttachments(); grow();
   }
-  function grow() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 240) + "px"; }
+  function grow() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 240) + "px";
+    input.style.overflowY = input.scrollHeight > 240 ? "auto" : "hidden";
+  }
   input.addEventListener("input", grow);
   input.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.isComposing || e.altKey) return;

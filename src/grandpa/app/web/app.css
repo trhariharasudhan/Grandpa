@@ -213,7 +213,7 @@ li:hover > .actions, li:focus-within > .actions, li.last > .actions { opacity: 1
 #app.incognito #composer { border-style: dashed; border-color: var(--purple); }
 #attachments { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
 #attachments:empty { display: none; }
-#input { width: 100%; resize: none; border: 0; background: transparent; max-height: 240px; padding: 2px 6px; outline: none; }
+#input { width: 100%; resize: none; border: 0; background: transparent; max-height: 240px; padding: 2px 6px; outline: none; overflow-y: hidden; }
 .tools-row { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
 .pop-wrap { position: relative; }
 .pop { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 20; background: var(--surface); border: 1px solid var(--border);
