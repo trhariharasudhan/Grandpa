@@ -146,10 +146,33 @@ def test_nothing_is_sent_while_grandpa_is_still_answering() -> None:
 
 
 def test_slash_commands_pop_up() -> None:
-    assert [n for n, _ in matching_commands("/m")] == ["/model", "/memory"]
-    assert len(matching_commands("/")) > 10
+    names = [n for n, _ in matching_commands("/m")]
+    assert {"/model", "/memory", "/mode"} <= set(names)
+    assert names.index("/memory") < names.index("/mode")  # everyday ones first
+    everything = [n for n, _ in matching_commands("/")]
+    from grandpa.cli.slash_commands import SLASH_COMMANDS as REGISTRY
+
+    for command in REGISTRY:  # every working engine command is offered
+        if command.implemented and command.name != "/quit":
+            assert command.name in everything
+    for name in ("/theme", "/talk", "/speak", "/copy", "/retry", "/export", "/keys"):
+        assert name in everything
     assert matching_commands("hello") == []
-    assert matching_commands("/model x") == []
+
+
+def test_a_space_after_a_command_lists_its_subcommands() -> None:
+    subs = [n for n, _ in matching_commands("/memory ")]
+    assert "/memory list" in subs and "/memory search <query>" in subs
+    narrowed = [n for n, _ in matching_commands("/memory se")]
+    assert narrowed and all(n.startswith("/memory se") for n in narrowed)
+    assert matching_commands("/memory search cats") == []
+
+
+def test_completion_stops_before_an_argument() -> None:
+    from grandpa.tui.app import completion_text
+
+    assert completion_text("/notes search <query>") == "/notes search "
+    assert completion_text("/memory list") == "/memory list"
 
 
 def test_history_survives_a_restart(tmp_path) -> None:
@@ -267,5 +290,234 @@ def test_typing_while_the_log_has_focus_goes_to_the_input_box() -> None:
             prompt = app.query_one("#prompt")
             assert app.focused is prompt
             assert prompt.text == "hi"
+
+    asyncio.run(scenario())
+
+
+# --- themes ----------------------------------------------------------------------
+
+
+def test_themes_use_only_the_seven_colours_and_stay_readable() -> None:
+    from grandpa.cli.theme import shade, tint
+    from grandpa.tui.themes import BASES, GRANDPA_YELLOW, THEMES, USER_PURPLE, contrast
+
+    family = {GRANDPA_YELLOW.lower(), USER_PURPLE.lower()}
+    for base in BASES.values():
+        for percent in range(0, 101):
+            family.add(tint(base, percent).lower())
+            family.add(shade(base, percent).lower())
+    for colors in THEMES.values():
+        everything = (
+            *colors.allowed_foregrounds(),
+            *colors.allowed_backgrounds(),
+            colors.border,
+            colors.faint,
+        )
+        for colour in everything:
+            assert colour.lower() in family, (colors.name, colour)
+        for colour in colors.allowed_foregrounds():
+            assert contrast(colour, colors.background) >= 4.5, (colors.name, colour)
+            assert contrast(colour, colors.surface) >= 4.5, (colors.name, colour)
+
+
+def test_the_owner_chosen_message_colours() -> None:
+    from grandpa.tui.themes import DARK
+
+    assert DARK.user == "#B0A2E2"
+    assert DARK.grandpa == "#FFE2A4"
+
+
+def test_any_printed_colour_is_mapped_onto_the_theme() -> None:
+    from rich.text import Text
+
+    from grandpa.tui.app import fit_text
+    from grandpa.tui.themes import DARK, LIGHT
+
+    text = Text.from_ansi(
+        "\x1b[38;2;95;179;179mcode\x1b[0m \x1b[35mmagenta\x1b[0m "
+        "\x1b[48;2;39;40;34mbg\x1b[0m \x1b[38;2;255;255;0myellow\x1b[0m"
+    )
+    for colors in (DARK, LIGHT):
+        fitted = fit_text(text, colors)
+        assert fitted.plain == text.plain
+        for span in fitted.spans:
+            style = span.style
+            if style.color is not None:
+                assert style.color.get_truecolor().hex in {
+                    c.lower() for c in colors.allowed_foregrounds()
+                }
+            if style.bgcolor is not None:
+                assert style.bgcolor.get_truecolor().hex in {
+                    c.lower() for c in colors.allowed_backgrounds()
+                }
+
+
+def test_theme_choice_is_saved(tmp_path) -> None:
+    from grandpa.tui.themes import save_settings, saved_theme_name
+
+    path = tmp_path / "s.json"
+    assert saved_theme_name(path) == "dark"
+    save_settings({"theme": "light"}, path)
+    assert saved_theme_name(path) == "light"
+    save_settings({"theme": "purple"}, path)
+    assert saved_theme_name(path) == "dark"
+
+
+# --- helpers -----------------------------------------------------------------------
+
+
+def test_files_can_be_attached_with_at(tmp_path) -> None:
+    from grandpa.tui.helpers import (
+        expand_file_mentions,
+        file_suggestions,
+        mention_at_cursor,
+    )
+
+    (tmp_path / "notes.txt").write_text("buy milk", encoding="utf-8")
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src" / "app.py").write_text("print(1)", encoding="utf-8")
+    (tmp_path / "image.bin").write_bytes(b"\x00\x01\x02")
+
+    assert mention_at_cursor("summarise @no") == "no"
+    assert mention_at_cursor("email a@b.com") is None
+    assert file_suggestions("no", tmp_path) == ["notes.txt"]
+    assert file_suggestions("src/", tmp_path) == ["src/app.py"]
+
+    message, attached, notes = expand_file_mentions(
+        "check @notes.txt and @src/app.py and @image.bin and @missing.txt", tmp_path
+    )
+    assert attached == ["notes.txt", "src/app.py"]
+    assert "buy milk" in message and "print(1)" in message
+    assert any("binary" in n for n in notes) and any("no such file" in n for n in notes)
+
+
+def test_files_outside_the_folder_and_home_are_refused(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+
+    from grandpa.tui.helpers import read_attachment
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path / "home"))
+    (tmp_path / "home").mkdir()
+    (tmp_path / "work").mkdir()
+    (tmp_path / "secret.txt").write_text("x", encoding="utf-8")
+    contents, note = read_attachment("../secret.txt", tmp_path / "work")
+    assert contents is None and "only files" in note
+
+
+def test_export_writes_markdown(tmp_path) -> None:
+    from datetime import datetime
+
+    from grandpa.tui.helpers import Turn, export_markdown
+
+    at = datetime(2026, 11, 24, 10, 30)
+    path = export_markdown(
+        [Turn("user", "hello", at), Turn("grandpa", "Hi Captain", at)], tmp_path, now=at
+    )
+    text = path.read_text(encoding="utf-8")
+    assert path.name == "grandpa-chat-20261124-103000.md"
+    assert "**You** · 10:30" in text and "Hi Captain" in text
+
+
+def test_reply_text_is_cleaned_before_speaking() -> None:
+    from grandpa.tui.voice import speakable
+
+    said = speakable("**Done.** Run `ls`:\n```bash\nls -la\n```\n# Next")
+    assert "ls -la" not in said and "*" not in said and "#" not in said
+    assert said.startswith("Done.")
+
+
+# --- the app with turns -------------------------------------------------------------
+
+
+@click.command()
+@click.option("--fullscreen/--no-fullscreen", default=None)
+def turn_chat(fullscreen):
+    console = chat_cmd.Console(stderr=True)
+    while True:
+        text = chat_cmd.read_chat_input("You > ")
+        if text is None:
+            return
+        chat_cmd.render_user_message(console, text)
+        chat_cmd.render_assistant_response(console, f"you said {text[:40]}")
+
+
+def _turn_app(tmp_path) -> GrandpaApp:
+    app = GrandpaApp(theme_name="dark")
+    hooks = UiHooks(
+        output=lambda t: app.call_from_thread(app._on_output, t),
+        ready_for_input=lambda p: app.call_from_thread(app._on_ready, p),
+        ask=lambda q: app.call_from_thread(app._on_question, q),
+        finished=lambda c: app.call_from_thread(app._on_finished, c),
+        turn=lambda r: app.call_from_thread(app._on_turn, r),
+    )
+    app.bridge = ChatBridge(hooks, width=80, chat_command=turn_chat)
+    app.history.path = None
+    app.history.items = []
+    return app
+
+
+def test_messages_are_labelled_and_coloured(tmp_path, monkeypatch) -> None:
+    import grandpa.tui.themes as themes
+    from grandpa.tui.app import OutputBlock, UserMessage
+
+    monkeypatch.setattr(themes, "settings_path", lambda: tmp_path / "s.json")
+
+    async def scenario() -> None:
+        app = _turn_app(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _until(pilot, lambda: app._busy_since is None)
+            await pilot.press(*"hello")
+            await pilot.press("enter")
+            await _until(
+                pilot,
+                lambda: len(app.query(".grandpa")) == 1 and app._busy_since is None,
+            )
+            user = app.query_one(UserMessage)
+            reply = app.query_one(".grandpa", OutputBlock)
+            assert user.text == "hello"
+            assert reply.plain() == "you said hello"
+            assert app.last_reply() == "you said hello"
+            assert [t.role for t in app.turns] == ["user", "grandpa"]
+
+            await pilot.press("ctrl+t")  # light theme, saved
+            assert app.palette.name == "light"
+            assert themes.saved_theme_name(tmp_path / "s.json") == "light"
+
+            await pilot.press("f5")  # retry
+            await _until(
+                pilot,
+                lambda: len(app.query(".grandpa")) == 2 and app._busy_since is None,
+            )
+
+            await pilot.press(*"/theme dark")
+            await pilot.press("escape")
+            await pilot.press("enter")
+            assert app.palette.name == "dark"
+
+    asyncio.run(scenario())
+
+
+def test_local_commands_never_reach_the_engine(tmp_path, monkeypatch) -> None:
+    import grandpa.tui.themes as themes
+
+    monkeypatch.setattr(themes, "settings_path", lambda: tmp_path / "s.json")
+    monkeypatch.setattr("grandpa.runtime_paths.grandpa_home", lambda: tmp_path)
+
+    async def scenario() -> None:
+        app = _turn_app(tmp_path)
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _until(pilot, lambda: app._busy_since is None)
+            await pilot.press(*"hi")
+            await pilot.press("enter")
+            await _until(
+                pilot, lambda: app.last_reply() is not None and app._busy_since is None
+            )
+            for command in ("/export", "/keys"):
+                await pilot.press(*command)
+                await pilot.press("escape")
+                await pilot.press("enter")
+            assert app.query_one("#help").has_class("visible")
+            assert len(list((tmp_path / "exports").glob("*.md"))) == 1
+            assert [t.role for t in app.turns] == ["user", "grandpa"]
 
     asyncio.run(scenario())

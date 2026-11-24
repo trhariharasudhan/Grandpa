@@ -553,6 +553,20 @@ def _calendar_slash_to_natural(command: str) -> str | None:
     return mapping.get(action)
 
 
+_NOTES_USAGE = {
+    "search": "/notes search <query>",
+    "open": "/notes open <name>",
+    "create": "/notes create <name>",
+    "append": "/notes append <name> <text>",
+    "rename": "/notes rename <old> to <new>",
+    "delete": "/notes delete <name>",
+    "archive": "/notes archive <name>",
+    "restore": "/notes restore <name>",
+    "pin": "/notes pin <name>",
+    "unpin": "/notes unpin <name>",
+}
+
+
 def _handle_notes_slash_command(command: str) -> str | None:
     if not command.startswith("/notes"):
         return None
@@ -575,6 +589,9 @@ def _handle_notes_slash_command(command: str) -> str | None:
         )
     command_text = _notes_slash_to_natural(command)
     if command_text is None:
+        usage = _NOTES_USAGE.get(parts[1].lower()) if len(parts) > 1 else None
+        if usage is not None:
+            return f"Which note? Use: {usage}"
         return "Unknown Notes command. Try /notes help."
     from grandpa.notes import handle_notes_command
 

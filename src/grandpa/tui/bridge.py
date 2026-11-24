@@ -106,6 +106,9 @@ class UiHooks:
     ready_for_input: Callable[[str], None]
     ask: Callable[[Question], None]
     finished: Callable[[int], None]
+    #: ``"user"`` when the engine records the user's message, ``"grandpa"``
+    #: when a reply starts. The interface draws the labels itself.
+    turn: Callable[[str], None] | None = None
 
 
 _YES_NO = re.compile(r"\[\s*y\s*/\s*n\s*\]\s*$", re.IGNORECASE)
@@ -168,6 +171,18 @@ class ChatBridge:
         self._last_line = (self._last_line + tail) if "\n" not in text else tail
         self.hooks.output(text)
 
+    def _user_message(self, _console: Any, _content: Any, **_kwargs: Any) -> None:
+        # The interface already shows what was typed (without attached files'
+        # contents), so the engine's own echo is not printed.
+        self.hooks.turn("user")  # type: ignore[misc]
+
+    def _assistant_prefix(self, _console: Any) -> None:
+        self.hooks.turn("grandpa")  # type: ignore[misc]
+
+    def _assistant_response(self, console: Any, content: Any) -> None:
+        self.hooks.turn("grandpa")  # type: ignore[misc]
+        console.print(content)
+
     def _write_log(self, text: str) -> None:
         """A log line: shown dimmed, never taken as a question's prompt."""
         text = text.rstrip("\n")
@@ -227,6 +242,9 @@ class ChatBridge:
                 theme=theme,
                 legacy_windows=False,
                 soft_wrap=False,
+                # No automatic colouring of numbers and paths: in a chat it
+                # reads as random emphasis.
+                highlight=False,
             )
 
         return make_console
@@ -245,6 +263,15 @@ class ChatBridge:
             (chat_cmd, "read_chat_input"): self._read_chat_input,
             (chat_cmd, "select_from_list"): self._select_from_list,
         }
+        # The interface shows its own spinner in the status line; the engine's
+        # terminal spinner would only leave stray frames in the conversation.
+        patches[(chat_cmd, "ThinkingAnimation")] = _quiet_animation(
+            chat_cmd.ThinkingAnimation
+        )
+        if self.hooks.turn is not None:
+            patches[(chat_cmd, "render_user_message")] = self._user_message
+            patches[(chat_cmd, "render_assistant_prefix")] = self._assistant_prefix
+            patches[(chat_cmd, "render_assistant_response")] = self._assistant_response
         saved = {key: getattr(*key) for key in patches}
         for (module, name), value in patches.items():
             setattr(module, name, value)
@@ -276,12 +303,21 @@ class ChatBridge:
 _real_input = builtins.input
 
 
+def _quiet_animation(base: type) -> type:
+    """A subclass of the engine's spinner that never draws."""
+
+    class QuietAnimation(base):  # type: ignore[valid-type, misc]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._enabled = False
+
+    return QuietAnimation
+
+
 def _is_terminal_stream(stream: object) -> bool:
     import sys
 
-    return stream is not None and (
-        stream is sys.__stderr__ or stream is sys.__stdout__
-    )
+    return stream is not None and (stream is sys.__stderr__ or stream is sys.__stdout__)
 
 
 def redirect_terminal_log_handlers(sink: Callable[[str], None]) -> Callable[[], None]:
@@ -301,9 +337,8 @@ def redirect_terminal_log_handlers(sink: Callable[[str], None]) -> Callable[[], 
     forward = _ForwardingFile(sink)
     for item in loggers:
         for handler in item.handlers:
-            if (
-                type(handler) is logging.StreamHandler
-                and _is_terminal_stream(handler.stream)
+            if type(handler) is logging.StreamHandler and _is_terminal_stream(
+                handler.stream
             ):
                 moved.append((handler, handler.stream))
                 handler.setStream(forward)  # type: ignore[arg-type]
@@ -313,5 +348,6 @@ def redirect_terminal_log_handlers(sink: Callable[[str], None]) -> Callable[[], 
             handler.setStream(stream)  # type: ignore[arg-type]
 
     return restore
+
 
 __all__ = ["ChatBridge", "Question", "UiHooks", "clean_terminal_text"]

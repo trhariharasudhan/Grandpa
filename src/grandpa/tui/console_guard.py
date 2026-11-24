@@ -71,6 +71,8 @@ class ConsoleModeGuard:
         self.repairs += 1
         if self.repairs <= 3:
             logger.warning(
-                "console input mode changed from %#06x to %#06x; restored", self._wanted, mode
+                "console input mode changed from %#06x to %#06x; restored",
+                self._wanted,
+                mode,
             )
         return True

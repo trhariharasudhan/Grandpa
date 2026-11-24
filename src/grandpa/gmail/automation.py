@@ -95,6 +95,12 @@ class GmailAutomation:
             return GmailResult("not_configured", str(exc), action, error=str(exc))
         except GmailApiError as exc:
             return GmailResult("error", str(exc), action, error=str(exc))
+        except ModuleNotFoundError as exc:
+            message = (
+                "Gmail needs Google's client libraries, which are not installed. "
+                "Install them with: uv sync --extra gmail"
+            )
+            return GmailResult("not_configured", message, action, error=str(exc))
         except Exception as exc:
             return GmailResult(
                 "error", f"Gmail action failed: {exc}", action, error=str(exc)
