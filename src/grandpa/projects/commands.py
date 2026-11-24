@@ -49,7 +49,11 @@ def handle_project_command(
     match = re.fullmatch(
         r"(?:start|run) (?:the )?(.+?)(?: server| project)?", normalized
     )
-    if match and "test" not in normalized:
+    if (
+        match
+        and "test" not in normalized
+        and _names_a_project(normalized, match.group(1), manager)
+    ):
         return _execute(
             manager,
             "start",
@@ -60,7 +64,7 @@ def handle_project_command(
     match = re.fullmatch(
         r"(?:check|show|what is) (?:the )?(.+?)(?: server| project)? status", normalized
     )
-    if match:
+    if match and _names_a_project(normalized, match.group(1), manager):
         return _execute(
             manager, "status", match.group(1), lambda: manager.status(match.group(1))
         )
@@ -164,6 +168,19 @@ def handle_project_command(
             project.id,
         )
     return ProjectCommandResult("no_match", "")
+
+
+def _names_a_project(text: str, name: str, manager) -> bool:
+    """Only route when the words say project/server or name a registered one.
+
+    "what is my status" and "start my day" matched these patterns and were
+    answered with "I could not find a registered project named my".
+    """
+    return (
+        "project" in text
+        or "server" in text
+        or _looks_like_registered_project(name, manager)
+    )
 
 
 def _looks_like_registered_project(query: str, service: ProjectService) -> bool:

@@ -521,3 +521,53 @@ def test_local_commands_never_reach_the_engine(tmp_path, monkeypatch) -> None:
             assert [t.role for t in app.turns] == ["user", "grandpa"]
 
     asyncio.run(scenario())
+
+
+def test_reply_highlights_use_one_colour_per_kind() -> None:
+    from rich.text import Text
+
+    from grandpa.tui.app import HIGHLIGHT_ROLES, highlight_reply
+    from grandpa.tui.themes import DARK, LIGHT
+
+    for colors in (DARK, LIGHT):
+        text = Text(
+            "1. Model: grandpa-fast\n- Status: connected ✓\n- Voice: failed\n"
+            "see https://ollama.com and run `ollama ps`",
+            style=colors.grandpa,
+        )
+        out = highlight_reply(text, colors)
+
+        def colour_of(word: str) -> str:
+            start = out.plain.index(word)
+            colours = [
+                s.style.color.get_truecolor().hex
+                for s in out.spans
+                if s.start <= start < s.end and s.style.color is not None
+            ]
+            return colours[-1] if colours else ""
+
+        accents = colors.accents
+        assert colour_of("1.") == accents[HIGHLIGHT_ROLES["marker"]].lower()
+        assert colour_of("Model") == accents[HIGHLIGHT_ROLES["label"]].lower()
+        assert colour_of("connected") == accents[HIGHLIGHT_ROLES["good"]].lower()
+        assert colour_of("failed") == accents[HIGHLIGHT_ROLES["bad"]].lower()
+        assert colour_of("https") == accents[HIGHLIGHT_ROLES["link"]].lower()
+        assert colour_of("`ollama") == accents[HIGHLIGHT_ROLES["code"]].lower()
+
+
+def test_accents_are_the_seven_colours_and_readable() -> None:
+    from grandpa.tui.themes import THEMES, contrast
+
+    for colors in THEMES.values():
+        assert set(colors.accents) == {
+            "yellow",
+            "orange",
+            "green",
+            "blue",
+            "purple",
+            "red",
+            "gray",
+        }
+        for colour in colors.accents.values():
+            assert contrast(colour, colors.background) >= 4.5
+            assert contrast(colour, colors.surface) >= 4.5

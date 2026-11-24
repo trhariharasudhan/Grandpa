@@ -98,6 +98,9 @@ class ThemeColors:
     success: str
     error: str
     extra: tuple[str, ...] = field(default=())
+    #: One readable version of each of the seven colours, for highlights:
+    #: yellow, orange, green, blue, purple, red, gray.
+    accents: dict[str, str] = field(default_factory=dict)
 
     def allowed_foregrounds(self) -> tuple[str, ...]:
         """Colours text may be drawn in, all readable on ``background``."""
@@ -114,6 +117,7 @@ class ThemeColors:
             self.success,
             self.error,
             *self.extra,
+            *self.accents.values(),
         )
 
     def allowed_backgrounds(self) -> tuple[str, ...]:
@@ -169,6 +173,15 @@ DARK = ThemeColors(
     success=GREEN,
     error=RED,
     extra=(tint(GREEN, 30), tint(ORANGE, 30), tint(RED, 25), tint(BLUE, 45)),
+    accents={
+        "yellow": YELLOW,
+        "orange": ORANGE,
+        "green": GREEN,
+        "blue": tint(BLUE, 25),
+        "purple": tint(PURPLE, 25),
+        "red": tint(RED, 10),
+        "gray": LIGHT_GRAY,
+    },
 )
 
 LIGHT = ThemeColors(
@@ -191,6 +204,15 @@ LIGHT = ThemeColors(
     success=shade(GREEN, 40),
     error=shade(RED, 25),
     extra=(shade(GREEN, 55), shade(BLUE, 50), shade(RED, 40)),
+    accents={
+        "yellow": shade(YELLOW, 50),
+        "orange": shade(ORANGE, 45),
+        "green": shade(GREEN, 45),
+        "blue": shade(BLUE, 30),
+        "purple": shade(PURPLE, 25),
+        "red": shade(RED, 25),
+        "gray": shade(LIGHT_GRAY, 60),
+    },
 )
 
 THEMES = {"dark": DARK, "light": LIGHT}

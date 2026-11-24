@@ -234,7 +234,7 @@ class ChatBridge:
         sink = _ForwardingFile(self._write)
 
         def make_console(*_args: Any, theme: Any = None, **_kwargs: Any) -> Console:
-            return Console(
+            console = Console(
                 file=sink,
                 force_terminal=True,
                 color_system="truecolor",
@@ -246,6 +246,8 @@ class ChatBridge:
                 # reads as random emphasis.
                 highlight=False,
             )
+            console.push_theme(markdown_theme())
+            return console
 
         return make_console
 
@@ -268,6 +270,9 @@ class ChatBridge:
         patches[(chat_cmd, "ThinkingAnimation")] = _quiet_animation(
             chat_cmd.ThinkingAnimation
         )
+        from grandpa.cli import interactive_tui
+
+        patches[(interactive_tui, "MODEL_PICKER")] = self._select_from_list
         if self.hooks.turn is not None:
             patches[(chat_cmd, "render_user_message")] = self._user_message
             patches[(chat_cmd, "render_assistant_prefix")] = self._assistant_prefix
@@ -301,6 +306,38 @@ class ChatBridge:
 
 
 _real_input = builtins.input
+
+
+def markdown_theme():
+    """Markdown in replies, one of the seven colours per kind of highlight.
+
+    The interface maps these onto its dark or light shades.
+    """
+    from rich.theme import Theme
+
+    from grandpa.cli.theme import BLUE, GREEN, LIGHT_GRAY, ORANGE, PURPLE, YELLOW
+
+    return Theme(
+        {
+            "markdown.h1": f"bold {YELLOW}",
+            "markdown.h2": f"bold {YELLOW}",
+            "markdown.h3": f"bold {YELLOW}",
+            "markdown.h4": f"bold {YELLOW}",
+            "markdown.h5": f"bold {YELLOW}",
+            "markdown.h6": f"bold {YELLOW}",
+            "markdown.strong": f"bold {ORANGE}",
+            "markdown.em": f"italic {PURPLE}",
+            "markdown.code": GREEN,
+            "markdown.link": f"underline {BLUE}",
+            "markdown.link_url": f"underline {BLUE}",
+            "markdown.item.bullet": f"bold {PURPLE}",
+            "markdown.item.number": f"bold {PURPLE}",
+            "markdown.block_quote": f"italic {LIGHT_GRAY}",
+            "markdown.hr": LIGHT_GRAY,
+            "markdown.table.header": f"bold {BLUE}",
+        },
+        inherit=True,
+    )
 
 
 def _quiet_animation(base: type) -> type:

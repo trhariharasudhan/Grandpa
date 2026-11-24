@@ -36,6 +36,7 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, VerticalScroll
+from textual.css.query import NoMatches
 from textual.widgets import Button, Label, OptionList, Static, TextArea
 from textual.widgets.option_list import Option
 
@@ -101,6 +102,9 @@ def all_commands() -> list[tuple[str, str, tuple[str, ...]]]:
 SLASH_COMMANDS = tuple((name, about) for name, about, _ in all_commands())
 
 _SUBCOMMAND_TYPING = re.compile(r"^(/[\w-]+) (\S*)$")
+# "Model changed to Grandpa Fast (grandpa-fast:latest)." or the automatic
+# switch "... so Grandpa Fast (grandpa-fast:latest) is answering."
+_MODEL_SWITCH = re.compile(r"(?:Model changed to|so)[^()\n]*\(([\w.:/\-]+)\)")
 
 
 def matching_commands(text: str) -> list[tuple[str, str]]:
@@ -263,6 +267,87 @@ def fit_text(text: Text, colors: ThemeColors) -> Text:
     return fitted
 
 
+# --- highlights ------------------------------------------------------------------------
+
+#: What each kind of highlight is drawn in (a key of ``ThemeColors.accents``).
+HIGHLIGHT_ROLES = {
+    "marker": "purple",  # 1.  2)  -  •
+    "label": "blue",  # Model: ...   Status: ...
+    "good": "green",  # ✓ done, connected, active
+    "bad": "red",  # ✗ failed, error, not installed
+    "link": "blue",
+    "code": "green",  # `inline code`
+}
+
+_HIGHLIGHTS: tuple[tuple[str, re.Pattern[str], int], ...] = (
+    ("marker", re.compile(r"^[ \t]*(\d{1,3}[.)]|[-•*▪●○◦])(?=[ \t])", re.M), 1),
+    (
+        "label",
+        re.compile(
+            r"^[ \t]*(?:\d{1,3}[.)][ \t]+|[-•*][ \t]+)?([A-Z][\w /()'-]{0,28}):(?=[ \t])",
+            re.M,
+        ),
+        1,
+    ),
+    ("code", re.compile(r"`([^`\n]+)`"), 0),
+    ("link", re.compile(r"https?://[^\s)>\]]+"), 0),
+    (
+        "good",
+        re.compile(
+            r"✓|✔|\b(?:done|ok|OK|connected|Connected|active|Active|ready|Ready|"
+            r"installed|Installed|enabled|Enabled|success|passed)\b"
+        ),
+        0,
+    ),
+    (
+        "bad",
+        re.compile(
+            r"✗|✘|\b(?:failed|Failed|error|Error|not installed|not available|"
+            r"not connected|disabled|Disabled|blocked|Blocked)\b"
+        ),
+        0,
+    ),
+)
+
+
+def highlight_reply(text: Text, colors: ThemeColors) -> Text:
+    """Colour the parts of a reply worth spotting, one colour per kind.
+
+    Only plain stretches are coloured: anything the engine already styled
+    (markdown headings, code blocks) keeps its own colour.
+    """
+    if not colors.accents:
+        return text
+    styled = [
+        (span.start, span.end)
+        for span in text.spans
+        if not isinstance(span.style, str)
+        and span.style.color is not None
+        and span.style.color.get_truecolor().hex != _hex(colors.grandpa)
+        and span.style.color.get_truecolor().hex != _hex(colors.text)
+    ]
+
+    def free(start: int, end: int) -> bool:
+        return not any(a < end and start < b for a, b in styled)
+
+    plain = text.plain
+    for role, pattern, group in _HIGHLIGHTS:
+        colour = colors.accents[HIGHLIGHT_ROLES[role]]
+        style = Style(
+            color=colour, bold=role in {"marker", "label"}, underline=role == "link"
+        )
+        for match in pattern.finditer(plain):
+            start, end = match.span(group)
+            if start < end and free(start, end):
+                text.stylize(style, start, end)
+                styled.append((start, end))
+    return text
+
+
+def _hex(colour: str) -> str:
+    return colour.lower()
+
+
 # --- conversation widgets ----------------------------------------------------------
 
 
@@ -319,6 +404,8 @@ class OutputBlock(Message):
         cleaned = clean_terminal_text(self.raw).rstrip("\n").lstrip("\n")
         body = Text.from_ansi(cleaned, style=base)
         body = fit_text(body, colors)
+        if self.role == "grandpa":
+            body = highlight_reply(body, colors)
         body.rstrip()
         out = Text()
         if self.role == "grandpa":
@@ -341,6 +428,7 @@ HELP_TEXT = (
     ("F3", "copy Grandpa's last reply"),
     ("F4", "read replies aloud on / off"),
     ("F5", "ask the last message again"),
+    ("F6", "switch model (your Grandpa models)"),
     ("Ctrl+T", "dark / light theme"),
     ("PgUp / PgDn", "scroll the conversation"),
     ("Esc / Ctrl+C", "cancel the reply, or answer No"),
@@ -392,6 +480,7 @@ class GrandpaApp(App):
         Binding("f3", "copy_reply", "Copy reply", show=False, priority=True),
         Binding("f4", "toggle_speak", "Read aloud", show=False, priority=True),
         Binding("f5", "retry", "Retry", show=False, priority=True),
+        Binding("f6", "pick_model", "Model", show=False, priority=True),
         Binding("pageup", "scroll_log(-1)", show=False, priority=True),
         Binding("pagedown", "scroll_log(1)", show=False, priority=True),
         Binding("y", "answer_yes", show=False),
@@ -508,6 +597,10 @@ class GrandpaApp(App):
             self._block = OutputBlock("system")
             self._mount_message(self._block)
         self._block.feed(text)
+        switched = _MODEL_SWITCH.search(clean_terminal_text(text))
+        if switched:
+            self._model_cache = switched.group(1)
+            self._paint_chrome()
         self.query_one("#log", VerticalScroll).scroll_end(animate=False)
 
     def _on_ready(self, _prompt: str) -> None:
@@ -864,6 +957,12 @@ class GrandpaApp(App):
         self.copy_to_clipboard(reply)
         self.notify_status("Copied (through the terminal)", "success")
 
+    def action_pick_model(self) -> None:
+        if self._busy_since is not None or self.bridge is None:
+            self.notify_status("Wait for the current reply (Esc cancels it)", "error")
+            return
+        self.send_message("/model")
+
     def action_retry(self) -> None:
         if not self.last_sent:
             self.notify_status("Nothing to retry yet", "error")
@@ -917,7 +1016,10 @@ class GrandpaApp(App):
         if self.reply_voice.enabled:
             header.append("  ·  ", style=colors.muted)
             header.append("♪ speaking replies", style=colors.voice)
-        self.query_one("#header", Static).update(header)
+        try:
+            self.query_one("#header", Static).update(header)
+        except NoMatches:
+            return
         if self.query_one("#help").has_class("visible"):
             self._paint_help()
         self._update_status()
@@ -973,7 +1075,10 @@ class GrandpaApp(App):
         }.get(role, colors.text)
 
     def _update_status(self) -> None:
-        status = self.query_one("#status", Static)
+        try:
+            status = self.query_one("#status", Static)
+        except NoMatches:  # the screen is already closing
+            return
         colors = self.palette
         text = Text()
         if self._notice and time.monotonic() > self._notice[2]:
@@ -1007,7 +1112,7 @@ class GrandpaApp(App):
             text.append("  ·  esc to cancel", style=colors.muted)
         else:
             text.append(
-                "enter send · / commands · @ files · F2 talk · F1 keys · ctrl+t theme · ctrl+d quit",
+                "enter send · / commands · @ files · F2 talk · F6 model · F1 keys · ctrl+t theme",
                 style=colors.muted,
             )
         status.update(text)

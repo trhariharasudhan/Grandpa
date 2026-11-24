@@ -311,6 +311,14 @@ def test_project_intents_and_app_command_non_collision(tmp_path: Path) -> None:
         == "test"
     )
     assert handle_project_command("Open Chrome", service=service).should_fallback
+    # Not projects: these used to answer "could not find a project named my".
+    assert handle_project_command("what is my status", service=service).should_fallback
+    assert handle_project_command("start my day", service=service).should_fallback
+    assert (
+        handle_project_command("what is Sample status", service=service).action
+        == "status"
+    )
+    assert handle_project_command("start Sample", service=service).action == "start"
     assert (
         handle_project_command("Stop Sample server", service=service).status
         == "needs_confirmation"
