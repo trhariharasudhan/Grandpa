@@ -285,7 +285,10 @@ def key_out_background(window: Any, *, expanded: bool = False) -> bool:
                 return
             key = Color.FromArgb(*KEY_COLOUR)
             size = form.ClientSize
-            scale = size.Width / COLLAPSED[0] if size.Width else 1.0
+            # Windows keeps a frameless window at least ~148 px wide, wider
+            # than the 88 px asked for; the height is the true scale (DPI).
+            short = min(size.Width, size.Height)
+            scale = short / COLLAPSED[1] if short else 1.0
             image = Bitmap(max(size.Width, 1), max(size.Height, 1))
             graphics = Graphics.FromImage(image)
             # exact colours only (None is a Python keyword, hence getattr)
