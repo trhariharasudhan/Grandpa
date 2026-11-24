@@ -2214,7 +2214,9 @@ def chat(
                 thinking.start()
                 try:
                     content = None
-                    if use_tool_loop:
+                    # Attached files: answer from the contents, no tools. A
+                    # small model otherwise calls file_read on the file's name.
+                    if use_tool_loop and not has_attachment:
                         # V1-T5: free text no local route claimed goes to the
                         # action layer's tool loop, so the model can act. Every
                         # action still passes the executor and chat's confirm

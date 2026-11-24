@@ -267,7 +267,9 @@ class TestChatCommand:
 
         config = GrandpaConfig()
         config.intelligence.default_model = "test-model"
-        config.tools.chat_tool_loop = False
+        # Tools stay on (the PC's setting): the attached message must still
+        # be answered without them.
+        config.tools.chat_tool_loop = True
         message = (
             'What is the secret word in "notes.txt"?\n\n'
             f"{ATTACHMENT_INTRO}\n\n"
@@ -290,6 +292,7 @@ class TestChatCommand:
                 side_effect=lambda *_a, **_k: next(lines),
             ),
             patch("grandpa.cli._files_route.build_file_request", side_effect=no_route),
+            patch("grandpa.cli._tool_loop.chat_tool_turn", side_effect=no_route),
         ):
             result = CliRunner().invoke(chat, ["--model", "test-model"])
 
