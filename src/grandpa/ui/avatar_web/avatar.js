@@ -92,7 +92,13 @@
   draggable(bar, null);
   document.getElementById("close").addEventListener("click", () => setOpen(false));
   const openApp = document.getElementById("open-app");
-  function showOpenApp() { const api = windowApi(); openApp.hidden = !(api && api.open_app); }
+  const quitButton = document.getElementById("quit");
+  function showOpenApp() {
+    const api = windowApi();
+    openApp.hidden = !(api && api.open_app);
+    quitButton.hidden = !(api && api.quit);
+  }
+  quitButton.addEventListener("click", () => { const api = windowApi(); if (api && api.quit) api.quit(); });
   window.addEventListener("pywebviewready", showOpenApp);
   showOpenApp();
   document.getElementById("open-app").addEventListener("click", () => {

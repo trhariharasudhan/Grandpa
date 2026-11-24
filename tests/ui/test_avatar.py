@@ -436,7 +436,21 @@ def test_the_window_api_moves_by_small_clamped_steps_only() -> None:
 
 def test_the_page_can_reach_only_the_window_methods() -> None:
     public = {name for name in dir(WindowApi) if not name.startswith("_")}
-    assert public == {"attach", "set_expanded", "move_by", "open_app"}
+    assert public == {"attach", "set_expanded", "move_by", "open_app", "quit"}
+
+
+def test_quit_closes_only_the_orb_window() -> None:
+    closed: list = []
+
+    class Window:
+        def destroy(self):
+            closed.append(True)
+
+    api = WindowApi()
+    api.quit()  # no window yet: nothing
+    api.attach(Window())
+    api.quit()
+    assert closed == [True]
 
 
 def test_open_app_can_only_start_the_app(monkeypatch) -> None:

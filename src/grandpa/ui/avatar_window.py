@@ -68,8 +68,8 @@ class WindowApi:
     """What the page may ask of the window: open/close the panel, and move.
 
     pywebview exposes every public method of this object to the page, so it has
-    exactly these three: the first two take plain numbers or a flag, and
-    open_app takes nothing and can only start ``grandpa app``.
+    exactly these: set_expanded and move_by take a flag or plain numbers,
+    open_app can only start ``grandpa app``, and quit closes this window.
     """
 
     def __init__(self) -> None:
@@ -99,6 +99,12 @@ class WindowApi:
             return launch("app")
         except (OSError, ValueError):
             return "failed"
+
+    def quit(self) -> None:
+        """Close the orb (its own window only; the app, if open, stays)."""
+        window = self._window
+        if window is not None:
+            window.destroy()
 
     def move_by(self, dx: Any, dy: Any) -> None:
         if isinstance(dx, bool) or isinstance(dy, bool):

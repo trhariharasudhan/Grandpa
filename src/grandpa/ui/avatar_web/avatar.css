@@ -96,7 +96,8 @@ html, body {
 #bar-status { color: var(--muted); font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--glow); box-shadow: 0 0 6px var(--glow); flex: none; }
 #panel button.small { padding: 3px 9px; font-size: 12px; }
-#panel #close { background: transparent; color: var(--muted); }
+#panel #close, #panel #quit { background: transparent; color: var(--muted); }
+#panel #quit:hover { color: #ff4f58; background: rgba(255,255,255,0.14); }
 #panel #close:hover { color: var(--ink); background: rgba(255,255,255,0.14); }
 
 #panel { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-radius: 16px; padding: 10px; }
