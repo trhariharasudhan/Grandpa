@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional
 
 import click
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from grandpa.core.config import DEFAULT_CONFIG_PATH, load_config
@@ -954,10 +955,12 @@ def _check_local_actions_ready() -> CheckResult:
 
 def _check_existing_sqlite_db(name: str, path: Path) -> CheckResult:
     if not path.exists():
+        # Nothing to fix: the store is created the first time it is used, so
+        # a fresh install is not "partially ready" because of it.
         return CheckResult(
             name,
-            "warn",
-            "Missing/optional",
+            "info",
+            "Not created yet",
             details=f"Will be created on first use: {path}",
         )
     try:
@@ -1621,6 +1624,93 @@ def _results_to_dicts(checks: List[CheckResult]) -> List[Dict[str, Any]]:
     return [asdict(c) for c in checks]
 
 
+# -- How to fix (P1) ----------------------------------------------------------
+
+
+def cli_prefix() -> str:
+    """The command to type for Grandpa, the way this process was started.
+
+    On Captain's laptop grandpa.exe is blocked, so the fallback is the module
+    form that always works from the repo folder."""
+    launcher = os.environ.get("GRANDPA_LAUNCHER", "").strip()
+    if launcher == "shim":
+        return "grandpa"
+    if launcher == "grandpa.cmd":
+        return ".\\grandpa.cmd"
+    return "uv run python -m grandpa"
+
+
+_FIX_VERBS = ("fix", "run", "install", "start", "recommended", "use", "set", "add")
+_OLLAMA_FIX = (
+    "Install Ollama from https://ollama.com/download/windows, "
+    "then start it: ollama serve"
+)
+
+
+def _with_prefix(text: str, prefix: str) -> str:
+    """Rewrite `grandpa <cmd>` in a fix to the launcher that works here."""
+    import re
+
+    return re.sub(r"(`|: )[Gg]randpa (?=[a-z])", rf"\g<1>{prefix} ", text)
+
+
+def fix_for(check: CheckResult) -> str:
+    """The exact thing to do about one warn/fail line."""
+    g = cli_prefix()
+    name = check.name
+    text = f"{check.message}\n{check.details or ''}".casefold()
+    ollama_down = "unreachable" in text or "not reachable" in text
+
+    if name in {"Config file", "Config parsing"} and (
+        "not found" in text or "no config" in text
+    ):
+        return f"{g} setup"
+    if name == "Config parsing":
+        return (
+            "Correct the TOML error shown above in config.toml, "
+            f"or rename the file and run {g} setup"
+        )
+    if name.startswith("Engine: ollama"):
+        return _OLLAMA_FIX
+    if name in {"Default model", "Embedding model", "Vision model"} or (
+        name.startswith("Model") and "ollama" in text
+    ):
+        if ollama_down:
+            return f"{_OLLAMA_FIX}; then run {g} models setup --yes"
+        return f"{g} models setup --yes"
+    if name.startswith("Known app:"):
+        app = name.split(":", 1)[1].strip()
+        return f"Optional: install {app} if you want Grandpa to open it."
+    if name == "Security profile":
+        return f"{g} config set security.profile personal"
+    if name == "Launcher":
+        return "powershell -ExecutionPolicy Bypass -File scripts\\install_launcher.ps1"
+
+    for line in (check.details or "").splitlines():
+        stripped = line.strip()
+        if stripped.casefold().startswith(_FIX_VERBS):
+            if stripped.casefold().startswith("fix"):
+                stripped = stripped.split(":", 1)[-1].strip()
+            return _with_prefix(stripped, g)
+    if check.details and "`" in check.details:
+        return _with_prefix(check.details.strip(), g)
+    return f"See the details with: {g} doctor --json"
+
+
+def _print_fixes(console: Console, checks: List[CheckResult]) -> None:
+    problems = [c for c in checks if c.status in {"warn", "fail"}]
+    console.print()
+    if not problems:
+        console.print("[bold green]All green. Nothing to fix.[/bold green]")
+        return
+    console.print("[bold]How to fix[/bold]")
+    for index, check in enumerate(problems, 1):
+        console.print(
+            f"  {index}. {escape(check.name)}: {escape(fix_for(check))}",
+            soft_wrap=True,
+        )
+
+
 @click.command()
 @click.option("--json", "as_json", is_flag=True, help="Output results as JSON.")
 def doctor(as_json: bool) -> None:
@@ -1671,6 +1761,7 @@ def doctor(as_json: bool) -> None:
         f"  {ok_count} passed, {info_count} optional/skipped, {warn_count} warnings, {fail_count} failures"
     )
     console.print(f"  Overall readiness: [{_readiness_style(readiness)}]{readiness}[/]")
+    _print_fixes(console, checks)
 
     failed_background = any(
         check.status == "fail"

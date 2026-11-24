@@ -298,6 +298,13 @@ cli.add_command(
     _lazy("doctor", "grandpa.cli.doctor_cmd:doctor", short_help="Check readiness.")
 )
 cli.add_command(
+    _lazy(
+        "setup",
+        "grandpa.cli.setup_cmd:setup",
+        short_help="First-run wizard: config, models, voices.",
+    )
+)
+cli.add_command(
     _lazy("speak", "grandpa.cli.speak_cmd:speak", short_help="Speak text aloud.")
 )
 cli.add_command(
