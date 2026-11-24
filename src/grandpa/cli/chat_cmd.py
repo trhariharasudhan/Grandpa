@@ -1556,7 +1556,11 @@ def chat(
         # answered again by the next smaller Grandpa model, without asking.
         retry_input: str | None = None
         retries_left = 2
+        warmed_model: str | None = None
         while True:
+            if use_tool_loop and model != warmed_model and retry_input is None:
+                warmed_model = model
+                _warm_up_in_background(engine, engine_name, model)
             for note in _notifications.diff(get_status()):
                 render_assistant_response(console, Text(note, style="dim cyan"))
 
@@ -2398,6 +2402,20 @@ def chat(
                 render_assistant_response(console, Text(cause, style="red"))
             finally:
                 pass
+
+
+def _warm_up_in_background(engine, engine_name: str, model: str) -> None:
+    """Let Ollama read the request opening while the user types (see warm_up)."""
+    import os
+    import threading
+
+    if engine_name != "ollama" or os.environ.get("GRANDPA_NO_WARMUP"):
+        return
+    from grandpa.action_layer.loop import warm_up
+
+    threading.Thread(
+        target=warm_up, args=(engine, model), name="grandpa-warm-up", daemon=True
+    ).start()
 
 
 def _model_label(tag: str) -> str:
