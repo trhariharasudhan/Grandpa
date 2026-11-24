@@ -159,3 +159,118 @@ def test_a_startup_failure_shows_its_reason() -> None:
     notes = [m["text"] for m in published if m["type"] == "note"]
     assert any("Ollama is not running" in n for n in notes)
     assert session.state == "stopped"
+
+
+# --- attach, voice typing, the window API, and the Claude-style page ------------
+
+
+def test_an_attached_file_is_read_and_named_in_the_user_record(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "notes.txt").write_text("buy milk\n", encoding="utf-8")
+    session, bridge, published = _session()
+    assert session.send('what is in this?\n@"notes.txt"') is True
+    assert "buy milk" in bridge.sent[0] and "File: notes.txt" in bridge.sent[0]
+    user = next(m for m in published if m["type"] == "user")
+    assert user["attached"] == ["notes.txt"]
+
+
+def test_a_file_that_cannot_be_attached_gives_a_red_note(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    session, bridge, published = _session()
+    session.send('@"missing.txt" please')
+    assert bridge.sent == ['@"missing.txt" please']
+    assert any(m["type"] == "note" and m.get("failed") for m in published)
+
+
+def test_voice_typing_sends_the_words_back_to_the_page(monkeypatch) -> None:
+    import grandpa.tui.voice as voice
+
+    class FakeTalk:
+        def __init__(self, on_text, on_error, on_level, **_k) -> None:
+            self.on_text, self.recording = on_text, False
+
+        def start(self) -> bool:
+            self.recording = True
+            return True
+
+        def stop(self) -> None:
+            self.recording = False
+            self.on_text("open notepad")
+
+    monkeypatch.setattr(voice, "PushToTalk", FakeTalk)
+    session, _bridge, published = _session()
+    assert session.talk() is True
+    assert published[-1] == {**published[-1], "type": "listening"}
+    assert session.talk() is True  # second click stops and transcribes
+    heard = [m for m in published if m["type"] == "heard"]
+    assert heard and heard[-1]["text"] == "open notepad"
+
+
+def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None:
+    from grandpa.app import window
+
+    api = window.AppApi()
+    public = {name for name in dir(api) if not name.startswith("_")}
+    assert public == {"pick_file", "user_name", "window"}
+    assert api.pick_file() is None  # no window yet: nothing happens
+    monkeypatch.setattr(window, "user_name", lambda: "Captain")
+    assert api.user_name() == "Captain"
+
+
+def test_the_page_has_the_claude_style_parts() -> None:
+    page = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    for part in (
+        'id="sidebar"',
+        'id="side-close"',
+        'id="side-open"',
+        'id="search"',
+        'id="projects"',
+        'id="new-project"',
+        'id="chats"',
+        'id="user-name"',
+        'id="open-settings"',
+        'id="incognito"',
+        'id="attach"',
+        'id="mic"',
+        'id="model"',
+        'id="model-menu"',
+        'id="settings"',
+        'data-tab="data"',
+    ):
+        assert part in page, part
+    script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
+    # incognito chats are never written to storage
+    assert "if (!incognito) { save();" in script
+    # voice typing and the stop button only ever send these fixed messages
+    assert 'send({ type: "talk" })' in script and 'send({ type: "cancel" })' in script
+
+
+def test_the_page_uses_only_the_project_colours() -> None:
+    import re
+
+    css = (WEB_DIR / "app.css").read_text(encoding="utf-8")
+    from grandpa.tui.themes import DARK, LIGHT
+
+    allowed = {
+        c.lower()
+        for c in (
+            "#E5E7EB",
+            "#168BFF",
+            "#FFD21F",
+            "#FF3B45",
+            "#A855F7",
+            "#22C55E",
+            "#FF922B",
+        )
+    }
+    for theme in (DARK, LIGHT):
+        allowed |= {
+            str(v).lower()
+            for v in vars(theme).values()
+            if isinstance(v, str) and v.startswith("#")
+        }
+        allowed |= {str(v).lower() for v in getattr(theme, "accents", {}).values()}
+    used = {c.lower() for c in re.findall(r"#[0-9A-Fa-f]{6}\b", css)}
+    assert used <= allowed, used - allowed

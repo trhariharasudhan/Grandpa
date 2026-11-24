@@ -26,6 +26,52 @@ MIN_SIZE = (720, 480)
 BACKGROUND = "#0b0c0c"
 
 
+class AppApi:
+    """What the page may ask of the window (pywebview exposes these to JS).
+
+    Two things, both read-only: pick a file to attach (the user chooses it in
+    Windows' own dialog; only its path comes back) and Captain's name for the
+    bottom-left corner. Nothing here reaches the chat engine or acts.
+    """
+
+    def __init__(self) -> None:
+        self.window: Any = None
+
+    def pick_file(self) -> str | None:
+        if self.window is None:
+            return None
+        try:
+            import webview
+
+            chosen = self.window.create_file_dialog(
+                webview.OPEN_DIALOG, allow_multiple=False
+            )
+        except Exception:  # noqa: BLE001
+            return None
+        return str(chosen[0]) if chosen else None
+
+    def user_name(self) -> str:
+        return user_name()
+
+
+def user_name() -> str:
+    """The name Grandpa calls the user (``[user] username``), else the OS name."""
+    try:
+        from grandpa.core.config import load_config
+
+        name = str(load_config().user.username or "").strip()
+        if name and name != "Username":  # "Username" is the unset default
+            return name
+    except Exception:  # noqa: BLE001
+        pass
+    import getpass
+
+    try:
+        return getpass.getuser()
+    except Exception:  # noqa: BLE001
+        return "You"
+
+
 def connect_script(ws_url: str) -> str:
     return f"window.grandpaConnect && window.grandpaConnect({json.dumps(ws_url)});"
 
@@ -88,7 +134,7 @@ def run(
     session = AppSession(publish, chat_args=chat_args)
     server = AvatarServer(
         on_send=session.send,
-        on_talk=None,
+        on_talk=session.talk,
         on_cancel=session.cancel,
         snapshot=session.snapshot,
     )
@@ -114,9 +160,11 @@ def run(
             except ImportError as exc:
                 raise missing_pywebview() from exc
         ensure_js_mime()
+        api = AppApi()
         window = webview_module.create_window(
             "Grandpa",
             str(INDEX),
+            js_api=api,
             width=SIZE[0],
             height=SIZE[1],
             min_size=MIN_SIZE,

@@ -67,6 +67,7 @@ class AppSession:
         self._started = False  # the engine's startup banner is not shown
         self.state = "starting"
         self.model: str | None = None
+        self._talk = None
         hooks = UiHooks(
             output=self._on_output,
             ready_for_input=self._on_ready,
@@ -122,10 +123,47 @@ class AppSession:
             self._set_state("thinking")
             question.answer(answer)
             return True
-        self._record({"type": "user", "text": text})
+        message, attached, notes = self._attach(text)
+        self._record({"type": "user", "text": text, "attached": attached})
+        for note in notes:
+            self._record({"type": "note", "text": note, "failed": True})
         self._set_state("thinking")
-        self.bridge.send(text)
+        self.bridge.send(message)
         return True
+
+    @staticmethod
+    def _attach(text: str) -> tuple[str, list[str], list[str]]:
+        """``@path`` attaches a text file, exactly as in the terminal.
+
+        The page's 📎 button puts ``@"<path>"`` in the message; the file is
+        read here, read-only, with the terminal's limits (text only, 100 KB,
+        the current folder or the home folder).
+        """
+        from grandpa.tui.helpers import expand_file_mentions
+
+        return expand_file_mentions(text)
+
+    # --- voice ------------------------------------------------------------------
+
+    def talk(self) -> bool:
+        """🎤: record one phrase; the words go to the page's typing box."""
+        if self._talk is None:
+            from grandpa.tui.voice import PushToTalk
+
+            self._talk = PushToTalk(
+                on_text=lambda text: self._emit({"type": "heard", "text": text}),
+                on_error=lambda message: self._emit(
+                    {"type": "heard", "error": message}
+                ),
+                on_level=None,
+            )
+        if self._talk.recording:
+            self._talk.stop()
+            return True
+        started = self._talk.start()
+        if started:
+            self._emit({"type": "listening"})
+        return started
 
     def cancel(self) -> bool:
         with self._lock:
