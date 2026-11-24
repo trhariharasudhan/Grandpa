@@ -220,8 +220,6 @@ def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None
         "get_profile",
         "save_profile",
         "open_orb",
-        "window",
-        "session",
     }
     assert api.pick_file() is None and api.pick_files() == []  # no window yet
     monkeypatch.setattr(window, "user_name", lambda: "Mr. Hari Hara Sudhan")
@@ -349,6 +347,75 @@ def test_a_document_without_text_gives_a_clear_note(tmp_path, monkeypatch) -> No
     monkeypatch.chdir(tmp_path)
     text, note = read_attachment("scan.pdf")
     assert text is None and "couldn't read any text" in note
+
+
+def test_the_window_is_handed_to_the_api_so_the_file_dialog_can_open(
+    monkeypatch,
+) -> None:
+    """The bug behind "attaching doesn't work": the api never got the window."""
+    from grandpa.app import window as app_window
+
+    made: dict = {}
+
+    class Events:
+        def __init__(self):
+            self.loaded = self
+
+        def __iadd__(self, _handler):
+            return self
+
+    class FakeWindow:
+        events = Events()
+
+        def create_file_dialog(self, *_a, **_k):
+            return ["C:/Users/me/notes.txt"]
+
+    class FakeWebview:
+        OPEN_DIALOG = 10
+
+        def create_window(self, *_a, js_api=None, **_k):
+            made["api"] = js_api
+            return FakeWindow()
+
+        def start(self, **_k):
+            made["paths"] = made["api"].pick_files()
+
+    class Session:
+        def __init__(self, *_a, **_k):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+        send = talk = cancel = snapshot = start
+
+        def allow_file(self, path):
+            return path
+
+    class Server:
+        url = "ws://127.0.0.1:1/x"
+
+        def __init__(self, **_k):
+            pass
+
+        def start(self, timeout=0):
+            pass
+
+        def stop(self):
+            pass
+
+        def broadcast(self, _m):
+            pass
+
+    monkeypatch.setenv("GRANDPA_HOME", str(Path.cwd() / "runtime" / "test-home"))
+    monkeypatch.setattr("grandpa.app.session.AppSession", Session)
+    monkeypatch.setattr("grandpa.ui.avatar_server.AvatarServer", Server)
+    monkeypatch.setattr(app_window, "_storage_dir", lambda: None)
+    app_window.run(webview_module=FakeWebview(), echo=lambda *_a: None)
+    assert made["paths"] == ["C:/Users/me/notes.txt"]
 
 
 def test_the_profile_is_saved_with_title_and_email(tmp_path, monkeypatch) -> None:

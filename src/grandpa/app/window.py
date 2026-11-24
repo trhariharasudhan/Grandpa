@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 import threading
 from pathlib import Path
 from typing import Any, Callable
 
 from grandpa.ui.avatar_window import ensure_js_mime, missing_pywebview
 
+logger = logging.getLogger(__name__)
 WEB_DIR = Path(__file__).with_name("web")
 INDEX = WEB_DIR / "index.html"
 SIZE = (1120, 760)
@@ -49,25 +51,36 @@ class AppApi:
     """
 
     def __init__(self, session: Any = None) -> None:
-        self.window: Any = None
-        self.session = session
+        # Private: pywebview hands every public attribute of this object to the
+        # page, nested objects included, so the window and the session stay
+        # out of its reach.
+        self._window: Any = None
+        self._webview: Any = None
+        self._session = session
+
+    def _set_window(self, window: Any, webview_module: Any = None) -> None:
+        # private (leading underscore): pywebview never offers it to the page
+        self._window = window
+        self._webview = webview_module
 
     def pick_files(self) -> list[str]:
-        if self.window is None:
+        if self._window is None:
             return []
         try:
-            import webview
-
+            webview = self._webview
+            if webview is None:
+                import webview
             dialog = getattr(webview, "FileDialog", None)
             kind = dialog.OPEN if dialog is not None else webview.OPEN_DIALOG
-            chosen = self.window.create_file_dialog(
+            chosen = self._window.create_file_dialog(
                 kind, allow_multiple=True, file_types=FILE_TYPES
             )
         except Exception:  # noqa: BLE001 - no dialog is "nothing picked"
+            logger.exception("file dialog failed")
             return []
         paths = [str(p) for p in (chosen or ())][:MAX_PICK]
-        if self.session is not None:
-            paths = [self.session.allow_file(p) for p in paths]
+        if self._session is not None:
+            paths = [self._session.allow_file(p) for p in paths]
         return paths
 
     def pick_file(self) -> str | None:  # the older page's name for it
@@ -253,6 +266,9 @@ def run(
             min_size=MIN_SIZE,
             background_color=BACKGROUND,
         )
+        # Without this the 📎 dialog had no window to open on and quietly did
+        # nothing -- the "attaching doesn't work" Captain saw.
+        api._set_window(window, webview_module)
         window.events.loaded += lambda *_a: window.evaluate_js(
             connect_script(server.url)
         )
