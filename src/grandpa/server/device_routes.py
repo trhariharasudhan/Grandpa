@@ -155,6 +155,100 @@ async def device_pending(request: Request, limit: int = 20) -> dict[str, Any]:
     return {"pending": [p.as_dict() for p in items]}
 
 
+# -- P2: the home server borrows this PC's model -----------------------------
+
+#: Roles a forwarded message may carry. No "tool": nothing here runs tools.
+_LLM_ROLES = {"system", "user", "assistant"}
+
+
+class LlmMessage(BaseModel):
+    role: str = Field(..., max_length=16)
+    content: str = Field("", max_length=32000)
+
+
+class LlmRequest(BaseModel):
+    messages: list[LlmMessage] = Field(..., min_length=1, max_length=64)
+    model: str = Field("", max_length=200)
+    temperature: float = Field(0.7, ge=0.0, le=2.0)
+    max_tokens: int = Field(1024, ge=1, le=8192)
+
+
+def _device_llm_enabled(request: Request) -> bool:
+    config = getattr(request.app.state, "config", None)
+    if config is None:
+        return False
+    return bool(getattr(getattr(config, "server", None), "device_llm", False))
+
+
+@router.post("/v1/devices/llm")
+def device_llm(req: LlmRequest, request: Request) -> dict[str, Any]:
+    """Model text for a paired home server (P2). Text in, text out.
+
+    No tools are passed to the model and no action, file or memory handler
+    runs, so a device token here can only make the model talk. Refused unless
+    ``server.device_llm = true`` was set at the PC.
+    """
+    from grandpa.core.types import Message, Role
+
+    device = _device(request)
+    store = _store(request)
+    if not _device_llm_enabled(request):
+        store.log_event("llm_refused", device_id=device.device_id, detail="off")
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Sharing this PC's model is off. At the PC run: "
+                "grandpa config set server.device_llm true"
+            ),
+        )
+    if not _limiter(request).allow(device.device_id):
+        store.log_event("llm_refused", device_id=device.device_id, detail="rate limit")
+        raise HTTPException(status_code=429, detail="Too many requests. Wait a minute.")
+    engine = getattr(request.app.state, "engine", None)
+    if engine is None:
+        raise HTTPException(status_code=503, detail="No model is running on the PC.")
+
+    default_model = getattr(request.app.state, "model", "") or ""
+    model = default_model
+    if req.model and req.model != default_model:
+        try:
+            if req.model in set(engine.list_models()):
+                model = req.model
+        except Exception:  # noqa: BLE001 - fall back to the PC's own model
+            pass
+    messages = [
+        Message(role=Role(m.role), content=m.content)
+        for m in req.messages
+        if m.role in _LLM_ROLES
+    ]
+    if not messages:
+        raise HTTPException(status_code=422, detail="No usable messages.")
+    try:
+        result = engine.generate(
+            messages,
+            model=model,
+            temperature=req.temperature,
+            max_tokens=req.max_tokens,
+        )
+    except Exception as exc:  # noqa: BLE001
+        store.log_event(
+            "llm_failed", device_id=device.device_id, detail=type(exc).__name__
+        )
+        raise HTTPException(status_code=502, detail="The PC's model failed.") from exc
+    # Only the size is logged, never the text.
+    store.log_event(
+        "llm_forwarded",
+        device_id=device.device_id,
+        detail=f"{len(messages)} messages",
+    )
+    return {
+        "model": model,
+        "content": result.get("content", "") or "",
+        "usage": result.get("usage", {}) or {},
+        "finish_reason": result.get("finish_reason", "stop") or "stop",
+    }
+
+
 @router.post("/v1/devices/voice")
 async def device_voice(
     request: Request, format: str = "wav", language: str | None = None

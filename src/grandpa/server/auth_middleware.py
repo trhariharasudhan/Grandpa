@@ -55,6 +55,9 @@ DEVICE_ALLOWED_PATHS = frozenset(
         # D4: read-only. A phone can see its own waiting requests; approving
         # one is only ever done at the PC (``grandpa devices approve``).
         "/v1/devices/pending",
+        # P2: model text only (no tools, no actions), and refused unless
+        # ``server.device_llm`` is turned on at the PC.
+        "/v1/devices/llm",
     }
 )
 

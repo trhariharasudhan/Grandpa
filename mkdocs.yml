@@ -142,6 +142,7 @@ nav:
       - Workflows: getting-started/workflows.md
       - MCP servers: getting-started/mcp.md
       - Plugins: getting-started/plugins.md
+      - Home server: getting-started/home-server.md
   - Architecture:
       - Overview: architecture/overview.md
       - Domain Boundaries: architecture/domain-architecture.md
