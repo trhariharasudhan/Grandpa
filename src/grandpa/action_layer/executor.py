@@ -557,6 +557,8 @@ def _call(
         return implementation(**dict(parameters))
     if spec.binding is Binding.MCP_TOOL:
         return implementation(spec.name, dict(parameters))
+    if spec.binding is Binding.PLUGIN_TOOL:
+        return implementation(spec.name, dict(parameters), confirm_callback)
     if spec.binding is Binding.WEB_SEARCH_ACTION:
         return _call_web_search(spec, implementation, owner, action, parameters)
     if spec.binding is Binding.MEMORY_ACTION:

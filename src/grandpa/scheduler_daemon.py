@@ -71,6 +71,12 @@ class BackgroundSchedulerDaemon:
         )
         self._thread.start()
         logger.info("Routine scheduler daemon started")
+        try:
+            from grandpa.plugins.host import start_events
+
+            start_events()
+        except Exception:  # noqa: BLE001 - a plugin must not stop the scheduler
+            logger.warning("plugin event handlers did not start", exc_info=True)
 
     def stop(self, timeout: float = 5.0) -> None:
         self._stop.set()
