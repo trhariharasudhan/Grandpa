@@ -194,6 +194,7 @@ class GrandpaApp(App):
     #prompt {{ height: auto; min-height: 3; max-height: 10; margin: 0 1; border: round #3a3a44;
                background: #0d0d0f; }}
     #prompt:focus {{ border: round {ACCENT}; }}
+    #prompt .text-area--cursor-line {{ background: transparent; }}
     #status {{ height: 1; padding: 0 2; color: #8a8a8a; }}
     """
     BINDINGS = [
