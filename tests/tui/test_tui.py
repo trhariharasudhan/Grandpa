@@ -189,3 +189,69 @@ def test_a_failure_stays_on_screen_instead_of_a_blank_exit() -> None:
             await _until(pilot, lambda: not app.is_running)
 
     asyncio.run(scenario())
+
+
+# --- console mode guard and log redirect ------------------------------------------
+
+
+class _FakeKernel32:
+    def __init__(self, mode: int) -> None:
+        self.mode = mode
+        self.sets: list[int] = []
+
+    def GetConsoleMode(self, _handle, ref) -> int:  # noqa: N802 - Windows API name
+        ref._obj.value = self.mode
+        return 1
+
+    def SetConsoleMode(self, _handle, mode) -> int:  # noqa: N802
+        self.mode = mode
+        self.sets.append(mode)
+        return 1
+
+
+def test_console_guard_restores_mode_after_echo_is_turned_back_on():
+    from grandpa.tui.console_guard import ConsoleModeGuard
+
+    app_mode = 0x0200 | 0x0010 | 0x0080  # VT input, mouse, extended flags
+    kernel = _FakeKernel32(app_mode)
+    guard = ConsoleModeGuard(kernel32=kernel, handle=1)
+    guard.capture()
+    assert guard.active
+    assert guard.check() is False
+
+    kernel.mode = 0x0001 | 0x0002 | 0x0004  # cooked mode with echo
+    assert guard.check() is True
+    assert kernel.mode == app_mode
+    assert guard.repairs == 1
+
+
+def test_console_guard_stays_off_when_the_console_still_echoes():
+    from grandpa.tui.console_guard import ConsoleModeGuard
+
+    kernel = _FakeKernel32(0x0001 | 0x0002 | 0x0004)
+    guard = ConsoleModeGuard(kernel32=kernel, handle=1)
+    guard.capture()
+    assert not guard.active
+    assert guard.check() is False
+    assert kernel.sets == []
+
+
+def test_log_lines_for_the_real_terminal_go_into_the_interface(monkeypatch):
+    import logging
+    import sys
+
+    from grandpa.tui.bridge import redirect_terminal_log_handlers
+
+    handler = logging.StreamHandler(sys.__stderr__)
+    log = logging.getLogger("grandpa.test_tui_redirect")
+    log.addHandler(handler)
+    log.propagate = False
+    seen: list[str] = []
+    try:
+        restore = redirect_terminal_log_handlers(seen.append)
+        log.warning("something went wrong")
+        restore()
+        assert handler.stream is sys.__stderr__
+    finally:
+        log.removeHandler(handler)
+    assert "something went wrong" in "".join(seen)

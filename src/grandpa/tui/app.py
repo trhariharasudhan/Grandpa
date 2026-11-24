@@ -27,6 +27,7 @@ from textual.widgets.option_list import Option
 
 import grandpa
 from grandpa.tui.bridge import ChatBridge, Question, UiHooks, clean_terminal_text
+from grandpa.tui.console_guard import ConsoleModeGuard
 
 ACCENT = "#f5c542"
 
@@ -240,6 +241,12 @@ class GrandpaApp(App):
         prompt.border_title = "Ask Grandpa anything · / for commands"
         prompt.focus()
         self.set_interval(0.12, self._tick)
+        # Windows: if anything resets the console input mode, put it back, or
+        # the classic Command Prompt starts echoing mouse reports as text.
+        self._console_guard = ConsoleModeGuard()
+        self._console_guard.capture()
+        if self._console_guard.active:
+            self.set_interval(0.2, self._console_guard.check)
         if self.bridge is None:
             width = max(60, self.size.width - 4)
             hooks = UiHooks(

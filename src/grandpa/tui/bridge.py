@@ -168,6 +168,12 @@ class ChatBridge:
         self._last_line = (self._last_line + tail) if "\n" not in text else tail
         self.hooks.output(text)
 
+    def _write_log(self, text: str) -> None:
+        """A log line: shown dimmed, never taken as a question's prompt."""
+        text = text.rstrip("\n")
+        if text:
+            self.hooks.output(f"\x1b[2m{text}\x1b[0m\n")
+
     def _read_chat_input(self, prompt: str = "", **_kwargs: Any) -> str | None:
         self.busy = False
         self.hooks.ready_for_input(clean_terminal_text(str(prompt)))
@@ -243,6 +249,7 @@ class ChatBridge:
         for (module, name), value in patches.items():
             setattr(module, name, value)
         builtins.input = self._input
+        restore_logs = redirect_terminal_log_handlers(self._write_log)
         try:
             command.main(
                 args=["--no-fullscreen", *self.chat_args],
@@ -258,6 +265,7 @@ class ChatBridge:
             self._write("\n" + traceback.format_exc() + "\n")
             code = 1
         finally:
+            restore_logs()
             builtins.input = _real_input
             for (module, name), value in saved.items():
                 setattr(module, name, value)
@@ -266,5 +274,44 @@ class ChatBridge:
 
 
 _real_input = builtins.input
+
+
+def _is_terminal_stream(stream: object) -> bool:
+    import sys
+
+    return stream is not None and (
+        stream is sys.__stderr__ or stream is sys.__stdout__
+    )
+
+
+def redirect_terminal_log_handlers(sink: Callable[[str], None]) -> Callable[[], None]:
+    """Send log lines meant for the real terminal into the interface instead.
+
+    A ``StreamHandler`` made before the full-screen app started still holds
+    the real stderr. Writing there draws over the app (and, in the classic
+    Command Prompt, scrambles the screen). Returns a function that undoes it.
+    """
+    loggers = [logging.getLogger()]
+    loggers += [
+        item
+        for item in logging.Logger.manager.loggerDict.values()
+        if isinstance(item, logging.Logger)
+    ]
+    moved: list[tuple[logging.StreamHandler, object]] = []
+    forward = _ForwardingFile(sink)
+    for item in loggers:
+        for handler in item.handlers:
+            if (
+                type(handler) is logging.StreamHandler
+                and _is_terminal_stream(handler.stream)
+            ):
+                moved.append((handler, handler.stream))
+                handler.setStream(forward)  # type: ignore[arg-type]
+
+    def restore() -> None:
+        for handler, stream in moved:
+            handler.setStream(stream)  # type: ignore[arg-type]
+
+    return restore
 
 __all__ = ["ChatBridge", "Question", "UiHooks", "clean_terminal_text"]
