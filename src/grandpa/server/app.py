@@ -30,6 +30,7 @@ def create_app(
     agent_scheduler=None,
     api_key: str = "",
     cors_origins: list[str] | None = None,
+    headless: bool = False,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -45,6 +46,9 @@ def create_app(
         Optional event bus for telemetry.
     config:
         Optional GrandpaConfig for other settings.
+    headless:
+        The Pironman home-server node (P2): only chat, memory, scheduler,
+        devices and workflows are served (see ``grandpa.server.headless``).
     """
     app = FastAPI(
         title="Grandpa API",
@@ -79,6 +83,7 @@ def create_app(
     app.state.agent_scheduler = agent_scheduler
     app.state.routine_scheduler_daemon = None
     app.state.session_start = time.time()
+    app.state.headless = headless
 
     # Wire up trace store if traces are enabled
     app.state.trace_store = None
@@ -97,6 +102,8 @@ def create_app(
         pass  # traces are optional; don't block server startup
 
     try:
+        if headless:
+            raise RuntimeError("no PC control on the headless node")
         from grandpa.pc_control import initialize_pc_control_store
 
         @app.on_event("startup")
@@ -148,6 +155,23 @@ def create_app(
             app.add_middleware(AuthMiddleware, api_key=api_key)
         except Exception as exc:
             logger.debug("Auth middleware init skipped: %s", exc)
+
+    if headless:
+        # Added last, so it runs first: routes the node does not serve
+        # answer 404 before anything else looks at the request. Not wrapped
+        # in try: a headless node without its filter must not start.
+        from starlette.responses import JSONResponse
+
+        from grandpa.runtime.exceptions import RuntimeConnectionError
+        from grandpa.server.headless import HeadlessRouteFilter, workflow_router
+
+        @app.exception_handler(RuntimeConnectionError)
+        async def _pc_unreachable(request, exc):  # noqa: ARG001
+            # The PC is asleep or refused: say so instead of a bare 500.
+            return JSONResponse({"detail": str(exc)}, status_code=503)
+
+        app.include_router(workflow_router)
+        app.add_middleware(HeadlessRouteFilter)
 
     return app
 

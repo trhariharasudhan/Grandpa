@@ -1,0 +1,74 @@
+name: Docker (headless arm64)
+
+# P2: the Pironman / Raspberry Pi 5 image. Built for linux/arm64 under QEMU
+# and started once: the node must come up and answer /health while the PC
+# is unreachable. Nothing is pushed anywhere.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "pyproject.toml"
+      - "src/grandpa/server/**"
+      - "src/grandpa/engine/**"
+      - "src/grandpa/cli/server_cmd.py"
+      - ".github/workflows/docker-headless.yml"
+  push:
+    branches: [main]
+    paths:
+      - "docker/**"
+      - "pyproject.toml"
+      - "src/grandpa/server/**"
+      - "src/grandpa/engine/**"
+      - "src/grandpa/cli/server_cmd.py"
+      - ".github/workflows/docker-headless.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: docker-headless-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - uses: docker/setup-buildx-action@v3
+      - name: Build linux/arm64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/headless.Dockerfile
+          platforms: linux/arm64
+          load: true
+          push: false
+          tags: grandpa-headless:ci
+      - name: Start the node with the PC away
+        run: |
+          docker run -d --name node --platform linux/arm64 -p 8000:8000 \
+            -e GRANDPA_PC_URL=http://127.0.0.1:9 \
+            -e GRANDPA_PC_TOKEN=gp_dev_ci_placeholder \
+            -e GRANDPA_API_KEY=ci-only-key \
+            grandpa-headless:ci
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:8000/health; then echo; break; fi
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8000/health | grep '"pc":false'
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H 'Authorization: Bearer ci-only-key' \
+            http://127.0.0.1:8000/v1/browser/context)
+          test "$code" = "404"
+          curl -sf -H 'Authorization: Bearer ci-only-key' \
+            http://127.0.0.1:8000/v1/workflows
+          docker exec node uname -m | grep aarch64
+      - name: Logs
+        if: always()
+        run: docker logs node || true

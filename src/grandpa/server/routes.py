@@ -335,7 +335,15 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
         # The HTTP API's consent is its own approve/deny endpoints below, so it
         # opts into deferred consent under origin "http". An action staged here
         # can be approved only over HTTP; one staged by voice or chat cannot.
-        action_result = handle_local_action(effective_user_text, deferred_origin="http")
+        # The headless home server (P2) has no desktop and no user files:
+        # PC actions and file commands are not tried there at all.
+        headless = bool(getattr(request.app.state, "headless", False))
+        _no_action = SimpleNamespace(should_fallback=True)
+        action_result = (
+            _no_action
+            if headless
+            else handle_local_action(effective_user_text, deferred_origin="http")
+        )
         if not action_result.should_fallback:
             _record_brain_result(brain_analysis, action_result)
             if request_body.stream:
@@ -346,7 +354,9 @@ async def chat_completions(request_body: ChatCompletionRequest, request: Request
                 )
             return _local_action_response(model, action_result, complexity_info)
 
-        file_result = handle_file_command(effective_user_text)
+        file_result = (
+            _no_action if headless else handle_file_command(effective_user_text)
+        )
         if not file_result.should_fallback:
             _record_brain_result(brain_analysis, file_result)
             if request_body.stream:
@@ -1361,6 +1371,10 @@ async def health(request: Request):
     """Health check endpoint."""
     engine = request.app.state.engine
     healthy = engine.health()
+    if getattr(request.app.state, "headless", False):
+        # The home server stays healthy while the PC sleeps: memory, the
+        # scheduler and workflows still run. "pc" says whether chat works.
+        return {"status": "ok", "pc": bool(healthy)}
     if not healthy:
         raise HTTPException(status_code=503, detail="Engine unhealthy")
     return {"status": "ok"}

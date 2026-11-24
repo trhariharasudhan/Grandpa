@@ -607,6 +607,10 @@ class ServerConfig:
     workers: int = 1
     cors_origins: list = field(default_factory=list)
     auth: ServerAuthConfig = field(default_factory=ServerAuthConfig)
+    # P2: let paired devices (the Pironman home server) use this PC's model
+    # through POST /v1/devices/llm. Text in, text out: no tools, no actions.
+    # Off until Captain turns it on at the PC.
+    device_llm: bool = False
 
 
 @dataclass(slots=True)
