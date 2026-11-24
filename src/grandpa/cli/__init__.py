@@ -171,6 +171,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "app",
+        "grandpa.cli.app_cmd:app",
+        short_help="Desktop app: chat window like ChatGPT/Claude.",
+    )
+)
+cli.add_command(
+    _lazy(
         "tui",
         "grandpa.cli.tui_cmd:tui",
         short_help="Full-screen terminal interface (also bare `grandpa`).",

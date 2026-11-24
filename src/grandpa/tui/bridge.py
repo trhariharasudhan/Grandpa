@@ -109,6 +109,10 @@ class UiHooks:
     #: ``"user"`` when the engine records the user's message, ``"grandpa"``
     #: when a reply starts. The interface draws the labels itself.
     turn: Callable[[str], None] | None = None
+    #: Optional: a whole reply as its source, ``("markdown", text)`` or
+    #: ``("text", text)``, instead of printed terminal output. The desktop app
+    #: renders Markdown itself; the terminal leaves this unset.
+    reply: Callable[[str, str], None] | None = None
 
 
 _YES_NO = re.compile(r"\[\s*y\s*/\s*n\s*\]\s*$", re.IGNORECASE)
@@ -181,6 +185,15 @@ class ChatBridge:
 
     def _assistant_response(self, console: Any, content: Any) -> None:
         self.hooks.turn("grandpa")  # type: ignore[misc]
+        if self.hooks.reply is not None:
+            markup = getattr(content, "markup", None)  # rich.markdown.Markdown
+            if isinstance(markup, str):
+                self.hooks.reply("markdown", markup)
+                return
+            plain = getattr(content, "plain", None)  # rich.text.Text
+            if isinstance(content, str) or isinstance(plain, str):
+                self.hooks.reply("text", content if isinstance(content, str) else plain)
+                return
         console.print(content)
 
     def _write_log(self, text: str) -> None:

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src ws://127.0.0.1:*; img-src 'self' data:">
+<title>Grandpa</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app" data-state="starting">
+  <aside id="sidebar" aria-label="Chats">
+    <div class="brand"><span class="pill">✦ GRANDPA</span></div>
+    <button type="button" id="new-chat" class="wide">＋ New chat</button>
+    <p class="section">Chats</p>
+    <ol id="chats" aria-label="Earlier chats"></ol>
+    <div class="side-foot">
+      <button type="button" id="theme" title="Dark / light (Ctrl+T)">◐ Theme</button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="top">
+      <span id="orb" aria-hidden="true"></span>
+      <div class="who">
+        <strong>Grandpa</strong>
+        <span id="status">Starting…</span>
+      </div>
+      <button type="button" id="model" title="Switch model (F6)">Model: …</button>
+    </header>
+
+    <section id="feed" aria-live="polite">
+      <div id="welcome">
+        <h1>Hi Captain, what shall we do?</h1>
+        <p class="hint">Ask anything, or try one of these:</p>
+        <div id="chips">
+          <button type="button" class="chip">What time is it?</button>
+          <button type="button" class="chip">Open Notepad</button>
+          <button type="button" class="chip">What can you do?</button>
+          <button type="button" class="chip">/status</button>
+        </div>
+      </div>
+      <ol id="messages"></ol>
+    </section>
+
+    <form id="composer" autocomplete="off">
+      <textarea id="input" rows="1" maxlength="2000"
+                placeholder="Ask Grandpa anything · / for commands"
+                aria-label="Message"></textarea>
+      <button type="button" id="stop" hidden title="Stop the reply (Esc)">■ Stop</button>
+      <button type="submit" id="send" title="Send (Enter)">Send ➤</button>
+    </form>
+    <p id="foot">Enter to send · Shift+Enter for a new line · Esc stops · Ctrl+T theme · F6 model</p>
+  </main>
+</div>
+<script src="markdown.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

@@ -65,6 +65,8 @@ class AvatarServer:
     on_talk: Callable[[], Any] | None = None
     """Called (on a worker thread) when the page asks to talk (A6). ``None``
     ignores the request."""
+    on_cancel: Callable[[], Any] | None = None
+    """Called when the page asks to stop the current reply; ``None`` ignores it."""
     snapshot: Callable[[], list[StateMessage | ChatMessage]] = list
     """Messages a newly connected page is sent first."""
     character: bytes | None = None
@@ -180,6 +182,11 @@ class AvatarServer:
                     continue
                 kind, text = parsed
                 loop = asyncio.get_running_loop()
+                if kind == "cancel":
+                    if self.on_cancel is not None:
+                        # Not queued behind the reply it is meant to stop.
+                        threading.Thread(target=self.on_cancel, daemon=True).start()
+                    continue
                 if kind == "talk":
                     if self.on_talk is not None:
                         loop.run_in_executor(self._worker, self._call_talk)
