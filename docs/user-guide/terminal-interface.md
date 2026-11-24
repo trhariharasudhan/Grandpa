@@ -43,7 +43,7 @@ These never go to the AI model:
 | `/speak on`, `/speak off` | Read replies aloud (saved) |
 | `/copy` | Same as F3 |
 | `/retry` | Same as F5 |
-| `/export` | Save the conversation to `~/.Grandpa/exports/grandpa-chat-<date>-<time>.md` |
+| `/export` | Save the conversation to `~/.grandpa/exports/grandpa-chat-<date>-<time>.md` |
 | `/keys` | Same as F1 |
 
 Every other command in the list (`/status`, `/memory`, `/notes`, `/apps` and the rest) is Grandpa's normal chat command. A command that needs something from you, such as `/notes search <query>`, fills the box and waits for you to type the rest.

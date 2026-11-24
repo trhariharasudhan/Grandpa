@@ -15,7 +15,7 @@ outside the seven can reach the screen, and a dark-theme colour never lands
 unreadable on the light background.
 
 There are two themes, ``dark`` and ``light``. The choice is saved in
-``~/.Grandpa/tui_settings.json``.
+``~/.grandpa/tui_settings.json``.
 """
 
 from __future__ import annotations

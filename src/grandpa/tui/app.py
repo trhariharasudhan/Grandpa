@@ -882,7 +882,7 @@ class GrandpaApp(App):
 
             folder = grandpa_home() / "exports"
         except Exception:  # noqa: BLE001
-            folder = Path.home() / ".Grandpa" / "exports"
+            folder = Path.home() / ".grandpa" / "exports"
         try:
             path = export_markdown(self.turns, folder)
         except OSError as exc:
