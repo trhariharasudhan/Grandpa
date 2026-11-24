@@ -57,13 +57,14 @@ def test_a_message_and_its_markdown_reply() -> None:
     kinds = [m["type"] for m in published]
     assert kinds[-4:] == ["note", "reply", "state", "state"] or "reply" in kinds
     reply = next(m for m in published if m["type"] == "reply")
-    assert reply == {
+    assert {k: reply[k] for k in ("v", "type", "format", "text")} == {
         "v": 1,
         "type": "reply",
         "format": "markdown",
         "text": "**Done** opening Notepad",
     }
     note = next(m for m in published if m["type"] == "note")
+    assert reply["seq"] > note["seq"] and reply["run"] == note["run"]
     assert "open_app ok" in note["text"]
     assert session.state == "idle"
     assert [m["type"] for m in session.snapshot()][:3] == ["user", "note", "reply"]
@@ -144,3 +145,17 @@ def test_addresses_carry_the_token_only_in_the_hash_or_script() -> None:
 def test_every_page_file_exists() -> None:
     for name in ("index.html", "app.css", "app.js", "markdown.js"):
         assert (Path(WEB_DIR) / name).is_file()
+
+
+def test_a_startup_failure_shows_its_reason() -> None:
+    class FailingBridge(FakeBridge):
+        def start(self) -> None:
+            self.hooks.output("Ollama is not running. Start it with: ollama serve\n")
+            self.hooks.finished(1)
+
+    published: list[dict] = []
+    session = AppSession(published.append, bridge_factory=FailingBridge)
+    session.start()
+    notes = [m["text"] for m in published if m["type"] == "note"]
+    assert any("Ollama is not running" in n for n in notes)
+    assert session.state == "stopped"

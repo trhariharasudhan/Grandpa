@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import re
+import secrets
 import threading
 from collections.abc import Callable
 from typing import Any
@@ -57,6 +58,10 @@ class AppSession:
         self._publish = publish
         self._lock = threading.Lock()
         self._history: list[dict[str, Any]] = []
+        # Every recorded message is numbered, with an id for this run, so a
+        # page that reconnects skips exactly the ones it already has.
+        self._run = secrets.token_hex(4)
+        self._seq = 0
         self._question: Question | None = None
         self._pending_output: list[str] = []
         self._started = False  # the engine's startup banner is not shown
@@ -152,9 +157,12 @@ class AppSession:
     # --- from the engine (worker thread) -------------------------------------------
 
     def _on_output(self, text: str) -> None:
-        if not self._started:
-            return  # the big ASCII banner and hints: the app has its own header
+        # Before the first prompt this is the big ASCII banner, which the app
+        # replaces with its own header -- unless startup fails, when it holds
+        # the reason and is shown (see _on_finished).
         self._pending_output.append(text)
+        if not self._started:
+            return
         switched = _MODEL_SWITCH.search(clean_terminal_text(text))
         if switched:
             self.model = switched.group(1)
@@ -198,6 +206,8 @@ class AppSession:
         self._emit(self._ask_message(question))
 
     def _on_finished(self, code: int) -> None:
+        if not self._started:
+            self._started = True  # what was printed is the reason it stopped
         self._flush_output()
         self._set_state("stopped")
         if code:
@@ -237,6 +247,8 @@ class AppSession:
 
     def _record(self, message: dict[str, Any]) -> None:
         with self._lock:
+            self._seq += 1
+            message = {**message, "run": self._run, "seq": self._seq}
             self._history.append(message)
             del self._history[:-MAX_SNAPSHOT]
         self._emit(message)

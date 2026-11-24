@@ -540,3 +540,32 @@ def test_the_voices_load_only_after_the_server_is_up(monkeypatch) -> None:
     assert order == ["server 20s", "voices", "window"]
     assert controller.speaker == "SPEAKER"
     assert "Voice: on, test." in result.output
+
+
+def test_the_ring_shows_the_project_seven_colours_and_breathes() -> None:
+    ring = (WEB_DIR / "ring.js").read_text(encoding="utf-8")
+    seven = [
+        "#FFD21F",
+        "#FF922B",
+        "#FF3B45",
+        "#A855F7",
+        "#168BFF",
+        "#22C55E",
+        "#E5E7EB",
+    ]
+    assert 'const SEVEN = ["' + '", "'.join(seven) + '"]' in ring
+    assert "uniform vec3  uSeven[7];" in ring
+    # At rest all seven show equally (lead 0) and the ring visibly breathes.
+    assert "idle:      { pulse: 0.04," in ring and "lead: 0.0 }" in ring
+    assert "sin(uTime * 1.6)" in ring  # the breath
+
+
+def test_the_app_header_orb_uses_the_same_seven() -> None:
+    from grandpa.app.window import WEB_DIR as APP_WEB
+
+    css = (APP_WEB / "app.css").read_text(encoding="utf-8")
+    assert (
+        "conic-gradient(#FFD21F, #FF922B, #FF3B45, #A855F7, #168BFF, #22C55E, #E5E7EB"
+        in css
+    )
+    assert "breathe" in css and "spin" in css

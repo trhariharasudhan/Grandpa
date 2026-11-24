@@ -105,7 +105,8 @@
   }
   function keep(msg) {
     const chat = currentChat();
-    const stored = Object.assign({ at: Date.now() }, msg); delete stored.v;
+    const stored = Object.assign({ at: Date.now() }, msg);
+    delete stored.v; delete stored.run; delete stored.seq;
     chat.messages.push(stored);
     if (msg.type === "user" && chat.title === "New chat") chat.title = msg.text.slice(0, 40);
     chat.messages = chat.messages.slice(-300);
@@ -217,6 +218,11 @@
     if (msg.type === "model") { modelBtn.textContent = "Model: " + String(msg.name).replace(/:latest$/, ""); return; }
     if (msg.type === "ask") return ask(msg);
     if (msg.type === "user" || msg.type === "reply" || msg.type === "note") {
+      // Skip what this window already has (a reconnect replays the run).
+      if (msg.run) {
+        if (db.lastRun === msg.run && msg.seq <= (db.lastSeq || 0)) return;
+        db.lastRun = msg.run; db.lastSeq = msg.seq; save();
+      }
       if (hideNext > 0 && (msg.text === "/clear" || /^Conversation cleared/.test(msg.text))) { hideNext -= 1; return; }
       if (msg.type === "reply" && busySince) msg.secs = ((Date.now() - busySince) / 1000).toFixed(1);
       keep(msg);
@@ -225,14 +231,9 @@
   function connect() {
     if (!address) { statusLine.textContent = "No connection address."; return; }
     socket = new WebSocket(address);
-    let first = true;
     socket.onopen = () => { retry = 500; tick(); };
     socket.onmessage = (event) => {
       let msg; try { msg = JSON.parse(event.data); } catch (_) { return; }
-      // On (re)connect Python replays its conversation; our stored copy is
-      // already on screen, so only the live state is taken from the replay.
-      if (first && (msg.type === "user" || msg.type === "reply" || msg.type === "note")) return;
-      if (msg.type === "state") first = false;
       onMessage(msg);
     };
     socket.onclose = () => { statusLine.textContent = "Reconnecting…"; setTimeout(connect, retry); retry = Math.min(retry * 2, 8000); };
