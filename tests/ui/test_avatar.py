@@ -542,30 +542,15 @@ def test_the_voices_load_only_after_the_server_is_up(monkeypatch) -> None:
     assert "Voice: on, test." in result.output
 
 
-def test_the_ring_shows_the_project_seven_colours_and_breathes() -> None:
+def test_the_ring_is_one_colour_per_state() -> None:
+    # Captain's choice: one colour for each action, never all seven at once.
     ring = (WEB_DIR / "ring.js").read_text(encoding="utf-8")
-    seven = [
-        "#FFD21F",
-        "#FF922B",
-        "#FF3B45",
-        "#A855F7",
-        "#168BFF",
-        "#22C55E",
-        "#E5E7EB",
-    ]
-    assert 'const SEVEN = ["' + '", "'.join(seven) + '"]' in ring
-    assert "uniform vec3  uSeven[7];" in ring
-    # At rest all seven show equally (lead 0) and the ring visibly breathes.
-    assert "idle:      { pulse: 0.04," in ring and "lead: 0.0 }" in ring
-    assert "sin(uTime * 1.6)" in ring  # the breath
+    assert "uSeven" not in ring and "uniform vec3  uColor;" in ring
 
 
-def test_the_app_header_orb_uses_the_same_seven() -> None:
+def test_the_app_header_orb_follows_the_state_colour() -> None:
     from grandpa.app.window import WEB_DIR as APP_WEB
 
     css = (APP_WEB / "app.css").read_text(encoding="utf-8")
-    assert (
-        "conic-gradient(#FFD21F, #FF922B, #FF3B45, #A855F7, #168BFF, #22C55E, #E5E7EB"
-        in css
-    )
-    assert "breathe" in css and "spin" in css
+    assert "conic-gradient" not in css
+    assert '#app[data-state="thinking"] #orb { --glow: var(--yellow);' in css

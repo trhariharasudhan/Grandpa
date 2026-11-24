@@ -222,6 +222,13 @@ def start_tray(window: Any, *, pystray_module: Any = None) -> AvatarTray | None:
     return tray
 
 
+def transparent_window() -> bool:
+    import os
+    import sys
+
+    return sys.platform == "win32" and not os.environ.get("GRANDPA_AVATAR_OPAQUE")
+
+
 def run_window(
     ws_url: str,
     *,
@@ -253,6 +260,10 @@ def run_window(
         easy_drag=False,
         on_top=on_top,
         background_color=BACKGROUND,
+        # Only the ring, no box around it. pywebview supports this with
+        # WebView2 on Windows; GRANDPA_AVATAR_OPAQUE=1 brings the box back if
+        # a machine paints it white.
+        transparent=transparent_window(),
     )
     api.attach(window)
 

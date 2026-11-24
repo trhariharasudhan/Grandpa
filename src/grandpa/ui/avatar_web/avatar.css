@@ -9,10 +9,12 @@
   --unread: #FFBE5A;
 }
 
+/* Transparent window (Windows): only the ring shows while the panel is
+   closed; the open panel draws its own dark rounded card. */
 html, body {
   margin: 0;
   height: 100%;
-  background: var(--bg);
+  background: transparent;
   color: var(--ink);
   font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
   overflow: hidden;
@@ -109,3 +111,5 @@ button:disabled, input:disabled { opacity: 0.5; cursor: default; }
 
 /* A6: click-to-talk. While listening the button says so and glows blue. */
 #app[data-state="listening"] #talk { background: rgba(96,165,250,0.35); }
+
+#app[data-panel="open"] { background: var(--bg); border-radius: 16px; }

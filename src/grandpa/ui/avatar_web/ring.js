@@ -29,20 +29,15 @@
   // highlight travels; segments: a dashed ring that turns (working);
   // flicker: the quick waver of speech.
   const MOTION = {
-    // lead: how much the state's own colour comes forward over the seven
-    // (0 = all seven equally, as at rest).
-    idle:      { pulse: 0.04,  speed: 0.25, segments: 0, flicker: 0.0, lead: 0.0 },
-    listening: { pulse: 0.06,  speed: 0.9,  segments: 0, flicker: 0.0, lead: 0.55 },
-    thinking:  { pulse: 0.05,  speed: 1.4,  segments: 0, flicker: 0.0, lead: 0.55 },
-    speaking:  { pulse: 0.03,  speed: 0.6,  segments: 0, flicker: 1.0, lead: 0.5 },
-    working:   { pulse: 0.02,  speed: 0.5,  segments: 8, flicker: 0.0, lead: 0.55 },
-    done:      { pulse: 0.02,  speed: 0.3,  segments: 0, flicker: 0.0, lead: 0.6 },
-    error:     { pulse: 0.04,  speed: 0.2,  segments: 0, flicker: 0.0, lead: 0.7 },
-    confirm:   { pulse: 0.07,  speed: 0.4,  segments: 0, flicker: 0.0, lead: 0.6 },
+    idle:      { pulse: 0.025, speed: 0.25, segments: 0, flicker: 0.0 },
+    listening: { pulse: 0.06,  speed: 0.9,  segments: 0, flicker: 0.0 },
+    thinking:  { pulse: 0.05,  speed: 1.4,  segments: 0, flicker: 0.0 },
+    speaking:  { pulse: 0.03,  speed: 0.6,  segments: 0, flicker: 1.0 },
+    working:   { pulse: 0.02,  speed: 0.5,  segments: 8, flicker: 0.0 },
+    done:      { pulse: 0.02,  speed: 0.3,  segments: 0, flicker: 0.0 },
+    error:     { pulse: 0.04,  speed: 0.2,  segments: 0, flicker: 0.0 },
+    confirm:   { pulse: 0.07,  speed: 0.4,  segments: 0, flicker: 0.0 },
   };
-
-  // The project's seven colours, in the order they flow around the ring.
-  const SEVEN = ["#FFD21F", "#FF922B", "#FF3B45", "#A855F7", "#168BFF", "#22C55E", "#E5E7EB"];
 
   const VERTEX = `
     attribute vec2 aPos;
@@ -60,8 +55,6 @@
     uniform float uSegments;
     uniform float uFlicker;
     uniform float uLevel;
-    uniform vec3  uSeven[7];
-    uniform float uLead;
 
     float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p) {
@@ -69,23 +62,6 @@
       vec2 u = f * f * (3.0 - 2.0 * f);
       return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
                  mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
-    }
-
-    // The seven colours around the ring, blended smoothly, turning slowly.
-    // Weighted sum instead of indexing, which GLSL ES 1.0 cannot do here.
-    vec3 seven(float a, float t) {
-      float pos = fract(a / 6.28318 + t * 0.03) * 7.0;
-      vec3 sum = vec3(0.0);
-      float total = 0.0;
-      for (int i = 0; i < 7; i++) {
-        float d = abs(pos - float(i));
-        d = min(d, 7.0 - d);
-        float w = max(0.0, 1.0 - d * 1.4);
-        w = w * w * (3.0 - 2.0 * w);
-        sum += uSeven[i] * w;
-        total += w;
-      }
-      return sum / max(total, 1e-4);
     }
 
     void main() {
@@ -105,7 +81,7 @@
       float d = abs(r - radius - wobble);
 
       float core = smoothstep(width, width * 0.35, d);
-      float halo = exp(-d * 8.0) * 0.75;
+      float halo = exp(-d * 9.0) * 0.55;
 
       // a highlight that travels around the ring
       float travel = 0.5 + 0.5 * cos(a - uPhase);
@@ -118,11 +94,8 @@
         dash = mix(0.25, 1.0, smoothstep(0.15, 0.25, s) * smoothstep(0.85, 0.75, s));
       }
 
-      // breathing glow: the halo brightens and dims with the breath
-      halo *= 0.85 + 0.3 * (0.5 + 0.5 * sin(uTime * 1.6));
       float glow = (core * (0.75 + highlight) * dash + halo * (0.6 + 0.4 * dash));
-      vec3 ringColour = mix(seven(a, uTime), uColor, uLead);
-      vec3 colour = ringColour * glow + vec3(1.0) * core * highlight * 0.35;
+      vec3 colour = uColor * glow + vec3(1.0) * core * highlight * 0.35;
       float alpha = clamp(glow, 0.0, 1.0);
       gl_FragColor = vec4(colour * alpha, alpha);
     }
@@ -176,15 +149,14 @@
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     const u = {};
-    for (const name of ["uTime", "uColor", "uPulse", "uPhase", "uSegments", "uFlicker", "uLevel", "uLead"]) {
+    for (const name of ["uTime", "uColor", "uPulse", "uPhase", "uSegments", "uFlicker", "uLevel"]) {
       u[name] = gl.getUniformLocation(program, name);
     }
-    gl.uniform3fv(gl.getUniformLocation(program, "uSeven"), new Float32Array(SEVEN.flatMap(hexToRgb)));
 
     const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const stats = { frames: 0, running: false };
     const target = { colour: [0.9, 0.91, 0.92], motion: MOTION.idle, state: "idle" };
-    const current = { colour: target.colour.slice(), pulse: 0.04, speed: 0.25, segments: 0, flicker: 0, lead: 0 };
+    const current = { colour: target.colour.slice(), pulse: 0.025, speed: 0.25, segments: 0, flicker: 0 };
     let phase = 0;
     let started = performance.now();
     let last = 0;
@@ -213,7 +185,6 @@
       current.pulse = approach(current.pulse, target.motion.pulse, k);
       current.speed = approach(current.speed, target.motion.speed, k);
       current.flicker = approach(current.flicker, target.motion.flicker, k);
-      current.lead = approach(current.lead, target.motion.lead || 0, k);
       current.segments = target.motion.segments; // a dash count does not blend
       phase += current.speed * dt * (reduceMotion ? 0 : 1);
 
@@ -227,7 +198,6 @@
       gl.uniform1f(u.uSegments, current.segments);
       gl.uniform1f(u.uFlicker, reduceMotion ? 0 : current.flicker);
       gl.uniform1f(u.uLevel, 0);
-      gl.uniform1f(u.uLead, current.lead);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       stats.frames += 1;
     }
@@ -301,5 +271,5 @@
     return { setState, setPaused, destroy, stats };
   }
 
-  window.GrandpaRing = { create, FRAME_MS, RESTING_FRAME_MS, MOTION, SEVEN };
+  window.GrandpaRing = { create, FRAME_MS, RESTING_FRAME_MS, MOTION };
 })();
