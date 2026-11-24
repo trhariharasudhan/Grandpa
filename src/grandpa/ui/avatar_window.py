@@ -229,6 +229,42 @@ def transparent_window() -> bool:
     return sys.platform == "win32" and not os.environ.get("GRANDPA_AVATAR_OPAQUE")
 
 
+#: The colour Windows makes fully see-through behind the transparent page.
+#: Nearly black, so the soft edge of the ring's glow fades into a dark rim
+#: rather than a coloured fringe.
+KEY_COLOUR = (1, 1, 1)
+
+
+def key_out_background(window: Any) -> bool:
+    """Remove the pale haze Windows paints behind a transparent pywebview window.
+
+    pywebview gives WebView2 a transparent background but leaves the form's
+    own background, which shows through as a whitish box (seen on Captain's
+    PC). Painting the form in :data:`KEY_COLOUR` and making that its
+    TransparencyKey turns it fully see-through. Windows only; False when it
+    could not be applied (the ring still works, just with the haze).
+    """
+    import sys
+
+    if sys.platform != "win32" or not transparent_window():
+        return False
+    try:
+        from System import Action  # pythonnet, which pywebview uses on Windows
+        from System.Drawing import Color
+
+        form = window.native
+        key = Color.FromArgb(*KEY_COLOUR)
+
+        def apply() -> None:
+            form.BackColor = key
+            form.TransparencyKey = key
+
+        form.Invoke(Action(apply))
+        return True
+    except Exception:  # noqa: BLE001 - cosmetic; never break the window
+        return False
+
+
 def run_window(
     ws_url: str,
     *,
@@ -271,6 +307,8 @@ def run_window(
         window.evaluate_js(connect_script(ws_url))
 
     window.events.loaded += _hand_over
+    if hasattr(window.events, "shown"):
+        window.events.shown += lambda *_a: key_out_background(window)
     icon = None
     if tray:
         icon = start_tray(window, pystray_module=pystray_module)
