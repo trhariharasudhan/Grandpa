@@ -256,7 +256,17 @@ def test_wizard_without_ollama_fails_with_the_fix(wizard, monkeypatch) -> None:
     result = _run("--yes", "--skip-voice")
     assert result.exit_code == 1
     assert "Ollama is not reachable" in result.output
-    assert "https://ollama.com/download/windows" in result.output
+    from grandpa.platform_hints import ollama_installer
+
+    assert ollama_installer() in result.output
+
+
+def test_the_ollama_hint_matches_the_system() -> None:
+    from grandpa.platform_hints import install_ollama_hint
+
+    assert "download/windows" in install_ollama_hint("win32")
+    assert "download/mac" in install_ollama_hint("darwin")
+    assert "install.sh | sh" in install_ollama_hint("linux")
 
 
 def test_wizard_skips_voices_whose_package_is_missing(wizard) -> None:

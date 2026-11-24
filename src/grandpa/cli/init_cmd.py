@@ -49,12 +49,14 @@ def _detect_running_engines() -> list[str]:
 
 def _next_steps_text(engine: str, model: str = "") -> str:
     """Return engine-specific next-steps guidance after init."""
+    from grandpa.platform_hints import ollama_installer
+
     pull_model = model or "qwen3.5:2b"
     return (
         "Next steps:\n"
         "\n"
         "  1. Install and start Ollama:\n"
-        "     https://ollama.com/download/windows\n"
+        f"     {ollama_installer()}\n"
         "     ollama serve\n"
         "\n"
         f"  2. Pull a model:\n"

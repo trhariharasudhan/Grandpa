@@ -18,6 +18,7 @@ import click
 from rich.console import Console
 
 from grandpa.core.config import DEFAULT_CONFIG_PATH
+from grandpa.platform_hints import install_ollama_hint
 
 
 @dataclass
@@ -97,7 +98,7 @@ def step_models(console: Console, confirm: Confirm) -> StepResult:
             "Models",
             "failed",
             "Ollama is not reachable",
-            "Install Ollama from https://ollama.com/download/windows, start it "
+            f"{install_ollama_hint()}, start it "
             f"(ollama serve), then run {_cli()} setup again",
         )
     plan = plan_setup(tags)
