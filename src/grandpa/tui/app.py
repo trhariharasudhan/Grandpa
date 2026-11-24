@@ -358,18 +358,41 @@ class Message(Static):
         raise NotImplementedError
 
 
+def user_label() -> str:
+    """The user's name as the profile has it: "Mr. Hari Hara Sudhan".
+
+    Read each time (the config is cached), so a /profile edit shows at once.
+    "You" until a name is set.
+    """
+    try:
+        from grandpa.cli.theme import DEFAULT_USERNAME, resolve_display_name
+        from grandpa.core.config import load_config
+
+        name = resolve_display_name(load_config())
+    except Exception:  # noqa: BLE001 - a label must never break sending
+        return "You"
+    return "You" if not name or name == DEFAULT_USERNAME else name
+
+
 class UserMessage(Message):
     """What the user sent, in the user colour."""
 
-    def __init__(self, text: str, at: datetime, attached: Iterable[str] = ()) -> None:
+    def __init__(
+        self,
+        text: str,
+        at: datetime,
+        attached: Iterable[str] = (),
+        label: str = "You",
+    ) -> None:
         super().__init__("", classes="msg user")
         self.text = text
         self.at = at
         self.attached = list(attached)
+        self.label = label or "You"
 
     def repaint(self, colors: ThemeColors) -> None:
         body = Text()
-        body.append("You", style=Style(color=colors.user, bold=True))
+        body.append(self.label, style=Style(color=colors.user, bold=True))
         body.append(f"  {self.at:%H:%M}\n", style=colors.muted)
         body.append(self.text, style=colors.user)
         for name in self.attached:
@@ -704,7 +727,9 @@ class GrandpaApp(App):
         """Show the message, attach any @files, and hand it to the engine."""
         message, attached, notes = expand_file_mentions(text)
         self._block = None
-        self._mount_message(UserMessage(text, datetime.now(), attached))
+        self._mount_message(
+            UserMessage(text, datetime.now(), attached, label=user_label())
+        )
         for note in notes:
             self.notify_status(note, "error")
         self.turns.append(Turn("user", text, datetime.now()))

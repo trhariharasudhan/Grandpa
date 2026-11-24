@@ -16,6 +16,8 @@
   const input = document.getElementById("text");
   const sendButton = document.getElementById("send");
   const talkButton = document.getElementById("talk");
+  const bar = document.getElementById("bar");
+  const barStatus = document.getElementById("bar-status");
 
   const BUSY = new Set(["thinking", "working", "listening"]);
   const DRAG_THRESHOLD = 4; // pixels before a press counts as a drag
@@ -55,32 +57,47 @@
   }
 
   // A press that moves is a drag and moves the window; one that does not is a
-  // click and opens or closes the panel. A drag never toggles.
-  let press = null;
-  ring.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return; // only the left button drags or toggles
-    press = { x: event.screenX, y: event.screenY, dragging: false };
-    ring.setPointerCapture(event.pointerId);
-  });
-  ring.addEventListener("pointermove", (event) => {
-    if (!press) return;
-    const dx = event.screenX - press.x;
-    const dy = event.screenY - press.y;
-    if (!press.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    press.dragging = true;
+  // click. On the ring a click opens the chat (and the ring hides); the chat's
+  // own bar drags the open window and its ✕ closes the chat, bringing the ring back.
+  function draggable(handle, onClick) {
+    let press = null;
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return; // only the left button drags or clicks
+      if (event.target.closest("button") && event.target !== handle) return; // the bar's buttons click normally
+      press = { x: event.screenX, y: event.screenY, dragging: false };
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (!press) return;
+      const dx = event.screenX - press.x;
+      const dy = event.screenY - press.y;
+      if (!press.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      press.dragging = true;
+      const api = windowApi();
+      if (api && api.move_by && (dx || dy)) {
+        api.move_by(Math.round(dx), Math.round(dy));
+        press.x = event.screenX;
+        press.y = event.screenY;
+      }
+    });
+    handle.addEventListener("pointerup", (event) => {
+      if (!press) return; // a right-click, or a press that began elsewhere
+      const wasDrag = press.dragging;
+      press = null;
+      try { handle.releasePointerCapture(event.pointerId); } catch (_) { /* already released */ }
+      if (!wasDrag && onClick) onClick();
+    });
+  }
+  draggable(ring, () => setOpen(true));
+  draggable(bar, null);
+  document.getElementById("close").addEventListener("click", () => setOpen(false));
+  const openApp = document.getElementById("open-app");
+  function showOpenApp() { const api = windowApi(); openApp.hidden = !(api && api.open_app); }
+  window.addEventListener("pywebviewready", showOpenApp);
+  showOpenApp();
+  document.getElementById("open-app").addEventListener("click", () => {
     const api = windowApi();
-    if (api && api.move_by && (dx || dy)) {
-      api.move_by(Math.round(dx), Math.round(dy));
-      press.x = event.screenX;
-      press.y = event.screenY;
-    }
-  });
-  ring.addEventListener("pointerup", (event) => {
-    if (!press) return; // a right-click, or a press that began elsewhere
-    const wasDrag = press.dragging;
-    press = null;
-    try { ring.releasePointerCapture(event.pointerId); } catch (_) { /* already released */ }
-    if (!wasDrag) setOpen(!isOpen());
+    if (api && api.open_app) api.open_app();
   });
   // A6: a right-click on the ring (or on Grandpa) talks without opening the panel.
   ring.addEventListener("contextmenu", (event) => { event.preventDefault(); talk(); });
@@ -112,6 +129,7 @@
     const words = msg.label || msg.state;
     label.textContent = words;
     ring.title = words;
+    barStatus.textContent = msg.state === "working" && msg.action ? words + " · " + msg.action.replace(/_/g, " ") : words;
     actionLine.textContent = msg.state === "working" && msg.action ? msg.action.replace(/_/g, " ") : "";
     const asking = msg.state === "confirm";
     confirmBox.hidden = !asking;

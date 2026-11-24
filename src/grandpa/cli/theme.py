@@ -416,10 +416,28 @@ def resolve_username(config=None) -> str:
     return _safe_username(configured)[:40] or DEFAULT_USERNAME
 
 
+def resolve_display_name(config=None) -> str:
+    """The name to show for the user: title and name, "Mr. Hari Hara Sudhan".
+
+    Falls back to :func:`resolve_username` alone when no title is set.
+    """
+    name = resolve_username(config)
+    title = str(getattr(getattr(config, "user", None), "title", "") or "").strip()
+    if not title or name == DEFAULT_USERNAME:
+        return name
+    from grandpa.profile import validate_title
+
+    try:
+        title = validate_title(title)
+    except ValueError:
+        return name
+    return f"{title} {name}".strip()[:48]
+
+
 def user_prompt(username: str = DEFAULT_USERNAME) -> str:
     """Return the shared interactive user prompt."""
 
-    normalized = " ".join(str(username).split()).strip()[:40]
+    normalized = " ".join(str(username).split()).strip()[:48]
     return f"{normalized or DEFAULT_USERNAME} > "
 
 
@@ -431,7 +449,7 @@ def render_user_message(
 ) -> None:
     """Render submitted user input into the permanent chat transcript."""
 
-    normalized = " ".join(str(username).split()).strip()[:40] or DEFAULT_USERNAME
+    normalized = " ".join(str(username).split()).strip()[:48] or DEFAULT_USERNAME
     label = Text(f"{normalized} >", style=f"bold {TEXT_ACCENT}")
     console.print(Text.assemble(label, " ", content))
 

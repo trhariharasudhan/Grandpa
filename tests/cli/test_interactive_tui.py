@@ -160,7 +160,9 @@ def test_startup_header_is_compact_and_status_remains_detailed() -> None:
     render_startup_header(session)
 
     output = console.export_text()
-    assert "██████╗ ██████╗" in output
+    # No big logo any more: a greeting, the version and model, the hints.
+    assert "██████╗" not in output
+    assert "I'm Grandpa." in output
     assert "Grandpa v" in output
     assert "| grandpa-fast" in output
     # No runtime vendor in the banner. Which backend serves the model is an

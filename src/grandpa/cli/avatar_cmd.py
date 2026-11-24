@@ -15,12 +15,16 @@ from grandpa.cli.safe_output import safe_cli_error
 _HELP = """Show Grandpa's avatar window. Blocks this terminal until you close it.
 
 It opens as a small glowing ring that stays on top. Click the ring to open
-the chat panel, click it again to close it; drag the ring to move it. The
+the chat (the ring hides while it is open); the chat's ✕ closes it and the
+ring comes back. Drag the ring, or the chat's top bar, to move it. "Open app"
+starts the full desktop app as its own program: closing either one leaves the
+other running. The
 ring's colour shows what is happening: thinking, working (with the action's
 name), done, error, or waiting for your yes/no. Risky actions still ask
 first, exactly as in `grandpa bubble` and `grandpa voice`.
 
-While Grandpa thinks, speaks, works or asks, the ring turns into his 3D head:
+With --character, while Grandpa thinks, speaks, works or asks, the ring
+turns into his 3D head (on hold for now; the ring alone is the default):
 a built-in placeholder, or your own model from assets/avatar/grandpa.glb
 (glTF 2.0, at most 30,000 triangles). The first line printed says which.
 His face follows the state: he smiles while speaking, looks thoughtful while
@@ -157,7 +161,14 @@ def build(bridge=None, speaker=None, listener=None):
 @click.option("--no-mic", is_flag=True, help="Turn click-to-talk off.")
 @click.option("--no-tray", is_flag=True, help="Do not show the tray icon.")
 @click.option(
-    "--orb-only", is_flag=True, help="Show only the ring, never the 3D character."
+    "--orb-only",
+    is_flag=True,
+    help="Show only the ring (the default while the 3D character is on hold).",
+)
+@click.option(
+    "--character",
+    is_flag=True,
+    help="Also show the 3D character while Grandpa works (on hold; experimental).",
 )
 @click.option(
     "--no-budget",
@@ -177,13 +188,19 @@ def avatar(
     no_mic: bool,
     no_tray: bool,
     orb_only: bool,
+    character: bool,
     no_budget: bool,
     perf_log: bool,
 ) -> None:
+    from grandpa.app.launch import claim, release
     from grandpa.ui.avatar_character import load_character
     from grandpa.ui.bridge import InProcessBridge
     from grandpa.ui.lipsync import default_speaker
 
+    if not no_window and not claim("avatar"):
+        click.echo("Grandpa's orb is already on screen.")
+        return
+    orb_only = orb_only or not character
     bridge = InProcessBridge()
     listener = None if no_mic else microphone_listener(bridge)
     # The voices are chosen after the server is up: loading them (the MMS Tamil
@@ -192,7 +209,7 @@ def avatar(
 
     if orb_only:
         controller.ring_only("--orb-only", announce=False)
-        click.echo("Character: off (--orb-only); the ring only.")
+        click.echo("Character: off; the ring only (--character turns it on).")
     else:
         server.character, report = load_character()
         click.echo(report.describe())
@@ -256,6 +273,8 @@ def avatar(
             watch.stop()
         controller.unwatch_actions()
         server.stop()
+        if not no_window:
+            release("avatar")
 
 
 __all__ = ["TALK_SECONDS", "avatar", "budget_watch", "build", "microphone_listener"]

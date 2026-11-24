@@ -213,10 +213,19 @@ def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None
 
     api = window.AppApi()
     public = {name for name in dir(api) if not name.startswith("_")}
-    assert public == {"pick_file", "user_name", "window"}
-    assert api.pick_file() is None  # no window yet: nothing happens
-    monkeypatch.setattr(window, "user_name", lambda: "Captain")
-    assert api.user_name() == "Captain"
+    assert public == {
+        "pick_file",
+        "pick_files",
+        "user_name",
+        "get_profile",
+        "save_profile",
+        "open_orb",
+        "window",
+        "session",
+    }
+    assert api.pick_file() is None and api.pick_files() == []  # no window yet
+    monkeypatch.setattr(window, "user_name", lambda: "Mr. Hari Hara Sudhan")
+    assert api.user_name() == "Mr. Hari Hara Sudhan"
 
 
 def test_the_page_has_the_claude_style_parts() -> None:
@@ -274,3 +283,99 @@ def test_the_page_uses_only_the_project_colours() -> None:
         allowed |= {str(v).lower() for v in getattr(theme, "accents", {}).values()}
     used = {c.lower() for c in re.findall(r"#[0-9A-Fa-f]{6}\b", css)}
     assert used <= allowed, used - allowed
+
+
+# --- the ＋ menu, files from anywhere the user picked, documents, the profile ---
+
+
+def test_the_plus_menu_holds_add_files_voice_and_the_orb() -> None:
+    page = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    for part in (
+        'id="plus"',
+        'id="plus-menu"',
+        'id="attach"',
+        'id="plus-voice"',
+        'id="plus-orb"',
+        'id="set-title"',
+        'id="set-email"',
+        'id="save-profile"',
+    ):
+        assert part in page, part
+
+
+def test_a_picked_file_outside_home_can_be_attached_but_a_typed_one_cannot(
+    tmp_path, monkeypatch
+) -> None:
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "plan.txt").write_text("step one\n", encoding="utf-8")
+    work = tmp_path / "work"
+    work.mkdir()
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(Path, "home", lambda: work)
+    session, bridge, _published = _session()
+    target = str(elsewhere / "plan.txt")
+
+    session.send(f'@"{target}"')  # typed, never picked: refused
+    assert "step one" not in bridge.sent[-1]
+    session.state = "idle"
+
+    session.allow_file(target)  # picked in the dialog
+    session.send(f'@"{target}"')
+    assert "step one" in bridge.sent[-1]
+
+
+def test_a_word_document_is_attached_as_its_text(tmp_path, monkeypatch) -> None:
+    import zipfile
+
+    from grandpa.tui.helpers import read_attachment
+
+    doc = tmp_path / "letter.docx"
+    with zipfile.ZipFile(doc, "w") as z:
+        z.writestr(
+            "word/document.xml",
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+            "<w:body><w:p><w:r><w:t>Dear Grandpa</w:t></w:r></w:p></w:body></w:document>",
+        )
+    monkeypatch.chdir(tmp_path)
+    text, note = read_attachment("letter.docx")
+    assert text is not None and "Dear Grandpa" in text and note == ""
+
+
+def test_a_document_without_text_gives_a_clear_note(tmp_path, monkeypatch) -> None:
+    from grandpa.tui.helpers import read_attachment
+
+    (tmp_path / "scan.pdf").write_bytes(b"%PDF-1.4 not really")
+    monkeypatch.chdir(tmp_path)
+    text, note = read_attachment("scan.pdf")
+    assert text is None and "couldn't read any text" in note
+
+
+def test_the_profile_is_saved_with_title_and_email(tmp_path, monkeypatch) -> None:
+    from grandpa.app import window
+    from grandpa.core.config import load_config
+
+    config = tmp_path / "config.toml"
+    monkeypatch.setenv("Grandpa_CONFIG", str(config))
+    monkeypatch.setattr(
+        "grandpa.core.config.DEFAULT_CONFIG_PATH", config, raising=False
+    )
+    load_config.cache_clear()
+    monkeypatch.setattr(window, "read_profile", lambda: {"display": "x"})
+    try:
+        _check_profile_saving(window, config)
+    finally:
+        load_config.cache_clear()  # never leave this test's config cached
+
+
+def _check_profile_saving(window, config) -> None:
+
+    bad = window.write_profile("Mr.", "Hari Hara Sudhan", "not-an-email")
+    assert bad["ok"] is False and "email" in bad["error"]
+    bad = window.write_profile("Sir", "Hari", "")
+    assert bad["ok"] is False
+    good = window.write_profile("mr", "Hari Hara Sudhan", "hari@example.com")
+    assert good["ok"] is True
+    text = config.read_text(encoding="utf-8")
+    assert 'title = "Mr."' in text and 'email = "hari@example.com"' in text
+    assert "onboarding_completed = true" in text

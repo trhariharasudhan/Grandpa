@@ -14,8 +14,7 @@ from grandpa.cli.theme import (
     ACCENT,
     DEFAULT_USERNAME,
     STRUCTURE,
-    render_logo,
-    resolve_username,
+    resolve_display_name,
     user_prompt,
 )
 from grandpa.core.config import DEFAULT_CONFIG_PATH, GrandpaConfig
@@ -467,13 +466,14 @@ def _profile(session: InteractiveSession, argument: str) -> LocalCommandResult:
         import click
 
         choice = click.prompt(
-            "Profile: 1) display name  2) preferred title  3) reset  4) back",
-            type=click.Choice(("1", "2", "3", "4")),
-            default="4",
+            "Profile: 1) name  2) title (Mr./Ms./Mrs./Mx.)  3) email  4) all  "
+            "5) reset  6) back",
+            type=click.Choice(("1", "2", "3", "4", "5", "6")),
+            default="6",
         )
-        if choice == "4":
+        if choice == "6":
             return LocalCommandResult(True, "Profile unchanged.")
-        if choice == "3":
+        if choice == "5":
             if not click.confirm("Reset local profile?", default=False):
                 return LocalCommandResult(True, "Profile reset cancelled.")
             reset_profile(confirmed=True)
@@ -486,11 +486,12 @@ def _profile(session: InteractiveSession, argument: str) -> LocalCommandResult:
             console=session.console,
             config=session.config,
             interactive=True,
-            edit_username=choice == "1",
-            edit_title=choice == "2",
+            edit_username=choice in {"1", "4"},
+            edit_title=choice in {"2", "4"},
+            edit_email=choice in {"3", "4"},
         )
         session.config = updated
-        session.username = resolve_username(updated)
+        session.username = resolve_display_name(updated)
         return LocalCommandResult(
             True,
             "Profile updated. Engine and model defaults apply on the next launch.\n"
@@ -559,24 +560,28 @@ def set_terminal_title(title: str = "Grandpa") -> None:
 
 
 def render_startup_header(session: InteractiveSession) -> None:
-    """Render a compact, scan-friendly runtime header."""
+    """A short, friendly start: a greeting, the model, and how to begin.
 
-    render_logo(session.console)
-    session.console.print()
+    No big logo: it took half the screen and said nothing the title bar
+    doesn't. The greeting uses the profile's title and name.
+    """
+
     from grandpa.intelligence.grandpa_models import get_model_role
 
     entry = get_model_role(session.model)
     model_label = entry.ollama_tag.removesuffix(":latest") if entry else session.model
+    name = session.username or resolve_display_name(session.config)
+    greeting = f"Hi {name}!" if name and name != "Username" else "Hi there!"
     # No runtime vendor here. Which backend serves the model is an
     # implementation detail of the product, and this banner is the product
     # speaking. It is display only: /doctor, /config, /info and every engine
     # error still name the real engine, because those are the surfaces whose
     # whole job is to say what is actually running.
+    session.console.print(f"[bold {ACCENT}]{greeting}[/bold {ACCENT}] I'm Grandpa.")
     session.console.print(
-        f"[bold {ACCENT}]Grandpa v{grandpa.__version__}[/bold {ACCENT}] "
+        f"[dim]Grandpa v{grandpa.__version__}[/dim] "
         f"[dim]|[/dim] [{STRUCTURE}]{model_label}[/{STRUCTURE}]"
     )
-    session.console.print()
     session.console.print(f"[dim]{chat_helper_text(session.console)}[/dim]")
 
 
@@ -597,7 +602,7 @@ def chat_helper_text(console: Console) -> str:
 def interactive_prompt(session: InteractiveSession) -> str:
     """Return the configured prompt for an interactive session."""
 
-    return user_prompt(session.username or resolve_username(session.config))
+    return user_prompt(session.username or resolve_display_name(session.config))
 
 
 def runtime_status_text(session: InteractiveSession) -> str:

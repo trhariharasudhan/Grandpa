@@ -26,44 +26,122 @@ MIN_SIZE = (720, 480)
 BACKGROUND = "#0b0c0c"
 
 
+#: What the 📎 dialog offers: text, code and documents Grandpa can read.
+FILE_TYPES = (
+    "Text and documents (*.txt;*.md;*.csv;*.json;*.log;*.py;*.js;*.ts;*.html;*.css;"
+    "*.toml;*.yaml;*.yml;*.xml;*.ini;*.ps1;*.bat;*.sql;*.pdf;*.docx;*.xlsx;*.pptx)",
+    "All files (*.*)",
+)
+MAX_PICK = 5
+
+
 class AppApi:
     """What the page may ask of the window (pywebview exposes these to JS).
 
-    Two things, both read-only: pick a file to attach (the user chooses it in
-    Windows' own dialog; only its path comes back) and Captain's name for the
-    bottom-left corner. Nothing here reaches the chat engine or acts.
+    * pick files to attach -- the user chooses them in the system's own file
+      dialog; only their paths come back, and only those paths may then be
+      read for attaching;
+    * read and save the profile (title, name, email) that every Grandpa
+      surface uses;
+    * open the orb as its own program.
+
+    Nothing here runs a command the page chose or reaches the chat engine.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, session: Any = None) -> None:
         self.window: Any = None
+        self.session = session
 
-    def pick_file(self) -> str | None:
+    def pick_files(self) -> list[str]:
         if self.window is None:
-            return None
+            return []
         try:
             import webview
 
+            dialog = getattr(webview, "FileDialog", None)
+            kind = dialog.OPEN if dialog is not None else webview.OPEN_DIALOG
             chosen = self.window.create_file_dialog(
-                webview.OPEN_DIALOG, allow_multiple=False
+                kind, allow_multiple=True, file_types=FILE_TYPES
             )
-        except Exception:  # noqa: BLE001
-            return None
-        return str(chosen[0]) if chosen else None
+        except Exception:  # noqa: BLE001 - no dialog is "nothing picked"
+            return []
+        paths = [str(p) for p in (chosen or ())][:MAX_PICK]
+        if self.session is not None:
+            paths = [self.session.allow_file(p) for p in paths]
+        return paths
+
+    def pick_file(self) -> str | None:  # the older page's name for it
+        paths = self.pick_files()
+        return paths[0] if paths else None
 
     def user_name(self) -> str:
         return user_name()
 
+    def get_profile(self) -> dict[str, Any]:
+        return read_profile()
+
+    def save_profile(self, title: Any, name: Any, email: Any) -> dict[str, Any]:
+        return write_profile(title, name, email)
+
+    def open_orb(self) -> str:
+        from grandpa.app.launch import launch
+
+        try:
+            return launch("avatar")
+        except (OSError, ValueError):
+            return "failed"
+
+
+def read_profile() -> dict[str, Any]:
+    """The profile the page shows: title, name, email, display name."""
+    try:
+        from grandpa.cli.theme import resolve_display_name
+        from grandpa.core.config import load_config
+        from grandpa.profile import profile_from_config
+
+        config = load_config()
+        profile = profile_from_config(config)
+        named = profile.username != "Username"
+        return {
+            "title": profile.title,
+            "name": profile.username if named else "",
+            "email": profile.email,
+            "display": resolve_display_name(config) if named else "",
+            "onboarded": bool(profile.onboarding_completed and named),
+        }
+    except Exception:  # noqa: BLE001
+        return {"title": "", "name": "", "email": "", "display": "", "onboarded": False}
+
+
+def write_profile(title: Any, name: Any, email: Any) -> dict[str, Any]:
+    """Validate and save; ``{"ok": False, "error": ...}`` when a field is wrong."""
+    from grandpa.core.config import load_config
+    from grandpa.profile import (
+        atomic_update_profile,
+        config_path,
+        validate_email,
+        validate_title,
+        validate_username,
+    )
+
+    try:
+        values = {
+            "title": validate_title(title),
+            "username": validate_username(name),
+            "email": validate_email(email),
+        }
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+    atomic_update_profile(config_path(), onboarding_completed=True, **values)
+    load_config.cache_clear()
+    return {"ok": True, **read_profile()}
+
 
 def user_name() -> str:
-    """The name Grandpa calls the user (``[user] username``), else the OS name."""
-    try:
-        from grandpa.core.config import load_config
-
-        name = str(load_config().user.username or "").strip()
-        if name and name != "Username":  # "Username" is the unset default
-            return name
-    except Exception:  # noqa: BLE001
-        pass
+    """How Grandpa names the user ("Mr. Hari Hara Sudhan"), else the OS name."""
+    display = read_profile().get("display")
+    if display:
+        return str(display)
     import getpass
 
     try:
@@ -131,6 +209,11 @@ def run(
         if server is not None:
             server.broadcast(message)
 
+    from grandpa.app.launch import claim, release
+
+    if not browser and not claim("app"):
+        echo("Grandpa app is already open (look for its window on the taskbar).")
+        return 0
     session = AppSession(publish, chat_args=chat_args)
     server = AvatarServer(
         on_send=session.send,
@@ -160,7 +243,7 @@ def run(
             except ImportError as exc:
                 raise missing_pywebview() from exc
         ensure_js_mime()
-        api = AppApi()
+        api = AppApi(session)
         window = webview_module.create_window(
             "Grandpa",
             str(INDEX),
@@ -184,6 +267,8 @@ def run(
     finally:
         session.stop()
         server.stop()
+        if not browser:
+            release("app")
 
 
 __all__ = ["INDEX", "WEB_DIR", "browser_address", "connect_script", "run", "serve_page"]

@@ -68,6 +68,9 @@ class AppSession:
         self.state = "starting"
         self.model: str | None = None
         self._talk = None
+        #: Files picked in the window's file dialog: those may be attached
+        #: from any folder, because choosing them there is the permission.
+        self.picked_files: set[str] = set()
         hooks = UiHooks(
             output=self._on_output,
             ready_for_input=self._on_ready,
@@ -131,8 +134,15 @@ class AppSession:
         self.bridge.send(message)
         return True
 
-    @staticmethod
-    def _attach(text: str) -> tuple[str, list[str], list[str]]:
+    def allow_file(self, path: str) -> str:
+        """Remember a file the user picked in the dialog; returns its full path."""
+        from pathlib import Path
+
+        resolved = str(Path(path).resolve())
+        self.picked_files.add(resolved)
+        return resolved
+
+    def _attach(self, text: str) -> tuple[str, list[str], list[str]]:
         """``@path`` attaches a text file, exactly as in the terminal.
 
         The page's 📎 button puts ``@"<path>"`` in the message; the file is
@@ -141,7 +151,7 @@ class AppSession:
         """
         from grandpa.tui.helpers import expand_file_mentions
 
-        return expand_file_mentions(text)
+        return expand_file_mentions(text, allowed=self.picked_files)
 
     # --- voice ------------------------------------------------------------------
 

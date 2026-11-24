@@ -59,7 +59,7 @@ from grandpa.cli.theme import (
     render_help,
     render_status_message,
     render_user_message,
-    resolve_username,
+    resolve_display_name,
     user_prompt,
 )
 from grandpa.core.config import consume_config_recovery_warnings, load_config
@@ -1291,7 +1291,7 @@ def chat(
     from grandpa.profile import ensure_profile
 
     config = ensure_profile(console=console, config=config)
-    username = resolve_username(config)
+    username = resolve_display_name(config)
 
     # Resolve engine
     from grandpa.engine import get_engine
@@ -1317,7 +1317,7 @@ def chat(
             resolved_engine=engine_name,
             available_models=installed_models,
         )
-        username = resolve_username(config)
+        username = resolve_display_name(config)
     model = model_name or config.intelligence.default_model
     if not model:
         from grandpa.engine import discover_engines, discover_models

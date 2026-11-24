@@ -28,23 +28,23 @@ html, body {
 
 #ring {
   position: relative;
-  width: 84px; height: 84px; padding: 0;
+  width: 56px; height: 56px; padding: 0;
   border-radius: 50%;
-  border: 6px solid var(--glow);
+  border: 4px solid var(--glow);
   background: radial-gradient(circle, color-mix(in srgb, var(--glow) 14%, transparent) 0%, transparent 70%);
-  box-shadow: 0 0 14px 2px var(--glow), inset 0 0 14px 1px color-mix(in srgb, var(--glow) 60%, transparent);
+  box-shadow: 0 0 9px 1px var(--glow), inset 0 0 9px 1px color-mix(in srgb, var(--glow) 60%, transparent);
   cursor: pointer;
   touch-action: none;
   animation: breathe 4s ease-in-out infinite;
   transition: border-color 300ms ease, box-shadow 300ms ease, width 200ms ease, height 200ms ease;
 }
 #ring:focus-visible { outline: 2px solid var(--ink); outline-offset: 6px; }
-#ring-core { position: absolute; inset: 10px; border-radius: 50%; }
+#ring-core { position: absolute; inset: 7px; border-radius: 50%; }
 
 /* A reply arrived while the panel was closed: an amber dot, until opened. */
 #ring.unread::after {
   content: ""; position: absolute; top: -4px; right: -4px;
-  width: 16px; height: 16px; border-radius: 50%;
+  width: 12px; height: 12px; border-radius: 50%;
   background: var(--unread); box-shadow: 0 0 8px var(--unread);
 }
 
@@ -60,23 +60,21 @@ html, body {
 @media (prefers-reduced-motion: reduce) { #ring, #ring-core { animation: none !important; } }
 
 /* A2: with WebGL the shader draws the ring; the CSS ring above is the fallback. */
-#ring-gl { display: none; position: absolute; inset: -22px; width: calc(100% + 44px); height: calc(100% + 44px); pointer-events: none; }
+#ring-gl { display: none; position: absolute; inset: -15px; width: calc(100% + 30px); height: calc(100% + 30px); pointer-events: none; }
 .gl #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
 .gl #ring-core { display: none; }
 .gl #ring-gl { display: block; }
-#app.gl[data-panel="open"] #ring-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
 
 /* A3: the character takes the ring's place while thinking, speaking, working or
    asking. character.js sets "char-ready" once its WebGL context works and
    "char" from the start of a morph to its end.
    A5: the morph itself (opacity and scale of both canvases) is set by
    character.js frame by frame, from one clock; CSS only places the canvases. */
-#char-gl { display: none; position: absolute; inset: -22px; width: calc(100% + 44px); height: calc(100% + 44px); pointer-events: none; opacity: 0; transform-origin: 50% 50%; }
+#char-gl { display: none; position: absolute; inset: -15px; width: calc(100% + 30px); height: calc(100% + 30px); pointer-events: none; opacity: 0; transform-origin: 50% 50%; }
 #ring-gl { transform-origin: 50% 50%; }
 .char-ready #char-gl { display: block; }
 .char #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
 .char #ring-core { display: none; }
-#app.char-ready[data-panel="open"] #char-gl { inset: -14px; width: calc(100% + 28px); height: calc(100% + 28px); }
 
 #status { display: none; min-width: 0; }
 #label { margin: 0; font-weight: 600; }
@@ -87,15 +85,21 @@ html, body {
 [data-panel="closed"] #presence { height: 100%; }
 [data-panel="closed"] #panel { display: none; }
 
-/* --- open: a small ring with its status beside it, and the chat below ----- */
+/* --- open: only the chat; the ring hides until the chat is closed --------- */
 
-#app[data-panel="open"] { padding: 12px; gap: 10px; }
-[data-panel="open"] #presence { justify-content: flex-start; }
-[data-panel="open"] #ring { width: 48px; height: 48px; border-width: 4px; }
-[data-panel="open"] #ring-core { inset: 6px; }
-[data-panel="open"] #status { display: block; }
+#app[data-panel="open"] { padding: 0; }
+[data-panel="open"] #presence { display: none; }
+#app.gl[data-panel="open"] #ring-gl, #app.char-ready[data-panel="open"] #char-gl { display: none; }
 
-#panel { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-radius: 14px; padding: 8px; }
+#bar { display: flex; align-items: center; gap: 8px; padding: 4px 4px 8px; cursor: grab; user-select: none; touch-action: none; }
+#bar strong { color: var(--ink); }
+#bar-status { color: var(--muted); font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--glow); box-shadow: 0 0 6px var(--glow); flex: none; }
+#panel button.small { padding: 3px 9px; font-size: 12px; }
+#panel #close { background: transparent; color: var(--muted); }
+#panel #close:hover { color: var(--ink); background: rgba(255,255,255,0.14); }
+
+#panel { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-radius: 16px; padding: 10px; }
 #history { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 #history li { padding: 6px 9px; border-radius: 10px; max-width: 88%; white-space: pre-wrap; word-wrap: break-word; }
 #history li.user { align-self: flex-end; background: var(--user); }

@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -158,19 +159,42 @@ def _allowed(path: Path, base: Path) -> bool:
     return any(resolved == root or root in resolved.parents for root in roots)
 
 
-def read_attachment(raw: str, base: Path | None = None) -> tuple[str | None, str]:
-    """``(contents, note)``. Contents is None when the file can't be attached."""
+#: Documents whose text is pulled out (PDF, Word, Excel, PowerPoint).
+DOCUMENT_SUFFIXES = {".pdf", ".docx", ".xlsx", ".pptx"}
+
+
+def _picked(path: Path, allowed: "Collection[str] | None") -> bool:
+    """A file the user chose in the window's own file dialog."""
+    if not allowed:
+        return False
+    try:
+        return str(path.resolve()) in allowed
+    except OSError:
+        return False
+
+
+def read_attachment(
+    raw: str, base: Path | None = None, allowed: "Collection[str] | None" = None
+) -> tuple[str | None, str]:
+    """``(contents, note)``. Contents is None when the file can't be attached.
+
+    Typed ``@file`` names must be in this folder or the home folder; files the
+    user picked in the desktop app's file dialog (``allowed``, resolved paths)
+    may be anywhere, because choosing them there is the permission.
+    """
     base = base or Path.cwd()
     path = Path(os.path.expanduser(raw))
     if not path.is_absolute():
         path = base / path
-    if not _allowed(path, base):
+    if not (_allowed(path, base) or _picked(path, allowed)):
         return (
             None,
             f"{raw}: only files in this folder or your home folder can be attached",
         )
     if not path.is_file():
         return None, f"{raw}: no such file"
+    if path.suffix.lower() in DOCUMENT_SUFFIXES:
+        return _document_text(raw, path)
     try:
         size = path.stat().st_size
         with path.open("rb") as handle:
@@ -186,8 +210,31 @@ def read_attachment(raw: str, base: Path | None = None) -> tuple[str | None, str
     return data.decode("utf-8", errors="replace"), note
 
 
+def _document_text(raw: str, path: Path) -> tuple[str | None, str]:
+    from grandpa.document_intelligence import extract_document_text
+
+    try:
+        text = extract_document_text(path)
+    except Exception:  # noqa: BLE001 - a broken file is a note, not a crash
+        text = ""
+    if not text.strip():
+        hint = (
+            " (a scanned PDF has no text to read)"
+            if path.suffix.lower() == ".pdf"
+            else ""
+        )
+        return None, f"{raw}: couldn't read any text from it{hint}"
+    note = ""
+    if len(text.encode("utf-8")) > MAX_ATTACH_BYTES:
+        text = text.encode("utf-8")[:MAX_ATTACH_BYTES].decode("utf-8", errors="ignore")
+        note = (
+            f"{raw}: only the first {MAX_ATTACH_BYTES // 1000} KB of its text attached"
+        )
+    return text, note
+
+
 def expand_file_mentions(
-    text: str, base: Path | None = None
+    text: str, base: Path | None = None, allowed: "Collection[str] | None" = None
 ) -> tuple[str, list[str], list[str]]:
     """Attach every ``@file`` in ``text``.
 
@@ -201,7 +248,7 @@ def expand_file_mentions(
         raw = match.group(1) or match.group(2)
         if raw in attached:
             continue
-        contents, note = read_attachment(raw, base)
+        contents, note = read_attachment(raw, base, allowed)
         if note:
             notes.append(note)
         if contents is None:

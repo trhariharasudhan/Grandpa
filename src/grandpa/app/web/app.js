@@ -51,20 +51,27 @@
     document.documentElement.dataset.size = ["s", "m", "l"].includes(settings.size) ? settings.size : "m";
     const name = settings.name || "You";
     $("user-name").textContent = name;
-    $("avatar").textContent = name.trim().charAt(0).toUpperCase() || "?";
+    $("avatar").textContent = name.replace(/^(Mr|Ms|Mrs|Mx)\.\s+/i, "").trim().charAt(0).toUpperCase() || "?";
     $("hello").textContent = settings.name ? "Hi " + settings.name + ", what shall we do?" : "What shall we do?";
   }
   function toggleTheme() { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); syncSettingsForm(); }
 
   // The window can tell us the name Grandpa uses and open a file picker.
   function api() { return window.pywebview && window.pywebview.api ? window.pywebview.api : null; }
+  // In the window the name comes from Grandpa's own profile (the same one
+  // the terminal uses); in a plain browser tab it is kept in this page.
+  let profile = null;
   function windowReady() {
-    attachBtn.disabled = !api();
-    attachBtn.title = api() ? "Attach a text file" : "Attaching works in the Grandpa window";
-    if (api() && !settings.name && api().user_name) {
-      api().user_name().then((name) => { if (name && !settings.name) { settings.name = String(name).slice(0, 40); saveSettings(); applySettings(); } })
-        .catch(() => { /* keep "You" */ });
-    }
+    const a = api();
+    attachBtn.disabled = !a;
+    attachBtn.title = a ? "" : "Adding files works in the Grandpa window";
+    $("plus-orb").disabled = !(a && a.open_orb);
+    if (!a || !a.get_profile) return;
+    a.get_profile().then((p) => {
+      profile = p || null;
+      if (profile && profile.display) { settings.name = String(profile.display).slice(0, 48); saveSettings(); applySettings(); redraw(); }
+      if (profile && !profile.onboarded) openSettings(true);
+    }).catch(() => { /* keep the page's own name */ });
   }
   window.addEventListener("pywebviewready", windowReady);
 
@@ -218,6 +225,7 @@
   document.addEventListener("click", (e) => {
     if (openMenu && !openMenu.contains(e.target)) closeMenu();
     if (!modelMenu.hidden && !modelMenu.contains(e.target) && e.target !== modelBtn) closeModelMenu();
+    if (!$("plus-menu").hidden && !$("plus-menu").contains(e.target)) $("plus-menu").hidden = true;
   });
 
   function chatMenu(chat, anchor) {
@@ -424,14 +432,36 @@
       chip.appendChild(x); box.appendChild(chip);
     });
   }
-  attachBtn.addEventListener("click", () => {
-    if (!api()) return;
-    api().pick_file().then((path) => {
-      if (!path) return;
-      if (attached.includes(path)) return;
-      if (attached.length >= 5) { toast("Five files at most per message.", true); return; }
-      attached.push(String(path)); drawAttachments(); input.focus();
+  function addFiles() {
+    closePlus();
+    const a = api();
+    if (!a) { toast("Adding files works in the Grandpa window.", true); return; }
+    const pick = a.pick_files ? a.pick_files() : a.pick_file().then((p) => (p ? [p] : []));
+    pick.then((paths) => {
+      let skipped = 0;
+      (paths || []).forEach((path) => {
+        path = String(path);
+        if (attached.includes(path)) return;
+        if (attached.length >= 5) { skipped += 1; return; }
+        attached.push(path);
+      });
+      if (skipped) toast("Five files at most per message.", true);
+      drawAttachments(); input.focus();
     }).catch(() => toast("Couldn't open the file picker.", true));
+  }
+  attachBtn.addEventListener("click", addFiles);
+
+  // ＋ menu: add files, voice typing, show the orb.
+  const plusMenu = $("plus-menu");
+  function closePlus() { plusMenu.hidden = true; }
+  $("plus").addEventListener("click", (e) => { e.stopPropagation(); closeModelMenu(); plusMenu.hidden = !plusMenu.hidden; });
+  $("plus-voice").addEventListener("click", () => { closePlus(); micBtn.click(); });
+  $("plus-orb").addEventListener("click", () => {
+    closePlus();
+    const a = api();
+    if (!a || !a.open_orb) return;
+    a.open_orb().then((r) => toast(r === "running" ? "The orb is already on screen." : r === "started" ? "Opening the orb…" : "Couldn't open the orb.", r === "failed"))
+      .catch(() => toast("Couldn't open the orb.", true));
   });
 
   // 🎤 voice typing: Grandpa listens for one sentence; the words land in the box.
@@ -497,7 +527,11 @@
 
   // --- settings page -----------------------------------------------------------------------------
   function syncSettingsForm() {
-    $("set-name").value = settings.name || "";
+    $("set-name").value = profile ? profile.name || "" : settings.name || "";
+    $("set-title").value = profile ? profile.title || "" : "";
+    $("set-email").value = profile ? profile.email || "" : "";
+    $("set-title").disabled = $("set-email").disabled = !profile;
+    $("profile-msg").textContent = "";
     $("set-model").value = settings.model || "";
     $("set-enter").checked = settings.enter !== false;
     document.querySelectorAll("#set-theme button").forEach((b) => b.classList.toggle("on", b.dataset.v === settings.theme));
@@ -507,13 +541,32 @@
     document.querySelectorAll("#settings-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
     document.querySelectorAll("#settings-box .tab").forEach((t) => { t.hidden = t.dataset.tab !== name; });
   }
-  function openSettings() { syncSettingsForm(); showTab("profile"); $("settings").hidden = false; $("set-name").focus(); }
+  function openSettings(welcome) {
+    syncSettingsForm(); showTab("profile");
+    $("profile-welcome").hidden = welcome !== true;
+    $("settings").hidden = false; $("set-name").focus();
+  }
   function closeSettings() { $("settings").hidden = true; input.focus(); }
-  $("open-settings").addEventListener("click", openSettings);
+  $("open-settings").addEventListener("click", () => openSettings());
   $("settings-close").addEventListener("click", closeSettings);
   $("settings").addEventListener("click", (e) => { if (e.target === $("settings")) closeSettings(); });
   document.querySelectorAll("#settings-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
-  $("set-name").addEventListener("input", () => { settings.name = $("set-name").value.trim().slice(0, 40); saveSettings(); applySettings(); redraw(); });
+  function saveProfile() {
+    const a = api();
+    const msg = $("profile-msg");
+    if (!a || !a.save_profile || !profile) {        // browser tab: the page keeps the name
+      settings.name = $("set-name").value.trim().slice(0, 40); saveSettings(); applySettings(); redraw();
+      msg.textContent = "Saved"; return;
+    }
+    a.save_profile($("set-title").value, $("set-name").value, $("set-email").value).then((r) => {
+      if (!r || !r.ok) { msg.textContent = (r && r.error) || "Couldn't save."; msg.style.color = "var(--red)"; return; }
+      profile = r; msg.style.color = ""; msg.textContent = "Saved ✓";
+      settings.name = String(r.display || r.name || "").slice(0, 48); saveSettings(); applySettings(); redraw();
+      $("profile-welcome").hidden = true;
+    }).catch(() => { msg.textContent = "Couldn't save."; });
+  }
+  $("save-profile").addEventListener("click", saveProfile);
+  ["set-name", "set-email"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveProfile(); } }));
   $("set-model").addEventListener("change", () => { settings.model = $("set-model").value.trim().replace(/[^\w.:\-]/g, "").slice(0, 60); saveSettings(); syncSettingsForm(); });
   $("set-enter").addEventListener("change", () => { settings.enter = $("set-enter").checked; saveSettings(); });
   document.querySelectorAll("#set-theme button").forEach((b) => b.addEventListener("click", () => { settings.theme = b.dataset.v; saveSettings(); applySettings(); syncSettingsForm(); }));
@@ -542,6 +595,7 @@
       if (!$("settings").hidden) return closeSettings();
       if (openMenu) return closeMenu();
       if (!modelMenu.hidden) return closeModelMenu();
+      if (!$("plus-menu").hidden) { $("plus-menu").hidden = true; return; }
       if (state === "thinking") cancel();
       return;
     }
@@ -599,7 +653,7 @@
   // A chat opened earlier starts fresh in Grandpa only when the user picks another one,
   // so a restart keeps showing the last chat without re-sending anything.
   applySettings(); currentChat(); redraw(); setState("starting");
-  if (api()) windowReady(); else attachBtn.disabled = true;
+  if (api()) windowReady(); else { attachBtn.disabled = true; $("plus-orb").disabled = true; }
   if (address) connect(); else statusLine.textContent = "Waiting for Grandpa…";
   input.focus();
 })();

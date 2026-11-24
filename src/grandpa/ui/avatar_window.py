@@ -27,7 +27,7 @@ from typing import Any
 WEB_DIR = Path(__file__).with_name("avatar_web")
 INDEX = WEB_DIR / "index.html"
 
-COLLAPSED = (132, 132)
+COLLAPSED = (88, 88)
 """The ring alone."""
 EXPANDED = (360, 560)
 """The ring and the chat panel."""
@@ -68,7 +68,8 @@ class WindowApi:
     """What the page may ask of the window: open/close the panel, and move.
 
     pywebview exposes every public method of this object to the page, so it has
-    exactly these two, and both take plain numbers or a flag.
+    exactly these three: the first two take plain numbers or a flag, and
+    open_app takes nothing and can only start ``grandpa app``.
     """
 
     def __init__(self) -> None:
@@ -89,6 +90,15 @@ class WindowApi:
                 self._window.resize(width, height)
                 key_out_background(self._window, expanded=expanded)
         return self.expanded
+
+    def open_app(self) -> str:
+        """Start the desktop app as its own program (never a command from the page)."""
+        from grandpa.app.launch import launch
+
+        try:
+            return launch("app")
+        except (OSError, ValueError):
+            return "failed"
 
     def move_by(self, dx: Any, dy: Any) -> None:
         if isinstance(dx, bool) or isinstance(dy, bool):
@@ -236,9 +246,10 @@ def transparent_window() -> bool:
 KEY_COLOUR = (1, 1, 1)
 
 
-#: Where the ring's solid line is in the collapsed window, measured from a
-#: rendered frame: fully opaque from radius 35 to 40 px of a 132 px window.
-RING_RADIUS = 37.5
+#: Where the ring's solid line is in the collapsed window. Measured at the
+#: old size (opaque from radius 35 to 40 px of a 132 px window, 84 px ring)
+#: and scaled with everything else by 2/3 for the smaller 56 px ring.
+RING_RADIUS = 25.0
 RING_HIT_WIDTH = 3.0
 
 

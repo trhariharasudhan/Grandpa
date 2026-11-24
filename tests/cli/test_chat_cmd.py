@@ -289,7 +289,6 @@ class TestChatCommand:
             patch("grandpa.cli.chat_cmd.load_config", return_value=config),
             patch("grandpa.engine.get_engine", return_value=("mock", engine)),
             patch("grandpa.intelligence.register_builtin_models"),
-            patch("grandpa.cli.interactive_tui.render_logo") as logo,
             patch("grandpa.cli.chat_cmd.render_chat_home") as legacy,
         ):
             result = CliRunner().invoke(
@@ -299,7 +298,6 @@ class TestChatCommand:
             )
 
         assert result.exit_code == 0
-        logo.assert_called_once()
         legacy.assert_not_called()
         assert "Username > /exit" in result.output
         assert "Grandpa > Goodbye!" not in result.output
@@ -1754,7 +1752,6 @@ def test_chat_shutdown_rendering_exit_command() -> None:
         patch("grandpa.cli.chat_cmd.load_config", return_value=config),
         patch("grandpa.engine.get_engine", return_value=("mock", engine)),
         patch("grandpa.intelligence.register_builtin_models"),
-        patch("grandpa.cli.interactive_tui.render_logo"),
         patch("grandpa.cli.chat_cmd.render_chat_home"),
     ):
         result = CliRunner().invoke(
@@ -1784,7 +1781,6 @@ def test_chat_shutdown_rendering_eof_or_ctrl_c() -> None:
         patch("grandpa.cli.chat_cmd.load_config", return_value=config),
         patch("grandpa.engine.get_engine", return_value=("mock", engine)),
         patch("grandpa.intelligence.register_builtin_models"),
-        patch("grandpa.cli.interactive_tui.render_logo"),
         patch("grandpa.cli.chat_cmd.render_chat_home"),
         patch("grandpa.cli.chat_cmd.read_chat_input", return_value=None),
     ):
@@ -1887,7 +1883,6 @@ def test_fullscreen_resolution_cli_vs_config() -> None:
         patch("grandpa.cli.chat_cmd.load_config", return_value=config),
         patch("grandpa.engine.get_engine", return_value=("mock", engine)),
         patch("grandpa.intelligence.register_builtin_models"),
-        patch("grandpa.cli.interactive_tui.render_logo"),
         patch("grandpa.cli.chat_cmd.render_chat_home"),
         patch("grandpa.cli.chat_cmd.read_chat_input", return_value=None),
         patch("grandpa.cli.chat_cmd.alternate_screen") as mock_alternate_screen,

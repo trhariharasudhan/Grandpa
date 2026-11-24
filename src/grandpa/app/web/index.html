@@ -71,9 +71,16 @@
                 placeholder="Ask Grandpa anything · / for commands"
                 aria-label="Message"></textarea>
       <div class="tools-row">
-        <button type="button" id="attach" class="icon" title="Attach a text file" aria-label="Attach a file">📎</button>
-        <button type="button" id="mic" class="icon" title="Voice typing: say one sentence" aria-label="Voice typing">🎤</button>
+        <div class="plus-wrap">
+          <button type="button" id="plus" class="icon plus" title="Add files and more" aria-label="Add files and more" aria-haspopup="menu">＋</button>
+          <div id="plus-menu" role="menu" hidden>
+            <button type="button" id="attach" role="menuitem"><span>📄</span> Add files <small>text, code, PDF, Word, Excel, PowerPoint</small></button>
+            <button type="button" id="plus-voice" role="menuitem"><span>🎤</span> Voice typing <small>say one sentence</small></button>
+            <button type="button" id="plus-orb" role="menuitem"><span>◯</span> Show the orb <small>Grandpa's floating ring</small></button>
+          </div>
+        </div>
         <span class="spacer"></span>
+        <button type="button" id="mic" class="icon" title="Voice typing: say one sentence" aria-label="Voice typing">🎤</button>
         <div class="model-wrap">
           <button type="button" id="model" class="model-select" title="Switch model (F6)" aria-haspopup="menu">Model</button>
           <div id="model-menu" role="menu" hidden></div>
@@ -114,8 +121,15 @@
       <button type="button" data-tab="about">About</button>
     </nav>
     <div class="tab" data-tab="profile">
-      <label>What should Grandpa call you?<input id="set-name" maxlength="40"></label>
-      <p class="hint">Shown at the bottom left and on the welcome screen.</p>
+      <p id="profile-welcome" class="hint" hidden>Welcome! Tell Grandpa a little about you. It stays on this PC.</p>
+      <label>Title
+        <select id="set-title">
+          <option value="">No title</option><option>Mr.</option><option>Ms.</option><option>Mrs.</option><option>Mx.</option>
+        </select></label>
+      <label>Name<input id="set-name" maxlength="40" placeholder="Your name"></label>
+      <label>Email (optional)<input id="set-email" type="email" maxlength="120" placeholder="name@example.com"></label>
+      <div class="row-actions"><button type="button" id="save-profile" class="primary">Save</button><span id="profile-msg" class="hint"></span></div>
+      <p class="hint">The same profile as the terminal (<code>/profile</code>): Grandpa calls you by it everywhere.</p>
     </div>
     <div class="tab" data-tab="appearance" hidden>
       <p>Theme</p>
