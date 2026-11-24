@@ -277,7 +277,8 @@ def key_out_background(window: Any, *, expanded: bool = False) -> bool:
             scale = size.Width / COLLAPSED[0] if size.Width else 1.0
             image = Bitmap(max(size.Width, 1), max(size.Height, 1))
             graphics = Graphics.FromImage(image)
-            graphics.SmoothingMode = SmoothingMode.None  # exact colours only
+            # exact colours only (None is a Python keyword, hence getattr)
+            graphics.SmoothingMode = getattr(SmoothingMode, "None")
             graphics.Clear(key)
             radius = RING_RADIUS * scale
             pen = Pen(Color.FromArgb(3, 3, 3), RING_HIT_WIDTH * scale)
