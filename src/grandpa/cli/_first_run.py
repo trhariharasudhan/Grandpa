@@ -40,4 +40,18 @@ def check_and_route(ctx: click.Context) -> None:
         except SystemExit:
             pass  # the summary already said what to fix; open the menu anyway
 
+    # Bare `grandpa` in a real terminal opens the full-screen interface, the
+    # way `claude` or `gemini` do. The numbered menu is still `grandpa launcher`,
+    # and it is what a pipe or a script gets.
+    import os
+
+    from grandpa.tui.app import can_run_fullscreen
+
+    if can_run_fullscreen() and os.environ.get("GRANDPA_NO_TUI", "") not in {
+        "1",
+        "true",
+    }:
+        from grandpa.tui import main as tui_main
+
+        raise SystemExit(tui_main())
     ctx.invoke(launcher_cmd)

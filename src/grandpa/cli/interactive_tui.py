@@ -124,40 +124,102 @@ def _status(session: InteractiveSession, _argument: str) -> LocalCommandResult:
     return LocalCommandResult(True, runtime_status_text(session))
 
 
-def _model(session: InteractiveSession, argument: str) -> LocalCommandResult:
-    from grandpa.intelligence.grandpa_models import (
-        canonical_model_tag,
-        get_model_role,
-        user_visible_models,
-    )
+#: Set by the full-screen app so ``/model`` opens a picker there. Takes a
+#: title and the option labels, returns the chosen label (or None).
+MODEL_PICKER = None
 
-    if not argument:
-        models = _list_models(session.engine)
-        installed = set(models)
-        lines = ["Grandpa Models", ""]
-        for entry in user_visible_models(capability="chat"):
-            marker = "*" if entry.ollama_tag == session.model else " "
-            status = "" if entry.ollama_tag in installed else " (not installed)"
-            lines.append(
-                f"{marker} {entry.display_name.removeprefix('Grandpa '):<8} "
-                f"{entry.description}{status}"
+
+def _base(tag: str) -> str:
+    return str(tag).strip().casefold().removesuffix(":latest")
+
+
+def resolve_model_tag(argument: str, installed: list[str]) -> str | None:
+    """The installed tag the user meant, or None.
+
+    Accepts a role (``brain``), a Grandpa short name (``general`` for
+    ``grandpa-general``), a tag with or without ``:latest``, in any case.
+    """
+    from grandpa.intelligence.grandpa_models import canonical_model_tag
+
+    wanted = argument.strip()
+    if not wanted:
+        return None
+    by_base = {_base(name): name for name in installed}
+    for candidate in (canonical_model_tag(wanted), wanted, f"grandpa-{wanted}"):
+        found = by_base.get(_base(candidate))
+        if found is not None:
+            return found
+    return None
+
+
+def model_menu(installed: list[str], current: str) -> list[tuple[str, str, bool]]:
+    """``(tag, label, installed)`` for every model worth offering.
+
+    Grandpa's own roles first (with what they are for and the memory they
+    need), then other Grandpa models found in Ollama, then everything else
+    installed. Embedding models and old names for a role are left out.
+    """
+    from grandpa.intelligence.grandpa_models import GRANDPA_MODEL_ROLES
+
+    have = {_base(name): name for name in installed}
+    rows: list[tuple[str, str, bool]] = []
+    covered: set[str] = set()
+    for entry in GRANDPA_MODEL_ROLES:
+        covered.add(_base(entry.ollama_tag))
+        covered.update(_base(alias) for alias in entry.legacy_aliases)
+        if not entry.user_visible:
+            continue
+        tag = have.get(_base(entry.ollama_tag), entry.ollama_tag)
+        is_installed = _base(entry.ollama_tag) in have
+        mark = "*" if _base(tag) == _base(current) else " "
+        name = entry.display_name.removeprefix("Grandpa ")
+        status = "" if is_installed else "  (not installed)"
+        rows.append(
+            (
+                tag,
+                f"{mark} {name:<8} {entry.description} · needs ~"
+                f"{entry.recommended_memory_gb:g} GB{status}",
+                is_installed,
             )
-        lines.append("\nUse /model <role> or /model <tag>.")
-        return LocalCommandResult(
-            True,
-            "\n".join(lines),
         )
+    others = [n for n in installed if _base(n) not in covered and "embed" not in n]
+    for name in sorted(others, key=lambda n: (not _base(n).startswith("grandpa-"), n)):
+        mark = "*" if _base(name) == _base(current) else " "
+        short = _base(name).removeprefix("grandpa-")
+        kind = "your model" if _base(name).startswith("grandpa-") else "other model"
+        rows.append((name, f"{mark} {short.title():<8} {kind} ({name})", True))
+    return rows
+
+
+def _model(session: InteractiveSession, argument: str) -> LocalCommandResult:
+    from grandpa.intelligence.grandpa_models import get_model_role
+
     available = _list_models(session.engine)
-    requested = canonical_model_tag(argument)
-    if available and requested not in available:
+    if not argument:
+        rows = model_menu(available, session.model)
+        picker = MODEL_PICKER
+        choices = [(tag, label) for tag, label, ok in rows if ok]
+        if picker is not None and choices:
+            picked = picker("Switch model", [label for _, label in choices])
+            if not picked:
+                return LocalCommandResult(True, "Model unchanged.")
+            argument = next(tag for tag, label in choices if label == picked)
+        else:
+            lines = ["Grandpa Models", ""]
+            lines += [label for _, label, _ in rows]
+            lines.append("\nUse /model <name>, for example /model fast.")
+            return LocalCommandResult(True, "\n".join(lines))
+    requested = resolve_model_tag(argument, available) if available else argument
+    if requested is None:
         return LocalCommandResult(
             True,
-            f'Model "{requested}" is not available on {session.engine_name}.',
+            f'Model "{argument}" is not installed on {session.engine_name}. '
+            "Type /model to see the installed ones.",
         )
     session.model = requested
     entry = get_model_role(requested)
-    label = entry.display_name if entry else requested
-    return LocalCommandResult(True, f"Model changed to {label} ({requested}).")
+    label = f"{entry.display_name} ({requested})" if entry else f"({requested})"
+    return LocalCommandResult(True, f"Model changed to {label}.")
 
 
 def _engine(session: InteractiveSession, argument: str) -> LocalCommandResult:

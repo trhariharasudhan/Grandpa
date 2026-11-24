@@ -784,9 +784,17 @@ def parse_memory_command(original_text: str) -> tuple[str, str] | None:
     if lower in project_questions:
         return "project_name", ""
 
-    if "project" in lower and (
-        re.search(r"[\u0B80-\u0BFF]", original)
-        or any(word in lower for word in {"enna", "yenna", "my", "namma"})
+    # Whole words in a short question only. This matched "project" and "my"
+    # anywhere in the text, so a long message (an attached file mentioning
+    # "pyproject" and "mypy") was answered with "I do not know your project".
+    words = re.findall(r"\w+", lower)
+    if (
+        len(words) <= 12
+        and any(word.startswith("project") for word in words)
+        and (
+            re.search(r"[\u0B80-\u0BFF]", original)
+            or {"enna", "yenna", "my", "namma"} & set(words)
+        )
     ):
         return "project_name", ""
 

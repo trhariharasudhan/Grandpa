@@ -553,6 +553,20 @@ def _calendar_slash_to_natural(command: str) -> str | None:
     return mapping.get(action)
 
 
+_NOTES_USAGE = {
+    "search": "/notes search <query>",
+    "open": "/notes open <name>",
+    "create": "/notes create <name>",
+    "append": "/notes append <name> <text>",
+    "rename": "/notes rename <old> to <new>",
+    "delete": "/notes delete <name>",
+    "archive": "/notes archive <name>",
+    "restore": "/notes restore <name>",
+    "pin": "/notes pin <name>",
+    "unpin": "/notes unpin <name>",
+}
+
+
 def _handle_notes_slash_command(command: str) -> str | None:
     if not command.startswith("/notes"):
         return None
@@ -575,6 +589,9 @@ def _handle_notes_slash_command(command: str) -> str | None:
         )
     command_text = _notes_slash_to_natural(command)
     if command_text is None:
+        usage = _NOTES_USAGE.get(parts[1].lower()) if len(parts) > 1 else None
+        if usage is not None:
+            return f"Which note? Use: {usage}"
         return "Unknown Notes command. Try /notes help."
     from grandpa.notes import handle_notes_command
 
@@ -1535,11 +1552,23 @@ def chat(
             bool(getattr(config.tools, "chat_tool_loop", True)) and not agent_name
         )
         tool_loop_notice_shown = False
+        # Set when a model would not fit in free memory: the same message is
+        # answered again by the next smaller Grandpa model, without asking.
+        retry_input: str | None = None
+        retries_left = 2
+        warmed_model: str | None = None
         while True:
+            if use_tool_loop and model != warmed_model and retry_input is None:
+                warmed_model = model
+                _warm_up_in_background(engine, engine_name, model)
             for note in _notifications.diff(get_status()):
                 render_assistant_response(console, Text(note, style="dim cyan"))
 
-            if tui_mode:
+            retrying = retry_input is not None
+            if retrying:
+                user_input, retry_input = retry_input, None
+            elif tui_mode:
+                retries_left = 2
                 from grandpa.cli.interactive_tui import (
                     interactive_prompt,
                     tui_history_path,
@@ -1551,6 +1580,7 @@ def chat(
                     multiline=True,
                 )
             else:
+                retries_left = 2
                 user_input = read_chat_input(user_prompt(username))
 
             if user_input is None:
@@ -1565,8 +1595,9 @@ def chat(
             if not user_input:
                 continue
 
-            render_user_message(console, user_input, username=username)
-            console.print()
+            if not retrying:
+                render_user_message(console, user_input, username=username)
+                console.print()
             user_input = expand_namespaced_command(user_input)
 
             # Handle slash commands
@@ -2329,6 +2360,30 @@ def chat(
                 raise click.exceptions.Exit(code=1) from exc
             except EngineModelLoadError as exc:
                 _log_generation_exception(exc)
+                smaller = (
+                    _smaller_model_that_fits(engine, model, exc)
+                    if retries_left > 0
+                    else None
+                )
+                if smaller is not None:
+                    retries_left -= 1
+                    render_assistant_response(
+                        console,
+                        Text(
+                            f"{_model_label(model)} does not fit in free memory "
+                            f"right now, so {_model_label(smaller)} ({smaller}) "
+                            "is answering. "
+                            f"Close some apps and use /model {_model_role_name(model)} to go back.",
+                            style="yellow",
+                        ),
+                    )
+                    model = smaller
+                    if tui_session is not None:
+                        tui_session.model = smaller
+                    if history and history[-1].role == Role.USER:
+                        history.pop()
+                    retry_input = user_input
+                    continue
                 render_assistant_response(
                     console,
                     Text(_model_load_failure_message(exc), style="red"),
@@ -2347,6 +2402,60 @@ def chat(
                 render_assistant_response(console, Text(cause, style="red"))
             finally:
                 pass
+
+
+def _warm_up_in_background(engine, engine_name: str, model: str) -> None:
+    """Let Ollama read the request opening while the user types (see warm_up)."""
+    import os
+    import threading
+
+    if engine_name != "ollama" or os.environ.get("GRANDPA_NO_WARMUP"):
+        return
+    from grandpa.action_layer.loop import warm_up
+
+    threading.Thread(
+        target=warm_up, args=(engine, model), name="grandpa-warm-up", daemon=True
+    ).start()
+
+
+def _model_label(tag: str) -> str:
+    from grandpa.intelligence.grandpa_models import get_model_role
+
+    entry = get_model_role(tag)
+    return entry.display_name if entry else tag
+
+
+def _model_role_name(tag: str) -> str:
+    from grandpa.intelligence.grandpa_models import get_model_role
+
+    entry = get_model_role(tag)
+    return entry.role if entry else tag
+
+
+def _smaller_model_that_fits(engine, model: str, exc: Exception) -> str | None:
+    """The next smaller installed Grandpa model, when ``model`` ran out of memory.
+
+    Follows each role's ``fallback_role`` (brain -> fast -> mini). Only for
+    memory failures: any other load error is shown as it is.
+    """
+    if "memory" not in str(exc).lower():
+        return None
+    from grandpa.intelligence.grandpa_models import get_model_role
+
+    try:
+        installed = {str(name).strip() for name in engine.list_models()}
+    except Exception:  # noqa: BLE001
+        return None
+    installed |= {name.removesuffix(":latest") for name in installed}
+    entry = get_model_role(model)
+    while entry is not None and entry.fallback_role:
+        entry = get_model_role(entry.fallback_role)
+        if entry is not None and (
+            entry.ollama_tag in installed
+            or entry.ollama_tag.removesuffix(":latest") in installed
+        ):
+            return entry.ollama_tag
+    return None
 
 
 __all__ = ["chat"]

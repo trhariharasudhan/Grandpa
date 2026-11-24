@@ -39,6 +39,9 @@ dependencies = [
     "pyttsx3>=2.90; sys_platform == 'win32'",
     "pytesseract>=0.3.13",
     "rich>=13",
+    # The full-screen terminal interface (bare `grandpa`). Pure Python, works
+    # in Windows Terminal, PowerShell and the classic console.
+    "textual>=1.0",
     "tomli>=2.0; python_version < '3.11'",
     "tomlkit>=0.12",
     "psutil>=7.2.2",

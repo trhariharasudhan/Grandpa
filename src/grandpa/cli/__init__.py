@@ -171,6 +171,13 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "tui",
+        "grandpa.cli.tui_cmd:tui",
+        short_help="Full-screen terminal interface (also bare `grandpa`).",
+    )
+)
+cli.add_command(
+    _lazy(
         "apps", "grandpa.cli.apps_cmd:apps", short_help="Scan and query installed apps."
     )
 )

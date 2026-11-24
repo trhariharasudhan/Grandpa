@@ -396,6 +396,40 @@ def _ask_model(
     return _Turn(content=str(response.get("content") or ""), calls=calls)
 
 
+WARM_UP_GOAL = "hi"
+
+
+def warm_up(engine: Any, model: str, system_prompt: str = SYSTEM_PROMPT) -> bool:
+    """Make Ollama read the opening of a chat request before the user asks.
+
+    A tool-loop request starts with the same system prompt and core tools
+    every time, and Ollama keeps what it has read for a loaded model. Reading
+    that opening on a CPU takes minutes (about 2,300 tokens at ~12 tokens a
+    second on Captain's laptop), so doing it while the user is still typing
+    makes the first answer as quick as the later ones. One token is asked
+    for and thrown away. False when the request failed; nothing else happens.
+    """
+    from grandpa.core.types import Message, Role
+
+    loaded = list(candidate_domains(WARM_UP_GOAL)) if preselect_enabled() else []
+    tools = (
+        tool_definitions_for(loaded)
+        if tiering_enabled()
+        else as_tool_definitions(CATALOGUE)
+    )
+    messages = [
+        Message(role=Role.SYSTEM, content=system_prompt),
+        Message(role=Role.USER, content=WARM_UP_GOAL),
+    ]
+    try:
+        engine.generate(
+            messages, model=model, tools=tools, temperature=0.0, max_tokens=1
+        )
+    except Exception:  # noqa: BLE001 - a warm-up never gets in the way
+        return False
+    return True
+
+
 def run(
     goal: str,
     *,
