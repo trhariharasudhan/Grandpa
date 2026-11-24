@@ -87,6 +87,7 @@ class WindowApi:
             width, height = EXPANDED if expanded else COLLAPSED
             if self._window is not None:
                 self._window.resize(width, height)
+                key_out_background(self._window, expanded=expanded)
         return self.expanded
 
     def move_by(self, dx: Any, dy: Any) -> None:
@@ -235,14 +236,24 @@ def transparent_window() -> bool:
 KEY_COLOUR = (1, 1, 1)
 
 
-def key_out_background(window: Any) -> bool:
-    """Remove the pale haze Windows paints behind a transparent pywebview window.
+#: Where the ring's solid line is in the collapsed window, measured from a
+#: rendered frame: fully opaque from radius 35 to 40 px of a 132 px window.
+RING_RADIUS = 37.5
+RING_HIT_WIDTH = 3.0
+
+
+def key_out_background(window: Any, *, expanded: bool = False) -> bool:
+    """Only the ring on screen, and the ring still clickable.
 
     pywebview gives WebView2 a transparent background but leaves the form's
-    own background, which shows through as a whitish box (seen on Captain's
-    PC). Painting the form in :data:`KEY_COLOUR` and making that its
-    TransparencyKey turns it fully see-through. Windows only; False when it
-    could not be applied (the ring still works, just with the haze).
+    own background, which showed as a pale box (seen on Captain's PC). Making
+    the form's colour its TransparencyKey removes the box -- but a keyed window
+    also lets every click through, the ring included. So under the ring's
+    solid line the form paints a thin circle just off the key colour: hidden
+    under the line, it makes exactly the ring clickable.
+
+    With the panel open the key is switched off: the whole panel must click.
+    Windows only; False when it could not be applied.
     """
     import sys
 
@@ -250,13 +261,36 @@ def key_out_background(window: Any) -> bool:
         return False
     try:
         from System import Action  # pythonnet, which pywebview uses on Windows
-        from System.Drawing import Color
+        from System.Drawing import Bitmap, Color, ColorTranslator, Graphics, Pen
+        from System.Drawing.Drawing2D import SmoothingMode
 
         form = window.native
-        key = Color.FromArgb(*KEY_COLOUR)
 
         def apply() -> None:
+            if expanded:
+                form.TransparencyKey = Color.Empty
+                form.BackgroundImage = None
+                form.BackColor = ColorTranslator.FromHtml(BACKGROUND)
+                return
+            key = Color.FromArgb(*KEY_COLOUR)
+            size = form.ClientSize
+            scale = size.Width / COLLAPSED[0] if size.Width else 1.0
+            image = Bitmap(max(size.Width, 1), max(size.Height, 1))
+            graphics = Graphics.FromImage(image)
+            graphics.SmoothingMode = SmoothingMode.None  # exact colours only
+            graphics.Clear(key)
+            radius = RING_RADIUS * scale
+            pen = Pen(Color.FromArgb(3, 3, 3), RING_HIT_WIDTH * scale)
+            graphics.DrawEllipse(
+                pen,
+                float(size.Width / 2 - radius),
+                float(size.Height / 2 - radius),
+                float(radius * 2),
+                float(radius * 2),
+            )
+            graphics.Dispose()
             form.BackColor = key
+            form.BackgroundImage = image
             form.TransparencyKey = key
 
         form.Invoke(Action(apply))
