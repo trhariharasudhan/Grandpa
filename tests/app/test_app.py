@@ -224,6 +224,10 @@ def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None
         "get_profile",
         "save_profile",
         "open_orb",
+        "set_next_context",
+        "list_memories",
+        "forget_memory",
+        "add_memory",
     }
     assert api.pick_file() is None and api.pick_files() == []  # no window yet
     monkeypatch.setattr(window, "user_name", lambda: "Mr. Hari Hara Sudhan")
@@ -236,19 +240,30 @@ def test_the_page_has_the_claude_style_parts() -> None:
         'id="sidebar"',
         'id="side-close"',
         'id="side-open"',
-        'id="search"',
-        'id="projects"',
-        'id="new-project"',
+        'id="open-search"',
+        'id="palette"',
+        'id="nav-projects"',
+        'id="projects-view"',
+        'id="project-instructions"',
+        'id="nav-memory"',
+        'id="memory-view"',
+        'id="pinned"',
         'id="chats"',
+        'id="title-button"',
+        'id="user-button"',
         'id="user-name"',
-        'id="open-settings"',
         'id="incognito"',
+        'id="plus"',
         'id="attach"',
         'id="mic"',
         'id="model"',
         'id="model-menu"',
+        'id="send"',
+        'id="stop"',
         'id="settings"',
         'data-tab="data"',
+        'data-tab="keys"',
+        'id="drop-shade"',
     ):
         assert part in page, part
     script = (WEB_DIR / "app.js").read_text(encoding="utf-8")
@@ -256,6 +271,8 @@ def test_the_page_has_the_claude_style_parts() -> None:
     assert "if (!incognito) { save();" in script
     # voice typing and the stop button only ever send these fixed messages
     assert 'send({ type: "talk" })' in script and 'send({ type: "cancel" })' in script
+    # streaming words are shown, never stored
+    assert 'msg.type === "delta"' in script and "function onDelta" in script
 
 
 def test_the_page_uses_only_the_project_colours() -> None:
@@ -450,3 +467,54 @@ def _check_profile_saving(window, config) -> None:
     text = config.read_text(encoding="utf-8")
     assert 'title = "Mr."' in text and 'email = "hari@example.com"' in text
     assert "onboarding_completed = true" in text
+
+
+# --- streaming, project instructions, memory --------------------------------
+
+
+def test_reply_words_stream_to_the_page_but_are_not_recorded() -> None:
+    session, bridge, published = _session()
+    session.send("hello")
+    bridge.hooks.stream("Hel")
+    bridge.hooks.stream("lo")
+    bridge.hooks.stream("")  # a tool call: drop what was shown
+    deltas = [m for m in published if m["type"] == "delta"]
+    assert [d.get("text") for d in deltas[:2]] == ["Hel", "lo"]
+    assert deltas[2].get("reset") is True
+    assert all("run" not in d for d in deltas)  # never replayed after a reconnect
+
+
+def test_project_instructions_go_with_the_next_message_only() -> None:
+    from grandpa.app.window import AppApi
+
+    session, bridge, published = _session()
+    api = AppApi(session)
+    assert api.set_next_context("Answer in Thanglish.") is True
+    session.send("menu ideas")
+    assert "Answer in Thanglish." in bridge.sent[-1] and bridge.sent[-1].endswith(
+        "menu ideas"
+    )
+    user = [m for m in published if m["type"] == "user"][-1]
+    assert user["text"] == "menu ideas"  # shown as typed
+    bridge.hooks.ready_for_input("You > ")
+    session.send("more")
+    assert bridge.sent[-1] == "more"
+    assert api.set_next_context(123) is False
+
+
+def test_forgetting_a_memory_needs_its_exact_id(monkeypatch) -> None:
+    from grandpa.app import window
+
+    asked: list = []
+
+    class Store:
+        def forget(self, query):
+            asked.append(query)
+            return 1
+
+    monkeypatch.setattr("grandpa.memory_context.MemoryStore", Store)
+    assert window.forget_memory("tea") is False  # a search could match many
+    assert window.forget_memory(True) is False
+    assert window.forget_memory(0) is False
+    assert window.forget_memory(7) is True
+    assert asked == ["7"]

@@ -3,13 +3,15 @@
 // so text from the model can never become markup or script.
 // Supported: headings, paragraphs, **bold**, *italic*, `code`, ``` fences,
 // - / * / 1. lists, > quotes, --- rules, http(s) links.
-// Highlights (one colour per kind, see app.css): "Label:" at a line start,
-// good words (connected, done, ✓...) and bad words (failed, error, ✗...).
+// Also: tables, and code blocks with a header (language, Copy) and light
+// syntax colours. Highlights (one colour per kind, see app.css): "Label:" at
+// a line start, good words (connected, done, a tick...) and bad words
+// (failed, error, a cross...).
 "use strict";
 
 (function () {
-  const GOOD = /(✓|✔|\b(?:done|ok|OK|connected|Connected|active|Active|ready|Ready|installed|Installed|enabled|Enabled|success|passed)\b)/;
-  const BAD = /(✗|✘|\b(?:failed|Failed|error|Error|not installed|not available|not connected|disabled|Disabled|blocked|Blocked)\b)/;
+  const GOOD = /(\u2713|\u2714|\b(?:done|ok|OK|connected|Connected|active|Active|ready|Ready|installed|Installed|enabled|Enabled|success|passed)\b)/;
+  const BAD = /(\u2717|\u2718|\b(?:failed|Failed|error|Error|not installed|not available|not connected|disabled|Disabled|blocked|Blocked)\b)/;
   const INLINE = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\*[^*\n]+\*|_[^_\n]+_|https?:\/\/[^\s<>()\]]+)/;
 
   function el(tag, cls, text) {
@@ -61,6 +63,85 @@
     } else inline(parent, text);
   }
 
+  // --- code blocks ----------------------------------------------------------
+  const KEYWORDS = new Set(("and as assert async await break case catch class const continue def del " +
+    "elif else except export false False finally for from function if import in is lambda let new " +
+    "none None nonlocal not null or pass raise return self static switch this throw true True try " +
+    "typeof var void while with yield param foreach echo").split(" "));
+  const TOKEN = /("(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`[^`\n]*`|#[^\n]*|\/\/[^\n]*|\b\d+(?:\.\d+)?\b|\$?[A-Za-z_][\w-]*)/g;
+
+  function highlight(code, text, lang) {
+    const hashComments = !/^(js|javascript|ts|typescript|json|css|c|cpp|java|go|rust)$/i.test(lang || "");
+    let last = 0;
+    let m;
+    TOKEN.lastIndex = 0;
+    while ((m = TOKEN.exec(text))) {
+      const t = m[0];
+      let cls = null;
+      if (t[0] === '"' || t[0] === "'" || t[0] === "`") cls = "tok-str";
+      else if ((t[0] === "#" && hashComments) || t.startsWith("//")) cls = "tok-com";
+      else if (/^\d/.test(t)) cls = "tok-num";
+      else if (KEYWORDS.has(t)) cls = "tok-key";
+      else if (t[0] === "$") cls = "tok-var";
+      if (!cls) continue;
+      if (m.index > last) code.appendChild(document.createTextNode(text.slice(last, m.index)));
+      code.appendChild(el("span", cls, t));
+      last = m.index + t.length;
+    }
+    if (last < text.length) code.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  function codeBlock(text, lang) {
+    const box = el("div", "code-block");
+    const head = el("div", "code-head");
+    head.appendChild(el("span", "code-lang", lang || "text"));
+    const copy = el("button", "code-copy");
+    copy.type = "button";
+    copy.title = "Copy code";
+    if (window.GrandpaIcons) copy.appendChild(window.GrandpaIcons.make("copy", 14));
+    copy.appendChild(el("span", null, "Copy"));
+    copy.addEventListener("click", () => {
+      const done = (ok) => {
+        copy.lastChild.textContent = ok ? "Copied" : "Copy failed";
+        setTimeout(() => { copy.lastChild.textContent = "Copy"; }, 1500);
+      };
+      if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+      else done(false);
+    });
+    head.appendChild(copy);
+    box.appendChild(head);
+    const pre = el("pre");
+    const code = el("code");
+    if (lang) code.dataset.lang = lang;
+    if (text.length < 20000) highlight(code, text, lang); else code.textContent = text;
+    pre.appendChild(code);
+    box.appendChild(pre);
+    return box;
+  }
+
+  // --- tables ---------------------------------------------------------------
+  function cells(line) {
+    return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+  }
+  function isTableStart(lines, i) {
+    return i + 1 < lines.length && /\|/.test(lines[i]) &&
+      /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(lines[i + 1]);
+  }
+  function table(root, lines, i) {
+    const wrap = root.appendChild(el("div", "table-wrap"));
+    const t = wrap.appendChild(el("table"));
+    const headRow = t.appendChild(el("thead")).appendChild(el("tr"));
+    cells(lines[i]).forEach((c) => inline(headRow.appendChild(el("th")), c));
+    const body = t.appendChild(el("tbody"));
+    i += 2;
+    while (i < lines.length && /\|/.test(lines[i]) && lines[i].trim()) {
+      const row = body.appendChild(el("tr"));
+      cells(lines[i]).forEach((c) => inline(row.appendChild(el("td")), c));
+      i += 1;
+    }
+    return i;
+  }
+
   function render(source, asMarkdown) {
     const root = el("div", "md");
     const lines = String(source || "").replace(/\r\n/g, "\n").split("\n");
@@ -81,11 +162,7 @@
         i += 1;
         while (i < lines.length && !lines[i].trim().startsWith(closer)) { body.push(lines[i]); i += 1; }
         i += 1;
-        const pre = el("pre");
-        const code = el("code", null, body.join("\n"));
-        if (fence[2]) code.dataset.lang = fence[2];
-        pre.appendChild(code);
-        root.appendChild(pre);
+        root.appendChild(codeBlock(body.join("\n"), fence[2]));
         continue;
       }
       if (!line.trim()) { endPara(); i += 1; continue; }
@@ -94,6 +171,11 @@
         endPara();
         inline(root.appendChild(el("h" + Math.min(heading[1].length + 1, 4))), heading[2]);
         i += 1; continue;
+      }
+      if (isTableStart(lines, i)) {
+        endPara();
+        i = table(root, lines, i);
+        continue;
       }
       if (/^\s*(---+|\*\*\*+)\s*$/.test(line)) { endPara(); root.appendChild(el("hr")); i += 1; continue; }
       if (/^\s*>/.test(line)) {

@@ -10,16 +10,20 @@
   const app = $("app"), feed = $("feed"), list = $("messages"), input = $("input");
   const sendBtn = $("send"), stopBtn = $("stop"), statusLine = $("status");
   const modelBtn = $("model"), modelMenu = $("model-menu"), micBtn = $("mic"), attachBtn = $("attach");
+  const plusMenu = $("plus-menu");
+  const icon = (name, size) => window.GrandpaIcons.make(name, size);
   const narrow = window.matchMedia("(max-width: 860px)");
+  const darkScheme = window.matchMedia("(prefers-color-scheme: dark)");
 
   const STORE = "grandpa.chats.v1", SETTINGS = "grandpa.settings.v1";
-  const WORDS = { starting: "Starting…", idle: "Ready", thinking: "Thinking…", asking: "Waiting for your answer", stopped: "Stopped" };
-  let socket = null, retry = 500, state = "starting", busySince = 0, modelName = "";
+  const WORDS = { starting: "Starting…", idle: "", thinking: "Thinking…", asking: "Waiting for your answer", stopped: "Stopped" };
+  let socket = null, retry = 500, state = "starting", busySince = 0;
   let address = new URLSearchParams(location.hash.slice(1)).get("ws");
   let incognito = null;          // the incognito chat while it is on (never stored)
-  let attached = [];             // paths picked with 📎 for the next message
+  let attached = [];             // file paths for the next message
   let picking = false;           // the model menu is waiting for Grandpa's list
   let ignoreModelAsk = false;    // the menu was closed before the list came
+  let contextPending = false;    // send the project's instructions with the next message
   const quiet = [];              // replies to our own commands: [{re, toast}]
 
   // --- storage -------------------------------------------------------------
@@ -29,42 +33,86 @@
   }
   let db = read(STORE, { current: null, chats: [], projects: [] });
   if (!Array.isArray(db.projects)) db.projects = [];
-  let settings = read(SETTINGS, { name: "", theme: "", size: "m", model: "", enter: true });
+  let settings = read(SETTINGS, { name: "", theme: "", size: "m", model: "", enter: true, stream: true });
   try { if (!settings.theme) settings.theme = localStorage.getItem("grandpa.theme") || "dark"; } catch (_) { settings.theme = "dark"; }
   function save() { try { localStorage.setItem(STORE, JSON.stringify(db)); } catch (_) { toast("Couldn't save the chat list (storage full?)", true); } }
   function saveSettings() { try { localStorage.setItem(SETTINGS, JSON.stringify(settings)); } catch (_) { /* ignore */ } }
   function newId() { return String(Date.now()) + Math.random().toString(36).slice(2, 6); }
+  function project(id) { return db.projects.find((p) => p.id === id) || null; }
 
   function currentChat() {
     if (incognito) return incognito;
     let chat = db.chats.find((c) => c.id === db.current);
     if (!chat) {
-      chat = { id: newId(), title: "New chat", at: Date.now(), project: null, messages: [] };
+      chat = { id: newId(), title: "New chat", at: Date.now(), project: null, pinned: false, messages: [] };
       db.chats.unshift(chat); db.current = chat.id; save();
     }
     return chat;
   }
 
-  // --- look & settings -----------------------------------------------------
+  // --- helpers ---------------------------------------------------------------
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+  function iconButton(name, title, onClick, cls) {
+    const b = el("button", cls || ""); b.type = "button"; b.title = title; b.setAttribute("aria-label", title);
+    b.appendChild(icon(name, 16));
+    b.addEventListener("click", onClick);
+    return b;
+  }
+  function baseName(path) { return String(path).split(/[\\/]/).pop() || String(path); }
+  function ago(at) {
+    const s = Math.round((Date.now() - (at || 0)) / 1000);
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.round(s / 60) + " min ago";
+    if (s < 86400) return Math.round(s / 3600) + " h ago";
+    return new Date(at).toLocaleDateString();
+  }
+  function copyText(text, button) {
+    const done = (ok) => {
+      if (!button) return toast(ok ? "Copied" : "Couldn't copy", !ok);
+      button.textContent = ""; button.appendChild(icon(ok ? "check" : "warning", 16));
+      setTimeout(() => { button.textContent = ""; button.appendChild(icon("copy", 16)); }, 1400);
+    };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(() => done(true), () => done(false));
+    else done(false);
+  }
+  let toastTimer = 0;
+  function toast(text, bad) {
+    const t = $("toast"); t.textContent = text; t.className = bad ? "bad" : ""; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2800);
+  }
+
+  // --- look & profile ----------------------------------------------------------
+  function greeting() {
+    const h = new Date().getHours();
+    return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+  }
   function applySettings() {
-    document.documentElement.dataset.theme = settings.theme === "light" ? "light" : "dark";
+    const mode = settings.theme === "system" ? (darkScheme.matches ? "dark" : "light") : settings.theme;
+    document.documentElement.dataset.theme = mode === "light" ? "light" : "dark";
     document.documentElement.dataset.size = ["s", "m", "l"].includes(settings.size) ? settings.size : "m";
     const name = settings.name || "You";
     $("user-name").textContent = name;
     $("avatar").textContent = name.replace(/^(Mr|Ms|Mrs|Mx)\.\s+/i, "").trim().charAt(0).toUpperCase() || "?";
-    $("hello").textContent = settings.name ? "Hi " + settings.name + ", what shall we do?" : "What shall we do?";
+    $("hello").textContent = settings.name ? greeting() + ", " + settings.name : "What shall we do?";
   }
-  function toggleTheme() { settings.theme = settings.theme === "dark" ? "light" : "dark"; saveSettings(); applySettings(); syncSettingsForm(); }
+  darkScheme.addEventListener("change", () => { if (settings.theme === "system") applySettings(); });
+  function toggleTheme() {
+    settings.theme = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    saveSettings(); applySettings(); syncSettingsForm();
+  }
 
-  // The window can tell us the name Grandpa uses and open a file picker.
-  function api() { return window.pywebview && window.pywebview.api ? window.pywebview.api : null; }
-  // In the window the name comes from Grandpa's own profile (the same one
-  // the terminal uses); in a plain browser tab it is kept in this page.
+  // In the window the name comes from Grandpa's own profile (the same one the
+  // terminal uses); in a plain browser tab it is kept in this page.
   let profile = null;
+  function api() { return window.pywebview && window.pywebview.api ? window.pywebview.api : null; }
   function windowReady() {
     const a = api();
     attachBtn.disabled = !a;
-    attachBtn.title = a ? "" : "Adding files works in the Grandpa window";
     $("plus-orb").disabled = !(a && a.open_orb);
     if (!a || !a.get_profile) return;
     a.get_profile().then((p) => {
@@ -75,71 +123,103 @@
   }
   window.addEventListener("pywebviewready", windowReady);
 
-  let toastTimer = 0;
-  function toast(text, bad) {
-    const t = $("toast"); t.textContent = text; t.className = bad ? "bad" : ""; t.hidden = false;
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.hidden = true; }, 2600);
+  // --- views -------------------------------------------------------------------
+  let viewProject = null;
+  function setView(view, arg) {
+    closeMenu(); closePops();
+    app.dataset.view = view;
+    $("chat-view").hidden = false;
+    $("projects-view").hidden = view !== "projects";
+    $("project-view").hidden = view !== "project";
+    $("memory-view").hidden = view !== "memory";
+    $("nav-projects").classList.toggle("active", view === "projects" || view === "project");
+    $("nav-memory").classList.toggle("active", view === "memory");
+    if (view === "projects") drawProjects();
+    if (view === "project") { viewProject = arg; drawProject(); }
+    if (view === "memory") loadMemories();
+    if (view === "chat") setTimeout(() => input.focus(), 30);
+    if (narrow.matches) app.classList.remove("side-open-small");
   }
+  document.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => setView(b.dataset.goto)));
 
-  // --- drawing messages ----------------------------------------------------
-  function el(tag, cls, text) {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (text !== undefined) e.textContent = text;
-    return e;
-  }
-  function label(who, at, extra) {
-    const row = el("div", "label", who);
-    row.appendChild(el("time", "", new Date(at || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })));
-    if (extra) row.appendChild(el("time", "", extra));
-    return row;
-  }
-  function baseName(path) { return String(path).split(/[\\/]/).pop() || String(path); }
+  // --- drawing messages ----------------------------------------------------------
   const MENTION = /@"([^"]+)"|@(\S+)/g;
-  function draw(msg) {
+  function userText(msg) {
+    const files = (msg.attached || []).filter(Boolean);
+    let text = msg.text;
+    if (files.length) text = text.replace(MENTION, (all, q, plain) => (files.includes(q || plain) ? "" : all)).trim();
+    return text;
+  }
+  function fileChip(path, onRemove) {
+    const chip = el("span", "file"); chip.title = path;
+    chip.appendChild(icon("file", 14));
+    chip.appendChild(el("span", "", baseName(path)));
+    if (onRemove) chip.appendChild(iconButton("close", "Remove", onRemove));
+    return chip;
+  }
+  function draw(msg, index) {
     const li = el("li");
+    li.dataset.index = String(index);
     if (msg.type === "user") {
       li.className = "msg-user";
-      li.appendChild(label(settings.name || "You", msg.at));
       const files = (msg.attached || []).filter(Boolean);
       if (files.length) {
         const row = el("div", "files");
-        files.forEach((f) => { const chip = el("span", "file"); chip.title = f; chip.appendChild(el("span", "", "📄 " + baseName(f))); row.appendChild(chip); });
+        files.forEach((f) => row.appendChild(fileChip(f)));
         li.appendChild(row);
       }
-      let text = msg.text;
-      if (files.length) text = text.replace(MENTION, (all, q, plain) => (files.includes(q || plain) ? "" : all)).trim();
+      const text = userText(msg);
       if (text) li.appendChild(el("div", "bubble", text));
+      const actions = el("div", "actions");
+      actions.appendChild(iconButton("copy", "Copy", (e) => copyText(text, e.currentTarget)));
+      actions.appendChild(iconButton("edit", "Edit and send again", () => editMessage(li, index), "edit-btn"));
+      li.appendChild(actions);
     } else if (msg.type === "reply") {
       li.className = "msg-grandpa";
-      li.appendChild(label("Grandpa", msg.at, msg.secs ? "· " + msg.secs + "s" : ""));
       const body = el("div", "body");
       body.appendChild(window.GrandpaMarkdown.render(msg.text, msg.format !== "text"));
       li.appendChild(body);
-      const tools = el("div", "tools");
-      const copy = el("button", "", "Copy"); copy.type = "button";
-      copy.addEventListener("click", () => {
-        (navigator.clipboard ? navigator.clipboard.writeText(msg.text) : Promise.reject())
-          .then(() => { copy.textContent = "Copied ✓"; setTimeout(() => { copy.textContent = "Copy"; }, 1500); })
-          .catch(() => { copy.textContent = "Copy failed"; });
-      });
-      tools.appendChild(copy); li.appendChild(tools);
+      const actions = el("div", "actions");
+      actions.appendChild(iconButton("copy", "Copy", (e) => copyText(msg.text, e.currentTarget)));
+      actions.appendChild(iconButton("retry", "Retry", () => retryLast(), "retry-btn"));
+      const when = new Date(msg.at || Date.now()).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      actions.appendChild(el("span", "meta", when + (msg.secs ? " · " + msg.secs + "s" : "") + (msg.model ? " · " + msg.model : "")));
+      li.appendChild(actions);
     } else if (msg.type === "note") {
       li.className = "msg-note" + (msg.failed ? " failed" : "");
       li.textContent = msg.text;
     } else return null;
     list.appendChild(li);
-    app.classList.add("has-messages");
-    feed.scrollTop = feed.scrollHeight;
     return li;
+  }
+  // Only the last message of each kind can be edited or retried.
+  function markLast() {
+    const items = Array.from(list.children);
+    items.forEach((li) => li.classList.remove("last"));
+    const lastUser = items.filter((li) => li.classList.contains("msg-user")).pop();
+    const lastReply = items.filter((li) => li.classList.contains("msg-grandpa") && !li.classList.contains("streaming")).pop();
+    items.forEach((li) => {
+      const edit = li.querySelector(".edit-btn"); if (edit) edit.hidden = li !== lastUser;
+      const again = li.querySelector(".retry-btn"); if (again) again.hidden = li !== lastReply;
+    });
+    if (lastReply && lastReply === items[items.length - 1]) lastReply.classList.add("last");
+  }
+  function updateEmpty() {
+    const chat = currentChat();
+    app.classList.toggle("empty", !chat.messages.length && !list.children.length);
   }
   function redraw() {
     list.textContent = "";
-    app.classList.remove("has-messages");
     const chat = currentChat();
-    chat.messages.forEach(draw);
-    $("title").textContent = incognito ? "Incognito chat" : (chat.title === "New chat" ? "Grandpa" : chat.title);
+    chat.messages.forEach((m, i) => draw(m, i));
+    markLast();
+    updateEmpty();
+    const p = chat.project ? project(chat.project) : null;
+    $("title").textContent = incognito ? "Incognito chat" : chat.title + (p ? "  ·  " + p.name : "");
+    $("project-hint").hidden = !p;
+    $("project-hint").textContent = p ? "In the project " + p.name + (p.instructions ? " · its instructions go with your first message" : "") : "";
     drawSidebar();
+    feed.scrollTop = feed.scrollHeight;
   }
   function keep(msg) {
     const chat = currentChat();
@@ -148,120 +228,225 @@
     chat.messages.push(stored);
     chat.messages = chat.messages.slice(-300);
     if (msg.type === "user" && chat.title === "New chat") {
-      chat.title = (msg.text.replace(MENTION, "").trim() || "Files").slice(0, 48);
-      $("title").textContent = incognito ? "Incognito chat" : chat.title;
+      chat.title = (userText(msg) || "Files").slice(0, 48);
+      const p = chat.project ? project(chat.project) : null;
+      $("title").textContent = incognito ? "Incognito chat" : chat.title + (p ? "  ·  " + p.name : "");
     }
     chat.at = Date.now();
     if (!incognito) { save(); if (msg.type === "user") drawSidebar(); }
-    draw(stored);
+    draw(stored, chat.messages.length - 1);
+    markLast(); updateEmpty();
+    feed.scrollTop = feed.scrollHeight;
   }
 
-  // --- left panel: projects and chats ------------------------------------------
-  let expanded = new Set();
+  // --- streaming and "thinking" ------------------------------------------------------
+  let liveLi = null, liveText = "", liveTimer = 0, thinkingLi = null;
+  function showThinking() {
+    if (thinkingLi || liveLi) return;
+    thinkingLi = el("li", "thinking");
+    const m = el("span", "mark"); thinkingLi.appendChild(m);
+    thinkingLi.appendChild(el("span", "", "Thinking…"));
+    list.appendChild(thinkingLi); updateEmpty();
+    feed.scrollTop = feed.scrollHeight;
+  }
+  function hideThinking() { if (thinkingLi) { thinkingLi.remove(); thinkingLi = null; } }
+  function renderLive() {
+    liveTimer = 0;
+    if (!liveLi) return;
+    const body = liveLi.firstChild; body.textContent = "";
+    body.appendChild(window.GrandpaMarkdown.render(liveText, true));
+    const near = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 120;
+    if (near) feed.scrollTop = feed.scrollHeight;
+  }
+  function onDelta(msg) {
+    if (msg.reset) { dropLive(); return; }
+    if (settings.stream === false) return;
+    hideThinking();
+    if (!liveLi) {
+      liveLi = el("li", "msg-grandpa streaming");
+      liveLi.appendChild(el("div", "body"));
+      list.appendChild(liveLi); liveText = ""; updateEmpty();
+    }
+    liveText += String(msg.text || "");
+    if (!liveTimer) liveTimer = setTimeout(renderLive, 80);
+  }
+  function dropLive() { if (liveLi) { liveLi.remove(); liveLi = null; liveText = ""; } clearTimeout(liveTimer); liveTimer = 0; }
+
+  // --- left panel ---------------------------------------------------------------------
   function matches(chat, needle) {
     if (!needle) return true;
     if (chat.title.toLowerCase().includes(needle)) return true;
     return chat.messages.some((m) => String(m.text || "").toLowerCase().includes(needle));
   }
-  function chatRow(chat) {
+  function chatRow(chat, withTag) {
     const li = el("li");
-    const row = el("div", "row" + (!incognito && chat.id === db.current ? " current" : ""));
+    const row = el("div", "row" + (!incognito && chat.id === db.current && app.dataset.view === "chat" ? " current" : ""));
     const open = el("button", "open", chat.title); open.type = "button"; open.title = chat.title;
     open.addEventListener("click", () => switchTo(chat.id));
-    const more = el("button", "more", "⋯"); more.type = "button"; more.title = "Rename, move or delete";
-    more.addEventListener("click", (e) => { e.stopPropagation(); chatMenu(chat, more); });
-    row.appendChild(open); row.appendChild(more); li.appendChild(row);
+    row.appendChild(open);
+    const p = withTag && chat.project ? project(chat.project) : null;
+    if (p) row.appendChild(el("span", "tag", p.name));
+    const more = iconButton("more", "Rename, pin, move or delete", (e) => { e.stopPropagation(); chatMenu(chat, more); }, "more");
+    row.appendChild(more); li.appendChild(row);
     return li;
   }
   function drawSidebar() {
-    const needle = $("search").value.trim().toLowerCase();
-    const projects = $("projects"), chats = $("chats");
-    projects.textContent = ""; chats.textContent = "";
-    const byTime = db.chats.slice().sort((a, b) => (b.at || 0) - (a.at || 0));
-    db.projects.forEach((p) => {
-      const inside = byTime.filter((c) => c.project === p.id && matches(c, needle));
-      if (needle && !inside.length && !p.name.toLowerCase().includes(needle)) return;
-      const li = el("li", "project" + (expanded.has(p.id) || needle ? " expanded" : ""));
-      const row = el("div", "row");
-      const open = el("button", "open", p.name); open.type = "button"; open.title = p.name + " (" + inside.length + " chats)";
-      open.addEventListener("click", () => { expanded.has(p.id) ? expanded.delete(p.id) : expanded.add(p.id); drawSidebar(); });
-      const more = el("button", "more", "⋯"); more.type = "button"; more.title = "Project options";
-      more.addEventListener("click", (e) => { e.stopPropagation(); projectMenu(p, more); });
-      row.appendChild(open); row.appendChild(more); li.appendChild(row);
-      if (expanded.has(p.id) || needle) {
-        const ol = el("ol", "project-chats");
-        inside.forEach((c) => ol.appendChild(chatRow(c)));
-        if (!inside.length) ol.appendChild(el("li", "empty", "No chats yet"));
-        li.appendChild(ol);
-      }
-      projects.appendChild(li);
-    });
-    if (!db.projects.length) projects.appendChild(el("li", "empty", "Group chats into projects with ＋"));
-    const loose = byTime.filter((c) => !c.project && c.messages.length && matches(c, needle));
-    loose.forEach((c) => chats.appendChild(chatRow(c)));
-    if (!loose.length) chats.appendChild(el("li", "empty", needle ? "No chats match" : "No chats yet"));
+    const pinned = $("pinned"), chats = $("chats");
+    pinned.textContent = ""; chats.textContent = "";
+    const byTime = db.chats.filter((c) => c.messages.length).sort((a, b) => (b.at || 0) - (a.at || 0));
+    const pins = byTime.filter((c) => c.pinned);
+    pins.forEach((c) => pinned.appendChild(chatRow(c, true)));
+    $("pinned-section").hidden = !pins.length;
+    const rest = byTime.filter((c) => !c.pinned).slice(0, 60);
+    rest.forEach((c) => chats.appendChild(chatRow(c, true)));
+    if (!rest.length) chats.appendChild(el("li", "empty", "Your chats will show here"));
   }
-  $("search").addEventListener("input", drawSidebar);
 
-  // a small "⋯" menu next to a row
+  // a small menu next to something
   let openMenu = null;
   function closeMenu() { if (openMenu) { openMenu.remove(); openMenu = null; } }
-  function showMenu(anchor, items) {
+  function showMenu(anchor, items, above) {
     closeMenu();
     const menu = el("div", "menu"); menu.setAttribute("role", "menu");
     items.forEach((item) => {
       if (item === "-") { menu.appendChild(el("div", "sep")); return; }
       if (item.head) { menu.appendChild(el("div", "head", item.head)); return; }
-      const b = el("button", item.danger ? "danger" : "", item.text); b.type = "button";
+      const b = el("button", item.danger ? "danger" : ""); b.type = "button";
+      if (item.icon) b.appendChild(icon(item.icon, 16));
+      b.appendChild(el("span", "", item.text));
       b.addEventListener("click", () => { closeMenu(); item.run(); });
       menu.appendChild(b);
     });
     document.body.appendChild(menu);
     const r = anchor.getBoundingClientRect();
-    menu.style.left = Math.min(r.left, window.innerWidth - menu.offsetWidth - 8) + "px";
-    menu.style.top = Math.min(r.bottom + 4, window.innerHeight - menu.offsetHeight - 8) + "px";
+    menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - menu.offsetWidth - 8)) + "px";
+    const top = above ? r.top - menu.offsetHeight - 6 : r.bottom + 4;
+    menu.style.top = Math.max(8, Math.min(top, window.innerHeight - menu.offsetHeight - 8)) + "px";
     openMenu = menu;
   }
+  function closePops() { plusMenu.hidden = true; if (!modelMenu.hidden) closeModelMenu(); }
   document.addEventListener("click", (e) => {
     if (openMenu && !openMenu.contains(e.target)) closeMenu();
-    if (!modelMenu.hidden && !modelMenu.contains(e.target) && e.target !== modelBtn) closeModelMenu();
-    if (!$("plus-menu").hidden && !$("plus-menu").contains(e.target)) $("plus-menu").hidden = true;
+    if (!modelMenu.hidden && !modelMenu.contains(e.target) && !modelBtn.contains(e.target)) closeModelMenu();
+    if (!plusMenu.hidden && !plusMenu.contains(e.target) && !$("plus").contains(e.target)) plusMenu.hidden = true;
   });
 
   function chatMenu(chat, anchor) {
     const items = [
-      { text: "Rename", run: () => ask({ title: "Rename chat", value: chat.title }).then((v) => { if (v) { chat.title = v.slice(0, 60); save(); redraw(); } }) },
+      { text: "Rename", icon: "edit", run: () => ask({ title: "Rename chat", value: chat.title }).then((v) => { if (v) { chat.title = v.slice(0, 60); save(); redraw(); } }) },
+      { text: chat.pinned ? "Unpin" : "Pin", icon: "pin", run: () => { chat.pinned = !chat.pinned; save(); drawSidebar(); } },
       "-", { head: "Move to project" },
     ];
-    db.projects.forEach((p) => { if (chat.project !== p.id) items.push({ text: "📁 " + p.name, run: () => { chat.project = p.id; expanded.add(p.id); save(); drawSidebar(); } }); });
-    if (chat.project) items.push({ text: "Remove from project", run: () => { chat.project = null; save(); drawSidebar(); } });
-    items.push({ text: "＋ New project…", run: () => newProject().then((p) => { if (p) { chat.project = p.id; save(); drawSidebar(); } }) });
-    items.push("-", { text: "Delete", danger: true, run: () => confirmBox("Delete this chat?", "“" + chat.title + "” is removed from this PC.").then((ok) => { if (ok) removeChat(chat.id); }) });
+    db.projects.forEach((p) => { if (chat.project !== p.id) items.push({ text: p.name, icon: "folder", run: () => { chat.project = p.id; save(); redraw(); } }); });
+    if (chat.project) items.push({ text: "Remove from project", icon: "close", run: () => { chat.project = null; save(); redraw(); } });
+    items.push({ text: "New project…", icon: "folder-plus", run: () => newProject().then((p) => { if (p) { chat.project = p.id; save(); redraw(); } }) });
+    items.push("-", { text: "Delete", icon: "trash", danger: true, run: () => confirmBox("Delete this chat?", "“" + chat.title + "” is removed from this PC.").then((ok) => { if (ok) removeChat(chat.id); }) });
     showMenu(anchor, items);
   }
-  function projectMenu(p, anchor) {
-    showMenu(anchor, [
-      { text: "New chat in this project", run: () => newChat(p.id) },
-      { text: "Rename", run: () => ask({ title: "Rename project", value: p.name }).then((v) => { if (v) { p.name = v.slice(0, 40); save(); drawSidebar(); } }) },
-      "-",
-      { text: "Delete project", danger: true, run: () => confirmBox("Delete the project “" + p.name + "”?", "Its chats are kept and move to Recents.").then((ok) => {
-        if (!ok) return;
-        db.chats.forEach((c) => { if (c.project === p.id) c.project = null; });
-        db.projects = db.projects.filter((x) => x.id !== p.id); save(); drawSidebar();
-      }) },
-    ]);
-  }
+  $("title-button").addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (incognito) return toast("Incognito chats aren't kept, so there's nothing to rename or move.");
+    const chat = currentChat();
+    if (!chat.messages.length) return toast("Send a message first.");
+    chatMenu(chat, $("title-button"));
+  });
+  $("user-button").addEventListener("click", (e) => {
+    e.stopPropagation();
+    showMenu($("user-button"), [
+      { text: "Settings", icon: "settings", run: () => openSettings() },
+      { text: "Memory", icon: "memory", run: () => setView("memory") },
+      { text: "Show the orb", icon: "orb", run: showOrb },
+      { text: document.documentElement.dataset.theme === "dark" ? "Light mode" : "Dark mode", icon: document.documentElement.dataset.theme === "dark" ? "sun" : "moon", run: toggleTheme },
+      { text: "Keyboard shortcuts", icon: "command", run: () => { openSettings(); showTab("keys"); } },
+    ], true);
+  });
+
+  // --- projects --------------------------------------------------------------------------
   function newProject() {
-    return ask({ title: "New project", text: "A folder for related chats.", value: "", placeholder: "Project name" }).then((name) => {
+    return ask({ title: "New project", text: "A folder for related chats, with its own instructions.", value: "", placeholder: "Project name" }).then((name) => {
       if (!name) return null;
-      const p = { id: newId(), name: name.slice(0, 40), at: Date.now() };
-      db.projects.push(p); expanded.add(p.id); save(); drawSidebar();
+      const p = { id: newId(), name: name.slice(0, 40), at: Date.now(), instructions: "" };
+      db.projects.push(p); save();
+      if (app.dataset.view === "projects") setView("project", p.id);
       return p;
     });
   }
   $("new-project").addEventListener("click", newProject);
+  function drawProjects() {
+    const grid = $("project-grid"); grid.textContent = "";
+    db.projects.slice().sort((a, b) => (b.at || 0) - (a.at || 0)).forEach((p) => {
+      const n = db.chats.filter((c) => c.project === p.id && c.messages.length).length;
+      const card = el("button", "card"); card.type = "button";
+      const t = el("p", "card-title"); t.appendChild(icon("folder", 16)); t.appendChild(el("span", "", p.name)); card.appendChild(t);
+      card.appendChild(el("p", "hint", p.instructions || "No instructions yet."));
+      card.appendChild(el("span", "hint", n + (n === 1 ? " chat" : " chats")));
+      card.addEventListener("click", () => setView("project", p.id));
+      grid.appendChild(card);
+    });
+    if (!db.projects.length) grid.appendChild(el("p", "empty", "No projects yet. Create one to group chats and give Grandpa standing instructions."));
+  }
+  function drawProject() {
+    const p = project(viewProject);
+    if (!p) return setView("projects");
+    $("project-name").textContent = p.name;
+    $("project-instructions").value = p.instructions || "";
+    $("instructions-msg").textContent = "";
+    const ol = $("project-chats"); ol.textContent = "";
+    const chats = db.chats.filter((c) => c.project === p.id && c.messages.length).sort((a, b) => (b.at || 0) - (a.at || 0));
+    chats.forEach((c) => {
+      const li = chatRow(c, false);
+      li.querySelector(".row").insertBefore(el("span", "when", ago(c.at)), li.querySelector(".more"));
+      ol.appendChild(li);
+    });
+    if (!chats.length) ol.appendChild(el("li", "empty", "No chats in this project yet."));
+  }
+  $("back-projects").addEventListener("click", () => setView("projects"));
+  $("project-new-chat").addEventListener("click", () => newChat(viewProject));
+  $("save-instructions").addEventListener("click", () => {
+    const p = project(viewProject); if (!p) return;
+    p.instructions = $("project-instructions").value.trim().slice(0, 4000); save();
+    $("instructions-msg").textContent = "Saved";
+  });
+  $("project-name").addEventListener("dblclick", () => {
+    const p = project(viewProject); if (!p) return;
+    ask({ title: "Rename project", value: p.name }).then((v) => { if (v) { p.name = v.slice(0, 40); save(); drawProject(); drawSidebar(); } });
+  });
 
-  // --- small dialog (rename, new project, confirm) ------------------------------
+  // --- memory page ----------------------------------------------------------------------
+  let memories = [];
+  function loadMemories() {
+    const a = api(); const ol = $("memory-list"); ol.textContent = "";
+    if (!a || !a.list_memories) { ol.appendChild(el("li", "empty", "Memory is available in the Grandpa window.")); return; }
+    ol.appendChild(el("li", "empty", "Loading…"));
+    a.list_memories().then((items) => { memories = items || []; drawMemories(); }).catch(() => { ol.textContent = ""; ol.appendChild(el("li", "empty", "Couldn't read the memory.")); });
+  }
+  function drawMemories() {
+    const ol = $("memory-list"); ol.textContent = "";
+    const needle = $("memory-filter").value.trim().toLowerCase();
+    const shown = memories.filter((m) => !needle || (m.key + " " + m.value + " " + m.category).toLowerCase().includes(needle));
+    shown.forEach((m) => {
+      const li = el("li", "memory-item");
+      const text = el("div", "text");
+      text.appendChild(el("div", "", m.value));
+      text.appendChild(el("div", "cat", (m.category || "memory") + " · " + ago((m.updated_at || 0) * 1000)));
+      li.appendChild(text);
+      li.appendChild(iconButton("trash", "Forget this", () => confirmBox("Forget this?", m.value).then((ok) => {
+        if (!ok) return;
+        api().forget_memory(m.id).then((done) => { if (done) { memories = memories.filter((x) => x.id !== m.id); drawMemories(); toast("Forgotten"); } else toast("Couldn't forget it.", true); });
+      }), "icon-btn"));
+      ol.appendChild(li);
+    });
+    if (!shown.length) ol.appendChild(el("li", "empty", needle ? "Nothing matches." : "Grandpa doesn't remember anything yet. Tell him in a chat (“remember that I like tea”) or add a note above."));
+  }
+  $("memory-filter").addEventListener("input", drawMemories);
+  $("memory-add").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const a = api(); const text = $("memory-text").value.trim();
+    if (!a || !text) return;
+    a.add_memory(text).then((ok) => { if (ok) { $("memory-text").value = ""; loadMemories(); toast("Remembered"); } else toast("Couldn't save it.", true); });
+  });
+
+  // --- small dialog (rename, new project, confirm) -----------------------------------------
   let dialogDone = null;
   function dialog(opts) {
     if (dialogDone) dialogDone(null);
@@ -280,12 +465,13 @@
   $("dialog-box").addEventListener("submit", (e) => { e.preventDefault(); if (dialogDone) dialogDone($("dialog-input").hidden ? true : $("dialog-input").value); });
   $("dialog-cancel").addEventListener("click", () => { if (dialogDone) dialogDone(null); });
 
-  // --- questions from Grandpa (confirm / choose / type) ------------------------------
+  // --- questions from Grandpa (confirm / choose / type) ----------------------------------------
   function question(msg) {
     if (msg.kind === "choose" && msg.prompt === "Switch model") {
       if (picking) return fillModelMenu(msg.options);
       if (ignoreModelAsk) { ignoreModelAsk = false; cancel(); return; }
     }
+    hideThinking(); dropLive();
     const li = el("li", "msg-ask");
     li.appendChild(el("p", "", msg.prompt));
     const box = el("div", "choices");
@@ -307,15 +493,16 @@
       box.appendChild(el("span", "hint", "Type your answer below and press Enter."));
       setTimeout(() => input.focus(), 30);
     }
-    li.appendChild(box); list.appendChild(li); app.classList.add("has-messages");
+    li.appendChild(box); list.appendChild(li); updateEmpty();
     feed.scrollTop = feed.scrollHeight;
   }
 
-  // --- the model picker in the typing box ---------------------------------------------
-  // It asks Grandpa's own /model list (the same one as F6 in the terminal), so the
-  // installed models and Grandpa's roles come from one place.
+  // --- the model picker in the typing box ----------------------------------------------------------
+  // It asks Grandpa's own /model list (the same one as F6 in the terminal).
+  let modelName = "";
   function openModelMenu() {
     if (state !== "idle" || !modelMenu.hidden) { closeModelMenu(); return; }
+    plusMenu.hidden = true;
     modelMenu.textContent = ""; modelMenu.appendChild(el("div", "wait", "Loading models…"));
     modelMenu.hidden = false; picking = true;
     quietly("/model", [/^\/model$/]);
@@ -327,8 +514,10 @@
       const current = text.trim().startsWith("*");
       const parts = text.replace(/^\s*\*?\s*/, "").match(/^(\S+)\s+(.*)$/) || [null, text.trim(), ""];
       const b = el("button", current ? "current" : ""); b.type = "button"; b.setAttribute("role", "menuitem");
-      b.appendChild(el("span", "name", parts[1]));
-      b.appendChild(el("span", "about", parts[2]));
+      const words = el("span");
+      words.appendChild(el("span", "name", parts[1]));
+      words.appendChild(el("small", "", parts[2]));
+      b.appendChild(words);
       b.addEventListener("click", () => { picking = false; modelMenu.hidden = true; quietly(opt, [], [/^Model (changed|unchanged)/]); input.focus(); });
       modelMenu.appendChild(b);
     });
@@ -341,11 +530,11 @@
     const waiting = pending.findIndex((p) => p.text === "/model");
     if (waiting >= 0) { pending.splice(waiting, 1); return; }   // never sent
     quiet.push({ re: /^Model unchanged/ });
-    if (state === "asking") cancel(); else ignoreModelAsk = true; // the list is still coming
+    if (state === "asking") cancel(); else ignoreModelAsk = true;  // the list is still coming
   }
   modelBtn.addEventListener("click", (e) => { e.stopPropagation(); openModelMenu(); });
 
-  // --- state ----------------------------------------------------------------------------
+  // --- state -----------------------------------------------------------------------------------------
   function setState(next) {
     if (next === "thinking" && state !== "thinking") busySince = Date.now();
     state = next; app.dataset.state = next;
@@ -354,17 +543,19 @@
     sendBtn.disabled = next === "starting" || next === "stopped";
     modelBtn.disabled = next !== "idle" && !picking;
     micBtn.disabled = next === "starting" || next === "stopped";
-    if (next !== "idle") { awaiting = false; clearTimeout(awaitTimer); } else { ownBusy = false; pump(); }
+    if (next === "thinking" && !ownBusy) showThinking();
+    if (next !== "thinking") hideThinking();
+    if (next !== "idle") { awaiting = false; clearTimeout(awaitTimer); } else { ownBusy = false; dropLive(); pump(); }
     tick();
   }
   function tick() {
-    let words = WORDS[state] || state;
+    let words = WORDS[state] || "";
     if (state === "thinking" && busySince) words += " " + Math.round((Date.now() - busySince) / 1000) + "s";
     statusLine.textContent = socket && socket.readyState === WebSocket.OPEN ? words : "Connecting…";
   }
   setInterval(tick, 1000);
 
-  // --- sending ---------------------------------------------------------------------------
+  // --- sending -------------------------------------------------------------------------------------------
   function send(obj) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify(obj)); return true;
@@ -385,8 +576,9 @@
     awaitTimer = setTimeout(() => { awaiting = false; pump(); }, 4000); // never stuck
   }
   function queue(text, own) { if (state === "asking") sendRaw(text); else { pending.push({ text, own: !!own }); pump(); } }
+  function escapeRe(text) { return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
   function quietly(text, hideUser, hideReplies, toastIt) {
-    (hideUser || [new RegExp("^" + text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "$")]).forEach((re) => quiet.push({ re }));
+    (hideUser || [new RegExp("^" + escapeRe(text) + "$")]).forEach((re) => quiet.push({ re }));
     (hideReplies || []).forEach((re) => quiet.push({ re, toast: toastIt !== false }));
     queue(text, true);
   }
@@ -397,126 +589,186 @@
     quiet.splice(i, 1);
     return true;
   }
+  // The project's instructions go with the first message of a project chat.
+  function withContext(then) {
+    const chat = currentChat();
+    const p = !incognito && chat.project ? project(chat.project) : null;
+    const a = api();
+    if (!contextPending || !p || !p.instructions || !a || !a.set_next_context) { contextPending = false; return then(); }
+    contextPending = false;
+    a.set_next_context(p.instructions).then(then, then);
+  }
+  // Send a line again without showing it twice (retry, edit).
+  function resend(text) {
+    quiet.push({ re: new RegExp("^" + escapeRe(text) + "$") });
+    withContext(() => queue(text));
+  }
 
   function submit() {
     const typed = input.value.trim();
     if (!typed && !attached.length) return;
-    // Busy with our own /clear or /model? Then the message just waits its turn.
     const ownWork = ownBusy || (pending.length && pending.every((p) => p.own));
-    if ((state === "thinking" && !ownWork) || state === "starting") { toast("Grandpa is still busy — Esc stops it."); return; }
+    if ((state === "thinking" && !ownWork) || state === "starting") { toast("Grandpa is still busy. Esc stops him."); return; }
     const mentions = attached.map((p) => '@"' + p + '"').join(" ");
     const text = (typed + (mentions ? (typed ? "\n" : "") + mentions : "")).trim();
     if (text.length > 2000) { toast("That message is too long (2000 characters at most).", true); return; }
     if (!socket || socket.readyState !== WebSocket.OPEN) { toast("Not connected to Grandpa yet.", true); return; }
-    queue(text); input.value = ""; attached = []; drawAttachments(); grow();
+    if (state === "asking") { queue(text); }
+    else withContext(() => queue(text));
+    input.value = ""; attached = []; drawAttachments(); grow();
   }
-  function grow() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 220) + "px"; }
+  function grow() { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 240) + "px"; }
   input.addEventListener("input", grow);
   input.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" || e.isComposing || e.altKey) return;
-    const sends = settings.enter ? !e.shiftKey : e.ctrlKey;
+    const sends = settings.enter !== false ? !e.shiftKey : e.ctrlKey;
     if (sends) { e.preventDefault(); submit(); }
   });
   $("composer").addEventListener("submit", (e) => { e.preventDefault(); submit(); });
   stopBtn.addEventListener("click", cancel);
-  document.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => { input.value = chip.textContent; submit(); }));
+  document.querySelectorAll(".chip").forEach((chip) => chip.addEventListener("click", () => { input.value = chip.dataset.text; submit(); }));
 
-  // 📎 attach: Windows' own file dialog; only the path comes back.
+  // retry the last reply; edit the last message
+  function lastUserIndex(chat) {
+    for (let i = chat.messages.length - 1; i >= 0; i -= 1) if (chat.messages[i].type === "user") return i;
+    return -1;
+  }
+  function retryLast() {
+    if (state !== "idle") return toast("Wait for Grandpa to finish first.");
+    const chat = currentChat();
+    const i = lastUserIndex(chat);
+    if (i < 0) return;
+    const text = chat.messages[i].text;
+    chat.messages = chat.messages.slice(0, i + 1);
+    if (!incognito) save();
+    redraw();
+    resend(text);
+  }
+  function editMessage(li, index) {
+    if (state !== "idle") return toast("Wait for Grandpa to finish first.");
+    const chat = currentChat();
+    const msg = chat.messages[index];
+    if (!msg || msg.type !== "user") return;
+    const box = el("div", "edit-box");
+    const area = el("textarea"); area.value = msg.text; box.appendChild(area);
+    const row = el("div", "row-actions");
+    const cancelB = el("button", "", "Cancel"); cancelB.type = "button";
+    const saveB = el("button", "primary small", "Send"); saveB.type = "button";
+    row.appendChild(cancelB); row.appendChild(saveB); box.appendChild(row);
+    li.textContent = ""; li.appendChild(box); area.focus();
+    cancelB.addEventListener("click", redraw);
+    const go = () => {
+      const text = area.value.trim();
+      if (!text) return;
+      msg.text = text;
+      chat.messages = chat.messages.slice(0, index + 1);
+      if (!incognito) save();
+      redraw();
+      resend(text);
+    };
+    saveB.addEventListener("click", go);
+    area.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } if (e.key === "Escape") { e.stopPropagation(); redraw(); } });
+  }
+
+  // files: the + menu, the dialog, and drag and drop
   function drawAttachments() {
     const box = $("attachments"); box.textContent = "";
-    attached.forEach((p, i) => {
-      const chip = el("span", "file"); chip.title = p;
-      chip.appendChild(el("span", "", "📄 " + baseName(p)));
-      const x = el("button", "", "✕"); x.type = "button"; x.title = "Remove";
-      x.addEventListener("click", () => { attached.splice(i, 1); drawAttachments(); });
-      chip.appendChild(x); box.appendChild(chip);
+    attached.forEach((p, i) => box.appendChild(fileChip(p, () => { attached.splice(i, 1); drawAttachments(); })));
+  }
+  function addPaths(paths) {
+    let skipped = 0;
+    (paths || []).forEach((path) => {
+      path = String(path);
+      if (!path || attached.includes(path)) return;
+      if (attached.length >= 5) { skipped += 1; return; }
+      attached.push(path);
     });
+    if (skipped) toast("Five files at most per message.", true);
+    drawAttachments(); input.focus();
   }
   function addFiles() {
-    closePlus();
+    plusMenu.hidden = true;
     const a = api();
     if (!a) { toast("Adding files works in the Grandpa window.", true); return; }
     const pick = a.pick_files ? a.pick_files() : a.pick_file().then((p) => (p ? [p] : []));
-    pick.then((paths) => {
-      let skipped = 0;
-      (paths || []).forEach((path) => {
-        path = String(path);
-        if (attached.includes(path)) return;
-        if (attached.length >= 5) { skipped += 1; return; }
-        attached.push(path);
-      });
-      if (skipped) toast("Five files at most per message.", true);
-      drawAttachments(); input.focus();
-    }).catch(() => toast("Couldn't open the file picker.", true));
+    pick.then(addPaths).catch(() => toast("Couldn't open the file picker.", true));
   }
   attachBtn.addEventListener("click", addFiles);
-
-  // ＋ menu: add files, voice typing, show the orb.
-  const plusMenu = $("plus-menu");
-  function closePlus() { plusMenu.hidden = true; }
-  $("plus").addEventListener("click", (e) => { e.stopPropagation(); closeModelMenu(); plusMenu.hidden = !plusMenu.hidden; });
-  $("plus-voice").addEventListener("click", () => { closePlus(); micBtn.click(); });
-  $("plus-orb").addEventListener("click", () => {
-    closePlus();
-    const a = api();
-    if (!a || !a.open_orb) return;
-    a.open_orb().then((r) => toast(r === "running" ? "The orb is already on screen." : r === "started" ? "Opening the orb…" : "Couldn't open the orb.", r === "failed"))
-      .catch(() => toast("Couldn't open the orb.", true));
+  window.grandpaDropped = (paths) => { $("drop-shade").hidden = true; if (app.dataset.view !== "chat") setView("chat"); addPaths(paths); };
+  let dragDepth = 0;
+  document.addEventListener("dragenter", (e) => { if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) { dragDepth += 1; $("drop-shade").hidden = false; } });
+  document.addEventListener("dragleave", () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("drop-shade").hidden = true; });
+  document.addEventListener("dragover", (e) => e.preventDefault());
+  document.addEventListener("drop", (e) => {
+    e.preventDefault(); dragDepth = 0;
+    setTimeout(() => { $("drop-shade").hidden = true; }, 300);
+    if (!api()) toast("Dropping files works in the Grandpa window.", true);
   });
 
-  // 🎤 voice typing: Grandpa listens for one sentence; the words land in the box.
-  function listening(on) { micBtn.classList.toggle("on", on); app.classList.toggle("listening", on); micBtn.title = on ? "Listening… click to stop" : "Voice typing: say one sentence"; }
-  micBtn.addEventListener("click", () => { if (send({ type: "talk" })) { if (micBtn.classList.contains("on")) listening(false); } });
+  $("plus").addEventListener("click", (e) => { e.stopPropagation(); closeModelMenu(); plusMenu.hidden = !plusMenu.hidden; });
+  $("plus-voice").addEventListener("click", () => { plusMenu.hidden = true; micBtn.click(); });
+  function showOrb() {
+    plusMenu.hidden = true;
+    const a = api();
+    if (!a || !a.open_orb) return toast("The orb opens from the Grandpa window.");
+    a.open_orb().then((r) => toast(r === "running" ? "The orb is already on screen." : r === "started" ? "Opening the orb…" : "Couldn't open the orb.", r === "failed"))
+      .catch(() => toast("Couldn't open the orb.", true));
+  }
+  $("plus-orb").addEventListener("click", showOrb);
 
-  // --- chats ----------------------------------------------------------------------------
+  // voice typing: Grandpa listens for one sentence; the words land in the box
+  function listening(on) { micBtn.classList.toggle("on", on); app.classList.toggle("listening", on); micBtn.title = on ? "Listening… click to stop" : "Voice typing: say one sentence"; }
+  micBtn.addEventListener("click", () => { if (send({ type: "talk" }) && micBtn.classList.contains("on")) listening(false); });
+
+  // --- chats ---------------------------------------------------------------------------------------------
   function freshEngine() {
     // Grandpa forgets the previous conversation (our /clear is not shown) and,
     // if the settings name one, starts on the chosen model.
     quietly("/clear", null, [/^Conversation cleared/], false);
     if (settings.model) quietly("/model " + settings.model, null, [/^Model (changed|unchanged)|is not installed/]);
+    contextPending = true;
   }
   function newChat(projectId) {
-    if (incognito) setIncognito(false);
+    if (incognito) setIncognito(false, true);
+    setView("chat");
     const chat = currentChat();
-    if (!chat.messages.length && (projectId || null) === (chat.project || null)) { input.focus(); return; }
-    if (!chat.messages.length) { chat.project = projectId || null; save(); redraw(); input.focus(); return; }
+    if (!chat.messages.length) { chat.project = projectId || null; save(); redraw(); contextPending = true; input.focus(); return; }
     db.current = null;
     const fresh = currentChat(); fresh.project = projectId || null;
-    if (projectId) expanded.add(projectId);
     save(); redraw(); freshEngine(); input.focus();
-    if (narrow.matches) app.classList.remove("side-open-small");
   }
   function switchTo(id) {
     if (incognito) setIncognito(false, true);
-    else if (id === db.current) return;
-    // an empty "New chat" left behind is not worth keeping
+    else if (id === db.current && app.dataset.view === "chat") return;
+    const same = id === db.current;
     const old = db.chats.find((c) => c.id === db.current);
     if (old && !old.messages.length && old.id !== id) db.chats = db.chats.filter((c) => c !== old);
-    db.current = id; save(); redraw(); freshEngine();
-    if (narrow.matches) app.classList.remove("side-open-small");
+    db.current = id; save(); setView("chat"); redraw();
+    if (!same) freshEngine();
   }
   function removeChat(id) {
     db.chats = db.chats.filter((c) => c.id !== id);
     if (db.current === id && !incognito) { db.current = null; currentChat(); freshEngine(); }
     save(); redraw();
+    if (app.dataset.view === "project") drawProject();
   }
   $("new-chat").addEventListener("click", () => newChat(null));
+  $("brand").addEventListener("click", () => newChat(null));
 
-  // 🕶 incognito: a chat that is never stored; Grandpa starts fresh and forgets it after.
+  // incognito: a chat that is never stored; Grandpa starts fresh and forgets it after
   function setIncognito(on, quietSwitch) {
     if (on === !!incognito) return;
     incognito = on ? { id: "incognito", title: "Incognito chat", messages: [] } : null;
     $("incognito").setAttribute("aria-pressed", on ? "true" : "false");
     $("incognito-banner").hidden = !on;
     app.classList.toggle("incognito", on);
-    redraw();
     if (!quietSwitch) freshEngine();
-    if (!on && !quietSwitch) { db.current = null; currentChat(); save(); redraw(); }
-    input.focus();
+    if (!on && !quietSwitch) { db.current = null; currentChat(); save(); }
+    setView("chat"); redraw();
   }
   $("incognito").addEventListener("click", () => setIncognito(!incognito));
 
-  // --- left panel open / close -------------------------------------------------------------
+  // --- left panel open / close -----------------------------------------------------------------------------
   function togglePanel() {
     if (narrow.matches) app.classList.toggle("side-open-small");
     else { app.classList.toggle("side-closed"); try { localStorage.setItem("grandpa.side", app.classList.contains("side-closed") ? "closed" : "open"); } catch (_) { /* ignore */ } }
@@ -525,7 +777,52 @@
   $("side-close").addEventListener("click", togglePanel);
   $("side-open").addEventListener("click", togglePanel);
 
-  // --- settings page -----------------------------------------------------------------------------
+  // --- search + commands (Ctrl+K) ---------------------------------------------------------------------------------
+  const COMMANDS = [
+    { text: "New chat", icon: "new-chat", run: () => newChat(null) },
+    { text: "New project", icon: "folder-plus", run: () => { setView("projects"); newProject(); } },
+    { text: "Projects", icon: "folder", run: () => setView("projects") },
+    { text: "Memory", icon: "memory", run: () => setView("memory") },
+    { text: "Switch model", icon: "chevron-down", run: () => { setView("chat"); setTimeout(openModelMenu, 50); } },
+    { text: "Incognito chat", icon: "incognito", run: () => setIncognito(!incognito) },
+    { text: "Show the orb", icon: "orb", run: showOrb },
+    { text: "Dark / light mode", icon: "sun", run: toggleTheme },
+    { text: "Open or close the panel", icon: "sidebar", run: togglePanel },
+    { text: "Settings", icon: "settings", run: () => openSettings() },
+  ];
+  let paletteItems = [], paletteSel = 0;
+  function openPalette() { closeMenu(); closePops(); $("palette").hidden = false; $("palette-input").value = ""; drawPalette(); $("palette-input").focus(); }
+  function closePalette() { $("palette").hidden = true; }
+  function drawPalette() {
+    const needle = $("palette-input").value.trim().toLowerCase();
+    const ol = $("palette-list"); ol.textContent = "";
+    const cmds = COMMANDS.filter((c) => !needle || c.text.toLowerCase().includes(needle));
+    const chats = db.chats.filter((c) => c.messages.length && matches(c, needle)).sort((a, b) => (b.at || 0) - (a.at || 0)).slice(0, 12);
+    paletteItems = [];
+    const add = (item, kind) => {
+      const li = el("li"); const b = el("button"); b.type = "button";
+      b.appendChild(icon(item.icon, 16)); b.appendChild(el("span", "", item.text)); b.appendChild(el("span", "kind", kind));
+      const index = paletteItems.length;
+      b.addEventListener("click", () => { closePalette(); item.run(); });
+      b.addEventListener("mousemove", () => { paletteSel = index; markPalette(); });
+      li.appendChild(b); ol.appendChild(li); paletteItems.push(b);
+    };
+    if (chats.length) { ol.appendChild(el("li", "head", needle ? "Chats" : "Recent chats")); chats.forEach((c) => add({ text: c.title, icon: "chat", run: () => switchTo(c.id) }, ago(c.at))); }
+    if (cmds.length) { ol.appendChild(el("li", "head", "Commands")); cmds.forEach((c) => add(c, "")); }
+    if (!paletteItems.length) ol.appendChild(el("li", "empty", "Nothing matches."));
+    paletteSel = 0; markPalette();
+  }
+  function markPalette() { paletteItems.forEach((b, i) => b.classList.toggle("sel", i === paletteSel)); if (paletteItems[paletteSel]) paletteItems[paletteSel].scrollIntoView({ block: "nearest" }); }
+  $("palette-input").addEventListener("input", drawPalette);
+  $("palette-input").addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); paletteSel = Math.min(paletteItems.length - 1, paletteSel + 1); markPalette(); }
+    if (e.key === "ArrowUp") { e.preventDefault(); paletteSel = Math.max(0, paletteSel - 1); markPalette(); }
+    if (e.key === "Enter" && paletteItems[paletteSel]) { e.preventDefault(); paletteItems[paletteSel].click(); }
+  });
+  $("palette").addEventListener("click", (e) => { if (e.target === $("palette")) closePalette(); });
+  $("open-search").addEventListener("click", openPalette);
+
+  // --- settings page ------------------------------------------------------------------------------------------------
   function syncSettingsForm() {
     $("set-name").value = profile ? profile.name || "" : settings.name || "";
     $("set-title").value = profile ? profile.title || "" : "";
@@ -534,6 +831,7 @@
     $("profile-msg").textContent = "";
     $("set-model").value = settings.model || "";
     $("set-enter").checked = settings.enter !== false;
+    $("set-stream").checked = settings.stream !== false;
     document.querySelectorAll("#set-theme button").forEach((b) => b.classList.toggle("on", b.dataset.v === settings.theme));
     document.querySelectorAll("#set-size button").forEach((b) => b.classList.toggle("on", b.dataset.v === settings.size));
   }
@@ -542,12 +840,12 @@
     document.querySelectorAll("#settings-box .tab").forEach((t) => { t.hidden = t.dataset.tab !== name; });
   }
   function openSettings(welcome) {
+    closeMenu(); closePops();
     syncSettingsForm(); showTab("profile");
     $("profile-welcome").hidden = welcome !== true;
     $("settings").hidden = false; $("set-name").focus();
   }
   function closeSettings() { $("settings").hidden = true; input.focus(); }
-  $("open-settings").addEventListener("click", () => openSettings());
   $("settings-close").addEventListener("click", closeSettings);
   $("settings").addEventListener("click", (e) => { if (e.target === $("settings")) closeSettings(); });
   document.querySelectorAll("#settings-tabs button").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
@@ -560,7 +858,7 @@
     }
     a.save_profile($("set-title").value, $("set-name").value, $("set-email").value).then((r) => {
       if (!r || !r.ok) { msg.textContent = (r && r.error) || "Couldn't save."; msg.style.color = "var(--red)"; return; }
-      profile = r; msg.style.color = ""; msg.textContent = "Saved ✓";
+      profile = r; msg.style.color = ""; msg.textContent = "Saved";
       settings.name = String(r.display || r.name || "").slice(0, 48); saveSettings(); applySettings(); redraw();
       $("profile-welcome").hidden = true;
     }).catch(() => { msg.textContent = "Couldn't save."; });
@@ -569,6 +867,7 @@
   ["set-name", "set-email"].forEach((id) => $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveProfile(); } }));
   $("set-model").addEventListener("change", () => { settings.model = $("set-model").value.trim().replace(/[^\w.:\-]/g, "").slice(0, 60); saveSettings(); syncSettingsForm(); });
   $("set-enter").addEventListener("change", () => { settings.enter = $("set-enter").checked; saveSettings(); });
+  $("set-stream").addEventListener("change", () => { settings.stream = $("set-stream").checked; saveSettings(); });
   document.querySelectorAll("#set-theme button").forEach((b) => b.addEventListener("click", () => { settings.theme = b.dataset.v; saveSettings(); applySettings(); syncSettingsForm(); }));
   document.querySelectorAll("#set-size button").forEach((b) => b.addEventListener("click", () => { settings.size = b.dataset.v; saveSettings(); applySettings(); syncSettingsForm(); }));
   $("export-chats").addEventListener("click", () => {
@@ -582,47 +881,50 @@
   $("delete-chats").addEventListener("click", () => {
     confirmBox("Delete every chat and project?", "This removes them from this PC and can't be undone.").then((ok) => {
       if (!ok) return;
-      db = { current: null, chats: [], projects: [] }; currentChat(); save(); redraw(); freshEngine();
+      db = { current: null, chats: [], projects: [] }; currentChat(); save(); setView("chat"); redraw(); freshEngine();
       toast("All chats deleted");
     });
   });
 
-  // --- keys ------------------------------------------------------------------------------
+  // --- keys ----------------------------------------------------------------------------------------------------------------
   document.addEventListener("keydown", (e) => {
     const key = e.key.toLowerCase();
     if (e.key === "Escape") {
       if (dialogDone) return dialogDone(null);
+      if (!$("palette").hidden) return closePalette();
       if (!$("settings").hidden) return closeSettings();
       if (openMenu) return closeMenu();
       if (!modelMenu.hidden) return closeModelMenu();
-      if (!$("plus-menu").hidden) { $("plus-menu").hidden = true; return; }
+      if (!plusMenu.hidden) { plusMenu.hidden = true; return; }
       if (state === "thinking") cancel();
       return;
     }
     if (e.key === "F6") { e.preventDefault(); openModelMenu(); }
     if (!e.ctrlKey) return;
+    if (key === "k") { e.preventDefault(); if ($("palette").hidden) openPalette(); else closePalette(); }
     if (key === "t") { e.preventDefault(); toggleTheme(); }
     if (key === "n") { e.preventDefault(); newChat(null); }
     if (key === "b") { e.preventDefault(); togglePanel(); }
     if (key === ",") { e.preventDefault(); openSettings(); }
   });
 
-  // --- the connection ------------------------------------------------------------------------
+  // --- the connection ----------------------------------------------------------------------------------------------------------
   function onMessage(msg) {
     if (msg.type === "state") return setState(msg.state);
     if (msg.type === "model") {
       modelName = String(msg.name).replace(/:latest$/, "").replace(/^grandpa-/, "");
-      modelBtn.textContent = modelName.charAt(0).toUpperCase() + modelName.slice(1);
+      $("model-name").textContent = modelName.charAt(0).toUpperCase() + modelName.slice(1);
       modelBtn.title = "Model: " + msg.name + " (F6 to switch)";
       return;
     }
     if (msg.type === "ask") return question(msg);
+    if (msg.type === "delta") return onDelta(msg);
     if (msg.type === "listening") return listening(true);
     if (msg.type === "heard") {
       listening(false);
       if (msg.error) return toast(msg.error, true);
       const words = String(msg.text || "").trim();
-      if (!words) return toast("Didn't catch that — try again.", true);
+      if (!words) return toast("Didn't catch that. Try again.", true);
       input.value = (input.value.trim() ? input.value.trimEnd() + " " : "") + words;
       grow(); input.focus();
       return;
@@ -634,8 +936,13 @@
         db.lastRun = msg.run; db.lastSeq = msg.seq; if (!incognito) save();
       }
       if (swallowed(msg)) return;
-      if (msg.type === "reply" && busySince) msg.secs = ((Date.now() - busySince) / 1000).toFixed(1);
+      if (msg.type === "reply") {
+        dropLive(); hideThinking();
+        if (busySince) msg.secs = ((Date.now() - busySince) / 1000).toFixed(1);
+        if (modelName) msg.model = modelName;
+      }
       keep(msg);
+      if (msg.type === "user" && state === "thinking") showThinking();
     }
   }
   function connect() {
@@ -650,8 +957,6 @@
   }
   window.grandpaConnect = function (url) { if (socket || !url) return; address = url; connect(); };
 
-  // A chat opened earlier starts fresh in Grandpa only when the user picks another one,
-  // so a restart keeps showing the last chat without re-sending anything.
   applySettings(); currentChat(); redraw(); setState("starting");
   if (api()) windowReady(); else { attachBtn.disabled = true; $("plus-orb").disabled = true; }
   if (address) connect(); else statusLine.textContent = "Waiting for Grandpa…";

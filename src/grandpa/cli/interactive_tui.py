@@ -570,8 +570,7 @@ def render_startup_header(session: InteractiveSession) -> None:
 
     entry = get_model_role(session.model)
     model_label = entry.ollama_tag.removesuffix(":latest") if entry else session.model
-    name = session.username or resolve_display_name(session.config)
-    greeting = f"Hi {name}!" if name and name != "Username" else "Hi there!"
+    greeting = time_greeting(session.username or resolve_display_name(session.config))
     # No runtime vendor here. Which backend serves the model is an
     # implementation detail of the product, and this banner is the product
     # speaking. It is display only: /doctor, /config, /info and every engine
@@ -583,6 +582,31 @@ def render_startup_header(session: InteractiveSession) -> None:
         f"[dim]|[/dim] [{STRUCTURE}]{model_label}[/{STRUCTURE}]"
     )
     session.console.print(f"[dim]{chat_helper_text(session.console)}[/dim]")
+
+
+def time_greeting(name: str = "", hour: int | None = None) -> str:
+    """ "Good evening, Mr. Hari Hara Sudhan!" -- by the clock, with the profile name."""
+    import datetime as _dt
+
+    hour = _dt.datetime.now().hour if hour is None else hour
+    part = (
+        "Good morning"
+        if hour < 12
+        else "Good afternoon"
+        if hour < 17
+        else "Good evening"
+    )
+    return f"{part}, {name}!" if name and name != DEFAULT_USERNAME else f"{part}!"
+
+
+def render_compact_header(session: InteractiveSession) -> None:
+    """The full-screen terminal's start: its own top bar already shows the
+    version and the model, so only the greeting and how to begin."""
+    greeting = time_greeting(session.username or resolve_display_name(session.config))
+    session.console.print(f"[bold {ACCENT}]{greeting}[/bold {ACCENT}] I'm Grandpa.")
+    session.console.print(
+        "[dim]Ask anything · / for commands · @ to attach a file · F2 to talk[/dim]"
+    )
 
 
 def chat_helper_text(console: Console) -> str:

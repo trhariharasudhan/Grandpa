@@ -28,23 +28,23 @@ html, body {
 
 #ring {
   position: relative;
-  width: 56px; height: 56px; padding: 0;
+  width: 40px; height: 40px; padding: 0;
   border-radius: 50%;
-  border: 4px solid var(--glow);
+  border: 3px solid var(--glow);
   background: radial-gradient(circle, color-mix(in srgb, var(--glow) 14%, transparent) 0%, transparent 70%);
-  box-shadow: 0 0 9px 1px var(--glow), inset 0 0 9px 1px color-mix(in srgb, var(--glow) 60%, transparent);
+  box-shadow: 0 0 7px 1px var(--glow), inset 0 0 6px 1px color-mix(in srgb, var(--glow) 60%, transparent);
   cursor: pointer;
   touch-action: none;
   animation: breathe 4s ease-in-out infinite;
   transition: border-color 300ms ease, box-shadow 300ms ease, width 200ms ease, height 200ms ease;
 }
 #ring:focus-visible { outline: 2px solid var(--ink); outline-offset: 6px; }
-#ring-core { position: absolute; inset: 7px; border-radius: 50%; }
+#ring-core { position: absolute; inset: 5px; border-radius: 50%; }
 
 /* A reply arrived while the panel was closed: an amber dot, until opened. */
 #ring.unread::after {
-  content: ""; position: absolute; top: -4px; right: -4px;
-  width: 12px; height: 12px; border-radius: 50%;
+  content: ""; position: absolute; top: -3px; right: -3px;
+  width: 9px; height: 9px; border-radius: 50%;
   background: var(--unread); box-shadow: 0 0 8px var(--unread);
 }
 
@@ -60,7 +60,7 @@ html, body {
 @media (prefers-reduced-motion: reduce) { #ring, #ring-core { animation: none !important; } }
 
 /* A2: with WebGL the shader draws the ring; the CSS ring above is the fallback. */
-#ring-gl { display: none; position: absolute; inset: -15px; width: calc(100% + 30px); height: calc(100% + 30px); pointer-events: none; }
+#ring-gl { display: none; position: absolute; inset: -11px; width: calc(100% + 22px); height: calc(100% + 22px); pointer-events: none; }
 .gl #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
 .gl #ring-core { display: none; }
 .gl #ring-gl { display: block; }
@@ -70,7 +70,7 @@ html, body {
    "char" from the start of a morph to its end.
    A5: the morph itself (opacity and scale of both canvases) is set by
    character.js frame by frame, from one clock; CSS only places the canvases. */
-#char-gl { display: none; position: absolute; inset: -15px; width: calc(100% + 30px); height: calc(100% + 30px); pointer-events: none; opacity: 0; transform-origin: 50% 50%; }
+#char-gl { display: none; position: absolute; inset: -11px; width: calc(100% + 22px); height: calc(100% + 22px); pointer-events: none; opacity: 0; transform-origin: 50% 50%; }
 #ring-gl { transform-origin: 50% 50%; }
 .char-ready #char-gl { display: block; }
 .char #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
@@ -95,9 +95,10 @@ html, body {
 #bar strong { color: var(--ink); }
 #bar-status { color: var(--muted); font-size: 12px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--glow); box-shadow: 0 0 6px var(--glow); flex: none; }
-#panel button.small { padding: 3px 9px; font-size: 12px; }
-#panel #close, #panel #quit { background: transparent; color: var(--muted); }
-#panel #quit:hover { color: #ff4f58; background: rgba(255,255,255,0.14); }
+#panel button.bar-icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; background: transparent; color: var(--muted); }
+#panel button.bar-icon:hover { color: var(--ink); background: rgba(255,255,255,0.12); }
+#panel #quit:hover { color: #ff4f58; }
+.icon-svg { display: block; }
 #panel #close:hover { color: var(--ink); background: rgba(255,255,255,0.14); }
 
 #panel { flex: 1; display: flex; flex-direction: column; min-height: 0; background: var(--panel); border-radius: 16px; padding: 10px; }
@@ -110,11 +111,14 @@ html, body {
 #confirm { padding: 6px 0; }
 #confirm p { margin: 0 0 6px; }
 #entry { display: flex; gap: 6px; margin-top: 6px; }
-#text { flex: 1; background: rgba(255,255,255,0.08); color: var(--ink); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 7px 9px; }
+#entry { align-items: center; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 4px 4px 4px 10px; }
+#entry:focus-within { border-color: #FFD21F; }
+#text { flex: 1; min-width: 0; background: transparent; color: var(--ink); border: 0; outline: none; padding: 6px 0; }
+#panel #send { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border-radius: 9px; background: #FFD21F; color: #12141C; }
 #panel button { background: rgba(255,255,255,0.14); color: var(--ink); border: 0; border-radius: 8px; padding: 7px 12px; cursor: pointer; }
 button:disabled, input:disabled { opacity: 0.5; cursor: default; }
 
-/* A6: click-to-talk. While listening the button says so and glows blue. */
-#app[data-state="listening"] #talk { background: rgba(96,165,250,0.35); }
+/* Hold Ctrl+Win to talk: while listening the box glows blue. */
+#app[data-state="listening"] #entry { border-color: #50a8ff; box-shadow: 0 0 8px rgba(80,168,255,0.5); }
 
 #app[data-panel="open"] { background: var(--bg); border-radius: 16px; }

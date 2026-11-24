@@ -150,7 +150,9 @@ class InProcessBridge:
             response = self.ensure_responder().handle_user_input(cleaned)
         except VoiceError as exc:
             return BridgeReply(
-                str(exc).splitlines()[0], status="error", failed=True,
+                str(exc).splitlines()[0],
+                status="error",
+                failed=True,
                 detail=getattr(exc, "detail", "") or "",
             )
         except Exception as exc:  # noqa: BLE001 - a UI must not die of a reply
@@ -188,9 +190,7 @@ class InProcessBridge:
                 explanation=getattr(outcome, "explanation", ""),
             )
         try:
-            return BridgeTranscript(
-                text=(transcriber.transcribe(audio) or "").strip()
-            )
+            return BridgeTranscript(text=(transcriber.transcribe(audio) or "").strip())
         except VoiceError as exc:
             return BridgeTranscript(
                 text="", reason="error", explanation=str(exc).splitlines()[0]

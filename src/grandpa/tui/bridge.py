@@ -113,6 +113,9 @@ class UiHooks:
     #: ``("text", text)``, instead of printed terminal output. The desktop app
     #: renders Markdown itself; the terminal leaves this unset.
     reply: Callable[[str, str], None] | None = None
+    #: Optional: the words of a reply while the model writes them (tool-loop
+    #: replies). ``""`` means "drop what was shown, that was a tool call".
+    stream: Callable[[str], None] | None = None
 
 
 _YES_NO = re.compile(r"\[\s*y\s*/\s*n\s*\]\s*$", re.IGNORECASE)
@@ -286,6 +289,9 @@ class ChatBridge:
         from grandpa.cli import interactive_tui
 
         patches[(interactive_tui, "MODEL_PICKER")] = self._select_from_list
+        patches[(interactive_tui, "render_startup_header")] = (
+            interactive_tui.render_compact_header
+        )
         if self.hooks.turn is not None:
             patches[(chat_cmd, "render_user_message")] = self._user_message
             patches[(chat_cmd, "render_assistant_prefix")] = self._assistant_prefix
@@ -295,6 +301,10 @@ class ChatBridge:
             setattr(module, name, value)
         builtins.input = self._input
         restore_logs = redirect_terminal_log_handlers(self._write_log)
+        if self.hooks.stream is not None:
+            from grandpa.action_layer.loop import set_stream_sink
+
+            set_stream_sink(self.hooks.stream)
         try:
             command.main(
                 args=["--no-fullscreen", *self.chat_args],
@@ -310,6 +320,10 @@ class ChatBridge:
             self._write("\n" + traceback.format_exc() + "\n")
             code = 1
         finally:
+            if self.hooks.stream is not None:
+                from grandpa.action_layer.loop import set_stream_sink
+
+                set_stream_sink(None)
             restore_logs()
             builtins.input = _real_input
             for (module, name), value in saved.items():

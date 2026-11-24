@@ -273,8 +273,8 @@ def fit_text(text: Text, colors: ThemeColors) -> Text:
 HIGHLIGHT_ROLES = {
     "marker": "purple",  # 1.  2)  -  •
     "label": "blue",  # Model: ...   Status: ...
-    "good": "green",  # ✓ done, connected, active
-    "bad": "red",  # ✗ failed, error, not installed
+    "good": "green",  # a tick, done, connected, active
+    "bad": "red",  # a cross, failed, error, not installed
     "link": "blue",
     "code": "green",  # `inline code`
 }
@@ -294,7 +294,8 @@ _HIGHLIGHTS: tuple[tuple[str, re.Pattern[str], int], ...] = (
     (
         "good",
         re.compile(
-            r"✓|✔|\b(?:done|ok|OK|connected|Connected|active|Active|ready|Ready|"
+            "\u2713|\u2714|"
+            r"\b(?:done|ok|OK|connected|Connected|active|Active|ready|Ready|"
             r"installed|Installed|enabled|Enabled|success|passed)\b"
         ),
         0,
@@ -302,7 +303,8 @@ _HIGHLIGHTS: tuple[tuple[str, re.Pattern[str], int], ...] = (
     (
         "bad",
         re.compile(
-            r"✗|✘|\b(?:failed|Failed|error|Error|not installed|not available|"
+            "\u2717|\u2718|"
+            r"\b(?:failed|Failed|error|Error|not installed|not available|"
             r"not connected|disabled|Disabled|blocked|Blocked)\b"
         ),
         0,
@@ -521,6 +523,8 @@ class GrandpaApp(App):
         self._chat_args = list(chat_args)
         self.bridge = bridge
         self._block: OutputBlock | None = None
+        self._live: OutputBlock | None = None  # a reply being written
+        self._queued: str | None = None  # typed while Grandpa was busy
         self._question: Question | None = None
         self._busy_since: float | None = None
         self._spinner = 0
@@ -581,6 +585,7 @@ class GrandpaApp(App):
                 ask=lambda q: self.call_from_thread(self._on_question, q),
                 finished=lambda code: self.call_from_thread(self._on_finished, code),
                 turn=lambda role: self.call_from_thread(self._on_turn, role),
+                stream=lambda text: self.call_from_thread(self._on_stream, text),
             )
             self.bridge = ChatBridge(hooks, width=width, chat_args=self._chat_args)
         self._busy_since = time.monotonic()
@@ -604,7 +609,29 @@ class GrandpaApp(App):
         log.mount(widget)
         log.scroll_end(animate=False)
 
+    def _on_stream(self, text: str) -> None:
+        """The reply's words while the model writes them (tool-loop replies).
+
+        Shown in a live block that the finished reply replaces; "" means it
+        was a tool call after all, so the block goes.
+        """
+        if not text:
+            self._drop_live()
+            return
+        if self._live is None:
+            self._live = OutputBlock("grandpa")
+            self._mount_message(self._live)
+        self._live.feed(text)
+        self.query_one("#log", VerticalScroll).scroll_end(animate=False)
+
+    def _drop_live(self) -> None:
+        if self._live is not None:
+            self._live.remove()
+            self._live = None
+
     def _on_turn(self, role: str) -> None:
+        if role == "grandpa":
+            self._drop_live()
         if role == "user":
             self._block = None
             return
@@ -643,9 +670,13 @@ class GrandpaApp(App):
                 self.reply_voice.say(reply)
             if took is not None and took >= LONG_REPLY_SECONDS:
                 self.bell()
+        self._drop_live()
         self._busy_since = None
         self._block = None  # the next turn starts a new block
         self._update_status()
+        if self._queued is not None and self._question is None and not self._stopped:
+            queued, self._queued = self._queued, None
+            self.send_message(queued)
 
     def _on_question(self, question: Question) -> None:
         self._question = question
@@ -717,7 +748,21 @@ class GrandpaApp(App):
             prompt.clear()
             self.history.add(text)
             return
-        if self.bridge is None or self._busy_since is not None:
+        if self.bridge is None:
+            return
+        if self._busy_since is not None:
+            # Typed while Grandpa works: it goes next, instead of being lost.
+            if self._queued is not None:
+                self.notify_status(
+                    "One message is already waiting; Esc cancels the reply.", "error"
+                )
+                return
+            self._queued = text
+            prompt.clear()
+            self.history.add(text)
+            self.notify_status(
+                "Queued: it goes as soon as Grandpa finishes.", "info", 6.0
+            )
             return
         prompt.clear()
         self.history.add(text)
@@ -1027,7 +1072,7 @@ class GrandpaApp(App):
         colors = self.palette
         header = Text()
         header.append(
-            " ✦ GRANDPA ",
+            " ● GRANDPA ",
             style=Style(color=colors.background, bgcolor=colors.brand, bold=True),
         )
         header.append(f"  v{grandpa.__version__}", style=colors.muted)
@@ -1040,7 +1085,7 @@ class GrandpaApp(App):
         header.append(f"  ·  {colors.name}", style=colors.muted)
         if self.reply_voice.enabled:
             header.append("  ·  ", style=colors.muted)
-            header.append("♪ speaking replies", style=colors.voice)
+            header.append("voice: speaking replies", style=colors.voice)
         try:
             self.query_one("#header", Static).update(header)
         except NoMatches:

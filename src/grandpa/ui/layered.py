@@ -70,8 +70,12 @@ def _win32():
     gdi32.DeleteObject.argtypes = [wt.HGDIOBJ]
     gdi32.DeleteDC.argtypes = [wt.HDC]
     gdi32.CreateDIBSection.argtypes = [
-        wt.HDC, ctypes.c_void_p, wt.UINT,
-        ctypes.POINTER(ctypes.c_void_p), wt.HANDLE, wt.DWORD,
+        wt.HDC,
+        ctypes.c_void_p,
+        wt.UINT,
+        ctypes.POINTER(ctypes.c_void_p),
+        wt.HANDLE,
+        wt.DWORD,
     ]
     gdi32.CreateDIBSection.restype = wt.HBITMAP
     user32.GetDC.argtypes = [wt.HWND]
@@ -91,17 +95,25 @@ def _structures(ctypes, wt):
 
     class BLENDFUNCTION(ctypes.Structure):
         _fields_ = [
-            ("BlendOp", ctypes.c_byte), ("BlendFlags", ctypes.c_byte),
-            ("SourceConstantAlpha", ctypes.c_byte), ("AlphaFormat", ctypes.c_byte),
+            ("BlendOp", ctypes.c_byte),
+            ("BlendFlags", ctypes.c_byte),
+            ("SourceConstantAlpha", ctypes.c_byte),
+            ("AlphaFormat", ctypes.c_byte),
         ]
 
     class BITMAPINFOHEADER(ctypes.Structure):
         _fields_ = [
-            ("biSize", wt.DWORD), ("biWidth", wt.LONG), ("biHeight", wt.LONG),
-            ("biPlanes", wt.WORD), ("biBitCount", wt.WORD),
-            ("biCompression", wt.DWORD), ("biSizeImage", wt.DWORD),
-            ("biXPelsPerMeter", wt.LONG), ("biYPelsPerMeter", wt.LONG),
-            ("biClrUsed", wt.DWORD), ("biClrImportant", wt.DWORD),
+            ("biSize", wt.DWORD),
+            ("biWidth", wt.LONG),
+            ("biHeight", wt.LONG),
+            ("biPlanes", wt.WORD),
+            ("biBitCount", wt.WORD),
+            ("biCompression", wt.DWORD),
+            ("biSizeImage", wt.DWORD),
+            ("biXPelsPerMeter", wt.LONG),
+            ("biYPelsPerMeter", wt.LONG),
+            ("biClrUsed", wt.DWORD),
+            ("biClrImportant", wt.DWORD),
         ]
 
     return POINT, SIZE, BLENDFUNCTION, BITMAPINFOHEADER
@@ -214,8 +226,12 @@ class LayeredPainter:
             header.biCompression = 0
             bits = ctypes.c_void_p()
             bitmap = gdi32.CreateDIBSection(
-                memory_dc, ctypes.cast(ctypes.byref(header), ctypes.c_void_p), 0,
-                ctypes.byref(bits), None, 0,
+                memory_dc,
+                ctypes.cast(ctypes.byref(header), ctypes.c_void_p),
+                0,
+                ctypes.byref(bits),
+                None,
+                0,
             )
             if not bitmap:
                 self.last_error = "CreateDIBSection returned NULL"
@@ -226,15 +242,25 @@ class LayeredPainter:
             call = self.update_layered_window
             if call is None:
                 user32.UpdateLayeredWindow.argtypes = [
-                    wt.HWND, wt.HDC, ctypes.POINTER(POINT), ctypes.POINTER(SIZE),
-                    wt.HDC, ctypes.POINTER(POINT), wt.DWORD,
-                    ctypes.POINTER(BLENDFUNCTION), wt.DWORD,
+                    wt.HWND,
+                    wt.HDC,
+                    ctypes.POINTER(POINT),
+                    ctypes.POINTER(SIZE),
+                    wt.HDC,
+                    ctypes.POINTER(POINT),
+                    wt.DWORD,
+                    ctypes.POINTER(BLENDFUNCTION),
+                    wt.DWORD,
                 ]
                 call = user32.UpdateLayeredWindow
             ok = call(
-                hwnd, screen_dc, ctypes.byref(POINT(int(x), int(y))),
-                ctypes.byref(SIZE(width, height)), memory_dc,
-                ctypes.byref(POINT(0, 0)), 0,
+                hwnd,
+                screen_dc,
+                ctypes.byref(POINT(int(x), int(y))),
+                ctypes.byref(SIZE(width, height)),
+                memory_dc,
+                ctypes.byref(POINT(0, 0)),
+                0,
                 ctypes.byref(BLENDFUNCTION(AC_SRC_OVER, 0, 255, AC_SRC_ALPHA)),
                 ULW_ALPHA,
             )

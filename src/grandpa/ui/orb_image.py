@@ -217,6 +217,7 @@ CHASE_LIT = 4
 #: against 73% that is merely non-transparent.
 HIT_RADIUS = RING_RADIUS + RING_WIDTH
 
+
 def visible_inset(size: int = ORB_SIZE) -> float:
     """How far the window may hang off a screen edge with the ring still whole.
 
@@ -295,19 +296,33 @@ ORB_STYLES: dict[str, OrbStyle] = {
     # travelling arc at roughly half idle's glow. During loading there is no
     # request yet, so there is nothing for a colour to be about.
     "loading": OrbStyle(
-        ring_rgb("loading"), 0.30, scaled_width(0.028),
-        animation="arc", arc=(0.0, 90.0), fps=20.0, frames=32,
+        ring_rgb("loading"),
+        0.30,
+        scaled_width(0.028),
+        animation="arc",
+        arc=(0.0, 90.0),
+        fps=20.0,
+        frames=32,
     ),
     # 6 seconds at 5 frames a second. Slow because it runs forever: measured at
     # 0.14% of one core, against 0.56% at 20fps.
     "idle": OrbStyle(
-        ring_rgb("idle"), 0.55, scaled_width(0.030),
-        animation="breathe", fps=5.0, frames=30, pulse=0.16,
+        ring_rgb("idle"),
+        0.55,
+        scaled_width(0.030),
+        animation="breathe",
+        fps=5.0,
+        frames=30,
+        pulse=0.16,
     ),
     # 10fps is the capture chunk rate. Faster would redraw the same history.
     "recording": OrbStyle(
-        ring_rgb("recording"), 1.05, scaled_width(0.046),
-        animation="waveform", fps=10.0, frames=1,
+        ring_rgb("recording"),
+        1.05,
+        scaled_width(0.046),
+        animation="waveform",
+        fps=10.0,
+        frames=1,
     ),
     # Both, not just thinking. They share a hue and they shared the animation
     # deliberately, so leaving transcribing on the old one would have kept the
@@ -317,35 +332,66 @@ ORB_STYLES: dict[str, OrbStyle] = {
     # the eye is most sensitive to movement in, which is the point: it has to
     # be noticed without being urgent.
     "transcribing": OrbStyle(
-        ring_rgb("transcribing"), 0.75, scaled_width(0.034),
-        animation="swell", fps=20.0, frames=24,
+        ring_rgb("transcribing"),
+        0.75,
+        scaled_width(0.034),
+        animation="swell",
+        fps=20.0,
+        frames=24,
     ),
     "thinking": OrbStyle(
-        ring_rgb("thinking"), 0.75, scaled_width(0.034),
-        animation="swell", fps=20.0, frames=24,
+        ring_rgb("thinking"),
+        0.75,
+        scaled_width(0.034),
+        animation="swell",
+        fps=20.0,
+        frames=24,
     ),
     "speaking": OrbStyle(
-        ring_rgb("speaking"), 0.95, scaled_width(0.040),
-        animation="waves", fps=20.0, frames=28,
+        ring_rgb("speaking"),
+        0.95,
+        scaled_width(0.040),
+        animation="waves",
+        fps=20.0,
+        frames=28,
     ),
     "executing": OrbStyle(
-        ring_rgb("executing"), 0.85, scaled_width(0.038),
-        animation="chase", fps=20.0, frames=CHASE_SEGMENTS * 2,
+        ring_rgb("executing"),
+        0.85,
+        scaled_width(0.038),
+        animation="chase",
+        fps=20.0,
+        frames=CHASE_SEGMENTS * 2,
     ),
     # One ripple, then steady. Success is somewhere the orb rests, so once the
     # ripple has played it costs nothing to sit in.
     "success": OrbStyle(
-        ring_rgb("success"), 0.70, scaled_width(0.034),
-        animation="ripple", fps=20.0, frames=20, oneshot=True,
+        ring_rgb("success"),
+        0.70,
+        scaled_width(0.034),
+        animation="ripple",
+        fps=20.0,
+        frames=20,
+        oneshot=True,
     ),
     # Two flashes, then solid. Also a resting state afterwards.
     "error": OrbStyle(
-        ring_rgb("error"), 0.85, scaled_width(0.034),
-        animation="flash", fps=20.0, frames=20, oneshot=True,
+        ring_rgb("error"),
+        0.85,
+        scaled_width(0.034),
+        animation="flash",
+        fps=20.0,
+        frames=20,
+        oneshot=True,
     ),
     "unread": OrbStyle(
-        ring_rgb("unread"), 0.95, scaled_width(0.038),
-        animation="breathe", fps=10.0, frames=24, pulse=0.30,
+        ring_rgb("unread"),
+        0.95,
+        scaled_width(0.038),
+        animation="breathe",
+        fps=10.0,
+        frames=24,
+        pulse=0.30,
     ),
 }
 
@@ -494,7 +540,12 @@ def level_at_angle(levels: Any, turns: Any) -> Any:
 
 
 def _alpha_for(
-    state: str, phase: float, level: float, levels: Any, size: int, unread: bool,
+    state: str,
+    phase: float,
+    level: float,
+    levels: Any,
+    size: int,
+    unread: bool,
 ) -> Any:
     """The alpha channel for one frame. Everything else is colour and wrapping."""
     import numpy as np
@@ -523,8 +574,12 @@ def _alpha_for(
     elif animation == "breathe":
         # A cosine so the loop has no seam. Very subtle on purpose.
         breath = 0.5 - 0.5 * math.cos(2.0 * math.pi * phase)
-        weight = _ring(radius, base, width * (1.0 + 0.10 * style.pulse * breath),
-                       glow * (1.0 + style.pulse * (breath - 0.5) * 2.0))
+        weight = _ring(
+            radius,
+            base,
+            width * (1.0 + 0.10 * style.pulse * breath),
+            glow * (1.0 + style.pulse * (breath - 0.5) * 2.0),
+        )
 
     elif animation == "arc":
         start, extent = style.arc or (0.0, 90.0)
@@ -551,17 +606,21 @@ def _alpha_for(
         for index in range(WAVE_COUNT):
             progress = (phase + index / WAVE_COUNT) % 1.0
             fading = (1.0 - progress) ** 2
-            weight = weight + _ring(
-                radius, base + progress * WAVE_SPAN, width, glow
-            ) * 0.75 * fading
+            weight = (
+                weight
+                + _ring(radius, base + progress * WAVE_SPAN, width, glow)
+                * 0.75
+                * fading
+            )
 
     elif animation == "ripple":
         # One ring leaving, then nothing but the steady ring. Plays once.
         weight = _ring(radius, base, width, glow)
         fading = (1.0 - phase) ** 2
-        weight = weight + _ring(
-            radius, base + phase * WAVE_SPAN * 1.4, width, glow
-        ) * 0.9 * fading
+        weight = (
+            weight
+            + _ring(radius, base + phase * WAVE_SPAN * 1.4, width, glow) * 0.9 * fading
+        )
 
     elif animation == "flash":
         # Two flashes, then solid for the rest of the cycle -- and the cycle
@@ -571,7 +630,7 @@ def _alpha_for(
             distance = abs(phase - centre)
             if distance < 0.08:
                 envelope += 1.15 * (0.5 + 0.5 * math.cos(math.pi * distance / 0.08))
-        weight = _ring(radius, base, width * envelope ** 0.35, glow * envelope)
+        weight = _ring(radius, base, width * envelope**0.35, glow * envelope)
 
     elif animation == "chase":
         # Segments travelling round. Indeterminate on purpose: the signal is
@@ -641,7 +700,12 @@ def orb_on_disc(
     from PIL import Image
 
     glow = orb_image(
-        state, phase, level, size=size, unread=unread, levels=levels,
+        state,
+        phase,
+        level,
+        size=size,
+        unread=unread,
+        levels=levels,
     )
     radius, _turns = _fields(size)
     edge = np.clip((0.47 - radius) / 0.02, 0.0, 1.0)

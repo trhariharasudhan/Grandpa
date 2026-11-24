@@ -162,7 +162,7 @@ def test_startup_header_is_compact_and_status_remains_detailed() -> None:
     output = console.export_text()
     # No big logo any more: a greeting, the version and model, the hints.
     assert "██████╗" not in output
-    assert "I'm Grandpa." in output
+    assert "I'm Grandpa." in output and "Good " in output
     assert "Grandpa v" in output
     assert "| grandpa-fast" in output
     # No runtime vendor in the banner. Which backend serves the model is an
@@ -177,6 +177,17 @@ def test_startup_header_is_compact_and_status_remains_detailed() -> None:
     assert "Directory:" in (status.message or "")
     assert "Memory:" in (status.message or "")
     assert "Ollama:" in (status.message or "")
+
+
+def test_the_greeting_follows_the_clock_and_the_profile() -> None:
+    from grandpa.cli.interactive_tui import time_greeting
+
+    assert (
+        time_greeting("Mr. Hari Hara Sudhan", hour=9)
+        == "Good morning, Mr. Hari Hara Sudhan!"
+    )
+    assert time_greeting("Mr. Hari Hara Sudhan", hour=14).startswith("Good afternoon")
+    assert time_greeting("Username", hour=20) == "Good evening!"
 
 
 def test_chat_helper_text_falls_back_for_ascii_terminal() -> None:

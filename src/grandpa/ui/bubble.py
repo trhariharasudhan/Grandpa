@@ -108,10 +108,16 @@ def completed_an_operation(reply: Any) -> bool:
     kind = str(getattr(reply, "kind", "") or "")
     return status == "handled" and kind in done_kinds()
 
+
 #: The states in which a hold must not start a recording.
 STATES_THAT_REFUSE_A_HOLD = frozenset(
-    {BubbleState.LOADING, BubbleState.RECORDING, BubbleState.TRANSCRIBING,
-     BubbleState.THINKING, BubbleState.EXECUTING}
+    {
+        BubbleState.LOADING,
+        BubbleState.RECORDING,
+        BubbleState.TRANSCRIBING,
+        BubbleState.THINKING,
+        BubbleState.EXECUTING,
+    }
 )
 
 DEFAULT_POSITION = (40, 40)
@@ -422,7 +428,7 @@ class BubbleController:
     key_seen_count: int = field(default=0, init=False)
     model_name: str = field(default="", init=False)
     #: Where the panel is. DERIVED from the anchor and the offset below --
-            # written by _place_windows and by nothing else.
+    # written by _place_windows and by nothing else.
     position: tuple[int, int] = field(default=DEFAULT_POSITION, init=False)
     #: **The anchor.** The orb's top-left, and the single thing a drag moves.
     #: The orb and the panel are two native windows -- the panel is the Tk
@@ -877,9 +883,7 @@ class BubbleController:
             self._refresh_status()
             return ""
         if self.probe is None or self.capture is None:
-            self.last_error = (
-                f"Saw {describe_hold_key(self.key)} -- no microphone capture is wired up."
-            )
+            self.last_error = f"Saw {describe_hold_key(self.key)} -- no microphone capture is wired up."
             self._enter(BubbleState.ERROR)
             self._refresh_status()
             return ""

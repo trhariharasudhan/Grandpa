@@ -136,7 +136,7 @@ class AvatarController:
             with self._lock:
                 self._busy = False
 
-    def talk(self) -> bool:
+    def talk(self, listener=None) -> bool:
         """Click-to-talk (A6): listen for one line, then route it like a typed one.
 
         ``listening`` shows while the microphone records. What was heard goes
@@ -145,7 +145,8 @@ class AvatarController:
         or a microphone that fails, is said in the chat and nothing is routed.
         Returns False, doing nothing, while a request is in flight.
         """
-        if self.listener is None:
+        listener = listener or self.listener
+        if listener is None:
             self._chat(ChatMessage("grandpa", NO_MICROPHONE, True))
             return False
         with self._lock:
@@ -155,7 +156,7 @@ class AvatarController:
         try:
             self._enter(StateMessage(AvatarState.LISTENING))
             try:
-                heard = self.listener()
+                heard = listener()
             except Exception as exc:  # noqa: BLE001 - a dead mic is not a crash
                 logger.warning("avatar listen failed", exc_info=True)
                 first = str(exc).splitlines()[0] if str(exc) else type(exc).__name__

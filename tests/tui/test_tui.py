@@ -571,3 +571,65 @@ def test_accents_are_the_seven_colours_and_readable() -> None:
         for colour in colors.accents.values():
             assert contrast(colour, colors.background) >= 4.5
             assert contrast(colour, colors.surface) >= 4.5
+
+
+# --- streaming and queueing (added with the desktop app's streaming) -----------
+
+
+def test_the_terminal_shows_a_reply_while_it_is_written_and_queues_typing() -> None:
+    import asyncio
+
+    from grandpa.tui.app import GrandpaApp
+
+    class Bridge:
+        def __init__(self):
+            self.sent: list[str] = []
+
+        def start(self):
+            pass
+
+        def send(self, text):
+            self.sent.append(text)
+
+        def cancel(self):
+            return True
+
+        def quit(self):
+            pass
+
+    async def run() -> None:
+        bridge = Bridge()
+        app = GrandpaApp(bridge=bridge)
+        async with app.run_test(size=(100, 30)) as pilot:
+            app._on_ready("You > ")
+            app.send_message("first")
+            app._on_stream("Hel")
+            app._on_stream("lo")
+            assert app._live is not None and "Hello" in app._live.raw
+            # typed while busy: queued, not lost
+            prompt = app.query_one("#prompt")
+            prompt.load_text("second")
+            app.submit_prompt()
+            assert bridge.sent == ["first"] and app._queued == "second"
+            app._on_turn("grandpa")  # the finished reply replaces the live block
+            assert app._live is None
+            app._on_ready("You > ")
+            await pilot.pause()
+            assert bridge.sent == ["first", "second"]
+
+    asyncio.run(run())
+
+
+def test_the_terminal_uses_no_emoji() -> None:
+    from pathlib import Path
+
+    import grandpa.tui as tui
+
+    for path in Path(tui.__file__).parent.glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        found = [
+            c
+            for c in text
+            if 0x1F300 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF
+        ]
+        assert not found, f"{path.name}: {found[:5]}"

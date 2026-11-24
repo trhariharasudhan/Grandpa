@@ -420,18 +420,30 @@ class TkBubbleView:
         radius = max(0.0, float(radius)) * float(factor)
         radius = max(0.0, min(radius, (x1 - x0) / 2.0, (y1 - y0) / 2.0))
         return [
-            x0 + radius, y0,
-            x1 - radius, y0,
-            x1, y0,
-            x1, y0 + radius,
-            x1, y1 - radius,
-            x1, y1,
-            x1 - radius, y1,
-            x0 + radius, y1,
-            x0, y1,
-            x0, y1 - radius,
-            x0, y0 + radius,
-            x0, y0,
+            x0 + radius,
+            y0,
+            x1 - radius,
+            y0,
+            x1,
+            y0,
+            x1,
+            y0 + radius,
+            x1,
+            y1 - radius,
+            x1,
+            y1,
+            x1 - radius,
+            y1,
+            x0 + radius,
+            y1,
+            x0,
+            y1,
+            x0,
+            y1 - radius,
+            x0,
+            y0 + radius,
+            x0,
+            y0,
         ]
 
     def _rounded(
@@ -499,8 +511,14 @@ class TkBubbleView:
             if self._field_shape is not None:
                 field.delete(self._field_shape)
             self._field_shape = self._rounded(
-                field, 1, 1, width - 2, INPUT_HEIGHT - 2, INPUT_HEIGHT / 2.0,
-                fill=SURFACE, outline=BORDER,
+                field,
+                1,
+                1,
+                width - 2,
+                INPUT_HEIGHT - 2,
+                INPUT_HEIGHT / 2.0,
+                fill=SURFACE,
+                outline=BORDER,
             )
             if self._field_shape is not None:
                 field.tag_lower(self._field_shape)
@@ -573,7 +591,12 @@ class TkBubbleView:
             pass
 
     def _bubble(
-        self, parent: Any, text: str, *, side: str, colour: str,
+        self,
+        parent: Any,
+        text: str,
+        *,
+        side: str,
+        colour: str,
         selectable: bool = False,
     ) -> Any:
         """One bubble, as tall as its own text.
@@ -609,16 +632,31 @@ class TkBubbleView:
         height = lines * spacing + BUBBLE_PAD * 2
 
         bubble = tk.Canvas(
-            row, width=width, height=height, bg=BACKGROUND,
-            highlightthickness=0, bd=0, takefocus=False,
+            row,
+            width=width,
+            height=height,
+            bg=BACKGROUND,
+            highlightthickness=0,
+            bd=0,
+            takefocus=False,
         )
         bubble.pack(side=side)
 
         if selectable:
             label = tk.Text(
-                bubble, bg=colour, fg=FOREGROUND, relief="flat", wrap="word",
-                insertbackground=FOREGROUND, font=FONT_BODY, padx=0, pady=0,
-                highlightthickness=0, bd=0, takefocus=False, height=lines,
+                bubble,
+                bg=colour,
+                fg=FOREGROUND,
+                relief="flat",
+                wrap="word",
+                insertbackground=FOREGROUND,
+                font=FONT_BODY,
+                padx=0,
+                pady=0,
+                highlightthickness=0,
+                bd=0,
+                takefocus=False,
+                height=lines,
             )
             label.insert("1.0", text)
             # Read-only but still selectable. "disabled" would block selection
@@ -626,8 +664,14 @@ class TkBubbleView:
             label.bind("<Key>", lambda _event: "break")
         else:
             label = tk.Label(
-                bubble, text=text, bg=colour, fg=FOREGROUND, font=FONT_BODY,
-                wraplength=BUBBLE_MAX_WIDTH, justify="left", anchor="nw",
+                bubble,
+                text=text,
+                bg=colour,
+                fg=FOREGROUND,
+                font=FONT_BODY,
+                wraplength=BUBBLE_MAX_WIDTH,
+                justify="left",
+                anchor="nw",
             )
             # A Label adds padding of its own around the text, so the font's
             # answer is a little short -- 13 pixels, which cut the last line
@@ -643,12 +687,22 @@ class TkBubbleView:
         except Exception:  # noqa: BLE001
             pass
         self._rounded(
-            bubble, 0, 0, width - 1, height - 1, BUBBLE_RADIUS,
-            fill=colour, outline="",
+            bubble,
+            0,
+            0,
+            width - 1,
+            height - 1,
+            BUBBLE_RADIUS,
+            fill=colour,
+            outline="",
         )
         bubble.create_window(
-            BUBBLE_PAD, BUBBLE_PAD, window=label, anchor="nw",
-            width=BUBBLE_MAX_WIDTH, height=inner,
+            BUBBLE_PAD,
+            BUBBLE_PAD,
+            window=label,
+            anchor="nw",
+            width=BUBBLE_MAX_WIDTH,
+            height=inner,
         )
         return row, bubble, label
 
@@ -716,10 +770,16 @@ class TkBubbleView:
     def _meta(self, parent: Any, text: str, *, side: str) -> Any:
         tk = self._tk()
         label = tk.Label(
-            parent, text=text, bg=BACKGROUND, fg=MUTED, font=FONT_SMALL,
+            parent,
+            text=text,
+            bg=BACKGROUND,
+            fg=MUTED,
+            font=FONT_SMALL,
         )
-        label.pack(anchor="e" if side == "right" else "w",
-                   padx=(0, BUBBLE_INSET) if side == "right" else (BUBBLE_INSET, 0))
+        label.pack(
+            anchor="e" if side == "right" else "w",
+            padx=(0, BUBBLE_INSET) if side == "right" else (BUBBLE_INSET, 0),
+        )
         return label
 
     def _restack(self) -> None:
@@ -788,9 +848,7 @@ class TkBubbleView:
             else:
                 pill.pack_forget()
                 if actions is not None and self._has_exchange:
-                    actions.pack(
-                        side="bottom", anchor="w", padx=12, pady=(4, 0)
-                    )
+                    actions.pack(side="bottom", anchor="w", padx=12, pady=(4, 0))
             self._restack()
         except Exception:  # noqa: BLE001
             pass
@@ -853,13 +911,22 @@ class TkBubbleView:
         # window. The alternative is SetWindowRgn or a layered panel, which is
         # a second Win32 mechanism and its own decision.
         frame = tk.Canvas(
-            root, bg=BACKGROUND, highlightthickness=0, bd=0,
+            root,
+            bg=BACKGROUND,
+            highlightthickness=0,
+            bd=0,
         )
         frame.place(x=0, y=0, relwidth=1, relheight=1)
         self._widgets["frame"] = frame
         self._rounded(
-            frame, 1, 1, WIDTH - 2, HEIGHT - 2, PANEL_RADIUS,
-            fill="", outline=BORDER,
+            frame,
+            1,
+            1,
+            WIDTH - 2,
+            HEIGHT - 2,
+            PANEL_RADIUS,
+            fill="",
+            outline=BORDER,
         )
 
         body = tk.Frame(root, bg=BACKGROUND)
@@ -880,16 +947,24 @@ class TkBubbleView:
         self._widgets["header"] = header
 
         self._widgets["title"] = tk.Label(
-            header, text=PRODUCT_NAME, bg=BACKGROUND, fg=FOREGROUND,
-            font=FONT_TITLE, anchor="w",
+            header,
+            text=PRODUCT_NAME,
+            bg=BACKGROUND,
+            fg=FOREGROUND,
+            font=FONT_TITLE,
+            anchor="w",
         )
         self._widgets["title"].pack(side="left")
 
         # Close, far right. An affordance for something that already exists --
         # Escape is bound to the same handler -- rather than new behaviour.
         self._widgets["close"] = tk.Label(
-            header, text=CLOSE_GLYPH, bg=BACKGROUND, fg=MUTED,
-            font=FONT_META, padx=6,
+            header,
+            text=CLOSE_GLYPH,
+            bg=BACKGROUND,
+            fg=MUTED,
+            font=FONT_META,
+            padx=6,
         )
         self._widgets["close"].pack(side="right")
         self._widgets["close"].bind("<Button-1>", lambda _event: self._close())
@@ -898,13 +973,20 @@ class TkBubbleView:
         status_block = tk.Frame(header, bg=BACKGROUND)
         status_block.pack(side="right", padx=(0, 8))
         self._widgets["dot"] = tk.Label(
-            status_block, text="\u25cf", bg=BACKGROUND, font=FONT_SMALL,
+            status_block,
+            text="\u25cf",
+            bg=BACKGROUND,
+            font=FONT_SMALL,
             fg=STATE_COLOURS["loading"],
         )
         self._widgets["dot"].pack(side="left")
         self._widgets["state"] = tk.Label(
-            status_block, text="Loading model...", bg=BACKGROUND, fg=FOREGROUND,
-            anchor="w", font=FONT_STATE,
+            status_block,
+            text="Loading model...",
+            bg=BACKGROUND,
+            fg=FOREGROUND,
+            anchor="w",
+            font=FONT_STATE,
         )
         self._widgets["state"].pack(side="left", padx=(5, 0))
 
@@ -927,8 +1009,13 @@ class TkBubbleView:
         # cannot be tabbed into -- the window must never acquire focus except
         # from a deliberate click.
         self._widgets["speak"] = tk.Label(
-            header, text=self._speak_label(True), bg=SURFACE, fg=MUTED,
-            font=FONT_SMALL, padx=5, pady=1,
+            header,
+            text=self._speak_label(True),
+            bg=SURFACE,
+            fg=MUTED,
+            font=FONT_SMALL,
+            padx=5,
+            pady=1,
         )
         self._widgets["speak"].pack(side="right", padx=(0, 8))
         self._widgets["speak"].bind("<Button-1>", self._toggle_speech)
@@ -939,8 +1026,12 @@ class TkBubbleView:
         # The level meter sits directly under the header, because while the key
         # is held it is the only thing the user is looking at.
         meter = tk.Canvas(
-            body, height=METER_HEIGHT, bg=BACKGROUND, highlightthickness=0,
-            bd=0, takefocus=False,
+            body,
+            height=METER_HEIGHT,
+            bg=BACKGROUND,
+            highlightthickness=0,
+            bd=0,
+            takefocus=False,
         )
         meter.pack(fill="x", padx=12, pady=(3, 0))
         self._widgets["meter"] = meter
@@ -957,14 +1048,21 @@ class TkBubbleView:
         # tabbable; the Canvas is the one widget here big enough to be an
         # obvious tab target.
         scroll = tk.Canvas(
-            body, bg=BACKGROUND, highlightthickness=0, bd=0, takefocus=False,
+            body,
+            bg=BACKGROUND,
+            highlightthickness=0,
+            bd=0,
+            takefocus=False,
         )
         self._widgets["scroll"] = scroll
 
         inner = tk.Frame(scroll, bg=BACKGROUND)
         self._widgets["convo"] = inner
         self._scroll_window = scroll.create_window(
-            0, 0, window=inner, anchor="nw",
+            0,
+            0,
+            window=inner,
+            anchor="nw",
         )
         inner.bind("<Configure>", self._on_convo_resized)
         scroll.bind("<Configure>", self._on_scroll_resized)
@@ -979,20 +1077,31 @@ class TkBubbleView:
         empty = tk.Frame(inner, bg=BACKGROUND)
         self._widgets["empty"] = empty
         ring = tk.Canvas(
-            empty, width=44, height=44, bg=BACKGROUND, highlightthickness=0,
-            bd=0, takefocus=False,
+            empty,
+            width=44,
+            height=44,
+            bg=BACKGROUND,
+            highlightthickness=0,
+            bd=0,
+            takefocus=False,
         )
         ring.pack(pady=(14, 6))
         ring.create_oval(3, 3, 41, 41, outline=DIVIDER, width=2)
         self._widgets["empty_ring"] = ring
         self._widgets["empty_title"] = tk.Label(
-            empty, text=EMPTY_TITLE, bg=BACKGROUND, fg=FOREGROUND,
+            empty,
+            text=EMPTY_TITLE,
+            bg=BACKGROUND,
+            fg=FOREGROUND,
             font=FONT_BODY,
         )
         self._widgets["empty_title"].pack()
         self._widgets["empty_body"] = tk.Label(
-            empty, text=EMPTY_BODY.format(key=describe_hold_key(self.hold_key)),
-            bg=BACKGROUND, fg=MUTED, font=FONT_SMALL,
+            empty,
+            text=EMPTY_BODY.format(key=describe_hold_key(self.hold_key)),
+            bg=BACKGROUND,
+            fg=MUTED,
+            font=FONT_SMALL,
         )
         self._widgets["empty_body"].pack(pady=(2, 0))
         empty.pack(fill="both", expand=True)
@@ -1010,20 +1119,37 @@ class TkBubbleView:
             ("stop", ACTION_STOP, self._stop_speaking),
         ):
             button = tk.Canvas(
-                actions, width=ACTION_WIDTH, height=ACTION_HEIGHT,
-                bg=BACKGROUND, highlightthickness=0, bd=0, takefocus=False,
+                actions,
+                width=ACTION_WIDTH,
+                height=ACTION_HEIGHT,
+                bg=BACKGROUND,
+                highlightthickness=0,
+                bd=0,
+                takefocus=False,
             )
             button.pack(side="left", padx=(0, 5))
             self._rounded(
-                button, 0, 0, ACTION_WIDTH - 1, ACTION_HEIGHT - 1,
-                ACTION_HEIGHT / 2.0, fill=BACKGROUND, outline=BORDER,
+                button,
+                0,
+                0,
+                ACTION_WIDTH - 1,
+                ACTION_HEIGHT - 1,
+                ACTION_HEIGHT / 2.0,
+                fill=BACKGROUND,
+                outline=BORDER,
             )
             caption = tk.Label(
-                button, text=label, bg=BACKGROUND, fg=MUTED, font=FONT_SMALL,
+                button,
+                text=label,
+                bg=BACKGROUND,
+                fg=MUTED,
+                font=FONT_SMALL,
                 takefocus=False,
             )
             button.create_window(
-                ACTION_WIDTH / 2, ACTION_HEIGHT / 2, window=caption,
+                ACTION_WIDTH / 2,
+                ACTION_HEIGHT / 2,
+                window=caption,
             )
             # Both, because the caption covers the middle of the canvas and a
             # click that lands on the word must count as a click on the button.
@@ -1038,13 +1164,22 @@ class TkBubbleView:
         pill = tk.Frame(body, bg=SURFACE)
         self._widgets["thinking"] = pill
         self._widgets["thinking_dot"] = tk.Label(
-            pill, text="\u25cf", bg=SURFACE, fg=STATE_COLOURS["thinking"],
-            font=FONT_SMALL, padx=5,
+            pill,
+            text="\u25cf",
+            bg=SURFACE,
+            fg=STATE_COLOURS["thinking"],
+            font=FONT_SMALL,
+            padx=5,
         )
         self._widgets["thinking_dot"].pack(side="left")
         self._widgets["thinking_text"] = tk.Label(
-            pill, text=THINKING_TEXT, bg=SURFACE, fg=MUTED, font=FONT_SMALL,
-            padx=5, pady=2,
+            pill,
+            text=THINKING_TEXT,
+            bg=SURFACE,
+            fg=MUTED,
+            font=FONT_SMALL,
+            padx=5,
+            pady=2,
         )
         self._widgets["thinking_text"].pack(side="left")
 
@@ -1058,24 +1193,36 @@ class TkBubbleView:
         # The send arrow beside it is gone: Enter already sent, and a button
         # that duplicates a key is a second way to do one thing.
         field = tk.Canvas(
-            input_row, height=INPUT_HEIGHT, bg=BACKGROUND,
-            highlightthickness=0, bd=0, takefocus=False,
+            input_row,
+            height=INPUT_HEIGHT,
+            bg=BACKGROUND,
+            highlightthickness=0,
+            bd=0,
+            takefocus=False,
         )
         field.pack(fill="x", expand=True)
         self._widgets["field"] = field
         self._field_shape = None
 
         entry = tk.Entry(
-            field, bg=SURFACE, fg=MUTED, relief="flat",
-            insertbackground=FOREGROUND, font=FONT_BODY,
+            field,
+            bg=SURFACE,
+            fg=MUTED,
+            relief="flat",
+            insertbackground=FOREGROUND,
+            font=FONT_BODY,
             # No highlight ring at all: the pill behind it is the edge now.
-            highlightthickness=0, bd=0,
+            highlightthickness=0,
+            bd=0,
             # Keeps the entry out of the tab order, so the window cannot
             # acquire focus by being tabbed into from elsewhere.
             takefocus=False,
         )
         self._entry_window = field.create_window(
-            INPUT_PAD, INPUT_HEIGHT / 2, window=entry, anchor="w",
+            INPUT_PAD,
+            INPUT_HEIGHT / 2,
+            window=entry,
+            anchor="w",
             height=INPUT_HEIGHT - 12,
         )
         field.bind("<Configure>", self._on_field_resized)
@@ -1108,9 +1255,7 @@ class TkBubbleView:
         # than taking it. The packer hands out space in pack order, so the
         # frame that expands must come last or the rows below it are pushed
         # off the window -- which is exactly what happened once already.
-        self._widgets["input_row"].pack(
-            side="bottom", fill="x", padx=12, pady=(6, 0)
-        )
+        self._widgets["input_row"].pack(side="bottom", fill="x", padx=12, pady=(6, 0))
         self._widgets["input_divider"].pack(side="bottom", fill="x", pady=(4, 0))
         # And now the conversation, into whatever is left.
         scroll.pack(fill="both", expand=True, padx=12, pady=(3, 0))
@@ -1180,9 +1325,14 @@ class TkBubbleView:
                 return
             try:
                 widget = tk.Label(
-                    parent, text=text, bg=BACKGROUND,
-                    fg=STATE_COLOURS["error"], font=FONT_META, anchor="w",
-                    wraplength=WIDTH - 32, justify="left",
+                    parent,
+                    text=text,
+                    bg=BACKGROUND,
+                    fg=STATE_COLOURS["error"],
+                    font=FONT_META,
+                    anchor="w",
+                    wraplength=WIDTH - 32,
+                    justify="left",
                 )
             except Exception:  # noqa: BLE001
                 return
@@ -1234,7 +1384,9 @@ class TkBubbleView:
             for widget in (row, bubble, label):
                 widget.bind("<Button-1>", self._edit_transcript)
             self._open_row = {
-                "heard": text, "row": row, "heard_label": label,
+                "heard": text,
+                "row": row,
+                "heard_label": label,
                 "heard_meta": meta,
             }
             self._trim_rows()
@@ -1254,15 +1406,22 @@ class TkBubbleView:
             return
         try:
             row, bubble, label = self._bubble(
-                inner, text, side="left", colour=BUBBLE_GRANDPA,
+                inner,
+                text,
+                side="left",
+                colour=BUBBLE_GRANDPA,
                 selectable=True,
             )
             meta = self._meta(inner, self.reply_meta_text(), side="left")
             entry = self._open_row or {}
-            entry.update({
-                "reply": text, "reply_row": row, "reply_label": label,
-                "reply_meta": meta,
-            })
+            entry.update(
+                {
+                    "reply": text,
+                    "reply_row": row,
+                    "reply_label": label,
+                    "reply_meta": meta,
+                }
+            )
             self._rows.append(entry)
             self._open_row = None
             # The reply widget the copy button reads, and the one the
@@ -1296,8 +1455,7 @@ class TkBubbleView:
     def rows(self) -> tuple[tuple[str, str], ...]:
         """The exchanges on screen, oldest first. For tests and for counting."""
         return tuple(
-            (str(row.get("heard", "")), str(row.get("reply", "")))
-            for row in self._rows
+            (str(row.get("heard", "")), str(row.get("reply", ""))) for row in self._rows
         )
 
     def set_painter(self, word: str) -> None:
@@ -1324,7 +1482,10 @@ class TkBubbleView:
                 return
             try:
                 widget = tk.Label(
-                    header, text=word, bg=BACKGROUND, fg=MUTED,
+                    header,
+                    text=word,
+                    bg=BACKGROUND,
+                    fg=MUTED,
                     font=FONT_SMALL,
                 )
                 widget.pack(side="right", padx=(0, 8))
@@ -1470,7 +1631,9 @@ class TkBubbleView:
             return
         try:
             reply.delete("1.0", "end")
-            reply.insert("1.0", EMPTY_REPLY.format(key=describe_hold_key(self.hold_key)))
+            reply.insert(
+                "1.0", EMPTY_REPLY.format(key=describe_hold_key(self.hold_key))
+            )
             reply.configure(fg=MUTED)
         except Exception:  # noqa: BLE001 - a closed window must not raise
             pass
@@ -1559,7 +1722,10 @@ class TkBubbleView:
             left = index * slot
             try:
                 meter.coords(
-                    bar, left, middle - height / 2.0, left + bar_width,
+                    bar,
+                    left,
+                    middle - height / 2.0,
+                    left + bar_width,
                     middle + height / 2.0,
                 )
                 meter.itemconfigure(

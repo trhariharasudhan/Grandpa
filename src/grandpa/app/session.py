@@ -14,6 +14,8 @@ What the page receives (JSON, via :class:`grandpa.ui.avatar_server.AvatarServer`
 * ``{"type": "ask", "kind": "confirm"|"choose"|"input", "prompt": ...,
   "options": [...]}`` a question that needs an answer before anything happens
 * ``{"type": "model", "name": ...}`` the model in use, after a switch
+* ``{"type": "delta", "text": ...}`` words of the reply being written
+  (``{"type": "delta", "reset": true}``: drop them, it was a tool call)
 
 What the page sends is only what :func:`grandpa.ui.avatar_states.parse_inbound`
 allows: a line of text, or "talk". A line sent while a question is open is
@@ -71,6 +73,9 @@ class AppSession:
         #: Files picked in the window's file dialog: those may be attached
         #: from any folder, because choosing them there is the permission.
         self.picked_files: set[str] = set()
+        #: Project instructions for the next message only (a fresh chat in a
+        #: project): sent to the model with it, never shown as typed text.
+        self.next_context: str = ""
         hooks = UiHooks(
             output=self._on_output,
             ready_for_input=self._on_ready,
@@ -78,6 +83,7 @@ class AppSession:
             finished=self._on_finished,
             turn=self._on_turn,
             reply=self._on_reply,
+            stream=self._on_stream,
         )
         if bridge_factory is not None:
             self.bridge = bridge_factory(hooks)
@@ -127,6 +133,13 @@ class AppSession:
             question.answer(answer)
             return True
         message, attached, notes = self._attach(text)
+        with self._lock:
+            context, self.next_context = self.next_context, ""
+        if context:
+            message = (
+                "Project instructions from the user (follow them in this "
+                f"conversation):\n{context}\n\n---\n\n{message}"
+            )
         self._record({"type": "user", "text": text, "attached": attached})
         for note in notes:
             self._record({"type": "note", "text": note, "failed": True})
@@ -203,6 +216,14 @@ class AppSession:
         return text
 
     # --- from the engine (worker thread) -------------------------------------------
+
+    def _on_stream(self, text: str) -> None:
+        # Shown while it is written, never stored: the finished reply follows
+        # as a normal "reply" message and replaces it.
+        if text:
+            self._emit({"type": "delta", "text": text})
+        else:
+            self._emit({"type": "delta", "reset": True})
 
     def _on_output(self, text: str) -> None:
         # Before the first prompt this is the big ASCII banner, which the app

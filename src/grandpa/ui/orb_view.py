@@ -418,13 +418,18 @@ class OrbView:
         # The fallback painter needs somewhere to put an image; the layered
         # painter replaces the whole window surface and ignores this.
         self._label = tk.Label(
-            root, bd=0, highlightthickness=0, bg=ORB_WINDOW_BACKGROUND,
+            root,
+            bd=0,
+            highlightthickness=0,
+            bg=ORB_WINDOW_BACKGROUND,
             takefocus=False,
         )
         self._label.pack(fill="both", expand=True)
 
         double_click_ms, slop = (
-            self.thresholds() if callable(self.thresholds) else system_input_thresholds()
+            self.thresholds()
+            if callable(self.thresholds)
+            else system_input_thresholds()
         )
         self.tracker = TapTracker(double_click_ms=double_click_ms, drag_slop=slop)
 
@@ -456,7 +461,9 @@ class OrbView:
         # here is stale before the first frame -- while the blit to it still
         # reports success. Measured, not guessed.
         layered = LayeredPainter(hwnd=self.window_handle)
-        return PainterChoice(primary=layered, fallback=DiscPainter(show=self.show_image))
+        return PainterChoice(
+            primary=layered, fallback=DiscPainter(show=self.show_image)
+        )
 
     def window_handle(self) -> int:
         """The toplevel handle. ``winfo_id`` gives tk's child window."""
@@ -563,9 +570,7 @@ class OrbView:
         frame is painted, and the history arrives faster than that in bursts.
         """
         try:
-            values = tuple(
-                min(1.0, max(0.0, float(value))) for value in levels
-            )
+            values = tuple(min(1.0, max(0.0, float(value))) for value in levels)
         except Exception:  # noqa: BLE001 - a bad reading must not kill the UI
             return
         if values:
@@ -579,7 +584,11 @@ class OrbView:
         """
         builder = orb_on_disc if self.painter_mode() == "disc" else orb_image
         return builder(
-            self.state, phase, self.level, size=self.size, unread=self.unread,
+            self.state,
+            phase,
+            self.level,
+            size=self.size,
+            unread=self.unread,
             levels=self.levels,
         )
 
@@ -682,9 +691,7 @@ class OrbView:
         self._pressed_on_orb = is_on_orb(
             getattr(event, "x", 0), getattr(event, "y", 0), size=self.size
         )
-        pointer = (
-            int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0))
-        )
+        pointer = (int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0)))
         self._last_pointer = pointer
         if self.tracker is not None:
             self.tracker.press(*pointer)
@@ -692,14 +699,10 @@ class OrbView:
     def _on_motion(self, event: Any) -> None:
         if self.tracker is None:
             return
-        pointer = (
-            int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0))
-        )
+        pointer = (int(getattr(event, "x_root", 0)), int(getattr(event, "y_root", 0)))
         if not self.tracker.motion(*pointer):
             return
-        delta = (
-            pointer[0] - self._last_pointer[0], pointer[1] - self._last_pointer[1]
-        )
+        delta = (pointer[0] - self._last_pointer[0], pointer[1] - self._last_pointer[1])
         self._last_pointer = pointer
         if callable(self.on_drag):
             # The controller moves both windows. Reporting the delta rather

@@ -27,9 +27,9 @@ from typing import Any
 WEB_DIR = Path(__file__).with_name("avatar_web")
 INDEX = WEB_DIR / "index.html"
 
-COLLAPSED = (88, 88)
+COLLAPSED = (64, 64)
 """The ring alone."""
-EXPANDED = (360, 560)
+EXPANDED = (340, 420)
 """The ring and the chat panel."""
 
 BACKGROUND = "#12141C"
@@ -254,8 +254,8 @@ KEY_COLOUR = (1, 1, 1)
 
 #: Where the ring's solid line is in the collapsed window. Measured at the
 #: old size (opaque from radius 35 to 40 px of a 132 px window, 84 px ring)
-#: and scaled with everything else by 2/3 for the smaller 56 px ring.
-RING_RADIUS = 25.0
+#: and scaled with everything else for the 40 px ring (x 40/84) in a 64 px window.
+RING_RADIUS = 17.9
 RING_HIT_WIDTH = 3.0
 
 

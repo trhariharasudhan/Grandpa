@@ -35,6 +35,8 @@ FILE_TYPES = (
     "All files (*.*)",
 )
 MAX_PICK = 5
+MAX_CONTEXT = 4000
+MAX_MEMORY = 500
 
 
 class AppApi:
@@ -96,6 +98,22 @@ class AppApi:
     def save_profile(self, title: Any, name: Any, email: Any) -> dict[str, Any]:
         return write_profile(title, name, email)
 
+    def set_next_context(self, text: Any) -> bool:
+        """Project instructions to go with the next message (one message only)."""
+        if self._session is None or not isinstance(text, str):
+            return False
+        self._session.next_context = text.strip()[:MAX_CONTEXT]
+        return True
+
+    def list_memories(self) -> list[dict[str, Any]]:
+        return list_memories()
+
+    def forget_memory(self, memory_id: Any) -> bool:
+        return forget_memory(memory_id)
+
+    def add_memory(self, text: Any) -> bool:
+        return add_memory(text)
+
     def open_orb(self) -> str:
         from grandpa.app.launch import launch
 
@@ -103,6 +121,86 @@ class AppApi:
             return launch("avatar")
         except (OSError, ValueError):
             return "failed"
+
+
+def list_memories() -> list[dict[str, Any]]:
+    """What Grandpa remembers about the user, newest first (as /memory list)."""
+    try:
+        from grandpa.cli.chat_cmd import _user_facing_memories
+        from grandpa.memory_context import MemoryStore
+
+        items = _user_facing_memories(MemoryStore().list_memories(limit=300))
+    except Exception:  # noqa: BLE001 - an empty page, never a broken one
+        logger.debug("memory list failed", exc_info=True)
+        return []
+    return [
+        {
+            "id": int(item.get("id", 0)),
+            "category": str(item.get("category", "")),
+            "key": str(item.get("key", "")),
+            "value": str(item.get("value", "")),
+            "updated_at": float(item.get("updated_at") or 0),
+        }
+        for item in items
+    ]
+
+
+def forget_memory(memory_id: Any) -> bool:
+    """Forget exactly one memory, by its id (never a search that could match many)."""
+    if isinstance(memory_id, bool) or not isinstance(memory_id, int) or memory_id <= 0:
+        return False
+    from grandpa.memory_context import MemoryStore
+
+    return MemoryStore().forget(str(memory_id)) == 1
+
+
+def add_memory(text: Any) -> bool:
+    """Remember a note the user typed on the Memory page."""
+    if not isinstance(text, str):
+        return False
+    value = " ".join(text.split())[:MAX_MEMORY]
+    if not value:
+        return False
+    import hashlib
+
+    from grandpa.memory_context import MemoryStore
+
+    key = "note_" + hashlib.sha1(value.encode("utf-8")).hexdigest()[:10]
+    MemoryStore().remember("note", key, value, source="app")
+    return True
+
+
+def bind_file_drop(window: Any, session: Any) -> bool:
+    """Files dropped on the window: their real paths go to the page.
+
+    pywebview adds ``pywebviewFullPath`` to a drop event's files; a dropped
+    file counts as chosen by the user, like one picked in the dialog.
+    """
+    try:
+        from webview.dom import DOMEventHandler
+    except Exception:  # noqa: BLE001 - old pywebview: the + menu still works
+        return False
+
+    def ignore(_event: Any) -> None:
+        return None
+
+    def on_drop(event: Any) -> None:
+        try:
+            files = (event or {}).get("dataTransfer", {}).get("files", []) or []
+            paths = [str(f.get("pywebviewFullPath") or "") for f in files][:MAX_PICK]
+            paths = [session.allow_file(p) for p in paths if p]
+        except Exception:  # noqa: BLE001
+            logger.debug("drop failed", exc_info=True)
+            return
+        if paths:
+            window.evaluate_js(
+                f"window.grandpaDropped && window.grandpaDropped({json.dumps(paths)});"
+            )
+
+    events = window.dom.document.events
+    events.dragover += DOMEventHandler(ignore, True, True, debounce=500)
+    events.drop += DOMEventHandler(on_drop, True, True)
+    return True
 
 
 def read_profile() -> dict[str, Any]:
@@ -269,9 +367,17 @@ def run(
         # Without this the 📎 dialog had no window to open on and quietly did
         # nothing -- the "attaching doesn't work" Captain saw.
         api._set_window(window, webview_module)
-        window.events.loaded += lambda *_a: window.evaluate_js(
-            connect_script(server.url)
-        )
+        dropping: dict[str, bool] = {}
+
+        def _loaded(*_a: Any) -> None:
+            window.evaluate_js(connect_script(server.url))
+            if not dropping:
+                try:
+                    dropping["on"] = bind_file_drop(window, session)
+                except Exception:  # noqa: BLE001 - drag and drop is a nicety
+                    logger.debug("drop binding failed", exc_info=True)
+
+        window.events.loaded += _loaded
         storage = _storage_dir()
         kwargs: dict[str, Any] = {"http_server": True, "debug": debug}
         if storage:

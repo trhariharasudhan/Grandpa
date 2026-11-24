@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -380,6 +381,21 @@ class _Turn:
     calls: list[dict[str, Any]] = field(default_factory=list)
 
 
+#: Where the words of a reply go while it is being written, for an interface
+#: that shows them as they arrive (the desktop app). Set per thread by that
+#: interface; None (the default) keeps the plain, all-at-once request.
+_stream_sink = threading.local()
+
+
+def set_stream_sink(sink: Callable[[str], None] | None) -> None:
+    """Show this thread's tool-loop replies as they are written (None: off).
+
+    ``sink("")`` is called when a turn turns out to be a tool call rather than
+    the answer, so the interface can drop what it showed of it.
+    """
+    _stream_sink.fn = sink
+
+
 def _ask_model(
     engine: Any,
     model: str,
@@ -387,9 +403,18 @@ def _ask_model(
     tools: list[dict[str, Any]],
     temperature: float,
 ) -> _Turn:
-    response = engine.generate(
-        messages, model=model, tools=tools, temperature=temperature
-    )
+    sink = getattr(_stream_sink, "fn", None)
+    streaming = getattr(engine, "generate_streaming", None)
+    if sink is not None and callable(streaming):
+        response = streaming(
+            messages, model=model, tools=tools, temperature=temperature, on_text=sink
+        )
+        if isinstance(response, Mapping) and response.get("tool_calls"):
+            sink("")  # it was a tool call, not the answer: clear what was shown
+    else:
+        response = engine.generate(
+            messages, model=model, tools=tools, temperature=temperature
+        )
     if not isinstance(response, Mapping):  # pragma: no cover - defensive
         return _Turn(content=str(response))
     calls = [dict(call) for call in (response.get("tool_calls") or [])]

@@ -10,90 +10,147 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<div id="app" data-state="starting">
-  <!-- left panel -->
-  <aside id="sidebar" aria-label="Chats and projects">
+<div id="app" data-state="starting" data-view="chat">
+
+  <!-- ===== left panel ===================================================== -->
+  <aside id="sidebar" aria-label="Navigation">
     <div class="side-top">
-      <span class="pill">✦ GRANDPA</span>
-      <button type="button" id="side-close" class="icon" title="Close the panel (Ctrl+B)" aria-label="Close the panel">⇤</button>
+      <button type="button" id="brand" class="brand" title="New chat">
+        <span class="mark" aria-hidden="true"></span><span>Grandpa</span>
+      </button>
+      <button type="button" id="side-close" class="icon-btn" title="Close the panel (Ctrl+B)" aria-label="Close the panel"><span data-icon="sidebar"></span></button>
     </div>
-    <button type="button" id="new-chat" class="wide">＋ New chat</button>
-    <input id="search" type="search" placeholder="Search chats" aria-label="Search chats">
+
+    <nav class="side-nav">
+      <button type="button" id="new-chat" class="nav-item"><span data-icon="new-chat"></span><span>New chat</span><kbd>Ctrl N</kbd></button>
+      <button type="button" id="open-search" class="nav-item"><span data-icon="search"></span><span>Search</span><kbd>Ctrl K</kbd></button>
+      <button type="button" id="nav-projects" class="nav-item" data-goto="projects"><span data-icon="folder"></span><span>Projects</span></button>
+      <button type="button" id="nav-memory" class="nav-item" data-goto="memory"><span data-icon="memory"></span><span>Memory</span></button>
+    </nav>
 
     <div class="side-scroll">
-      <div class="section-row">
-        <p class="section">Projects</p>
-        <button type="button" id="new-project" class="icon small" title="New project" aria-label="New project">＋</button>
+      <div id="pinned-section" hidden>
+        <p class="section">Pinned</p>
+        <ol id="pinned" aria-label="Pinned chats"></ol>
       </div>
-      <ol id="projects" aria-label="Projects"></ol>
       <p class="section">Recents</p>
       <ol id="chats" aria-label="Recent chats"></ol>
     </div>
 
     <div class="side-foot">
-      <span id="avatar" aria-hidden="true">?</span>
-      <span id="user-name">You</span>
-      <button type="button" id="open-settings" class="icon" title="Settings (Ctrl+,)" aria-label="Settings">⚙</button>
+      <button type="button" id="user-button" class="user-button" aria-haspopup="menu">
+        <span id="avatar" aria-hidden="true">?</span>
+        <span class="user-text"><span id="user-name">You</span><span class="user-sub">Local · runs on this PC</span></span>
+        <span data-icon="chevron-down" data-icon-size="16"></span>
+      </button>
     </div>
   </aside>
 
-  <!-- main -->
+  <!-- ===== main ============================================================ -->
   <main id="main">
     <header id="top">
-      <button type="button" id="side-open" class="icon" title="Open the panel (Ctrl+B)" aria-label="Open the panel">☰</button>
-      <span id="orb" aria-hidden="true"></span>
-      <div class="who">
-        <strong id="title">Grandpa</strong>
-        <span id="status">Starting…</span>
-      </div>
-      <button type="button" id="incognito" class="toggle" aria-pressed="false" title="Incognito chat: not kept in your chat list">🕶 Incognito</button>
+      <button type="button" id="side-open" class="icon-btn" title="Open the panel (Ctrl+B)" aria-label="Open the panel"><span data-icon="sidebar"></span></button>
+      <button type="button" id="title-button" class="title-button" aria-haspopup="menu" title="Rename, pin, move or delete">
+        <span id="orb" aria-hidden="true"></span>
+        <span id="title">New chat</span>
+        <span data-icon="chevron-down" data-icon-size="14"></span>
+      </button>
+      <span id="status">Starting…</span>
+      <span class="spacer"></span>
+      <button type="button" id="incognito" class="icon-btn" aria-pressed="false" title="Incognito chat: not kept, Grandpa forgets it" aria-label="Incognito chat"><span data-icon="incognito"></span></button>
     </header>
 
-    <p id="incognito-banner" hidden>Incognito chat: it won't be kept in your chat list, and Grandpa forgets it when you leave.</p>
+    <p id="incognito-banner" hidden><span data-icon="incognito" data-icon-size="14"></span> Incognito chat: it won't be kept, and Grandpa forgets it when you leave.</p>
 
-    <section id="feed" aria-live="polite">
-      <div id="welcome">
-        <h1 id="hello">What shall we do?</h1>
-        <p class="hint">Ask anything, or try one of these:</p>
-        <div id="chips">
-          <button type="button" class="chip">What time is it?</button>
-          <button type="button" class="chip">Open Notepad</button>
-          <button type="button" class="chip">What can you do?</button>
-          <button type="button" class="chip">/status</button>
-        </div>
+    <!-- chat view -->
+    <section id="chat-view" class="view">
+      <div id="feed" aria-live="polite">
+        <ol id="messages"></ol>
       </div>
-      <ol id="messages"></ol>
     </section>
+
+    <!-- welcome (an empty chat): greeting + composer in the middle -->
+    <div id="welcome">
+      <div class="hello-row"><span class="mark big" aria-hidden="true"></span><h1 id="hello">What shall we do?</h1></div>
+      <p id="project-hint" class="hint" hidden></p>
+    </div>
 
     <form id="composer" autocomplete="off">
       <div id="attachments" aria-label="Attached files"></div>
-      <textarea id="input" rows="1" maxlength="1800"
-                placeholder="Ask Grandpa anything · / for commands"
-                aria-label="Message"></textarea>
+      <textarea id="input" rows="1" maxlength="1800" placeholder="How can Grandpa help you today?" aria-label="Message"></textarea>
       <div class="tools-row">
-        <div class="plus-wrap">
-          <button type="button" id="plus" class="icon plus" title="Add files and more" aria-label="Add files and more" aria-haspopup="menu">＋</button>
-          <div id="plus-menu" role="menu" hidden>
-            <button type="button" id="attach" role="menuitem"><span>📄</span> Add files <small>text, code, PDF, Word, Excel, PowerPoint</small></button>
-            <button type="button" id="plus-voice" role="menuitem"><span>🎤</span> Voice typing <small>say one sentence</small></button>
-            <button type="button" id="plus-orb" role="menuitem"><span>◯</span> Show the orb <small>Grandpa's floating ring</small></button>
+        <div class="pop-wrap">
+          <button type="button" id="plus" class="icon-btn round" title="Add files and more" aria-label="Add files and more" aria-haspopup="menu"><span data-icon="plus"></span></button>
+          <div id="plus-menu" class="pop" role="menu" hidden>
+            <button type="button" id="attach" role="menuitem"><span data-icon="file"></span><span>Add files<small>Text, code, PDF, Word, Excel, PowerPoint · or drop them here</small></span></button>
+            <button type="button" id="plus-voice" role="menuitem"><span data-icon="mic"></span><span>Voice typing<small>Say one sentence</small></span></button>
+            <button type="button" id="plus-orb" role="menuitem"><span data-icon="orb"></span><span>Show the orb<small>Grandpa's floating ring · hold Ctrl+Win to talk</small></span></button>
           </div>
         </div>
         <span class="spacer"></span>
-        <button type="button" id="mic" class="icon" title="Voice typing: say one sentence" aria-label="Voice typing">🎤</button>
-        <div class="model-wrap">
-          <button type="button" id="model" class="model-select" title="Switch model (F6)" aria-haspopup="menu">Model</button>
-          <div id="model-menu" role="menu" hidden></div>
+        <div class="pop-wrap">
+          <button type="button" id="model" class="model-select" title="Switch model (F6)" aria-haspopup="menu"><span id="model-name">Model</span><span data-icon="chevron-down" data-icon-size="14"></span></button>
+          <div id="model-menu" class="pop right" role="menu" hidden></div>
         </div>
-        <button type="button" id="stop" hidden title="Stop the reply (Esc)" aria-label="Stop">■</button>
-        <button type="submit" id="send" title="Send (Enter)" aria-label="Send">↑</button>
+        <button type="button" id="mic" class="icon-btn" title="Voice typing: say one sentence" aria-label="Voice typing"><span data-icon="mic"></span></button>
+        <button type="button" id="stop" class="send-btn stop" hidden title="Stop (Esc)" aria-label="Stop"><span data-icon="stop"></span></button>
+        <button type="submit" id="send" class="send-btn" title="Send (Enter)" aria-label="Send"><span data-icon="send"></span></button>
       </div>
     </form>
-    <p id="foot">Grandpa runs on this PC · Enter sends · Shift+Enter new line · Esc stops</p>
+    <div id="chips">
+      <button type="button" class="chip" data-text="What time is it?"><span data-icon="spark" data-icon-size="14"></span>What time is it?</button>
+      <button type="button" class="chip" data-text="Open Notepad"><span data-icon="app" data-icon-size="14"></span>Open Notepad</button>
+      <button type="button" class="chip" data-text="What can you do?"><span data-icon="chat" data-icon-size="14"></span>What can you do?</button>
+      <button type="button" class="chip" data-text="/status"><span data-icon="command" data-icon-size="14"></span>Status</button>
+    </div>
+    <p id="foot">Grandpa runs on this PC. Replies can be wrong; check important things.</p>
+
+    <!-- projects view -->
+    <section id="projects-view" class="view page" hidden>
+      <div class="page-head">
+        <h2>Projects</h2>
+        <button type="button" id="new-project" class="primary"><span data-icon="plus" data-icon-size="16"></span>New project</button>
+      </div>
+      <p class="hint">Group chats and give Grandpa instructions that apply to every chat in the project.</p>
+      <div id="project-grid" class="grid"></div>
+    </section>
+
+    <!-- one project -->
+    <section id="project-view" class="view page" hidden>
+      <button type="button" id="back-projects" class="link-btn"><span data-icon="chevron" data-icon-size="14" class="flip"></span>All projects</button>
+      <div class="page-head">
+        <h2 id="project-name"></h2>
+        <button type="button" id="project-new-chat" class="primary"><span data-icon="new-chat" data-icon-size="16"></span>New chat</button>
+      </div>
+      <div class="project-cols">
+        <div>
+          <p class="section">Chats</p>
+          <ol id="project-chats" class="list"></ol>
+        </div>
+        <aside class="card">
+          <p class="card-title">Instructions</p>
+          <textarea id="project-instructions" rows="7" maxlength="4000" placeholder="For example: answer in simple Thanglish; this project is about my catering website."></textarea>
+          <div class="row-actions"><button type="button" id="save-instructions" class="primary small">Save</button><span id="instructions-msg" class="hint"></span></div>
+          <p class="hint">Sent to Grandpa at the start of each chat in this project.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- memory view -->
+    <section id="memory-view" class="view page" hidden>
+      <div class="page-head"><h2>Memory</h2></div>
+      <p class="hint">What Grandpa remembers about you, kept on this PC. Forget anything, or add a note.</p>
+      <form id="memory-add" class="row-actions">
+        <input id="memory-text" maxlength="500" placeholder="Something Grandpa should remember, e.g. I prefer short answers">
+        <button type="submit" class="primary small">Remember</button>
+      </form>
+      <input id="memory-filter" type="search" placeholder="Search memories">
+      <ol id="memory-list" class="list"></ol>
+    </section>
   </main>
 </div>
 
-<!-- small dialog: names and choices -->
+<!-- small dialog: names and confirmations -->
 <div id="dialog" class="shade" hidden>
   <form id="dialog-box" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
     <h2 id="dialog-title"></h2>
@@ -106,18 +163,27 @@
   </form>
 </div>
 
+<!-- search + commands (Ctrl+K) -->
+<div id="palette" class="shade top" hidden>
+  <div id="palette-box" role="dialog" aria-modal="true" aria-label="Search chats and commands">
+    <div class="palette-input"><span data-icon="search"></span><input id="palette-input" placeholder="Search chats or type a command"></div>
+    <ol id="palette-list"></ol>
+  </div>
+</div>
+
 <!-- settings -->
 <div id="settings" class="shade" hidden>
   <section id="settings-box" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <header>
       <h2 id="settings-title">Settings</h2>
-      <button type="button" id="settings-close" class="icon" aria-label="Close">✕</button>
+      <button type="button" id="settings-close" class="icon-btn" aria-label="Close"><span data-icon="close"></span></button>
     </header>
     <nav id="settings-tabs">
       <button type="button" data-tab="profile" class="active">Profile</button>
       <button type="button" data-tab="appearance">Appearance</button>
       <button type="button" data-tab="chat">Chat</button>
       <button type="button" data-tab="data">Data &amp; privacy</button>
+      <button type="button" data-tab="keys">Shortcuts</button>
       <button type="button" data-tab="about">About</button>
     </nav>
     <div class="tab" data-tab="profile">
@@ -129,32 +195,47 @@
       <label>Name<input id="set-name" maxlength="40" placeholder="Your name"></label>
       <label>Email (optional)<input id="set-email" type="email" maxlength="120" placeholder="name@example.com"></label>
       <div class="row-actions"><button type="button" id="save-profile" class="primary">Save</button><span id="profile-msg" class="hint"></span></div>
-      <p class="hint">The same profile as the terminal (<code>/profile</code>): Grandpa calls you by it everywhere.</p>
+      <p class="hint">The same profile as the terminal's <code>/profile</code>: Grandpa calls you by it everywhere.</p>
     </div>
     <div class="tab" data-tab="appearance" hidden>
-      <p>Theme</p>
-      <div class="seg" id="set-theme"><button type="button" data-v="dark">Dark</button><button type="button" data-v="light">Light</button></div>
+      <p>Colour mode</p>
+      <div class="seg" id="set-theme"><button type="button" data-v="dark"><span data-icon="moon" data-icon-size="14"></span>Dark</button><button type="button" data-v="light"><span data-icon="sun" data-icon-size="14"></span>Light</button><button type="button" data-v="system">System</button></div>
       <p>Text size</p>
       <div class="seg" id="set-size"><button type="button" data-v="s">Small</button><button type="button" data-v="m">Medium</button><button type="button" data-v="l">Large</button></div>
     </div>
     <div class="tab" data-tab="chat" hidden>
-      <label>Start every new chat with this model (leave blank to keep the current one)
+      <label>Start every new chat with this model (blank keeps the current one)
         <input id="set-model" placeholder="for example: mini, fast, brain" maxlength="60"></label>
       <label class="check"><input type="checkbox" id="set-enter"> Enter sends (Shift+Enter makes a new line)</label>
+      <label class="check"><input type="checkbox" id="set-stream"> Show replies as they are written</label>
     </div>
     <div class="tab" data-tab="data" hidden>
       <p>Chats and projects are kept only on this PC, in this window's storage. Incognito chats are never kept.</p>
-      <button type="button" id="export-chats">Export all chats (JSON)</button>
-      <button type="button" id="delete-chats" class="danger">Delete all chats and projects…</button>
+      <button type="button" id="export-chats"><span data-icon="download" data-icon-size="16"></span>Export all chats (JSON)</button>
+      <button type="button" id="delete-chats" class="danger"><span data-icon="trash" data-icon-size="16"></span>Delete all chats and projects…</button>
+    </div>
+    <div class="tab" data-tab="keys" hidden>
+      <dl class="keys">
+        <dt>Ctrl+N</dt><dd>New chat</dd>
+        <dt>Ctrl+K</dt><dd>Search chats and commands</dd>
+        <dt>Ctrl+B</dt><dd>Open or close the panel</dd>
+        <dt>Ctrl+T</dt><dd>Dark / light</dd>
+        <dt>Ctrl+,</dt><dd>Settings</dd>
+        <dt>F6</dt><dd>Switch model</dd>
+        <dt>Esc</dt><dd>Stop a reply, close a menu</dd>
+        <dt>Ctrl+Win (hold)</dt><dd>Talk to the orb from anywhere</dd>
+      </dl>
     </div>
     <div class="tab" data-tab="about" hidden>
-      <p><strong>Grandpa</strong>: your local AI assistant. The chat engine and every model run on this PC.</p>
-      <p class="hint">Shortcuts: Ctrl+N new chat · Ctrl+B panel · Ctrl+T theme · F6 model · Ctrl+, settings · Esc stop</p>
+      <p><strong>Grandpa</strong>: your local AI assistant. The chat engine and every model run on this PC; nothing is sent to a cloud.</p>
+      <p class="hint">Grandpa's desktop app. The same engine powers the terminal (<code>grandpa</code>) and the orb (<code>grandpa avatar</code>).</p>
     </div>
   </section>
 </div>
 
+<div id="drop-shade" hidden><div><span data-icon="file" data-icon-size="32"></span><p>Drop files to add them to your message</p></div></div>
 <div id="toast" role="status" hidden></div>
+<script src="icons.js"></script>
 <script src="markdown.js"></script>
 <script src="app.js"></script>
 </body>

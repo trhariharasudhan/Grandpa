@@ -15,7 +15,6 @@
   const form = document.getElementById("entry");
   const input = document.getElementById("text");
   const sendButton = document.getElementById("send");
-  const talkButton = document.getElementById("talk");
   const bar = document.getElementById("bar");
   const barStatus = document.getElementById("bar-status");
 
@@ -58,7 +57,7 @@
 
   // A press that moves is a drag and moves the window; one that does not is a
   // click. On the ring a click opens the chat (and the ring hides); the chat's
-  // own bar drags the open window and its ✕ closes the chat, bringing the ring back.
+  // own bar drags the open window and its close button closes the chat, bringing the ring back.
   function draggable(handle, onClick) {
     let press = null;
     handle.addEventListener("pointerdown", (event) => {
@@ -144,14 +143,14 @@
     const busy = BUSY.has(msg.state);
     input.disabled = busy;
     sendButton.disabled = busy;
-    talkButton.disabled = busy || asking; // a yes/no is answered with the buttons
-    talkButton.textContent = msg.state === "listening" ? "Listening..." : "Talk";
+    input.placeholder = msg.state === "listening" ? "Listening… release the keys when done"
+      : "Ask Grandpa · hold Ctrl+Win to talk";
   }
 
   // A6, click-to-talk: ask Python to listen for one sentence. The message
   // carries nothing; what is heard is routed like typed text.
   function talk() {
-    if (talkButton.disabled || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN || BUSY.has(app.dataset.state)) return;
     socket.send(JSON.stringify({ type: "talk" }));
   }
 
@@ -197,7 +196,6 @@
     send(input.value);
     input.value = "";
   });
-  talkButton.addEventListener("click", talk);
   document.getElementById("yes").addEventListener("click", () => send("yes"));
   document.getElementById("no").addEventListener("click", () => send("no"));
 

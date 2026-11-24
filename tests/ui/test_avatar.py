@@ -321,6 +321,70 @@ def test_a_page_with_the_token_chats_and_sees_states(running) -> None:
 # --- the page and the window --------------------------------------------------
 
 
+def test_the_orb_and_the_app_share_one_icon_set() -> None:
+    from grandpa.app.window import WEB_DIR as APP_WEB
+
+    assert (WEB_DIR / "icons.js").read_text(encoding="utf-8") == (
+        APP_WEB / "icons.js"
+    ).read_text(encoding="utf-8")
+
+
+def test_no_emoji_in_the_pages() -> None:
+    """Captain's rule: line icons, never emoji."""
+    from grandpa.app.window import WEB_DIR as APP_WEB
+
+    for folder in (WEB_DIR, APP_WEB):
+        for path in folder.glob("*.*"):
+            if path.suffix not in {".html", ".js", ".css"}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            found = [
+                c
+                for c in text
+                if 0x1F300 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF
+            ]
+            assert not found, f"{path.name}: {found[:5]}"
+
+
+def test_hold_to_talk_records_while_held_and_routes_the_words() -> None:
+    from grandpa.cli.avatar_cmd import HoldToTalk
+
+    class Probe:
+        def __init__(self):
+            self.down = 0
+
+        def is_down(self, _key):
+            self.down += 1
+            return self.down <= 3  # held for a few polls, then released
+
+    class Audio:
+        captured_frame_count = 100
+
+    class Capture:
+        def capture(self, stop_event=None):
+            stop_event.wait(2)
+            return Audio()
+
+    class Bridge:
+        def transcribe(self, audio):
+            return "open notepad"
+
+    heard: list = []
+
+    class Controller:
+        def talk(self, listener):
+            heard.append(listener())
+            return True
+
+    hold = HoldToTalk(Controller(), Bridge(), probe=Probe(), capture_factory=Capture)
+    clock = iter(range(0, 10_000))
+    session = hold._session(Capture())
+    session.clock = lambda: next(clock) * 0.1  # each poll is 0.1 s
+    session.sleep = lambda _s: None
+    hold._session = lambda capture: session
+    assert hold.listen_while_held() == "open notepad"
+
+
 def test_the_page_ships_with_the_package() -> None:
     for name in ("index.html", "avatar.js", "avatar.css", "ring.js"):
         assert (WEB_DIR / name).is_file(), name
@@ -334,6 +398,8 @@ def test_the_page_loads_nothing_from_the_internet() -> None:
         # (tests/ui/test_avatar_character.py), and the CSP below binds it too.
         if path.is_file() and "vendor" not in path.relative_to(WEB_DIR).parts
     )
+    # The SVG namespace is a name, not an address anything is fetched from.
+    text = text.replace("http://www.w3.org/2000/svg", "")
     assert "http://" not in text.replace("http://127.0.0.1", "")
     assert "https://" not in text
     html = INDEX.read_text(encoding="utf-8")

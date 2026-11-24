@@ -7,6 +7,7 @@ is unchanged and still available as ``grandpa bubble``.
 from __future__ import annotations
 
 import threading
+import time
 
 import click
 
@@ -30,8 +31,9 @@ a built-in placeholder, or your own model from assets/avatar/grandpa.glb
 His face follows the state: he smiles while speaking, looks thoughtful while
 thinking, and raises his brows when he asks you something.
 
-Click Talk in the chat panel and say one sentence: Grandpa listens until you
-stop, then answers as if you had typed it. --no-mic turns Talk off.
+Hold Ctrl+Win anywhere, speak, and let go: Grandpa answers as if you had
+typed it (--hold-key picks other keys). Right-clicking the ring listens for
+one sentence. --no-mic turns talking off.
 
 A tray icon (next to the clock) shows or hides the window and quits it.
 --no-tray leaves it out.
@@ -101,6 +103,98 @@ def microphone_listener(bridge, *, device=None, capture_factory=None):
     return listen
 
 
+class HoldToTalk:
+    """Hold Ctrl+Win (anywhere on Windows), speak, release: Grandpa hears it.
+
+    The key is read with ``GetAsyncKeyState`` (read-only; nothing is typed or
+    sent), exactly like ``grandpa bubble``. While it is held the microphone
+    records with no voice detection at all -- the keys say when speech starts
+    and ends -- and on release the words go through the controller like a
+    typed line, so a spoken request meets the same confirmations.
+    """
+
+    def __init__(
+        self, controller, bridge, *, key=None, probe=None, capture_factory=None
+    ):
+        from grandpa.voice.push_to_talk import DEFAULT_HOLD_KEY
+
+        self.controller = controller
+        self.bridge = bridge
+        self.key = key or DEFAULT_HOLD_KEY
+        self.probe = probe
+        self.capture_factory = capture_factory or self._capture
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @staticmethod
+    def _capture():
+        from grandpa.voice.config import load_voice_assistant_config
+        from grandpa.voice.microphone import MicrophoneCapture
+        from grandpa.voice.push_to_talk import (
+            MAXIMUM_HOLD_SECONDS,
+            hold_to_talk_vad_config,
+        )
+
+        config = load_voice_assistant_config(tts_enabled=False)
+        return MicrophoneCapture(
+            duration_seconds=MAXIMUM_HOLD_SECONDS,
+            device=config.microphone,
+            recovery_attempts=config.microphone_recovery_attempts,
+            vad_config=hold_to_talk_vad_config(),
+        )
+
+    def start(self) -> bool:
+        if self.probe is None:
+            from grandpa.voice.push_to_talk import WindowsKeyProbe
+
+            if not WindowsKeyProbe.available():
+                return False
+            self.probe = WindowsKeyProbe()
+        self._thread = threading.Thread(
+            target=self._run, name="grandpa-orb-hold-to-talk", daemon=True
+        )
+        self._thread.start()
+        return True
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _session(self, capture):
+        from grandpa.voice.push_to_talk import PushToTalkSession
+
+        return PushToTalkSession(
+            capture=capture,
+            transcriber=None,  # the bridge transcribes, as for click-to-talk
+            probe=self.probe,
+            key=self.key,
+            echo=lambda _m: None,
+            on_idle=self._stop.is_set,
+        )
+
+    def listen_while_held(self) -> str:
+        capture = self.capture_factory()
+        try:
+            audio, held, _reason = self._session(capture).record_while_held()
+        finally:
+            close = getattr(capture, "close", None)
+            if callable(close):
+                close()
+        if held < 0.3 or not getattr(audio, "captured_frame_count", 1):
+            return ""  # a tap, not an utterance
+        return self.bridge.transcribe(audio)
+
+    def _run(self) -> None:
+        waiter = self._session(None)
+        while not self._stop.is_set():
+            if not waiter.wait_for_press():
+                return
+            self.controller.talk(self.listen_while_held)
+            # Busy (a reply in flight) or done: wait for the keys to come up
+            # before listening again, so one hold is one utterance.
+            while self.probe.is_down(self.key) and not self._stop.is_set():
+                time.sleep(0.05)
+
+
 def budget_watch(controller, echo, *, perf_log=False, fall_back=True, sample=None):
     """A7: watch the window's GPU and RAM; over budget, show only the ring."""
     from grandpa.ui.avatar_budget import BudgetWatch, sample_window
@@ -158,7 +252,14 @@ def build(bridge=None, speaker=None, listener=None):
 @click.option("--not-on-top", is_flag=True, help="Let other windows cover it.")
 @click.option("--debug", is_flag=True, help="Open the web inspector with the window.")
 @click.option("--quiet", is_flag=True, help="Do not say replies aloud.")
-@click.option("--no-mic", is_flag=True, help="Turn click-to-talk off.")
+@click.option(
+    "--no-mic", is_flag=True, help="Turn talking off (hold-to-talk and click-to-talk)."
+)
+@click.option(
+    "--hold-key",
+    default=None,
+    help="Keys to hold while speaking (default ctrl+win; e.g. f8, menu).",
+)
 @click.option("--no-tray", is_flag=True, help="Do not show the tray icon.")
 @click.option(
     "--orb-only",
@@ -186,6 +287,7 @@ def avatar(
     debug: bool,
     quiet: bool,
     no_mic: bool,
+    hold_key: str | None,
     no_tray: bool,
     orb_only: bool,
     character: bool,
@@ -223,9 +325,23 @@ def avatar(
     else:
         controller.speaker, voice_line = default_speaker()
     click.echo(voice_line)
-    click.echo(
-        "Talk: off (--no-mic)." if no_mic else "Talk: click Talk in the chat panel."
-    )
+    hold = None
+    if no_mic:
+        click.echo("Talk: off (--no-mic).")
+    else:
+        from grandpa.voice.push_to_talk import describe_hold_key, parse_hold_key
+
+        try:
+            if hold_key:
+                parse_hold_key(hold_key)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--hold-key") from None
+        hold = HoldToTalk(controller, bridge, key=hold_key)
+        if hold.start():
+            click.echo(f"Talk: hold {describe_hold_key(hold.key)}, speak, release.")
+        else:
+            hold = None
+            click.echo("Talk: right-click the ring (hold-to-talk needs Windows).")
     controller.watch_actions()
     watch = None
 
@@ -272,6 +388,8 @@ def avatar(
         if watch is not None:
             watch.stop()
         controller.unwatch_actions()
+        if hold is not None:
+            hold.stop()
         server.stop()
         if not no_window:
             release("avatar")

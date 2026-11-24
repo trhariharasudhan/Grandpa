@@ -514,6 +514,134 @@ class OllamaBackendAdapter(BackendAdapter):
                 f"{_extract_ollama_error(body)}"
             ) from exc
 
+    def generate_streaming(
+        self,
+        messages: Sequence[Message],
+        *,
+        model: str,
+        on_text: Any,
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """:meth:`generate`, but the reply's text is passed to ``on_text`` as
+        it arrives. Returns the same dict as :meth:`generate`.
+
+        Same options as :meth:`generate` (``num_ctx``, ``keep_alive``): a
+        different context size would make Ollama reload the model. Anything
+        that goes wrong before the first word falls back to :meth:`generate`,
+        so streaming can only ever make a reply appear sooner.
+        """
+        messages = ensure_grandpa_identity(messages, model)
+        msg_dicts = messages_to_dicts(messages)
+        for md in msg_dicts:
+            for tc in md.get("tool_calls", []):
+                fn = tc.get("function", {})
+                args = fn.get("arguments")
+                if isinstance(args, str):
+                    try:
+                        fn["arguments"] = json.loads(args)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+        payload: Dict[str, Any] = {
+            "model": model,
+            "messages": msg_dicts,
+            "stream": True,
+            "options": _generation_options(
+                temperature,
+                max_tokens,
+                {"num_ctx": self._num_ctx, **kwargs},
+            ),
+            "keep_alive": self._keep_alive,
+        }
+        if "think" not in kwargs:
+            payload["think"] = False
+        elif kwargs["think"] is not None:
+            payload["think"] = kwargs["think"]
+        tools = kwargs.get("tools")
+        if tools:
+            payload["tools"] = tools
+
+        text_parts: List[str] = []
+        raw_calls: List[Dict[str, Any]] = []
+        data_done: Dict[str, Any] = {}
+        state = {"in_reasoning": False}
+        started_output = False
+        try:
+            with self._client.stream("POST", "/api/chat", json=payload) as resp:
+                if resp.status_code >= 400:
+                    resp.read()
+                    raise httpx.HTTPStatusError(
+                        "stream refused", request=resp.request, response=resp
+                    )
+                for line in resp.iter_lines():
+                    if not line.strip():
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    message = chunk.get("message", {}) or {}
+                    delta = _visible_stream_delta(message.get("content", ""), state)
+                    if delta:
+                        text_parts.append(delta)
+                        started_output = True
+                        try:
+                            on_text(delta)
+                        except Exception:  # noqa: BLE001 - a display never stops a reply
+                            logger.debug("stream sink failed", exc_info=True)
+                    raw_calls.extend(message.get("tool_calls") or [])
+                    if chunk.get("done", False):
+                        data_done = chunk
+                        break
+        except Exception:
+            if started_output:
+                raise
+            # Nothing shown yet: the plain request gives the same answer
+            # (and the same, well-tested error messages).
+            return self.generate(
+                messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+
+        reported_prompt = data_done.get("prompt_eval_count", 0)
+        prompt_tokens = max(reported_prompt, estimate_prompt_tokens(messages))
+        completion_tokens = data_done.get("eval_count", 0)
+        result: Dict[str, Any] = {
+            "content": clean_assistant_response("".join(text_parts), fallback=""),
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "prompt_tokens_evaluated": reported_prompt or prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+            "model": data_done.get("model", model),
+            "finish_reason": "stop",
+            "ttft": data_done.get("prompt_eval_duration", 0) / 1e9,
+        }
+        if raw_calls:
+            result["tool_calls"] = [
+                {
+                    "id": tc.get("id", f"call_{i}"),
+                    "name": (tc.get("function", {}) or {}).get("name", ""),
+                    "arguments": (
+                        json.dumps(raw_args)
+                        if isinstance(
+                            raw_args := (tc.get("function", {}) or {}).get(
+                                "arguments", "{}"
+                            ),
+                            dict,
+                        )
+                        else raw_args
+                    ),
+                }
+                for i, tc in enumerate(raw_calls)
+            ]
+        return result
+
     async def stream_full(
         self,
         messages: Sequence[Message],
