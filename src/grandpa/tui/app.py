@@ -259,6 +259,16 @@ class GrandpaApp(App):
         self._busy_since = time.monotonic()
         self.bridge.start()
 
+    def on_key(self, event: events.Key) -> None:
+        """Typing while the chat log has focus goes to the input box."""
+        prompt = self.query_one("#prompt", PromptBox)
+        if self.focused is prompt or prompt.disabled or not event.is_printable:
+            return
+        if not self.query_one("#question").has_class("visible") and event.character:
+            prompt.focus()
+            prompt.insert(event.character)
+            event.stop()
+
     # --- what the chat engine sends -----------------------------------------------
 
     def _on_output(self, text: str) -> None:

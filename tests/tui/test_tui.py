@@ -255,3 +255,17 @@ def test_log_lines_for_the_real_terminal_go_into_the_interface(monkeypatch):
     finally:
         log.removeHandler(handler)
     assert "something went wrong" in "".join(seen)
+
+
+def test_typing_while_the_log_has_focus_goes_to_the_input_box() -> None:
+    async def scenario() -> None:
+        app = _app()
+        async with app.run_test(size=(100, 30)) as pilot:
+            await _until(pilot, lambda: "ready" in _log_text(app))
+            app.set_focus(None)
+            await pilot.press("h", "i")
+            prompt = app.query_one("#prompt")
+            assert app.focused is prompt
+            assert prompt.text == "hi"
+
+    asyncio.run(scenario())
