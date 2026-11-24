@@ -19,7 +19,38 @@ Optional local capabilities:
 - A microphone for voice commands
 - Rust for the native acceleration workspace
 
-## Install
+## One-command install
+
+```powershell
+git clone https://github.com/trhariharasudhan/Grandpa.git D:\Grandpa
+cd D:\Grandpa
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+`scripts\install.ps1` installs uv and Python 3.11, runs `uv sync` with the
+voice, screen, server, piper, tamil-voice and scheduler extras, checks that
+Ollama is installed and running, installs the `grandpa` launcher shim (no
+`grandpa.exe`, see [Launcher](launcher.md)), runs the first-run wizard
+(`grandpa setup --yes`), puts a **Grandpa** shortcut on the desktop and ends
+with `grandpa doctor`. Every step is skipped when already done, so it is safe
+to run again. `-DryRun` prints the steps without changing anything;
+`-SkipModels`, `-SkipVoice` and `-NoShortcut` leave those parts out.
+
+The wizard can also be run on its own. It asks before each download:
+
+```powershell
+uv run python -m grandpa setup
+```
+
+It writes `~/.grandpa/config.toml` if there is none, asks your name, builds
+the Ollama models (`grandpa models setup`) and fetches the offline voices
+(Piper English, MMS Tamil). A bare `grandpa` at a terminal starts it by itself
+when there is no config yet.
+
+`grandpa doctor` ends with either **All green** or a numbered **How to fix**
+list: one exact command or step for every warning and failure.
+
+## Manual install
 
 ```powershell
 git clone https://github.com/trhariharasudhan/Grandpa.git

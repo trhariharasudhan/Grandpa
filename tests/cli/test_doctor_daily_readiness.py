@@ -49,8 +49,8 @@ def test_fetch_ollama_models_parses_tags(monkeypatch) -> None:
 def test_existing_sqlite_db_missing_is_optional(tmp_path: Path) -> None:
     result = _check_existing_sqlite_db("Memory database ready", tmp_path / "missing.db")
 
-    assert result.status == "warn"
-    assert result.message == "Missing/optional"
+    assert result.status == "info"
+    assert result.message == "Not created yet"
 
 
 def test_known_app_found(monkeypatch) -> None:
