@@ -255,10 +255,26 @@ def expand_file_mentions(
             continue
         attached.append(raw)
         fence = "````" if "```" in contents else "```"
-        blocks.append(f"File: {raw}\n{fence}\n{contents.rstrip()}\n{fence}")
+        blocks.append(
+            f'Attached file "{Path(raw).name}" (full contents):\n'
+            f"{fence}\n{contents.rstrip()}\n{fence}"
+        )
     if not blocks:
         return text, attached, notes
-    return text + "\n\n" + "\n\n".join(blocks), attached, notes
+
+    # The model gets the file's name, not its path: with a path in the message
+    # a small model reaches for its file-reading tool (and is refused outside
+    # the safe folders) instead of reading the contents right below.
+    def _name_only(match: re.Match[str]) -> str:
+        raw = match.group(1) or match.group(2)
+        return f'"{Path(raw).name}"' if raw in attached else match.group(0)
+
+    question = _MENTION.sub(_name_only, text).strip()
+    intro = (
+        "The user attached the file(s) below; their contents are already here, "
+        "so answer from them without opening any file."
+    )
+    return f"{question}\n\n{intro}\n\n" + "\n\n".join(blocks), attached, notes
 
 
 __all__ = [

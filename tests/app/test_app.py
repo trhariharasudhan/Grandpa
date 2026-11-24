@@ -171,7 +171,11 @@ def test_an_attached_file_is_read_and_named_in_the_user_record(
     (tmp_path / "notes.txt").write_text("buy milk\n", encoding="utf-8")
     session, bridge, published = _session()
     assert session.send('what is in this?\n@"notes.txt"') is True
-    assert "buy milk" in bridge.sent[0] and "File: notes.txt" in bridge.sent[0]
+    assert "buy milk" in bridge.sent[0]
+    assert 'Attached file "notes.txt"' in bridge.sent[0]
+    assert (
+        '@"notes.txt"' not in bridge.sent[0]
+    )  # the model sees a name, not a path to open
     user = next(m for m in published if m["type"] == "user")
     assert user["attached"] == ["notes.txt"]
 
