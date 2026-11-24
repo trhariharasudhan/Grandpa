@@ -242,6 +242,61 @@ class TestChatCommand:
         assert "Hello there" in result.output
         assert result.output.count("Grandpa > Hello there") == 1
 
+    def test_a_message_with_an_attached_file_goes_to_the_model(self) -> None:
+        """ "What's in this file?" with a file attached must read the contents,
+        not take the phrase route that opens a file by name (seen on the PC:
+        file_read -> outside_safe_roots)."""
+        from grandpa.tui.helpers import ATTACHMENT_INTRO
+
+        seen: list[str] = []
+
+        class StreamingEngine:
+            engine_id = "stream-test"
+            supports_streaming = True
+
+            async def stream(self, messages, *, model):
+                seen.append(messages[-1].content)
+                yield "The secret word is mango."
+
+            def generate(self, messages, *, model, **_kw):  # the non-streaming path
+                seen.append(messages[-1].content)
+                return {"content": "The secret word is mango."}
+
+            def health(self):
+                return True
+
+        config = GrandpaConfig()
+        config.intelligence.default_model = "test-model"
+        config.tools.chat_tool_loop = False
+        message = (
+            'What is the secret word in "notes.txt"?\n\n'
+            f"{ATTACHMENT_INTRO}\n\n"
+            'Attached file "notes.txt" (full contents):\n```\nthe word is mango\n```'
+        )
+        lines = iter([message, "/quit"])
+
+        def no_route(*_a, **_k):
+            raise AssertionError("an attached file must not go to the file route")
+
+        with (
+            patch("grandpa.cli.chat_cmd.load_config", return_value=config),
+            patch(
+                "grandpa.engine.get_engine",
+                return_value=("stream-test", StreamingEngine()),
+            ),
+            patch("grandpa.intelligence.register_builtin_models"),
+            patch(
+                "grandpa.cli.chat_cmd.read_chat_input",
+                side_effect=lambda *_a, **_k: next(lines),
+            ),
+            patch("grandpa.cli._files_route.build_file_request", side_effect=no_route),
+        ):
+            result = CliRunner().invoke(chat, ["--model", "test-model"])
+
+        assert result.exit_code == 0, result.output
+        assert "The secret word is mango." in result.output
+        assert seen and "the word is mango" in seen[-1]
+
     @pytest.mark.parametrize(
         ("question", "expected"),
         (

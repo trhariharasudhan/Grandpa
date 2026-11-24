@@ -1789,379 +1789,409 @@ def chat(
             remember_conversation("user", user_input)
             brain_analysis = process_user_message(user_input)
             effective_user_input = brain_analysis.effective_text
-            capture_natural_personal_fact(effective_user_input)
+            # A message with attached files goes straight to the model: the
+            # phrase routes below would answer "what's in this file?" by
+            # opening a file, never reading the contents already attached.
+            from grandpa.tui.helpers import ATTACHMENT_INTRO
 
-            from grandpa.prompt.identity import resolve_identity_response
+            has_attachment = ATTACHMENT_INTRO in user_input
+            if not has_attachment:
+                capture_natural_personal_fact(effective_user_input)
 
-            identity_message = resolve_identity_response(
-                effective_user_input,
-                model=model,
-            )
-            if identity_message is not None:
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=identity_message))
-                remember_conversation("assistant", identity_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=identity_message,
-                    kind="identity",
-                    target=None,
-                    status="handled",
+            if not has_attachment:
+                from grandpa.prompt.identity import resolve_identity_response
+
+                identity_message = resolve_identity_response(
+                    effective_user_input,
+                    model=model,
                 )
-                render_assistant_response(console, Markdown(identity_message))
-                continue
+                if identity_message is not None:
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=identity_message)
+                    )
+                    remember_conversation("assistant", identity_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=identity_message,
+                        kind="identity",
+                        target=None,
+                        status="handled",
+                    )
+                    render_assistant_response(console, Markdown(identity_message))
+                    continue
 
-            natural_intent_message = _handle_natural_assistant_intent(
-                effective_user_input,
-                automation_service=automation_service,
-                browser_confirm=_confirm_browser_action,
-            )
-            if natural_intent_message is not None:
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=natural_intent_message)
+                natural_intent_message = _handle_natural_assistant_intent(
+                    effective_user_input,
+                    automation_service=automation_service,
+                    browser_confirm=_confirm_browser_action,
                 )
-                remember_conversation("assistant", natural_intent_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=natural_intent_message,
-                    kind="local",
-                    target=None,
-                    status="handled",
-                )
-                render_assistant_response(console, Markdown(natural_intent_message))
-                continue
+                if natural_intent_message is not None:
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=natural_intent_message)
+                    )
+                    remember_conversation("assistant", natural_intent_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=natural_intent_message,
+                        kind="local",
+                        target=None,
+                        status="handled",
+                    )
+                    render_assistant_response(console, Markdown(natural_intent_message))
+                    continue
 
-            # Reminders are migrated. This branch stays first, as it always
-            # was: whichever parser claims the phrase decides which store it
-            # lands in, and changing that is a separate task.
-            reminder_request, reminder_subject = build_reminder_request(
-                effective_user_input
-            )
-            reminder_message = None
-            if reminder_request is not None:
-                reminder_result = execute_action(reminder_request, _confirm_action)
-                reminder_message = reminder_reply(reminder_result)
-            if reminder_message is not None:
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=reminder_message))
-                remember_conversation("assistant", reminder_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=reminder_message,
-                    kind="reminder",
-                    target=None,
-                    status="handled",
+                # Reminders are migrated. This branch stays first, as it always
+                # was: whichever parser claims the phrase decides which store it
+                # lands in, and changing that is a separate task.
+                reminder_request, reminder_subject = build_reminder_request(
+                    effective_user_input
                 )
-                render_assistant_response(console, Markdown(reminder_message))
-                continue
+                reminder_message = None
+                if reminder_request is not None:
+                    reminder_result = execute_action(reminder_request, _confirm_action)
+                    reminder_message = reminder_reply(reminder_result)
+                if reminder_message is not None:
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=reminder_message)
+                    )
+                    remember_conversation("assistant", reminder_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=reminder_message,
+                        kind="reminder",
+                        target=None,
+                        status="handled",
+                    )
+                    render_assistant_response(console, Markdown(reminder_message))
+                    continue
 
-            # Notes is migrated: parsed here, but decided and performed by the
-            # action layer, which rates the risk, asks, and audits.
-            notes_request, parsed_note = build_notes_request(effective_user_input)
-            if notes_request is not None:
-                notes_result = execute_action(notes_request, _confirm_action)
-                notes_message = notes_reply(notes_result)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=notes_message))
-                remember_conversation("assistant", notes_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=notes_message,
-                    kind="notes",
-                    target=parsed_note.query if parsed_note else None,
-                    status=notes_status(notes_result),
+                # Notes is migrated: parsed here, but decided and performed by the
+                # action layer, which rates the risk, asks, and audits.
+                notes_request, parsed_note = build_notes_request(effective_user_input)
+                if notes_request is not None:
+                    notes_result = execute_action(notes_request, _confirm_action)
+                    notes_message = notes_reply(notes_result)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(Message(role=Role.ASSISTANT, content=notes_message))
+                    remember_conversation("assistant", notes_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=notes_message,
+                        kind="notes",
+                        target=parsed_note.query if parsed_note else None,
+                        status=notes_status(notes_result),
+                    )
+                    render_assistant_response(console, Markdown(notes_message))
+                    continue
+
+                # Downloads is migrated. It asks for itself, through the layer's
+                # callback, because only the scan knows how many files are involved.
+                downloads_request, parsed_download = build_downloads_request(
+                    effective_user_input
                 )
-                render_assistant_response(console, Markdown(notes_message))
-                continue
+                if downloads_request is not None:
+                    downloads_result = execute_action(
+                        downloads_request, _confirm_action
+                    )
+                    downloads_message = downloads_reply(downloads_result)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=downloads_message)
+                    )
+                    remember_conversation("assistant", downloads_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=downloads_message,
+                        kind="downloads",
+                        target=parsed_download.query if parsed_download else None,
+                        status=downloads_status(downloads_result),
+                    )
+                    render_assistant_response(console, Markdown(downloads_message))
+                    continue
 
-            # Downloads is migrated. It asks for itself, through the layer's
-            # callback, because only the scan knows how many files are involved.
-            downloads_request, parsed_download = build_downloads_request(
-                effective_user_input
-            )
-            if downloads_request is not None:
-                downloads_result = execute_action(downloads_request, _confirm_action)
-                downloads_message = downloads_reply(downloads_result)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=downloads_message))
-                remember_conversation("assistant", downloads_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=downloads_message,
-                    kind="downloads",
-                    target=parsed_download.query if parsed_download else None,
-                    status=downloads_status(downloads_result),
+                # Web search is migrated.
+                search_request, parsed_search = build_web_search_request(
+                    effective_user_input
                 )
-                render_assistant_response(console, Markdown(downloads_message))
-                continue
+                if search_request is not None:
+                    search_result = execute_action(search_request, _confirm_action)
+                    search_message = web_search_reply(search_result)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(Message(role=Role.ASSISTANT, content=search_message))
+                    remember_conversation("assistant", search_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=search_message,
+                        kind="web_search",
+                        target=parsed_search.query.text
+                        if parsed_search and parsed_search.query
+                        else None,
+                        status=web_search_status(search_result),
+                    )
+                    render_assistant_response(console, Markdown(search_message))
+                    continue
 
-            # Web search is migrated.
-            search_request, parsed_search = build_web_search_request(
-                effective_user_input
-            )
-            if search_request is not None:
-                search_result = execute_action(search_request, _confirm_action)
-                search_message = web_search_reply(search_result)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=search_message))
-                remember_conversation("assistant", search_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=search_message,
-                    kind="web_search",
-                    target=parsed_search.query.text
-                    if parsed_search and parsed_search.query
-                    else None,
-                    status=web_search_status(search_result),
+                # Memory is migrated. It had no structured seam, so one was
+                # extracted first; the parser is still memory_context's.
+                memory_request, memory_subject = build_memory_request(
+                    effective_user_input
                 )
-                render_assistant_response(console, Markdown(search_message))
-                continue
+                if memory_request is not None:
+                    memory_result = execute_action(memory_request, _confirm_action)
+                    memory_message = memory_reply(memory_result)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(Message(role=Role.ASSISTANT, content=memory_message))
+                    remember_conversation("assistant", memory_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=memory_message,
+                        kind="memory",
+                        target=memory_target(memory_result, memory_subject),
+                        status=memory_status(memory_result),
+                    )
+                    render_assistant_response(console, Markdown(memory_message))
+                    continue
 
-            # Memory is migrated. It had no structured seam, so one was
-            # extracted first; the parser is still memory_context's.
-            memory_request, memory_subject = build_memory_request(effective_user_input)
-            if memory_request is not None:
-                memory_result = execute_action(memory_request, _confirm_action)
-                memory_message = memory_reply(memory_result)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=memory_message))
-                remember_conversation("assistant", memory_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=memory_message,
-                    kind="memory",
-                    target=memory_target(memory_result, memory_subject),
-                    status=memory_status(memory_result),
+                # Calendar is migrated. It asks for itself, like downloads.
+                calendar_request, parsed_event = build_calendar_request(
+                    effective_user_input
                 )
-                render_assistant_response(console, Markdown(memory_message))
-                continue
+                if calendar_request is not None:
+                    calendar_result = execute_action(calendar_request, _confirm_action)
+                    calendar_message = google_reply(calendar_result, "calendar")
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=calendar_message)
+                    )
+                    remember_conversation("assistant", calendar_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=calendar_message,
+                        kind="calendar",
+                        target=getattr(parsed_event, "query", None) or None,
+                        status=google_status(calendar_result),
+                    )
+                    render_assistant_response(console, Markdown(calendar_message))
+                    continue
 
-            # Calendar is migrated. It asks for itself, like downloads.
-            calendar_request, parsed_event = build_calendar_request(
-                effective_user_input
-            )
-            if calendar_request is not None:
-                calendar_result = execute_action(calendar_request, _confirm_action)
-                calendar_message = google_reply(calendar_result, "calendar")
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=calendar_message))
-                remember_conversation("assistant", calendar_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=calendar_message,
-                    kind="calendar",
-                    target=getattr(parsed_event, "query", None) or None,
-                    status=google_status(calendar_result),
+                # Mail is migrated, and asks for itself too.
+                gmail_request, parsed_mail = build_gmail_request(effective_user_input)
+                if gmail_request is not None:
+                    gmail_result = execute_action(gmail_request, _confirm_action)
+                    gmail_message = google_reply(gmail_result, "gmail")
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(Message(role=Role.ASSISTANT, content=gmail_message))
+                    remember_conversation("assistant", gmail_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=gmail_message,
+                        kind="gmail",
+                        target=getattr(parsed_mail, "query", None) or None,
+                        status=google_status(gmail_result),
+                    )
+                    render_assistant_response(console, Markdown(gmail_message))
+                    continue
+
+                # Reading the visible page, migrated. See cli/_awareness_route.py.
+                from grandpa.cli._awareness_route import build_awareness_request
+
+                awareness_request, _awareness_parsed = build_awareness_request(
+                    effective_user_input
                 )
-                render_assistant_response(console, Markdown(calendar_message))
-                continue
+                if awareness_request is not None:
+                    awareness_result = execute_action(
+                        awareness_request, _confirm_action
+                    )
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=awareness_result.message)
+                    )
+                    remember_conversation("assistant", awareness_result.message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=awareness_result.message,
+                        kind="browser_awareness",
+                        target=str(awareness_result.data.get("url") or "") or None,
+                        status=str(awareness_result.data.get("status") or ""),
+                    )
+                    render_assistant_response(
+                        console, Markdown(awareness_result.message)
+                    )
+                    continue
 
-            # Mail is migrated, and asks for itself too.
-            gmail_request, parsed_mail = build_gmail_request(effective_user_input)
-            if gmail_request is not None:
-                gmail_result = execute_action(gmail_request, _confirm_action)
-                gmail_message = google_reply(gmail_result, "gmail")
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=gmail_message))
-                remember_conversation("assistant", gmail_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=gmail_message,
-                    kind="gmail",
-                    target=getattr(parsed_mail, "query", None) or None,
-                    status=google_status(gmail_result),
+                # The browser, migrated. Parsed here, decided and performed by the
+                # layer; see cli/_browser_route.py.
+                from grandpa.cli._browser_route import build_browser_request
+
+                browser_request, browser_parsed = build_browser_request(
+                    effective_user_input
                 )
-                render_assistant_response(console, Markdown(gmail_message))
-                continue
+                if browser_request is not None:
+                    browser_result = execute_action(browser_request, _confirm_action)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=browser_result.message)
+                    )
+                    remember_conversation("assistant", browser_result.message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=browser_result.message,
+                        kind="browser",
+                        target=str(browser_result.data.get("url") or "")
+                        or (browser_parsed.target if browser_parsed else None),
+                        status=str(browser_result.data.get("status") or ""),
+                    )
+                    render_assistant_response(console, Markdown(browser_result.message))
+                    continue
 
-            # Reading the visible page, migrated. See cli/_awareness_route.py.
-            from grandpa.cli._awareness_route import build_awareness_request
+                # The desktop, migrated. The parser already named a pc_control
+                # action; the catalogue has every one of them, so the executor path
+                # behind it was a second way of doing what the layer does. See
+                # cli/_desktop_route.py.
+                from grandpa.cli._desktop_route import build_desktop_request
 
-            awareness_request, _awareness_parsed = build_awareness_request(
-                effective_user_input
-            )
-            if awareness_request is not None:
-                awareness_result = execute_action(awareness_request, _confirm_action)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=awareness_result.message)
+                desktop_request, desktop_parsed = build_desktop_request(
+                    effective_user_input
                 )
-                remember_conversation("assistant", awareness_result.message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=awareness_result.message,
-                    kind="browser_awareness",
-                    target=str(awareness_result.data.get("url") or "") or None,
-                    status=str(awareness_result.data.get("status") or ""),
-                )
-                render_assistant_response(console, Markdown(awareness_result.message))
-                continue
+                if desktop_request is not None:
+                    desktop_result = execute_action(desktop_request, _confirm_action)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=desktop_result.message)
+                    )
+                    remember_conversation("assistant", desktop_result.message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=desktop_result.message,
+                        kind="desktop",
+                        target=desktop_parsed.target if desktop_parsed else None,
+                        status=str(desktop_result.data.get("status") or ""),
+                    )
+                    render_assistant_response(console, Markdown(desktop_result.message))
+                    continue
 
-            # The browser, migrated. Parsed here, decided and performed by the
-            # layer; see cli/_browser_route.py.
-            from grandpa.cli._browser_route import build_browser_request
+                from grandpa.local import handle_local_action
 
-            browser_request, browser_parsed = build_browser_request(
-                effective_user_input
-            )
-            if browser_request is not None:
-                browser_result = execute_action(browser_request, _confirm_action)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=browser_result.message)
+                # Migrated actions are asked inline, as the tool loop asks. Shapes
+                # still on the legacy dispatch keep chat's two-turn "yes" -- which
+                # is deferred consent, so chat opts in with its own origin.
+                local_action = handle_local_action(
+                    effective_user_input,
+                    confirm=_confirm_desktop_action,
+                    deferred_origin="chat",
                 )
-                remember_conversation("assistant", browser_result.message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=browser_result.message,
-                    kind="browser",
-                    target=str(browser_result.data.get("url") or "")
-                    or (browser_parsed.target if browser_parsed else None),
-                    status=str(browser_result.data.get("status") or ""),
-                )
-                render_assistant_response(console, Markdown(browser_result.message))
-                continue
+                if not local_action.should_fallback:
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=local_action.message)
+                    )
+                    remember_conversation("assistant", local_action.message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=local_action.message,
+                        kind=local_action.kind,
+                        target=local_action.target,
+                        status=local_action.status,
+                    )
+                    render_assistant_response(console, Markdown(local_action.message))
+                    continue
 
-            # The desktop, migrated. The parser already named a pc_control
-            # action; the catalogue has every one of them, so the executor path
-            # behind it was a second way of doing what the layer does. See
-            # cli/_desktop_route.py.
-            from grandpa.cli._desktop_route import build_desktop_request
+                # File operations, migrated. grandpa.files owns them; the layer
+                # rates them and asks. See cli/_files_route.py.
+                from grandpa.cli._files_route import build_file_request
 
-            desktop_request, desktop_parsed = build_desktop_request(
-                effective_user_input
-            )
-            if desktop_request is not None:
-                desktop_result = execute_action(desktop_request, _confirm_action)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=desktop_result.message)
-                )
-                remember_conversation("assistant", desktop_result.message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=desktop_result.message,
-                    kind="desktop",
-                    target=desktop_parsed.target if desktop_parsed else None,
-                    status=str(desktop_result.data.get("status") or ""),
-                )
-                render_assistant_response(console, Markdown(desktop_result.message))
-                continue
+                file_request, file_parsed = build_file_request(effective_user_input)
+                if file_request is not None:
+                    file_result = execute_action(file_request, _confirm_action)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=file_result.message)
+                    )
+                    remember_conversation("assistant", file_result.message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=file_result.message,
+                        kind="file",
+                        target=str(file_result.data.get("path") or "")
+                        or (file_parsed.source if file_parsed else None),
+                        status=str(file_result.data.get("status") or ""),
+                    )
+                    render_assistant_response(console, Markdown(file_result.message))
+                    continue
 
-            from grandpa.local import handle_local_action
+                # What is left of the old file branch is not file *operations*: it
+                # is file_assistant's own intelligence -- recent files, document
+                # search, summaries. A separate domain, catalogued separately; see
+                # the phase report.
+                from grandpa.file_assistant import handle_file_command
 
-            # Migrated actions are asked inline, as the tool loop asks. Shapes
-            # still on the legacy dispatch keep chat's two-turn "yes" -- which
-            # is deferred consent, so chat opts in with its own origin.
-            local_action = handle_local_action(
-                effective_user_input,
-                confirm=_confirm_desktop_action,
-                deferred_origin="chat",
-            )
-            if not local_action.should_fallback:
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=local_action.message)
-                )
-                remember_conversation("assistant", local_action.message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=local_action.message,
-                    kind=local_action.kind,
-                    target=local_action.target,
-                    status=local_action.status,
-                )
-                render_assistant_response(console, Markdown(local_action.message))
-                continue
+                file_action = handle_file_command(effective_user_input)
+                if not file_action.should_fallback:
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=file_action.message)
+                    )
+                    remember_conversation("assistant", file_action.message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=file_action.message,
+                        kind=getattr(file_action, "kind", "file"),
+                        target=getattr(file_action, "target", None),
+                        status=file_action.status,
+                    )
+                    render_assistant_response(console, Markdown(file_action.message))
+                    continue
 
-            # File operations, migrated. grandpa.files owns them; the layer
-            # rates them and asks. See cli/_files_route.py.
-            from grandpa.cli._files_route import build_file_request
-
-            file_request, file_parsed = build_file_request(effective_user_input)
-            if file_request is not None:
-                file_result = execute_action(file_request, _confirm_action)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=file_result.message)
+                # Routines and recurring reminders, migrated. A different store
+                # from the branch above; see cli/_reminders_route.py.
+                routine_request, routine_name = build_routine_request(
+                    effective_user_input
                 )
-                remember_conversation("assistant", file_result.message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=file_result.message,
-                    kind="file",
-                    target=str(file_result.data.get("path") or "")
-                    or (file_parsed.source if file_parsed else None),
-                    status=str(file_result.data.get("status") or ""),
-                )
-                render_assistant_response(console, Markdown(file_result.message))
-                continue
+                if routine_request is not None:
+                    routine_result = execute_action(routine_request, _confirm_action)
+                    routine_message = reminder_reply(routine_result)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=routine_message)
+                    )
+                    remember_conversation("assistant", routine_message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=routine_message,
+                        kind="routine",
+                        target=routine_name,
+                        status=reminder_status(routine_result),
+                    )
+                    render_assistant_response(console, Markdown(routine_message))
+                    continue
 
-            # What is left of the old file branch is not file *operations*: it
-            # is file_assistant's own intelligence -- recent files, document
-            # search, summaries. A separate domain, catalogued separately; see
-            # the phase report.
-            from grandpa.file_assistant import handle_file_command
+                # The clock is migrated: parsed here, answered by the layer.
+                from grandpa.core.runtime_context import parse_datetime_intent
 
-            file_action = handle_file_command(effective_user_input)
-            if not file_action.should_fallback:
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(
-                    Message(role=Role.ASSISTANT, content=file_action.message)
-                )
-                remember_conversation("assistant", file_action.message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=file_action.message,
-                    kind=getattr(file_action, "kind", "file"),
-                    target=getattr(file_action, "target", None),
-                    status=file_action.status,
-                )
-                render_assistant_response(console, Markdown(file_action.message))
-                continue
-
-            # Routines and recurring reminders, migrated. A different store
-            # from the branch above; see cli/_reminders_route.py.
-            routine_request, routine_name = build_routine_request(effective_user_input)
-            if routine_request is not None:
-                routine_result = execute_action(routine_request, _confirm_action)
-                routine_message = reminder_reply(routine_result)
-                history.append(Message(role=Role.USER, content=user_input))
-                history.append(Message(role=Role.ASSISTANT, content=routine_message))
-                remember_conversation("assistant", routine_message)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=routine_message,
-                    kind="routine",
-                    target=routine_name,
-                    status=reminder_status(routine_result),
-                )
-                render_assistant_response(console, Markdown(routine_message))
-                continue
-
-            # The clock is migrated: parsed here, answered by the layer.
-            from grandpa.core.runtime_context import parse_datetime_intent
-
-            dt_kind = parse_datetime_intent(effective_user_input)
-            dt_resp = None
-            if dt_kind is not None:
-                dt_result = execute_action(_clock_request(dt_kind), _confirm_action)
-                dt_resp = dt_result.message
-            if dt_resp:
-                history.append(Message(role=Role.USER, content=effective_user_input))
-                history.append(Message(role=Role.ASSISTANT, content=dt_resp))
-                remember_conversation("user", effective_user_input)
-                remember_conversation("assistant", dt_resp)
-                record_assistant_outcome(
-                    brain_analysis,
-                    assistant_text=dt_resp,
-                    kind="local",
-                    target=None,
-                    status="handled",
-                )
-                render_assistant_response(console, Markdown(dt_resp))
-                continue
+                dt_kind = parse_datetime_intent(effective_user_input)
+                dt_resp = None
+                if dt_kind is not None:
+                    dt_result = execute_action(_clock_request(dt_kind), _confirm_action)
+                    dt_resp = dt_result.message
+                if dt_resp:
+                    history.append(
+                        Message(role=Role.USER, content=effective_user_input)
+                    )
+                    history.append(Message(role=Role.ASSISTANT, content=dt_resp))
+                    remember_conversation("user", effective_user_input)
+                    remember_conversation("assistant", dt_resp)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=dt_resp,
+                        kind="local",
+                        target=None,
+                        status="handled",
+                    )
+                    render_assistant_response(console, Markdown(dt_resp))
+                    continue
 
             # Add user message
             history.append(Message(role=Role.USER, content=effective_user_input))

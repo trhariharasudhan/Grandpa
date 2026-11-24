@@ -159,6 +159,15 @@ def _allowed(path: Path, base: Path) -> bool:
     return any(resolved == root or root in resolved.parents for root in roots)
 
 
+#: Starts the attached files' part of a message. The chat engine looks for it
+#: to send such a message straight to the model: its quick phrase routes
+#: ("...this file" -> open a file) would otherwise answer the question
+#: without ever reading the contents.
+ATTACHMENT_INTRO = (
+    "The user attached the file(s) below; their contents are already here, "
+    "so answer from them without opening any file."
+)
+
 #: Documents whose text is pulled out (PDF, Word, Excel, PowerPoint).
 DOCUMENT_SUFFIXES = {".pdf", ".docx", ".xlsx", ".pptx"}
 
@@ -270,10 +279,7 @@ def expand_file_mentions(
         return f'"{Path(raw).name}"' if raw in attached else match.group(0)
 
     question = _MENTION.sub(_name_only, text).strip()
-    intro = (
-        "The user attached the file(s) below; their contents are already here, "
-        "so answer from them without opening any file."
-    )
+    intro = ATTACHMENT_INTRO
     return f"{question}\n\n{intro}\n\n" + "\n\n".join(blocks), attached, notes
 
 
