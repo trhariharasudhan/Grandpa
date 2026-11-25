@@ -27,7 +27,7 @@ from typing import Any
 WEB_DIR = Path(__file__).with_name("avatar_web")
 INDEX = WEB_DIR / "index.html"
 
-COLLAPSED = (64, 64)
+COLLAPSED = (48, 48)
 """The ring alone."""
 EXPANDED = (340, 420)
 """The ring and the chat panel."""
@@ -254,9 +254,47 @@ KEY_COLOUR = (1, 1, 1)
 
 #: Where the ring's solid line is in the collapsed window. Measured at the
 #: old size (opaque from radius 35 to 40 px of a 132 px window, 84 px ring)
-#: and scaled with everything else for the 40 px ring (x 40/84) in a 64 px window.
-RING_RADIUS = 17.9
-RING_HIT_WIDTH = 3.0
+#: and scaled with everything else for the 30 px ring (x 30/84) in a 48 px window.
+RING_RADIUS = 13.4
+RING_HIT_WIDTH = 4.0
+
+
+#: Corner radius of the open chat panel, in 96-dpi pixels.
+PANEL_RADIUS = 16
+
+
+def round_corners(form: Any, radius: float) -> None:
+    """Give the open panel round corners.
+
+    Windows 11 rounds the window itself when asked (DWM, smooth edges); the
+    window region is the fallback that works everywhere. Runs on the UI thread.
+    """
+    try:
+        import ctypes
+
+        preference = ctypes.c_int(2)  # DWMWCP_ROUND
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            int(form.Handle.ToInt64()), 33, ctypes.byref(preference), 4
+        )
+    except Exception:  # noqa: BLE001 - Windows 10: the region below does it
+        pass
+    try:
+        from System.Drawing import Rectangle, Region
+        from System.Drawing.Drawing2D import GraphicsPath
+
+        size = form.ClientSize
+        scale = form.DeviceDpi / 96.0 if getattr(form, "DeviceDpi", 0) else 1.0
+        d = int(round(radius * 2 * scale))
+        w, h = size.Width, size.Height
+        path = GraphicsPath()
+        path.AddArc(Rectangle(0, 0, d, d), 180, 90)
+        path.AddArc(Rectangle(w - d, 0, d, d), 270, 90)
+        path.AddArc(Rectangle(w - d, h - d, d, d), 0, 90)
+        path.AddArc(Rectangle(0, h - d, d, d), 90, 90)
+        path.CloseFigure()
+        form.Region = Region(path)
+    except Exception:  # noqa: BLE001 - square corners are only cosmetic
+        pass
 
 
 def key_out_background(window: Any, *, expanded: bool = False) -> bool:
@@ -288,7 +326,9 @@ def key_out_background(window: Any, *, expanded: bool = False) -> bool:
                 form.TransparencyKey = Color.Empty
                 form.BackgroundImage = None
                 form.BackColor = ColorTranslator.FromHtml(BACKGROUND)
+                round_corners(form, PANEL_RADIUS)
                 return
+            form.Region = None  # the collapsed ring is shaped by the key colour
             key = Color.FromArgb(*KEY_COLOUR)
             size = form.ClientSize
             # Windows keeps a frameless window at least ~148 px wide, wider

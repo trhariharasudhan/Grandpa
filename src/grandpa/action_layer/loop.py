@@ -436,6 +436,8 @@ def warm_up(engine: Any, model: str, system_prompt: str = SYSTEM_PROMPT) -> bool
     """
     from grandpa.core.types import Message, Role
 
+    if str(model).startswith("@"):
+        return False  # a cloud model: nothing to warm, and a request costs the user
     loaded = list(candidate_domains(WARM_UP_GOAL)) if preselect_enabled() else []
     tools = (
         tool_definitions_for(loaded)

@@ -73,8 +73,9 @@ class AppSession:
         #: Files picked in the window's file dialog: those may be attached
         #: from any folder, because choosing them there is the permission.
         self.picked_files: set[str] = set()
-        #: Project instructions for the next message only (a fresh chat in a
-        #: project): sent to the model with it, never shown as typed text.
+        #: Context for the next message only: a project's instructions and the
+        #: chat's earlier messages when Grandpa starts fresh on an old chat.
+        #: Sent to the model with it, never shown as typed text.
         self.next_context: str = ""
         hooks = UiHooks(
             output=self._on_output,
@@ -133,12 +134,14 @@ class AppSession:
             question.answer(answer)
             return True
         message, attached, notes = self._attach(text)
-        with self._lock:
-            context, self.next_context = self.next_context, ""
+        context = ""
+        if not text.lstrip().startswith("/"):  # commands never carry it (or use it up)
+            with self._lock:
+                context, self.next_context = self.next_context, ""
         if context:
             message = (
-                "Project instructions from the user (follow them in this "
-                f"conversation):\n{context}\n\n---\n\n{message}"
+                "Context for this conversation (from the app; the user's new "
+                f"message follows the line):\n{context}\n\n---\n\n{message}"
             )
         self._record({"type": "user", "text": text, "attached": attached})
         for note in notes:

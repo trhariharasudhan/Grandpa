@@ -23,7 +23,10 @@
   let attached = [];             // file paths for the next message
   let picking = false;           // the model menu is waiting for Grandpa's list
   let ignoreModelAsk = false;    // the menu was closed before the list came
-  let contextPending = false;    // send the project's instructions with the next message
+  // Grandpa's own conversation starts empty in a new app run and after each
+  // /clear. The chat's earlier messages (and its project's instructions) go
+  // with the next message, so an old chat continues where it left off.
+  let contextPending = true;
   const quiet = [];              // replies to our own commands: [{re, toast}]
 
   // --- storage -------------------------------------------------------------
@@ -129,14 +132,16 @@
     closeMenu(); closePops();
     app.dataset.view = view;
     $("chat-view").hidden = false;
-    $("projects-view").hidden = view !== "projects";
-    $("project-view").hidden = view !== "project";
-    $("memory-view").hidden = view !== "memory";
-    $("nav-projects").classList.toggle("active", view === "projects" || view === "project");
-    $("nav-memory").classList.toggle("active", view === "memory");
+    document.querySelectorAll(".view.page").forEach((page) => { page.hidden = page.id !== view + "-view"; });
+    document.querySelectorAll(".nav-item[data-goto]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.goto === view || (b.dataset.goto === "projects" && view === "project"));
+    });
     if (view === "projects") drawProjects();
     if (view === "project") { viewProject = arg; drawProject(); }
     if (view === "memory") loadMemories();
+    if (view === "skills") loadSkills();
+    if (view === "connectors") loadConnectors();
+    if (view === "models") loadModels();
     if (view === "chat") setTimeout(() => input.focus(), 30);
     if (narrow.matches) app.classList.remove("side-open-small");
   }
@@ -446,6 +451,209 @@
     a.add_memory(text).then((ok) => { if (ok) { $("memory-text").value = ""; loadMemories(); toast("Remembered"); } else toast("Couldn't save it.", true); });
   });
 
+  // --- skills -------------------------------------------------------------------------------
+  let skills = { yours: [], builtin: [] };
+  let activeSkill = null;   // {name, instructions} for the next message
+  function setSkill(skill) {
+    activeSkill = skill;
+    const box = $("skill-chip"); box.textContent = ""; box.hidden = !skill;
+    if (!skill) return;
+    const chip = el("span", "file"); chip.appendChild(icon("spark", 14));
+    chip.appendChild(el("span", "", "Skill: " + skill.name));
+    chip.appendChild(iconButton("close", "Don't use this skill", () => setSkill(null)));
+    box.appendChild(chip);
+  }
+  function loadSkills(then) {
+    const a = api();
+    if (!a || !a.list_skills) { drawSkills(); return; }
+    a.list_skills().then((r) => { skills = r || skills; drawSkills(); if (then) then(); }).catch(() => drawSkills());
+  }
+  function drawSkills() {
+    const grid = $("skill-grid"); grid.textContent = "";
+    if (!api()) grid.appendChild(el("p", "empty", "Skills are available in the Grandpa window."));
+    skills.yours.forEach((sk) => {
+      const card = el("div", "card");
+      const t = el("p", "card-title"); t.appendChild(icon("spark", 16)); t.appendChild(el("span", "", sk.name)); card.appendChild(t);
+      card.appendChild(el("p", "hint", sk.description || sk.instructions.slice(0, 140)));
+      const row = el("div", "card-actions");
+      const use = el("button", "", "Use"); use.type = "button";
+      use.addEventListener("click", () => { setSkill(sk); setView("chat"); toast("The skill goes with your next message."); });
+      const edit = el("button", "", "Edit"); edit.type = "button";
+      edit.addEventListener("click", () => openSkillForm(sk));
+      const del = el("button", "danger", "Delete"); del.type = "button";
+      del.addEventListener("click", () => confirmBox("Delete the skill \u201c" + sk.name + "\u201d?", "Its SKILL.md is removed from this PC.").then((ok) => {
+        if (ok) api().delete_skill(sk.name).then(() => loadSkills());
+      }));
+      row.appendChild(use); row.appendChild(edit); row.appendChild(del); card.appendChild(row);
+      grid.appendChild(card);
+    });
+    if (api() && !skills.yours.length) grid.appendChild(el("p", "empty", "No skills yet. Make one for something you ask often: \u201cpolish my email\u201d, \u201creview my code like a senior dev\u201d."));
+    const built = $("builtin-grid"); built.textContent = "";
+    skills.builtin.forEach((sk) => {
+      const card = el("div", "card"); card.appendChild(el("p", "card-title", sk.name));
+      card.appendChild(el("p", "hint", sk.description)); built.appendChild(card);
+    });
+  }
+  function openSkillForm(sk) {
+    $("skill-form").hidden = false;
+    $("skill-name").value = sk ? sk.name : ""; $("skill-description").value = sk ? sk.description : "";
+    $("skill-instructions").value = sk ? sk.instructions : ""; $("skill-msg").textContent = "";
+    $("skill-name").focus();
+  }
+  $("new-skill").addEventListener("click", () => openSkillForm(null));
+  $("skill-cancel").addEventListener("click", () => { $("skill-form").hidden = true; });
+  $("skill-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const a = api(); if (!a) return;
+    a.save_skill($("skill-name").value, $("skill-description").value, $("skill-instructions").value).then((r) => {
+      if (!r || !r.ok) { $("skill-msg").textContent = (r && r.error) || "Couldn't save."; return; }
+      $("skill-form").hidden = true; toast("Skill saved"); loadSkills();
+    });
+  });
+  $("import-skill").addEventListener("click", () => {
+    const a = api(); if (!a) return toast("Importing works in the Grandpa window.", true);
+    a.import_skill().then((r) => { if (r && r.ok) { toast("Imported " + r.name); loadSkills(); } else if (r && r.error) toast(r.error, true); });
+  });
+  function pickSkill() {
+    plusMenu.hidden = true;
+    loadSkills(() => {
+      if (!skills.yours.length) { setView("skills"); return toast("Make a skill first."); }
+      showMenu($("plus"), skills.yours.map((sk) => ({ text: sk.name, icon: "spark", run: () => { setSkill(sk); input.focus(); } })), true);
+    });
+  }
+  $("plus-skill").addEventListener("click", (e) => { e.stopPropagation(); pickSkill(); });
+
+  // --- connectors (MCP) --------------------------------------------------------------------------
+  const MCP_PRESETS = [
+    { label: "GitHub", name: "github", command: "npx -y @modelcontextprotocol/server-github", key: "GITHUB_PERSONAL_ACCESS_TOKEN", allow: "search_repositories, get_file_contents, list_issues, get_issue" },
+    { label: "Files (a folder)", name: "files", command: "npx -y @modelcontextprotocol/server-filesystem D:/Notes", key: "", allow: "read_text_file, list_directory, search_files" },
+    { label: "Fetch web pages", name: "fetch", command: "uvx mcp-server-fetch", key: "", allow: "fetch" },
+    { label: "Memory graph", name: "memory-graph", command: "npx -y @modelcontextprotocol/server-memory", key: "", allow: "*" },
+    { label: "Brave Search", name: "brave", command: "npx -y @modelcontextprotocol/server-brave-search", key: "BRAVE_API_KEY", allow: "brave_web_search" },
+  ];
+  function loadConnectors() {
+    const a = api(); const grid = $("mcp-grid"); grid.textContent = "";
+    const presets = $("mcp-presets"); presets.textContent = "";
+    MCP_PRESETS.forEach((p) => {
+      const b = el("button", "", p.label); b.type = "button";
+      b.addEventListener("click", () => { $("mcp-name").value = p.name; $("mcp-command").value = p.command; $("mcp-allow").value = p.allow; $("mcp-key-name").value = p.key; $("mcp-key-value").focus(); });
+      presets.appendChild(b);
+    });
+    if (!a || !a.mcp_status) { grid.appendChild(el("p", "empty", "Connectors are available in the Grandpa window.")); return; }
+    a.mcp_status().then((st) => {
+      $("mcp-on").checked = !st.off;
+      $("mcp-problems").hidden = !st.problems.length; $("mcp-problems").textContent = st.problems.join("\n");
+      st.servers.forEach((srv) => {
+        const card = el("div", "card");
+        const t = el("p", "card-title");
+        t.appendChild(el("span", "status-dot " + (srv.enabled && !st.off ? "on" : "off")));
+        t.appendChild(el("span", "", srv.name)); card.appendChild(t);
+        card.appendChild(el("p", "mono", srv.command));
+        card.appendChild(el("p", "hint", "May use: " + (srv.allow.join(", ") || "nothing yet") + (srv.env.length ? " · keys: " + srv.env.join(", ") : "")));
+        const row = el("div", "card-actions");
+        const test = el("button", "", "Test"); test.type = "button";
+        test.addEventListener("click", () => { test.textContent = "Testing…"; a.mcp_test(srv.name).then((r) => {
+          test.textContent = "Test";
+          if (r.ok) toast(srv.name + ": OK, " + r.tools.length + " tools, " + r.allowed.length + " allowed"); else toast(r.error, true);
+        }); });
+        const toggle = el("button", "", srv.enabled ? "Turn off" : "Turn on"); toggle.type = "button";
+        toggle.addEventListener("click", () => a.mcp_toggle_server(srv.name, !srv.enabled).then(loadConnectors));
+        const edit = el("button", "", "Edit"); edit.type = "button";
+        edit.addEventListener("click", () => { $("mcp-name").value = srv.name; $("mcp-command").value = srv.command; $("mcp-allow").value = srv.allow.join(", "); $("mcp-key-name").value = srv.env[0] || ""; $("mcp-key-value").value = ""; $("mcp-name").focus(); });
+        const del = el("button", "danger", "Remove"); del.type = "button";
+        del.addEventListener("click", () => confirmBox("Remove the connector \u201c" + srv.name + "\u201d?", "Its stored keys are deleted too.").then((ok) => { if (ok) a.mcp_remove_server(srv.name).then(loadConnectors); }));
+        row.appendChild(test); row.appendChild(toggle); row.appendChild(edit); row.appendChild(del); card.appendChild(row);
+        grid.appendChild(card);
+      });
+      if (!st.servers.length) grid.appendChild(el("p", "empty", "No connectors yet. Pick one below to start."));
+    });
+  }
+  $("mcp-on").addEventListener("change", () => { const a = api(); if (a) a.mcp_set_off(!$("mcp-on").checked).then(loadConnectors); });
+  $("mcp-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const a = api(); if (!a) return;
+    const keys = {};
+    const keyName = $("mcp-key-name").value.trim();
+    if (keyName) keys[keyName] = $("mcp-key-value").value;
+    dialog({ title: "Add this connector?", text: "Grandpa will start this program on your PC: " + $("mcp-command").value, ok: "Add" }).then((ok) => {
+      if (ok === null) return;
+      a.mcp_save_server($("mcp-name").value, $("mcp-command").value, $("mcp-allow").value, keys).then((r) => {
+        if (!r.ok) { $("mcp-msg").textContent = r.error; return; }
+        $("mcp-msg").textContent = "Saved"; $("mcp-key-value").value = ""; loadConnectors();
+      });
+    });
+  });
+
+  // --- models & API keys ------------------------------------------------------------------------------
+  let providerInfo = null;
+  function loadModels() {
+    const a = api(); const grid = $("provider-grid"); grid.textContent = "";
+    if (!a || !a.providers_status) { grid.appendChild(el("p", "empty", "Available in the Grandpa window.")); return; }
+    a.providers_status().then((st) => {
+      providerInfo = st;
+      $("key-store").textContent = st.store;
+      const select = $("provider-preset"); select.textContent = "";
+      st.presets.forEach((p) => { const o = el("option", "", p.label); o.value = p.id; select.appendChild(o); });
+      const custom = el("option", "", "Other (OpenAI-compatible)"); custom.value = "custom"; select.appendChild(custom);
+      presetChanged();
+      st.providers.forEach((p) => {
+        const card = el("div", "card");
+        const t = el("p", "card-title"); t.appendChild(el("span", "status-dot " + (!p.needs_key || p.has_key ? "on" : "off"))); t.appendChild(el("span", "", p.label)); card.appendChild(t);
+        card.appendChild(el("p", "mono", p.base_url));
+        card.appendChild(el("p", "hint", (p.models.length ? p.models.map((m) => "@" + p.id + "/" + m).join(", ") : "No models chosen yet") + (p.needs_key && !p.has_key ? " · no key" : "")));
+        const row = el("div", "card-actions");
+        const edit = el("button", "", "Edit"); edit.type = "button";
+        edit.addEventListener("click", () => { select.value = st.presets.some((x) => x.id === p.id) ? p.id : "custom"; presetChanged(); $("provider-id").value = p.id; $("provider-url").value = p.base_url; $("provider-models").value = p.models.join(", "); $("provider-key").value = ""; $("provider-key").placeholder = p.has_key ? "key saved (leave empty to keep it)" : "paste the key"; });
+        const del = el("button", "danger", "Remove"); del.type = "button";
+        del.addEventListener("click", () => confirmBox("Remove " + p.label + "?", "Its key is deleted from this PC.").then((ok) => { if (ok) a.provider_remove(p.id).then(loadModels); }));
+        row.appendChild(edit); row.appendChild(del); card.appendChild(row);
+        grid.appendChild(card);
+      });
+      if (!st.providers.length) grid.appendChild(el("p", "empty", "Only local models so far."));
+    });
+  }
+  function presetChanged() {
+    const id = $("provider-preset").value;
+    const preset = providerInfo && providerInfo.presets.find((p) => p.id === id);
+    $("provider-url").value = preset ? preset.base_url : "";
+    $("provider-id-row").hidden = !!preset;
+    $("provider-key").placeholder = preset && !preset.needs_key ? "no key needed" : "paste the key (stored encrypted)";
+    $("provider-found").hidden = true;
+  }
+  $("provider-preset").addEventListener("change", presetChanged);
+  function saveProvider(fetchModels) {
+    const a = api(); if (!a) return;
+    const preset = $("provider-preset").value;
+    const id = preset === "custom" ? $("provider-id").value.trim().toLowerCase() : preset;
+    $("provider-msg").textContent = "Saving…";
+    a.provider_save(id, $("provider-url").value, $("provider-key").value, $("provider-models").value).then((r) => {
+      if (!r.ok) { $("provider-msg").textContent = r.error; return; }
+      $("provider-key").value = "";
+      $("provider-msg").textContent = "Saved";
+      loadModels();
+      if (!fetchModels) return;
+      $("provider-msg").textContent = "Asking the provider for its models…";
+      a.provider_models(id).then((m) => {
+        if (!m.ok) { $("provider-msg").textContent = m.error; return; }
+        $("provider-msg").textContent = m.models.length + " models: click to add or remove, then Save";
+        const box = $("provider-found"); box.textContent = ""; box.hidden = false;
+        const chosen = () => $("provider-models").value.split(",").map((x) => x.trim()).filter(Boolean);
+        m.models.forEach((name) => {
+          const b = el("button", chosen().includes(name) ? "on" : "", name); b.type = "button";
+          b.addEventListener("click", () => {
+            const now = chosen(); const i = now.indexOf(name);
+            if (i >= 0) now.splice(i, 1); else now.push(name);
+            $("provider-models").value = now.join(", "); b.classList.toggle("on", i < 0);
+          });
+          box.appendChild(b);
+        });
+      });
+    });
+  }
+  $("provider-form").addEventListener("submit", (e) => { e.preventDefault(); saveProvider(false); });
+  $("provider-fetch").addEventListener("click", () => saveProvider(true));
+  $("open-models").addEventListener("click", () => { closeSettings(); setView("models"); });
+
   // --- small dialog (rename, new project, confirm) -----------------------------------------
   let dialogDone = null;
   function dialog(opts) {
@@ -521,6 +729,12 @@
       b.addEventListener("click", () => { picking = false; modelMenu.hidden = true; quietly(opt, [], [/^Model (changed|unchanged)/]); input.focus(); });
       modelMenu.appendChild(b);
     });
+    const manage = el("button", ""); manage.type = "button";
+    manage.appendChild(icon("key", 16));
+    const words = el("span"); words.appendChild(el("span", "name", "Models & API keys…")); words.appendChild(el("small", "", "Add Groq, OpenAI, Gemini, OpenRouter…"));
+    manage.appendChild(words);
+    manage.addEventListener("click", () => { closeModelMenu(); setView("models"); });
+    modelMenu.appendChild(manage);
   }
   function closeModelMenu() {
     if (modelMenu.hidden) return;
@@ -589,19 +803,43 @@
     quiet.splice(i, 1);
     return true;
   }
-  // The project's instructions go with the first message of a project chat.
-  function withContext(then) {
-    const chat = currentChat();
+  const CONTEXT_CHARS = 7000, MESSAGE_CHARS = 900;
+  function contextFor(chat, upto) {
+    const parts = [];
     const p = !incognito && chat.project ? project(chat.project) : null;
-    const a = api();
-    if (!contextPending || !p || !p.instructions || !a || !a.set_next_context) { contextPending = false; return then(); }
-    contextPending = false;
-    a.set_next_context(p.instructions).then(then, then);
+    if (p && p.instructions) parts.push("Project instructions (follow them):\n" + p.instructions);
+    const earlier = chat.messages.slice(0, upto === undefined ? chat.messages.length : upto)
+      .filter((m) => m.type === "user" || m.type === "reply");
+    const lines = [];
+    let used = 0;
+    for (let i = earlier.length - 1; i >= 0 && used < CONTEXT_CHARS - 1200; i -= 1) {
+      const m = earlier[i];
+      let text = String(m.type === "user" ? userText(m) : m.text).replace(/\s+\n/g, "\n").trim();
+      if (text.length > MESSAGE_CHARS) text = text.slice(0, MESSAGE_CHARS) + " …";
+      lines.unshift((m.type === "user" ? "User: " : "Grandpa: ") + text);
+      used += text.length + 10;
+    }
+    if (lines.length) parts.push("Earlier in this chat (continue from here):\n" + lines.join("\n"));
+    return parts.join("\n\n").slice(0, CONTEXT_CHARS);
   }
-  // Send a line again without showing it twice (retry, edit).
-  function resend(text) {
+  function withContext(then, upto) {
+    const a = api();
+    const skill = activeSkill;
+    if ((!contextPending && !skill) || !a || !a.set_next_context) { contextPending = false; return then(); }
+    const parts = [];
+    if (contextPending) { const history = contextFor(currentChat(), upto); if (history) parts.push(history); }
+    contextPending = false;
+    if (skill) { parts.push("Use the skill \u201c" + skill.name + "\u201d for this message:\n" + skill.instructions); setSkill(null); }
+    if (!parts.length) return then();
+    a.set_next_context(parts.join("\n\n").slice(0, 7900)).then(then, then);
+  }
+  // Send a line again without showing it twice (retry, edit). Grandpa starts
+  // fresh with the chat up to that message, so the old answer doesn't linger.
+  function resend(text, upto) {
+    quietly("/clear", null, [/^Conversation cleared/], false);
+    contextPending = true;
     quiet.push({ re: new RegExp("^" + escapeRe(text) + "$") });
-    withContext(() => queue(text));
+    withContext(() => queue(text), upto);
   }
 
   function submit() {
@@ -646,7 +884,7 @@
     chat.messages = chat.messages.slice(0, i + 1);
     if (!incognito) save();
     redraw();
-    resend(text);
+    resend(text, i);
   }
   function editMessage(li, index) {
     if (state !== "idle") return toast("Wait for Grandpa to finish first.");
@@ -668,7 +906,7 @@
       chat.messages = chat.messages.slice(0, index + 1);
       if (!incognito) save();
       redraw();
-      resend(text);
+      resend(text, index);
     };
     saveB.addEventListener("click", go);
     area.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); go(); } if (e.key === "Escape") { e.stopPropagation(); redraw(); } });
@@ -787,6 +1025,9 @@
     { text: "New project", icon: "folder-plus", run: () => { setView("projects"); newProject(); } },
     { text: "Projects", icon: "folder", run: () => setView("projects") },
     { text: "Memory", icon: "memory", run: () => setView("memory") },
+    { text: "Skills", icon: "spark", run: () => setView("skills") },
+    { text: "Connectors", icon: "plug", run: () => setView("connectors") },
+    { text: "Models & API keys", icon: "key", run: () => setView("models") },
     { text: "Switch model", icon: "chevron-down", run: () => { setView("chat"); setTimeout(openModelMenu, 50); } },
     { text: "Incognito chat", icon: "incognito", run: () => setIncognito(!incognito) },
     { text: "Show the orb", icon: "orb", run: showOrb },

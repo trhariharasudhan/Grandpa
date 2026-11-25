@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src ws://127.0.0.1:*; img-src 'self' data:">
 <title>Grandpa</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="logo.svg">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -16,7 +16,7 @@
   <aside id="sidebar" aria-label="Navigation">
     <div class="side-top">
       <button type="button" id="brand" class="brand" title="New chat">
-        <span class="mark" aria-hidden="true"></span><span>Grandpa</span>
+        <span class="brand-logo" data-icon="logo" data-icon-size="22"></span><span>Grandpa</span>
       </button>
       <button type="button" id="side-close" class="icon-btn" title="Close the panel (Ctrl+B)" aria-label="Close the panel"><span data-icon="sidebar"></span></button>
     </div>
@@ -25,6 +25,8 @@
       <button type="button" id="new-chat" class="nav-item"><span data-icon="new-chat"></span><span>New chat</span><kbd>Ctrl N</kbd></button>
       <button type="button" id="open-search" class="nav-item"><span data-icon="search"></span><span>Search</span><kbd>Ctrl K</kbd></button>
       <button type="button" id="nav-projects" class="nav-item" data-goto="projects"><span data-icon="folder"></span><span>Projects</span></button>
+      <button type="button" id="nav-skills" class="nav-item" data-goto="skills"><span data-icon="spark"></span><span>Skills</span></button>
+      <button type="button" id="nav-connectors" class="nav-item" data-goto="connectors"><span data-icon="plug"></span><span>Connectors</span></button>
       <button type="button" id="nav-memory" class="nav-item" data-goto="memory"><span data-icon="memory"></span><span>Memory</span></button>
     </nav>
 
@@ -71,18 +73,20 @@
 
     <!-- welcome (an empty chat): greeting + composer in the middle -->
     <div id="welcome">
-      <div class="hello-row"><span class="mark big" aria-hidden="true"></span><h1 id="hello">What shall we do?</h1></div>
+      <div class="hello-row"><span class="brand-logo" data-icon="logo" data-icon-size="40"></span><h1 id="hello">What shall we do?</h1></div>
       <p id="project-hint" class="hint" hidden></p>
     </div>
 
     <form id="composer" autocomplete="off">
       <div id="attachments" aria-label="Attached files"></div>
+      <div id="skill-chip" hidden></div>
       <textarea id="input" rows="1" maxlength="1800" placeholder="How can Grandpa help you today?" aria-label="Message"></textarea>
       <div class="tools-row">
         <div class="pop-wrap">
           <button type="button" id="plus" class="icon-btn round" title="Add files and more" aria-label="Add files and more" aria-haspopup="menu"><span data-icon="plus"></span></button>
           <div id="plus-menu" class="pop" role="menu" hidden>
             <button type="button" id="attach" role="menuitem"><span data-icon="file"></span><span>Add files<small>Text, code, PDF, Word, Excel, PowerPoint · or drop them here</small></span></button>
+            <button type="button" id="plus-skill" role="menuitem"><span data-icon="spark"></span><span>Use a skill<small>Your saved instructions for this message</small></span></button>
             <button type="button" id="plus-voice" role="menuitem"><span data-icon="mic"></span><span>Voice typing<small>Say one sentence</small></span></button>
             <button type="button" id="plus-orb" role="menuitem"><span data-icon="orb"></span><span>Show the orb<small>Grandpa's floating ring · hold Ctrl+Win to talk</small></span></button>
           </div>
@@ -134,6 +138,67 @@
           <p class="hint">Sent to Grandpa at the start of each chat in this project.</p>
         </aside>
       </div>
+    </section>
+
+    <!-- skills view -->
+    <section id="skills-view" class="view page" hidden>
+      <div class="page-head">
+        <h2>Skills</h2>
+        <div class="row-actions">
+          <button type="button" id="import-skill" class="ghost"><span data-icon="download" data-icon-size="16"></span>Import SKILL.md</button>
+          <button type="button" id="new-skill" class="primary"><span data-icon="plus" data-icon-size="16"></span>New skill</button>
+        </div>
+      </div>
+      <p class="hint">A skill is a set of instructions Grandpa follows when you use it (＋ → Use a skill). Same format as Claude skills: a SKILL.md with a name and a description.</p>
+      <form id="skill-form" class="card" hidden>
+        <label>Name<input id="skill-name" maxlength="48" placeholder="email-polish"></label>
+        <label>When to use it<input id="skill-description" maxlength="300" placeholder="Polish an email draft: friendly, short, clear"></label>
+        <label>Instructions<textarea id="skill-instructions" rows="9" maxlength="12000" placeholder="Steps, rules and the format of the answer."></textarea></label>
+        <div class="row-actions"><button type="submit" class="primary small">Save skill</button><button type="button" id="skill-cancel" class="ghost small">Cancel</button><span id="skill-msg" class="hint"></span></div>
+      </form>
+      <p class="section">Your skills</p>
+      <div id="skill-grid" class="grid"></div>
+      <p class="section">Built into Grandpa <span class="hint">(tool skills: grandpa skill run NAME)</span></p>
+      <div id="builtin-grid" class="grid small"></div>
+    </section>
+
+    <!-- connectors view -->
+    <section id="connectors-view" class="view page" hidden>
+      <div class="page-head">
+        <h2>Connectors</h2>
+        <label class="switch"><input type="checkbox" id="mcp-on"> Connectors on</label>
+      </div>
+      <p class="hint">Connect apps and services through MCP servers. Grandpa may only use the tools you allow, and asks you before every call. Keys are stored encrypted on this PC.</p>
+      <p id="mcp-problems" class="bad-note" hidden></p>
+      <div id="mcp-grid" class="grid"></div>
+      <form id="mcp-form" class="card">
+        <p class="card-title"><span data-icon="plus" data-icon-size="16"></span>Add a connector</p>
+        <div class="presets" id="mcp-presets"></div>
+        <label>Name<input id="mcp-name" maxlength="40" placeholder="github"></label>
+        <label>Command that starts it<input id="mcp-command" maxlength="400" placeholder="npx -y @modelcontextprotocol/server-github"></label>
+        <label>Tools Grandpa may use (comma separated, * for all)<input id="mcp-allow" maxlength="600" placeholder="search_repositories, get_issue"></label>
+        <label>API key or token (optional)
+          <div class="key-row"><input id="mcp-key-name" maxlength="64" placeholder="GITHUB_PERSONAL_ACCESS_TOKEN"><input id="mcp-key-value" type="password" maxlength="400" placeholder="paste the key"></div></label>
+        <div class="row-actions"><button type="submit" class="primary small">Save connector</button><span id="mcp-msg" class="hint"></span></div>
+        <p class="hint">A connector is a program Grandpa starts on this PC. Add only ones you trust.</p>
+      </form>
+    </section>
+
+    <!-- models & API keys view -->
+    <section id="models-view" class="view page" hidden>
+      <div class="page-head"><h2>Models &amp; API keys</h2></div>
+      <p class="hint">Grandpa runs on local models (Ollama) by default. Add a cloud provider to use its models too; they appear in the model menu as <code>@provider/model</code>. Messages sent to a cloud model leave this PC. Keys: <span id="key-store"></span>.</p>
+      <div id="provider-grid" class="grid"></div>
+      <form id="provider-form" class="card">
+        <p class="card-title"><span data-icon="plus" data-icon-size="16"></span>Add a provider</p>
+        <label>Provider<select id="provider-preset"></select></label>
+        <label id="provider-url-row">Address (OpenAI-compatible)<input id="provider-url" maxlength="200" placeholder="https://api.example.com/v1"></label>
+        <label id="provider-id-row" hidden>Short id<input id="provider-id" maxlength="30" placeholder="myserver"></label>
+        <label>API key<input id="provider-key" type="password" maxlength="400" placeholder="paste the key (stored encrypted)"></label>
+        <label>Models to show (comma separated)<input id="provider-models" maxlength="2000" placeholder="llama-3.3-70b-versatile"></label>
+        <div class="row-actions"><button type="submit" class="primary small">Save</button><button type="button" id="provider-fetch" class="ghost small">Save and list its models</button><span id="provider-msg" class="hint"></span></div>
+        <div id="provider-found" class="chips-list" hidden></div>
+      </form>
     </section>
 
     <!-- memory view -->
@@ -208,6 +273,7 @@
         <input id="set-model" placeholder="for example: mini, fast, brain" maxlength="60"></label>
       <label class="check"><input type="checkbox" id="set-enter"> Enter sends (Shift+Enter makes a new line)</label>
       <label class="check"><input type="checkbox" id="set-stream"> Show replies as they are written</label>
+      <button type="button" id="open-models" class="ghost"><span data-icon="key" data-icon-size="16"></span>Models &amp; API keys…</button>
     </div>
     <div class="tab" data-tab="data" hidden>
       <p>Chats and projects are kept only on this PC, in this window's storage. Incognito chats are never kept.</p>

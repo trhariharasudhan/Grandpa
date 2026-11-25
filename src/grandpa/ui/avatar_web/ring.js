@@ -29,7 +29,7 @@
   // highlight travels; segments: a dashed ring that turns (working);
   // flicker: the quick waver of speech.
   const MOTION = {
-    idle:      { pulse: 0.025, speed: 0.25, segments: 0, flicker: 0.0 },
+    idle:      { pulse: 0.07, speed: 0.95, segments: 0, flicker: 0.0 },  // a visible, slow breath
     listening: { pulse: 0.06,  speed: 0.9,  segments: 0, flicker: 0.0 },
     thinking:  { pulse: 0.05,  speed: 1.4,  segments: 0, flicker: 0.0 },
     speaking:  { pulse: 0.03,  speed: 0.6,  segments: 0, flicker: 1.0 },

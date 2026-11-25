@@ -44,8 +44,39 @@
     app: [["rect", { x: 3, y: 4, width: 18, height: 16, rx: 2 }], ["path", { d: "M3 9h18" }]],
     power: [["path", { d: "M12 3v8" }], ["path", { d: "M7 6.5a7 7 0 1 0 10 0" }]],
     spark: [["path", { d: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" }]],
+    plug: [["path", { d: "M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4" }]],
+    key: [["circle", { cx: 8, cy: 15, r: 4 }], ["path", { d: "M11 12l9-9M17 6l3 3M15 8l2 2" }]],
     warning: [["path", { d: "M12 4l9 16H3z" }], ["path", { d: "M12 10v4M12 17v.5" }]],
   };
+
+  // Grandpa's emblem (assets/brand): the sail with its three cuts, in the
+  // current text colour. The cuts are a mask, so any background shows through.
+  const LOGO_OUTER = "M48 912 C 120 560, 380 222, 776 52 C 600 300, 548 610, 756 892 C 610 770, 480 660, 352 612 C 238 700, 130 800, 48 912 Z";
+  const LOGO_CUTS = "M138 676 L159 656 L179 636 L199 618 L218 600 L237 583 L256 566 L274 551 L292 537 L310 523 L327 510 L344 498 L360 487 L375 476 L392 468 L391 467 L375 474 L357 481 L338 489 L320 499 L301 511 L282 524 L264 538 L245 554 L226 571 L208 589 L190 609 L172 630 L154 652 L137 675 Z M398 472 L407 457 L417 442 L427 427 L436 412 L446 397 L455 382 L465 367 L474 352 L484 337 L493 322 L503 307 L512 292 L521 277 L530 262 L529 261 L518 275 L508 289 L497 304 L487 318 L477 333 L467 347 L456 362 L446 376 L436 391 L426 405 L416 420 L406 434 L395 449 L385 463 Z M385 473 L400 491 L414 509 L429 527 L444 545 L458 563 L473 581 L488 599 L503 617 L517 635 L532 653 L547 671 L562 689 L577 707 L593 724 L594 723 L581 704 L567 685 L553 666 L539 648 L525 629 L511 610 L497 592 L483 573 L469 555 L455 536 L441 518 L427 499 L412 481 L398 462 Z";
+  let logoCount = 0;
+  function logo(size) {
+    const id = "grandpa-logo-cuts-" + (logoCount += 1);
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "0 0 800 960");
+    svg.setAttribute("height", String(size || 20));
+    svg.setAttribute("width", String(Math.round((size || 20) * 800 / 960)));
+    svg.setAttribute("aria-hidden", "true");
+    svg.setAttribute("class", "logo-svg");
+    const defs = document.createElementNS(NS, "defs");
+    const mask = document.createElementNS(NS, "mask");
+    mask.setAttribute("id", id);
+    const white = document.createElementNS(NS, "rect");
+    white.setAttribute("width", "800"); white.setAttribute("height", "960"); white.setAttribute("fill", "#fff");
+    const cuts = document.createElementNS(NS, "path");
+    cuts.setAttribute("d", LOGO_CUTS); cuts.setAttribute("fill", "#000");
+    const knot = document.createElementNS(NS, "circle");
+    knot.setAttribute("cx", "392"); knot.setAttribute("cy", "468"); knot.setAttribute("r", "8"); knot.setAttribute("fill", "#000");
+    mask.appendChild(white); mask.appendChild(cuts); mask.appendChild(knot); defs.appendChild(mask); svg.appendChild(defs);
+    const sail = document.createElementNS(NS, "path");
+    sail.setAttribute("d", LOGO_OUTER); sail.setAttribute("fill", "currentColor"); sail.setAttribute("mask", "url(#" + id + ")");
+    svg.appendChild(sail);
+    return svg;
+  }
 
   function make(name, size) {
     const parts = ICONS[name];
@@ -72,13 +103,14 @@
   function fill(root) {
     (root || document).querySelectorAll("[data-icon]").forEach((el) => {
       const size = Number(el.getAttribute("data-icon-size")) || undefined;
-      const svg = make(el.getAttribute("data-icon"), size);
+      const name = el.getAttribute("data-icon");
+      const svg = name === "logo" ? logo(size) : make(name, size);
       el.textContent = "";
       el.appendChild(svg);
     });
   }
 
-  window.GrandpaIcons = { make, fill, names: Object.keys(ICONS) };
+  window.GrandpaIcons = { make, logo, fill, names: Object.keys(ICONS) };
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => fill());
   else fill();
 })();

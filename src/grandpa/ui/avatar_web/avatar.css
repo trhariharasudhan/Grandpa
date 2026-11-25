@@ -28,23 +28,23 @@ html, body {
 
 #ring {
   position: relative;
-  width: 40px; height: 40px; padding: 0;
+  width: 30px; height: 30px; padding: 0;
   border-radius: 50%;
-  border: 3px solid var(--glow);
+  border: 2.5px solid var(--glow);
   background: radial-gradient(circle, color-mix(in srgb, var(--glow) 14%, transparent) 0%, transparent 70%);
-  box-shadow: 0 0 7px 1px var(--glow), inset 0 0 6px 1px color-mix(in srgb, var(--glow) 60%, transparent);
+  box-shadow: 0 0 6px 1px var(--glow), inset 0 0 4px 1px color-mix(in srgb, var(--glow) 60%, transparent);
   cursor: pointer;
   touch-action: none;
-  animation: breathe 4s ease-in-out infinite;
+  animation: breathe 4.2s ease-in-out infinite;
   transition: border-color 300ms ease, box-shadow 300ms ease, width 200ms ease, height 200ms ease;
 }
 #ring:focus-visible { outline: 2px solid var(--ink); outline-offset: 6px; }
-#ring-core { position: absolute; inset: 5px; border-radius: 50%; }
+#ring-core { position: absolute; inset: 4px; border-radius: 50%; }
 
 /* A reply arrived while the panel was closed: an amber dot, until opened. */
 #ring.unread::after {
   content: ""; position: absolute; top: -3px; right: -3px;
-  width: 9px; height: 9px; border-radius: 50%;
+  width: 7px; height: 7px; border-radius: 50%;
   background: var(--unread); box-shadow: 0 0 8px var(--unread);
 }
 
@@ -54,13 +54,14 @@ html, body {
 [data-state="confirm"] #ring   { animation: pulse 1.6s ease-in-out infinite; }
 [data-state="working"] #ring-core { border: 3px dashed color-mix(in srgb, var(--glow) 80%, transparent); animation: spin 2s linear infinite; }
 
-@keyframes breathe { 0%,100% { transform: scale(0.97); opacity: 0.88; } 50% { transform: scale(1.0); opacity: 1; } }
+/* Resting: a slow, clearly visible breath (about 4 s in, 4 s out). */
+@keyframes breathe { 0%,100% { transform: scale(0.9); opacity: 0.7; } 50% { transform: scale(1.04); opacity: 1; } }
 @keyframes pulse   { 0%,100% { transform: scale(0.94); } 50% { transform: scale(1.04); } }
 @keyframes spin    { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { #ring, #ring-core { animation: none !important; } }
 
 /* A2: with WebGL the shader draws the ring; the CSS ring above is the fallback. */
-#ring-gl { display: none; position: absolute; inset: -11px; width: calc(100% + 22px); height: calc(100% + 22px); pointer-events: none; }
+#ring-gl { display: none; position: absolute; inset: -8px; width: calc(100% + 16px); height: calc(100% + 16px); pointer-events: none; }
 .gl #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }
 .gl #ring-core { display: none; }
 .gl #ring-gl { display: block; }
@@ -70,7 +71,7 @@ html, body {
    "char" from the start of a morph to its end.
    A5: the morph itself (opacity and scale of both canvases) is set by
    character.js frame by frame, from one clock; CSS only places the canvases. */
-#char-gl { display: none; position: absolute; inset: -11px; width: calc(100% + 22px); height: calc(100% + 22px); pointer-events: none; opacity: 0; transform-origin: 50% 50%; }
+#char-gl { display: none; position: absolute; inset: -8px; width: calc(100% + 16px); height: calc(100% + 16px); pointer-events: none; opacity: 0; transform-origin: 50% 50%; }
 #ring-gl { transform-origin: 50% 50%; }
 .char-ready #char-gl { display: block; }
 .char #ring { border-color: transparent; box-shadow: none; background: none; animation: none; }

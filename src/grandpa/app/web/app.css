@@ -50,7 +50,9 @@ code { font-family: Consolas, "Cascadia Mono", monospace; }
 .link-btn { display: inline-flex; gap: 4px; align-items: center; background: none; border: 0; color: var(--muted); padding: 0; }
 .link-btn:hover { color: var(--text); }
 
-/* the Grandpa mark: a small ring, like the orb */
+/* Grandpa's emblem (assets/brand) in the brand yellow; the ring mark is the orb's */
+.brand-logo { display: inline-grid; place-items: center; color: var(--brand); }
+.logo-svg { display: block; }
 .mark { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--brand); box-shadow: 0 0 6px var(--brand); flex: none; }
 .mark.big { width: 30px; height: 30px; border-width: 4px; box-shadow: 0 0 12px var(--brand); }
 
@@ -304,3 +306,29 @@ button.card:hover { border-color: var(--border); }
   #app:not(.side-open-small) #side-open { display: inline-grid; }
   .project-cols { grid-template-columns: 1fr; }
 }
+
+/* skills, connectors, models */
+.ghost { display: inline-flex; gap: 6px; align-items: center; background: transparent; border: 1px solid var(--panel); border-radius: 10px; padding: 6px 12px; color: var(--text); }
+.ghost:hover { border-color: var(--border); }
+.ghost.small, .primary.small { padding: 5px 12px; }
+.grid.small { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.grid.small .card { min-height: 0; padding: 10px 12px; }
+.card label { display: block; margin-bottom: 10px; font-size: .92em; }
+.card input, .card select, .card textarea { width: 100%; padding: 8px 10px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg); margin-top: 4px; resize: vertical; }
+.card .card-actions { display: flex; gap: 4px; margin-top: auto; padding-top: 6px; }
+.card .card-actions button { display: inline-flex; gap: 5px; align-items: center; background: transparent; border: 1px solid var(--panel); border-radius: 8px; padding: 3px 9px; font-size: .85em; color: var(--muted); }
+.card .card-actions button:hover { color: var(--text); border-color: var(--border); }
+.card .card-actions .danger:hover { color: var(--red); }
+#skill-form, #mcp-form, #provider-form { margin-top: 16px; max-width: 720px; }
+.status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.status-dot.on { background: var(--green); } .status-dot.off { background: var(--red); }
+.mono { font-family: Consolas, "Cascadia Mono", monospace; font-size: .82em; color: var(--muted); overflow-wrap: anywhere; }
+.key-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.switch { display: inline-flex; gap: 8px; align-items: center; color: var(--muted); }
+.bad-note { color: var(--red); font-size: .88em; white-space: pre-wrap; }
+.presets, .chips-list { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.presets button, .chips-list button { background: transparent; border: 1px solid var(--panel); border-radius: 999px; padding: 3px 10px; font-size: .85em; color: var(--muted); }
+.presets button:hover, .chips-list button:hover, .chips-list button.on { color: var(--text); border-color: var(--brand); }
+.chips-list { max-height: 180px; overflow-y: auto; }
+#skill-chip { display: flex; margin-bottom: 6px; }
+#skill-chip .file { border-color: var(--brand); color: var(--text); }

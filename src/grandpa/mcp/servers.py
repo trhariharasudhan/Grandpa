@@ -75,6 +75,8 @@ __all__ = [
 
 DEFAULT_TIMEOUT = 30.0
 IMPLEMENTATION = "grandpa.mcp.servers.call_action"
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+SECRET_PREFIX = "secret:"
 _SERVER_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]|_(?!_))*$")
 _MESSAGE_LIMIT = 600
 
@@ -92,6 +94,10 @@ class ServerConfig:
     timeout: float = DEFAULT_TIMEOUT
     enabled: bool = True
     cwd: str | None = None
+    #: Extra environment variables. A value ``"secret:<name>"`` is read from
+    #: Grandpa's secret store when the server starts (DPAPI on Windows), so an
+    #: API key never sits in this file.
+    env: tuple[tuple[str, str], ...] = ()
 
     def allows(self, tool: str) -> bool:
         return "*" in self.allow or tool in self.allow
@@ -178,6 +184,15 @@ def parse_settings(data: Mapping[str, Any], path: Path | None = None) -> MCPSett
         if cwd is not None and not isinstance(cwd, str):
             problems.append(f"{label}: 'cwd' must be a folder path")
             continue
+        env_table = table.get("env", {})
+        if not isinstance(env_table, Mapping) or not all(
+            isinstance(k, str) and _ENV_NAME.match(k) and isinstance(v, str)
+            for k, v in env_table.items()
+        ):
+            problems.append(
+                f"{label}: 'env' must map NAMES (letters, digits, _) to strings"
+            )
+            continue
         servers[str(name)] = ServerConfig(
             name=str(name),
             command=tuple(command) + tuple(args),
@@ -185,6 +200,7 @@ def parse_settings(data: Mapping[str, Any], path: Path | None = None) -> MCPSett
             timeout=float(min(timeout, 600)),
             enabled=server_enabled,
             cwd=cwd,
+            env=tuple(sorted(env_table.items())),
         )
     return MCPSettings(
         enabled=enabled, servers=servers, problems=tuple(problems), path=path
@@ -331,7 +347,36 @@ TransportFactory = Callable[[ServerConfig], Any]
 def _stdio_transport(server: ServerConfig) -> Any:
     from grandpa.mcp.transport import StdioTransport
 
-    return StdioTransport(list(server.command), timeout=server.timeout, cwd=server.cwd)
+    return StdioTransport(
+        list(server.command),
+        timeout=server.timeout,
+        cwd=server.cwd,
+        env=server_environment(server),
+    )
+
+
+def server_environment(server: ServerConfig) -> dict[str, str] | None:
+    """The process environment for a server: Grandpa's, plus its ``env``.
+
+    ``secret:<name>`` values come from the secret store; a missing secret is
+    an error (the server would fail in a confusing way without its key).
+    """
+    if not server.env:
+        return None
+    environment = dict(os.environ)
+    for key, value in server.env:
+        if value.startswith(SECRET_PREFIX):
+            from grandpa.security.secret_store import SecretStore
+
+            secret = SecretStore().get(value[len(SECRET_PREFIX) :])
+            if secret is None:
+                raise RuntimeError(
+                    f"the key for {key} is missing; add it again in the app's Connectors page"
+                )
+            environment[key] = secret
+        else:
+            environment[key] = value
+    return environment
 
 
 @dataclass

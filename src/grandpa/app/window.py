@@ -35,7 +35,7 @@ FILE_TYPES = (
     "All files (*.*)",
 )
 MAX_PICK = 5
-MAX_CONTEXT = 4000
+MAX_CONTEXT = 8000
 MAX_MEMORY = 500
 
 
@@ -113,6 +113,96 @@ class AppApi:
 
     def add_memory(self, text: Any) -> bool:
         return add_memory(text)
+
+    # --- Skills, Connectors, Models & API keys (grandpa.app.manage) ---------
+
+    def list_skills(self) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.list_skills()
+
+    def save_skill(
+        self, name: Any, description: Any, instructions: Any
+    ) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.save_skill(name, description, instructions)
+
+    def delete_skill(self, name: Any) -> bool:
+        from grandpa.app import manage
+
+        return manage.delete_skill(name)
+
+    def import_skill(self) -> dict[str, Any]:
+        """Pick a SKILL.md in the file dialog and add it."""
+        from grandpa.app import manage
+
+        paths = self.pick_files()
+        if not paths:
+            return {"ok": False, "error": ""}
+        allowed = (
+            self._session.picked_files if self._session is not None else set(paths)
+        )
+        return manage.import_skill(paths[0], allowed)
+
+    def skill_instructions(self, name: Any) -> str:
+        from grandpa.app import manage
+
+        return manage.skill_instructions(name)
+
+    def mcp_status(self) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.mcp_status()
+
+    def mcp_save_server(
+        self, name: Any, command: Any, allow: Any, keys: Any
+    ) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.mcp_save_server(name, command, allow, keys)
+
+    def mcp_remove_server(self, name: Any) -> bool:
+        from grandpa.app import manage
+
+        return manage.mcp_remove_server(name)
+
+    def mcp_toggle_server(self, name: Any, enabled: Any) -> bool:
+        from grandpa.app import manage
+
+        return manage.mcp_toggle_server(name, enabled)
+
+    def mcp_set_off(self, off: Any) -> bool:
+        from grandpa.app import manage
+
+        return manage.mcp_set_off(off)
+
+    def mcp_test(self, name: Any) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.mcp_test(name)
+
+    def providers_status(self) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.providers_status()
+
+    def provider_save(
+        self, pid: Any, url: Any, key: Any, models: Any
+    ) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.provider_save(pid, url, key, models)
+
+    def provider_remove(self, pid: Any) -> bool:
+        from grandpa.app import manage
+
+        return manage.provider_remove(pid)
+
+    def provider_models(self, pid: Any) -> dict[str, Any]:
+        from grandpa.app import manage
+
+        return manage.provider_models(pid)
 
     def open_orb(self) -> str:
         from grandpa.app.launch import launch

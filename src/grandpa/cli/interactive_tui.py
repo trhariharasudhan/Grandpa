@@ -182,9 +182,22 @@ def model_menu(installed: list[str], current: str) -> list[tuple[str, str, bool]
             )
         )
     others = [n for n in installed if _base(n) not in covered and "embed" not in n]
-    for name in sorted(others, key=lambda n: (not _base(n).startswith("grandpa-"), n)):
+    for name in sorted(
+        others,
+        key=lambda n: (n.startswith("@"), not _base(n).startswith("grandpa-"), n),
+    ):
         mark = "*" if _base(name) == _base(current) else " "
         short = _base(name).removeprefix("grandpa-")
+        if name.startswith("@"):  # a cloud provider's model (grandpa.engine.cloud)
+            provider, _, model_id = name[1:].partition("/")
+            rows.append(
+                (
+                    name,
+                    f"{mark} {model_id} cloud: sends your messages to {provider}",
+                    True,
+                )
+            )
+            continue
         kind = "your model" if _base(name).startswith("grandpa-") else "other model"
         rows.append((name, f"{mark} {short.title():<8} {kind} ({name})", True))
     return rows

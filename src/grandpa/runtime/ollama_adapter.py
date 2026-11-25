@@ -311,6 +311,17 @@ class OllamaBackendAdapter(BackendAdapter):
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> Dict[str, Any]:
+        if model.startswith("@"):  # a cloud provider (grandpa.engine.cloud)
+            from grandpa.engine.cloud import client_for
+
+            client, name = client_for(model)
+            return client.generate(
+                messages,
+                model=name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
         messages = ensure_grandpa_identity(messages, model)
         msg_dicts = messages_to_dicts(messages)
         for md in msg_dicts:
@@ -441,6 +452,19 @@ class OllamaBackendAdapter(BackendAdapter):
         max_tokens: int = 1024,
         **kwargs: Any,
     ) -> AsyncIterator[str]:
+        if model.startswith("@"):  # a cloud provider (grandpa.engine.cloud)
+            from grandpa.engine.cloud import client_for
+
+            client, name = client_for(model)
+            async for piece in client.stream(
+                messages,
+                model=name,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            ):
+                yield piece
+            return
         messages = ensure_grandpa_identity(messages, model)
         payload: Dict[str, Any] = {
             "model": model,
@@ -532,6 +556,18 @@ class OllamaBackendAdapter(BackendAdapter):
         that goes wrong before the first word falls back to :meth:`generate`,
         so streaming can only ever make a reply appear sooner.
         """
+        if model.startswith("@"):  # a cloud provider (grandpa.engine.cloud)
+            from grandpa.engine.cloud import client_for
+
+            client, name = client_for(model)
+            return client.generate_streaming(
+                messages,
+                model=name,
+                on_text=on_text,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
         messages = ensure_grandpa_identity(messages, model)
         msg_dicts = messages_to_dicts(messages)
         for md in msg_dicts:
@@ -785,9 +821,20 @@ class OllamaBackendAdapter(BackendAdapter):
                 self._host,
                 exc,
             )
-            return []
+            return self._cloud_models()
         data = resp.json()
-        return [m["name"] for m in data.get("models", [])]
+        return [m["name"] for m in data.get("models", [])] + self._cloud_models()
+
+    @staticmethod
+    def _cloud_models() -> List[str]:
+        """Models of the cloud providers the user added (``@provider/model``)."""
+        try:
+            from grandpa.engine.cloud import cloud_model_names
+
+            return cloud_model_names()
+        except Exception:  # noqa: BLE001 - a broken providers file hides them, nothing more
+            logger.debug("cloud models unavailable", exc_info=True)
+            return []
 
     def pull_model(self, model: str) -> Dict[str, Any]:
         """Pull an Ollama model through the local Ollama HTTP API."""

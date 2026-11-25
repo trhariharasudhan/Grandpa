@@ -228,6 +228,21 @@ def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None
         "list_memories",
         "forget_memory",
         "add_memory",
+        "list_skills",
+        "save_skill",
+        "delete_skill",
+        "import_skill",
+        "skill_instructions",
+        "mcp_status",
+        "mcp_save_server",
+        "mcp_remove_server",
+        "mcp_toggle_server",
+        "mcp_set_off",
+        "mcp_test",
+        "providers_status",
+        "provider_save",
+        "provider_remove",
+        "provider_models",
     }
     assert api.pick_file() is None and api.pick_files() == []  # no window yet
     monkeypatch.setattr(window, "user_name", lambda: "Mr. Hari Hara Sudhan")
@@ -490,6 +505,9 @@ def test_project_instructions_go_with_the_next_message_only() -> None:
     session, bridge, published = _session()
     api = AppApi(session)
     assert api.set_next_context("Answer in Thanglish.") is True
+    session.send("/clear")  # a command neither carries nor uses it up
+    assert bridge.sent[-1] == "/clear"
+    bridge.hooks.ready_for_input("You > ")
     session.send("menu ideas")
     assert "Answer in Thanglish." in bridge.sent[-1] and bridge.sent[-1].endswith(
         "menu ideas"
