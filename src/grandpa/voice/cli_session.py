@@ -8,10 +8,10 @@ import threading
 import time
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher
-from enum import StrEnum
 from typing import Callable, Protocol
 
 from grandpa.cli.theme import FAREWELL_TEXT
+from grandpa.core.compat import StrEnum
 from grandpa.engine._base import (
     EngineConnectionError,
     EngineModelLoadError,

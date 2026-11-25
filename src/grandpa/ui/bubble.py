@@ -16,9 +16,10 @@ from __future__ import annotations
 import math
 from collections import deque
 from dataclasses import dataclass, field
-from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
+
+from grandpa.core.compat import StrEnum
 
 # Re-exported below, not defined here: the hold key lives beside
 # ``KEY_CODES`` in push_to_talk because three commands read one and two of

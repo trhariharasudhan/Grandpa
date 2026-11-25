@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from enum import StrEnum
 from typing import Any
+
+from grandpa.core.compat import StrEnum
 
 PROTOCOL_VERSION = 1
 
