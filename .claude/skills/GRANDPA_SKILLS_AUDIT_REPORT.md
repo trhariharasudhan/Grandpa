@@ -157,7 +157,7 @@ are still visible in imports at this commit (module docstring of `desktop/__init
 
 ## 4. Capability matrix (implemented / partial / planned / experimental / missing)
 
-The maintained matrix is `.claude/skills/grandpa-dev-orchestrator/references/capability-status.md`.
+The maintained matrix is `.claude/skills/grandpa-master-orchestrator/references/capability-status.md`.
 Summary:
 
 | Status | Capabilities |
@@ -184,7 +184,7 @@ Each candidate was scored on: (1) exists in repo, (2) complexity, (3) developmen
 
 | Candidate area | Exists | Freq. (recent PRs) | Distinct workflows | Decision |
 |---|---|---|---|---|
-| Architecture & coordination | yes | – | routing, rules | **Master skill** (`grandpa-dev-orchestrator`) |
+| Architecture & coordination | yes | – | routing, rules | **Master skill** (`grandpa-master-orchestrator`) |
 | Tool execution / computer control / OS integration / automation | yes, central | very high | add action, debug tool calls | **Essential** – merged into `grandpa-action-layer` (one executor serves all) |
 | Testing & QA + debugging | yes, very rich infra | every PR | scope, guards, CI, commit guard | **Essential** (`grandpa-testing-qa`; debugging folded in) |
 | Security & permissions | yes, many boundaries | high (C4, D1–D4, E1, G1, G2) | review lens | **Essential** (`grandpa-security-governance`) |
@@ -211,7 +211,7 @@ tests + an honest report; every skill depends on the orchestrator's rules and en
 
 | Skill | Priority | Purpose / problems solved | Responsibilities | Key modules | Expected workflows | Depends on | Justification |
 |---|---|---|---|---|---|---|---|
-| `grandpa-dev-orchestrator` | Master | Claude otherwise starts from a 167k-line tree with stale architecture docs | map, rules, routing, capability truth, skill maintenance | whole repo | orient → route → verify | – | prevents wrong-layer edits and unsafe probes |
+| `grandpa-master-orchestrator` | Master | Claude otherwise starts from a 167k-line tree with stale architecture docs | map, rules, routing, capability truth, skill maintenance | whole repo | orient → route → verify | – | prevents wrong-layer edits and unsafe probes |
 | `grandpa-action-layer` | Essential | new actions break tier mirroring, import isolation or confirmation | catalogue, `_CALLS`, tiers, domains, tool loop | `action_layer/`, `pc_control.py`, `desktop/control/`, `local/` | add action; debug tool call | security, testing | the hub every feature passes through |
 | `grandpa-testing-qa` | Essential | guards, markers and commit guard are non-obvious; tests can damage the machine | scope selection, guards, CI parity, probes | `tests/`, `scripts/commit_verification.py`, CI | which tests → run → report | – | highest leverage for correctness and safety |
 | `grandpa-security-governance` | Essential | many boundaries, easy to weaken one while fixing another | boundary review, hard constraints | `security/`, `server/auth_middleware.py`, `devices/`, `plugins/`, `mcp/`, `screen/privacy.py` | five-question review | action-layer | the product actuates a real PC |
@@ -226,7 +226,7 @@ tests + an honest report; every skill depends on the orchestrator's rules and en
 
 ## 6. Phase 4 – Skill ecosystem architecture
 
-- **A. Master:** `grandpa-dev-orchestrator` – map, shared rules, routing table, capability status, validator.
+- **A. Master:** `grandpa-master-orchestrator` – map, shared rules, routing table, capability status, validator.
 - **B. Specialists:** nine domain skills, each with a short SKILL.md (47–81 lines) and at most one reference file.
 - **C. Supporting knowledge:** `references/*.md` (architecture map, capability status, governance, routing,
   catalogue guide, test infrastructure, boundaries, voice map, Odin roles, memory stores, extension formats)
@@ -241,7 +241,7 @@ they enforce. Overlaps are resolved by an explicit owner table in `references/sk
 ### 6.1 Dependency map
 
 ```
-                     grandpa-dev-orchestrator
+                     grandpa-master-orchestrator
                                │
   ┌──────────────┬─────────────┼──────────────┬────────────────┬────────────────────┐
   ▼              ▼             ▼              ▼                ▼                    ▼
@@ -262,7 +262,7 @@ testing-qa (final step of every skill)
 .claude/skills/
 ├── GRANDPA_SKILLS_MASTER_INDEX.md
 ├── GRANDPA_SKILLS_AUDIT_REPORT.md
-├── grandpa-dev-orchestrator/
+├── grandpa-master-orchestrator/
 │   ├── SKILL.md
 │   ├── references/{architecture-map,capability-status,governance,skill-routing}.md
 │   └── scripts/validate_skills.py
@@ -343,6 +343,9 @@ skills' commands on Windows (run here on Linux).
 | B10 | Medium (test infra) | Full-suite run on Linux ends in an INTERNALERROR: `tests/verification_plugin.py` writes `runtime/verification/` at session end while a write guard is still armed (last test: `tests/voice/test_accuracy_confidence.py::test_the_report_states_what_the_sample_can_settle`), so pytest prints no summary and the commit guard gets no record. Reproduced twice; not seen in Windows CI | full-suite runs in this audit |
 | B11 | Medium (test infra) | Order-dependent leak: a patched `importlib.import_module` from `tests/jarvis/test_voice_input.py` breaks ~2,775 later tests in a full Linux run | §9.7 |
 | B12 | Low (dev UX) | Running pytest with `GRANDPA_HOME` exported (as the probe rules recommend for scripts) yields thousands of spurious guard errors; `tests/conftest.py` only `setdefault`s it | §9.7 |
+| B13 | Medium | `pyproject.toml` declares `requires-python >= 3.10` and ruff targets `py310`, but `ui/bubble.py`, `ui/avatar_states.py` and `voice/cli_session.py` import `enum.StrEnum` (3.11+). CI runs 3.12 and the installer 3.11, so nothing tests 3.10 | `grep -rn "import StrEnum" src/grandpa`; `.github/workflows/ci.yml` `python-version: "3.12"` |
+| B14 | Low | `scripts/oauth_all.py` (inherited) runs Google, Strava and Spotify OAuth and writes to `~/.grandpa/connectors` at import time, ignoring `GRANDPA_HOME`; Grandpa has no Strava or Spotify integration | `scripts/oauth_all.py` lines 1–25 |
+| B15 | Low | Version base in `pyproject.toml` is `1.0.1` while tags go up to `v1.0.3`; autotag derives dev versions from the base | `git tag`, `.github/workflows/autotag.yml` |
 
 ### 9.3 Security issues
 
@@ -463,9 +466,12 @@ How to read this (verified from the JUnit XML):
     `importlib.import_module` patch leak (B11), and make `tests/conftest.py` override or reject a pre-set
     `GRANDPA_HOME` (B12).
 
+11. Settle the Python floor: raise `requires-python` to 3.11, or add a `StrEnum` fallback and a 3.10 CI job (B13).
+
 **Low**
-11. Remove the tracked PATH dump (B9) and the stale STT backend comment (B6); regenerate the Odin dataset (B8).
-12. Add `.env.example`-style reference documentation for `GRANDPA_*` variables.
+12. Remove the tracked PATH dump (B9) and the stale STT backend comment (B6); regenerate the Odin dataset (B8).
+13. Retire or fix `scripts/oauth_all.py` (B14) and align the version base with the tags before the next release (B15).
+14. Add `.env.example`-style reference documentation for `GRANDPA_*` variables.
 
 ---
 
@@ -484,15 +490,52 @@ How to read this (verified from the JUnit XML):
 ## 14. Installation and usage
 
 See `GRANDPA_SKILLS_MASTER_INDEX.md` → *Installation*. In short: merge the branch; Claude Code picks up
-`.claude/skills/*/SKILL.md` automatically inside the repo; invoke with `/grandpa-dev-orchestrator` (or any skill
+`.claude/skills/*/SKILL.md` automatically inside the repo; invoke with `/grandpa-master-orchestrator` (or any skill
 name) or just describe the task. Validate with
-`python .claude/skills/grandpa-dev-orchestrator/scripts/validate_skills.py`.
+`python .claude/skills/grandpa-master-orchestrator/scripts/validate_skills.py`.
 
 ---
 
 ## 15. Next prompt to give Claude
 
-> Use `/grandpa-dev-orchestrator` and `/grandpa-security-governance`. Fix the autotag workflow (it dispatches a
+> Use `/grandpa-master-orchestrator` and `/grandpa-security-governance`. Fix the autotag workflow (it dispatches a
 > missing `desktop.yml`), then design a prompt-injection policy for text that comes from the screen, web pages,
 > mail and MCP tools before it reaches the model. Start read-only, propose the design with the files you will touch
 > and the tests that will prove it, and wait for my go-ahead before changing security behaviour.
+
+---
+
+## 16. Expansion to 19 skills (2026-11-25)
+
+Captain supplied a 50-item candidate list for a "complete development skill
+library" covering the whole lifecycle. Each candidate was evaluated for an
+independent responsibility, overlap, and whether the work exists in this repo
+now or only in a future phase.
+
+**Decision (Captain chose the proposal):** 19 skills now, 2 named for later.
+
+- **Kept (10):** the original set. `grandpa-dev-orchestrator` was renamed
+  `grandpa-master-orchestrator` and now holds the shared project knowledge
+  (`references/project-vision.md`, `references/roadmap.md` added).
+- **Added (9):** `grandpa-product-planning`, `grandpa-architecture-design`,
+  `grandpa-research-prototyping`, `grandpa-python-engineering`,
+  `grandpa-agent-engineering`, `grandpa-desktop-ui`,
+  `grandpa-external-integrations`, `grandpa-debugging-performance`,
+  `grandpa-devops-release`. Each is grounded in real code and documents
+  (paths cited inside each skill).
+- **Future (2, not created):** `grandpa-smart-home-iot`,
+  `grandpa-hardware-robotics`. No code exists for these areas; a skill now would
+  be generic advice that Claude could not verify.
+- **Not separate skills:** code review (Claude Code's built-in `/code-review`
+  plus the security and testing skills), documentation (a step inside every
+  skill, PRD/SRS in product planning), localization (agent and voice skills),
+  backup and recovery (memory skill), accessibility (desktop UI).
+
+Why not 50: Claude picks a skill by matching the request to each skill's
+description. Many near-identical descriptions (voice, speech recognition,
+speech synthesis, wake word, audio) make it choose wrongly or load several,
+which costs tokens and gives conflicting guidance. The full mapping from each
+candidate to its owner is in `GRANDPA_SKILLS_MASTER_INDEX.md`.
+
+New findings recorded while writing the new skills: B13, B14, B15 (§9.2).
+Validation: `validate_skills.py` → `PASSED: 19 skills validated`.

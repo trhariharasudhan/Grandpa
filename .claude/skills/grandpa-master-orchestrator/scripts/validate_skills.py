@@ -13,7 +13,7 @@ Checks, per skill directory:
 Also checks that every skill named in the master index exists and vice versa.
 
 Standard library only (PyYAML is used if importable, else a minimal parser), so
-it runs without the project venv:  python .claude/skills/grandpa-dev-orchestrator/scripts/validate_skills.py
+it runs without the project venv:  python .claude/skills/grandpa-master-orchestrator/scripts/validate_skills.py
 Exit code 0 = all checks passed, 1 = at least one failure.
 """
 
@@ -25,6 +25,8 @@ from pathlib import Path
 
 SKILLS_DIR = Path(__file__).resolve().parents[2]
 INDEX = SKILLS_DIR / "GRANDPA_SKILLS_MASTER_INDEX.md"
+# Named in the index as future-phase skills on purpose; no folder exists yet.
+PLANNED_SKILLS = {"grandpa-smart-home-iot", "grandpa-hardware-robotics"}
 # Keys accepted by every Skills surface (claude.ai, API, Claude Code). Claude Code
 # accepts more, but these skills stay portable on purpose.
 PORTABLE_KEYS = {
@@ -150,7 +152,7 @@ def main() -> int:
         index_text = INDEX.read_text(encoding="utf-8")
         listed = set(re.findall(r"`(grandpa-[a-z0-9-]+)`", index_text))
         names = {s.name for s in skills}
-        for missing in sorted(listed - names):
+        for missing in sorted(listed - names - PLANNED_SKILLS):
             problems.append(f"index names {missing!r} but no such skill folder exists")
         for unlisted in sorted(names - listed):
             problems.append(f"skill {unlisted!r} is not described in the master index")
