@@ -179,6 +179,10 @@ def _reply_from(events: list[dict[str, Any]]) -> BridgeReply:
         if e.get("type") == "note" and not str(e.get("text", "")).lstrip().startswith("·")
     ]
     asks = [e for e in events if e.get("type") == "ask"]
+    if asks:
+        # the engine also prints the question it asks: say it once
+        asked = _spoken_question(str(asks[-1].get("prompt", "")))
+        notes = [n for n in notes if _spoken_question(n) != asked and asked not in _spoken_question(n)]
     failed = any(e.get("type") == "note" and e.get("failed") for e in events)
     parts = [t for t in replies if t.strip()] or [t for t in notes if t.strip()]
     status = "ok"
@@ -187,7 +191,7 @@ def _reply_from(events: list[dict[str, Any]]) -> BridgeReply:
         prompt = str(ask.get("prompt", "")).strip()
         options = [str(o).strip() for o in ask.get("options") or [] if str(o).strip()]
         if ask.get("kind") == "confirm" or not options:
-            prompt = re.sub(r"\s*\[y/N\]\s*$", "", prompt, flags=re.I).strip()
+            prompt = _spoken_question(prompt)
             question = f"{prompt} Say yes or no." if ask.get("kind") == "confirm" else prompt
         else:
             question = prompt + " " + ", ".join(options)
@@ -197,6 +201,20 @@ def _reply_from(events: list[dict[str, Any]]) -> BridgeReply:
     # never "Done." on silence: saying something happened when nothing was
     # reported is exactly the fake-success bug this path exists to remove
     return BridgeReply(text or "I have no answer for that.", status=status, failed=failed and not replies)
+
+
+_TECH = re.compile(
+    r"\s*\((?:requires_confirmation|(?:low|medium|high|blocked) risk)\)|\s*\[y/N\]",
+    re.IGNORECASE,
+)
+
+
+def _spoken_question(text: str) -> str:
+    """"Confirm: Close Calculator? ... (requires_confirmation) [y/N]" ->
+    "Close Calculator? Unsaved work may be lost." -- words meant to be heard."""
+    cleaned = _TECH.sub("", text or "")
+    cleaned = re.sub(r"^\s*confirm(?: [a-z ]+)?:\s*", "", cleaned, flags=re.IGNORECASE)
+    return " ".join(cleaned.split()).strip()
 
 
 def _app_session(publish: Callable[[dict], None], chat_args: list[str]) -> Any:

@@ -128,6 +128,29 @@ _LATEST_DOWNLOAD = re.compile(
 _CREATE_FILE = re.compile(
     r"^(?:create|make|new)\s+(?:a\s+)?(?:new\s+)?(?:text\s+)?(file|folder)\s+(?:called|named|name)?\s*(.+)$"
 )
+#: Who holds a role *now* changes after any model was trained, so it is looked
+#: up, never guessed ("Who is the CM of Tamil Nadu?" -> the small model said it
+#: could not provide that).
+_ROLE = (
+    r"cm|chief minister|pm|prime minister|president|vice president|governor|ceo|"
+    r"founder|chairman|chairperson|captain|coach|mayor|minister|speaker|chief justice|"
+    r"head coach|leader of the opposition|collector|mla|mp"
+)
+_CURRENT_FACT = re.compile(
+    rf"^(?:who(?:'s| is| are| was elected)|tell me who is)\s+(?:the\s+)?"
+    rf"(?:current\s+|present\s+|new\s+|sitting\s+)?(?:{_ROLE})\b.*$"
+    r"|^(?:what(?:'s| is| are)\s+the\s+)?(?:latest|today'?s?|recent)\s+news\b.*$"
+    r"|^(?:what(?:'s| is)\s+)?(?:the\s+)?(?:price|rate)\s+of\s+.+\s+(?:today|now)$"
+)
+_EXPAND = {r"\bcm\b": "chief minister", r"\bpm\b": "prime minister"}
+
+_PC = r"(?:my\s+|the\s+|this\s+)?(?:pc|computer|laptop|system|machine)"
+_POWER = (
+    (re.compile(rf"^lock\s+(?:{_PC}|(?:my\s+|the\s+)?screen)$"), "system_lock"),
+    (re.compile(rf"^(?:put\s+{_PC}\s+to\s+sleep|sleep\s+{_PC})$"), "system_sleep"),
+    (re.compile(rf"^(?:restart|reboot)\s+{_PC}$"), "system_restart"),
+    (re.compile(rf"^(?:shut\s*down|turn\s+off|power\s+off|switch\s+off)\s+{_PC}$"), "system_shutdown"),
+)
 _REMINDERS_TODAY = re.compile(r"^(?:what|which|show|list)\s+(?:are\s+)?(?:my\s+)?reminders?(?:\s+(?:do i have\s+)?today)?$|^what reminders do i have(?: today)?$")
 
 
@@ -216,4 +239,14 @@ def quick_request(text: str):
             return _request("file_create", {"path": str(_desktop() / name), "kind": kind})
     if _REMINDERS_TODAY.match(low):
         return _request("reminders_today", {})
+    if _CURRENT_FACT.match(low):
+        query = low.rstrip("?")
+        for short, full in _EXPAND.items():
+            query = re.sub(short, full, query)
+        return _request("web_search", {"query": query})
+    # Power: found here so "restart my computer" is never read as an app to
+    # restart. Each keeps its catalogue rule -- a yes/no is always asked.
+    for pattern, action in _POWER:
+        if pattern.match(low):
+            return _request(action, {})
     return None

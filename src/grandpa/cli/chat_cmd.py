@@ -781,13 +781,32 @@ def _unknown_slash_command_message(command: str) -> str:
     return unknown_command_message(command)
 
 
-def _desktop_action_confirmer(browser_confirm):
-    """Adapt chat's (prompt, tier) callback to the desktop handler's (action)."""
+#: Asked as a plain yes/no in chat and run on yes (the action layer's route),
+#: never staged behind an approval code a voice user cannot answer.
+_ASK_YES_NO_ACTIONS = frozenset(
+    {"system_lock", "system_sleep", "system_restart", "system_shutdown", "empty_recycle_bin"}
+)
+
+
+def _desktop_action_confirmer(browser_confirm, *, user_said_it: bool = False):
+    """Adapt chat's (prompt, tier) callback to the desktop handler's (action).
+
+    This one callback answers every question the desktop handler asks: a
+    browser launch, but also shut down, restart, sleep and emptying the
+    Recycle Bin. ``user_said_it`` may skip the question for the browser launch
+    only ("open Chrome" in the user's own words); every other action is asked.
+    """
     if browser_confirm is None:
         return None
 
     def _confirm(action) -> bool:
-        return browser_confirm(f"open {action.label}", "requires_confirmation")
+        from grandpa.desktop.automation import _is_browser_launch
+
+        if _is_browser_launch(action):
+            if user_said_it:
+                return True
+            return browser_confirm(f"open {action.label}", "requires_confirmation")
+        return browser_confirm(f"{action.label}?", "requires_confirmation")
 
     return _confirm
 
@@ -818,7 +837,11 @@ def _handle_natural_assistant_intent(
     spoken: bool = False,
     automation_service=None,
     browser_confirm=None,
+    user_said_it: bool = False,
 ) -> str | None:
+    """``user_said_it``: the text is the user's own request, so opening the
+    browser or a search page needs no second yes (grandpa.core.risk_policy).
+    Every other question is still asked through ``browser_confirm``."""
     from grandpa.planner.routing import handle_executive_goal
 
     planned = handle_executive_goal(
@@ -834,9 +857,16 @@ def _handle_natural_assistant_intent(
     # spoken turns get a runner that refuses rather than one that presses.
     from grandpa.browser.executor import refuse_hotkey
 
+    navigate_confirm = browser_confirm
+    if user_said_it and browser_confirm is not None:
+
+        def navigate_confirm(prompt: str, permission: str) -> bool:
+            # a page the user named in their own words: no second yes
+            return True
+
     browser_result = handle_browser_command(
         text,
-        confirm=browser_confirm,
+        confirm=navigate_confirm,
         hotkey_runner=refuse_hotkey if spoken else None,
     )
     if not browser_result.should_fallback:
@@ -846,7 +876,7 @@ def _handle_natural_assistant_intent(
     pipeline_result = WindowsCommandPipeline(
         automation_service=automation_service,
         source="chat",
-        confirm=_desktop_action_confirmer(browser_confirm),
+        confirm=_desktop_action_confirmer(browser_confirm, user_said_it=user_said_it),
     ).handle(text, spoken=spoken)
     if not pipeline_result.should_fallback:
         return pipeline_result.message
@@ -1487,10 +1517,6 @@ def chat(
             return True
         return _confirm_action(action, parameters, risk)
 
-    def _user_browser_ok(spec: str, permission: str) -> bool:
-        """"Open Chrome" said by the user: it is already the yes."""
-        return True
-
     history: List[Message] = []
     if system_prompt:
         history.append(Message(role=Role.SYSTEM, content=system_prompt))
@@ -1879,10 +1905,22 @@ def chat(
                     render_assistant_response(console, Markdown(identity_message))
                     continue
 
-                natural_intent_message = _handle_natural_assistant_intent(
-                    effective_user_input,
-                    automation_service=automation_service,
-                    browser_confirm=_user_browser_ok,
+                # Lock, sleep, restart, shut down and emptying the Recycle Bin go
+                # to the action layer below, which asks a plain yes/no and runs
+                # on yes. The older pipeline here staged them behind an approval
+                # code nobody can say ("Approval required before running ...").
+                from grandpa.cli._desktop_route import build_desktop_request
+
+                power_request, _ = build_desktop_request(effective_user_input)
+                natural_intent_message = (
+                    None
+                    if power_request is not None and power_request.action in _ASK_YES_NO_ACTIONS
+                    else _handle_natural_assistant_intent(
+                        effective_user_input,
+                        automation_service=automation_service,
+                        browser_confirm=_confirm_browser_action,
+                        user_said_it=True,
+                    )
                 )
                 if natural_intent_message is not None:
                     history.append(Message(role=Role.USER, content=user_input))

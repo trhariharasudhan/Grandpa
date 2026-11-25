@@ -234,9 +234,20 @@ def _default_hotkey(keys: tuple[str, ...]) -> bool:
     if _find_visible_browser_window() is None:
         raise BrowserNotInFrontError("the foreground window is not a browser")
 
-    response = AutomationControlService().execute(
-        _HotkeyRequest(keys), "keyboard_hotkey", platform=sys.platform
-    )
+    service = AutomationControlService()
+    response = service.execute(_HotkeyRequest(keys), "keyboard_hotkey", platform=sys.platform)
+    if not getattr(response, "ok", False) and getattr(response, "error", "") == "cooldown":
+        # "new tab, go back, refresh" said in one breath: the second shortcut
+        # arrived inside the service's 0.35 s cooldown and was dropped. Wait it
+        # out once, rather than report a failure the user cannot explain.
+        import time
+
+        from grandpa.desktop.control.automation import _cooldown_remaining
+
+        time.sleep(_cooldown_remaining() + 0.05)
+        response = service.execute(
+            _HotkeyRequest(keys), "keyboard_hotkey", platform=sys.platform
+        )
     return bool(getattr(response, "ok", False))
 
 

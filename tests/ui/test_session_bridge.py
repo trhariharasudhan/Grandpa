@@ -110,3 +110,15 @@ def test_an_engine_that_did_not_start_says_so() -> None:
     ok, why = b.warm()
     assert not ok and "Ollama" in why
     assert b.send("hello").failed
+
+
+def test_a_confirm_question_is_said_once_in_plain_words() -> None:
+    prompt = "Confirm: Close Calculator? Unsaved work may be lost. (requires_confirmation) [y/N]"
+    reply = _reply_from(
+        [
+            {"type": "note", "text": prompt.replace(" [y/N]", "")},
+            {"type": "ask", "kind": "confirm", "prompt": prompt},
+            {"type": "state", "state": "asking"},
+        ]
+    )
+    assert reply.text == "Close Calculator? Unsaved work may be lost. Say yes or no."

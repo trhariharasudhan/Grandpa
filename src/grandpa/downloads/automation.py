@@ -95,9 +95,16 @@ class DownloadsAutomation:
             return DownloadResult(
                 "handled", format_duplicate_groups(items), action, items
             )
-        if action.action == "info":
+        if action.action in {"info", "latest"}:
+            # "latest" was listed in the catalogue and found its item here, but
+            # fell to "not supported yet" (Captain's test, 2026-11-25).
             if not items:
-                return DownloadResult("error", "No matching download found.", action)
+                message = (
+                    "Your Downloads folder is empty."
+                    if action.action == "latest"
+                    else "No matching download found."
+                )
+                return DownloadResult("error", message, action)
             return DownloadResult(
                 "handled", format_download_info(items[0]), action, (items[0],)
             )

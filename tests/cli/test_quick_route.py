@@ -44,7 +44,7 @@ def test_a_new_file_goes_on_the_desktop_with_a_safe_name() -> None:
 
 @pytest.mark.parametrize(
     "said",
-    ["Hello Grandpa, how are you?", "What time is it?", "Who is the CM of Tamil Nadu?",
+    ["Hello Grandpa, how are you?", "What time is it?", "Who is your favourite actor?",
      "Open Notepad", "tell me about the battery of an electric car in detail please now"],
 )
 def test_other_things_are_left_to_the_normal_routes(said) -> None:
@@ -76,3 +76,42 @@ def test_a_list_of_commands_is_split_but_a_sentence_is_not() -> None:
     assert split_commands("Hello Grandpa, how are you?") is None
     assert split_commands("Open Chrome and search for Grandpa AI assistant") is None
     assert split_commands("open notepad") is None
+
+
+@pytest.mark.parametrize(
+    "said,action",
+    [
+        ("Lock my PC", "system_lock"),
+        ("lock the screen", "system_lock"),
+        ("restart my computer", "system_restart"),
+        ("Shut down the PC", "system_shutdown"),
+        ("shutdown my laptop", "system_shutdown"),
+        ("put the computer to sleep", "system_sleep"),
+    ],
+)
+def test_power_is_found_and_always_asks(said, action) -> None:
+    request = quick_request(said)
+    assert request is not None and request.action == action
+    assert request.requires_confirmation  # the catalogue's yes/no is kept
+
+
+def test_restarting_an_app_is_not_a_pc_restart() -> None:
+    assert quick_request("restart chrome") is None
+
+
+@pytest.mark.parametrize(
+    "said,query",
+    [
+        ("Who is the CM of Tamil Nadu?", "who is the chief minister of tamil nadu"),
+        ("who's the current prime minister of india", "who's the current prime minister of india"),
+        ("what's the latest news about ISRO", "what's the latest news about isro"),
+    ],
+)
+def test_who_holds_a_role_now_is_looked_up(said, query) -> None:
+    request = quick_request(said)
+    assert request is not None and request.action == "web_search"
+    assert request.parameters["query"] == query
+
+
+def test_a_follow_up_question_is_left_to_the_conversation() -> None:
+    assert quick_request("How old is he?") is None
