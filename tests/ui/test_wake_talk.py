@@ -169,3 +169,31 @@ def test_the_panel_has_the_mic_toggle() -> None:
     js = (WEB / "avatar.js").read_text(encoding="utf-8")
     assert 'id="wake"' in html and "Hey Grandpa" in html
     assert "api.set_wake(" in js and "api.wake_status()" in js
+
+
+def test_after_a_question_the_answer_needs_no_second_wake() -> None:
+    from grandpa.ui.avatar_controller import StateMessage
+    from grandpa.ui.avatar_states import AvatarState
+
+    heard = iter([Transcript("close notepad"), Transcript("seri")])
+
+    class Asking(Controller):
+        def talk(self, listener):
+            said = listener()
+            self.routed.append(said)
+            ask = said == "close notepad"
+            self.state = StateMessage(AvatarState.CONFIRM if ask else AvatarState.IDLE)
+            return True
+
+    controller = Asking()
+    wake = WakeToTalk(
+        controller,
+        Bridge(),
+        lambda: next(heard),
+        engine_factory=lambda *a: type("E", (), {"label": "x"})(),
+        listener_factory=lambda e, cb: Listener(),
+        spawn=lambda job: job(),
+        chime=lambda: None,
+    )
+    wake._wake(None)
+    assert controller.routed == ["close notepad", "seri"]

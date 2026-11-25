@@ -249,7 +249,7 @@ class VoicePresenter:
 
         msg = (
             f"{prefix}Confirmation required before executing: {command}\n"
-            f"Reply with yes/confirm to approve, or cancel to deny."
+            "Say yes to go ahead, or no to cancel."
         )
         if not self.no_color and not self.screen_reader:
             self.console.print(

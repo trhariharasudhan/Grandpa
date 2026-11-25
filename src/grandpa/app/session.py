@@ -70,6 +70,7 @@ class AppSession:
         self.state = "starting"
         self.model: str | None = None
         self._talk = None
+        self._after_question: str = ""
         #: Files picked in the window's file dialog: those may be attached
         #: from any folder, because choosing them there is the permission.
         self.picked_files: set[str] = set()
@@ -148,6 +149,15 @@ class AppSession:
             self._question = None
         if question is not None:
             answer = self._answer_for(question, text)
+            if question.yes_no:
+                from grandpa.core.consent import read_consent
+
+                if read_consent(text) is None:
+                    # Not a yes or a no: something new. The question is
+                    # answered "no" (nothing risky runs on a guess) and the
+                    # new words are sent as soon as Grandpa is free again.
+                    with self._lock:
+                        self._after_question = text
             self._set_state("thinking")
             question.answer(answer)
             return True
@@ -221,11 +231,9 @@ class AppSession:
     @staticmethod
     def _answer_for(question: Question, text: str) -> str | None:
         if question.yes_no:
-            return (
-                "y"
-                if text.strip().lower() in {"y", "yes", "ok", "sari", "aama"}
-                else "n"
-            )
+            from grandpa.core.consent import read_consent
+
+            return "y" if read_consent(text) == "yes" else "n"
         if question.kind == "choose":
             # The page's text arrives trimmed; options may start with spaces
             # ("  Fast ..."), so compare trimmed and answer with the original.
@@ -286,6 +294,16 @@ class AppSession:
                 if self.model:
                     self._emit({"type": "model", "name": self.model})
         self._flush_output()
+        with self._lock:
+            follow, self._after_question = self._after_question, ""
+            if follow:
+                # Free for the follow-up, but "idle" is not announced: the
+                # turn is not over until the new words are answered too.
+                self.state = "idle"
+        if follow:
+            # off the engine's thread: send() hands the line back to it
+            threading.Thread(target=self.send, args=(follow,), daemon=True).start()
+            return
         self._set_state("idle")
 
     def _on_ask(self, question: Question) -> None:

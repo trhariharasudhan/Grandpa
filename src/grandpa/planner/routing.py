@@ -19,17 +19,18 @@ def handle_executive_goal(
     session_id = f"{source}:{id(automation_service)}"
     planner = _PLANNERS.get(session_id)
     current = planner.current() if planner is not None else None
-    decision = text.strip().casefold()
     if current is not None and current.status == PlanStatus.WAITING_FOR_CONFIRMATION:
-        if decision in {"yes", "confirm", "continue", "resume"}:
+        from grandpa.core.consent import read_consent
+
+        answer = read_consent(text)
+        if answer == "yes":
             return planner.resume(confirmed=True).message
-        if decision in {"no", "cancel", "stop"}:
+        if answer == "no":
             return planner.cancel().message
-        return (
-            current.confirmation.message
-            if current.confirmation
-            else "Confirmation is required."
-        )
+        # Not an answer: a new request. The waiting plan is dropped (it must
+        # never trap the conversation) and the new words are handled below.
+        planner.cancel()
+        current = None
     if current is not None and current.status == PlanStatus.WAITING_FOR_CLARIFICATION:
         return planner.clarify(text).message
     steps = DeterministicDecomposer().decompose(

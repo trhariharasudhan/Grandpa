@@ -315,7 +315,11 @@ def avatar(
         click.echo("Grandpa's orb is already on screen.")
         return
     orb_only = orb_only or not character
-    bridge = InProcessBridge()
+    from grandpa.ui.session_bridge import SessionBridge
+
+    # One brain: the orb answers through the same chat engine as the app and
+    # the terminal (routes, action layer, tools, risk rules, yes/no questions).
+    bridge = SessionBridge(transcriber=InProcessBridge())
     listener = None if no_mic else microphone_listener(bridge)
     # The voices are chosen after the server is up: loading them (the MMS Tamil
     # model holds Python's lock for ~5 s) used to starve the server's start.
@@ -332,6 +336,8 @@ def avatar(
     except RuntimeError as exc:
         safe_cli_error(str(exc))
         raise SystemExit(1) from None
+    # start the chat engine now, so the first "Hey Grandpa" is answered quickly
+    threading.Thread(target=bridge.warm, name="grandpa-orb-warm", daemon=True).start()
     if quiet:
         voice_line = "Voice: off (--quiet)."
     else:
@@ -421,6 +427,7 @@ def avatar(
             hold.stop()
         if wake is not None:
             wake.stop()
+        bridge.stop()
         server.stop()
         if not no_window:
             release("avatar")

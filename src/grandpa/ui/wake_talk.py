@@ -34,6 +34,9 @@ STRIP_PHRASES = (
     "hey grand pa", "hey granpa", "hey grampa", "grandpa", "granpa", "grampa",
 )
 
+MAX_FOLLOW_UPS = 2
+"""Questions answered in a row without saying "Hey Grandpa" again."""
+
 AFTER_BUSY_SECONDS = 1.5
 """Quiet time after a reply, so the tail of Grandpa's own voice is not heard."""
 
@@ -187,7 +190,26 @@ class WakeToTalk:
 
     def _wake(self, command: str | None) -> None:
         self.chime()
-        self.spawn(lambda: self.controller.talk(lambda: self._command(command)))
+        self.spawn(lambda: self._converse(command))
+
+    def _converse(self, command: str | None) -> None:
+        """One request; if Grandpa then asks something ("Close Notepad?"),
+        listen once more for the answer -- no second "Hey Grandpa" needed."""
+        self.controller.talk(lambda: self._command(command))
+        for _ in range(MAX_FOLLOW_UPS):
+            if not self._asking():
+                return
+            self.chime()
+            self.controller.talk(self._answer)
+
+    def _asking(self) -> bool:
+        state = getattr(getattr(self.controller, "state", None), "state", None)
+        return str(getattr(state, "value", state) or "").lower() == "confirm"
+
+    def _answer(self) -> Any:
+        heard = self.listen()
+        text = strip_wake(getattr(heard, "text", heard))
+        return text or None
 
     def _command(self, command: str | None) -> Any:
         """What the controller routes: the words said with the wake, else the

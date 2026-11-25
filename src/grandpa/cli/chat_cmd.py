@@ -63,6 +63,7 @@ from grandpa.cli.theme import (
     user_prompt,
 )
 from grandpa.core.config import consume_config_recovery_warnings, load_config
+from grandpa.core.consent import is_yes
 from grandpa.core.types import (
     CONVERSATION_WINDOW_MESSAGES,
     Conversation,
@@ -1379,7 +1380,7 @@ def chat(
                             end="",
                         )
                         ans = input().strip().lower()
-                        return ans in ("y", "yes")
+                        return is_yes(ans)
 
                     kwargs["interactive"] = True
                     kwargs["confirm_callback"] = _confirm
@@ -1402,7 +1403,7 @@ def chat(
             ans = input().strip().lower()
         except (EOFError, KeyboardInterrupt):
             return False
-        return ans in ("y", "yes")
+        return is_yes(ans)
 
     def _clock_request(kind: str):
         """The clock action, rated from the catalogue like every other."""
@@ -1438,7 +1439,7 @@ def chat(
             ans = input().strip().lower()
         except (EOFError, KeyboardInterrupt):
             return False
-        return ans in ("y", "yes")
+        return is_yes(ans)
 
     def _confirm_browser_action(spec: str, permission: str) -> bool:
         """Prompt before Grandpa navigates the user's real browser."""
@@ -1473,6 +1474,19 @@ def chat(
             # the rule the application service applies.
             return _confirm_browser_action(spec, f"{risk.value} risk")
         return _confirm_local_change(spec, f"{risk.value} risk")
+
+    def _confirm_user_action(action: str, parameters, risk) -> bool:
+        """For a request parsed from the user's own words: opening the browser
+        or a search needs no second yes (see grandpa.core.risk_policy)."""
+        from grandpa.core.risk_policy import user_request_needs_no_question
+
+        if user_request_needs_no_question(action, parameters):
+            return True
+        return _confirm_action(action, parameters, risk)
+
+    def _user_browser_ok(spec: str, permission: str) -> bool:
+        """"Open Chrome" said by the user: it is already the yes."""
+        return True
 
     history: List[Message] = []
     if system_prompt:
@@ -1824,7 +1838,7 @@ def chat(
                 natural_intent_message = _handle_natural_assistant_intent(
                     effective_user_input,
                     automation_service=automation_service,
-                    browser_confirm=_confirm_browser_action,
+                    browser_confirm=_user_browser_ok,
                 )
                 if natural_intent_message is not None:
                     history.append(Message(role=Role.USER, content=user_input))
@@ -2030,7 +2044,7 @@ def chat(
                     effective_user_input
                 )
                 if browser_request is not None:
-                    browser_result = execute_action(browser_request, _confirm_action)
+                    browser_result = execute_action(browser_request, _confirm_user_action)
                     history.append(Message(role=Role.USER, content=user_input))
                     history.append(
                         Message(role=Role.ASSISTANT, content=browser_result.message)
@@ -2214,6 +2228,7 @@ def chat(
                 thinking.start()
                 try:
                     content = None
+                    from_tool_loop = False
                     # Attached files: answer from the contents, no tools. A
                     # small model otherwise calls file_read on the file's name.
                     if use_tool_loop and not has_attachment:
@@ -2240,6 +2255,7 @@ def chat(
                             confirm_callback=_confirm_in_loop,
                             console=console,
                         )
+                        from_tool_loop = content is not None
                         if content is None and not tool_loop_notice_shown:
                             tool_loop_notice_shown = True
                             console.print(
@@ -2297,6 +2313,14 @@ def chat(
                 finally:
                     thinking.stop()
                 content = clean_assistant_response(content)
+                if not from_tool_loop and not has_attachment:
+                    # No tool could run on this path, so a reply saying
+                    # "volume set to 50%" is untrue: say so instead.
+                    from grandpa.core.claims import honest_reply
+
+                    guarded = honest_reply(content, acted=False)
+                    if guarded != content:
+                        content, streamed = guarded, False
                 remember_conversation("assistant", content)
                 record_assistant_outcome(
                     brain_analysis,

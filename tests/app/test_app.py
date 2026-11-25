@@ -578,3 +578,35 @@ def test_the_page_cache_is_cleared_but_the_chats_stay(tmp_path) -> None:
     clear_page_cache(tmp_path)
     assert not (profile / "Cache").exists()
     assert (profile / "Local Storage" / "chats").read_text() == "keep me"
+
+
+def test_a_new_request_while_asked_cancels_and_is_then_sent() -> None:
+    """Saying something else to "Shut down?" is a no, and the new words still go."""
+    import time
+
+    session, bridge, published = _session()
+    session.send("shut down the pc")
+    question = Question(kind="confirm", prompt="Shut down? [y/N]", options=[], yes_no=True)
+    bridge.hooks.ask(question)
+    assert session.send("Who is the CM of Tamil Nadu?") is True
+    assert question.wait() == "n"  # nothing risky on a guess
+    idle_before = sum(1 for m in published if m == {"type": "state", "state": "idle"})
+    bridge.hooks.ready_for_input("You > ")  # the engine is free again
+    for _ in range(50):
+        if bridge.sent[-1:] == ["Who is the CM of Tamil Nadu?"]:
+            break
+        time.sleep(0.02)
+    assert bridge.sent[-1] == "Who is the CM of Tamil Nadu?"
+    # "idle" was not announced in between: the turn was not over yet
+    assert sum(1 for m in published if m == {"type": "state", "state": "idle"}) == idle_before
+
+
+def test_spoken_and_tamil_yes_answer_a_question() -> None:
+    session, bridge, _ = _session()
+    for said, expected in (("Yes, confirming.", "y"), ("seri", "y"), ("venam", "n")):
+        session.send("close notepad")
+        question = Question(kind="confirm", prompt="Close? [y/N]", options=[], yes_no=True)
+        bridge.hooks.ask(question)
+        session.send(said)
+        assert question.wait() == expected
+        bridge.hooks.ready_for_input("You > ")

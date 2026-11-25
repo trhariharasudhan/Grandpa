@@ -119,7 +119,9 @@ class PlanValidator:
                 )
             if _risk_rank(definition.risk) > _risk_rank(step.risk):
                 step.risk = definition.risk
-            if step.action in {"browser_search", "navigate_url"}:
+            # A plan is built from the user's own words; a search page needs
+            # no second yes (grandpa.core.risk_policy). A full address still asks.
+            if step.action == "navigate_url":
                 step.requires_confirmation = True
             if step.action == "save_document" or (
                 step.action == "invoke_verified_dialog_action"
