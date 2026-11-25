@@ -189,7 +189,7 @@ class AppSession:
     def _attach(self, text: str) -> tuple[str, list[str], list[str]]:
         """``@path`` attaches a text file, exactly as in the terminal.
 
-        The page's 📎 button puts ``@"<path>"`` in the message; the file is
+        The page's Add files button puts ``@"<path>"`` in the message; the file is
         read here, read-only, with the terminal's limits (text only, 100 KB,
         the current folder or the home folder).
         """
@@ -200,7 +200,7 @@ class AppSession:
     # --- voice ------------------------------------------------------------------
 
     def talk(self) -> bool:
-        """🎤: record one phrase; the words go to the page's typing box."""
+        """The mic button: record one phrase; the words go to the page's typing box."""
         if self._talk is None:
             from grandpa.tui.voice import PushToTalk
 

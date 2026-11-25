@@ -130,6 +130,9 @@ def ensure_profile(
         text_prompt=text_prompt,
         title_prompt=title_prompt,
         heading="Welcome to Grandpa",
+        # the first run asks only what Grandpa needs to greet you; the
+        # optional email is set later with /profile edit or the app's Profile
+        edit_email=False,
     )
 
 
@@ -353,14 +356,20 @@ def _safe_email(value: object) -> str:
         return ""
 
 
+EMAIL_TRIES = 3
+
+
 def _prompt_email(console: Console, prompt_text: TextPrompt, default: str) -> str:
-    while True:
+    """Optional, so it never traps anyone: three wrong tries keep the old value."""
+    for _ in range(EMAIL_TRIES):
         try:
             return validate_email(
                 prompt_text("Email (optional, press Enter to skip)", default)
             )
         except ValueError as exc:
             console.print(f"[red]{exc}[/red]")
+    console.print("[dim]Email left unchanged.[/dim]")
+    return default
 
 
 def _click_title_prompt(current: str) -> str:
