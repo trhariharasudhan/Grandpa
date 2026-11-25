@@ -88,6 +88,9 @@ CLAUDE.md
 # guard that a fresh clone does not have. Everything else under .claude/ stays
 # per-developer, including settings.local.json.
 !.claude/settings.json
+# ...and the project's Claude Code skills, for the same reason: they describe
+# this repository and every checkout should get them.
+!.claude/skills/
 
 # NFS lock artifacts
 .nfs*
