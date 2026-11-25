@@ -868,7 +868,7 @@ def execute(
         if not confirmed:
             result = ActionResult.failed(
                 CONFIRMATION_DECLINED,
-                message=f"{spec.name} was declined, so nothing was done.",
+                message=f"Okay, I did not do it ({spec.name} cancelled).",
             )
             _audit(request, risk=spec.risk, confirmed=False, result=result)
             return result

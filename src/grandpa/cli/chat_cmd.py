@@ -781,6 +781,15 @@ def _unknown_slash_command_message(command: str) -> str:
     return unknown_command_message(command)
 
 
+#: The yes/no question for actions whose name alone was the question.
+_PLAIN_QUESTIONS = {
+    "system_lock": "Lock your PC now?",
+    "system_sleep": "Put your PC to sleep now?",
+    "system_restart": "Restart your PC now? Unsaved work in open apps may be lost.",
+    "system_shutdown": "Shut down your PC now? Unsaved work in open apps may be lost.",
+    "empty_recycle_bin": "Empty the Recycle Bin? Those files cannot be brought back.",
+}
+
 #: Asked as a plain yes/no in chat and run on yes (the action layer's route),
 #: never staged behind an approval code a voice user cannot answer.
 _ASK_YES_NO_ACTIONS = frozenset(
@@ -1494,6 +1503,9 @@ def chat(
             # A domain that asks for itself supplies the sentence, because only
             # it knows what it found -- "Archive 1 download (6 B)?".
             spec = str(plan)
+        elif action in _PLAIN_QUESTIONS:
+            # spoken by the orb: a sentence, not "system_lock"
+            spec = _PLAIN_QUESTIONS[action]
         elif action == "memory_clear":
             spec = "Erase everything Grandpa remembers about you?"
         elif action == "notes_delete":
