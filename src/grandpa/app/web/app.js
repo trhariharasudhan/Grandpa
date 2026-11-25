@@ -66,7 +66,11 @@
     b.addEventListener("click", onClick);
     return b;
   }
-  function baseName(path) { return String(path).split(/[\\/]/).pop() || String(path); }
+  // A file sent from a browser tab is saved as "<date>-<time>-<name>"; show <name>.
+  function baseName(path) {
+    const name = String(path).split(/[\\/]/).pop() || String(path);
+    return /[\\/]uploads[\\/]/i.test(String(path)) ? name.replace(/^\d{8}-\d{6}-/, "") : name;
+  }
   function ago(at) {
     const s = Math.round((Date.now() - (at || 0)) / 1000);
     if (s < 60) return "just now";
