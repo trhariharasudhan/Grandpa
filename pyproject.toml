@@ -111,6 +111,8 @@ avatar = [
     "sounddevice>=0.4.6",
     # phone pairing: the QR code shown in Settings > Phone
     "segno>=1.6",
+    # "brightness 70" by voice (the desktop-hardware extra, needed by the orb)
+    "screen-brightness-control>=0.23; sys_platform == 'win32'",
 ]
 # B3: Piper, a local neural voice (onnxruntime on the CPU). Voices are fetched
 # separately: python -m grandpa.speech.piper_tts download
