@@ -80,7 +80,3 @@ jobs:
           gh workflow run pypi-publish.yml \
             --ref "${TAG}" \
             -f tag="${TAG}"
-          echo "Dispatching desktop.yml @ ${TAG}"
-          gh workflow run desktop.yml \
-            --ref "${TAG}" \
-            -f tag="${TAG}"
