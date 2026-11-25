@@ -112,7 +112,26 @@
   // In the window the name comes from Grandpa's own profile (the same one the
   // terminal uses); in a plain browser tab it is kept in this page.
   let profile = null;
-  function api() { return window.pywebview && window.pywebview.api ? window.pywebview.api : null; }
+  // In a browser tab there is no pywebview bridge: the same methods are
+  // called over the socket (Grandpa lists the ones a tab may use).
+  let wsApi = null, nextCall = 1;
+  const calls = new Map();
+  function makeWsApi(methods) {
+    const out = {};
+    (methods || []).forEach((name) => {
+      if (typeof name !== "string") return;
+      out[name] = (...args) => new Promise((resolve, reject) => {
+        if (!socket || socket.readyState !== 1) { reject(new Error("Not connected")); return; }
+        const id = nextCall++;
+        calls.set(id, { resolve, reject });
+        socket.send(JSON.stringify({ type: "api", id, method: name, args }));
+      });
+    });
+    return out;
+  }
+  function failCalls() { calls.forEach((c) => c.reject(new Error("Disconnected"))); calls.clear(); }
+  function api() { return window.pywebview && window.pywebview.api ? window.pywebview.api : wsApi; }
+  const inBrowser = () => !(window.pywebview && window.pywebview.api) && !!wsApi;
   function windowReady() {
     const a = api();
     attachBtn.disabled = !a;
@@ -511,7 +530,7 @@
     });
   });
   $("import-skill").addEventListener("click", () => {
-    const a = api(); if (!a) return toast("Importing works in the Grandpa window.", true);
+    const a = api(); if (!a || !a.import_skill) return toast("Importing a skill file works in the Grandpa window. Here, use New skill.", true);
     a.import_skill().then((r) => { if (r && r.ok) { toast("Imported " + r.name); loadSkills(); } else if (r && r.error) toast(r.error, true); });
   });
   function pickSkill() {
@@ -928,9 +947,31 @@
     if (skipped) toast("Five files at most per message.", true);
     drawAttachments(); input.focus();
   }
+  const MAX_UPLOAD = 10 * 1024 * 1024;
+  function uploadFiles(files) {
+    const a = api();
+    if (!a || !a.upload_file) { toast("Adding files works in the Grandpa window.", true); return; }
+    Array.from(files || []).slice(0, 5).forEach((file) => {
+      if (file.size > MAX_UPLOAD) { toast(file.name + " is over 10 MB.", true); return; }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const data = String(reader.result || "").replace(/^data:[^,]*,/, "");
+        a.upload_file(file.name, data).then((path) => {
+          if (path) addPaths([path]); else toast("Couldn't add " + file.name + ".", true);
+        }).catch(() => toast("Couldn't add " + file.name + ".", true));
+      };
+      reader.onerror = () => toast("Couldn't read " + file.name + ".", true);
+      reader.readAsDataURL(file);
+    });
+  }
+  const fileInput = document.createElement("input");
+  fileInput.type = "file"; fileInput.multiple = true; fileInput.hidden = true;
+  document.body.appendChild(fileInput);
+  fileInput.addEventListener("change", () => { uploadFiles(fileInput.files); fileInput.value = ""; });
   function addFiles() {
     plusMenu.hidden = true;
     const a = api();
+    if (inBrowser()) { fileInput.click(); return; }
     if (!a) { toast("Adding files works in the Grandpa window.", true); return; }
     const pick = a.pick_files ? a.pick_files() : a.pick_file().then((p) => (p ? [p] : []));
     pick.then(addPaths).catch(() => toast("Couldn't open the file picker.", true));
@@ -944,7 +985,8 @@
   document.addEventListener("drop", (e) => {
     e.preventDefault(); dragDepth = 0;
     setTimeout(() => { $("drop-shade").hidden = true; }, 300);
-    if (!api()) toast("Dropping files works in the Grandpa window.", true);
+    if (inBrowser()) { if (app.dataset.view !== "chat") setView("chat"); uploadFiles(e.dataTransfer && e.dataTransfer.files); }
+    else if (!api()) toast("Dropping files works in the Grandpa window.", true);
   });
 
   $("plus").addEventListener("click", (e) => { e.stopPropagation(); closeModelMenu(); plusMenu.hidden = !plusMenu.hidden; });
@@ -1188,6 +1230,13 @@
 
   // --- the connection ----------------------------------------------------------------------------------------------------------
   function onMessage(msg) {
+    if (msg.type === "api_methods") { wsApi = makeWsApi(msg.methods); windowReady(); return; }
+    if (msg.type === "api_result") {
+      const call = calls.get(msg.id); if (!call) return;
+      calls.delete(msg.id);
+      if (msg.ok) call.resolve(msg.value); else call.reject(new Error(msg.error || "Failed"));
+      return;
+    }
     if (msg.type === "state") return setState(msg.state);
     if (msg.type === "model") {
       modelName = String(msg.name).replace(/:latest$/, "").replace(/^grandpa-/, "");
@@ -1232,7 +1281,7 @@
       let msg; try { msg = JSON.parse(event.data); } catch (_) { return; }
       onMessage(msg);
     };
-    socket.onclose = () => { statusLine.textContent = "Reconnecting…"; setTimeout(connect, retry); retry = Math.min(retry * 2, 8000); };
+    socket.onclose = () => { failCalls(); statusLine.textContent = "Reconnecting…"; setTimeout(connect, retry); retry = Math.min(retry * 2, 8000); };
   }
   window.grandpaConnect = function (url) { if (socket || !url) return; address = url; connect(); };
 

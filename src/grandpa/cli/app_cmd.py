@@ -11,7 +11,7 @@ import click
 @click.option(
     "--browser",
     is_flag=True,
-    help="No window: print an address to open in a browser tab instead.",
+    help="No window: open Grandpa in your web browser instead.",
 )
 @click.option("--debug", is_flag=True, help="Open the web inspector with the window.")
 def app(
@@ -26,7 +26,13 @@ def app(
     if engine_key:
         args += ["--engine", engine_key]
     try:
-        code = run(chat_args=args, browser=browser, debug=debug, echo=click.echo)
+        code = run(
+            chat_args=args,
+            browser=browser,
+            open_browser=browser,
+            debug=debug,
+            echo=click.echo,
+        )
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
     raise SystemExit(code)

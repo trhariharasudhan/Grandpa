@@ -255,6 +255,7 @@ def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None
         "save_skill",
         "delete_skill",
         "import_skill",
+        "upload_file",
         "skill_instructions",
         "mcp_status",
         "mcp_save_server",

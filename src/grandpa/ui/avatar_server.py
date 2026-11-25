@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import secrets
 import threading
@@ -72,6 +73,14 @@ class AvatarServer:
     character: bytes | None = None
     """Captain's checked ``grandpa.glb`` (A3), sent to each page as one binary
     frame after the snapshot; ``None`` keeps the placeholder head."""
+    api: Callable[[str, list], Any] | None = None
+    """Browser mode of the desktop app: runs one whitelisted method (name,
+    args) and returns a JSON-able value. ``None`` (the orb) refuses every
+    ``{"type": "api"}`` message."""
+    api_methods: tuple[str, ...] = ()
+    """The names :attr:`api` accepts; told to each page when it connects."""
+    max_frame: int = MAX_FRAME
+    """Largest inbound frame. The app's browser mode raises it for uploads."""
     port: int = 0
     token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
 
@@ -82,6 +91,7 @@ class AvatarServer:
     _ready: threading.Event = field(default_factory=threading.Event, init=False)
     _error: BaseException | None = field(default=None, init=False)
     _worker: Any = field(default=None, init=False)
+    _api_worker: Any = field(default=None, init=False)
 
     # --- lifecycle ------------------------------------------------------------
 
@@ -94,6 +104,8 @@ class AvatarServer:
         from concurrent.futures import ThreadPoolExecutor
 
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="avatar")
+        # Separate, so opening Skills never waits behind a long reply.
+        self._api_worker = ThreadPoolExecutor(max_workers=2, thread_name_prefix="app-api")
         self._thread = threading.Thread(
             target=self._run, name="grandpa-avatar-ws", daemon=True
         )
@@ -110,8 +122,9 @@ class AvatarServer:
             loop.call_soon_threadsafe(loop.stop)
         if self._thread is not None:
             self._thread.join(timeout=5)
-        if self._worker is not None:
-            self._worker.shutdown(wait=False, cancel_futures=True)
+        for worker in (self._worker, self._api_worker):
+            if worker is not None:
+                worker.shutdown(wait=False, cancel_futures=True)
 
     @property
     def url(self) -> str:
@@ -147,7 +160,7 @@ class AvatarServer:
             HOST,
             self.port,
             process_request=self._check_token,
-            max_size=MAX_FRAME,
+            max_size=self.max_frame,
         )
         self.port = self._server.sockets[0].getsockname()[1]
 
@@ -176,7 +189,15 @@ class AvatarServer:
                 }
                 await websocket.send(encode(announce))
                 await websocket.send(self.character)
+            if self.api is not None:
+                await websocket.send(
+                    encode({"type": "api_methods", "methods": list(self.api_methods)})
+                )
             async for raw in websocket:
+                call = parse_api(raw, self.api_methods) if self.api is not None else None
+                if call is not None:
+                    asyncio.ensure_future(self._answer(websocket, *call))
+                    continue
                 parsed = parse_inbound(raw)
                 if parsed is None:
                     continue
@@ -196,6 +217,23 @@ class AvatarServer:
             logger.debug("avatar connection ended", exc_info=True)
         finally:
             self._clients.discard(websocket)
+
+    async def _answer(self, websocket: Any, call_id: int, method: str, args: list) -> None:
+        """Run one API call off the loop and reply to the page that asked."""
+        loop = asyncio.get_running_loop()
+        try:
+            value = await loop.run_in_executor(self._api_worker, self.api, method, args)
+            reply = {"type": "api_result", "id": call_id, "ok": True, "value": value}
+        except Exception as exc:  # noqa: BLE001 - reported to the page
+            logger.exception("app api %s failed", method)
+            reply = {"type": "api_result", "id": call_id, "ok": False, "error": str(exc)}
+        try:
+            payload = json.dumps(reply, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            payload = json.dumps(
+                {"type": "api_result", "id": call_id, "ok": False, "error": "bad result"}
+            )
+        await self._safe_send(websocket, payload)
 
     def _call_send(self, text: str) -> None:
         try:
@@ -231,4 +269,34 @@ class AvatarServer:
             self._clients.discard(client)
 
 
-__all__ = ["AvatarServer", "HOST"]
+MAX_API_ARGS = 8
+
+
+def parse_api(raw: str | bytes, allowed: tuple[str, ...]) -> tuple[int, str, list] | None:
+    """``(id, method, args)`` for a valid API call, else ``None``.
+
+    Only names in ``allowed`` pass, and only plain JSON arguments; anything
+    else falls through to :func:`parse_inbound`, which drops it.
+    """
+    if isinstance(raw, bytes):
+        try:
+            raw = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("type") != "api":
+        return None
+    call_id, method, args = data.get("id"), data.get("method"), data.get("args", [])
+    if not isinstance(call_id, int) or isinstance(call_id, bool):
+        return None
+    if not isinstance(method, str) or method not in allowed or method.startswith("_"):
+        return None
+    if not isinstance(args, list) or len(args) > MAX_API_ARGS:
+        return None
+    return call_id, method, args
+
+
+__all__ = ["AvatarServer", "HOST", "parse_api"]

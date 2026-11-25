@@ -89,6 +89,16 @@ class AppApi:
         paths = self.pick_files()
         return paths[0] if paths else None
 
+    def upload_file(self, name: Any, data: Any) -> str | None:
+        """Browser mode's Add files: the tab sends the bytes (base64), they are
+        saved under ``<grandpa home>/uploads`` and attached like a picked file."""
+        path = save_upload(name, data)
+        if path is None:
+            return None
+        if self._session is not None:
+            return self._session.allow_file(path)
+        return path
+
     def user_name(self) -> str:
         return user_name()
 
@@ -410,6 +420,63 @@ def user_name() -> str:
         return "You"
 
 
+MAX_UPLOAD = 10 * 1024 * 1024
+"""Largest file a browser tab may send (bytes, after decoding)."""
+
+BROWSER_METHODS: tuple[str, ...] = (
+    "upload_file", "user_name", "get_profile", "save_profile", "set_next_context",
+    "list_memories", "forget_memory", "add_memory",
+    "list_skills", "save_skill", "delete_skill", "skill_instructions",
+    "mcp_status", "mcp_save_server", "mcp_remove_server", "mcp_toggle_server",
+    "mcp_set_off", "mcp_test",
+    "providers_status", "provider_save", "provider_remove", "provider_models",
+    "restart_engine", "open_orb",
+)
+"""What a browser tab may call. Not the native dialogs (``pick_files``,
+``import_skill``): they would open on the PC, behind the browser."""
+
+
+def save_upload(name: Any, data: Any) -> str | None:
+    """Write one uploaded file; ``None`` for a bad name, bad data or too big."""
+    import base64
+    import binascii
+    import re
+    import time
+
+    if not isinstance(name, str) or not isinstance(data, str):
+        return None
+    if len(data) > MAX_UPLOAD * 4 // 3 + 8:
+        return None
+    base = Path(name.replace("\\", "/")).name
+    base = re.sub(r"[^\w.\- ()]", "_", base).strip(" .")[:120]
+    if not base:
+        return None
+    try:
+        raw = base64.b64decode(data, validate=True)
+    except (binascii.Error, ValueError):
+        return None
+    if len(raw) > MAX_UPLOAD:
+        return None
+    from grandpa.runtime_paths import grandpa_home
+
+    folder = grandpa_home() / "uploads"
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / f"{time.strftime('%Y%m%d-%H%M%S')}-{base}"
+    target.write_bytes(raw)
+    return str(target)
+
+
+def browser_dispatch(api: "AppApi") -> Callable[[str, list], Any]:
+    """The browser tab's way in: whitelisted method names only."""
+
+    def call(method: str, args: list) -> Any:
+        if method not in BROWSER_METHODS:
+            raise ValueError("not allowed")
+        return getattr(api, method)(*args)
+
+    return call
+
+
 def connect_script(ws_url: str) -> str:
     return f"window.grandpaConnect && window.grandpaConnect({json.dumps(ws_url)});"
 
@@ -481,6 +548,7 @@ def run(
     *,
     chat_args: list[str] | None = None,
     browser: bool = False,
+    open_browser: bool = False,
     debug: bool = False,
     echo: Callable[[str], None] = print,
     webview_module: Any = None,
@@ -503,11 +571,22 @@ def run(
         echo("Grandpa app is already open (look for its window on the taskbar).")
         return 0
     session = AppSession(publish, chat_args=chat_args)
+    api = AppApi(session)
+    extra: dict[str, Any] = {}
+    if browser:
+        # The tab has no pywebview bridge, so the same methods go over the
+        # (token-protected, loopback) socket instead.
+        extra = {
+            "api": browser_dispatch(api),
+            "api_methods": BROWSER_METHODS,
+            "max_frame": MAX_UPLOAD * 4 // 3 + 4096,
+        }
     server = AvatarServer(
         on_send=session.send,
         on_talk=session.talk,
         on_cancel=session.cancel,
         snapshot=session.snapshot,
+        **extra,
     )
     holder["server"] = server
     server.start(timeout=20)
@@ -517,7 +596,12 @@ def run(
         if browser:
             _page, port = serve_page()
             echo("Grandpa app: open this address in your browser:")
-            echo("  " + browser_address(server.url, port))
+            address = browser_address(server.url, port)
+            echo("  " + address)
+            if open_browser:
+                import webbrowser
+
+                webbrowser.open(address)
             echo("Press Ctrl+C to stop.")
             if wait is not None:
                 wait()
@@ -531,7 +615,6 @@ def run(
             except ImportError as exc:
                 raise missing_pywebview() from exc
         ensure_js_mime()
-        api = AppApi(session)
         window = webview_module.create_window(
             "Grandpa",
             str(INDEX),
@@ -570,4 +653,4 @@ def run(
             release("app")
 
 
-__all__ = ["INDEX", "WEB_DIR", "browser_address", "connect_script", "run", "serve_page"]
+__all__ = ["BROWSER_METHODS", "INDEX", "WEB_DIR", "browser_address", "browser_dispatch", "save_upload", "connect_script", "run", "serve_page"]

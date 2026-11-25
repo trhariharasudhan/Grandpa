@@ -56,7 +56,7 @@ code { font-family: Consolas, "Cascadia Mono", monospace; }
 .mark { width: 16px; height: 16px; border-radius: 50%; border: 2.5px solid var(--brand); box-shadow: 0 0 6px var(--brand); flex: none; }
 .mark.big { width: 30px; height: 30px; border-width: 4px; box-shadow: 0 0 12px var(--brand); }
 
-#app { display: grid; grid-template-columns: 272px 1fr; height: 100vh; }
+#app { display: grid; grid-template-columns: 272px 1fr; height: 100vh; height: 100dvh; }
 #app.side-closed { grid-template-columns: 0 1fr; }
 #app.side-closed #sidebar { visibility: hidden; }
 #side-open { display: none; }
@@ -305,7 +305,21 @@ button.card:hover { border-color: var(--border); }
   #app:not(.side-open-small) #sidebar { visibility: hidden; }
   #app:not(.side-open-small) #side-open { display: inline-grid; }
   .project-cols { grid-template-columns: 1fr; }
+  /* a phone or a narrow tab: the panel slides over the chat instead of
+     squeezing it */
+  #app.side-open-small { grid-template-columns: 0 1fr; }
+  #app.side-open-small #sidebar { position: fixed; inset: 0 auto 0 0; width: min(300px, 86vw);
+    z-index: 30; box-shadow: 0 0 0 100vmax rgba(11, 12, 12, 0.35); animation: drawer 0.18s ease-out; }
 }
+@keyframes drawer { from { transform: translateX(-100%); } to { transform: none; } }
+@media (max-width: 560px) {
+  #composer { border-radius: 18px; }
+  #chips { flex-wrap: wrap; justify-content: center; }
+  .chip { font-size: .85em; }
+  #hello { font-size: 1.5em; text-align: center; }
+  .msg-user .bubble { max-width: 88%; }
+}
+@media (prefers-reduced-motion: reduce) { #app.side-open-small #sidebar { animation: none; } }
 
 /* skills, connectors, models */
 .ghost { display: inline-flex; gap: 6px; align-items: center; background: transparent; border: 1px solid var(--panel); border-radius: 10px; padding: 6px 12px; color: var(--text); }
