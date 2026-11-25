@@ -536,3 +536,16 @@ def test_forgetting_a_memory_needs_its_exact_id(monkeypatch) -> None:
     assert window.forget_memory(0) is False
     assert window.forget_memory(7) is True
     assert asked == ["7"]
+
+
+def test_the_page_cache_is_cleared_but_the_chats_stay(tmp_path) -> None:
+    from grandpa.app.window import clear_page_cache
+
+    profile = tmp_path / "EBWebView" / "Default"
+    (profile / "Cache").mkdir(parents=True)
+    (profile / "Cache" / "data_1").write_text("old page")
+    (profile / "Local Storage").mkdir()
+    (profile / "Local Storage" / "chats").write_text("keep me")
+    clear_page_cache(tmp_path)
+    assert not (profile / "Cache").exists()
+    assert (profile / "Local Storage" / "chats").read_text() == "keep me"

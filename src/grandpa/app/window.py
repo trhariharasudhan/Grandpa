@@ -378,6 +378,33 @@ def browser_address(ws_url: str, page_port: int) -> str:
     return f"http://127.0.0.1:{page_port}/index.html#ws={quote(ws_url, safe='')}"
 
 
+def clear_page_cache(folder: Path) -> None:
+    """Forget the cached copies of the page, so an update shows at once.
+
+    The window keeps its storage between runs (that is where the chat list
+    lives), and with it WebView2's HTTP cache: after ``git pull`` the window
+    could still show yesterday's page. Only the caches go; Local Storage (the
+    chats) stays.
+    """
+    for profile in folder.glob("EBWebView/*/"):
+        for name in ("Cache", "Code Cache", "GPUCache", "Service Worker"):
+            target = profile / name
+            if not target.is_dir():
+                continue
+            # deepest first, by full path (a file in use stays; that's fine)
+            for path in sorted(
+                target.rglob("*"), key=lambda p: len(p.parts), reverse=True
+            ):
+                try:
+                    path.rmdir() if path.is_dir() and not path.is_symlink() else path.unlink()
+                except OSError:
+                    pass
+            try:
+                target.rmdir()
+            except OSError:
+                pass
+
+
 def _storage_dir() -> str | None:
     """Where the window keeps the chat list (localStorage) between runs."""
     try:
@@ -385,6 +412,7 @@ def _storage_dir() -> str | None:
 
         folder = grandpa_home() / "app_webview"
         folder.mkdir(parents=True, exist_ok=True)
+        clear_page_cache(folder)
         return str(folder)
     except Exception:  # noqa: BLE001
         return None
