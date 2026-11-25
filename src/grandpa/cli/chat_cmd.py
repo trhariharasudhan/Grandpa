@@ -1569,6 +1569,9 @@ def chat(
         # Set when a model would not fit in free memory: the same message is
         # answered again by the next smaller Grandpa model, without asking.
         retry_input: str | None = None
+        # "open a new tab, go back, refresh": the parts after the first wait
+        # here and run one by one, before anything new is read.
+        queued_commands: list[str] = []
         retries_left = 2
         warmed_model: str | None = None
         while True:
@@ -1581,6 +1584,8 @@ def chat(
             retrying = retry_input is not None
             if retrying:
                 user_input, retry_input = retry_input, None
+            elif queued_commands:
+                user_input = queued_commands.pop(0)
             elif tui_mode:
                 retries_left = 2
                 from grandpa.cli.interactive_tui import (
@@ -1811,6 +1816,42 @@ def chat(
             has_attachment = ATTACHMENT_INTRO in user_input
             if not has_attachment:
                 capture_natural_personal_fact(effective_user_input)
+
+            if not has_attachment:
+                # Short commands go straight to their action (volume, battery,
+                # weather, latest download, a new file...), Thanglish verbs are
+                # read as English, and a list of commands runs one by one.
+                from grandpa.cli._quick_route import (
+                    normalize_thanglish,
+                    quick_request,
+                    split_commands,
+                )
+
+                parts = split_commands(effective_user_input)
+                if parts:
+                    effective_user_input = parts[0]
+                    queued_commands.extend(parts[1:])
+                effective_user_input = normalize_thanglish(effective_user_input)
+                # speech ends sentences with "."; a search for "weather." is wrong
+                if not effective_user_input.rstrip().endswith("..."):
+                    effective_user_input = effective_user_input.rstrip().rstrip(".!")
+                quick = quick_request(effective_user_input)
+                if quick is not None:
+                    quick_result = execute_action(quick, _confirm_user_action)
+                    history.append(Message(role=Role.USER, content=user_input))
+                    history.append(
+                        Message(role=Role.ASSISTANT, content=quick_result.message)
+                    )
+                    remember_conversation("assistant", quick_result.message)
+                    record_assistant_outcome(
+                        brain_analysis,
+                        assistant_text=quick_result.message,
+                        kind="local",
+                        target=quick.action,
+                        status="handled" if quick_result.success else "error",
+                    )
+                    render_assistant_response(console, Markdown(quick_result.message))
+                    continue
 
             if not has_attachment:
                 from grandpa.prompt.identity import resolve_identity_response

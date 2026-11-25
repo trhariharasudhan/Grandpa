@@ -267,13 +267,14 @@ def test_volume_action_mocked(monkeypatch):
     monkeypatch.setitem(
         __import__("sys").modules,
         "pyautogui",
-        SimpleNamespace(press=lambda key: calls.append(key)),
+        SimpleNamespace(press=lambda key, presses=1: calls.extend([key] * presses)),
     )
 
     result = run_local_action({"action_type": "volume_up"})
 
     assert result.ok is True
-    assert calls == ["volumeup"]
+    # five Windows steps (~10%): one press (2%) was not audible
+    assert calls == ["volumeup"] * 5
 
 
 def _without_audio_backend(monkeypatch):
