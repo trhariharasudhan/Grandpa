@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src ws://127.0.0.1:*; img-src 'self' data:">
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' ws://127.0.0.1:*; img-src 'self' data:">
 <title>Grandpa</title>
 <link rel="icon" href="logo.svg">
 <link rel="stylesheet" href="app.css">
@@ -248,6 +248,7 @@
       <button type="button" data-tab="appearance">Appearance</button>
       <button type="button" data-tab="chat">Chat</button>
       <button type="button" data-tab="data">Data &amp; privacy</button>
+      <button type="button" data-tab="phone" id="phone-tab" hidden>Phone</button>
       <button type="button" data-tab="keys">Shortcuts</button>
       <button type="button" data-tab="about">About</button>
     </nav>
@@ -279,6 +280,21 @@
       <p>Chats and projects are kept only on this PC, in this window's storage. Incognito chats are never kept.</p>
       <button type="button" id="export-chats"><span data-icon="download" data-icon-size="16"></span>Export all chats (JSON)</button>
       <button type="button" id="delete-chats" class="danger"><span data-icon="trash" data-icon-size="16"></span>Delete all chats and projects…</button>
+    </div>
+    <div class="tab" data-tab="phone" hidden>
+      <p>Use Grandpa from your phone (hotspot, Wi-Fi or mobile data) through <strong>Tailscale</strong>: only your own signed-in devices can reach it, and it stays encrypted end to end.</p>
+      <p id="phone-state" class="hint"></p>
+      <label class="check"><input type="checkbox" id="phone-on"> Phone access</label>
+      <div class="row-actions">
+        <button type="button" id="phone-share" hidden><span data-icon="plug" data-icon-size="16"></span>Share with my devices</button>
+        <button type="button" id="phone-pair" class="primary" hidden>Pair a phone</button>
+      </div>
+      <div id="phone-qr" class="phone-qr" hidden>
+        <img id="phone-qr-img" alt="QR code: scan it with the phone's camera" width="216" height="216">
+        <p class="hint">Scan with the phone's camera. Works once, for 10 minutes. Code: <strong id="phone-code"></strong></p>
+      </div>
+      <p>Paired phones</p>
+      <ul id="phone-devices" class="phone-devices"><li class="hint">None yet.</li></ul>
     </div>
     <div class="tab" data-tab="keys" hidden>
       <dl class="keys">

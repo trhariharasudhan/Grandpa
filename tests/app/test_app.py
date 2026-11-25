@@ -131,7 +131,7 @@ def test_the_page_never_builds_html_from_strings() -> None:
             assert banned not in source, f"{name} uses {banned}"
     page = (WEB_DIR / "index.html").read_text(encoding="utf-8")
     assert "script-src 'self'" in page and "default-src 'none'" in page
-    assert "connect-src ws://127.0.0.1:*" in page
+    assert "connect-src 'self' ws://127.0.0.1:*" in page  # 'self': a phone's own origin
 
 
 def test_addresses_carry_the_token_only_in_the_hash_or_script() -> None:
@@ -256,6 +256,11 @@ def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None
         "delete_skill",
         "import_skill",
         "upload_file",
+        "phone_status",
+        "phone_set_enabled",
+        "phone_share",
+        "phone_pair",
+        "phone_forget",
         "skill_instructions",
         "mcp_status",
         "mcp_save_server",

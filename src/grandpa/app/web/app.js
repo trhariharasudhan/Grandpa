@@ -140,6 +140,7 @@
     const a = api();
     attachBtn.disabled = !a;
     $("plus-orb").disabled = !(a && a.open_orb);
+    $("phone-tab").hidden = !(a && a.phone_status);
     if (!a || !a.get_profile) return;
     a.get_profile().then((p) => {
       profile = p || null;
@@ -1126,7 +1127,54 @@
     document.querySelectorAll("#set-theme button").forEach((b) => b.classList.toggle("on", b.dataset.v === settings.theme));
     document.querySelectorAll("#set-size button").forEach((b) => b.classList.toggle("on", b.dataset.v === settings.size));
   }
+  // --- Settings > Phone (the PC's own window) ----------------------------------
+  function phoneWhen(seconds) { return seconds ? new Date(seconds * 1000).toLocaleDateString() : ""; }
+  function drawPhone(st) {
+    if (!st) return;
+    const tail = st.tailscale || {};
+    let line;
+    if (!tail.installed) line = "Step 1: install Tailscale on this PC and on your phone (tailscale.com/download) and sign in to both with the same account.";
+    else if (!tail.running) line = "Tailscale is installed but off or signed out on this PC. Open Tailscale and sign in.";
+    else if (!st.enabled) line = "Tailscale is on (" + tail.name + "). Turn on Phone access below.";
+    else if (!st.live) line = "Restart the Grandpa app to finish turning phone access on.";
+    else line = "Ready. After \u201cShare with my devices\u201d, pair your phone; it then opens " + (st.address || "this PC's Tailscale address") + ".";
+    $("phone-state").textContent = line;
+    $("phone-on").checked = !!st.enabled;
+    $("phone-share").hidden = !(st.live && tail.running);
+    $("phone-pair").hidden = !(st.live && tail.running);
+    const list = $("phone-devices"); list.textContent = "";
+    (st.devices || []).forEach((d) => {
+      const li = el("li");
+      li.appendChild(el("span", "", (d.name || "Phone") + " \u00b7 paired " + phoneWhen(d.paired)));
+      const forget = el("button", "ghost", "Forget"); forget.type = "button";
+      forget.addEventListener("click", () => { const a = api(); if (a && a.phone_forget) a.phone_forget(d.id).then(loadPhone); });
+      li.appendChild(forget); list.appendChild(li);
+    });
+    if (!list.children.length) list.appendChild(el("li", "hint", "None yet."));
+  }
+  function loadPhone() { const a = api(); if (a && a.phone_status) a.phone_status().then(drawPhone).catch(() => {}); }
+  $("phone-on").addEventListener("change", () => {
+    const a = api(); if (!a || !a.phone_set_enabled) return;
+    a.phone_set_enabled($("phone-on").checked).then(drawPhone);
+  });
+  $("phone-share").addEventListener("click", () => {
+    const a = api(); if (!a || !a.phone_share) return;
+    a.phone_share().then((r) => { if (r && r.ok) toast("Shared with your Tailscale devices"); else toast((r && r.error) || "Couldn't share.", true); loadPhone(); });
+  });
+  $("phone-pair").addEventListener("click", () => {
+    const a = api(); if (!a || !a.phone_pair) return;
+    a.phone_pair().then((r) => {
+      if (!r || !r.ok) { toast((r && r.error) || "Couldn't start pairing.", true); return; }
+      $("phone-qr").hidden = false;
+      $("phone-code").textContent = r.code;
+      if (r.qr) $("phone-qr-img").src = r.qr; else $("phone-qr-img").hidden = true;
+      $("phone-qr-img").title = r.link;
+      setTimeout(() => { $("phone-qr").hidden = true; loadPhone(); }, (r.expires_in || 600) * 1000);
+    });
+  });
+
   function showTab(name) {
+    if (name === "phone") loadPhone();
     document.querySelectorAll("#settings-tabs button").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
     document.querySelectorAll("#settings-box .tab").forEach((t) => { t.hidden = t.dataset.tab !== name; });
   }
@@ -1280,17 +1328,51 @@
   function connect() {
     if (!address) { statusLine.textContent = "No connection address."; return; }
     socket = new WebSocket(address);
-    socket.onopen = () => { retry = 500; tick(); };
+    socket.onopen = () => { retry = 500; phoneFails = 0; tick(); };
     socket.onmessage = (event) => {
       let msg; try { msg = JSON.parse(event.data); } catch (_) { return; }
       onMessage(msg);
     };
-    socket.onclose = () => { failCalls(); statusLine.textContent = "Reconnecting…"; setTimeout(connect, retry); retry = Math.min(retry * 2, 8000); };
+    socket.onclose = () => { failCalls();
+      if (servedToPhone && ++phoneFails === 3) phoneHelp("Can't reach Grandpa. Is the PC on, the app open and Tailscale on? If this phone was removed, pair it again."); statusLine.textContent = "Reconnecting…"; setTimeout(connect, retry); retry = Math.min(retry * 2, 8000); };
   }
   window.grandpaConnect = function (url) { if (socket || !url) return; address = url; connect(); };
 
   applySettings(); currentChat(); redraw(); setState("starting");
   if (api()) windowReady(); else { attachBtn.disabled = true; $("plus-orb").disabled = true; }
-  if (address) connect(); else statusLine.textContent = "Waiting for Grandpa…";
+  // A phone: the page came from Grandpa's phone port (through Tailscale) with
+  // no address in it. Its own device key, kept on the phone, opens the socket.
+  const DEVICE_KEY = "grandpa.device.v1";
+  const servedToPhone = !address && /^https?:$/.test(location.protocol);
+  let phoneFails = 0;
+  function phoneHelp(message) {
+    statusLine.textContent = message || "This phone isn't paired yet. On your PC: Grandpa app > Settings > Phone > Pair a phone, then scan the QR code.";
+    toast(statusLine.textContent, true);
+  }
+  function deviceKey() {
+    const code = new URLSearchParams(location.hash.slice(1)).get("pair");
+    if (!code) { try { return Promise.resolve(localStorage.getItem(DEVICE_KEY) || ""); } catch (_) { return Promise.resolve(""); } }
+    history.replaceState(null, "", location.pathname);  // the code is used once; don't keep it
+    const ua = navigator.userAgent;
+    const name = /iphone|ipad/i.test(ua) ? "iPhone" : /android/i.test(ua) ? "Android phone" : "Browser";
+    return fetch("/pair/claim?code=" + encodeURIComponent(code) + "&name=" + encodeURIComponent(name), { cache: "no-store" })
+      .then((r) => r.json())
+      .then((r) => {
+        if (!r || !r.ok || !r.token) throw new Error((r && r.error) || "Pairing failed.");
+        try { localStorage.setItem(DEVICE_KEY, r.token); } catch (_) { /* private mode */ }
+        toast("Paired. This phone can use Grandpa now.");
+        return r.token;
+      });
+  }
+  if (address) connect();
+  else if (servedToPhone) {
+    micBtn.hidden = true;   // the mic button records on the PC; not from a phone
+    statusLine.textContent = "Connecting to your PC…";
+    deviceKey().then((key) => {
+      if (!key) { phoneHelp(); return; }
+      address = (location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/avatar?device=" + encodeURIComponent(key);
+      connect();
+    }).catch((e) => phoneHelp(e.message + " Pair again from the PC."));
+  } else statusLine.textContent = "Waiting for Grandpa…";
   input.focus();
 })();

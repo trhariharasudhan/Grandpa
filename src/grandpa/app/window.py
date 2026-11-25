@@ -59,6 +59,8 @@ class AppApi:
         self._window: Any = None
         self._webview: Any = None
         self._session = session
+        self._devices: Any = None
+        self._phone_live = False
 
     def _set_window(self, window: Any, webview_module: Any = None) -> None:
         # private (leading underscore): pywebview never offers it to the page
@@ -98,6 +100,62 @@ class AppApi:
         if self._session is not None:
             return self._session.allow_file(path)
         return path
+
+    # --- phone access (the PC's own window only; never offered to a phone) ----
+
+    def _phone(self) -> Any:
+        if getattr(self, "_devices", None) is None:
+            from grandpa.app.phone import DeviceRegistry
+
+            self._devices = DeviceRegistry()
+        return self._devices
+
+    def phone_status(self) -> dict[str, Any]:
+        from grandpa.app import phone
+
+        settings = phone.load_settings()
+        tail = phone.tailscale_status()
+        live = getattr(self, "_phone_live", False)
+        return {
+            "enabled": settings["enabled"],
+            "live": bool(live and settings["enabled"]),
+            "port": settings["port"],
+            "tailscale": tail,
+            "address": phone.phone_address(tail.get("name", "")) if tail.get("running") else "",
+            "devices": self._phone().devices(),
+        }
+
+    def phone_set_enabled(self, on: Any) -> dict[str, Any]:
+        from grandpa.app import phone
+
+        if isinstance(on, bool):
+            phone.save_settings(on)
+        return self.phone_status()
+
+    def phone_share(self) -> dict[str, Any]:
+        """Publish the phone port on this tailnet (``tailscale serve``)."""
+        from grandpa.app import phone
+
+        return phone.tailscale_share(phone.load_settings()["port"])
+
+    def phone_pair(self) -> dict[str, Any]:
+        from grandpa.app import phone
+
+        tail = phone.tailscale_status()
+        if not tail.get("running") or not tail.get("name"):
+            return {"ok": False, "error": "Turn Tailscale on (and sign in) on this PC first."}
+        started = self._phone().start_pairing()
+        link = phone.pair_link(tail["name"], started["code"])
+        return {
+            "ok": True,
+            "code": started["code"],
+            "expires_in": started["expires_in"],
+            "link": link,
+            "qr": phone.qr_svg(link),
+        }
+
+    def phone_forget(self, device_id: Any) -> bool:
+        return self._phone().forget(device_id)
 
     def user_name(self) -> str:
         return user_name()
@@ -573,23 +631,54 @@ def run(
     session = AppSession(publish, chat_args=chat_args)
     api = AppApi(session)
     extra: dict[str, Any] = {}
+    phone_extra: dict[str, Any] = {}
+    from grandpa.app import phone
+
+    phone_settings = phone.load_settings()
+    if phone_settings["enabled"]:
+        # One fixed loopback port for page and socket; tailscale serve
+        # publishes it to your own devices. Nothing listens on the network.
+        phone_extra = {
+            "api": browser_dispatch(api),
+            "device_methods": phone.PHONE_METHODS,
+            "device_ok": api._phone().check,
+            "pair_claim": api._phone().claim,
+            "static_dir": WEB_DIR,
+            "port": phone_settings["port"],
+            "max_frame": MAX_UPLOAD * 4 // 3 + 4096,
+        }
     if browser:
         # The tab has no pywebview bridge, so the same methods go over the
         # (token-protected, loopback) socket instead.
-        extra = {
-            "api": browser_dispatch(api),
-            "api_methods": BROWSER_METHODS,
-            "max_frame": MAX_UPLOAD * 4 // 3 + 4096,
-        }
-    server = AvatarServer(
-        on_send=session.send,
-        on_talk=session.talk,
-        on_cancel=session.cancel,
-        snapshot=session.snapshot,
-        **extra,
-    )
+        extra.update(
+            api=browser_dispatch(api),
+            api_methods=BROWSER_METHODS,
+            max_frame=MAX_UPLOAD * 4 // 3 + 4096,
+        )
+
+    def make_server(with_phone: bool) -> Any:
+        return AvatarServer(
+            on_send=session.send,
+            on_talk=session.talk,
+            on_cancel=session.cancel,
+            snapshot=session.snapshot,
+            **{**(phone_extra if with_phone else {}), **extra},
+        )
+
+    server = make_server(bool(phone_extra))
     holder["server"] = server
-    server.start(timeout=20)
+    try:
+        server.start(timeout=20)
+        api._phone_live = bool(phone_extra)
+    except RuntimeError:
+        if not phone_extra:
+            raise
+        # the phone port is taken (another copy?): run without phone access
+        echo(f"Phone access: port {phone_settings['port']} is busy; starting without it.")
+        server.stop()
+        server = make_server(False)
+        holder["server"] = server
+        server.start(timeout=20)
     session.start()
 
     try:

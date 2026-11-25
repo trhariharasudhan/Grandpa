@@ -81,6 +81,17 @@ class AvatarServer:
     """The names :attr:`api` accepts; told to each page when it connects."""
     max_frame: int = MAX_FRAME
     """Largest inbound frame. The app's browser mode raises it for uploads."""
+    static_dir: Any = None
+    """Phone access: also serve this folder's page files over plain GET on the
+    same port, so one ``tailscale serve`` covers page and socket."""
+    device_ok: Callable[[str], bool] | None = None
+    """Phone access: accepts ``?device=<key>`` from a paired phone."""
+    device_methods: tuple[str, ...] = ()
+    """The API names a paired phone may call (fewer than the PC's own page)."""
+    pair_claim: Callable[[str, str], str | None] | None = None
+    """Phone access: ``GET /pair/claim?code=..&name=..`` swaps a code for a key."""
+    host: str = HOST
+    """Largest inbound frame. The app's browser mode raises it for uploads."""
     port: int = 0
     token: str = field(default_factory=lambda: secrets.token_urlsafe(24))
 
@@ -157,7 +168,7 @@ class AvatarServer:
 
         self._server = await serve(
             self._handle,
-            HOST,
+            self.host,
             self.port,
             process_request=self._check_token,
             max_size=self.max_frame,
@@ -171,10 +182,72 @@ class AvatarServer:
         offered = (query.get("token") or [""])[0]
         return bool(offered) and hmac.compare_digest(offered, self.token)
 
+    def device_from(self, path: str) -> bool:
+        if self.device_ok is None:
+            return False
+        offered = (parse_qs(urlparse(path).query).get("device") or [""])[0]
+        try:
+            return bool(offered) and bool(self.device_ok(offered))
+        except Exception:  # noqa: BLE001 - a broken registry refuses
+            logger.exception("device check failed")
+            return False
+
     def _check_token(self, connection: Any, request: Any) -> Any:
-        if self.token_ok(getattr(request, "path", "") or ""):
+        path = getattr(request, "path", "") or ""
+        headers = getattr(request, "headers", None)
+        upgrade = str(headers.get("Upgrade", "") if headers is not None else "").lower()
+        if upgrade != "websocket" and self.static_dir is not None:
+            return self._http(connection, path)
+        if self.token_ok(path) or self.device_from(path):
             return None
         return connection.respond(HTTPStatus.FORBIDDEN, "Forbidden\n")
+
+    # --- plain HTTP (phone access only) ----------------------------------------
+
+    def _http(self, connection: Any, path: str) -> Any:
+        from pathlib import Path
+
+        from websockets.datastructures import Headers
+        from websockets.http11 import Response
+
+        def reply(status: int, body: bytes, kind: str) -> Any:
+            headers = Headers(
+                [
+                    ("Content-Type", kind),
+                    ("Content-Length", str(len(body))),
+                    ("Cache-Control", "no-cache"),
+                    ("X-Content-Type-Options", "nosniff"),
+                    ("X-Frame-Options", "DENY"),
+                    ("Referrer-Policy", "no-referrer"),
+                ]
+            )
+            return Response(status, HTTPStatus(status).phrase, headers, body)
+
+        parsed = urlparse(path)
+        route = parsed.path or "/"
+        if route == "/pair/claim" and self.pair_claim is not None:
+            query = parse_qs(parsed.query)
+            code = (query.get("code") or [""])[0][:32]
+            name = (query.get("name") or [""])[0][:40]
+            token = self.pair_claim(code, name)
+            if not token:
+                body = json.dumps({"ok": False, "error": "That code is wrong or expired."})
+                return reply(403, body.encode(), "application/json")
+            body = json.dumps({"ok": True, "token": token})
+            return reply(200, body.encode(), "application/json")
+        name = "index.html" if route in ("/", "") else route.lstrip("/")
+        folder = Path(self.static_dir)
+        kind = STATIC_TYPES.get(Path(name).suffix.lower())
+        # one level, known types, no tricks: "a/../b", "%2e", "\\" all refused
+        if kind is None or "/" in name or "\\" in name or name.startswith("."):
+            return reply(404, b"Not found\n", "text/plain")
+        target = folder / name
+        try:
+            if target.resolve().parent != folder.resolve() or not target.is_file():
+                return reply(404, b"Not found\n", "text/plain")
+            return reply(200, target.read_bytes(), kind)
+        except OSError:
+            return reply(404, b"Not found\n", "text/plain")
 
     async def _handle(self, websocket: Any) -> None:
         self._clients.add(websocket)
@@ -189,12 +262,14 @@ class AvatarServer:
                 }
                 await websocket.send(encode(announce))
                 await websocket.send(self.character)
-            if self.api is not None:
-                await websocket.send(
-                    encode({"type": "api_methods", "methods": list(self.api_methods)})
-                )
+            request_path = str(getattr(getattr(websocket, "request", None), "path", "") or "")
+            # a paired phone gets the shorter list; the PC's own page the full one
+            from_pc = self.token_ok(request_path)
+            methods = self.api_methods if from_pc else self.device_methods
+            if self.api is not None and methods:
+                await websocket.send(encode({"type": "api_methods", "methods": list(methods)}))
             async for raw in websocket:
-                call = parse_api(raw, self.api_methods) if self.api is not None else None
+                call = parse_api(raw, methods) if self.api is not None else None
                 if call is not None:
                     asyncio.ensure_future(self._answer(websocket, *call))
                     continue
@@ -209,7 +284,8 @@ class AvatarServer:
                         threading.Thread(target=self.on_cancel, daemon=True).start()
                     continue
                 if kind == "talk":
-                    if self.on_talk is not None:
+                    # "talk" opens *this PC's* microphone: never for a phone
+                    if self.on_talk is not None and from_pc:
                         loop.run_in_executor(self._worker, self._call_talk)
                     continue
                 loop.run_in_executor(self._worker, self._call_send, text)
@@ -270,6 +346,15 @@ class AvatarServer:
 
 
 MAX_API_ARGS = 8
+
+STATIC_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "text/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".webmanifest": "application/manifest+json",
+}
 
 
 def parse_api(raw: str | bytes, allowed: tuple[str, ...]) -> tuple[int, str, list] | None:

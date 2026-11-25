@@ -346,3 +346,9 @@ button.card:hover { border-color: var(--border); }
 .chips-list { max-height: 180px; overflow-y: auto; }
 #skill-chip { display: flex; margin-bottom: 6px; }
 #skill-chip .file { border-color: var(--brand); color: var(--text); }
+
+/* Settings > Phone */
+.phone-qr { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; margin: 10px 0; }
+.phone-qr img { background: #E5E7EB; border-radius: 12px; padding: 6px; }
+.phone-devices { list-style: none; padding: 0; margin: 4px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.phone-devices li { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
