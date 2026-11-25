@@ -502,7 +502,9 @@ def test_the_window_api_moves_by_small_clamped_steps_only() -> None:
 
 def test_the_page_can_reach_only_the_window_methods() -> None:
     public = {name for name in dir(WindowApi) if not name.startswith("_")}
-    assert public == {"attach", "set_expanded", "move_by", "open_app", "quit"}
+    assert public == {
+        "attach", "set_expanded", "move_by", "open_app", "quit", "wake_status", "set_wake"
+    }
 
 
 def test_quit_closes_only_the_orb_window() -> None:

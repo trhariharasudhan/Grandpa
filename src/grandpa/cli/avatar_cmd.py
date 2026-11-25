@@ -31,6 +31,12 @@ a built-in placeholder, or your own model from assets/avatar/grandpa.glb
 His face follows the state: he smiles while speaking, looks thoughtful while
 thinking, and raises his brows when he asks you something.
 
+Say "Hey Grandpa" and then what you want ("Hey Grandpa, open Notepad"
+works in one breath too). The ring turns blue while he listens. The mic
+button in the panel turns this on or off (remembered); --no-wake starts with
+it off. Without a trained wake model it reads only the moments someone
+speaks, with a small local Whisper; nothing is saved or sent anywhere.
+
 Hold Ctrl+Win anywhere, speak, and let go: Grandpa answers as if you had
 typed it (--hold-key picks other keys). Right-clicking the ring listens for
 one sentence. --no-mic turns talking off.
@@ -260,6 +266,11 @@ def build(bridge=None, speaker=None, listener=None):
     default=None,
     help="Keys to hold while speaking (default ctrl+win; e.g. f8, menu).",
 )
+@click.option(
+    "--no-wake",
+    is_flag=True,
+    help='Do not listen for "Hey Grandpa" (the mic button in the panel turns it on/off too).',
+)
 @click.option("--no-tray", is_flag=True, help="Do not show the tray icon.")
 @click.option(
     "--orb-only",
@@ -288,6 +299,7 @@ def avatar(
     quiet: bool,
     no_mic: bool,
     hold_key: str | None,
+    no_wake: bool,
     no_tray: bool,
     orb_only: bool,
     character: bool,
@@ -342,6 +354,22 @@ def avatar(
         else:
             hold = None
             click.echo("Talk: right-click the ring (hold-to-talk needs Windows).")
+    wake = None
+    if not no_mic:
+        from grandpa.ui.wake_talk import WakeToTalk, load_wake_enabled
+
+        wake = WakeToTalk(
+            controller,
+            bridge,
+            microphone_listener(bridge),
+            enabled=False if no_wake else load_wake_enabled(),
+        )
+        if not wake.enabled:
+            click.echo('Wake: off (turn on with the mic button in the panel).')
+        elif wake.start():
+            click.echo(f'Wake: say "Hey Grandpa" ({wake.label}).')
+        else:
+            click.echo(f"Wake: not available ({wake.error}).")
     controller.watch_actions()
     watch = None
 
@@ -380,6 +408,7 @@ def avatar(
                     debug=debug,
                     tray=not no_tray,
                     echo=click.echo,
+                    wake=wake,
                 )
             except RuntimeError as exc:
                 safe_cli_error(str(exc))
@@ -390,6 +419,8 @@ def avatar(
         controller.unwatch_actions()
         if hold is not None:
             hold.stop()
+        if wake is not None:
+            wake.stop()
         server.stop()
         if not no_window:
             release("avatar")

@@ -98,6 +98,7 @@ html, body {
 #dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--glow); box-shadow: 0 0 6px var(--glow); flex: none; }
 #panel button.bar-icon { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; background: transparent; color: var(--muted); }
 #panel button.bar-icon:hover { color: var(--ink); background: rgba(255,255,255,0.12); }
+#panel button.bar-icon.on { color: #168BFF; }
 #panel #quit:hover { color: #ff4f58; }
 .icon-svg { display: block; }
 #panel #close:hover { color: var(--ink); background: rgba(255,255,255,0.14); }

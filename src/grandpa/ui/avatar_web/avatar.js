@@ -100,6 +100,36 @@
   quitButton.addEventListener("click", () => { const api = windowApi(); if (api && api.quit) api.quit(); });
   window.addEventListener("pywebviewready", showOpenApp);
   showOpenApp();
+
+  // "Hey Grandpa": the mic button shows whether he is listening for it.
+  const wakeButton = document.getElementById("wake");
+  function drawWake(status) {
+    if (!status || !status.available) { wakeButton.hidden = true; return; }
+    wakeButton.hidden = false;
+    const on = !!status.on;
+    wakeButton.classList.toggle("on", on);
+    wakeButton.setAttribute("aria-pressed", on ? "true" : "false");
+    wakeButton.title = on
+      ? "Listening for \u201cHey Grandpa\u201d. Click to stop."
+      : (status.error ? "Hey Grandpa is off: " + status.error : "Hey Grandpa is off. Click to listen.");
+    const holder = wakeButton.querySelector("[data-icon]");
+    holder.setAttribute("data-icon", on ? "mic" : "mic-off");
+    if (window.GrandpaIcons) window.GrandpaIcons.fill(wakeButton);
+  }
+  function loadWake() {
+    const api = windowApi();
+    if (!api || !api.wake_status) return;
+    api.wake_status().then(drawWake).catch(() => { wakeButton.hidden = true; });
+  }
+  wakeButton.addEventListener("click", () => {
+    const api = windowApi();
+    if (!api || !api.set_wake) return;
+    wakeButton.disabled = true;
+    api.set_wake(!wakeButton.classList.contains("on")).then(drawWake)
+      .catch(() => {}).then(() => { wakeButton.disabled = false; });
+  });
+  window.addEventListener("pywebviewready", loadWake);
+  loadWake();
   document.getElementById("open-app").addEventListener("click", () => {
     const api = windowApi();
     if (api && api.open_app) api.open_app();

@@ -27,6 +27,7 @@
       <span id="dot" aria-hidden="true"></span>
       <strong>Grandpa</strong>
       <span id="bar-status">Ready</span>
+      <button type="button" id="wake" class="bar-icon" hidden title="Hey Grandpa" aria-label="Hey Grandpa listening" aria-pressed="false"><span data-icon="mic-off" data-icon-size="16"></span></button>
       <button type="button" id="clear" class="bar-icon" title="Clear the chat (Grandpa starts fresh)" aria-label="Clear the chat"><span data-icon="trash" data-icon-size="16"></span></button>
       <button type="button" id="open-app" class="bar-icon" hidden title="Open the full Grandpa app" aria-label="Open the full Grandpa app"><span data-icon="app" data-icon-size="16"></span></button>
       <button type="button" id="quit" class="bar-icon" hidden title="Close the orb (the app stays open)" aria-label="Close the orb"><span data-icon="power" data-icon-size="16"></span></button>
@@ -39,7 +40,7 @@
       <button type="button" id="no">No</button>
     </div>
     <form id="entry" autocomplete="off">
-      <input id="text" type="text" maxlength="2000" placeholder="Ask Grandpa · hold Ctrl+Win to talk" aria-label="Message">
+      <input id="text" type="text" maxlength="2000" placeholder="Ask Grandpa · or say Hey Grandpa" aria-label="Message">
       <button type="submit" id="send" aria-label="Send" title="Send (Enter)"><span data-icon="send" data-icon-size="18"></span></button>
     </form>
   </section>

@@ -14,6 +14,7 @@
     send: [["path", { d: "M12 19V5M6 11l6-6 6 6" }]],
     stop: [["rect", { x: 7, y: 7, width: 10, height: 10, rx: 1.5, fill: "currentColor", stroke: "none" }]],
     mic: [["rect", { x: 9, y: 3, width: 6, height: 11, rx: 3 }], ["path", { d: "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" }]],
+    "mic-off": [["rect", { x: 9, y: 3, width: 6, height: 11, rx: 3 }], ["path", { d: "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7M4 4l16 16" }]],
     file: [["path", { d: "M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" }], ["path", { d: "M14 3v5h5M9 13h6M9 17h4" }]],
     paperclip: [["path", { d: "M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" }]],
     orb: [["circle", { cx: 12, cy: 12, r: 8 }], ["circle", { cx: 12, cy: 12, r: 3.5, opacity: 0.5 }]],

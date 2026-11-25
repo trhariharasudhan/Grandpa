@@ -72,9 +72,10 @@ class WindowApi:
     open_app can only start ``grandpa app``, and quit closes this window.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, wake: Any = None) -> None:
         self._window: Any = None
         self._lock = threading.Lock()
+        self._wake = wake  # private: the page only gets wake_status / set_wake
         self.expanded = False
 
     def attach(self, window: Any) -> None:
@@ -99,6 +100,24 @@ class WindowApi:
             return launch("app")
         except (OSError, ValueError):
             return "failed"
+
+    def wake_status(self) -> dict[str, Any]:
+        """Is "Hey Grandpa" listening? For the mic button in the panel."""
+        wake = self._wake
+        if wake is None:
+            return {"available": False, "on": False, "label": "", "error": ""}
+        return {
+            "available": True,
+            "on": bool(wake.enabled and wake.running),
+            "label": str(wake.label or ""),
+            "error": str(wake.error or ""),
+        }
+
+    def set_wake(self, on: Any) -> dict[str, Any]:
+        """Turn "Hey Grandpa" listening on or off (and remember it)."""
+        if self._wake is not None and isinstance(on, bool):
+            self._wake.set_enabled(on)
+        return self.wake_status()
 
     def quit(self) -> None:
         """Close the orb (its own window only; the app, if open, stays)."""
@@ -380,6 +399,7 @@ def run_window(
     echo: Any = None,
     webview_module: Any = None,
     pystray_module: Any = None,
+    wake: Any = None,
 ) -> None:
     """Open the window and block until it is closed (pywebview owns the loop)."""
     if webview_module is None:
@@ -389,7 +409,7 @@ def run_window(
             raise missing_pywebview() from exc
 
     ensure_js_mime()
-    api = WindowApi()
+    api = WindowApi(wake)
     width, height = COLLAPSED
     window = webview_module.create_window(
         "Grandpa",
