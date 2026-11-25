@@ -1373,7 +1373,10 @@ dependencies = [
 
 [package.optional-dependencies]
 avatar = [
+    { name = "faster-whisper" },
+    { name = "numpy" },
     { name = "pywebview", marker = "sys_platform == 'win32'" },
+    { name = "sounddevice" },
     { name = "websockets", version = "16.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "websockets", version = "17.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
@@ -1500,6 +1503,7 @@ requires-dist = [
     { name = "ddgs", marker = "extra == 'tools-search'", specifier = ">=9.11.4" },
     { name = "faiss-cpu", marker = "extra == 'memory-faiss'", specifier = ">=1.7" },
     { name = "fastapi", marker = "extra == 'server'", specifier = ">=0.110" },
+    { name = "faster-whisper", marker = "extra == 'avatar'", specifier = ">=1.0" },
     { name = "faster-whisper", marker = "extra == 'speech'", specifier = ">=1.0" },
     { name = "faster-whisper", marker = "extra == 'voice'", specifier = ">=1.0" },
     { name = "google-api-python-client", marker = "extra == 'calendar'", specifier = ">=2.0" },
@@ -1519,6 +1523,7 @@ requires-dist = [
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.5,<9.7" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.25" },
     { name = "mss", marker = "extra == 'screen'", specifier = ">=9.0" },
+    { name = "numpy", marker = "extra == 'avatar'", specifier = ">=1.24" },
     { name = "numpy", marker = "extra == 'memory-faiss'", specifier = ">=1.24" },
     { name = "numpy", marker = "extra == 'voice'", specifier = ">=1.24" },
     { name = "numpy", marker = "extra == 'wake'", specifier = ">=1.24" },
@@ -1554,6 +1559,7 @@ requires-dist = [
     { name = "screen-brightness-control", marker = "extra == 'desktop-hardware'", specifier = ">=0.23" },
     { name = "sentence-transformers", marker = "extra == 'memory-faiss'", specifier = ">=2.2" },
     { name = "sherpa-onnx", marker = "extra == 'tamil-voice'", specifier = ">=1.10" },
+    { name = "sounddevice", marker = "extra == 'avatar'", specifier = ">=0.4.6" },
     { name = "sounddevice", marker = "extra == 'voice'", specifier = ">=0.4.6" },
     { name = "sounddevice", marker = "extra == 'wake'", specifier = ">=0.4.6" },
     { name = "soundfile", marker = "extra == 'voice'", specifier = ">=0.12" },
