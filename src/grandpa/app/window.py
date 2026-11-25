@@ -204,6 +204,16 @@ class AppApi:
 
         return manage.provider_models(pid)
 
+    def restart_engine(self, start_ollama: Any = False) -> dict[str, Any]:
+        """Retry after the engine stopped; optionally start Ollama first."""
+        if start_ollama is True:
+            started = start_ollama_service()
+            if started != "ok":
+                return {"ok": False, "error": started}
+        if self._session is None or not self._session.restart():
+            return {"ok": False, "error": "Grandpa is already running."}
+        return {"ok": True}
+
     def open_orb(self) -> str:
         from grandpa.app.launch import launch
 
@@ -211,6 +221,55 @@ class AppApi:
             return launch("avatar")
         except (OSError, ValueError):
             return "failed"
+
+
+def start_ollama_service(wait: float = 25.0) -> str:
+    """Start ``ollama serve`` (hidden, detached) and wait until it answers.
+
+    "ok" when Ollama answers (or already did); otherwise what went wrong, in
+    words for the page. Only the fixed command; nothing from the page.
+    """
+    import shutil
+    import subprocess
+    import sys
+    import time
+
+    import httpx
+
+    def up() -> bool:
+        try:
+            return (
+                httpx.get("http://127.0.0.1:11434/api/tags", timeout=1.5).status_code
+                == 200
+            )
+        except Exception:  # noqa: BLE001
+            return False
+
+    if up():
+        return "ok"
+    exe = shutil.which("ollama")
+    if not exe:
+        return "Ollama isn't installed. Get it from ollama.com, then press Retry."
+    flags = 0
+    if sys.platform == "win32":
+        flags = 0x00000008 | 0x00000200 | 0x08000000  # detached, new group, no window
+    try:
+        subprocess.Popen(
+            [exe, "serve"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            creationflags=flags,
+        )
+    except OSError as exc:
+        return f"Couldn't start Ollama: {exc}"
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        if up():
+            return "ok"
+        time.sleep(0.5)
+    return "Ollama didn't answer in time. Open the Ollama app, then press Retry."
 
 
 def list_memories() -> list[dict[str, Any]]:

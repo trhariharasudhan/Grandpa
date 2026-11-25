@@ -86,16 +86,34 @@ class AppSession:
             reply=self._on_reply,
             stream=self._on_stream,
         )
-        if bridge_factory is not None:
-            self.bridge = bridge_factory(hooks)
-        else:
-            self.bridge = ChatBridge(hooks, width=width, chat_args=chat_args or [])
+        self._hooks = hooks
+        self._make_bridge = (
+            (lambda: bridge_factory(hooks))
+            if bridge_factory is not None
+            else (lambda: ChatBridge(hooks, width=width, chat_args=chat_args or []))
+        )
+        self.bridge = self._make_bridge()
 
     # --- lifecycle --------------------------------------------------------------
 
     def start(self) -> None:
         self._emit({"type": "state", "state": "starting"})
         self.bridge.start()
+
+    def restart(self) -> bool:
+        """Start the chat engine again after it stopped (Ollama was not up).
+
+        Only from "stopped": a running engine is never replaced under the user.
+        """
+        with self._lock:
+            if self.state != "stopped":
+                return False
+            self._started = False
+            self._pending_output.clear()
+            self._question = None
+        self.bridge = self._make_bridge()
+        self.start()
+        return True
 
     def stop(self) -> None:
         try:
@@ -278,8 +296,23 @@ class AppSession:
         self._emit(self._ask_message(question))
 
     def _on_finished(self, code: int) -> None:
-        if not self._started:
-            self._started = True  # what was printed is the reason it stopped
+        at_start = not self._started
+        if at_start:
+            # What was printed is the reason it never started. Shown, but as a
+            # notice the page does not keep in the chat.
+            self._started = True
+            reason = _plain("".join(self._pending_output)).strip()
+            self._pending_output.clear()
+            self._set_state("stopped")
+            self._emit(
+                {
+                    "type": "engine_down",
+                    "reason": reason or "The chat engine stopped.",
+                    "ollama": "inference engine" in reason.lower()
+                    or "ollama" in reason.lower(),
+                }
+            )
+            return
         self._flush_output()
         self._set_state("stopped")
         if code:

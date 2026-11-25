@@ -156,9 +156,31 @@ def test_a_startup_failure_shows_its_reason() -> None:
     published: list[dict] = []
     session = AppSession(published.append, bridge_factory=FailingBridge)
     session.start()
-    notes = [m["text"] for m in published if m["type"] == "note"]
-    assert any("Ollama is not running" in n for n in notes)
+    down = [m for m in published if m["type"] == "engine_down"]
+    assert down and "Ollama is not running" in down[0]["reason"] and down[0]["ollama"]
+    assert "run" not in down[0]  # a notice, not a chat message the page keeps
     assert session.state == "stopped"
+
+
+def test_the_engine_can_be_started_again_after_it_stopped() -> None:
+    starts: list[int] = []
+
+    class FlakyBridge(FakeBridge):
+        def start(self) -> None:
+            starts.append(1)
+            if len(starts) == 1:
+                self.hooks.output("No inference engine available.\n")
+                self.hooks.finished(1)
+            else:
+                self.hooks.ready_for_input("You > ")
+
+    published: list[dict] = []
+    session = AppSession(published.append, bridge_factory=FlakyBridge)
+    session.start()
+    assert session.state == "stopped"
+    assert session.restart() is True
+    assert session.state == "idle" and len(starts) == 2
+    assert session.restart() is False  # never replaces a running engine
 
 
 # --- attach, voice typing, the window API, and the Claude-style page ------------
@@ -224,6 +246,7 @@ def test_the_window_api_only_picks_files_and_reads_the_name(monkeypatch) -> None
         "get_profile",
         "save_profile",
         "open_orb",
+        "restart_engine",
         "set_next_context",
         "list_memories",
         "forget_memory",

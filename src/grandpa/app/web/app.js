@@ -1153,6 +1153,39 @@
     if (key === ",") { e.preventDefault(); openSettings(); }
   });
 
+  // Grandpa couldn't start (most often: Ollama isn't running yet). A card
+  // with the reason and a way out; it is not kept in the chat.
+  let downCard = null;
+  function engineDown(msg) {
+    if (downCard) downCard.remove();
+    hideThinking(); dropLive();
+    downCard = el("li", "msg-ask down");
+    downCard.appendChild(el("p", "", msg.ollama
+      ? "Grandpa can't reach Ollama, the program that runs the models. It may not be started yet."
+      : "Grandpa couldn't start."));
+    downCard.appendChild(el("p", "mono", String(msg.reason || "").slice(0, 600)));
+    const row = el("div", "choices");
+    const retryButton = (label, startOllama) => {
+      const b = el("button", startOllama ? "yes" : "", label); b.type = "button";
+      b.addEventListener("click", () => {
+        const a = api();
+        if (!a || !a.restart_engine) return toast("Close and open the app again.", true);
+        row.querySelectorAll("button").forEach((x) => { x.disabled = true; });
+        b.textContent = startOllama ? "Starting Ollama…" : "Retrying…";
+        a.restart_engine(startOllama).then((r) => {
+          if (r && r.ok) { downCard.remove(); downCard = null; contextPending = true; toast("Grandpa is starting…"); }
+          else { toast((r && r.error) || "Still not working.", true); row.querySelectorAll("button").forEach((x) => { x.disabled = false; }); b.textContent = label; }
+        });
+      });
+      row.appendChild(b);
+    };
+    if (msg.ollama) retryButton("Start Ollama and retry", true);
+    retryButton("Retry", false);
+    downCard.appendChild(row);
+    list.appendChild(downCard);
+    app.classList.remove("empty");
+  }
+
   // --- the connection ----------------------------------------------------------------------------------------------------------
   function onMessage(msg) {
     if (msg.type === "state") return setState(msg.state);
@@ -1164,6 +1197,7 @@
     }
     if (msg.type === "ask") return question(msg);
     if (msg.type === "delta") return onDelta(msg);
+    if (msg.type === "engine_down") return engineDown(msg);
     if (msg.type === "listening") return listening(true);
     if (msg.type === "heard") {
       listening(false);
