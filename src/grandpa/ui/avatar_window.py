@@ -254,13 +254,31 @@ KEY_COLOUR = (1, 1, 1)
 
 #: Where the ring's solid line is in the collapsed window. Measured at the
 #: old size (opaque from radius 35 to 40 px of a 132 px window, 84 px ring)
-#: and scaled with everything else for the 30 px ring (x 30/84) in a 48 px window.
-RING_RADIUS = 13.4
+#: and scaled with everything else for the 24 px ring (x 24/84) in a 48 px window.
+RING_RADIUS = 10.7
 RING_HIT_WIDTH = 4.0
 
 
 #: Corner radius of the open chat panel, in 96-dpi pixels.
 PANEL_RADIUS = 16
+
+
+def _dwm_frame(form: Any, *, rounded: bool) -> None:
+    """Windows 11's own frame: rounded corners (open panel) or none at all.
+
+    Rounding comes with a thin border; left on for the collapsed ring it drew
+    a box around it -- so the ring always gets square corners and no border.
+    """
+    try:
+        import ctypes
+
+        hwnd = int(form.Handle.ToInt64())
+        corner = ctypes.c_int(2 if rounded else 1)  # DWMWCP_ROUND / DONOTROUND
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner), 4)
+        no_border = ctypes.c_uint(0xFFFFFFFE)  # DWMWA_COLOR_NONE
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(no_border), 4)
+    except Exception:  # noqa: BLE001 - Windows 10 has neither
+        pass
 
 
 def round_corners(form: Any, radius: float) -> None:
@@ -269,15 +287,7 @@ def round_corners(form: Any, radius: float) -> None:
     Windows 11 rounds the window itself when asked (DWM, smooth edges); the
     window region is the fallback that works everywhere. Runs on the UI thread.
     """
-    try:
-        import ctypes
-
-        preference = ctypes.c_int(2)  # DWMWCP_ROUND
-        ctypes.windll.dwmapi.DwmSetWindowAttribute(
-            int(form.Handle.ToInt64()), 33, ctypes.byref(preference), 4
-        )
-    except Exception:  # noqa: BLE001 - Windows 10: the region below does it
-        pass
+    _dwm_frame(form, rounded=True)
     try:
         from System.Drawing import Rectangle, Region
         from System.Drawing.Drawing2D import GraphicsPath
@@ -329,6 +339,7 @@ def key_out_background(window: Any, *, expanded: bool = False) -> bool:
                 round_corners(form, PANEL_RADIUS)
                 return
             form.Region = None  # the collapsed ring is shaped by the key colour
+            _dwm_frame(form, rounded=False)  # no corner rounding, no border
             key = Color.FromArgb(*KEY_COLOUR)
             size = form.ClientSize
             # Windows keeps a frameless window at least ~148 px wide, wider

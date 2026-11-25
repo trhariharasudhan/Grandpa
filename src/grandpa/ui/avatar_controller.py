@@ -36,7 +36,7 @@ HISTORY_SIZE = 50
 CONFIRM_STATUSES = frozenset({"requires_confirmation", "needs_confirmation"})
 
 NO_MICROPHONE = "Talking is off here (no microphone). Please type instead."
-NOTHING_HEARD = "I did not catch that. Click Talk and try again, or type it."
+NOTHING_HEARD = "I did not catch that. Hold Ctrl+Win while you speak, or type it."
 RING_ONLY_NOTE = "To keep your PC fast I will show only my ring for now"
 
 
@@ -166,6 +166,9 @@ class AvatarController:
                     )
                 )
                 self._enter(StateMessage(AvatarState.ERROR))
+                return True
+            if heard is None:  # a quick tap on the talk keys: say nothing
+                self._enter(StateMessage(AvatarState.IDLE))
                 return True
             text = str(getattr(heard, "text", heard) or "").strip()
             if not text:

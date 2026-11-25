@@ -154,6 +154,16 @@
     socket.send(JSON.stringify({ type: "talk" }));
   }
 
+  // Clear: the panel empties and Grandpa forgets this conversation.
+  let clearing = false;
+  document.getElementById("clear").addEventListener("click", () => {
+    if (BUSY.has(app.dataset.state)) return;
+    clearing = true;
+    history.textContent = "";
+    send("/clear");
+    setTimeout(() => { clearing = false; }, 8000);
+  });
+
   function send(text) {
     const cleaned = (text || "").trim();
     if (!cleaned || !socket || socket.readyState !== WebSocket.OPEN) return;
@@ -176,7 +186,12 @@
       let msg;
       try { msg = JSON.parse(event.data); } catch (_) { return; }
       if (msg.type === "state") { showState(msg); connected = true; }
-      else if (msg.type === "chat") addLine(msg.role, msg.text, msg.failed);
+      else if (msg.type === "chat") {
+        // our own /clear: its confirmation would only clutter the fresh chat
+        if (clearing && msg.role !== "user" && /^Conversation cleared/.test(msg.text)) { clearing = false; return; }
+        if (clearing && msg.role === "user" && msg.text === "/clear") return;
+        addLine(msg.role, msg.text, msg.failed);
+      }
       else if (msg.type === "mode") {
         // A7: over budget (or --orb-only): the ring only, for the rest of the run.
         window.__grandpaMode = msg;

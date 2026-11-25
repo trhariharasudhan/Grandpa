@@ -171,7 +171,7 @@ class HoldToTalk:
             on_idle=self._stop.is_set,
         )
 
-    def listen_while_held(self) -> str:
+    def listen_while_held(self) -> str | None:
         capture = self.capture_factory()
         try:
             audio, held, _reason = self._session(capture).record_while_held()
@@ -179,8 +179,8 @@ class HoldToTalk:
             close = getattr(capture, "close", None)
             if callable(close):
                 close()
-        if held < 0.3 or not getattr(audio, "captured_frame_count", 1):
-            return ""  # a tap, not an utterance
+        if held < 0.4 or not getattr(audio, "captured_frame_count", 1):
+            return None  # a tap (or Ctrl+Win for something else), not an utterance
         return self.bridge.transcribe(audio)
 
     def _run(self) -> None:
