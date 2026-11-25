@@ -111,3 +111,23 @@ def test_a_waiting_plan_never_traps_the_conversation(monkeypatch) -> None:
     out = routing.handle_executive_goal("Who is the CM of Tamil Nadu?")
     assert planner.cancelled == 1 and not planner.waiting
     assert out is None  # a one-step question: handled by the normal chat after this
+
+
+def test_the_model_underneath_is_not_named_unless_asked() -> None:
+    from grandpa.prompt.identity import scrub_model_names
+
+    leaked = "I'm Grandpa. My friend is not named. It's an internal model family called Qwen2.5."
+    assert "Qwen" not in scrub_model_names(leaked, "Tell me about your friend, Grandpa.")
+    assert scrub_model_names(leaked, "which model are you running on?") == leaked
+    assert scrub_model_names("Hello!", "hi") == "Hello!"
+
+
+def test_reminder_times_are_local_and_spoken() -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from grandpa.reminders import friendly_time
+
+    now = datetime(2026, 11, 25, 16, 46, tzinfo=UTC)
+    soon = friendly_time(now + timedelta(minutes=2), now=now)
+    assert soon.startswith("today at ") and "+00:00" not in soon and "T" not in soon
+    assert friendly_time(now + timedelta(days=1), now=now).startswith("tomorrow at ")

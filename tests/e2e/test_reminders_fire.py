@@ -137,7 +137,7 @@ def test_ask_creates_the_same_one_shot_reminder_chat_does(cli) -> None:
     asked = cli("ask", "remind me to call mom at 5pm")
 
     assert asked.returncode == 0, asked.text
-    assert "Reminder created" in asked.text
+    assert "Reminder set" in asked.text
     rows = _pending(cli)
     assert [row["message"] for row in rows] == ["call mom"], rows
 

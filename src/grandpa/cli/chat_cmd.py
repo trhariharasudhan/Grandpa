@@ -1218,12 +1218,15 @@ def _strip_all_flag(argument: str) -> tuple[str, bool]:
 
 
 def _format_reminders(items: list, *, empty: str) -> str:
+    from grandpa.reminders import friendly_time
+
     if not items:
         return empty
     lines = ["Reminders:"]
     for reminder in items[:20]:
         lines.append(
-            f"- {reminder.id} [{reminder.status}] {reminder.message} at {reminder.due_at.isoformat()}"
+            f"- {reminder.message}, {friendly_time(reminder.due_at)} "
+            f"({reminder.status}, id {reminder.id})"
         )
     return "\n".join(lines)
 
@@ -2362,6 +2365,11 @@ def chat(
                     guarded = honest_reply(content, acted=False)
                     if guarded != content:
                         content, streamed = guarded, False
+                from grandpa.prompt.identity import scrub_model_names
+
+                scrubbed = scrub_model_names(content, effective_user_input)
+                if scrubbed != content:
+                    content, streamed = scrubbed, False
                 remember_conversation("assistant", content)
                 record_assistant_outcome(
                     brain_analysis,

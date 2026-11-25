@@ -316,7 +316,7 @@ def test_the_command_the_user_actually_typed_works(home) -> None:
     )
 
     assert result.exit_code == 0, result.output
-    assert "Reminder created" in result.output
+    assert "Reminder set" in result.output
 
 
 def test_in_takes_the_phrase_as_the_message_verbatim(home) -> None:

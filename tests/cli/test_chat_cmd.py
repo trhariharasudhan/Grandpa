@@ -1341,7 +1341,7 @@ class TestChatSlashCommands:
         )
 
         assert result.status == "handled"
-        assert "Reminder created" in result.message
+        assert "Reminder set" in result.message
         assert store.list(status="pending")[0].message == "drink water"
 
     def test_show_my_memories_routes_locally(self, tmp_path) -> None:
