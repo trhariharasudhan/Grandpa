@@ -42,6 +42,27 @@ APPLICATION_VOCABULARY: tuple[str, ...] = (
     "Explorer",
     "Settings",
     "Terminal",
+    "YouTube",
+    "Google",
+    "Downloads",
+)
+
+#: The words of Grandpa's everyday commands. Captain's voice test heard
+#: "Vlog my PC" for "Lock my PC", "Shaddown DPC" for "Shut down the PC" and
+#: "Bangalore feather" for "Bangalore weather": each a command word decoded
+#: as a likelier English one. Listed like the application names, so the
+#: decoder ranks them up. Words only -- never a phrase it could invent whole.
+COMMAND_VOCABULARY: tuple[str, ...] = (
+    "volume",
+    "brightness",
+    "battery",
+    "weather",
+    "lock",
+    "shut down",
+    "restart",
+    "remind me",
+    "Bengaluru",
+    "Tamil",
 )
 
 #: Shipped so the tool works out of the box for the person it was built for.
@@ -119,7 +140,7 @@ def transcription_vocabulary() -> tuple[str, ...]:
     words = user_vocabulary()
     if replaces:
         return words
-    return _clean(APPLICATION_VOCABULARY + words)
+    return _clean(APPLICATION_VOCABULARY + COMMAND_VOCABULARY + words)
 
 
 def build_initial_prompt(vocabulary: tuple[str, ...] | None = None) -> str:
@@ -138,6 +159,7 @@ def build_initial_prompt(vocabulary: tuple[str, ...] | None = None) -> str:
 
 __all__ = [
     "APPLICATION_VOCABULARY",
+    "COMMAND_VOCABULARY",
     "DEFAULT_USER_VOCABULARY",
     "ENV_VARIABLE",
     "build_initial_prompt",
