@@ -283,7 +283,9 @@ testing-qa (final step of every skill)
 └── grandpa-api-server/SKILL.md
 ```
 
-No file outside `.claude/skills/` was modified. No source code was changed.
+Outside `.claude/skills/`, only `.gitignore` changed: it ignored everything under `.claude/` except
+`settings.json`, so `!.claude/skills/` was added to let the skills travel with the repository (the same
+reason the file gives for the hooks). No source code was changed.
 
 ---
 
