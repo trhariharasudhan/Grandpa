@@ -1641,9 +1641,23 @@ def chat(
         from grandpa.cli._bg_state import get_status
 
         # Completion-notification dispatcher (fires once per task per session)
+        from grandpa.cli._chat_banner import render_startup_banner
         from grandpa.cli._chat_notifications import NotificationDispatcher
 
-        _notifications = NotificationDispatcher(get_status())
+        # One snapshot for both: the banner says what is in flight now, the
+        # dispatcher reports what finishes later, and they must agree about
+        # the moment chat opened.
+        _bg_at_start = get_status()
+        _notifications = NotificationDispatcher(_bg_at_start)
+
+        # Work already running when chat opens never transitions into view --
+        # the dispatcher treats the opening snapshot as reported -- so without
+        # this line a model download or an extension build is invisible until
+        # it finishes.
+        _startup_banner = render_startup_banner(_bg_at_start)
+        if _startup_banner:
+            render_status_message(console, _startup_banner)
+            console.print()
 
         from grandpa.automation import ScreenAutomationService
 
