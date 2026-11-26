@@ -70,6 +70,86 @@ def test_no_credential_bearing_variable_was_added() -> None:
     )
 
 
+def _powershell_startup_diagnosis() -> str:
+    """Why the sanitised run did not finish, measured rather than guessed.
+
+    A bare "Command timed out after 30 seconds." says nothing about whether the
+    environment is wrong, the host is slow, or the process is blocked -- and
+    those want three different fixes. This re-runs the same command with the
+    full environment, and with the sanitised one plus the variables PowerShell
+    startup is documented to use, so the failure names its own cause:
+
+    * full environment fast, sanitised slow  -> the allowlist is missing
+      something, and the delta below says which candidates exist to add.
+    * both slow                              -> the host, not the allowlist.
+    * stdin=DEVNULL fast, inherited slow     -> blocked reading stdin, which
+      has bitten this tool before (see the comment in
+      ``skills/data/backup-files.toml`` about cmd.exe's ``date`` prompting).
+    """
+    import subprocess
+    import time
+
+    from grandpa.tools.shell_exec import _env_keys
+
+    command = 'powershell -NoProfile -Command "Get-Date -Format yyyy"'
+    sanitised = {
+        key: os.environ[key] for key in _env_keys() if os.environ.get(key) is not None
+    }
+    # Variables PowerShell 5.1 reads at startup that the allowlist omits. The
+    # module analysis cache lives under LOCALAPPDATA and the module search path
+    # comes from PSModulePath, so without them a cold start can enumerate every
+    # module on the machine -- which on a CI image is a great many.
+    candidates = (
+        "PSModulePath",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "PROCESSOR_ARCHITECTURE",
+        "COMPUTERNAME",
+        "OS",
+    )
+    present = [key for key in candidates if os.environ.get(key) is not None]
+
+    def timed(label: str, env: dict[str, str] | None, stdin: object) -> str:
+        start = time.time()
+        try:
+            done = subprocess.run(
+                command,
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=40,
+                env=env,
+                stdin=stdin,
+            )
+            return (
+                f"  {label:34s} {time.time() - start:6.2f}s "
+                f"rc={done.returncode} out={(done.stdout or '').strip()[:30]!r}"
+            )
+        except subprocess.TimeoutExpired:
+            return f"  {label:34s} {time.time() - start:6.2f}s TIMED OUT"
+        except Exception as exc:  # pragma: no cover - diagnosis must not raise
+            return f"  {label:34s} {type(exc).__name__}: {exc}"
+
+    widened = dict(sanitised)
+    for key in present:
+        widened[key] = os.environ[key]
+
+    lines = [
+        "powershell startup, same command, three environments:",
+        timed("full environment", None, None),
+        timed("sanitised (what the tool does)", sanitised, None),
+        timed("sanitised + startup vars", widened, None),
+        timed("sanitised, stdin=DEVNULL", sanitised, subprocess.DEVNULL),
+        f"allowlist passes: {sorted(sanitised)}",
+        f"omitted startup vars present on this host: {present}",
+        f"PSModulePath entries: {len(os.environ.get('PSModulePath', '').split(os.pathsep))}",
+    ]
+    return "\n".join(lines)
+
+
 @pytest.mark.real_actions(
     reason="runs powershell.exe through the real shell_exec to prove the "
     "environment is sufficient; reads the clock with Get-Date and writes nothing"
@@ -89,7 +169,7 @@ def test_powershell_actually_runs_through_shell_exec() -> None:
         command='powershell -NoProfile -Command "Get-Date -Format yyyy"'
     )
 
-    assert result.success, result.content
+    assert result.success, f"{result.content}\n\n{_powershell_startup_diagnosis()}"
     assert "8009001d" not in result.content, (
         "powershell could not load the CLR, so the sanitised environment is "
         "still missing something it needs"
