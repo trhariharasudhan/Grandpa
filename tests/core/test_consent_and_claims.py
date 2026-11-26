@@ -131,3 +131,37 @@ def test_reminder_times_are_local_and_spoken() -> None:
     soon = friendly_time(now + timedelta(minutes=2), now=now)
     assert soon.startswith("today at ") and "+00:00" not in soon and "T" not in soon
     assert friendly_time(now + timedelta(days=1), now=now).startswith("tomorrow at ")
+
+
+def test_a_search_is_answered_in_a_sentence_with_its_sources_kept() -> None:
+    from grandpa.action_layer.model import ActionResult
+    from grandpa.cli.chat_cmd import _answer_from_search
+
+    raw = ActionResult(
+        success=True,
+        message="Found 2 relevant sources.\n\nSummary:\nold page says A. new page says B.\n\nSources:\n1. News - x.com",
+    )
+
+    class Engine:
+        def generate(self, messages, model=None):
+            assert "old page says A" in messages[-1].content
+            return {"content": "B is the chief minister (recent news)."}
+
+    answered = _answer_from_search(Engine(), "m", "who is the cm", raw)
+    assert answered.message.startswith("B is the chief minister")
+    assert answered.message.endswith("1. News - x.com")
+
+    class Broken:
+        def generate(self, *a, **k):
+            raise RuntimeError("ollama down")
+
+    assert _answer_from_search(Broken(), "m", "q", raw) is raw
+
+
+def test_long_answers_are_spoken_to_a_full_stop_without_sources() -> None:
+    from grandpa.voice.text_to_speech import MORE_ON_SCREEN, clean_text_for_speech
+
+    text = ("This is one sentence about the topic. " * 30) + "\n\nSources:\n1. https://example.com"
+    spoken = clean_text_for_speech(text, max_chars=200)
+    assert spoken.endswith(MORE_ON_SCREEN) and "http" not in spoken and "Sources" not in spoken
+    assert spoken.replace(" " + MORE_ON_SCREEN, "").endswith(".")

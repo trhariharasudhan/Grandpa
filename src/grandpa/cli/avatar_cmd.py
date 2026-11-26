@@ -13,7 +13,7 @@ import click
 
 from grandpa.cli.safe_output import safe_cli_error
 
-_HELP = """Show Grandpa's avatar window. Blocks this terminal until you close it.
+_HELP = """Show Grandpa's orb ring. Blocks this terminal until you close it.
 
 It opens as a small glowing ring that stays on top. Click the ring to open
 the chat (the ring hides while it is open); the chat's ✕ closes it and the
@@ -32,9 +32,8 @@ His face follows the state: he smiles while speaking, looks thoughtful while
 thinking, and raises his brows when he asks you something.
 
 Say "Hey Grandpa" and then what you want ("Hey Grandpa, open Notepad"
-works in one breath too). The ring turns blue while he listens. The mic
-button in the panel turns this on or off (remembered); --no-wake starts with
-it off. Without a trained wake model it reads only the moments someone
+works in one breath too). The ring turns blue while he listens. --no-wake
+starts without it. Without a trained wake model it reads only the moments someone
 speaks, with a small local Whisper; nothing is saved or sent anywhere.
 
 Hold Ctrl+Win anywhere, speak, and let go: Grandpa answers as if you had
@@ -269,7 +268,7 @@ def build(bridge=None, speaker=None, listener=None):
 @click.option(
     "--no-wake",
     is_flag=True,
-    help='Do not listen for "Hey Grandpa" (the mic button in the panel turns it on/off too).',
+    help='Do not listen for "Hey Grandpa" (hold Ctrl+Win to talk instead).',
 )
 @click.option("--no-tray", is_flag=True, help="Do not show the tray icon.")
 @click.option(
@@ -362,20 +361,23 @@ def avatar(
             click.echo("Talk: right-click the ring (hold-to-talk needs Windows).")
     wake = None
     if not no_mic:
-        from grandpa.ui.wake_talk import WakeToTalk, load_wake_enabled
+        from grandpa.ui.wake_talk import WakeToTalk
 
-        wake = WakeToTalk(
-            controller,
-            bridge,
-            microphone_listener(bridge),
-            enabled=False if no_wake else load_wake_enabled(),
-        )
+        # On unless --no-wake. (The panel's mic button is gone, so a setting it
+        # once saved must not keep listening off with no way back.)
+        wake = WakeToTalk(controller, bridge, microphone_listener(bridge), enabled=not no_wake)
         if not wake.enabled:
-            click.echo('Wake: off (turn on with the mic button in the panel).')
+            click.echo('Wake: off (--no-wake). Hold Ctrl+Win to talk.')
         elif wake.start():
             click.echo(f'Wake: say "Hey Grandpa" ({wake.label}).')
         else:
             click.echo(f"Wake: not available ({wake.error}).")
+    from grandpa.ui.reminder_voice import start_reminders
+
+    # Due reminders are said aloud (and shown) while the orb is open.
+    reminders = start_reminders(controller)
+    if reminders is not None:
+        click.echo("Reminders: on (said aloud when they come due).")
     controller.watch_actions()
     watch = None
 
@@ -427,10 +429,65 @@ def avatar(
             hold.stop()
         if wake is not None:
             wake.stop()
+        if reminders is not None:
+            reminders.stop(timeout=1.0)
         bridge.stop()
         server.stop()
         if not no_window:
             release("avatar")
 
 
-__all__ = ["TALK_SECONDS", "avatar", "budget_watch", "build", "microphone_listener"]
+def _orb_command() -> click.Command:
+    """``grandpa orb``: the ring. Same window, options and behaviour as
+    ``grandpa avatar`` used to have; the name is what it is.
+
+    ``grandpa avatar`` stays for the 3D character -- a separate feature, on
+    hold -- and starts with the character on.
+    """
+    import copy
+
+    command = copy.copy(avatar)
+    command.name = "orb"
+    command.help = _HELP.replace("grandpa avatar", "grandpa orb")
+    command.short_help = "Grandpa's orb ring: \"Hey Grandpa\", Ctrl+Win, chat panel."
+    command.params = [p for p in avatar.params if getattr(p, "name", "") != "character"]
+    original = avatar.callback
+
+    def run(**kwargs):
+        kwargs.setdefault("character", False)
+        return original(**kwargs)
+
+    command.callback = run
+    return command
+
+
+orb = _orb_command()
+
+
+def _avatar_command() -> click.Command:
+    import copy
+
+    command = copy.copy(avatar)
+    command.short_help = "Grandpa's 3D avatar (on hold; early preview). The ring is `grandpa orb`."
+    original = avatar.callback
+
+    def run(**kwargs):
+        click.echo("3D avatar: on hold, early preview. For the orb ring use: grandpa orb")
+        kwargs["character"] = True
+        return original(**kwargs)
+
+    command.callback = run
+    return command
+
+
+avatar_3d = _avatar_command()
+
+__all__ = [
+    "TALK_SECONDS",
+    "avatar",
+    "avatar_3d",
+    "budget_watch",
+    "build",
+    "microphone_listener",
+    "orb",
+]

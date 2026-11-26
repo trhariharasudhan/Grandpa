@@ -164,11 +164,11 @@ def test_phrase_is_stripped_from_the_command() -> None:
     assert strip_wake("open notepad") == "open notepad"
 
 
-def test_the_panel_has_the_mic_toggle() -> None:
+def test_the_panel_has_no_mic_button() -> None:
+    """Captain asked for it gone; listening stays on (``--no-wake`` turns it off)."""
     html = (WEB / "index.html").read_text(encoding="utf-8")
     js = (WEB / "avatar.js").read_text(encoding="utf-8")
-    assert 'id="wake"' in html and "Hey Grandpa" in html
-    assert "api.set_wake(" in js and "api.wake_status()" in js
+    assert 'id="wake"' not in html and "set_wake(" not in js
 
 
 def test_after_a_question_the_answer_needs_no_second_wake() -> None:

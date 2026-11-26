@@ -781,6 +781,51 @@ def _unknown_slash_command_message(command: str) -> str:
     return unknown_command_message(command)
 
 
+SEARCH_ANSWER_PROMPT = (
+    "Answer the user's question in one or two short sentences, using only the "
+    "search results below. Results can disagree or be out of date: prefer the "
+    "most recent information and say plainly if they conflict. No lists, no "
+    "links, no 'according to the search results'."
+)
+
+
+def _answer_from_search(engine, model, question: str, result):
+    """A short answer from the search results, then the sources.
+
+    "Who is the CM of Tamil Nadu?" came back as a pasted page of snippets
+    that named two different people (an old Q&A site and this year's news).
+    The results are read once more by the model for a one-sentence answer;
+    the sources stay underneath so it can be checked. If the model is not
+    available the raw results are shown, as before.
+    """
+    import dataclasses
+
+    raw = str(result.message or "")
+    sources = ""
+    parts = re.split(r"(?im)^\s*sources?\s*:\s*$", raw, maxsplit=1)
+    if len(parts) == 2:
+        sources = "Sources:" + parts[1]
+    try:
+        reply = engine.generate(
+            [
+                Message(role=Role.SYSTEM, content=SEARCH_ANSWER_PROMPT),
+                Message(role=Role.USER, content=f"Question: {question}\n\nSearch results:\n{parts[0]}"),
+            ],
+            model=model,
+        )
+        answer = (reply.get("content", "") if isinstance(reply, dict) else str(reply)).strip()
+    except Exception:  # noqa: BLE001 - the raw results are still an answer
+        logger.debug("search answer could not be written", exc_info=True)
+        return result
+    if not answer:
+        return result
+    message = answer + ("\n\n" + sources.strip() if sources else "")
+    try:
+        return dataclasses.replace(result, message=message)
+    except TypeError:
+        return result
+
+
 #: The yes/no question for actions whose name alone was the question.
 _PLAIN_QUESTIONS = {
     "system_lock": "Lock your PC now?",
@@ -793,7 +838,16 @@ _PLAIN_QUESTIONS = {
 #: Asked as a plain yes/no in chat and run on yes (the action layer's route),
 #: never staged behind an approval code a voice user cannot answer.
 _ASK_YES_NO_ACTIONS = frozenset(
-    {"system_lock", "system_sleep", "system_restart", "system_shutdown", "empty_recycle_bin"}
+    {
+        "system_lock",
+        "system_sleep",
+        "system_restart",
+        "system_shutdown",
+        "empty_recycle_bin",
+        # "Close, completed." (misheard "close calculator") reached the old
+        # approval-code path and the "yes" that followed found nothing pending.
+        "close_app",
+    }
 )
 
 
@@ -1868,6 +1922,13 @@ def chat(
                     split_commands,
                 )
 
+                if len(re.sub(r"\W", "", effective_user_input)) <= 1:
+                    # "V": a fragment the microphone caught, not a request. The
+                    # model turned it into a volume report; nothing is better.
+                    render_assistant_response(
+                        console, Markdown("I didn't catch that. Say it again?")
+                    )
+                    continue
                 parts = split_commands(effective_user_input)
                 if parts:
                     effective_user_input = parts[0]
@@ -1879,6 +1940,10 @@ def chat(
                 quick = quick_request(effective_user_input)
                 if quick is not None:
                     quick_result = execute_action(quick, _confirm_user_action)
+                    if quick.action == "web_search" and quick_result.success:
+                        quick_result = _answer_from_search(
+                            engine, model, effective_user_input, quick_result
+                        )
                     history.append(Message(role=Role.USER, content=user_input))
                     history.append(
                         Message(role=Role.ASSISTANT, content=quick_result.message)

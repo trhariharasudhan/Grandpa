@@ -1381,6 +1381,7 @@ avatar = [
     { name = "sounddevice" },
     { name = "websockets", version = "16.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "websockets", version = "17.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "winotify", marker = "sys_platform == 'win32'" },
 ]
 browser = [
     { name = "playwright" },
@@ -1575,6 +1576,7 @@ requires-dist = [
     { name = "uvicorn", marker = "extra == 'server'", specifier = ">=0.30" },
     { name = "websockets", marker = "extra == 'avatar'", specifier = ">=13.0" },
     { name = "websockets", marker = "extra == 'dev'", specifier = ">=13.0" },
+    { name = "winotify", marker = "sys_platform == 'win32' and extra == 'avatar'", specifier = ">=1.1" },
     { name = "winotify", marker = "sys_platform == 'win32' and extra == 'windows-notifications'", specifier = ">=1.1" },
 ]
 provides-extras = ["dev", "tools-search", "memory-faiss", "memory-colbert", "memory-pdf", "memory-bm25", "server", "gmail", "calendar", "browser", "pdf", "scheduler", "security-signing", "tray", "avatar", "piper", "tamil-voice", "wake", "windows-notifications", "speech", "native", "screen", "desktop-hardware", "voice", "docs"]

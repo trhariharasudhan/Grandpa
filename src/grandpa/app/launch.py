@@ -24,7 +24,7 @@ from pathlib import Path
 #: What may be launched, and the command line each one runs.
 PROGRAMS: dict[str, tuple[str, ...]] = {
     "app": ("-m", "grandpa", "app"),
-    "avatar": ("-m", "grandpa", "avatar"),
+    "avatar": ("-m", "grandpa", "orb"),  # the orb ring (pid file keeps its old name)
 }
 
 

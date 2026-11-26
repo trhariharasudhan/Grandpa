@@ -229,6 +229,30 @@ class AvatarController:
         except Exception:  # noqa: BLE001 - a silent reply is still a reply
             logger.warning("avatar speech failed", exc_info=True)
 
+    def announce(self, text: str) -> bool:
+        """Grandpa speaks first: a reminder that came due.
+
+        Shown in the panel and spoken. While he is busy with a turn the line
+        still goes to the panel; it is not spoken over the turn's own reply.
+        """
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return False
+        self._chat(ChatMessage("grandpa", cleaned, False))
+        if self.busy:
+            return True
+        with self._lock:
+            if self._busy:
+                return True
+            self._busy = True
+        try:
+            self._say(cleaned)
+        finally:
+            with self._lock:
+                self._busy = False
+            self._enter(StateMessage(AvatarState.IDLE))
+        return True
+
     # --- the action layer's announcements -------------------------------------
 
     def watch_actions(self) -> bool:

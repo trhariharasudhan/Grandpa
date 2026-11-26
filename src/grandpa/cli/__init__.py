@@ -397,9 +397,16 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "orb",
+        "grandpa.cli.avatar_cmd:orb",
+        short_help="Grandpa's orb ring: \"Hey Grandpa\", Ctrl+Win, chat panel.",
+    )
+)
+cli.add_command(
+    _lazy(
         "avatar",
-        "grandpa.cli.avatar_cmd:avatar",
-        short_help="Grandpa's orb ring (voice + chat). Blocks this terminal.",
+        "grandpa.cli.avatar_cmd:avatar_3d",
+        short_help="Grandpa's 3D avatar (on hold; early preview). The ring is `grandpa orb`.",
     )
 )
 cli.add_command(

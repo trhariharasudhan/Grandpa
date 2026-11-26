@@ -697,3 +697,20 @@ def test_the_app_header_orb_follows_the_state_colour() -> None:
     css = (APP_WEB / "app.css").read_text(encoding="utf-8")
     assert "conic-gradient" not in css
     assert '#app[data-state="thinking"] #orb { --glow: var(--yellow);' in css
+
+
+def test_the_ring_is_grandpa_orb_and_avatar_is_the_3d_feature(monkeypatch) -> None:
+    """Captain: "grandpa orb" for the ring; "avatar" is a separate feature."""
+    from grandpa.app.launch import PROGRAMS
+    from grandpa.cli import avatar_cmd, cli
+
+    calls: list[dict] = []
+    monkeypatch.setattr(avatar_cmd.avatar, "callback", lambda **kw: calls.append(kw))
+    orb = avatar_cmd._orb_command()
+    three_d = avatar_cmd._avatar_command()
+    assert orb.name == "orb" and "character" not in [p.name for p in orb.params]
+    orb.callback(no_window=True)
+    three_d.callback(no_window=True)
+    assert calls[0]["character"] is False and calls[1]["character"] is True
+    assert "orb" in cli.commands and "avatar" in cli.commands
+    assert PROGRAMS["avatar"][-1] == "orb"  # the app's "show the orb" opens the ring
