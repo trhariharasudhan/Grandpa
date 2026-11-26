@@ -106,13 +106,3 @@ def test_an_injected_factory_still_wins_over_the_model() -> None:
     bridge = InProcessBridge(model="small.en", transcriber_factory=lambda: sentinel)
 
     assert bridge.ensure_transcriber() is sentinel
-
-
-def test_the_command_hands_the_model_to_the_bridge() -> None:
-    import inspect
-
-    from grandpa.cli import bubble_cmd
-
-    source = inspect.getsource(bubble_cmd.bubble.callback)
-
-    assert "InProcessBridge(model=model)" in source

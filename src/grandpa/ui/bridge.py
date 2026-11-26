@@ -41,7 +41,7 @@ class BridgeReply:
     #: What sort of thing answered. Carried, not invented: the responder already
     #: produces it and this used to drop it on the floor. With ``status`` it is
     #: how the UI can tell "an automation ran and finished" from "a model wrote
-    #: a sentence" -- see ``grandpa.ui.bubble.completed_an_operation``. Optional
+    #: a sentence" -- see ``grandpa.ui.outcomes.completed_an_operation``. Optional
     #: so every existing construction of this type is unchanged.
     kind: str | None = None
 

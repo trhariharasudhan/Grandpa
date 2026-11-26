@@ -1,3 +1,5 @@
+> Retired 2026-11-26: this was the QA list for the tkinter bubble (`grandpa bubble`), which the orb ring replaced.
+
 # Bubble manual QA
 
 Everything a test can assert is already asserted. What is left needs eyes and

@@ -160,7 +160,7 @@ phrases. 208 voice + 136 speech tests.
 
 ### Desktop UI
 
-`grandpa bubble` — a borderless, always-on-top tkinter window that never takes
+(Retired 2026-11-26, replaced by the orb ring `grandpa avatar`.) `grandpa bubble` — a borderless, always-on-top tkinter window that never takes
 focus, with a global hold-to-talk key, a text box, a reply pane and a status
 line. The toolkit is injected, so 143 UI tests run without opening a window, a
 microphone or a speaker. The hold path is verified end to end through

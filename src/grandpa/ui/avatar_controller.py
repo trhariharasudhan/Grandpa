@@ -26,7 +26,7 @@ from grandpa.ui.avatar_states import (
     ModeMessage,
     StateMessage,
 )
-from grandpa.ui.bubble import completed_an_operation
+from grandpa.ui.outcomes import completed_an_operation
 
 logger = logging.getLogger(__name__)
 

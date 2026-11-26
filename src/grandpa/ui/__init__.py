@@ -1,19 +1,16 @@
-"""Grandpa's desktop UI: a floating bubble over the existing paths.
+"""Grandpa's desktop UI: the orb ring (``grandpa avatar``).
 
-Three layers, deliberately separated so the middle one can be tested without a
-display:
+* :mod:`grandpa.ui.session_bridge` -- the orb talks to the same chat engine
+  as the desktop app and the terminal.
+* :mod:`grandpa.ui.avatar_controller` -- the behaviour, no toolkit import.
+* :mod:`grandpa.ui.avatar_window` / :mod:`grandpa.ui.avatar_server` -- the
+  pywebview window and its loopback socket; ``avatar_web/`` is the page.
+* :mod:`grandpa.ui.wake_talk` -- "Hey Grandpa".
 
-* :mod:`grandpa.ui.bridge` -- the two methods the UI may use, ``send`` and
-  ``transcribe``, both in-process.
-* :mod:`grandpa.ui.bubble` -- the controller. All the behaviour, no toolkit
-  import. Drives an injected view.
-* :mod:`grandpa.ui.tk_view` -- the tkinter view. Imports tkinter lazily and is
-  itself driven by an injected ``tkinter`` module, the way
-  ``grandpa.tray.start_tray`` takes ``pystray_module``.
-
-No test opens a window, a microphone or a speaker.
+The tkinter bubble (``grandpa bubble``) was retired on 2026-11-26 in favour of
+the orb ring.
 """
 
 from __future__ import annotations
 
-__all__ = ["bridge", "bubble", "tk_view"]
+__all__ = ["avatar_controller", "bridge", "session_bridge"]

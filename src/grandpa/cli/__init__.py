@@ -397,16 +397,9 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
-        "bubble",
-        "grandpa.cli.bubble_cmd:bubble",
-        short_help="Floating desktop assistant. Blocks this terminal.",
-    )
-)
-cli.add_command(
-    _lazy(
         "avatar",
         "grandpa.cli.avatar_cmd:avatar",
-        short_help="Grandpa's avatar window (orb + text). Blocks this terminal.",
+        short_help="Grandpa's orb ring (voice + chat). Blocks this terminal.",
     )
 )
 cli.add_command(

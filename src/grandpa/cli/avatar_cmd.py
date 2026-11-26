@@ -1,7 +1,7 @@
 """``grandpa avatar`` -- the Phase A presence window.
 
-Blocks this terminal, because the window owns the UI loop. The tkinter bubble
-is unchanged and still available as ``grandpa bubble``.
+Blocks this terminal, because the window owns the UI loop. (The tkinter
+bubble, ``grandpa bubble``, was retired on 2026-11-26: this orb replaces it.)
 """
 
 from __future__ import annotations

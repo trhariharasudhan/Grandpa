@@ -41,7 +41,8 @@ ollama serve
 uv run grandpa --help
 uv run grandpa doctor
 uv run grandpa chat
-uv run grandpa bubble               # floating desktop assistant (blocks the terminal)
+uv run --extra avatar grandpa avatar   # the orb ring: "Hey Grandpa", Ctrl+Win, chat panel
+uv run --extra avatar grandpa app      # the desktop app
 uv run grandpa voice push-to-talk   # hold Ctrl+Win to talk -- start here
 uv run grandpa voice                # hands-free, detects speech itself
 uv run grandpa voice-operator
@@ -146,72 +147,19 @@ a reminder that fired while you were not watching a terminal is still there.
 never reads reminders. Use `reminders watch`, or
 `grandpa config set scheduler.enabled true` to have it always on.
 
-## Desktop Bubble
+## The Orb Ring
 
 ```powershell
-uv run grandpa bubble
+uv run --extra avatar grandpa avatar
 ```
 
-A small borderless window that stays on top: hold **Ctrl+Win** anywhere to talk,
-watch the level meter while you speak, and the reply appears and is read aloud.
-Type in the box to ask the same thing silently. **It blocks the terminal** — it
-owns the window loop — so open a second one if you need it.
+A small ring that stays on top of your screen. Say **"Hey Grandpa"** (or hold
+**Ctrl+Win**), speak, and the reply is read aloud. Click the ring for the chat
+panel. It uses the same chat engine as the desktop app (`grandpa app`) and the
+terminal, so it can do the same things and asks the same yes/no questions before
+anything risky. It blocks the terminal; open a second one if you need it.
 
-The key is read globally, so the bubble hears a hold while another window has
-focus, and it never takes focus itself: you can type into Notepad with the
-bubble visible and every character lands in Notepad. The microphone is refused
-while the model is still loading, and the status says so rather than claiming to
-be ready.
-
-**heard, then reply.** The window shows what it *heard* in its own captioned
-row, with a coloured edge, above the *reply* pane. They are separated because a
-wrong answer has two very different causes — it misheard you, or it
-misunderstood you — and they need different things from you: speak differently,
-or rephrase. Two unlabelled blocks of text in one pane could not tell you which.
-
-**Correcting a misheard sentence.** Click the **heard** row and the text drops
-into the box at the bottom, where you can fix the wrong word and press Enter.
-It is sent as if typed, so one bad word no longer costs the whole sentence
-again. The caret does not jump there — the window never takes focus.
-
-**The meter.** While the key is held, the strip under the state line shows what
-the microphone is actually picking up — one bar per 0.1s chunk, about three
-seconds of history. It is the fastest way to tell "it is not hearing me" from
-"it heard me and got the words wrong", which are different problems with
-different fixes.
-
-**The reply is spoken as well as shown.** The text appears first and stays;
-speech is in addition, never instead. Click **speech on/off** in the header to
-mute it, `--no-speak` to start muted, and holding the key cuts a reply off
-mid-sentence and starts a new one. If no speech engine works the text is
-unaffected and the status line says it was not spoken.
-
-**Why Ctrl+Win and not a single key.** A global read means the key also reaches
-whatever window has focus. A printable key therefore types into it — SPACE
-shipped first and put a space in the bubble's own text box. A lone modifier
-types nothing but fires on the shortcuts you actually use: `--key ctrl` would
-start a recording on every Ctrl+C. F9 avoided both and worked, but needs `Fn` on
-this laptop, which is awkward to hold while speaking.
-
-A combination solves it, because the test is "all of these at once" and that is
-a chord nothing else claims: Ctrl+C never satisfies Ctrl+Win. Both keys are on
-the bottom row and reachable with one hand. Rejected: `ctrl+shift` (Windows uses
-it to switch keyboard layout), `ctrl+alt` (that *is* right-Alt on AltGr
-layouts), `alt+space` (opens the window menu), `win+shift` and `win+alt`
-(prefixes of live Windows shortcuts).
-
-`--key` takes any combination of `space`, `ctrl`, `shift`, `alt`, `win`, `rwin`,
-`menu`, `f8`, `f9`, `f10` — joined with `+`, as in `--key ctrl+shift` — and the
-bubble swallows whichever you pick so it never lands in its own text box. One
-part of a combination pressed alone still works normally, so Ctrl+C keeps
-copying. `--position X,Y` to place it, `--model small.en` for a different model.
-It remembers where you dragged it.
-
-If holding Ctrl+Win does nothing, or if releasing it opens the Start menu, try
-`--key menu` or `--key f8` — both are inert single keys — and tell me which.
-
-`docs/testing/desktop-ui-manual-qa.md` is the fifteen-step check for whether it
-actually behaves.
+The old tkinter bubble (`grandpa bubble`) was retired on 2026-11-26.
 
 ## Voice Assistant
 
