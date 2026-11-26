@@ -26,17 +26,19 @@ from grandpa.ui.avatar_states import (
     ModeMessage,
     StateMessage,
 )
-from grandpa.ui.bubble import completed_an_operation
+from grandpa.ui.outcomes import completed_an_operation
 
 logger = logging.getLogger(__name__)
 
 HISTORY_SIZE = 50
 """Chat lines replayed to a page that (re)connects."""
 
-CONFIRM_STATUSES = frozenset({"requires_confirmation", "needs_confirmation"})
+CONFIRM_STATUSES = frozenset(
+    {"requires_confirmation", "needs_confirmation", "pending_confirmation"}
+)
 
 NO_MICROPHONE = "Talking is off here (no microphone). Please type instead."
-NOTHING_HEARD = "I did not catch that. Click Talk and try again, or type it."
+NOTHING_HEARD = "I did not catch that. Say it again, or type it."
 RING_ONLY_NOTE = "To keep your PC fast I will show only my ring for now"
 
 
@@ -136,7 +138,7 @@ class AvatarController:
             with self._lock:
                 self._busy = False
 
-    def talk(self) -> bool:
+    def talk(self, listener=None) -> bool:
         """Click-to-talk (A6): listen for one line, then route it like a typed one.
 
         ``listening`` shows while the microphone records. What was heard goes
@@ -145,7 +147,8 @@ class AvatarController:
         or a microphone that fails, is said in the chat and nothing is routed.
         Returns False, doing nothing, while a request is in flight.
         """
-        if self.listener is None:
+        listener = listener or self.listener
+        if listener is None:
             self._chat(ChatMessage("grandpa", NO_MICROPHONE, True))
             return False
         with self._lock:
@@ -155,7 +158,7 @@ class AvatarController:
         try:
             self._enter(StateMessage(AvatarState.LISTENING))
             try:
-                heard = self.listener()
+                heard = listener()
             except Exception as exc:  # noqa: BLE001 - a dead mic is not a crash
                 logger.warning("avatar listen failed", exc_info=True)
                 first = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
@@ -165,6 +168,9 @@ class AvatarController:
                     )
                 )
                 self._enter(StateMessage(AvatarState.ERROR))
+                return True
+            if heard is None:  # a quick tap on the talk keys: say nothing
+                self._enter(StateMessage(AvatarState.IDLE))
                 return True
             text = str(getattr(heard, "text", heard) or "").strip()
             if not text:
@@ -222,6 +228,30 @@ class AvatarController:
             self.speaker.speak(text, _started)
         except Exception:  # noqa: BLE001 - a silent reply is still a reply
             logger.warning("avatar speech failed", exc_info=True)
+
+    def announce(self, text: str) -> bool:
+        """Grandpa speaks first: a reminder that came due.
+
+        Shown in the panel and spoken. While he is busy with a turn the line
+        still goes to the panel; it is not spoken over the turn's own reply.
+        """
+        cleaned = str(text or "").strip()
+        if not cleaned:
+            return False
+        self._chat(ChatMessage("grandpa", cleaned, False))
+        if self.busy:
+            return True
+        with self._lock:
+            if self._busy:
+                return True
+            self._busy = True
+        try:
+            self._say(cleaned)
+        finally:
+            with self._lock:
+                self._busy = False
+            self._enter(StateMessage(AvatarState.IDLE))
+        return True
 
     # --- the action layer's announcements -------------------------------------
 

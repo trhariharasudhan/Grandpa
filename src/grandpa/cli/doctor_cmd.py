@@ -273,10 +273,11 @@ def _probe_executable(path: str) -> tuple[str, str]:
 def _active_launcher(active: str) -> str:
     """How this process was started, in the words the docs use."""
     launcher = os.environ.get("GRANDPA_LAUNCHER", "").strip()
-    if launcher == "grandpa.cmd":
-        return "grandpa.cmd (repo folder)"
+    if launcher in {"grandpa.cmd", "grandpa.sh"}:
+        return f"{launcher} (repo folder)"
     if launcher == "shim":
-        return "grandpa (shim from scripts\\install_launcher.ps1)"
+        script = "install_launcher.ps1" if sys.platform == "win32" else "install_launcher.sh"
+        return f"grandpa (shim from scripts/{script})"
     if PureWindowsPath(active).name.casefold() in {"grandpa", "grandpa.exe"}:
         return PureWindowsPath(active).name
     return "python -m grandpa"
@@ -1637,14 +1638,16 @@ def cli_prefix() -> str:
         return "grandpa"
     if launcher == "grandpa.cmd":
         return ".\\grandpa.cmd"
+    if launcher == "grandpa.sh":
+        return "./grandpa.sh"
     return "uv run python -m grandpa"
 
 
 _FIX_VERBS = ("fix", "run", "install", "start", "recommended", "use", "set", "add")
-_OLLAMA_FIX = (
-    "Install Ollama from https://ollama.com/download/windows, "
-    "then start it: ollama serve"
-)
+def _ollama_fix() -> str:
+    from grandpa.platform_hints import install_ollama_hint
+
+    return f"{install_ollama_hint()}, then start it: ollama serve"
 
 
 def _with_prefix(text: str, prefix: str) -> str:
@@ -1671,12 +1674,12 @@ def fix_for(check: CheckResult) -> str:
             f"or rename the file and run {g} setup"
         )
     if name.startswith("Engine: ollama"):
-        return _OLLAMA_FIX
+        return _ollama_fix()
     if name in {"Default model", "Embedding model", "Vision model"} or (
         name.startswith("Model") and "ollama" in text
     ):
         if ollama_down:
-            return f"{_OLLAMA_FIX}; then run {g} models setup --yes"
+            return f"{_ollama_fix()}; then run {g} models setup --yes"
         return f"{g} models setup --yes"
     if name.startswith("Known app:"):
         app = name.split(":", 1)[1].strip()

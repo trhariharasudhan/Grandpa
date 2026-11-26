@@ -14,8 +14,7 @@ from grandpa.cli.theme import (
     ACCENT,
     DEFAULT_USERNAME,
     STRUCTURE,
-    render_logo,
-    resolve_username,
+    resolve_display_name,
     user_prompt,
 )
 from grandpa.core.config import DEFAULT_CONFIG_PATH, GrandpaConfig
@@ -124,40 +123,115 @@ def _status(session: InteractiveSession, _argument: str) -> LocalCommandResult:
     return LocalCommandResult(True, runtime_status_text(session))
 
 
-def _model(session: InteractiveSession, argument: str) -> LocalCommandResult:
-    from grandpa.intelligence.grandpa_models import (
-        canonical_model_tag,
-        get_model_role,
-        user_visible_models,
-    )
+#: Set by the full-screen app so ``/model`` opens a picker there. Takes a
+#: title and the option labels, returns the chosen label (or None).
+MODEL_PICKER = None
 
-    if not argument:
-        models = _list_models(session.engine)
-        installed = set(models)
-        lines = ["Grandpa Models", ""]
-        for entry in user_visible_models(capability="chat"):
-            marker = "*" if entry.ollama_tag == session.model else " "
-            status = "" if entry.ollama_tag in installed else " (not installed)"
-            lines.append(
-                f"{marker} {entry.display_name.removeprefix('Grandpa '):<8} "
-                f"{entry.description}{status}"
+
+def _base(tag: str) -> str:
+    return str(tag).strip().casefold().removesuffix(":latest")
+
+
+def resolve_model_tag(argument: str, installed: list[str]) -> str | None:
+    """The installed tag the user meant, or None.
+
+    Accepts a role (``brain``), a Grandpa short name (``general`` for
+    ``grandpa-general``), a tag with or without ``:latest``, in any case.
+    """
+    from grandpa.intelligence.grandpa_models import canonical_model_tag
+
+    wanted = argument.strip()
+    if not wanted:
+        return None
+    by_base = {_base(name): name for name in installed}
+    for candidate in (canonical_model_tag(wanted), wanted, f"grandpa-{wanted}"):
+        found = by_base.get(_base(candidate))
+        if found is not None:
+            return found
+    return None
+
+
+def model_menu(installed: list[str], current: str) -> list[tuple[str, str, bool]]:
+    """``(tag, label, installed)`` for every model worth offering.
+
+    Grandpa's own roles first (with what they are for and the memory they
+    need), then other Grandpa models found in Ollama, then everything else
+    installed. Embedding models and old names for a role are left out.
+    """
+    from grandpa.intelligence.grandpa_models import GRANDPA_MODEL_ROLES
+
+    have = {_base(name): name for name in installed}
+    rows: list[tuple[str, str, bool]] = []
+    covered: set[str] = set()
+    for entry in GRANDPA_MODEL_ROLES:
+        covered.add(_base(entry.ollama_tag))
+        covered.update(_base(alias) for alias in entry.legacy_aliases)
+        if not entry.user_visible:
+            continue
+        tag = have.get(_base(entry.ollama_tag), entry.ollama_tag)
+        is_installed = _base(entry.ollama_tag) in have
+        mark = "*" if _base(tag) == _base(current) else " "
+        name = entry.display_name.removeprefix("Grandpa ")
+        status = "" if is_installed else "  (not installed)"
+        rows.append(
+            (
+                tag,
+                f"{mark} {name:<8} {entry.description} · needs ~"
+                f"{entry.recommended_memory_gb:g} GB{status}",
+                is_installed,
             )
-        lines.append("\nUse /model <role> or /model <tag>.")
-        return LocalCommandResult(
-            True,
-            "\n".join(lines),
         )
+    others = [n for n in installed if _base(n) not in covered and "embed" not in n]
+    for name in sorted(
+        others,
+        key=lambda n: (n.startswith("@"), not _base(n).startswith("grandpa-"), n),
+    ):
+        mark = "*" if _base(name) == _base(current) else " "
+        short = _base(name).removeprefix("grandpa-")
+        if name.startswith("@"):  # a cloud provider's model (grandpa.engine.cloud)
+            provider, _, model_id = name[1:].partition("/")
+            rows.append(
+                (
+                    name,
+                    f"{mark} {model_id} cloud: sends your messages to {provider}",
+                    True,
+                )
+            )
+            continue
+        kind = "your model" if _base(name).startswith("grandpa-") else "other model"
+        rows.append((name, f"{mark} {short.title():<8} {kind} ({name})", True))
+    return rows
+
+
+def _model(session: InteractiveSession, argument: str) -> LocalCommandResult:
+    from grandpa.intelligence.grandpa_models import get_model_role
+
     available = _list_models(session.engine)
-    requested = canonical_model_tag(argument)
-    if available and requested not in available:
+    if not argument:
+        rows = model_menu(available, session.model)
+        picker = MODEL_PICKER
+        choices = [(tag, label) for tag, label, ok in rows if ok]
+        if picker is not None and choices:
+            picked = picker("Switch model", [label for _, label in choices])
+            if not picked:
+                return LocalCommandResult(True, "Model unchanged.")
+            argument = next(tag for tag, label in choices if label == picked)
+        else:
+            lines = ["Grandpa Models", ""]
+            lines += [label for _, label, _ in rows]
+            lines.append("\nUse /model <name>, for example /model fast.")
+            return LocalCommandResult(True, "\n".join(lines))
+    requested = resolve_model_tag(argument, available) if available else argument
+    if requested is None:
         return LocalCommandResult(
             True,
-            f'Model "{requested}" is not available on {session.engine_name}.',
+            f'Model "{argument}" is not installed on {session.engine_name}. '
+            "Type /model to see the installed ones.",
         )
     session.model = requested
     entry = get_model_role(requested)
-    label = entry.display_name if entry else requested
-    return LocalCommandResult(True, f"Model changed to {label} ({requested}).")
+    label = f"{entry.display_name} ({requested})" if entry else f"({requested})"
+    return LocalCommandResult(True, f"Model changed to {label}.")
 
 
 def _engine(session: InteractiveSession, argument: str) -> LocalCommandResult:
@@ -405,13 +479,14 @@ def _profile(session: InteractiveSession, argument: str) -> LocalCommandResult:
         import click
 
         choice = click.prompt(
-            "Profile: 1) display name  2) preferred title  3) reset  4) back",
-            type=click.Choice(("1", "2", "3", "4")),
-            default="4",
+            "Profile: 1) name  2) title (Mr./Ms./Mrs./Mx.)  3) email  4) all  "
+            "5) reset  6) back",
+            type=click.Choice(("1", "2", "3", "4", "5", "6")),
+            default="6",
         )
-        if choice == "4":
+        if choice == "6":
             return LocalCommandResult(True, "Profile unchanged.")
-        if choice == "3":
+        if choice == "5":
             if not click.confirm("Reset local profile?", default=False):
                 return LocalCommandResult(True, "Profile reset cancelled.")
             reset_profile(confirmed=True)
@@ -424,11 +499,12 @@ def _profile(session: InteractiveSession, argument: str) -> LocalCommandResult:
             console=session.console,
             config=session.config,
             interactive=True,
-            edit_username=choice == "1",
-            edit_title=choice == "2",
+            edit_username=choice in {"1", "4"},
+            edit_title=choice in {"2", "4"},
+            edit_email=choice in {"3", "4"},
         )
         session.config = updated
-        session.username = resolve_username(updated)
+        session.username = resolve_display_name(updated)
         return LocalCommandResult(
             True,
             "Profile updated. Engine and model defaults apply on the next launch.\n"
@@ -497,25 +573,53 @@ def set_terminal_title(title: str = "Grandpa") -> None:
 
 
 def render_startup_header(session: InteractiveSession) -> None:
-    """Render a compact, scan-friendly runtime header."""
+    """A short, friendly start: a greeting, the model, and how to begin.
 
-    render_logo(session.console)
-    session.console.print()
+    No big logo: it took half the screen and said nothing the title bar
+    doesn't. The greeting uses the profile's title and name.
+    """
+
     from grandpa.intelligence.grandpa_models import get_model_role
 
     entry = get_model_role(session.model)
     model_label = entry.ollama_tag.removesuffix(":latest") if entry else session.model
+    greeting = time_greeting(session.username or resolve_display_name(session.config))
     # No runtime vendor here. Which backend serves the model is an
     # implementation detail of the product, and this banner is the product
     # speaking. It is display only: /doctor, /config, /info and every engine
     # error still name the real engine, because those are the surfaces whose
     # whole job is to say what is actually running.
+    session.console.print(f"[bold {ACCENT}]{greeting}[/bold {ACCENT}] I'm Grandpa.")
     session.console.print(
-        f"[bold {ACCENT}]Grandpa v{grandpa.__version__}[/bold {ACCENT}] "
+        f"[dim]Grandpa v{grandpa.__version__}[/dim] "
         f"[dim]|[/dim] [{STRUCTURE}]{model_label}[/{STRUCTURE}]"
     )
-    session.console.print()
     session.console.print(f"[dim]{chat_helper_text(session.console)}[/dim]")
+
+
+def time_greeting(name: str = "", hour: int | None = None) -> str:
+    """ "Good evening, Mr. Hari Hara Sudhan!" -- by the clock, with the profile name."""
+    import datetime as _dt
+
+    hour = _dt.datetime.now().hour if hour is None else hour
+    part = (
+        "Good morning"
+        if hour < 12
+        else "Good afternoon"
+        if hour < 17
+        else "Good evening"
+    )
+    return f"{part}, {name}!" if name and name != DEFAULT_USERNAME else f"{part}!"
+
+
+def render_compact_header(session: InteractiveSession) -> None:
+    """The full-screen terminal's start: its own top bar already shows the
+    version and the model, so only the greeting and how to begin."""
+    greeting = time_greeting(session.username or resolve_display_name(session.config))
+    session.console.print(f"[bold {ACCENT}]{greeting}[/bold {ACCENT}] I'm Grandpa.")
+    session.console.print(
+        "[dim]Ask anything · / for commands · @ to attach a file · F2 to talk[/dim]"
+    )
 
 
 def chat_helper_text(console: Console) -> str:
@@ -535,7 +639,7 @@ def chat_helper_text(console: Console) -> str:
 def interactive_prompt(session: InteractiveSession) -> str:
     """Return the configured prompt for an interactive session."""
 
-    return user_prompt(session.username or resolve_username(session.config))
+    return user_prompt(session.username or resolve_display_name(session.config))
 
 
 def runtime_status_text(session: InteractiveSession) -> str:

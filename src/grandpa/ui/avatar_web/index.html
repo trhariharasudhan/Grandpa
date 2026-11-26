@@ -23,6 +23,15 @@
   </section>
 
   <section id="panel">
+    <header id="bar" title="Drag to move">
+      <span id="dot" aria-hidden="true"></span>
+      <strong>Grandpa</strong>
+      <span id="bar-status">Ready</span>
+      <button type="button" id="clear" class="bar-icon" title="Clear the chat (Grandpa starts fresh)" aria-label="Clear the chat"><span data-icon="trash" data-icon-size="16"></span></button>
+      <button type="button" id="open-app" class="bar-icon" hidden title="Open the full Grandpa app" aria-label="Open the full Grandpa app"><span data-icon="app" data-icon-size="16"></span></button>
+      <button type="button" id="quit" class="bar-icon" hidden title="Close the orb (the app stays open)" aria-label="Close the orb"><span data-icon="power" data-icon-size="16"></span></button>
+      <button type="button" id="close" class="bar-icon" aria-label="Close the chat" title="Close the chat (Esc)"><span data-icon="close" data-icon-size="16"></span></button>
+    </header>
     <ol id="history" aria-label="Conversation"></ol>
     <div id="confirm" hidden>
       <p id="question"></p>
@@ -30,12 +39,12 @@
       <button type="button" id="no">No</button>
     </div>
     <form id="entry" autocomplete="off">
-      <input id="text" type="text" maxlength="2000" placeholder="Ask Grandpa..." aria-label="Message">
-      <button type="button" id="talk" title="Click, then say one sentence">Talk</button>
-      <button type="submit" id="send">Send</button>
+      <input id="text" type="text" maxlength="2000" placeholder="Ask Grandpa · or say Hey Grandpa" aria-label="Message">
+      <button type="submit" id="send" aria-label="Send" title="Send (Enter)"><span data-icon="send" data-icon-size="18"></span></button>
     </form>
   </section>
 </main>
+<script src="icons.js"></script>
 <script src="ring.js"></script>
 <script src="avatar.js"></script>
 <script type="module" src="character.js"></script>

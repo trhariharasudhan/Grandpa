@@ -369,3 +369,16 @@ def test_runtime_repair_migrates_legacy_tiny_qwen_when_mini_is_installed(
     )
 
     assert repaired.intelligence.default_model == "grandpa-mini:latest"
+
+
+def test_a_wrong_email_three_times_keeps_the_old_one_instead_of_asking_forever() -> None:
+    from grandpa.profile import EMAIL_TRIES, _prompt_email
+
+    asked: list[str] = []
+
+    def answer(label: str, _default: str) -> str:
+        asked.append(label)
+        return "not an email"
+
+    assert _prompt_email(_console(), answer, "hari@example.com") == "hari@example.com"
+    assert len(asked) == EMAIL_TRIES

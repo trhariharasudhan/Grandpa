@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="en" data-theme="dark" data-size="m">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' ws://127.0.0.1:*; img-src 'self' data:">
+<title>Grandpa</title>
+<link rel="icon" href="logo.svg">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div id="app" data-state="starting" data-view="chat">
+
+  <!-- ===== left panel ===================================================== -->
+  <aside id="sidebar" aria-label="Navigation">
+    <div class="side-top">
+      <button type="button" id="brand" class="brand" title="New chat">
+        <span class="brand-logo" data-icon="logo" data-icon-size="22"></span><span>Grandpa</span>
+      </button>
+      <button type="button" id="side-close" class="icon-btn" title="Close the panel (Ctrl+B)" aria-label="Close the panel"><span data-icon="sidebar"></span></button>
+    </div>
+
+    <nav class="side-nav">
+      <button type="button" id="new-chat" class="nav-item"><span data-icon="new-chat"></span><span>New chat</span><kbd>Ctrl N</kbd></button>
+      <button type="button" id="open-search" class="nav-item"><span data-icon="search"></span><span>Search</span><kbd>Ctrl K</kbd></button>
+      <button type="button" id="nav-projects" class="nav-item" data-goto="projects"><span data-icon="folder"></span><span>Projects</span></button>
+      <button type="button" id="nav-skills" class="nav-item" data-goto="skills"><span data-icon="spark"></span><span>Skills</span></button>
+      <button type="button" id="nav-connectors" class="nav-item" data-goto="connectors"><span data-icon="plug"></span><span>Connectors</span></button>
+      <button type="button" id="nav-memory" class="nav-item" data-goto="memory"><span data-icon="memory"></span><span>Memory</span></button>
+    </nav>
+
+    <div class="side-scroll">
+      <div id="pinned-section" hidden>
+        <p class="section">Pinned</p>
+        <ol id="pinned" aria-label="Pinned chats"></ol>
+      </div>
+      <p class="section">Recents</p>
+      <ol id="chats" aria-label="Recent chats"></ol>
+    </div>
+
+    <div class="side-foot">
+      <button type="button" id="user-button" class="user-button" aria-haspopup="menu">
+        <span id="avatar" aria-hidden="true">?</span>
+        <span class="user-text"><span id="user-name">You</span><span class="user-sub">Local · runs on this PC</span></span>
+        <span data-icon="chevron-down" data-icon-size="16"></span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- ===== main ============================================================ -->
+  <main id="main">
+    <header id="top">
+      <button type="button" id="side-open" class="icon-btn" title="Open the panel (Ctrl+B)" aria-label="Open the panel"><span data-icon="sidebar"></span></button>
+      <button type="button" id="title-button" class="title-button" aria-haspopup="menu" title="Rename, pin, move or delete">
+        <span id="orb" aria-hidden="true"></span>
+        <span id="title">New chat</span>
+        <span data-icon="chevron-down" data-icon-size="14"></span>
+      </button>
+      <span id="status">Starting…</span>
+      <span class="spacer"></span>
+      <button type="button" id="incognito" class="icon-btn" aria-pressed="false" title="Incognito chat: not kept, Grandpa forgets it" aria-label="Incognito chat"><span data-icon="incognito"></span></button>
+    </header>
+
+    <p id="incognito-banner" hidden><span data-icon="incognito" data-icon-size="14"></span> Incognito chat: it won't be kept, and Grandpa forgets it when you leave.</p>
+
+    <!-- chat view -->
+    <section id="chat-view" class="view">
+      <div id="feed" aria-live="polite">
+        <ol id="messages"></ol>
+      </div>
+    </section>
+
+    <!-- welcome (an empty chat): greeting + composer in the middle -->
+    <div id="welcome">
+      <div class="hello-row"><span class="brand-logo" data-icon="logo" data-icon-size="40"></span><h1 id="hello">What shall we do?</h1></div>
+      <p id="project-hint" class="hint" hidden></p>
+    </div>
+
+    <form id="composer" autocomplete="off">
+      <div id="attachments" aria-label="Attached files"></div>
+      <div id="skill-chip" hidden></div>
+      <textarea id="input" rows="1" maxlength="1800" placeholder="How can Grandpa help you today?" aria-label="Message"></textarea>
+      <div class="tools-row">
+        <div class="pop-wrap">
+          <button type="button" id="plus" class="icon-btn round" title="Add files and more" aria-label="Add files and more" aria-haspopup="menu"><span data-icon="plus"></span></button>
+          <div id="plus-menu" class="pop" role="menu" hidden>
+            <button type="button" id="attach" role="menuitem"><span data-icon="file"></span><span>Add files<small>Text, code, PDF, Word, Excel, PowerPoint · or drop them here</small></span></button>
+            <button type="button" id="plus-skill" role="menuitem"><span data-icon="spark"></span><span>Use a skill<small>Your saved instructions for this message</small></span></button>
+            <button type="button" id="plus-voice" role="menuitem"><span data-icon="mic"></span><span>Voice typing<small>Say one sentence</small></span></button>
+            <button type="button" id="plus-orb" role="menuitem"><span data-icon="orb"></span><span>Show the orb<small>Grandpa's floating ring · hold Ctrl+Win to talk</small></span></button>
+          </div>
+        </div>
+        <span class="spacer"></span>
+        <div class="pop-wrap">
+          <button type="button" id="model" class="model-select" title="Switch model (F6)" aria-haspopup="menu"><span id="model-name">Model</span><span data-icon="chevron-down" data-icon-size="14"></span></button>
+          <div id="model-menu" class="pop right" role="menu" hidden></div>
+        </div>
+        <button type="button" id="mic" class="icon-btn" title="Voice typing: say one sentence" aria-label="Voice typing"><span data-icon="mic"></span></button>
+        <button type="button" id="stop" class="send-btn stop" hidden title="Stop (Esc)" aria-label="Stop"><span data-icon="stop"></span></button>
+        <button type="submit" id="send" class="send-btn" title="Send (Enter)" aria-label="Send"><span data-icon="send"></span></button>
+      </div>
+    </form>
+    <div id="chips">
+      <button type="button" class="chip" data-text="What time is it?"><span data-icon="spark" data-icon-size="14"></span>What time is it?</button>
+      <button type="button" class="chip" data-text="Open Notepad"><span data-icon="app" data-icon-size="14"></span>Open Notepad</button>
+      <button type="button" class="chip" data-text="What can you do?"><span data-icon="chat" data-icon-size="14"></span>What can you do?</button>
+      <button type="button" class="chip" data-text="/status"><span data-icon="command" data-icon-size="14"></span>Status</button>
+    </div>
+    <p id="foot">Grandpa runs on this PC. Replies can be wrong; check important things.</p>
+
+    <!-- projects view -->
+    <section id="projects-view" class="view page" hidden>
+      <div class="page-head">
+        <h2>Projects</h2>
+        <button type="button" id="new-project" class="primary"><span data-icon="plus" data-icon-size="16"></span>New project</button>
+      </div>
+      <p class="hint">Group chats and give Grandpa instructions that apply to every chat in the project.</p>
+      <div id="project-grid" class="grid"></div>
+    </section>
+
+    <!-- one project -->
+    <section id="project-view" class="view page" hidden>
+      <button type="button" id="back-projects" class="link-btn"><span data-icon="chevron" data-icon-size="14" class="flip"></span>All projects</button>
+      <div class="page-head">
+        <h2 id="project-name"></h2>
+        <button type="button" id="project-new-chat" class="primary"><span data-icon="new-chat" data-icon-size="16"></span>New chat</button>
+      </div>
+      <div class="project-cols">
+        <div>
+          <p class="section">Chats</p>
+          <ol id="project-chats" class="list"></ol>
+        </div>
+        <aside class="card">
+          <p class="card-title">Instructions</p>
+          <textarea id="project-instructions" rows="7" maxlength="4000" placeholder="For example: answer in simple Thanglish; this project is about my catering website."></textarea>
+          <div class="row-actions"><button type="button" id="save-instructions" class="primary small">Save</button><span id="instructions-msg" class="hint"></span></div>
+          <p class="hint">Sent to Grandpa at the start of each chat in this project.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- skills view -->
+    <section id="skills-view" class="view page" hidden>
+      <div class="page-head">
+        <h2>Skills</h2>
+        <div class="row-actions">
+          <button type="button" id="import-skill" class="ghost"><span data-icon="download" data-icon-size="16"></span>Import SKILL.md</button>
+          <button type="button" id="new-skill" class="primary"><span data-icon="plus" data-icon-size="16"></span>New skill</button>
+        </div>
+      </div>
+      <p class="hint">A skill is a set of instructions Grandpa follows when you use it (＋ → Use a skill). Same format as Claude skills: a SKILL.md with a name and a description.</p>
+      <form id="skill-form" class="card" hidden>
+        <label>Name<input id="skill-name" maxlength="48" placeholder="email-polish"></label>
+        <label>When to use it<input id="skill-description" maxlength="300" placeholder="Polish an email draft: friendly, short, clear"></label>
+        <label>Instructions<textarea id="skill-instructions" rows="9" maxlength="12000" placeholder="Steps, rules and the format of the answer."></textarea></label>
+        <div class="row-actions"><button type="submit" class="primary small">Save skill</button><button type="button" id="skill-cancel" class="ghost small">Cancel</button><span id="skill-msg" class="hint"></span></div>
+      </form>
+      <p class="section">Your skills</p>
+      <div id="skill-grid" class="grid"></div>
+      <p class="section">Built into Grandpa <span class="hint">(tool skills: grandpa skill run NAME)</span></p>
+      <div id="builtin-grid" class="grid small"></div>
+    </section>
+
+    <!-- connectors view -->
+    <section id="connectors-view" class="view page" hidden>
+      <div class="page-head">
+        <h2>Connectors</h2>
+        <label class="switch"><input type="checkbox" id="mcp-on"> Connectors on</label>
+      </div>
+      <p class="hint">Connect apps and services through MCP servers. Grandpa may only use the tools you allow, and asks you before every call. Keys are stored encrypted on this PC.</p>
+      <p id="mcp-problems" class="bad-note" hidden></p>
+      <div id="mcp-grid" class="grid"></div>
+      <form id="mcp-form" class="card">
+        <p class="card-title"><span data-icon="plus" data-icon-size="16"></span>Add a connector</p>
+        <div class="presets" id="mcp-presets"></div>
+        <label>Name<input id="mcp-name" maxlength="40" placeholder="github"></label>
+        <label>Command that starts it<input id="mcp-command" maxlength="400" placeholder="npx -y @modelcontextprotocol/server-github"></label>
+        <label>Tools Grandpa may use (comma separated, * for all)<input id="mcp-allow" maxlength="600" placeholder="search_repositories, get_issue"></label>
+        <label>API key or token (optional)
+          <div class="key-row"><input id="mcp-key-name" maxlength="64" placeholder="GITHUB_PERSONAL_ACCESS_TOKEN"><input id="mcp-key-value" type="password" maxlength="400" placeholder="paste the key"></div></label>
+        <div class="row-actions"><button type="submit" class="primary small">Save connector</button><span id="mcp-msg" class="hint"></span></div>
+        <p class="hint">A connector is a program Grandpa starts on this PC. Add only ones you trust.</p>
+      </form>
+    </section>
+
+    <!-- models & API keys view -->
+    <section id="models-view" class="view page" hidden>
+      <div class="page-head"><h2>Models &amp; API keys</h2></div>
+      <p class="hint">Grandpa runs on local models (Ollama) by default. Add a cloud provider to use its models too; they appear in the model menu as <code>@provider/model</code>. Messages sent to a cloud model leave this PC. Keys: <span id="key-store"></span>.</p>
+      <div id="provider-grid" class="grid"></div>
+      <form id="provider-form" class="card">
+        <p class="card-title"><span data-icon="plus" data-icon-size="16"></span>Add a provider</p>
+        <label>Provider<select id="provider-preset"></select></label>
+        <label id="provider-url-row">Address (OpenAI-compatible)<input id="provider-url" maxlength="200" placeholder="https://api.example.com/v1"></label>
+        <label id="provider-id-row" hidden>Short id<input id="provider-id" maxlength="30" placeholder="myserver"></label>
+        <label>API key<input id="provider-key" type="password" maxlength="400" placeholder="paste the key (stored encrypted)"></label>
+        <label>Models to show (comma separated)<input id="provider-models" maxlength="2000" placeholder="llama-3.3-70b-versatile"></label>
+        <div class="row-actions"><button type="submit" class="primary small">Save</button><button type="button" id="provider-fetch" class="ghost small">Save and list its models</button><span id="provider-msg" class="hint"></span></div>
+        <div id="provider-found" class="chips-list" hidden></div>
+      </form>
+    </section>
+
+    <!-- memory view -->
+    <section id="memory-view" class="view page" hidden>
+      <div class="page-head"><h2>Memory</h2></div>
+      <p class="hint">What Grandpa remembers about you, kept on this PC. Forget anything, or add a note.</p>
+      <form id="memory-add" class="row-actions">
+        <input id="memory-text" maxlength="500" placeholder="Something Grandpa should remember, e.g. I prefer short answers">
+        <button type="submit" class="primary small">Remember</button>
+      </form>
+      <input id="memory-filter" type="search" placeholder="Search memories">
+      <ol id="memory-list" class="list"></ol>
+    </section>
+  </main>
+</div>
+
+<!-- small dialog: names and confirmations -->
+<div id="dialog" class="shade" hidden>
+  <form id="dialog-box" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <h2 id="dialog-title"></h2>
+    <p id="dialog-text" class="hint"></p>
+    <input id="dialog-input" maxlength="60">
+    <div class="dialog-actions">
+      <button type="button" id="dialog-cancel">Cancel</button>
+      <button type="submit" id="dialog-ok">OK</button>
+    </div>
+  </form>
+</div>
+
+<!-- search + commands (Ctrl+K) -->
+<div id="palette" class="shade top" hidden>
+  <div id="palette-box" role="dialog" aria-modal="true" aria-label="Search chats and commands">
+    <div class="palette-input"><span data-icon="search"></span><input id="palette-input" placeholder="Search chats or type a command"></div>
+    <ol id="palette-list"></ol>
+  </div>
+</div>
+
+<!-- settings -->
+<div id="settings" class="shade" hidden>
+  <section id="settings-box" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <header>
+      <h2 id="settings-title">Settings</h2>
+      <button type="button" id="settings-close" class="icon-btn" aria-label="Close"><span data-icon="close"></span></button>
+    </header>
+    <nav id="settings-tabs">
+      <button type="button" data-tab="profile" class="active">Profile</button>
+      <button type="button" data-tab="appearance">Appearance</button>
+      <button type="button" data-tab="chat">Chat</button>
+      <button type="button" data-tab="data">Data &amp; privacy</button>
+      <button type="button" data-tab="phone" id="phone-tab" hidden>Phone</button>
+      <button type="button" data-tab="keys">Shortcuts</button>
+      <button type="button" data-tab="about">About</button>
+    </nav>
+    <div class="tab" data-tab="profile">
+      <p id="profile-welcome" class="hint" hidden>Welcome! Tell Grandpa a little about you. It stays on this PC.</p>
+      <label>Title
+        <select id="set-title">
+          <option value="">No title</option><option>Mr.</option><option>Ms.</option><option>Mrs.</option><option>Mx.</option>
+        </select></label>
+      <label>Name<input id="set-name" maxlength="40" placeholder="Your name"></label>
+      <label>Email (optional)<input id="set-email" type="email" maxlength="120" placeholder="name@example.com"></label>
+      <div class="row-actions"><button type="button" id="save-profile" class="primary">Save</button><span id="profile-msg" class="hint"></span></div>
+      <p class="hint">The same profile as the terminal's <code>/profile</code>: Grandpa calls you by it everywhere.</p>
+    </div>
+    <div class="tab" data-tab="appearance" hidden>
+      <p>Colour mode</p>
+      <div class="seg" id="set-theme"><button type="button" data-v="dark"><span data-icon="moon" data-icon-size="14"></span>Dark</button><button type="button" data-v="light"><span data-icon="sun" data-icon-size="14"></span>Light</button><button type="button" data-v="system">System</button></div>
+      <p>Text size</p>
+      <div class="seg" id="set-size"><button type="button" data-v="s">Small</button><button type="button" data-v="m">Medium</button><button type="button" data-v="l">Large</button></div>
+    </div>
+    <div class="tab" data-tab="chat" hidden>
+      <label>Start every new chat with this model (blank keeps the current one)
+        <input id="set-model" placeholder="for example: mini, fast, brain" maxlength="60"></label>
+      <label class="check"><input type="checkbox" id="set-enter"> Enter sends (Shift+Enter makes a new line)</label>
+      <label class="check"><input type="checkbox" id="set-stream"> Show replies as they are written</label>
+      <button type="button" id="open-models" class="ghost"><span data-icon="key" data-icon-size="16"></span>Models &amp; API keys…</button>
+    </div>
+    <div class="tab" data-tab="data" hidden>
+      <p>Chats and projects are kept only on this PC, in this window's storage. Incognito chats are never kept.</p>
+      <button type="button" id="export-chats"><span data-icon="download" data-icon-size="16"></span>Export all chats (JSON)</button>
+      <button type="button" id="delete-chats" class="danger"><span data-icon="trash" data-icon-size="16"></span>Delete all chats and projects…</button>
+    </div>
+    <div class="tab" data-tab="phone" hidden>
+      <p>Use Grandpa from your phone (hotspot, Wi-Fi or mobile data) through <strong>Tailscale</strong>: only your own signed-in devices can reach it, and it stays encrypted end to end.</p>
+      <p id="phone-state" class="hint"></p>
+      <label class="check"><input type="checkbox" id="phone-on"> Phone access</label>
+      <div class="row-actions">
+        <button type="button" id="phone-share" hidden><span data-icon="plug" data-icon-size="16"></span>Share with my devices</button>
+        <button type="button" id="phone-pair" class="primary" hidden>Pair a phone</button>
+      </div>
+      <div id="phone-qr" class="phone-qr" hidden>
+        <img id="phone-qr-img" alt="QR code: scan it with the phone's camera" width="216" height="216">
+        <p class="hint">Scan with the phone's camera. Works once, for 10 minutes. Code: <strong id="phone-code"></strong></p>
+      </div>
+      <p>Paired phones</p>
+      <ul id="phone-devices" class="phone-devices"><li class="hint">None yet.</li></ul>
+    </div>
+    <div class="tab" data-tab="keys" hidden>
+      <dl class="keys">
+        <dt>Ctrl+N</dt><dd>New chat</dd>
+        <dt>Ctrl+K</dt><dd>Search chats and commands</dd>
+        <dt>Ctrl+B</dt><dd>Open or close the panel</dd>
+        <dt>Ctrl+T</dt><dd>Dark / light</dd>
+        <dt>Ctrl+,</dt><dd>Settings</dd>
+        <dt>F6</dt><dd>Switch model</dd>
+        <dt>Esc</dt><dd>Stop a reply, close a menu</dd>
+        <dt>Ctrl+Win (hold)</dt><dd>Talk to the orb from anywhere</dd>
+      </dl>
+    </div>
+    <div class="tab" data-tab="about" hidden>
+      <p><strong>Grandpa</strong>: your local AI assistant. The chat engine and every model run on this PC; nothing is sent to a cloud.</p>
+      <p class="hint">Grandpa's desktop app. The same engine powers the terminal (<code>grandpa</code>) and the orb (<code>grandpa avatar</code>).</p>
+    </div>
+  </section>
+</div>
+
+<div id="drop-shade" hidden><div><span data-icon="file" data-icon-size="32"></span><p>Drop files to add them to your message</p></div></div>
+<div id="toast" role="status" hidden></div>
+<script src="icons.js"></script>
+<script src="markdown.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

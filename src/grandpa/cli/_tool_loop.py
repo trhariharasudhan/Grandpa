@@ -71,7 +71,9 @@ def _confirm_callback(console: Console, auto_approve: bool):
             answer = input().strip().lower()
         except EOFError:
             return False
-        return answer in {"y", "yes"}
+        from grandpa.core.consent import is_yes
+
+        return is_yes(answer)
 
     return confirm
 
@@ -294,4 +296,8 @@ def chat_tool_turn(
         return None
     if result.stopped_at_limit and not result.text.strip():
         return "I stopped after the step limit without an answer."
-    return result.text
+    from grandpa.core.claims import honest_reply
+
+    # "Done!" only when something was really done in this turn
+    acted = any(entry.success for entry in result.trace)
+    return honest_reply(result.text, acted=acted)

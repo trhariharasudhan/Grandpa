@@ -29,7 +29,7 @@
   // highlight travels; segments: a dashed ring that turns (working);
   // flicker: the quick waver of speech.
   const MOTION = {
-    idle:      { pulse: 0.025, speed: 0.25, segments: 0, flicker: 0.0 },
+    idle:      { pulse: 0.07, speed: 0.95, segments: 0, flicker: 0.0 },  // a visible, slow breath
     listening: { pulse: 0.06,  speed: 0.9,  segments: 0, flicker: 0.0 },
     thinking:  { pulse: 0.05,  speed: 1.4,  segments: 0, flicker: 0.0 },
     speaking:  { pulse: 0.03,  speed: 0.6,  segments: 0, flicker: 1.0 },
@@ -55,6 +55,7 @@
     uniform float uSegments;
     uniform float uFlicker;
     uniform float uLevel;
+    uniform float uBreath;   // 0..1, the slow resting breath (always on)
 
     float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p) {
@@ -71,7 +72,7 @@
 
       float breathe = 1.0 + uPulse * sin(uTime * 1.6);
       float flick = uFlicker * (0.5 + 0.5 * sin(uTime * 23.0)) * 0.04;
-      float radius = 0.66 * breathe + flick + uLevel * 0.05;
+      float radius = 0.66 * breathe * (0.95 + 0.07 * uBreath) + flick + uLevel * 0.05;
       float width = 0.075 + uLevel * 0.04;
 
       // shimmer: the edge wavers a little, slowly. Sampled on the unit circle,
@@ -95,6 +96,7 @@
       }
 
       float glow = (core * (0.75 + highlight) * dash + halo * (0.6 + 0.4 * dash));
+      glow *= 0.5 + 0.5 * uBreath;  // breathing in brightens, breathing out dims
       vec3 colour = uColor * glow + vec3(1.0) * core * highlight * 0.35;
       float alpha = clamp(glow, 0.0, 1.0);
       gl_FragColor = vec4(colour * alpha, alpha);
@@ -149,7 +151,7 @@
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     const u = {};
-    for (const name of ["uTime", "uColor", "uPulse", "uPhase", "uSegments", "uFlicker", "uLevel"]) {
+    for (const name of ["uTime", "uColor", "uPulse", "uPhase", "uSegments", "uFlicker", "uLevel", "uBreath"]) {
       u[name] = gl.getUniformLocation(program, name);
     }
 
@@ -198,6 +200,13 @@
       gl.uniform1f(u.uSegments, current.segments);
       gl.uniform1f(u.uFlicker, reduceMotion ? 0 : current.flicker);
       gl.uniform1f(u.uLevel, 0);
+      // The breath: about 4.5 s in and out. It stays on even when Windows asks
+      // for less motion: it is slow and gentle, and it is how Captain sees
+      // that Grandpa is alive. Busy states breathe faster and shallower.
+      const rate = RESTING.has(target.state) ? 0.22 : 0.6;
+      const depth = RESTING.has(target.state) ? 1 : 0.4;
+      const wave = 0.5 + 0.5 * Math.sin(((now - started) / 1000) * rate * 2 * Math.PI);
+      gl.uniform1f(u.uBreath, 1 - depth + depth * wave);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       stats.frames += 1;
     }
@@ -215,7 +224,7 @@
         last = now;
         draw(now);
       }
-      if (reduceMotion && settled()) { stats.running = false; return; }
+      // (no stopping when settled: the breath keeps going, at the resting frame rate)
       raf = requestAnimationFrame(loop);
       stats.running = true;
     }

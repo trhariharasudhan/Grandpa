@@ -15,7 +15,8 @@
   const form = document.getElementById("entry");
   const input = document.getElementById("text");
   const sendButton = document.getElementById("send");
-  const talkButton = document.getElementById("talk");
+  const bar = document.getElementById("bar");
+  const barStatus = document.getElementById("bar-status");
 
   const BUSY = new Set(["thinking", "working", "listening"]);
   const DRAG_THRESHOLD = 4; // pixels before a press counts as a drag
@@ -55,32 +56,56 @@
   }
 
   // A press that moves is a drag and moves the window; one that does not is a
-  // click and opens or closes the panel. A drag never toggles.
-  let press = null;
-  ring.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return; // only the left button drags or toggles
-    press = { x: event.screenX, y: event.screenY, dragging: false };
-    ring.setPointerCapture(event.pointerId);
-  });
-  ring.addEventListener("pointermove", (event) => {
-    if (!press) return;
-    const dx = event.screenX - press.x;
-    const dy = event.screenY - press.y;
-    if (!press.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
-    press.dragging = true;
+  // click. On the ring a click opens the chat (and the ring hides); the chat's
+  // own bar drags the open window and its close button closes the chat, bringing the ring back.
+  function draggable(handle, onClick) {
+    let press = null;
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return; // only the left button drags or clicks
+      if (event.target.closest("button") && event.target !== handle) return; // the bar's buttons click normally
+      press = { x: event.screenX, y: event.screenY, dragging: false };
+      handle.setPointerCapture(event.pointerId);
+    });
+    handle.addEventListener("pointermove", (event) => {
+      if (!press) return;
+      const dx = event.screenX - press.x;
+      const dy = event.screenY - press.y;
+      if (!press.dragging && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+      press.dragging = true;
+      const api = windowApi();
+      if (api && api.move_by && (dx || dy)) {
+        api.move_by(Math.round(dx), Math.round(dy));
+        press.x = event.screenX;
+        press.y = event.screenY;
+      }
+    });
+    handle.addEventListener("pointerup", (event) => {
+      if (!press) return; // a right-click, or a press that began elsewhere
+      const wasDrag = press.dragging;
+      press = null;
+      try { handle.releasePointerCapture(event.pointerId); } catch (_) { /* already released */ }
+      if (!wasDrag && onClick) onClick();
+    });
+  }
+  draggable(ring, () => setOpen(true));
+  draggable(bar, null);
+  document.getElementById("close").addEventListener("click", () => setOpen(false));
+  const openApp = document.getElementById("open-app");
+  const quitButton = document.getElementById("quit");
+  function showOpenApp() {
     const api = windowApi();
-    if (api && api.move_by && (dx || dy)) {
-      api.move_by(Math.round(dx), Math.round(dy));
-      press.x = event.screenX;
-      press.y = event.screenY;
-    }
-  });
-  ring.addEventListener("pointerup", (event) => {
-    if (!press) return; // a right-click, or a press that began elsewhere
-    const wasDrag = press.dragging;
-    press = null;
-    try { ring.releasePointerCapture(event.pointerId); } catch (_) { /* already released */ }
-    if (!wasDrag) setOpen(!isOpen());
+    openApp.hidden = !(api && api.open_app);
+    quitButton.hidden = !(api && api.quit);
+  }
+  quitButton.addEventListener("click", () => { const api = windowApi(); if (api && api.quit) api.quit(); });
+  window.addEventListener("pywebviewready", showOpenApp);
+  showOpenApp();
+
+  // "Hey Grandpa" has no button in the panel (Captain, 2026-11-26): it is on
+  // by default and `grandpa orb --no-wake` starts without it.
+  document.getElementById("open-app").addEventListener("click", () => {
+    const api = windowApi();
+    if (api && api.open_app) api.open_app();
   });
   // A6: a right-click on the ring (or on Grandpa) talks without opening the panel.
   ring.addEventListener("contextmenu", (event) => { event.preventDefault(); talk(); });
@@ -112,6 +137,7 @@
     const words = msg.label || msg.state;
     label.textContent = words;
     ring.title = words;
+    barStatus.textContent = msg.state === "working" && msg.action ? words + " · " + msg.action.replace(/_/g, " ") : words;
     actionLine.textContent = msg.state === "working" && msg.action ? msg.action.replace(/_/g, " ") : "";
     const asking = msg.state === "confirm";
     confirmBox.hidden = !asking;
@@ -120,16 +146,26 @@
     const busy = BUSY.has(msg.state);
     input.disabled = busy;
     sendButton.disabled = busy;
-    talkButton.disabled = busy || asking; // a yes/no is answered with the buttons
-    talkButton.textContent = msg.state === "listening" ? "Listening..." : "Talk";
+    input.placeholder = msg.state === "listening" ? "Listening… release the keys when done"
+      : "Ask Grandpa · hold Ctrl+Win to talk";
   }
 
   // A6, click-to-talk: ask Python to listen for one sentence. The message
   // carries nothing; what is heard is routed like typed text.
   function talk() {
-    if (talkButton.disabled || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN || BUSY.has(app.dataset.state)) return;
     socket.send(JSON.stringify({ type: "talk" }));
   }
+
+  // Clear: the panel empties and Grandpa forgets this conversation.
+  let clearing = false;
+  document.getElementById("clear").addEventListener("click", () => {
+    if (BUSY.has(app.dataset.state)) return;
+    clearing = true;
+    history.textContent = "";
+    send("/clear");
+    setTimeout(() => { clearing = false; }, 8000);
+  });
 
   function send(text) {
     const cleaned = (text || "").trim();
@@ -153,7 +189,12 @@
       let msg;
       try { msg = JSON.parse(event.data); } catch (_) { return; }
       if (msg.type === "state") { showState(msg); connected = true; }
-      else if (msg.type === "chat") addLine(msg.role, msg.text, msg.failed);
+      else if (msg.type === "chat") {
+        // our own /clear: its confirmation would only clutter the fresh chat
+        if (clearing && msg.role !== "user" && /^Conversation cleared/.test(msg.text)) { clearing = false; return; }
+        if (clearing && msg.role === "user" && msg.text === "/clear") return;
+        addLine(msg.role, msg.text, msg.failed);
+      }
       else if (msg.type === "mode") {
         // A7: over budget (or --orb-only): the ring only, for the rest of the run.
         window.__grandpaMode = msg;
@@ -173,7 +214,6 @@
     send(input.value);
     input.value = "";
   });
-  talkButton.addEventListener("click", talk);
   document.getElementById("yes").addEventListener("click", () => send("yes"));
   document.getElementById("no").addEventListener("click", () => send("no"));
 

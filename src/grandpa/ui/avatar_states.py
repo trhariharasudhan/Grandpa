@@ -160,6 +160,10 @@ def parse_inbound(raw: str | bytes) -> tuple[str, str] | None:
         return None
     if isinstance(data, dict) and data.get("type") == "talk" and len(data) == 1:
         return ("talk", "")
+    # The desktop app's Stop button: cancels the reply being written. Like
+    # "talk" it carries nothing, and it can only stop work, never start any.
+    if isinstance(data, dict) and data.get("type") == "cancel" and len(data) == 1:
+        return ("cancel", "")
     if not isinstance(data, dict) or data.get("type") != "send":
         return None
     text = data.get("text")

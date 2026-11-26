@@ -927,6 +927,8 @@ class UserConfig:
 
     username: str = "Username"
     title: str = ""
+    #: Optional; kept only in this config file, never sent anywhere.
+    email: str = ""
     onboarding_completed: bool = False
 
 

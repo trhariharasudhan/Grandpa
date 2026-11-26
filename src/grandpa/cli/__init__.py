@@ -171,6 +171,20 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
+        "app",
+        "grandpa.cli.app_cmd:app",
+        short_help="Desktop app: chat window like ChatGPT/Claude.",
+    )
+)
+cli.add_command(
+    _lazy(
+        "tui",
+        "grandpa.cli.tui_cmd:tui",
+        short_help="Full-screen terminal interface (also bare `grandpa`).",
+    )
+)
+cli.add_command(
+    _lazy(
         "apps", "grandpa.cli.apps_cmd:apps", short_help="Scan and query installed apps."
     )
 )
@@ -390,16 +404,16 @@ cli.add_command(
 )
 cli.add_command(
     _lazy(
-        "bubble",
-        "grandpa.cli.bubble_cmd:bubble",
-        short_help="Floating desktop assistant. Blocks this terminal.",
+        "orb",
+        "grandpa.cli.avatar_cmd:orb",
+        short_help="Grandpa's orb ring: \"Hey Grandpa\", Ctrl+Win, chat panel.",
     )
 )
 cli.add_command(
     _lazy(
         "avatar",
-        "grandpa.cli.avatar_cmd:avatar",
-        short_help="Grandpa's avatar window (orb + text). Blocks this terminal.",
+        "grandpa.cli.avatar_cmd:avatar_3d",
+        short_help="Grandpa's 3D avatar (on hold; early preview). The ring is `grandpa orb`.",
     )
 )
 cli.add_command(

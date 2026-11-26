@@ -624,7 +624,7 @@ def execute_reminder_action(
         )
         return ReminderActionResult(
             "handled",
-            f"Reminder created: {reminder.message} at {reminder.due_at.isoformat()}.",
+            f"Reminder set: {reminder.message}, {friendly_time(reminder.due_at)}.",
             target=reminder.id,
         )
 
@@ -663,6 +663,29 @@ def execute_reminder_action(
     )
 
 
+def friendly_time(when: datetime, *, now: datetime | None = None) -> str:
+    """"today at 10:18 PM" in the PC's own time zone, not a UTC timestamp.
+
+    Captain's test showed "at 2026-11-25T16:48:41.802230+00:00" for a reminder
+    due at 10:18 PM India time: correct, and useless to hear.
+    """
+    local = when.astimezone() if when.tzinfo else when
+    current = now or (datetime.now(UTC) if local.tzinfo else datetime.now())
+    if local.tzinfo:
+        current = current.astimezone(local.tzinfo)
+    clock = local.strftime("%I:%M %p").lstrip("0")
+    days = (local.date() - current.date()).days
+    if days == 0:
+        return f"today at {clock}"
+    if days == 1:
+        return f"tomorrow at {clock}"
+    if days == -1:
+        return f"yesterday at {clock}"
+    if 1 < days < 7:
+        return f"{local.strftime('%A')} at {clock}"
+    return f"{local.strftime('%d %b %Y').lstrip('0')} at {clock}"
+
+
 def format_reminder_list(items: list, *, empty: str) -> str:
     """Chat's own formatting, moved verbatim so the output does not change."""
     if not items:
@@ -670,8 +693,8 @@ def format_reminder_list(items: list, *, empty: str) -> str:
     lines = ["Reminders:"]
     for reminder in items[:20]:
         lines.append(
-            f"- {reminder.id} [{reminder.status}] {reminder.message} "
-            f"at {reminder.due_at.isoformat()}"
+            f"- {reminder.message}, {friendly_time(reminder.due_at)} "
+            f"({reminder.status}, id {reminder.id})"
         )
     return "\n".join(lines)
 

@@ -417,8 +417,9 @@ def test_both_characters_have_a_face_and_a_glb_uses_its_shape_keys() -> None:
     assert "expressFace();" in CHARACTER
 
 
-def test_the_page_has_a_talk_button_that_sends_only_talk() -> None:
-    assert 'id="talk"' in INDEX_HTML
+def test_talk_is_held_ctrl_win_not_a_button_and_sends_only_talk() -> None:
+    # Captain: no Talk button; hold Ctrl+Win to speak.
+    assert 'id="talk"' not in INDEX_HTML
     sent = re.findall(r"socket\.send\(JSON\.stringify\((\{[^)]*\})\)\)", AVATAR)
     assert '{ type: "talk" }' in sent
     assert all("talk" not in s or s == '{ type: "talk" }' for s in sent)

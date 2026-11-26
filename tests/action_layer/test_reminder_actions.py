@@ -95,7 +95,7 @@ def test_create_then_list_then_cancel(monkeypatch: pytest.MonkeyPatch) -> None:
 
     created = act("reminder_create", subject="remind me in 30 minutes to drink water")
     assert created.success is True, created
-    assert "Reminder created" in created.message
+    assert "Reminder set" in created.message
     reminder_id = created.data["target"]
 
     listed = act("reminder_list")

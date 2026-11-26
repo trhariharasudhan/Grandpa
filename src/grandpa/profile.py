@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sys
 import tempfile
 import unicodedata
@@ -50,6 +51,7 @@ class LocalProfile:
     memory_enabled: bool
     onboarding_completed: bool
     mode: str = LOCAL_MODE
+    email: str = ""
 
 
 def config_path(path: Path | None = None) -> Path:
@@ -66,6 +68,7 @@ def profile_from_config(config: GrandpaConfig) -> LocalProfile:
         model=config.intelligence.default_model or "Not configured",
         memory_enabled=bool(config.agent.context_from_memory),
         onboarding_completed=bool(config.user.onboarding_completed),
+        email=_safe_email(getattr(config.user, "email", "")),
     )
 
 
@@ -105,8 +108,7 @@ def ensure_profile(
         return current
     if not stored_name_is_usable:
         console.print(
-            f"[yellow]The saved display name cannot be used: "
-            f"{name_problem}[/yellow]"
+            f"[yellow]The saved display name cannot be used: {name_problem}[/yellow]"
         )
         console.print(
             "[dim]Setting it again now. You can also change it any time with "
@@ -128,6 +130,9 @@ def ensure_profile(
         text_prompt=text_prompt,
         title_prompt=title_prompt,
         heading="Welcome to Grandpa",
+        # the first run asks only what Grandpa needs to greet you; the
+        # optional email is set later with /profile edit or the app's Profile
+        edit_email=False,
     )
 
 
@@ -142,6 +147,7 @@ def configure_profile(
     heading: str = "Grandpa Profile",
     edit_username: bool = True,
     edit_title: bool = True,
+    edit_email: bool = True,
 ) -> GrandpaConfig:
     """Collect and atomically persist profile-owned identity fields."""
 
@@ -165,6 +171,11 @@ def configure_profile(
             if edit_title
             else validate_title(current.user.title)
         )
+        email = (
+            _prompt_email(console, prompt_text, _safe_email(current.user.email))
+            if edit_email
+            else _safe_email(current.user.email)
+        )
     else:
         return current
 
@@ -172,6 +183,7 @@ def configure_profile(
         target,
         username=username,
         title=title,
+        email=email,
         onboarding_completed=True,
     )
     load_config.cache_clear()
@@ -272,6 +284,7 @@ def atomic_update_profile(path: Path, **values: object) -> None:
     mapping = {
         "username": ("user", "username"),
         "title": ("user", "title"),
+        "email": ("user", "email"),
         "onboarding_completed": ("user", "onboarding_completed"),
         "engine": ("engine", "default"),
         "model": ("intelligence", "default_model"),
@@ -306,6 +319,7 @@ def format_profile(profile: LocalProfile) -> str:
         "Local Profile\n"
         f"Name: {profile.username}\n"
         f"Preferred title: {profile.title or 'None'}\n"
+        f"Email: {profile.email or 'Not set'}\n"
         f"Mode: {profile.mode}\n"
         f"Engine: {profile.engine}\n"
         f"Model: {profile.model}\n"
@@ -314,7 +328,48 @@ def format_profile(profile: LocalProfile) -> str:
 
 
 def _click_text_prompt(label: str, default: str) -> str:
-    return str(click.prompt(label, default=default, show_default=True))
+    # An empty default makes the answer optional (Enter skips it).
+    return str(click.prompt(label, default=default, show_default=bool(default)))
+
+
+#: A practical check, not RFC 5322: one @, a dot in the domain, no spaces.
+_EMAIL = re.compile(r"^[^@\s<>\"']+@[^@\s<>\"']+\.[^@\s<>\"'.]{2,}$")
+MAX_EMAIL_LENGTH = 120
+
+
+def validate_email(value: object) -> str:
+    """An email address, or "" for none. Raises ValueError for anything else."""
+    normalized = str(value or "").strip()
+    if not normalized or normalized.casefold() in {"none", "skip", "-"}:
+        return ""
+    if any(unicodedata.category(c).startswith("C") for c in normalized):
+        raise ValueError("Email cannot contain control characters.")
+    if len(normalized) > MAX_EMAIL_LENGTH or not _EMAIL.match(normalized):
+        raise ValueError("That doesn't look like an email address (name@example.com).")
+    return normalized
+
+
+def _safe_email(value: object) -> str:
+    try:
+        return validate_email(value)
+    except ValueError:
+        return ""
+
+
+EMAIL_TRIES = 3
+
+
+def _prompt_email(console: Console, prompt_text: TextPrompt, default: str) -> str:
+    """Optional, so it never traps anyone: three wrong tries keep the old value."""
+    for _ in range(EMAIL_TRIES):
+        try:
+            return validate_email(
+                prompt_text("Email (optional, press Enter to skip)", default)
+            )
+        except ValueError as exc:
+            console.print(f"[red]{exc}[/red]")
+    console.print("[dim]Email left unchanged.[/dim]")
+    return default
 
 
 def _click_title_prompt(current: str) -> str:
@@ -485,6 +540,7 @@ __all__ = [
     "profile_from_config",
     "reset_profile",
     "repair_runtime_configuration",
+    "validate_email",
     "validate_username",
     "validate_title",
 ]

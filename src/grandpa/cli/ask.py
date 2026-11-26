@@ -14,6 +14,7 @@ from rich.table import Table
 from grandpa.cli._tool_names import resolve_tool_names
 from grandpa.cli.hints import hint_no_engine
 from grandpa.core.config import load_config
+from grandpa.core.consent import is_yes
 from grandpa.core.events import EventBus, EventType
 from grandpa.core.types import Message, Role
 from grandpa.engine import (
@@ -217,7 +218,7 @@ def _resolve_confirm_callback(auto_approve: bool):
             ans = input().strip().lower()
         except EOFError:
             return False
-        return ans in ("y", "yes")
+        return is_yes(ans)
 
     return _confirm
 

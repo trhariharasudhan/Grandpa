@@ -394,8 +394,7 @@ def run_parsed(
             status="requires_confirmation",
             kind=kind,
             target=target,
-            message=f"{spoken}\n\nReply with yes/confirm to approve, or cancel to "
-            f"deny.\nAction ID: {staged['id']}",
+            message=f"{spoken}\n\nSay yes to go ahead, or no to cancel.",
             tts_text=spoken,
             permission=permission,
             pending_action=staged,

@@ -39,6 +39,9 @@ dependencies = [
     "pyttsx3>=2.90; sys_platform == 'win32'",
     "pytesseract>=0.3.13",
     "rich>=13",
+    # The full-screen terminal interface (bare `grandpa`). Pure Python, works
+    # in Windows Terminal, PowerShell and the classic console.
+    "textual>=1.0",
     "tomli>=2.0; python_version < '3.11'",
     "tomlkit>=0.12",
     "psutil>=7.2.2",
@@ -102,6 +105,16 @@ tray = ["pystray>=0.19.5", "pillow>=12.1.1"]
 avatar = [
     "pywebview>=5.0; sys_platform == 'win32'",
     "websockets>=13.0",
+    # "Hey Grandpa" and hold-to-talk on the orb: the microphone and a local Whisper
+    "faster-whisper>=1.0",
+    "numpy>=1.24",
+    "sounddevice>=0.4.6",
+    # phone pairing: the QR code shown in Settings > Phone
+    "segno>=1.6",
+    # "brightness 70" by voice (the desktop-hardware extra, needed by the orb)
+    "screen-brightness-control>=0.23; sys_platform == 'win32'",
+    # due reminders also pop a Windows notification
+    "winotify>=1.1; sys_platform == 'win32'",
 ]
 # B3: Piper, a local neural voice (onnxruntime on the CPU). Voices are fetched
 # separately: python -m grandpa.speech.piper_tts download

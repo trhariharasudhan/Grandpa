@@ -95,3 +95,29 @@ __all__ = [
     "identity_prompt",
     "resolve_identity_response",
 ]
+
+
+_MODEL_NAMES = re.compile(
+    r"\b(?:qwen[\w.\-]*|gemma[\w.\-]*|deepseek[\w.\-]*|llama[\w.\-]*|llava[\w.\-]*|"
+    r"phi-?\d[\w.\-]*|mistral[\w.\-]*|alibaba|ollama)\b",
+    re.IGNORECASE,
+)
+_ASKED_ABOUT_MODELS = re.compile(
+    r"\b(?:model|models|llm|qwen|gemma|llama|deepseek|mistral|ollama|engine|built on|based on|"
+    r"under the hood|which ai|what ai)\b",
+    re.IGNORECASE,
+)
+
+
+def scrub_model_names(reply: str, user_text: str) -> str:
+    """Drop sentences that name the model underneath, unless the user asked.
+
+    Captain asked "Tell me about your friend, Grandpa" and heard "It's an
+    internal model family called Qwen2.5". Grandpa is Grandpa; which model runs
+    him is shown in the app's model menu and answered when asked.
+    """
+    if not reply or _ASKED_ABOUT_MODELS.search(user_text or "") or not _MODEL_NAMES.search(reply):
+        return reply
+    sentences = re.split(r"(?<=[.!?])\s+", reply.strip())
+    kept = [s for s in sentences if not _MODEL_NAMES.search(s)]
+    return " ".join(kept).strip() or "I'm Grandpa, your assistant on this PC."

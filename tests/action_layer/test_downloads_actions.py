@@ -101,15 +101,15 @@ def test_search_finds_by_name(downloads_home: Path) -> None:
 @pytest.mark.real_actions(
     reason="reaches the real grandpa.downloads.automation.DownloadsAutomation.execute"
 )
-def test_latest_is_catalogued_but_still_unsupported(downloads_home: Path) -> None:
-    """The parser produces it and _execute has no branch. Catalogued so the
-    honest refusal survives the migration rather than becoming an LLM guess."""
+def test_latest_names_the_newest_download(downloads_home: Path) -> None:
+    """It used to be catalogued with no branch ("not supported yet"); Captain
+    asked "show my latest download" by voice, so it answers now."""
     (downloads_home / "report.pdf").write_bytes(b"%PDF")
 
     result = act("downloads_latest")
 
-    assert result.success is False
-    assert "not supported yet" in result.message
+    assert result.success is True
+    assert "report.pdf" in result.message
 
 
 # --- the domain does the asking ----------------------------------------------

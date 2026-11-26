@@ -147,8 +147,10 @@ class VoiceCommandProcessor:
             pending = self._pending_action
             self._pending_action = None  # Clear state
 
-            user_input_lower = user_input.lower().rstrip(".?!,")
-            if user_input_lower in {"yes", "y", "yeah", "sure", "ok", "okay"}:
+            from grandpa.core.consent import read_consent
+
+            answer = read_consent(user_input)
+            if answer == "yes":
                 remember_conversation("user", user_input)
                 from grandpa.local import handle_local_action
 
@@ -161,7 +163,7 @@ class VoiceCommandProcessor:
                     status=result.status,
                     kind=result.kind or "local",
                 )
-            elif user_input_lower in {"no", "n", "nope", "cancel"}:
+            elif answer == "no":
                 remember_conversation("user", user_input)
                 msg = "Okay, cancelled."
                 remember_conversation("assistant", msg)
@@ -236,6 +238,11 @@ class VoiceCommandProcessor:
                 effective_text,
                 system_context=build_brain_context(brain_analysis),
             )
+            from grandpa.core.claims import honest_reply
+
+            honest = honest_reply(generated.text, acted=False)
+            if honest != generated.text:  # the model said it did what it can't
+                generated = VoiceAssistantResponse(honest, status="handled", kind="voice")
             remember_conversation("assistant", generated.text)
             record_assistant_outcome(
                 brain_analysis,

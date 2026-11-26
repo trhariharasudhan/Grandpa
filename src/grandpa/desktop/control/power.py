@@ -56,6 +56,9 @@ def _endpoint_volume():
         ) from exc
 
 
+VOLUME_STEP_PRESSES = 5
+
+
 @dataclass(frozen=True)
 class PowerControlService:
     """System power and hardware controls behind facade approval checks."""
@@ -85,7 +88,10 @@ class PowerControlService:
             return self._execute_volume_set(request, platform=platform)
         import pyautogui  # type: ignore
 
-        pyautogui.press(key)
+        # One key press is one Windows step (2%): nobody hears that. Up and
+        # down move five steps (about 10%); mute/unmute is one press.
+        presses = VOLUME_STEP_PRESSES if action in {"volume_up", "volume_down"} else 1
+        pyautogui.press(key, presses=presses)
         label = action.replace("volume_", "volume ").replace("_", " ")
         return LocalActionResponse(
             True, None, "completed", f"Adjusted {label}.", False, "LOW", {"key": key}

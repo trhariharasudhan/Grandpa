@@ -176,7 +176,10 @@ def test_opening_a_browser_app_asks_but_other_apps_do_not() -> None:
     assert other.status != "needs_confirmation", other
 
 
-def test_browser_steps_in_a_plan_are_medium_risk_and_confirmed() -> None:
+def test_a_search_step_the_user_asked_for_runs_without_a_second_yes() -> None:
+    # Captain, 2026-11-25: "Open Chrome and search for X" asked "Continue?"
+    # and then trapped the chat. A plan is built from the user's own words;
+    # the search page is what they asked for. A full address still asks.
     from grandpa.planner.decomposer import DeterministicDecomposer
     from grandpa.planner.executor import _step_confirmation_message
     from grandpa.planner.models import (
@@ -208,7 +211,7 @@ def test_browser_steps_in_a_plan_are_medium_risk_and_confirmed() -> None:
 
     browser_steps = [step for step in plan.steps if step.action == "browser_search"]
     assert len(browser_steps) == 1
-    assert browser_steps[0].requires_confirmation
+    assert not browser_steps[0].requires_confirmation
     assert "https://www.google.com/search?q=fastapi" in _step_confirmation_message(
         browser_steps[0]
     )

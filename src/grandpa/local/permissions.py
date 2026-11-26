@@ -50,9 +50,13 @@ def handle_confirmation_command(
     confirm: ConfirmationCallback | None = None,
     origin: str | None = None,
 ) -> LocalActionResult:
-    if command in {"yes", "confirm", "approve", "run it", "do it"}:
+    from grandpa.core.consent import read_consent
+
+    # one reading of yes/no for every confirmation ("yeah", "seri", "venam"...)
+    decision = "yes" if command in {"run it", "approve"} else read_consent(command)
+    if decision == "yes":
         return approve_pending_action(confirm=confirm, origin=origin)
-    if command in {"no", "cancel", "deny", "stop", "don't", "do not"}:
+    if decision == "no":
         return deny_pending_action(origin=origin)
     return LocalActionResult(status="no_match")
 
@@ -214,8 +218,7 @@ def _confirmation_message(
     summary = _confirmation_summary(command, result)
     return (
         f"{summary}\n\n"
-        "Reply with yes/confirm to approve, or cancel to deny.\n"
-        f"Action ID: {action_id}"
+        "Say yes to go ahead, or no to cancel."
     )
 
 

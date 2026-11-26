@@ -256,6 +256,7 @@ def run_profile_submenu(
                 interactive=True,
                 edit_username=action == "edit_name",
                 edit_title=action == "edit_title",
+                edit_email=False,
             )
             config = updated
             username = resolve_username(updated)

@@ -143,17 +143,33 @@ class GrandpaTextToSpeech:
         self._finished.set()
 
 
+MORE_ON_SCREEN = "The rest is in the chat."
+
+
 def clean_text_for_speech(text: str, *, max_chars: int = 360) -> str:
     """Remove markdown/code-heavy content before speaking a concise response."""
 
     value = re.sub(r"```.*?```", " ", str(text), flags=re.DOTALL)
+    # A source list is for reading, not hearing: everything from "Sources:" on.
+    value = re.split(r"(?im)^\s*sources?\s*:\s*$", value, maxsplit=1)[0]
+    # Search scaffolding: "Found 5 relevant sources." "Summary:" etc.
+    value = re.sub(r"(?im)^\s*found \d+ relevant sources?\.?\s*$", " ", value)
+    value = re.sub(r"(?i)\bsummary(?: from search results)?\s*:\s*", " ", value)
     value = re.sub(r"`([^`]*)`", r"\1", value)
-    value = re.sub(r"https?://\S+", "link", value)
+    value = re.sub(r"https?://\S+", " ", value)
     value = re.sub(r"[*_#>\[\]()]", " ", value)
     value = " ".join(value.split())
     if len(value) <= max_chars:
         return value
-    return value[: max_chars - 1].rstrip() + "..."
+    # Stop at the end of a sentence, never in the middle of a word or a
+    # thought (Captain: the CM answer "stopped halfway"); the rest is on screen.
+    cut = value[:max_chars]
+    end = max(cut.rfind(". "), cut.rfind("? "), cut.rfind("! "))
+    if end >= max_chars // 3:
+        cut = cut[: end + 1]
+    else:
+        cut = cut[: cut.rfind(" ")].rstrip(",;:") + "."
+    return cut + " " + MORE_ON_SCREEN
 
 
 def list_system_voices() -> list[str]:

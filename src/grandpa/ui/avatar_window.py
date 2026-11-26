@@ -27,9 +27,9 @@ from typing import Any
 WEB_DIR = Path(__file__).with_name("avatar_web")
 INDEX = WEB_DIR / "index.html"
 
-COLLAPSED = (132, 132)
+COLLAPSED = (48, 48)
 """The ring alone."""
-EXPANDED = (360, 560)
+EXPANDED = (340, 420)
 """The ring and the chat panel."""
 
 BACKGROUND = "#12141C"
@@ -68,12 +68,14 @@ class WindowApi:
     """What the page may ask of the window: open/close the panel, and move.
 
     pywebview exposes every public method of this object to the page, so it has
-    exactly these two, and both take plain numbers or a flag.
+    exactly these: set_expanded and move_by take a flag or plain numbers,
+    open_app can only start ``grandpa app``, and quit closes this window.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, wake: Any = None) -> None:
         self._window: Any = None
         self._lock = threading.Lock()
+        self._wake = wake  # private: the page only gets wake_status / set_wake
         self.expanded = False
 
     def attach(self, window: Any) -> None:
@@ -87,7 +89,41 @@ class WindowApi:
             width, height = EXPANDED if expanded else COLLAPSED
             if self._window is not None:
                 self._window.resize(width, height)
+                key_out_background(self._window, expanded=expanded)
         return self.expanded
+
+    def open_app(self) -> str:
+        """Start the desktop app as its own program (never a command from the page)."""
+        from grandpa.app.launch import launch
+
+        try:
+            return launch("app")
+        except (OSError, ValueError):
+            return "failed"
+
+    def wake_status(self) -> dict[str, Any]:
+        """Is "Hey Grandpa" listening? For the mic button in the panel."""
+        wake = self._wake
+        if wake is None:
+            return {"available": False, "on": False, "label": "", "error": ""}
+        return {
+            "available": True,
+            "on": bool(wake.enabled and wake.running),
+            "label": str(wake.label or ""),
+            "error": str(wake.error or ""),
+        }
+
+    def set_wake(self, on: Any) -> dict[str, Any]:
+        """Turn "Hey Grandpa" listening on or off (and remember it)."""
+        if self._wake is not None and isinstance(on, bool):
+            self._wake.set_enabled(on)
+        return self.wake_status()
+
+    def quit(self) -> None:
+        """Close the orb (its own window only; the app, if open, stays)."""
+        window = self._window
+        if window is not None:
+            window.destroy()
 
     def move_by(self, dx: Any, dy: Any) -> None:
         if isinstance(dx, bool) or isinstance(dy, bool):
@@ -222,6 +258,138 @@ def start_tray(window: Any, *, pystray_module: Any = None) -> AvatarTray | None:
     return tray
 
 
+def transparent_window() -> bool:
+    import os
+    import sys
+
+    return sys.platform == "win32" and not os.environ.get("GRANDPA_AVATAR_OPAQUE")
+
+
+#: The colour Windows makes fully see-through behind the transparent page.
+#: Nearly black, so the soft edge of the ring's glow fades into a dark rim
+#: rather than a coloured fringe.
+KEY_COLOUR = (1, 1, 1)
+
+
+#: Where the ring's solid line is in the collapsed window. Measured at the
+#: old size (opaque from radius 35 to 40 px of a 132 px window, 84 px ring)
+#: and scaled with everything else for the 24 px ring (x 24/84) in a 48 px window.
+RING_RADIUS = 10.7
+RING_HIT_WIDTH = 4.0
+
+
+#: Corner radius of the open chat panel, in 96-dpi pixels.
+PANEL_RADIUS = 16
+
+
+def _dwm_frame(form: Any, *, rounded: bool) -> None:
+    """Windows 11's own frame: rounded corners (open panel) or none at all.
+
+    Rounding comes with a thin border; left on for the collapsed ring it drew
+    a box around it -- so the ring always gets square corners and no border.
+    """
+    try:
+        import ctypes
+
+        hwnd = int(form.Handle.ToInt64())
+        corner = ctypes.c_int(2 if rounded else 1)  # DWMWCP_ROUND / DONOTROUND
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 33, ctypes.byref(corner), 4)
+        no_border = ctypes.c_uint(0xFFFFFFFE)  # DWMWA_COLOR_NONE
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 34, ctypes.byref(no_border), 4)
+    except Exception:  # noqa: BLE001 - Windows 10 has neither
+        pass
+
+
+def round_corners(form: Any, radius: float) -> None:
+    """Give the open panel round corners.
+
+    Windows 11 rounds the window itself when asked (DWM, smooth edges); the
+    window region is the fallback that works everywhere. Runs on the UI thread.
+    """
+    _dwm_frame(form, rounded=True)
+    try:
+        from System.Drawing import Rectangle, Region
+        from System.Drawing.Drawing2D import GraphicsPath
+
+        size = form.ClientSize
+        scale = form.DeviceDpi / 96.0 if getattr(form, "DeviceDpi", 0) else 1.0
+        d = int(round(radius * 2 * scale))
+        w, h = size.Width, size.Height
+        path = GraphicsPath()
+        path.AddArc(Rectangle(0, 0, d, d), 180, 90)
+        path.AddArc(Rectangle(w - d, 0, d, d), 270, 90)
+        path.AddArc(Rectangle(w - d, h - d, d, d), 0, 90)
+        path.AddArc(Rectangle(0, h - d, d, d), 90, 90)
+        path.CloseFigure()
+        form.Region = Region(path)
+    except Exception:  # noqa: BLE001 - square corners are only cosmetic
+        pass
+
+
+def key_out_background(window: Any, *, expanded: bool = False) -> bool:
+    """Only the ring on screen, and the ring still clickable.
+
+    pywebview gives WebView2 a transparent background but leaves the form's
+    own background, which showed as a pale box (seen on Captain's PC). Making
+    the form's colour its TransparencyKey removes the box -- but a keyed window
+    also lets every click through, the ring included. So under the ring's
+    solid line the form paints a thin circle just off the key colour: hidden
+    under the line, it makes exactly the ring clickable.
+
+    With the panel open the key is switched off: the whole panel must click.
+    Windows only; False when it could not be applied.
+    """
+    import sys
+
+    if sys.platform != "win32" or not transparent_window():
+        return False
+    try:
+        from System import Action  # pythonnet, which pywebview uses on Windows
+        from System.Drawing import Bitmap, Color, ColorTranslator, Graphics, Pen
+        from System.Drawing.Drawing2D import SmoothingMode
+
+        form = window.native
+
+        def apply() -> None:
+            if expanded:
+                form.TransparencyKey = Color.Empty
+                form.BackgroundImage = None
+                form.BackColor = ColorTranslator.FromHtml(BACKGROUND)
+                round_corners(form, PANEL_RADIUS)
+                return
+            form.Region = None  # the collapsed ring is shaped by the key colour
+            _dwm_frame(form, rounded=False)  # no corner rounding, no border
+            key = Color.FromArgb(*KEY_COLOUR)
+            size = form.ClientSize
+            # Windows keeps a frameless window at least ~148 px wide, wider
+            # than the 88 px asked for; the height is the true scale (DPI).
+            short = min(size.Width, size.Height)
+            scale = short / COLLAPSED[1] if short else 1.0
+            image = Bitmap(max(size.Width, 1), max(size.Height, 1))
+            graphics = Graphics.FromImage(image)
+            # exact colours only (None is a Python keyword, hence getattr)
+            graphics.SmoothingMode = getattr(SmoothingMode, "None")
+            graphics.Clear(key)
+            radius = RING_RADIUS * scale
+            pen = Pen(Color.FromArgb(3, 3, 3), RING_HIT_WIDTH * scale)
+            graphics.DrawEllipse(
+                pen,
+                float(size.Width / 2 - radius),
+                float(size.Height / 2 - radius),
+                float(radius * 2),
+                float(radius * 2),
+            )
+            graphics.Dispose()
+            form.BackColor = key
+            form.BackgroundImage = image
+            form.TransparencyKey = key
+
+        form.Invoke(Action(apply))
+        return True
+    except Exception:  # noqa: BLE001 - cosmetic; never break the window
+        return False
+
+
 def run_window(
     ws_url: str,
     *,
@@ -231,6 +399,7 @@ def run_window(
     echo: Any = None,
     webview_module: Any = None,
     pystray_module: Any = None,
+    wake: Any = None,
 ) -> None:
     """Open the window and block until it is closed (pywebview owns the loop)."""
     if webview_module is None:
@@ -240,7 +409,7 @@ def run_window(
             raise missing_pywebview() from exc
 
     ensure_js_mime()
-    api = WindowApi()
+    api = WindowApi(wake)
     width, height = COLLAPSED
     window = webview_module.create_window(
         "Grandpa",
@@ -253,6 +422,10 @@ def run_window(
         easy_drag=False,
         on_top=on_top,
         background_color=BACKGROUND,
+        # Only the ring, no box around it. pywebview supports this with
+        # WebView2 on Windows; GRANDPA_AVATAR_OPAQUE=1 brings the box back if
+        # a machine paints it white.
+        transparent=transparent_window(),
     )
     api.attach(window)
 
@@ -260,6 +433,8 @@ def run_window(
         window.evaluate_js(connect_script(ws_url))
 
     window.events.loaded += _hand_over
+    if hasattr(window.events, "shown"):
+        window.events.shown += lambda *_a: key_out_background(window)
     icon = None
     if tray:
         icon = start_tray(window, pystray_module=pystray_module)

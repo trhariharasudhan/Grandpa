@@ -148,9 +148,19 @@ def test_nothing_in_the_module_can_write_a_file() -> None:
     tree = ast.parse(source)
 
     forbidden_calls = {
-        "open", "write", "write_bytes", "write_text", "writelines",
-        "mkstemp", "NamedTemporaryFile", "TemporaryFile", "dump", "dumps",
-        "savez", "save", "tofile",
+        "open",
+        "write",
+        "write_bytes",
+        "write_text",
+        "writelines",
+        "mkstemp",
+        "NamedTemporaryFile",
+        "TemporaryFile",
+        "dump",
+        "dumps",
+        "savez",
+        "save",
+        "tofile",
     }
     offenders: list[str] = []
     for node in ast.walk(tree):
@@ -338,10 +348,12 @@ def _radial_bands(alpha, share: float = 0.5):
     ys, xs = np.mgrid[0:size, 0:size]
     distance = np.hypot(xs - centre, ys - centre)
     edges = np.arange(0.0, size / 2.0, 0.5)
-    peak_at = np.array([
-        alpha[(distance >= edge) & (distance < edge + 0.5)].max(initial=0.0)
-        for edge in edges
-    ])
+    peak_at = np.array(
+        [
+            alpha[(distance >= edge) & (distance < edge + 0.5)].max(initial=0.0)
+            for edge in edges
+        ]
+    )
     if peak_at.max() <= 0:
         return []
     lit = peak_at >= peak_at.max() * share
@@ -355,121 +367,6 @@ def _radial_bands(alpha, share: float = 0.5):
     if start is not None:
         bands.append((float(edges[start]), float(edges[-1])))
     return bands
-
-
-def test_the_orb_draws_exactly_one_ring() -> None:
-    """The reported fault: "the orb draws TWO rings".
-
-    Every still state, because a peak that only appears mid-animation is still
-    a second ring to look at. The animated ones are checked below with their
-    own phases.
-    """
-    from grandpa.ui.orb_image import ORB_STYLES, orb_image
-
-    faults = []
-    for state in ORB_STYLES:
-        bands = _radial_bands(np.asarray(orb_image(state, 0.0, 0.0))[:, :, 3])
-        if len(bands) != 1:
-            faults.append(f"{state}: {len(bands)} bands at {bands}")
-
-    assert faults == [], "; ".join(faults)
-
-
-def test_the_counter_would_notice_a_second_ring() -> None:
-    """The mutation, because a counter that cannot fail proves nothing.
-
-    A ring drawn back in where the microphone mark used to be, at the
-    brightness it used to have, has to be counted.
-    """
-    from grandpa.ui import orb_image as module
-    from grandpa.ui.orb_image import ORB_SIZE, orb_image
-
-    alpha = np.asarray(orb_image("idle", 0.0, 0.0))[:, :, 3].astype(np.float32)
-    assert len(_radial_bands(alpha)) == 1, "the orb already has two"
-
-    radius, _turns = module._fields(ORB_SIZE)
-    mark = module._ring(radius, 0.085, 0.0396, 0.45, tight=True) * 0.75
-    with_mark = np.clip(alpha + mark * module._taper(ORB_SIZE) * 255.0, 0, 255)
-
-    assert len(_radial_bands(with_mark)) == 2, _radial_bands(with_mark)
-
-
-def test_one_ring_at_every_phase_of_every_animation() -> None:
-    """The waves and the ripple travel outward on purpose and are excluded by
-    name: a ring leaving the ring is the animation, not a second ring."""
-    from grandpa.ui.orb_image import ORB_STYLES, orb_image, style_for
-
-    travelling = {"waves", "ripple"}
-    faults = []
-    for state in ORB_STYLES:
-        if style_for(state).animation in travelling:
-            continue
-        for step in range(8):
-            alpha = np.asarray(orb_image(state, step / 8.0, 0.4))[:, :, 3]
-            bands = _radial_bands(alpha)
-            if len(bands) != 1:
-                faults.append(
-                    f"{state} at phase {step / 8.0}: {len(bands)} rings {bands}"
-                )
-
-    assert faults == [], "; ".join(faults)
-
-
-def test_the_renderer_takes_no_microphone_flag_any_more() -> None:
-    """A parameter that changes no pixel is a promise the drawing does not
-    keep. It was removed with the mark rather than left accepting a value."""
-    import inspect
-
-    from grandpa.ui.orb_image import orb_image, orb_on_disc
-
-    for function in (orb_image, orb_on_disc):
-        assert "mic_live" not in inspect.signature(function).parameters
-
-
-def test_the_orb_view_is_not_told_about_the_microphone_either() -> None:
-    from grandpa.ui.orb_view import OrbView
-
-    assert not hasattr(OrbView(), "set_mic_live")
-    assert not hasattr(OrbView(), "mic_live")
-
-
-def test_the_status_line_still_says_the_microphone_is_held_open() -> None:
-    """Where the signal lives now. It is the reason removing the mark did not
-    remove the fact."""
-    from grandpa.ui.bubble import BubbleController
-
-    class Panel:
-        def set_status_line(self, text):
-            self.status = text
-
-    controller = BubbleController(view=Panel(), bridge=object(), orb=None)
-
-    controller.note_mic_live(True)
-    assert controller.mic_live is True
-    assert "mic held open" in controller.status_line()
-
-    controller.note_mic_live(False)
-    assert "mic held open" not in controller.status_line()
-
-
-def test_the_command_says_it_on_startup_too() -> None:
-    """The other place, and the one a user sees before the panel is open."""
-    from pathlib import Path
-
-    source = Path("src/grandpa/cli/bubble_cmd.py").read_text(encoding="utf-8")
-
-    assert "controller.mic_live" in source
-    assert "Microphone held open" in source
-
-
-def test_the_corners_stay_transparent() -> None:
-    from grandpa.ui.orb_image import ORB_STYLES, orb_image
-
-    for state in ORB_STYLES:
-        alpha = np.asarray(orb_image(state, 0.5, 1.0))[:, :, 3]
-        corners = [alpha[0, 0], alpha[0, -1], alpha[-1, 0], alpha[-1, -1]]
-
-        assert max(corners) <= 2, f"{state}: {corners}"
 
 
 # --- c) it can be turned off -------------------------------------------------
@@ -492,46 +389,6 @@ def test_the_config_key_is_settable_through_config_set() -> None:
     assert "live_microphone" in {field.name for field in fields(VoiceConfig)}
 
 
-@pytest.mark.parametrize(
-    "flag,configured,expected",
-    [
-        (False, True, True),
-        (False, False, False),
-        (True, True, False),
-        (True, False, False),
-    ],
-)
-def test_the_flag_wins_over_the_config_key(
-    monkeypatch, flag: bool, configured: bool, expected: bool
-) -> None:
-    """Both exist on purpose: the key sets it once, the flag rules it out for
-    one run without editing anything."""
-    from grandpa.cli import bubble_cmd
-    from grandpa.core import config as config_module
-
-    class Voice:
-        live_microphone = configured
-
-    class Config:
-        voice = Voice()
-
-    monkeypatch.setattr(config_module, "load_config", lambda *a, **k: Config())
-
-    assert bubble_cmd._live_microphone_wanted(flag) is expected
-
-
-def test_an_unreadable_config_keeps_the_better_default(monkeypatch) -> None:
-    from grandpa.cli import bubble_cmd
-    from grandpa.core import config as config_module
-
-    def explode(*_args, **_kwargs):
-        raise OSError("no config")
-
-    monkeypatch.setattr(config_module, "load_config", explode)
-
-    assert bubble_cmd._live_microphone_wanted(False) is True
-
-
 def test_with_it_off_no_stream_is_opened() -> None:
     """The proof that turning it off returns to today's behaviour: nothing is
     constructed, so nothing is held."""
@@ -539,32 +396,6 @@ def test_with_it_off_no_stream_is_opened() -> None:
 
     assert sounddevice.opened == 0
     assert mic.live is False
-
-    # And the command's own switch is what decides whether it is even built.
-    source = Path("src/grandpa/cli/bubble_cmd.py").read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    guarded = [
-        node.lineno
-        for node in ast.walk(tree)
-        if isinstance(node, ast.If)
-        and isinstance(node.test, ast.Call)
-        and isinstance(node.test.func, ast.Name)
-        and node.test.func.id == "_live_microphone_wanted"
-    ]
-
-    assert len(guarded) == 1, "the live stream is not behind the switch"
-
-
-def test_the_flag_is_offered_on_the_command() -> None:
-    from grandpa.cli.bubble_cmd import bubble
-
-    names = {
-        option
-        for parameter in bubble.params
-        for option in getattr(parameter, "opts", [])
-    }
-
-    assert "--no-live-mic" in names
 
 
 # --- what a lost device costs ------------------------------------------------

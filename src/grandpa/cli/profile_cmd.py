@@ -30,22 +30,23 @@ def edit_profile() -> None:
     console = Console()
     console.print("1. Edit display name")
     console.print("2. Edit preferred title")
-    console.print("3. Reset profile")
-    console.print("4. Back")
+    console.print("3. Edit email")
+    console.print("4. Reset profile")
+    console.print("5. Back")
     action = click.prompt(
         "Select profile action",
-        type=click.Choice(("1", "2", "3", "4")),
-        default="4",
+        type=click.Choice(("1", "2", "3", "4", "5")),
+        default="5",
     )
-    if action == "1":
+    if action in {"1", "2", "3"}:
         configure_profile(
-            console=console, interactive=True, edit_username=True, edit_title=False
+            console=console,
+            interactive=True,
+            edit_username=action == "1",
+            edit_title=action == "2",
+            edit_email=action == "3",
         )
-    elif action == "2":
-        configure_profile(
-            console=console, interactive=True, edit_username=False, edit_title=True
-        )
-    elif action == "3":
+    elif action == "4":
         confirmed = click.confirm("Reset local profile?", default=False)
         if confirmed:
             reset_profile(confirmed=True)

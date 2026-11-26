@@ -135,7 +135,7 @@ def test_chat_creates_one_shot_reminder_from_natural_text(
 
     reminders = store.list()
     assert result.status == "handled"
-    assert "Reminder created" in result.message
+    assert "Reminder set" in result.message
     assert len(reminders) == 1
     assert reminders[0].message == "drink water"
     assert reminders[0].status == "pending"

@@ -163,6 +163,14 @@ class FasterWhisperBackend(SpeechBackend):
             text = ""
             valid_segments = []
             repetition_filtered = True
+        elif text and is_stock_whisper_phrase(text):
+            # Whisper learned these from YouTube captions and writes them for
+            # near-silence ("You can find the link in the description box
+            # below" -- Captain never said it). Treated like a loop: nothing heard.
+            logger.info("Ignoring a stock Whisper phrase: %r", text)
+            text = ""
+            valid_segments = []
+            repetition_filtered = True
 
         segments = [
             Segment(
@@ -488,6 +496,30 @@ _LOOP_DOMINANCE = 0.65
 #: which the existing corpus treats as real speech.
 _MIN_VARIETY_WORDS = 20
 _MIN_UNIQUE_RATIO = 0.16
+
+
+#: Lines Whisper writes for silence or noise, learned from video captions.
+#: Matched as whole utterances (or nearly), never as words inside a request:
+#: "search YouTube for subscribe button tutorials" is still heard.
+_STOCK_PHRASES = (
+    r"(?:you can find )?the link (?:is )?in the description(?: box)?(?: below)?",
+    r"(?:please |don't forget to )?(?:like and )?subscribe(?: to (?:my|the|our) channel)?(?: for more)?",
+    r"thank(?:s| you) (?:so much )?for watching(?: and see you (?:next time|in the next video))?",
+    r"see you (?:in the next video|next time)",
+    r"(?:subtitles|captions) by .{0,40}",
+    r"thank you\.?",
+    r"you",
+    r"bye\.?",
+    r"(?:the|i|a|so|okay)\.?",
+)
+_STOCK = re.compile(
+    r"^\s*(?:" + "|".join(_STOCK_PHRASES) + r")[\s.!,]*$", re.IGNORECASE
+)
+
+
+def is_stock_whisper_phrase(text: str) -> bool:
+    """The whole transcript is one of Whisper's silence phrases."""
+    return bool(_STOCK.match(str(text or "")))
 
 
 def _is_hallucinated_repetition(text: str) -> bool:

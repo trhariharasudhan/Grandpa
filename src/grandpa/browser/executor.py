@@ -209,6 +209,48 @@ class _HotkeyRequest:
         self.args = {"keys": list(keys)}
 
 
+def _bring_browser_forward() -> bool:
+    """Put the user's most recent browser window in front; True if it is now.
+
+    Captain typed "open a new tab, go back, refresh" into the Grandpa window,
+    so Grandpa was the window in front and every shortcut was (rightly)
+    refused. The guard stays -- a shortcut is only ever sent to a browser --
+    but Grandpa now brings the browser forward first, the way a person would
+    click on it. Windows lists windows top to bottom, so the first browser
+    found is the one used last. A minimised one is restored; a maximised one
+    is left maximised.
+    """
+    import sys
+    import time
+
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+
+        from grandpa.browser_control import (
+            _browser_from_title,
+            _find_visible_browser_window,
+        )
+        from grandpa.windows_window_control import _list_windows
+
+        for window in _list_windows():
+            if not _browser_from_title(window.title):
+                continue
+            user32 = ctypes.windll.user32
+            if user32.IsIconic(window.handle):
+                user32.ShowWindow(window.handle, 9)  # SW_RESTORE, only if minimised
+            user32.SetForegroundWindow(window.handle)
+            for _ in range(10):
+                time.sleep(0.05)
+                if _find_visible_browser_window() is not None:
+                    return True
+            return False
+    except Exception:  # noqa: BLE001 - not bringing it forward is the old behaviour
+        return False
+    return False
+
+
 def _default_hotkey(keys: tuple[str, ...]) -> bool:
     """Send one of this domain's fixed shortcuts to the browser in front.
 
@@ -231,12 +273,23 @@ def _default_hotkey(keys: tuple[str, ...]) -> bool:
     from grandpa.browser_control import _find_visible_browser_window
     from grandpa.desktop.control.automation import AutomationControlService
 
-    if _find_visible_browser_window() is None:
+    if _find_visible_browser_window() is None and not _bring_browser_forward():
         raise BrowserNotInFrontError("the foreground window is not a browser")
 
-    response = AutomationControlService().execute(
-        _HotkeyRequest(keys), "keyboard_hotkey", platform=sys.platform
-    )
+    service = AutomationControlService()
+    response = service.execute(_HotkeyRequest(keys), "keyboard_hotkey", platform=sys.platform)
+    if not getattr(response, "ok", False) and getattr(response, "error", "") == "cooldown":
+        # "new tab, go back, refresh" said in one breath: the second shortcut
+        # arrived inside the service's 0.35 s cooldown and was dropped. Wait it
+        # out once, rather than report a failure the user cannot explain.
+        import time
+
+        from grandpa.desktop.control.automation import _cooldown_remaining
+
+        time.sleep(_cooldown_remaining() + 0.05)
+        response = service.execute(
+            _HotkeyRequest(keys), "keyboard_hotkey", platform=sys.platform
+        )
     return bool(getattr(response, "ok", False))
 
 

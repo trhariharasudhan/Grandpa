@@ -321,6 +321,70 @@ def test_a_page_with_the_token_chats_and_sees_states(running) -> None:
 # --- the page and the window --------------------------------------------------
 
 
+def test_the_orb_and_the_app_share_one_icon_set() -> None:
+    from grandpa.app.window import WEB_DIR as APP_WEB
+
+    assert (WEB_DIR / "icons.js").read_text(encoding="utf-8") == (
+        APP_WEB / "icons.js"
+    ).read_text(encoding="utf-8")
+
+
+def test_no_emoji_in_the_pages() -> None:
+    """Captain's rule: line icons, never emoji."""
+    from grandpa.app.window import WEB_DIR as APP_WEB
+
+    for folder in (WEB_DIR, APP_WEB):
+        for path in folder.glob("*.*"):
+            if path.suffix not in {".html", ".js", ".css"}:
+                continue
+            text = path.read_text(encoding="utf-8")
+            found = [
+                c
+                for c in text
+                if 0x1F300 <= ord(c) <= 0x1FAFF or 0x2600 <= ord(c) <= 0x27BF
+            ]
+            assert not found, f"{path.name}: {found[:5]}"
+
+
+def test_hold_to_talk_records_while_held_and_routes_the_words() -> None:
+    from grandpa.cli.avatar_cmd import HoldToTalk
+
+    class Probe:
+        def __init__(self):
+            self.down = 0
+
+        def is_down(self, _key):
+            self.down += 1
+            return self.down <= 3  # held for a few polls, then released
+
+    class Audio:
+        captured_frame_count = 100
+
+    class Capture:
+        def capture(self, stop_event=None):
+            stop_event.wait(2)
+            return Audio()
+
+    class Bridge:
+        def transcribe(self, audio):
+            return "open notepad"
+
+    heard: list = []
+
+    class Controller:
+        def talk(self, listener):
+            heard.append(listener())
+            return True
+
+    hold = HoldToTalk(Controller(), Bridge(), probe=Probe(), capture_factory=Capture)
+    clock = iter(range(0, 10_000))
+    session = hold._session(Capture())
+    session.clock = lambda: next(clock) * 0.1  # each poll is 0.1 s
+    session.sleep = lambda _s: None
+    hold._session = lambda capture: session
+    assert hold.listen_while_held() == "open notepad"
+
+
 def test_the_page_ships_with_the_package() -> None:
     for name in ("index.html", "avatar.js", "avatar.css", "ring.js"):
         assert (WEB_DIR / name).is_file(), name
@@ -334,6 +398,8 @@ def test_the_page_loads_nothing_from_the_internet() -> None:
         # (tests/ui/test_avatar_character.py), and the CSP below binds it too.
         if path.is_file() and "vendor" not in path.relative_to(WEB_DIR).parts
     )
+    # The SVG namespace is a name, not an address anything is fetched from.
+    text = text.replace("http://www.w3.org/2000/svg", "")
     assert "http://" not in text.replace("http://127.0.0.1", "")
     assert "https://" not in text
     html = INDEX.read_text(encoding="utf-8")
@@ -385,8 +451,14 @@ def test_the_page_opens_as_a_ring_and_the_ring_opens_the_panel() -> None:
     assert 'id="ring"' in html
     assert '[data-panel="closed"] #panel { display: none; }' in css
     assert "set_expanded" in js and "move_by" in js
-    # a drag never toggles
-    assert "if (!wasDrag) setOpen(!isOpen());" in js
+    # a drag never toggles; a click on the ring opens the chat, the ✕ closes it
+    assert "if (!wasDrag && onClick) onClick();" in js
+    assert "draggable(ring, () => setOpen(true));" in js
+    assert (
+        'getElementById("close").addEventListener("click", () => setOpen(false))' in js
+    )
+    # while the chat is open the ring is hidden
+    assert '[data-panel="open"] #presence { display: none; }' in css
 
 
 class FakeWindow:
@@ -428,9 +500,37 @@ def test_the_window_api_moves_by_small_clamped_steps_only() -> None:
     assert window.moves == [(105, 197), (505, 197)]
 
 
-def test_the_page_can_reach_only_the_two_window_methods() -> None:
+def test_the_page_can_reach_only_the_window_methods() -> None:
     public = {name for name in dir(WindowApi) if not name.startswith("_")}
-    assert public == {"attach", "set_expanded", "move_by"}
+    assert public == {
+        "attach", "set_expanded", "move_by", "open_app", "quit", "wake_status", "set_wake"
+    }
+
+
+def test_quit_closes_only_the_orb_window() -> None:
+    closed: list = []
+
+    class Window:
+        def destroy(self):
+            closed.append(True)
+
+    api = WindowApi()
+    api.quit()  # no window yet: nothing
+    api.attach(Window())
+    api.quit()
+    assert closed == [True]
+
+
+def test_open_app_can_only_start_the_app(monkeypatch) -> None:
+    from grandpa.app import launch
+
+    started: list = []
+    monkeypatch.setattr(launch, "running_pid", lambda name: None)
+    monkeypatch.setattr(
+        launch, "launch", lambda name, **_k: started.append(name) or "started"
+    )
+    assert WindowApi().open_app() == "started"
+    assert started == ["app"]
 
 
 def test_the_window_is_frameless_on_top_and_gets_the_address_after_load() -> None:
@@ -534,9 +634,83 @@ def test_the_voices_load_only_after_the_server_is_up(monkeypatch) -> None:
         avatar_window, "run_window", lambda *a, **k: order.append("window")
     )
     result = CliRunner().invoke(
-        avatar_cmd.avatar, ["--no-mic", "--no-tray", "--no-budget"]
+        avatar_cmd.avatar, ["--no-mic", "--no-tray", "--no-budget", "--character"]
     )
     assert result.exit_code == 0, result.output
     assert order == ["server 20s", "voices", "window"]
     assert controller.speaker == "SPEAKER"
     assert "Voice: on, test." in result.output
+
+
+def test_the_orb_is_ring_only_unless_the_character_is_asked_for(monkeypatch) -> None:
+    """The 3D character is on hold: by default only the ring is shown."""
+    from click.testing import CliRunner
+
+    from grandpa.cli import avatar_cmd
+    from grandpa.ui import avatar_window, lipsync
+
+    reasons: list[str] = []
+
+    class Server:
+        url = "ws://127.0.0.1:1/avatar?token=t"
+        character = None
+
+        def start(self, timeout: float = 5.0) -> int:
+            return 1
+
+        def stop(self) -> None:
+            pass
+
+    class Controller:
+        speaker = None
+
+        def ring_only(self, reason: str, *, announce: bool = True) -> bool:
+            reasons.append(f"{reason} announce={announce}")
+            return True
+
+        def watch_actions(self) -> None:
+            pass
+
+        def unwatch_actions(self) -> None:
+            pass
+
+    monkeypatch.setattr(avatar_cmd, "build", lambda **_k: (Controller(), Server()))
+    monkeypatch.setattr(lipsync, "default_speaker", lambda: (None, "Voice: off."))
+    monkeypatch.setattr(avatar_window, "run_window", lambda *a, **k: None)
+    result = CliRunner().invoke(
+        avatar_cmd.avatar, ["--no-mic", "--no-tray", "--no-budget"]
+    )
+    assert result.exit_code == 0, result.output
+    assert reasons == ["--orb-only announce=False"]  # no "RAM ... MB" note in the chat
+    assert "the ring only" in result.output
+
+
+def test_the_ring_is_one_colour_per_state() -> None:
+    # Captain's choice: one colour for each action, never all seven at once.
+    ring = (WEB_DIR / "ring.js").read_text(encoding="utf-8")
+    assert "uSeven" not in ring and "uniform vec3  uColor;" in ring
+
+
+def test_the_app_header_orb_follows_the_state_colour() -> None:
+    from grandpa.app.window import WEB_DIR as APP_WEB
+
+    css = (APP_WEB / "app.css").read_text(encoding="utf-8")
+    assert "conic-gradient" not in css
+    assert '#app[data-state="thinking"] #orb { --glow: var(--yellow);' in css
+
+
+def test_the_ring_is_grandpa_orb_and_avatar_is_the_3d_feature(monkeypatch) -> None:
+    """Captain: "grandpa orb" for the ring; "avatar" is a separate feature."""
+    from grandpa.app.launch import PROGRAMS
+    from grandpa.cli import avatar_cmd, cli
+
+    calls: list[dict] = []
+    monkeypatch.setattr(avatar_cmd.avatar, "callback", lambda **kw: calls.append(kw))
+    orb = avatar_cmd._orb_command()
+    three_d = avatar_cmd._avatar_command()
+    assert orb.name == "orb" and "character" not in [p.name for p in orb.params]
+    orb.callback(no_window=True)
+    three_d.callback(no_window=True)
+    assert calls[0]["character"] is False and calls[1]["character"] is True
+    assert "orb" in cli.commands and "avatar" in cli.commands
+    assert PROGRAMS["avatar"][-1] == "orb"  # the app's "show the orb" opens the ring

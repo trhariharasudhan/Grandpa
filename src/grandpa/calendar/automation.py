@@ -96,6 +96,12 @@ class CalendarAutomation:
             return CalendarResult("not_configured", str(exc), action, error=str(exc))
         except CalendarApiError as exc:
             return CalendarResult("error", str(exc), action, error=str(exc))
+        except ModuleNotFoundError as exc:
+            message = (
+                "Calendar needs Google's client libraries, which are not installed. "
+                "Install them with: uv sync --extra calendar"
+            )
+            return CalendarResult("not_configured", message, action, error=str(exc))
         except Exception as exc:
             return CalendarResult(
                 "error", f"Calendar action failed: {exc}", action, error=str(exc)

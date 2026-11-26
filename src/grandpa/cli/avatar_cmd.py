@@ -1,33 +1,44 @@
 """``grandpa avatar`` -- the Phase A presence window.
 
-Blocks this terminal, because the window owns the UI loop. The tkinter bubble
-is unchanged and still available as ``grandpa bubble``.
+Blocks this terminal, because the window owns the UI loop. (The tkinter
+bubble, ``grandpa bubble``, was retired on 2026-11-26: this orb replaces it.)
 """
 
 from __future__ import annotations
 
 import threading
+import time
 
 import click
 
 from grandpa.cli.safe_output import safe_cli_error
 
-_HELP = """Show Grandpa's avatar window. Blocks this terminal until you close it.
+_HELP = """Show Grandpa's orb ring. Blocks this terminal until you close it.
 
 It opens as a small glowing ring that stays on top. Click the ring to open
-the chat panel, click it again to close it; drag the ring to move it. The
+the chat (the ring hides while it is open); the chat's ✕ closes it and the
+ring comes back. Drag the ring, or the chat's top bar, to move it. "Open app"
+starts the full desktop app as its own program: closing either one leaves the
+other running. The
 ring's colour shows what is happening: thinking, working (with the action's
 name), done, error, or waiting for your yes/no. Risky actions still ask
 first, exactly as in `grandpa bubble` and `grandpa voice`.
 
-While Grandpa thinks, speaks, works or asks, the ring turns into his 3D head:
+With --character, while Grandpa thinks, speaks, works or asks, the ring
+turns into his 3D head (on hold for now; the ring alone is the default):
 a built-in placeholder, or your own model from assets/avatar/grandpa.glb
 (glTF 2.0, at most 30,000 triangles). The first line printed says which.
 His face follows the state: he smiles while speaking, looks thoughtful while
 thinking, and raises his brows when he asks you something.
 
-Click Talk in the chat panel and say one sentence: Grandpa listens until you
-stop, then answers as if you had typed it. --no-mic turns Talk off.
+Say "Hey Grandpa" and then what you want ("Hey Grandpa, open Notepad"
+works in one breath too). The ring turns blue while he listens. --no-wake
+starts without it. Without a trained wake model it reads only the moments someone
+speaks, with a small local Whisper; nothing is saved or sent anywhere.
+
+Hold Ctrl+Win anywhere, speak, and let go: Grandpa answers as if you had
+typed it (--hold-key picks other keys). Right-clicking the ring listens for
+one sentence. --no-mic turns talking off.
 
 A tray icon (next to the clock) shows or hides the window and quits it.
 --no-tray leaves it out.
@@ -97,6 +108,98 @@ def microphone_listener(bridge, *, device=None, capture_factory=None):
     return listen
 
 
+class HoldToTalk:
+    """Hold Ctrl+Win (anywhere on Windows), speak, release: Grandpa hears it.
+
+    The key is read with ``GetAsyncKeyState`` (read-only; nothing is typed or
+    sent), exactly like ``grandpa bubble``. While it is held the microphone
+    records with no voice detection at all -- the keys say when speech starts
+    and ends -- and on release the words go through the controller like a
+    typed line, so a spoken request meets the same confirmations.
+    """
+
+    def __init__(
+        self, controller, bridge, *, key=None, probe=None, capture_factory=None
+    ):
+        from grandpa.voice.push_to_talk import DEFAULT_HOLD_KEY
+
+        self.controller = controller
+        self.bridge = bridge
+        self.key = key or DEFAULT_HOLD_KEY
+        self.probe = probe
+        self.capture_factory = capture_factory or self._capture
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    @staticmethod
+    def _capture():
+        from grandpa.voice.config import load_voice_assistant_config
+        from grandpa.voice.microphone import MicrophoneCapture
+        from grandpa.voice.push_to_talk import (
+            MAXIMUM_HOLD_SECONDS,
+            hold_to_talk_vad_config,
+        )
+
+        config = load_voice_assistant_config(tts_enabled=False)
+        return MicrophoneCapture(
+            duration_seconds=MAXIMUM_HOLD_SECONDS,
+            device=config.microphone,
+            recovery_attempts=config.microphone_recovery_attempts,
+            vad_config=hold_to_talk_vad_config(),
+        )
+
+    def start(self) -> bool:
+        if self.probe is None:
+            from grandpa.voice.push_to_talk import WindowsKeyProbe
+
+            if not WindowsKeyProbe.available():
+                return False
+            self.probe = WindowsKeyProbe()
+        self._thread = threading.Thread(
+            target=self._run, name="grandpa-orb-hold-to-talk", daemon=True
+        )
+        self._thread.start()
+        return True
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _session(self, capture):
+        from grandpa.voice.push_to_talk import PushToTalkSession
+
+        return PushToTalkSession(
+            capture=capture,
+            transcriber=None,  # the bridge transcribes, as for click-to-talk
+            probe=self.probe,
+            key=self.key,
+            echo=lambda _m: None,
+            on_idle=self._stop.is_set,
+        )
+
+    def listen_while_held(self) -> str | None:
+        capture = self.capture_factory()
+        try:
+            audio, held, _reason = self._session(capture).record_while_held()
+        finally:
+            close = getattr(capture, "close", None)
+            if callable(close):
+                close()
+        if held < 0.4 or not getattr(audio, "captured_frame_count", 1):
+            return None  # a tap (or Ctrl+Win for something else), not an utterance
+        return self.bridge.transcribe(audio)
+
+    def _run(self) -> None:
+        waiter = self._session(None)
+        while not self._stop.is_set():
+            if not waiter.wait_for_press():
+                return
+            self.controller.talk(self.listen_while_held)
+            # Busy (a reply in flight) or done: wait for the keys to come up
+            # before listening again, so one hold is one utterance.
+            while self.probe.is_down(self.key) and not self._stop.is_set():
+                time.sleep(0.05)
+
+
 def budget_watch(controller, echo, *, perf_log=False, fall_back=True, sample=None):
     """A7: watch the window's GPU and RAM; over budget, show only the ring."""
     from grandpa.ui.avatar_budget import BudgetWatch, sample_window
@@ -154,10 +257,29 @@ def build(bridge=None, speaker=None, listener=None):
 @click.option("--not-on-top", is_flag=True, help="Let other windows cover it.")
 @click.option("--debug", is_flag=True, help="Open the web inspector with the window.")
 @click.option("--quiet", is_flag=True, help="Do not say replies aloud.")
-@click.option("--no-mic", is_flag=True, help="Turn click-to-talk off.")
+@click.option(
+    "--no-mic", is_flag=True, help="Turn talking off (hold-to-talk and click-to-talk)."
+)
+@click.option(
+    "--hold-key",
+    default=None,
+    help="Keys to hold while speaking (default ctrl+win; e.g. f8, menu).",
+)
+@click.option(
+    "--no-wake",
+    is_flag=True,
+    help='Do not listen for "Hey Grandpa" (hold Ctrl+Win to talk instead).',
+)
 @click.option("--no-tray", is_flag=True, help="Do not show the tray icon.")
 @click.option(
-    "--orb-only", is_flag=True, help="Show only the ring, never the 3D character."
+    "--orb-only",
+    is_flag=True,
+    help="Show only the ring (the default while the 3D character is on hold).",
+)
+@click.option(
+    "--character",
+    is_flag=True,
+    help="Also show the 3D character while Grandpa works (on hold; experimental).",
 )
 @click.option(
     "--no-budget",
@@ -175,16 +297,28 @@ def avatar(
     debug: bool,
     quiet: bool,
     no_mic: bool,
+    hold_key: str | None,
+    no_wake: bool,
     no_tray: bool,
     orb_only: bool,
+    character: bool,
     no_budget: bool,
     perf_log: bool,
 ) -> None:
+    from grandpa.app.launch import claim, release
     from grandpa.ui.avatar_character import load_character
     from grandpa.ui.bridge import InProcessBridge
     from grandpa.ui.lipsync import default_speaker
 
-    bridge = InProcessBridge()
+    if not no_window and not claim("avatar"):
+        click.echo("Grandpa's orb is already on screen.")
+        return
+    orb_only = orb_only or not character
+    from grandpa.ui.session_bridge import SessionBridge
+
+    # One brain: the orb answers through the same chat engine as the app and
+    # the terminal (routes, action layer, tools, risk rules, yes/no questions).
+    bridge = SessionBridge(transcriber=InProcessBridge())
     listener = None if no_mic else microphone_listener(bridge)
     # The voices are chosen after the server is up: loading them (the MMS Tamil
     # model holds Python's lock for ~5 s) used to starve the server's start.
@@ -192,7 +326,7 @@ def avatar(
 
     if orb_only:
         controller.ring_only("--orb-only", announce=False)
-        click.echo("Character: off (--orb-only); the ring only.")
+        click.echo("Character: off; the ring only (--character turns it on).")
     else:
         server.character, report = load_character()
         click.echo(report.describe())
@@ -201,14 +335,49 @@ def avatar(
     except RuntimeError as exc:
         safe_cli_error(str(exc))
         raise SystemExit(1) from None
+    # start the chat engine now, so the first "Hey Grandpa" is answered quickly
+    threading.Thread(target=bridge.warm, name="grandpa-orb-warm", daemon=True).start()
     if quiet:
         voice_line = "Voice: off (--quiet)."
     else:
         controller.speaker, voice_line = default_speaker()
     click.echo(voice_line)
-    click.echo(
-        "Talk: off (--no-mic)." if no_mic else "Talk: click Talk in the chat panel."
-    )
+    hold = None
+    if no_mic:
+        click.echo("Talk: off (--no-mic).")
+    else:
+        from grandpa.voice.push_to_talk import describe_hold_key, parse_hold_key
+
+        try:
+            if hold_key:
+                parse_hold_key(hold_key)
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--hold-key") from None
+        hold = HoldToTalk(controller, bridge, key=hold_key)
+        if hold.start():
+            click.echo(f"Talk: hold {describe_hold_key(hold.key)}, speak, release.")
+        else:
+            hold = None
+            click.echo("Talk: right-click the ring (hold-to-talk needs Windows).")
+    wake = None
+    if not no_mic:
+        from grandpa.ui.wake_talk import WakeToTalk
+
+        # On unless --no-wake. (The panel's mic button is gone, so a setting it
+        # once saved must not keep listening off with no way back.)
+        wake = WakeToTalk(controller, bridge, microphone_listener(bridge), enabled=not no_wake)
+        if not wake.enabled:
+            click.echo('Wake: off (--no-wake). Hold Ctrl+Win to talk.')
+        elif wake.start():
+            click.echo(f'Wake: say "Hey Grandpa" ({wake.label}).')
+        else:
+            click.echo(f"Wake: not available ({wake.error}).")
+    from grandpa.ui.reminder_voice import start_reminders
+
+    # Due reminders are said aloud (and shown) while the orb is open.
+    reminders = start_reminders(controller)
+    if reminders is not None:
+        click.echo("Reminders: on (said aloud when they come due).")
     controller.watch_actions()
     watch = None
 
@@ -247,6 +416,7 @@ def avatar(
                     debug=debug,
                     tray=not no_tray,
                     echo=click.echo,
+                    wake=wake,
                 )
             except RuntimeError as exc:
                 safe_cli_error(str(exc))
@@ -255,7 +425,69 @@ def avatar(
         if watch is not None:
             watch.stop()
         controller.unwatch_actions()
+        if hold is not None:
+            hold.stop()
+        if wake is not None:
+            wake.stop()
+        if reminders is not None:
+            reminders.stop(timeout=1.0)
+        bridge.stop()
         server.stop()
+        if not no_window:
+            release("avatar")
 
 
-__all__ = ["TALK_SECONDS", "avatar", "budget_watch", "build", "microphone_listener"]
+def _orb_command() -> click.Command:
+    """``grandpa orb``: the ring. Same window, options and behaviour as
+    ``grandpa avatar`` used to have; the name is what it is.
+
+    ``grandpa avatar`` stays for the 3D character -- a separate feature, on
+    hold -- and starts with the character on.
+    """
+    import copy
+
+    command = copy.copy(avatar)
+    command.name = "orb"
+    command.help = _HELP.replace("grandpa avatar", "grandpa orb")
+    command.short_help = "Grandpa's orb ring: \"Hey Grandpa\", Ctrl+Win, chat panel."
+    command.params = [p for p in avatar.params if getattr(p, "name", "") != "character"]
+    original = avatar.callback
+
+    def run(**kwargs):
+        kwargs.setdefault("character", False)
+        return original(**kwargs)
+
+    command.callback = run
+    return command
+
+
+orb = _orb_command()
+
+
+def _avatar_command() -> click.Command:
+    import copy
+
+    command = copy.copy(avatar)
+    command.short_help = "Grandpa's 3D avatar (on hold; early preview). The ring is `grandpa orb`."
+    original = avatar.callback
+
+    def run(**kwargs):
+        click.echo("3D avatar: on hold, early preview. For the orb ring use: grandpa orb")
+        kwargs["character"] = True
+        return original(**kwargs)
+
+    command.callback = run
+    return command
+
+
+avatar_3d = _avatar_command()
+
+__all__ = [
+    "TALK_SECONDS",
+    "avatar",
+    "avatar_3d",
+    "budget_watch",
+    "build",
+    "microphone_listener",
+    "orb",
+]
