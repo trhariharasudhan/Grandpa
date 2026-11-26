@@ -1,6 +1,6 @@
 """V1-T7: ``grandpa jarvis`` routes the eight ordinary phrases it used to refuse.
 
-docs/MVP-STATUS.md §4.4 measured 0 of 8: open notepad, set volume to 30, lock
+docs/product/MVP-STATUS.md §4.4 measured 0 of 8: open notepad, set volume to 30, lock
 the screen, what is the time, take a screenshot, scroll down, close the window,
 mute the volume. Each now reaches the action layer's tool loop with its action
 on the first turn's tool list, and the action goes through the executor: the

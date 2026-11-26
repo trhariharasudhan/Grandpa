@@ -1,4 +1,4 @@
-"""Grandpa's desktop UI: the orb ring (``grandpa avatar``).
+"""Grandpa's desktop UI: the orb ring (``grandpa orb``).
 
 * :mod:`grandpa.ui.session_bridge` -- the orb talks to the same chat engine
   as the desktop app and the terminal.

@@ -9,6 +9,9 @@ and every desktop action passes through Grandpa's permission, confirmation, and
 audit layers. There is no bundled web dashboard, desktop shell, browser
 extension, mobile client, or third-party plugin runtime.
 
+
+**Finding your way around:** [docs/development/repo-structure.md](docs/development/repo-structure.md) says what every folder is for.
+
 ## Quick Start on Windows
 
 Install Python 3.10 or newer, [uv](https://docs.astral.sh/uv/), and
