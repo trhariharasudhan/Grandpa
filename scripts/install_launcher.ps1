@@ -56,6 +56,11 @@ function Set-UserPath([string[]]$Entries) {
 
 if ($Uninstall) {
   if (Test-Path $Shim) { Remove-Item $Shim }
+  $p = $PROFILE.CurrentUserAllHosts
+  if ((-not $NoPath) -and (Test-Path $p)) {
+    $text = [regex]::Replace((Get-Content $p -Raw), "(?s)\r?\n?# >>> grandpa launcher >>>.*?# <<< grandpa launcher <<<", "")
+    Set-Content -Path $p -Value $text.TrimEnd() -Encoding UTF8
+  }
   if (-not $NoPath) { Set-UserPath (Get-UserPathEntries) }
   Write-Host "Removed the Grandpa launcher from $BinDir."
   exit 0
@@ -81,11 +86,32 @@ $lines = @(
   "rem Grandpa launcher shim, written by scripts\install_launcher.ps1. No .exe involved.",
   "setlocal",
   "set `"GRANDPA_LAUNCHER=shim`"",
+  "if exist `"$RepoRoot\.venv\Scripts\python.exe`" (",
+  "  `"$RepoRoot\.venv\Scripts\python.exe`" -m grandpa %*",
+  "  exit /b %ERRORLEVEL%",
+  ")",
   "uv run --project `"$RepoRoot`" python -m grandpa %*",
   "exit /b %ERRORLEVEL%"
 )
 Set-Content -Path $Shim -Value $lines -Encoding ASCII
 Write-Host "Wrote $Shim -> $RepoRoot"
+
+# PowerShell looks for a function before any program on PATH. A terminal with
+# the project's .venv activated (VS Code does this) has .venv\Scripts first on
+# PATH, so "grandpa" found the blocked grandpa.exe there before this shim. A
+# profile function wins over both. Marked so a rerun replaces it, not adds one.
+$Begin = "# >>> grandpa launcher >>>"
+$End = "# <<< grandpa launcher <<<"
+$ProfilePath = $PROFILE.CurrentUserAllHosts
+if (-not $NoPath) {
+  $block = @($Begin, "function grandpa { & `"$Shim`" @args }", $End) -join "`r`n"
+  $old = if (Test-Path $ProfilePath) { Get-Content $ProfilePath -Raw } else { "" }
+  $pattern = "(?s)\r?\n?" + [regex]::Escape($Begin) + ".*?" + [regex]::Escape($End)
+  $kept = [regex]::Replace("$old", $pattern, "").TrimEnd()
+  New-Item -ItemType Directory -Force -Path (Split-Path $ProfilePath) | Out-Null
+  Set-Content -Path $ProfilePath -Value (($kept, $block) -join "`r`n").TrimStart() -Encoding UTF8
+  Write-Host "Added a 'grandpa' function to $ProfilePath (works with .venv active)."
+}
 
 if (-not $NoPath) {
   Set-UserPath (@($BinDir) + (Get-UserPathEntries))
