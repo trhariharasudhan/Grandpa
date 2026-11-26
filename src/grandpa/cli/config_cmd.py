@@ -158,7 +158,7 @@ def _show_toml_config(console: Console, config_path: Path) -> None:
     console.print(f"[dim]Loading config from: {config_path}[/dim]")
 
     if config_path.exists():
-        config_content = config_path.read_text()
+        config_content = config_path.read_text(encoding="utf-8-sig")
         syntax = Syntax(config_content, "toml", theme="monokai", line_numbers=True)
         console.print(Panel(syntax, title="Config File", border_style="cyan"))
     else:
@@ -170,7 +170,7 @@ def _show_json_config(console: Console, config_path: Path) -> None:
     console.print(f"[dim]Loading config from: {config_path}[/dim]")
 
     if config_path.exists():
-        config_content = config_path.read_text()
+        config_content = config_path.read_text(encoding="utf-8-sig")
 
         try:
             import tomllib  # Python 3.11+
@@ -345,7 +345,9 @@ def set_config(key: str, value: str) -> None:
         os.environ.get("Grandpa_CONFIG", DEFAULT_CONFIG_DIR / "config.toml")
     )
     if config_path.exists():
-        doc = tomlkit.parse(config_path.read_text())
+        # utf-8-sig: a config saved by PowerShell or Notepad starts with a BOM,
+        # which tomlkit reads as an empty key ("Empty key at line 1 col 0").
+        doc = tomlkit.parse(config_path.read_text(encoding="utf-8-sig"))
     else:
         doc = tomlkit.document()
         config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -360,7 +362,7 @@ def set_config(key: str, value: str) -> None:
     current[parts[-1]] = typed_value
 
     # Write back
-    config_path.write_text(tomlkit.dumps(doc))
+    config_path.write_text(tomlkit.dumps(doc), encoding="utf-8")
 
     console.print(f"[green]Set[/green] {key} = {value!r}")
 
