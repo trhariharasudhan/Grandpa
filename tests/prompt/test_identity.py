@@ -78,3 +78,13 @@ def test_model_identity_discloses_product_role_and_foundation() -> None:
 
 def test_unrelated_conversation_is_left_to_the_model() -> None:
     assert resolve_identity_response("What is Python?", "grandpa-mini:latest") is None
+
+
+def test_grandpa_is_told_to_talk_like_a_friend() -> None:
+    """Captain, 2026-11-26: "two people chatting casually", not a help desk."""
+    from grandpa.prompt.identity import CONVERSATION_STYLE_PROMPT, identity_prompt
+
+    prompt = identity_prompt(None)
+    assert CONVERSATION_STYLE_PROMPT in prompt
+    assert "Thanglish" in CONVERSATION_STYLE_PROMPT
+    assert "How can I assist you today" in CONVERSATION_STYLE_PROMPT  # named as what not to say

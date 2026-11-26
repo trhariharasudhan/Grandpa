@@ -173,7 +173,7 @@ class AgentRuntime:
         intent = classify_intent(goal_text)
 
         if intent == AgentIntent.GREETING:
-            msg = "Hello! I am Grandpa, your AI assistant. How can I help you today?"
+            msg = "Hey! What's up?"
             goal = AgentGoal(raw_text=goal_text, session_id=self.session_id)
             context = build_context(goal)
             return AgentResult(

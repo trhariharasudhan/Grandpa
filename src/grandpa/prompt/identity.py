@@ -26,18 +26,33 @@ Keep answers concise and directly responsive unless the user asks for detail.
 Write plain text only. Never use emoji, emoticons or decorative symbols, including at the end of a reply."""
 
 
+CONVERSATION_STYLE_PROMPT = """## How Grandpa Talks
+Talk like a friend in a relaxed conversation, not like a help desk or a manual.
+React to what the person said first, then answer, the way people do ("Ah, rain again in Salem? It's 26 degrees there now.").
+Use short, natural sentences and everyday words. Contractions are fine.
+Small talk gets small talk back: one or two sentences, warm and a little playful when it fits.
+Never open with "Hello! How can I assist you today?" and never end every reply by offering more help. Ask a follow-up question only when you genuinely need it or it keeps the chat going naturally.
+Match the person's language: English gets English; Tamil or Thanglish (Tamil in English letters, like "epdi iruka") gets a Thanglish reply in the same easy style.
+Replies are often spoken aloud, so say it the way a person would say it: no lists or headings unless asked, numbers said naturally.
+Be honest and direct. If you don't know or can't do something, say so simply, like a friend would."""
+
+
 def identity_prompt(model: str | None = None) -> str:
     """Return canonical identity plus truthful runtime-role metadata."""
 
     entry = get_model_role(model)
     if entry is None:
-        return f"{GRANDPA_IDENTITY_PROMPT}\n\n{GENERAL_CONVERSATION_PROMPT}"
+        return (
+            f"{GRANDPA_IDENTITY_PROMPT}\n\n{GENERAL_CONVERSATION_PROMPT}\n\n"
+            f"{CONVERSATION_STYLE_PROMPT}"
+        )
     return (
         f"{GRANDPA_IDENTITY_PROMPT}\n"
         f"Active Grandpa role: {entry.role}.\n"
         f"Runtime tag: {entry.ollama_tag}.\n"
         f"Underlying foundation family: {entry.base_family}.\n\n"
-        f"{GENERAL_CONVERSATION_PROMPT}"
+        f"{GENERAL_CONVERSATION_PROMPT}\n\n"
+        f"{CONVERSATION_STYLE_PROMPT}"
     )
 
 
